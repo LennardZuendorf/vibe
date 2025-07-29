@@ -82,7 +82,7 @@ export function HeroSection() {
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row gap-4">
             <Button size="lg" className="bg-white hover:bg-zinc-200 text-black" asChild>
-              <Link href="/docs">
+              <Link href="https://docs.agents.ignitr.dev">
                 Get Started <ArrowRight className="ml-2 h-4 w-4" />
               </Link>
             </Button>
@@ -92,7 +92,7 @@ export function HeroSection() {
               className="border-zinc-700 text-white hover:bg-zinc-800 bg-transparent"
               asChild
             >
-              <Link href="/components">Browse Components</Link>
+              <Link href="/kits">Browse Kits</Link>
             </Button>
           </div>
 

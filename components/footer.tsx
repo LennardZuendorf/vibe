@@ -5,7 +5,7 @@ export function Footer() {
   return (
     <footer className="w-full bg-black border-t border-zinc-800">
       <div className="container px-4 py-12 md:px-6">
-        <div className="grid gap-8 md:grid-cols-4">
+        <div className="grid gap-8 md:grid-cols-3">
           <div>
             <div className="flex items-center space-x-2 mb-4">
               <div className="w-8 h-8 bg-white rounded-md flex items-center justify-center">
@@ -18,51 +18,19 @@ export function Footer() {
             </p>
           </div>
           <div>
-            <h3 className="mb-4 text-sm font-semibold text-white">Documentation</h3>
+            <h3 className="mb-4 text-sm font-semibold text-white">Resources</h3>
             <ul className="space-y-2 text-sm">
               <li>
-                <Link href="/docs/getting-started" className="text-zinc-400 transition-colors hover:text-white">
-                  Getting Started
+                <Link
+                  href="https://docs.agents.ignitr.dev"
+                  className="text-zinc-400 transition-colors hover:text-white"
+                >
+                  Documentation
                 </Link>
               </li>
               <li>
-                <Link href="/docs/installation" className="text-zinc-400 transition-colors hover:text-white">
-                  Installation
-                </Link>
-              </li>
-              <li>
-                <Link href="/docs/cli" className="text-zinc-400 transition-colors hover:text-white">
-                  CLI Reference
-                </Link>
-              </li>
-              <li>
-                <Link href="/docs/api" className="text-zinc-400 transition-colors hover:text-white">
-                  API Reference
-                </Link>
-              </li>
-            </ul>
-          </div>
-          <div>
-            <h3 className="mb-4 text-sm font-semibold text-white">Components</h3>
-            <ul className="space-y-2 text-sm">
-              <li>
-                <Link href="/components/agents" className="text-zinc-400 transition-colors hover:text-white">
-                  Agent Types
-                </Link>
-              </li>
-              <li>
-                <Link href="/components/rules" className="text-zinc-400 transition-colors hover:text-white">
-                  Rules
-                </Link>
-              </li>
-              <li>
-                <Link href="/components/modes" className="text-zinc-400 transition-colors hover:text-white">
-                  Modes
-                </Link>
-              </li>
-              <li>
-                <Link href="/components/behaviors" className="text-zinc-400 transition-colors hover:text-white">
-                  Behaviors
+                <Link href="/kits" className="text-zinc-400 transition-colors hover:text-white">
+                  AgentKits
                 </Link>
               </li>
             </ul>
@@ -71,23 +39,16 @@ export function Footer() {
             <h3 className="mb-4 text-sm font-semibold text-white">Community</h3>
             <ul className="space-y-2 text-sm">
               <li>
-                <Link href="/examples" className="text-zinc-400 transition-colors hover:text-white">
-                  Examples
-                </Link>
-              </li>
-              <li>
-                <Link href="/blocks" className="text-zinc-400 transition-colors hover:text-white">
-                  Blocks
+                <Link
+                  href="https://github.com/agentkit/agentkit"
+                  className="text-zinc-400 transition-colors hover:text-white"
+                >
+                  GitHub
                 </Link>
               </li>
               <li>
                 <Link href="/changelog" className="text-zinc-400 transition-colors hover:text-white">
                   Changelog
-                </Link>
-              </li>
-              <li>
-                <Link href="/contributing" className="text-zinc-400 transition-colors hover:text-white">
-                  Contributing
                 </Link>
               </li>
             </ul>

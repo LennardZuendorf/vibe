@@ -91,7 +91,7 @@ export function FeaturesGrid() {
               <h3 className="text-lg font-semibold text-white">Ready to build your first agent?</h3>
               <p className="text-zinc-400 text-sm">Start with our getting started guide</p>
               <Link
-                href="/docs"
+                href="https://docs.agents.ignitr.dev"
                 className="inline-block px-4 py-2 bg-white text-black rounded-md hover:bg-zinc-200 transition-colors text-sm font-medium"
               >
                 Get Started

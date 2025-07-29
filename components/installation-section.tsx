@@ -46,7 +46,8 @@ export function InstallationSection() {
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Get started in minutes</h2>
           <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
-            Follow these simple steps to create your first AI agent with AgentKit.
+            Follow these simple steps to create your first AI agent with AgentKit. Visit our documentation for detailed
+            guides.
           </p>
         </div>
 

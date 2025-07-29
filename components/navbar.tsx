@@ -21,17 +21,14 @@ export function Navbar() {
             <span className="text-xl font-bold text-white">AgentKit</span>
           </Link>
           <nav className="hidden gap-6 md:flex">
-            <Link href="/docs" className="text-sm font-medium text-zinc-400 transition-colors hover:text-white">
+            <Link
+              href="https://docs.agents.ignitr.dev"
+              className="text-sm font-medium text-zinc-400 transition-colors hover:text-white"
+            >
               Documentation
             </Link>
-            <Link href="/components" className="text-sm font-medium text-zinc-400 transition-colors hover:text-white">
-              Components
-            </Link>
-            <Link href="/examples" className="text-sm font-medium text-zinc-400 transition-colors hover:text-white">
-              Examples
-            </Link>
-            <Link href="/blocks" className="text-sm font-medium text-zinc-400 transition-colors hover:text-white">
-              Blocks
+            <Link href="/kits" className="text-sm font-medium text-zinc-400 transition-colors hover:text-white">
+              Kits
             </Link>
           </nav>
         </div>
@@ -55,17 +52,14 @@ export function Navbar() {
       {isMenuOpen && (
         <div className="container border-t border-zinc-800 px-4 py-4 md:hidden">
           <nav className="flex flex-col space-y-3">
-            <Link href="/docs" className="text-sm font-medium text-zinc-400 transition-colors hover:text-white">
+            <Link
+              href="https://docs.agents.ignitr.dev"
+              className="text-sm font-medium text-zinc-400 transition-colors hover:text-white"
+            >
               Documentation
             </Link>
-            <Link href="/components" className="text-sm font-medium text-zinc-400 transition-colors hover:text-white">
-              Components
-            </Link>
-            <Link href="/examples" className="text-sm font-medium text-zinc-400 transition-colors hover:text-white">
-              Examples
-            </Link>
-            <Link href="/blocks" className="text-sm font-medium text-zinc-400 transition-colors hover:text-white">
-              Blocks
+            <Link href="/kits" className="text-sm font-medium text-zinc-400 transition-colors hover:text-white">
+              Kits
             </Link>
           </nav>
         </div>
