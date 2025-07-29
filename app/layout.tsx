@@ -6,7 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata = {
-  title: "AgentKit - Build AI Agents with Reusable AgentKits",
+  title: "AgentKit - Build AI Agents with Reusable Components",
   description:
     "A CLI and component library for rapidly building AI agents. Copy, paste, and customize agent rules, modes, and behaviors.",
     generator: 'v0.dev'

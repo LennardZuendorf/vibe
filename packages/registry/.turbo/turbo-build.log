@@ -1,8 +1,0 @@
-
-> agentkit-registry@1.0.0 build /Users/lzuendorf/Development/agent-kit/packages/registry
-> tsc
-
-
-> agentkit-registry@1.0.0 postbuild /Users/lzuendorf/Development/agent-kit/packages/registry
-> echo '#!/usr/bin/env node' | cat - dist/index.js > temp && mv temp dist/index.js && chmod +x dist/index.js
-

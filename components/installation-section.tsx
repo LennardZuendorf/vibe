@@ -16,9 +16,9 @@ const steps = [
     description: "Create a new agent project with the basic structure",
   },
   {
-    title: "Add AgentKits",
+    title: "Add Components",
     command: "agentkit add engineer writer analyst",
-    description: "Add pre-built AgentKits to your project",
+    description: "Add pre-built agent components to your project",
   },
   {
     title: "Run Your Agent",

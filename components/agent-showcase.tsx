@@ -73,9 +73,9 @@ export function AgentShowcase() {
     <section className="w-full py-16 md:py-24 bg-black border-b border-zinc-800">
       <div className="container px-4 md:px-6">
         <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Popular AgentKits</h2>
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Popular Agent Types</h2>
           <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
-            Choose from our collection of pre-configured AgentKits or use them as starting points for your custom
+            Choose from our collection of pre-configured agents or use them as starting points for your custom
             implementations.
           </p>
         </div>
