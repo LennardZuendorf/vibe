@@ -1,0 +1,47 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**/*.ts", "package.json", "tsconfig.json"],
+      "outputs": ["dist/**"]
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "inputs": ["src/**/*.ts", "src/**/*.test.ts", "package.json", "tsconfig.json", "vitest.config.ts"],
+      "cache": false,
+      "persistent": true
+    },
+    "test:run": {
+      "dependsOn": ["build"],
+      "inputs": ["src/**/*.ts", "src/**/*.test.ts", "package.json", "tsconfig.json", "vitest.config.ts"]
+    },
+    "lint": {
+      "inputs": ["src/**/*.ts", "package.json", "biome.json", ".biomeignore"]
+    },
+    "lint:fix": {
+      "inputs": ["src/**/*.ts", "package.json", "biome.json", ".biomeignore"],
+      "cache": false
+    },
+    "format": {
+      "inputs": ["src/**/*.ts", "package.json", "biome.json", ".biomeignore"],
+      "cache": false
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "start": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "start:cli": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+} 

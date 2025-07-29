@@ -1,0 +1,40 @@
+{
+  "name": "agentkit-registry",
+  "version": "1.0.0",
+  "description": "A CLI tool to install AgentKits into a repository.",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "agentkit-registry": "node ./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "postbuild": "echo '#!/usr/bin/env node' | cat - dist/index.js > temp && mv temp dist/index.js && chmod +x dist/index.js"
+  },
+  "keywords": [
+    "ai",
+    "framework",
+    "cli",
+    "installer"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.0.0",
+    "ora": "^8.0.1",
+    "prompts": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.14",
+    "typescript": "^5.8.3",
+    "vitest": "^1.0.0",
+    "@vitest/coverage-v8": "^1.0.0"
+  }
+}

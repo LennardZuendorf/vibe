@@ -43,7 +43,7 @@ export function Footer() {
             </ul>
           </div>
           <div>
-            <h3 className="mb-4 text-sm font-semibold text-white">Components</h3>
+            <h3 className="mb-4 text-sm font-semibold text-white">AgentKits</h3>
             <ul className="space-y-2 text-sm">
               <li>
                 <Link href="/components/agents" className="text-zinc-400 transition-colors hover:text-white">
