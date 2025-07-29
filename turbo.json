@@ -4,8 +4,8 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**/*.ts", "package.json", "tsconfig.json"],
-      "outputs": ["dist/**"]
+      "inputs": ["src/**/*.ts", "app/**", "components/**", "lib/**", "hooks/**", "styles/**", "public/**", "package.json", "tsconfig.json", "next.config.mjs", "tailwind.config.ts"],
+      "outputs": [".next/**", "!.next/cache/**"]
     },
     "test": {
       "dependsOn": ["build"],
