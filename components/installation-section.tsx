@@ -6,24 +6,24 @@ import { Button } from "@/components/ui/button"
 
 const steps = [
   {
-    title: "Install AgentKit",
+    title: "Install AgentKit CLI",
     command: "npm install -g agentkit",
-    description: "Install the AgentKit CLI globally on your system",
+    description: "Install the AgentKit CLI globally to manage agent configurations across platforms",
   },
   {
-    title: "Initialize Project",
-    command: "agentkit init my-agent",
-    description: "Create a new agent project with the basic structure",
+    title: "Initialize Registry",
+    command: "agentkit init --registry https://github.com/your-org/agent-kits",
+    description: "Connect to your team's registry or use the public registry for shared kits",
   },
   {
-    title: "Add Components",
-    command: "agentkit add engineer writer analyst",
-    description: "Add pre-built agent components to your project",
+    title: "Add Agent Kits",
+    command: "agentkit add cursor-engineer claude-writer",
+    description: "Install platform-specific kits and sync them with your development environment",
   },
   {
-    title: "Run Your Agent",
-    command: "npm run dev",
-    description: "Start your agent and begin interacting with it",
+    title: "Sync Across Platforms",
+    command: "agentkit sync --platforms cursor,claude",
+    description: "Keep your agent configurations synchronized across all your tools",
   },
 ]
 
@@ -44,10 +44,9 @@ export function InstallationSection() {
     <section className="w-full py-16 md:py-24 bg-zinc-950 border-b border-zinc-800">
       <div className="container px-4 md:px-6">
         <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Get started in minutes</h2>
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Start syncing in minutes</h2>
           <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
-            Follow these simple steps to create your first AI agent with AgentKit. Visit our documentation for detailed
-            guides.
+            Set up AgentKit to manage and sync your AI agent configurations across platforms and teams.
           </p>
         </div>
 

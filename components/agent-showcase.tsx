@@ -4,53 +4,63 @@ import { useState } from "react"
 import { Copy, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-const agents = [
+const agentKits = [
   {
-    name: "Engineer",
-    description: "Code review, debugging, and technical documentation",
-    command: "npx agentkit add engineer",
-    preview: `// Engineer Agent Configuration
-export const engineerAgent = {
-  name: "Engineer",
+    name: "Cursor Engineer",
+    description: "Code review and debugging rules optimized for Cursor IDE",
+    command: "npx agentkit add cursor-engineer",
+    platform: "Cursor",
+    preview: `// Cursor Engineer Kit
+export const cursorEngineerKit = {
+  name: "cursor-engineer",
+  platform: "cursor",
   rules: [
-    "Always provide code examples",
-    "Explain technical concepts clearly",
-    "Suggest best practices"
+    "Focus on code quality and best practices",
+    "Provide actionable debugging steps",
+    "Suggest performance optimizations"
   ],
-  modes: ["debug", "review", "document"],
-  capabilities: ["code-analysis", "testing", "optimization"]
+  prompts: {
+    codeReview: "Review this code for...",
+    debugging: "Help debug this issue..."
+  }
 }`,
   },
   {
-    name: "Writer",
-    description: "Content creation, editing, and style optimization",
-    command: "npx agentkit add writer",
-    preview: `// Writer Agent Configuration
-export const writerAgent = {
-  name: "Writer",
+    name: "Claude Writer",
+    description: "Content creation and editing prompts for Claude",
+    command: "npx agentkit add claude-writer",
+    platform: "Claude",
+    preview: `// Claude Writer Kit
+export const claudeWriterKit = {
+  name: "claude-writer", 
+  platform: "claude",
   rules: [
-    "Maintain consistent tone",
-    "Check grammar and style",
-    "Optimize for readability"
+    "Maintain consistent tone and style",
+    "Optimize for clarity and readability",
+    "Provide constructive editing feedback"
   ],
-  modes: ["creative", "technical", "marketing"],
-  capabilities: ["editing", "proofreading", "seo"]
+  prompts: {
+    contentGen: "Create content that...",
+    editing: "Edit this text to improve..."
+  }
 }`,
   },
   {
-    name: "Analyst",
-    description: "Data analysis, insights, and reporting",
-    command: "npx agentkit add analyst",
-    preview: `// Analyst Agent Configuration
-export const analystAgent = {
-  name: "Analyst",
+    name: "N8N Workflow",
+    description: "Automation agent for n8n workflow management",
+    command: "npx agentkit add n8n-workflow",
+    platform: "n8n",
+    preview: `// N8N Workflow Kit
+export const n8nWorkflowKit = {
+  name: "n8n-workflow",
+  platform: "n8n", 
   rules: [
-    "Support claims with data",
-    "Provide actionable insights",
-    "Use clear visualizations"
+    "Optimize workflow efficiency",
+    "Handle error cases gracefully",
+    "Provide clear automation logic"
   ],
-  modes: ["research", "report", "forecast"],
-  capabilities: ["data-viz", "statistics", "trends"]
+  triggers: ["webhook", "schedule", "manual"],
+  actions: ["process", "transform", "notify"]
 }`,
   },
 ]
@@ -73,18 +83,19 @@ export function AgentShowcase() {
     <section className="w-full py-16 md:py-24 bg-black border-b border-zinc-800">
       <div className="container px-4 md:px-6">
         <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Preset AgentKits</h2>
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Platform-Specific AgentKits</h2>
           <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
-            Ready-to-use agent kits that you can install and customize for your projects.
+            Pre-configured agent kits optimized for specific platforms and use cases. Install, sync, and customize for
+            your workflow.
           </p>
         </div>
 
         <div className="grid lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
           {/* Agent Selector */}
           <div className="space-y-4">
-            {agents.map((agent, index) => (
+            {agentKits.map((kit, index) => (
               <div
-                key={agent.name}
+                key={kit.name}
                 className={`p-6 rounded-lg border cursor-pointer transition-all ${
                   activeAgent === index
                     ? "border-white bg-zinc-900"
@@ -93,21 +104,26 @@ export function AgentShowcase() {
                 onClick={() => setActiveAgent(index)}
               >
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xl font-semibold text-white">{agent.name}</h3>
+                  <div className="flex items-center space-x-3">
+                    <h3 className="text-xl font-semibold text-white">{kit.name}</h3>
+                    <span className="px-2 py-1 bg-zinc-800 text-zinc-300 text-xs rounded font-mono">
+                      {kit.platform}
+                    </span>
+                  </div>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={(e) => {
                       e.stopPropagation()
-                      copyCommand(agent.command)
+                      copyCommand(kit.command)
                     }}
                     className="h-8 px-2 text-zinc-400 hover:text-white"
                   >
                     {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   </Button>
                 </div>
-                <p className="text-zinc-400 mb-4">{agent.description}</p>
-                <code className="text-sm bg-zinc-800 px-3 py-2 rounded text-zinc-300 block">{agent.command}</code>
+                <p className="text-zinc-400 mb-4">{kit.description}</p>
+                <code className="text-sm bg-zinc-800 px-3 py-2 rounded text-zinc-300 block">{kit.command}</code>
               </div>
             ))}
           </div>
@@ -121,12 +137,14 @@ export function AgentShowcase() {
                   <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
                   <div className="w-3 h-3 rounded-full bg-green-500"></div>
                 </div>
-                <span className="text-sm text-zinc-400 ml-4">{agents[activeAgent].name.toLowerCase()}-agent.js</span>
+                <span className="text-sm text-zinc-400 ml-4">
+                  {agentKits[activeAgent].name.toLowerCase().replace(" ", "-")}.js
+                </span>
               </div>
             </div>
             <div className="p-6">
               <pre className="text-sm text-zinc-300 overflow-x-auto">
-                <code>{agents[activeAgent].preview}</code>
+                <code>{agentKits[activeAgent].preview}</code>
               </pre>
             </div>
           </div>

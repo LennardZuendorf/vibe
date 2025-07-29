@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 
 export function HeroSection() {
   const [copied, setCopied] = useState(false)
-  const command = "npx agentkit add engineer"
+  const command = "npx agentkit add cursor-engineer"
 
   const copyToClipboard = async () => {
     try {
@@ -24,16 +24,17 @@ export function HeroSection() {
     <section className="w-full py-16 md:py-24 lg:py-32 bg-black">
       <div className="container px-4 md:px-6">
         <div className="flex flex-col items-center space-y-8 text-center">
-          <div className="space-y-4 max-w-3xl">
+          <div className="space-y-4 max-w-4xl">
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-white">
-              Build AI agents with{" "}
+              Sync and share{" "}
               <span className="bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent">
-                reusable components
-              </span>
+                AI agent logic
+              </span>{" "}
+              across platforms
             </h1>
-            <p className="text-lg md:text-xl text-zinc-400 max-w-[700px] mx-auto">
-              A CLI and component library for rapidly building AI agents. Copy, paste, and customize agent rules, modes,
-              and behaviors.
+            <p className="text-lg md:text-xl text-zinc-400 max-w-[800px] mx-auto">
+              A developer-first CLI for building, syncing, and sharing AI agent rules, prompts, and configurations.
+              Works with Cursor, Claude, Kilo Code, CLINE, Rovoo, and more.
             </p>
           </div>
 
@@ -70,10 +71,10 @@ export function HeroSection() {
                   <span className="text-white">{command}</span>
                 </div>
                 <div className="text-zinc-400 space-y-1">
-                  <div>✓ Installing engineer agent...</div>
-                  <div>✓ Adding rules and behaviors...</div>
-                  <div>✓ Setting up custom modes...</div>
-                  <div className="text-green-400">✓ Engineer agent ready!</div>
+                  <div>✓ Fetching kit from registry...</div>
+                  <div>✓ Installing agent rules and prompts...</div>
+                  <div>✓ Syncing with Cursor configuration...</div>
+                  <div className="text-green-400">✓ cursor-engineer kit ready!</div>
                 </div>
               </div>
             </div>
@@ -92,23 +93,20 @@ export function HeroSection() {
               className="border-zinc-700 text-white hover:bg-zinc-800 bg-transparent"
               asChild
             >
-              <Link href="/kits">Browse Kits</Link>
+              <Link href="/kits">Browse Registry</Link>
             </Button>
           </div>
 
-          {/* Quick Stats */}
-          <div className="grid grid-cols-3 gap-8 pt-8 border-t border-zinc-800 w-full max-w-md">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-white">50+</div>
-              <div className="text-sm text-zinc-400">Components</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-white">12</div>
-              <div className="text-sm text-zinc-400">Agent Types</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-white">100%</div>
-              <div className="text-sm text-zinc-400">Open Source</div>
+          {/* Platform Support */}
+          <div className="pt-8 border-t border-zinc-800 w-full max-w-4xl">
+            <p className="text-sm text-zinc-500 mb-4">Works with your favorite tools</p>
+            <div className="flex flex-wrap items-center justify-center gap-8 text-zinc-400">
+              <span className="text-sm font-mono">Cursor</span>
+              <span className="text-sm font-mono">Claude</span>
+              <span className="text-sm font-mono">Kilo Code</span>
+              <span className="text-sm font-mono">CLINE</span>
+              <span className="text-sm font-mono">Rovoo</span>
+              <span className="text-sm font-mono">+ more</span>
             </div>
           </div>
         </div>
