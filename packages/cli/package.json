@@ -1,0 +1,58 @@
+{
+  "name": "@agentkit/cli",
+  "version": "1.0.0",
+  "description": "CLI for managing AgentKits - reusable AI agent configurations",
+  "main": "dist/index.js",
+  "bin": {
+    "agentkit": "dist/index.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsc && chmod +x dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "lint": "biome lint src/",
+    "lint:fix": "biome lint --apply src/",
+    "format": "biome format --write src/",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm build"
+  },
+  "keywords": ["ai", "agent", "cli", "agentkit", "automation", "cursor", "claude", "development"],
+  "author": "AgentKit Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agentkit/agentkit.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://agentkit.dev",
+  "bugs": {
+    "url": "https://github.com/agentkit/agentkit/issues"
+  },
+  "files": ["dist", "kits", "README.md"],
+  "dependencies": {
+    "commander": "^11.1.0",
+    "chalk": "^5.3.0",
+    "ora": "^7.0.1",
+    "prompts": "^2.4.2",
+    "fs-extra": "^11.2.0",
+    "node-fetch": "^3.3.2",
+    "tar": "^6.2.0",
+    "semver": "^7.5.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.8.3",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^20.0.0",
+    "@types/prompts": "^2.4.9",
+    "@types/semver": "^7.5.6",
+    "@types/tar": "^6.1.11",
+    "tsx": "^4.7.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
