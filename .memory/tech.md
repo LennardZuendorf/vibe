@@ -12,12 +12,13 @@
 - **Fonts**: Geist font family
 - **Theme**: next-themes for dark/light mode support
 
-### CLI & Backend
+### CLI & Backend (Optional/Future)
 - **Runtime**: Node.js with ES Modules
 - **CLI Framework**: Commander.js
 - **Package Manager**: pnpm with workspaces
 - **Build System**: TypeScript compiler + Turbo for monorepo
 - **Testing**: Vitest
+- **Purpose**: Workspace management utilities for PMs
 
 ### Development Tools
 - **Linting**: Biome (replacing ESLint/Prettier)
@@ -67,11 +68,12 @@
 - **Responsive**: Mobile-first breakpoints
 - **Dark Mode**: Support via next-themes
 
-### CLI Standards
-- **Commands**: Descriptive subcommands
+### CLI Standards (Future)
+- **Commands**: PM-focused operations (init, template, sync, review)
 - **Output**: Use ora spinners for long operations
 - **Prompts**: Confirm destructive operations
 - **Error Handling**: Graceful failures with helpful messages
+- **Focus**: Workspace scaffolding and template generation
 
 ## Quality Gates
 
@@ -99,7 +101,8 @@ pnpm lint         # Lint and format
 ### Production
 - **Platform**: Vercel (auto-deploy from main branch)
 - **Environment**: Node.js 18+
-- **CLI Distribution**: npm registry
+- **Repository Template**: GitHub template repository
+- **CLI Distribution**: npm registry (optional future feature)
 
 ## Dependencies Management
 
