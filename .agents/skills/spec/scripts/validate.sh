@@ -13,10 +13,30 @@ green() { echo -e "\033[32m  OK:    $1\033[0m"; }
 echo "Validating $SPEC_DIR/..."
 echo ""
 
+if [[ ! -d "$SPEC_DIR" ]]; then
+  red "No .spec/ directory found. Run setup first: bash ~/.agents/skills/spec/scripts/setup.sh"
+  exit 1
+fi
+
+shopt -s nullglob
+specs=("$SPEC_DIR"/*.md)
+
+if [[ ${#specs[@]} -eq 0 ]]; then
+  red "No spec files found in $SPEC_DIR/"
+  exit 1
+fi
+
 # Check all .md files exist and have frontmatter
-for f in "$SPEC_DIR"/*.md; do
+for f in "${specs[@]}"; do
   name=$(basename "$f")
   echo "--- $name ---"
+
+  # lessons.md doesn't require frontmatter
+  if [[ "$name" == "lessons.md" ]]; then
+    green "$name: checked (lessons file, no frontmatter required)"
+    echo ""
+    continue
+  fi
 
   # Check frontmatter exists
   if ! head -1 "$f" | grep -q "^---$"; then
@@ -32,10 +52,14 @@ for f in "$SPEC_DIR"/*.md; do
     red "$name: missing 'updated:' in frontmatter"
   fi
 
-  # Entrypoints must have children
+  # Entrypoints: product.md and tech.md must have children, plan.md warns if missing
   if grep -q "^type: entrypoint" "$f"; then
     if ! grep -q "^children:" "$f"; then
-      red "$name: entrypoint missing 'children:' list"
+      if [[ "$name" == "plan.md" ]]; then
+        yellow "$name: entrypoint has no 'children:' list (add sub-plans if needed)"
+      else
+        red "$name: entrypoint missing 'children:' list"
+      fi
     fi
   fi
 
@@ -52,10 +76,19 @@ for f in "$SPEC_DIR"/*.md; do
     fi
   fi
 
-  # Check naming convention: {area}-{topic}.md or {area}.md
-  if [[ "$name" != "product.md" && "$name" != "tech.md" ]]; then
-    if [[ "$name" != product-* && "$name" != tech-* ]]; then
-      red "$name: doesn't follow naming convention (must start with 'product-' or 'tech-')"
+  # Check naming convention: {area}-{topic}.md or entrypoints
+  if [[ "$name" != "product.md" && "$name" != "tech.md" && "$name" != "plan.md" && "$name" != "lessons.md" ]]; then
+    # Branch docs must start with product-, tech-, or plan-
+    if [[ "$name" != product-* && "$name" != tech-* && "$name" != plan-* ]]; then
+      red "$name: must start with 'product-', 'tech-', or 'plan-' (e.g., product-design.md, tech-api.md, plan-editor.md)"
+    fi
+
+    # Validate topic part is lowercase with hyphens only
+    if [[ "$name" =~ ^(product|tech|plan)-(.+)\.md$ ]]; then
+      topic="${BASH_REMATCH[2]}"
+      if [[ ! "$topic" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; then
+        red "$name: topic must be lowercase with hyphens only, no leading/trailing hyphens (found: '$topic')"
+      fi
     fi
   fi
 
@@ -74,7 +107,8 @@ for f in "$SPEC_DIR"/*.md; do
 done
 
 # Check that entrypoint children actually exist
-for entrypoint in "$SPEC_DIR"/product.md "$SPEC_DIR"/tech.md; do
+# Check that all entrypoint children actually exist
+for entrypoint in "$SPEC_DIR"/product.md "$SPEC_DIR"/tech.md "$SPEC_DIR"/plan.md; do
   if [[ -f "$entrypoint" ]]; then
     name=$(basename "$entrypoint")
     in_children=false
