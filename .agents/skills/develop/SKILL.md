@@ -47,13 +47,15 @@ Update `.spec/.phase` whenever you transition between phases.
    - Agent 1: Search for existing code related to the feature (Glob + Grep patterns)
    - Agent 2: Search for related tests, fixtures, and examples
    - Agent 3: Search for related configuration, types, and interfaces
-   - If a web search would help understand external APIs/libraries, do that too
+   - Agent 4: If external APIs/libraries are involved, use WebSearch/WebFetch
+   - Run all agents that make sense in **parallel** — do NOT run them sequentially
 
-3. **Document findings** — Write a brief summary of:
-   - What already exists that's relevant
-   - What needs to be built
+3. **Write findings to file** — Create `.spec/research.md` with a structured summary:
+   - What already exists that's relevant (with file paths)
+   - What needs to be built (gap analysis)
    - What constraints or patterns you discovered
    - Any risks or open questions
+   - This file preserves context across compactions and lets future phases reference it
 
 4. **Present to user** — Show your research findings and ask: "Does this match your understanding? Any corrections before I write specs?"
 
@@ -197,6 +199,33 @@ When `/develop` is called and `.spec/.phase` already exists:
 2. Read the relevant specs and plan
 3. Present a brief status: "Resuming from IMPLEMENT phase. Last completed: M2. Next: M3."
 4. Continue from where you left off
+
+## Context Management
+
+Each phase transition is a natural compaction point. After completing a phase:
+1. Ensure all findings/decisions are persisted to files (`.spec/research.md`, specs, plan)
+2. The files become the context for the next phase — not your memory of the previous one
+3. If context is getting long, suggest `/compact` to the user before starting the next phase
+
+This follows the **Frequent Intentional Compaction** pattern: treat every session as disposable, treat files as permanent. A 10-line spec is worth more than 10,000 tokens of conversation history.
+
+## Subagent Strategy
+
+Use the right subagent for the right job:
+
+| Task | Subagent Type | Model | Why |
+|------|--------------|-------|-----|
+| Codebase search | `Explore` | haiku | Fast, read-only, cheap |
+| Deep code analysis | `Explore` (very thorough) | haiku | Thorough but still cheap |
+| Independent implementation task | `general-purpose` | inherited | Needs write access |
+| Background test runs | `general-purpose` (background) | inherited | Non-blocking |
+| Multi-perspective review | `/simplify` | inherited | 3 parallel review agents |
+
+**Rules for subagents:**
+- Always dispatch 3+ independent research tasks in parallel, never sequentially
+- Subagents should return **compact summaries**, not raw data (~95% context reduction)
+- For implementation, prefer isolated worktree agents for independent modules
+- Never let a subagent make architectural decisions — that's the main agent's job
 
 ## Key Principle: When In Doubt, Ask
 

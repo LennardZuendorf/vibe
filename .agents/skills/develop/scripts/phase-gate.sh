@@ -59,14 +59,23 @@ is_phase_file() {
     esac
 }
 
-# Phase: RESEARCH — block all writes except .spec/.phase
+# Helper: check if file is the research file
+is_research_file() {
+    local fp="$1"
+    case "$fp" in
+        */.spec/research.md|*.spec/research.md) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Phase: RESEARCH — block all writes except .spec/.phase and .spec/research.md
 if [ "$PHASE" = "RESEARCH" ]; then
     case "$TOOL_NAME" in
         Edit|Write|NotebookEdit)
-            if is_phase_file "$FILE_PATH"; then
+            if is_phase_file "$FILE_PATH" || is_research_file "$FILE_PATH"; then
                 exit 0
             fi
-            echo "BLOCKED: You are in the RESEARCH phase. No file writes allowed except .spec/.phase. Complete your research and get user confirmation before moving to SPEC phase." >&2
+            echo "BLOCKED: You are in the RESEARCH phase. Only .spec/research.md and .spec/.phase can be written. Complete your research and get user confirmation before moving to SPEC phase." >&2
             exit 2
             ;;
     esac

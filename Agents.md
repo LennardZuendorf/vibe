@@ -27,10 +27,12 @@ Not guidelines — enforced boundaries. A hook script checks the current phase s
 ### 5. Lessons Compound
 Every session starts by reading `lessons.md`. Every mistake updates it. Knowledge accumulates across sessions, not just within them.
 
-## Inspiration
+## Inspiration & References
 
-- **GSD (Getting Shit Done)** — Phase-gated development with clear boundaries between thinking and doing
-- **Ruflo** — Structured AI agent workflows with context persistence
+- **GSD (Getting Shit Done)** — Phase-gated development with clear boundaries between thinking and doing. Each phase runs in a fresh context window; requirements trace to phases, phases to plans, plans to commits. (ccforeveryone.com/gsd)
+- **HumanLayer FIC (Frequent Intentional Compaction)** — Validated on 300K+ LOC Rust codebases. Core insight: subagents write findings to files, not inline. Main context stays clean. Enables 35K LOC feature additions in 7 hours. (github.com/humanlayer/advanced-context-engineering-for-coding-agents)
+- **cc-sdd** — Kiro-style commands enforcing Requirements → Design → Tasks → Implementation. Multi-tool compatible. (github.com/gotalab/cc-sdd)
+- **claude-wizard** — 8-phase workflow with TDD, adversarial review, and quality gate cycles. (github.com/vlad-ko/claude-wizard)
 - **Feature-Dev Pattern** — Research → spec → plan → implement → review lifecycle
 - **Simplify Skill** — Multi-agent parallel review pattern (reuse, quality, efficiency)
 
@@ -85,10 +87,33 @@ Every session starts by reading `lessons.md`. Every mistake updates it. Knowledg
 **Blocked:** Write(new files) — fixes only
 **Exit:** Tests pass, /simplify review clean, specs updated if needed
 
+## Key Patterns
+
+### Research-to-File
+Subagents write findings to `.spec/research.md`, not inline. This preserves main context (~95% reduction) and creates a durable artifact other phases can reference.
+
+### Frequent Intentional Compaction
+Each phase transition is a compaction point. Files are the memory, not conversation history. A 10-line spec outweighs 10,000 tokens of chat.
+
+### Lock-File Phase Gates
+Hooks check `.spec/.phase` before allowing writes. Exit code 2 = hard block. This is deterministic — not a suggestion the model can ignore.
+
+### Stop-Hook Quality Gates
+End-of-turn hooks can run tests and linters automatically after every response, catching regressions immediately rather than at review time.
+
 ## Current Status
 
-- [x] Spec skill exists and is functional
-- [ ] `/develop` skill — needs creation
-- [ ] Phase gate hooks — needs creation
-- [ ] CLAUDE.md — needs creation
-- [ ] Integration testing
+- [x] Spec skill — functional
+- [x] `/develop` skill — created with 5-phase lifecycle
+- [x] Phase gate hooks — PreToolUse enforcement via check-phase.sh
+- [x] SessionStart hook — context injection at session start
+- [x] CLAUDE.md — framework overview and rules
+- [x] Agents.md — vision, goals, architecture
+
+### Future Enhancements
+- [ ] Stop hook for end-of-turn quality gates (auto-test, auto-lint)
+- [ ] PostToolUse hook for auto-formatting after edits
+- [ ] Custom `.claude/agents/` subagent definitions with persistent memory
+- [ ] `.mcp.json` for GitHub/external service integration
+- [ ] `.claude/rules/` for path-specific coding standards
+- [ ] Bash command filtering in phase-gate (block `rm`, `mv` during RESEARCH)
