@@ -51,10 +51,11 @@ Update `.spec/.phase` whenever you transition between phases.
    - Run all agents that make sense in **parallel** — do NOT run them sequentially
 
 3. **Write findings to file** — Create `.spec/research.md` with a structured summary:
-   - What already exists that's relevant (with file paths)
-   - What needs to be built (gap analysis)
-   - What constraints or patterns you discovered
-   - Any risks or open questions
+   - **Exists (don't rebuild):** List what already exists with file paths
+   - **Must build:** Gap analysis of what's new
+   - **Patterns & constraints:** Conventions you must follow
+   - **Risks:** With confidence levels — `HIGH` (verified in code), `MEDIUM` (inferred), `LOW` (uncertain)
+   - **Open questions:** What needs user input
    - This file preserves context across compactions and lets future phases reference it
 
 4. **Present to user** — Show your research findings and ask: "Does this match your understanding? Any corrections before I write specs?"
@@ -107,6 +108,10 @@ Update `.spec/.phase` whenever you transition between phases.
    - For complex features (3+ milestones), create `.spec/plan-{feature}.md`
    - Include: validation summary, tasks with checkboxes, session estimates, risk levels
    - Include validation criteria for each milestone (how do you know it's done?)
+   - **Group tasks into waves** based on dependencies:
+     - Tasks within a wave have NO dependencies on each other (can run in parallel)
+     - Waves run sequentially (wave 2 depends on wave 1 completing)
+     - This enables parallel subagent execution during IMPLEMENT
 
 3. **Set up tracking** — Create a TodoWrite list mirroring the plan's tasks
 
@@ -128,14 +133,15 @@ Update `.spec/.phase` whenever you transition between phases.
 
 **You MUST do all of the following:**
 
-1. **Follow the plan** — Work through milestones in order. Check off tasks as you complete them.
+1. **Follow the plan wave by wave** — Execute tasks within each wave. Independent tasks within a wave can be dispatched to parallel subagents (using worktree isolation for file-level independence).
 
 2. **Re-read specs before each milestone** — Don't drift. Load the relevant product and tech specs before starting each milestone to ensure your implementation matches.
 
-3. **Use subagents when helpful:**
-   - Spawn background agents for running tests while you continue coding
-   - Use Explore agents to find patterns when implementing unfamiliar code paths
-   - Use general-purpose agents for complex, independent subtasks
+3. **Use subagents aggressively:**
+   - **Parallel wave execution:** Independent tasks within a wave → spawn general-purpose agents in isolated worktrees
+   - **Background test runs:** After completing a wave, spawn a background agent to run the test suite while you start the next wave
+   - **Pattern discovery:** Use Explore agents to find patterns when implementing unfamiliar code paths
+   - Each subagent gets a fresh context with only its task + relevant specs (avoids context rot)
 
 4. **Update progress** — Mark tasks complete in both TodoWrite and `.spec/plan.md` as you go.
 
@@ -158,20 +164,26 @@ Update `.spec/.phase` whenever you transition between phases.
 
 **You MUST do all of the following:**
 
-1. **Run tests** — Execute the project's test suite. Fix any failures.
+1. **Goal-backward verification** — Don't just check "did we do the tasks?" Ask: **"What must be TRUE for this feature to work?"** Then verify each condition:
+   - Re-read `product.md` / `product-{feature}.md` — does the implementation match the user experience described?
+   - Re-read `tech.md` / `tech-{feature}.md` — does the code follow the architecture described?
+   - For each spec requirement, verify it's observable in the code (not just assumed)
 
-2. **Run /simplify** — Use the simplify skill for multi-agent review (reuse, quality, efficiency). Apply its suggestions.
+2. **Run tests** — Execute the project's test suite. Fix any failures.
 
-3. **Self-review checklist:**
+3. **Run /simplify** — Use the simplify skill for multi-agent review (reuse, quality, efficiency). Apply its suggestions.
+
+4. **Self-review checklist:**
    - [ ] All plan tasks are checked off
+   - [ ] Every spec requirement is verifiably implemented
    - [ ] Specs are still accurate (update if implementation diverged)
    - [ ] No debug code, console.logs, or TODOs left behind
    - [ ] Code follows existing patterns in the codebase
    - [ ] Lessons learned? Update `.spec/lessons.md`
 
-4. **Validate specs** — Run `bash ~/.agents/skills/spec/scripts/validate.sh`
+5. **Validate specs** — Run `bash ~/.agents/skills/spec/scripts/validate.sh`
 
-5. **Present to user** — Show summary of what was built, tests passing, review findings.
+6. **Present to user** — Show summary of what was built, tests passing, review findings.
 
 **Rules during this phase:**
 - Fixes only — no new features

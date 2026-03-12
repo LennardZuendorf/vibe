@@ -90,16 +90,25 @@ Every session starts by reading `lessons.md`. Every mistake updates it. Knowledg
 ## Key Patterns
 
 ### Research-to-File
-Subagents write findings to `.spec/research.md`, not inline. This preserves main context (~95% reduction) and creates a durable artifact other phases can reference.
+Subagents write findings to `.spec/research.md`, not inline. This preserves main context (~95% reduction) and creates a durable artifact other phases can reference. Findings include confidence levels (HIGH/MEDIUM/LOW) so specs can prioritize what to verify.
 
 ### Frequent Intentional Compaction
-Each phase transition is a compaction point. Files are the memory, not conversation history. A 10-line spec outweighs 10,000 tokens of chat.
+Each phase transition is a compaction point. Files are the memory, not conversation history. A 10-line spec outweighs 10,000 tokens of chat. (From HumanLayer FIC methodology.)
 
 ### Lock-File Phase Gates
 Hooks check `.spec/.phase` before allowing writes. Exit code 2 = hard block. This is deterministic — not a suggestion the model can ignore.
 
+### Wave-Based Execution (from GSD)
+Plan tasks are grouped into dependency waves. Tasks within a wave have no dependencies on each other and can be dispatched to parallel subagents. Waves execute sequentially. This gives the parallelism of GSD's multi-agent execution while keeping the simplicity of a single skill.
+
+### Goal-Backward Verification (from GSD)
+Review doesn't just check "did we do the tasks?" It asks: "What must be TRUE for this feature to work?" Then verifies each condition against the product and tech specs. This catches cases where tasks completed but the feature doesn't actually work.
+
 ### Stop-Hook Quality Gates
 End-of-turn hooks can run tests and linters automatically after every response, catching regressions immediately rather than at review time.
+
+### File-Based Communication
+Agents communicate exclusively via files, never via inline context. Research → `.spec/research.md`. Specs → `.spec/*.md`. Plans → `.spec/plan*.md`. Progress → plan checkboxes. This is the core pattern shared by GSD, HumanLayer FIC, and this framework.
 
 ## Current Status
 
