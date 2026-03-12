@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/check-phase.sh"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '--- Session Context ---'; if [ -f .spec/lessons.md ]; then echo 'lessons.md exists — read it before coding'; fi; if [ -f .spec/.phase ]; then echo \"Current phase: $(cat .spec/.phase)\"; fi; echo '---'"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "TodoWrite",
+      "Skill(spec)",
+      "Skill(develop)"
+    ]
+  }
+}
