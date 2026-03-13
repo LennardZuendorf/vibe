@@ -12,101 +12,199 @@ Updated: 2026-03-13
 
 **What exists:**
 - Full spec management system at `.agents/skills/spec/`
-- Three entrypoint types: `product.md` (what/why), `tech.md` (how), `plan.md` (roadmap)
-- Branch docs for deep-dives: `product-{topic}.md`, `tech-{topic}.md`, `plan-{topic}.md`
-- `lessons.md` for accumulated mistakes
-- Frontmatter with `type`, `scope`, `parent`, `children`, `updated`
-- Cross-reference system with bidirectional links
-- Validation script: checks frontmatter, naming, broken links, orphaned children
+- Six document types: product entrypoint, tech entrypoint, plan entrypoint, lessons, branch docs, sub-plans
+- Frontmatter-based metadata (`type`, `scope`, `parent`, `children`, `updated`) enabling graph traversal
+- Strict product/tech separation with explicit style rules and good/bad examples
+- Cross-reference discipline: bidirectional links between parents, branches, and siblings
+- Validation script: checks naming, frontmatter, broken links, orphaned children
 - Templates for all document types
-- Strict product/tech separation: product specs have ZERO code, tech specs have ZERO UX opinions
+- Progressive disclosure: load entrypoints first, branch docs only when relevant
 
 **This is non-negotiable.** The SPEC phase always uses `/spec`. No plugin can replace it.
 
-**What's good:**
-- Strong separation of concerns (product vs tech)
-- Validation catches drift and inconsistency
-- Templates enforce consistent structure
-- Cross-references keep documents connected
-- Progressive disclosure — load only what's relevant
+**What our system does better than everyone else:**
+1. **Hard product/tech separation with enforcement** — No other framework has explicit style rules with good/bad examples for what belongs in each doc type
+2. **Progressive disclosure architecture** — Entrypoint → branch doc hierarchy with navigation rules. Directly addresses the "curse of instructions" (AI performance degrades with too many requirements in one prompt)
+3. **Lessons as first-class infrastructure** — The only framework that treats error memory as spec infrastructure
+4. **Automated structural validation** — Cross-reference checking, naming, orphaned children
+5. **Bidirectional cross-references** — Creates a navigable graph, not a flat file dump
+6. **Frontmatter-based metadata** — Enables programmatic querying of the spec graph
 
 ---
 
-### GSD
+### GSD (Get Stuff Done)
 
 **Spec-related patterns:**
-- Spec-driven development is a core principle
-- Plans reference specs as the source of truth
-- But GSD doesn't have a formal spec writing system — it focuses on plans and execution
-- Specs are more like "context engineering" artifacts than formal design documents
+- Externalizes state into discrete files: `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `CONTEXT.md`, `STATE.md`, `MILESTONE.md`, `DISCOVERY.md`, `RESEARCH.md`, `UAT.md`, `VALIDATION.md`
+- `PLAN_N_M.md` files are XML-formatted **executable prompts**, not documentation — each is 2-3 tasks fitting 50% of a context window
+- Does NOT enforce product vs. tech separation
+- `CONTEXT.md` per milestone archives what was known at decision time — temporal snapshots
+- `STATE.md` as explicit current-state file (richer than our `.spec/.phase`)
 
-**Skip:** GSD doesn't add to our spec system
+**What GSD does better than us:**
+- XML task format provides unambiguous machine-parseable execution units (our plan tasks are prose checkboxes)
+- `CONTEXT.md` per milestone captures temporal state that our living-document approach loses on update
+- `STATE.md` is richer than our binary `.phase` file
+
+**Skip:** XML format, monolithic requirements doc
+**Consider:** Temporal context snapshots, richer state tracking
 
 ---
 
 ### Feature-Dev
 
 **Spec-related patterns:**
-- Phase 4 ("Architecture Design") produces an architecture blueprint
-- `code-architect` agent generates: patterns found, architecture decision, component design, implementation map, data flow, build sequence
-- Makes **decisive choices** — picks one approach and commits (doesn't present multiple options by default)
-- Output is comprehensive but not split into product/tech
+- `code-architect` agent produces architecture blueprints with mandatory sections:
+  1. Patterns & Conventions Found (with **`file:line` references**)
+  2. Architecture Decision (chosen approach + rationale + trade-offs)
+  3. Component Design (file path, responsibilities, dependencies, interfaces)
+  4. Implementation Map (specific files to create/modify)
+  5. Data Flow (entry-to-output with transformation steps)
+  6. Build Sequence (phased checklist)
+  7. Critical Details (error handling, state management, testing, performance, security)
+- Makes **decisive choices** — picks one approach and commits, no hedging
+- Proposals are ephemeral (session-only), not persistent files
 
-**Adopt pattern:** The architecture blueprint structure is useful for tech specs
-**Gap:** Feature-dev doesn't separate product from tech concerns
+**What feature-dev does better than us:**
+- `file:line` references make findings directly verifiable
+- Build sequence automatically derived from architecture proposal
+- Decisive single-approach commitment prevents wishy-washy "we could do A or B" specs
+
+**Adopt pattern:** `file:line` references in tech specs, decisive commitment language
+**Gap:** No product/tech separation, no persistence
 
 ---
 
 ### Superpowers
 
 **Spec-related patterns:**
-- Brainstorm skill produces a "design document" before coding
-- No formal spec system — the design doc is more of a summary than a structured spec
-- The "plan for dumb executor" principle means specs need to be extremely explicit
+- Brainstorm skill uses **Socratic questioning** to elicit a spec from conversation
+- Presents design in digestible chunks for approval before implementation
+- In v5.0: **subagent reviews planning docs for completeness** — catches TBD sections left by main agent
+- Skills trigger automatically on task recognition, no explicit invocation needed
+- TDD enforcement: failing tests derived from specs must exist before code
 
-**Adopt pattern:** Explicitness principle — specs should be unambiguous enough for a fresh agent to follow
-**Gap:** No structured spec system to adopt
+**What Superpowers does better than us:**
+- Socratic elicitation — surfaces ambiguity through questions rather than writing specs from a description
+- Automated completeness checking (not just structural validation)
+- Spec → test derivation: test stubs come directly from spec content
+
+**Adopt pattern:** Completeness checking as a spec gate
+**Gap:** No structured persistent spec system
 
 ---
 
-### ADR (Architecture Decision Records)
+### BMAD Method
 
 **What it is:**
-- Lightweight docs that capture architectural decisions
-- Format: Title, Status, Context, Decision, Consequences
-- Stored in `docs/adr/` or similar directory
-- Each ADR is a single decision, not a full design doc
+- Uses specialized personas (Analyst, PM, Architect, Product Owner, Scrum Master, Developer, QA)
+- Each persona produces a document that feeds the next: Project Brief → PRD → Architecture Design → User Stories → Implementation
+- `project-context.md` acts as a constitution guiding all agent decisions
 
-**Key patterns:**
-- **Decision log:** Each ADR captures ONE decision with rationale
-- **Status tracking:** Proposed → Accepted → Deprecated → Superseded
-- **Consequences section:** Forces you to think about trade-offs
-- **Chronological:** ADRs are numbered and dated
+**What BMAD does better than us:**
+- Explicit role separation during spec creation (PM writes requirements without knowing implementation)
+- **User stories with acceptance criteria** bridge product → implementation in a directly testable way
+- `project-context.md` constitution concept is stronger than `lessons.md` for cross-cutting conventions
 
-**Adopt pattern:** Our `lessons.md` serves a similar purpose (capturing learnings).
-**Consider:** Adding a "Product Decisions" section to product specs (we already have this)
-**Skip:** Full ADR system — our specs already capture decisions inline
+**Adopt pattern:** User stories / acceptance criteria format for testable requirements
+**Skip:** Full persona system — too ceremonial for solo developers
 
 ---
 
-### RFC Processes (Uber, Meta, Google)
+### ADRs (Architecture Decision Records)
 
-**How it works:**
-- RFC = Request For Comments — formal proposal before building
-- Sections typically: Summary, Motivation, Detailed Design, Alternatives Considered, Open Questions
-- Reviewed by peers before approval
-- Time-boxed review period
+**Format:** Title, Status (Proposed → Accepted → Deprecated → Superseded), Context, Decision, Consequences
 
-**Key patterns:**
-- **Alternatives Considered:** Forces exploration of multiple approaches
-- **Open Questions:** Explicitly tracks what's unresolved
-- **Peer review:** Multiple perspectives before committing
-- **Approval gate:** Can't build until RFC is approved
+**Relationship to our system:**
+Our tech specs record decisions in "Key Patterns" and "Risks & Mitigations" sections. But these are embedded, not standalone per-decision records. The ADR pattern adds:
+- **Superseded tracking:** Marking old decisions and pointing to replacements
+- **Single-decision focus:** Each ADR is one decision with rationale
+- **Status lifecycle:** Decisions can be deprecated/superseded
 
-**Already adopted:**
-- Our specs have "Open Questions" sections
-- Phase gates serve as approval mechanism
-- Product/tech separation forces different perspectives
+**Our `lessons.md` partially covers this.** Full ADR system is overkill for our use case.
+
+---
+
+### Google Design Docs / Engineering RFCs
+
+**Google's design doc anatomy:**
+1. Context & Scope — objective facts, no opinions
+2. Goals & Non-Goals — explicit non-goals
+3. The Design — emphasizing trade-offs, system-context diagrams, API sketches
+4. **Alternatives Considered** — rejected designs with trade-off rationale
+5. **Cross-Cutting Concerns** — security, privacy, observability
+
+**Uber's ERD evolution:** Scaled from informal RFCs to **tiered templates** — lightweight for team-scoped changes, heavyweight for org-wide changes.
+
+**What Google/Uber do better than us:**
+- Alternatives Considered as a **mandatory** section (prevents re-litigation of closed decisions)
+- Cross-cutting concerns as their own section (security, privacy, observability)
+- **Tiered templates** — spec depth matches work complexity (we use same structure for bug fixes and major features)
+
+---
+
+### Cursor/Windsurf Rules
+
+**What they are:**
+- `.cursorrules` / `.windsurfrules` are behavioral contracts for AI agents
+- Imperative: "always do X, never do Y"
+- Our `CLAUDE.md` serves the same role
+
+**Key insight:** Specs are descriptive ("the system uses pattern X"), rules are imperative ("always use pattern X"). These are complementary layers. Tool like Specifys.ai exports PRD → Tech Spec → `.cursorrules` — showing demand for a spec-to-rules bridge.
+
+**Gap:** No mechanism for spec content to update `CLAUDE.md` conventions
+
+---
+
+### AI-Specific Spec Best Practices
+
+From [Addy Osmani's research](https://addyosmani.com/blog/good-spec/):
+- Use meaningful subheadings, code blocks, tables, summaries — LLMs parse structured text better
+- One real code snippet beats three paragraphs describing it
+- Include executable commands verbatim (`npm test -- --coverage`, not "run the tests")
+- Define three-tier boundaries: Always / Ask First / Never
+- Break specs into modular cross-referenced documents (performance drops with too many requirements in one prompt)
+- Include verification steps in the spec
+
+**Our progressive disclosure model directly addresses the "curse of instructions."** This is a genuine architectural advantage.
+
+---
+
+## Identified Gaps (8 Total)
+
+### Gap 1: No "Alternatives Considered" in Tech Specs
+**Impact:** Future agents re-examine rejected approaches because the spec doesn't explain why they were ruled out.
+**Recommendation:** Add optional `## Alternatives Considered` section to tech spec template.
+
+### Gap 2: No Tiered Spec Scope (Lightweight vs. Heavyweight)
+**Impact:** Same structure for 2-line bug fixes and multi-month redesigns. Overhead is disproportionate for small changes.
+**Recommendation:** Define two tiers:
+- **Lightweight:** Inline section in `plan.md` + brief `tech.md` update. For < 1 session, no architectural impact.
+- **Full:** Current product-{topic}.md + tech-{topic}.md + plan-{topic}.md. For 3+ milestones or architectural decisions.
+
+### Gap 3: No Spec Completeness Gate (Only Structural Validation)
+**Impact:** Specs with TBD markers or empty sections pass validation and enter PLAN phase.
+**Recommendation:** Add content-level validation: check for empty sections, TBD markers, missing required sections, unresolved Open Questions. Superpowers v5 added this and called it "a dramatic improvement."
+
+### Gap 4: No Cross-Cutting Concerns Section
+**Impact:** Security and observability considerations discovered during implementation rather than designed in.
+**Recommendation:** Add optional `## Cross-Cutting Concerns` section to tech spec template (Security, Privacy, Observability, Error Handling Strategy).
+
+### Gap 5: No Temporal Context Snapshots
+**Impact:** History of why a decision was made at a particular point is lost when specs are updated.
+**Recommendation:** When a tech spec section is materially revised, add a brief `> Changed from: [old approach] because: [reason]` note.
+
+### Gap 6: No Acceptance Criteria / Test Derivation Bridge
+**Impact:** Test coverage depends on implementer's interpretation, not the spec itself.
+**Recommendation:** Add optional `## Acceptance Criteria` section (given/when/then format) to branch docs. Plan should map each criterion to a test case.
+
+### Gap 7: No Spec-to-Rules Export Path
+**Impact:** Conventions in `tech.md` don't propagate to `CLAUDE.md` behavioral layer.
+**Recommendation:** During REVIEW, check if new conventions should be added to `CLAUDE.md`.
+
+### Gap 8: `.phase` File Is Too Simple
+**Impact:** On resumption, agent knows phase but not milestone, relevant files, or last-completed task.
+**Recommendation:** Extend to structured JSON: current phase, milestone, last task, relevant spec files to load.
 
 ---
 
@@ -118,11 +216,9 @@ Updated: 2026-03-13
 2. Product/tech separation (sacred rule)
 3. Open Questions tracking
 4. Lessons tracking
-5. Phase gate enforcement (can't write non-spec files during SPEC phase)
+5. Phase gate enforcement
 
 ### What the Orchestrator Adds
-
-The SPEC phase in `/develop` wraps our existing `/spec` skill with orchestration:
 
 ```
 1. Check if .spec/ exists → if not, run /spec setup
@@ -136,9 +232,13 @@ The SPEC phase in `/develop` wraps our existing `/spec` skill with orchestration
    - Ensure specs address risks identified in research
    - Resolve open questions from DISCUSS phase
 
-4. Validate: bash validate.sh
+4. Completeness check (NEW — from Superpowers):
+   - Check for empty sections, TBD markers
+   - Verify Open Questions that should be resolved are resolved
 
-5. Present to user: "Are these specs accurate?"
+5. Validate: bash validate.sh
+
+6. Present to user: "Are these specs accurate?"
 ```
 
 ### Integration Points with Other Phases
@@ -150,15 +250,29 @@ The SPEC phase in `/develop` wraps our existing `/spec` skill with orchestration
 | SPEC | Writes/updates product and tech specs |
 | PLAN | Reads specs to create implementation plan |
 | IMPLEMENT | Re-reads specs before each milestone to prevent drift |
-| REVIEW | Verifies implementation matches spec requirements |
+| REVIEW | Verifies implementation matches spec requirements; updates CLAUDE.md if new conventions found |
 
 ### Key Design Decisions
 
 1. **SPEC phase is not pluggable.** No plugin can replace `/spec`. It's the backbone.
-2. **Orchestrator adds context, not functionality.** The `/develop` skill feeds research findings into spec writing and enforces the write order.
-3. **Explicitness principle (from Superpowers).** Specs should be clear enough that a fresh agent with no conversation history can understand them.
-4. **Research-informed specs.** Specs reference findings from the RESEARCH phase — they don't start from scratch.
-5. **Validation is mandatory.** `validate.sh` runs before the phase can advance.
+2. **Orchestrator adds context, not functionality.** Feeds research findings in, enforces write order.
+3. **Explicitness principle (from Superpowers).** Specs should be unambiguous for a fresh agent.
+4. **Research-informed specs.** Reference RESEARCH findings, don't start from scratch.
+5. **Validation is mandatory.** `validate.sh` runs before advancing.
+6. **Completeness checking (NEW).** Content-level validation, not just structural.
+
+### Gaps to Address During Implementation
+
+| Gap | Priority | When to Address |
+|-----|----------|----------------|
+| Alternatives Considered section | P1 | M1 (update tech spec template) |
+| Tiered spec scope | P2 | M2 (routing logic in /develop) |
+| Completeness gate | P1 | M2 (add to SPEC phase exit criteria) |
+| Cross-cutting concerns section | P2 | M1 (update tech spec template) |
+| Temporal context snapshots | P3 | Future (nice-to-have) |
+| Acceptance criteria bridge | P2 | M2 (add to product branch template) |
+| Spec-to-rules export | P3 | M4 (REVIEW phase enhancement) |
+| Rich .phase file | P1 | M1 (extend phase tracking) |
 
 ---
 
@@ -167,5 +281,16 @@ The SPEC phase in `/develop` wraps our existing `/spec` skill with orchestration
 - `.agents/skills/spec/SKILL.md` (local, existing)
 - `.agents/skills/spec/reference/product.md` (local, existing)
 - `.agents/skills/spec/reference/tech.md` (local, existing)
-- [Feature-Dev code-architect agent](https://github.com/anthropics/claude-code/blob/main/plugins/feature-dev/agents/code-architect.md)
+- [GSD Framework](https://github.com/gsd-build/get-shit-done)
+- [GSD v2](https://github.com/gsd-build/gsd-2)
+- [Beating context rot with GSD - The New Stack](https://thenewstack.io/beating-the-rot-and-getting-stuff-done/)
+- [Feature-Dev code-architect](https://github.com/anthropics/claude-code/blob/main/plugins/feature-dev/agents/code-architect.md)
 - [Superpowers (GitHub)](https://github.com/obra/superpowers)
+- [Superpowers v5 (blog)](https://blog.fsck.com/2026/03/09/superpowers-5/)
+- [BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD)
+- [Design Docs at Google](https://www.industrialempathy.com/posts/design-docs-at-google/)
+- [Software Engineering RFCs — Pragmatic Engineer](https://newsletter.pragmaticengineer.com/p/software-engineering-rfc-and-design)
+- [ADR Templates](https://adr.github.io/adr-templates/)
+- [How to Write a Good Spec for AI Agents — Addy Osmani](https://addyosmani.com/blog/good-spec/)
+- [AI Coding Rules for Cursor & Windsurf](https://deeplearning.fr/ai-coding-assistant-rules-for-windsurf-and-cursor/)
+- [Spec-Driven Development Map — Vishal Mysore](https://medium.com/@visrow/spec-driven-development-is-eating-software-engineering-a-map-of-30-agentic-coding-frameworks-6ac0b5e2b484)
