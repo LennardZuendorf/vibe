@@ -18,12 +18,14 @@ Updated: 2026-03-13
 - Context stays clean in the main session while agents do the heavy lifting
 
 **Key patterns:**
-- **Mandate-based agents:** Each agent has a specific research focus (e.g., "find all database-related code", "find test patterns", "find config files")
-- **Aggressive parallelism:** 3+ agents dispatched simultaneously
+- **Typed concern segregation:** 4 parallel agents with distinct concern types — tech/architecture, code quality, implementation concerns, testing/infra. Each agent has a non-overlapping scope to prevent duplicate work.
+- **"Dumb zone" theory:** >40% context utilization = degraded output. All design decisions flow from keeping the orchestrator below this threshold.
+- **Aggressive parallelism:** 3-4 agents dispatched simultaneously
 - **Fresh context per agent:** Prevents context rot — task 50 has same quality as task 1
-- **Structured output:** Agents return compact summaries, not raw file contents
+- **Disk-based output:** All research artifacts written to markdown files, never kept in conversation memory
+- **Structured output:** Agents return compact summaries (<500 tokens each), not raw file contents
 
-**Adopt:** Mandate-based parallel agents, fresh contexts, structured summaries
+**Adopt:** Typed concern agents, fresh contexts, disk-based summaries, 40% context ceiling
 **Skip:** The full GSD CLI infrastructure — we just need the patterns
 
 ---
@@ -38,13 +40,15 @@ Updated: 2026-03-13
 - This happens BEFORE any architecture proposals
 
 **Key patterns:**
-- **Specialized agent type:** `code-explorer` is purpose-built for codebase analysis
-- **Trace-based exploration:** Follows execution paths, maps architecture layers
+- **Specialized agent type:** `code-explorer` is purpose-built for codebase analysis — strictly read-only
+- **4-stage structured analysis:** Discovery → Flow Tracing → Architecture Mapping → Detail Extraction
+- **Mandatory `file:line` references:** All findings include specific file paths with line numbers, making them directly verifiable
 - **Two-pass approach:** Agents find references → main agent reads and understands
 - **Pattern extraction:** Identifies conventions, module boundaries, abstraction layers
+- **2-3 parallel instances per research run**, each with a distinct aspect
 
 **Adopt as plugin:** Route to feature-dev's explorer agents when installed
-**Built-in equivalent:** Parallel Explore agents with similar mandates
+**Built-in equivalent:** Parallel Explore agents with similar mandates + `file:line` reference requirement
 
 ---
 
@@ -124,6 +128,26 @@ Updated: 2026-03-13
 
 ---
 
+### HumanLayer FIC (Frequent Intentional Compaction)
+
+**How it works:**
+- Formalizes context management during research: target **40-60% context utilization**
+- Research artifacts written to markdown files
+- Each phase starts with a **clean context seeded from the previous phase's output file**
+- Files are the memory, not conversation history
+
+**Key insight:** This is exactly our philosophy — "treat sessions as disposable, treat files as permanent." FIC gives it a name and specific utilization targets.
+
+**Adopt built-in:** The 40-60% target and clean-context-per-phase pattern.
+
+---
+
+## Universal Finding
+
+**Research must be isolated from the main context.** Every framework that scales enforces this — subagents explore, main agent receives summaries. Raw search output must never enter the main context.
+
+---
+
 ## Synthesis: Recommendations for Our RESEARCH Phase
 
 ### Built-in Default Provider
@@ -134,17 +158,23 @@ Updated: 2026-03-13
    - .spec/product.md + tech.md (understand existing architecture)
    - CLAUDE.md (project conventions)
 
-2. Spawn 3+ parallel Explore agents with mandates:
-   - Agent 1: "Find existing code related to [feature]" (Glob + Grep)
-   - Agent 2: "Find related tests, fixtures, examples" (Glob for test patterns)
-   - Agent 3: "Find configuration, types, interfaces" (Grep for type definitions)
-   - Agent 4: (if external) WebSearch for APIs/libraries
+2. Spawn 3-4 parallel Explore agents with TYPED CONCERNS (non-overlapping):
+   - Agent 1 (tech/architecture): "Find code related to [feature], map architecture layers"
+   - Agent 2 (quality/tests): "Find related tests, fixtures, examples, coverage gaps"
+   - Agent 3 (implementation): "Find configuration, types, interfaces, integration points"
+   - Agent 4 (external): WebSearch for APIs/libraries (only if needed)
+
+   Rules for subagent output:
+   - Each agent returns structured summary UNDER 500 TOKENS
+   - All file references must use `file:line` format (directly verifiable)
+   - Raw search output must NEVER enter the main context
+   - Agents write to disk, orchestrator reads summaries
 
 3. Merge findings into .spec/research/{topic}.md:
-   - Exists (don't rebuild): [file paths]
+   - Exists (don't rebuild): [file:line paths]
    - Must build: [gap analysis]
    - Patterns & constraints: [conventions found]
-   - Risks: HIGH (verified) / MEDIUM (inferred) / LOW (uncertain)
+   - Risks: HIGH (verified in code) / MEDIUM (inferred) / LOW (uncertain)
    - Open questions: [what needs user input]
 
 4. Present to user for confirmation
@@ -160,10 +190,13 @@ Updated: 2026-03-13
 ### Key Design Decisions
 
 1. **Always persist to files.** Research goes to `.spec/research/*.md` regardless of provider. This survives compaction and session boundaries.
-2. **Mandate-based agents.** Each research agent gets a specific focus, not a generic "explore everything."
-3. **Two-pass pattern.** Agents find references → main agent reads and understands. Don't dump raw file contents.
-4. **Parallel by default.** Always dispatch 3+ agents simultaneously. Sequential research is too slow.
-5. **Compact summaries.** Agents return structured findings, not raw grep output. ~95% context reduction.
+2. **Typed concern agents (from GSD).** Each agent has a non-overlapping concern type (tech, quality, implementation, external). Prevents duplicate work.
+3. **`file:line` references mandatory (from Feature-Dev).** All findings include specific file paths with line numbers. Makes findings directly verifiable.
+4. **500-token summary cap.** Subagents return structured summaries under 500 tokens. Raw search output never enters main context.
+5. **Two-pass pattern.** Agents find references → main agent reads and understands. Don't dump raw file contents.
+6. **Parallel by default.** Always dispatch 3-4 agents simultaneously. Sequential research is too slow.
+7. **40-60% context target (from FIC).** Keep orchestrator context utilization in this range. Above 40% = degraded quality.
+8. **Files are the memory.** Each phase starts clean, seeded from previous phase's output files. Sessions are disposable.
 
 ---
 
@@ -171,7 +204,9 @@ Updated: 2026-03-13
 
 - [GSD Framework (GitHub)](https://github.com/gsd-build/get-shit-done)
 - [GSD v2](https://github.com/gsd-build/gsd-2)
+- [GSD context budget management](https://zread.ai/gsd-build/get-shit-done/19-context-budget-management)
 - [Superpowers (GitHub)](https://github.com/obra/superpowers)
 - [Feature-Dev code-explorer agent](https://github.com/anthropics/claude-code/blob/main/plugins/feature-dev/agents/code-explorer.md)
 - [Beating context rot with GSD - The New Stack](https://thenewstack.io/beating-the-rot-and-getting-stuff-done/)
 - [Superpowers Complete Guide](https://pasqualepillitteri.it/en/news/215/superpowers-claude-code-complete-guide)
+- [HumanLayer FIC (Frequent Intentional Compaction)](https://humanlayer.dev/blog/frequent-intentional-compaction)
