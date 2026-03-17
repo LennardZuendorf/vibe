@@ -10,7 +10,7 @@ updated: 2026-03-14
 
 **Parent:** [product.md](product.md)
 
-This document describes the functional design of the engineering agent framework: how the two clusters work, how global and feature specs interact, and how plugins integrate.
+This document describes the functional design of the engineering agent framework: how the two clusters work at different cadences, how global and feature specs interact, and how plugins integrate.
 
 ---
 
@@ -19,7 +19,7 @@ This document describes the functional design of the engineering agent framework
 ```mermaid
 graph TB
     subgraph "User Interface"
-        U["/develop feature-x"]
+        U["/develop"]
         S["/setup-framework"]
         SP["/spec"]
     end
@@ -43,6 +43,7 @@ graph TB
         FS["Feature Specs<br/>.spec/features/&lt;name&gt;/"]
         LESSONS["lessons.md"]
         PHASE[".phase State"]
+        PLAN["plan.md<br/>(global plan)"]
     end
 
     U --> O
@@ -67,46 +68,48 @@ graph TB
 
 ## Core Workflow: `/develop`
 
-The main user flow. Two clusters with a handoff gate between them.
+The lifecycle runs at two cadences. The Design Cluster runs **once** as a project bootstrap. The Implementation Cluster runs **per feature** from the global plan.
 
 ```mermaid
 flowchart TD
-    START(["/develop feature-x"]) --> CHECK_PHASE{".phase exists?"}
-    CHECK_PHASE -->|No| DESIGN_CLUSTER
+    START(["/develop"]) --> CHECK_PHASE{".phase exists?"}
+    CHECK_PHASE -->|No| BOOTSTRAP
     CHECK_PHASE -->|Yes| RESUME["Resume from saved phase"]
 
-    subgraph DESIGN_CLUSTER ["DESIGN CLUSTER — Front-loaded Thinking"]
+    subgraph BOOTSTRAP ["DESIGN CLUSTER — Project Bootstrap (runs once)"]
         direction TB
 
-        RESEARCH["RESEARCH"] --> R1["Read lessons.md + global specs"]
-        R1 --> R2["Spawn parallel Explore agents"]
+        RESEARCH["RESEARCH"] --> R1["Read lessons.md + existing global specs"]
+        R1 --> R2["Spawn parallel Explore agents on full codebase"]
         R2 --> R3["Write findings to .spec/research/"]
         R3 --> R4["Present findings"]
 
         R4 --> DISCUSS["DISCUSS"]
-        DISCUSS --> D1["Surface ambiguities"]
-        D1 --> D2["Clarify scope & constraints"]
-        D2 --> D3["Align on approach"]
+        DISCUSS --> D1["Surface ambiguities across ALL features"]
+        D1 --> D2["Clarify scope, priorities, constraints"]
+        D2 --> D3["Align on architecture and approach"]
 
         D3 --> SPEC["SPEC"]
-        SPEC --> S1["Create .spec/features/&lt;name&gt;/"]
-        S1 --> S2["Write feature product spec"]
-        S2 --> S3["Write feature tech spec"]
-        S3 --> S4["Update global specs if cross-cutting"]
+        SPEC --> S1["Write/update global product.md + tech.md"]
+        S1 --> S2["For each known feature:"]
+        S2 --> S3["Create .spec/features/&lt;name&gt;/product.md"]
+        S3 --> S4["Create .spec/features/&lt;name&gt;/tech.md"]
         S4 --> S5["Validate all specs"]
 
         S5 --> PLAN["PLAN"]
-        PLAN --> P1["Read feature specs"]
-        P1 --> P2["Group tasks into waves"]
-        P2 --> P3["Set validation criteria"]
-        P3 --> P4["Write feature plan"]
+        PLAN --> P1["Read all feature specs"]
+        P1 --> P2["Sequence features by dependency"]
+        P2 --> P3["Group tasks into waves per feature"]
+        P3 --> P4["Write global plan.md"]
     end
 
     P4 --> DESIGN_GATE{{"User approves design?"}}
     DESIGN_GATE -->|No| RESEARCH
-    DESIGN_GATE -->|Yes| IMPL_CLUSTER
+    DESIGN_GATE -->|Yes| NEXT_FEATURE
 
-    subgraph IMPL_CLUSTER ["IMPLEMENTATION CLUSTER — Execution"]
+    NEXT_FEATURE["Pick next feature from plan"] --> IMPL_CLUSTER
+
+    subgraph IMPL_CLUSTER ["IMPLEMENTATION CLUSTER — Per Feature (repeats)"]
         direction TB
 
         VERIFY["VERIFY"] --> V1["Scan codebase against feature spec"]
@@ -137,37 +140,61 @@ flowchart TD
     end
 
     RV4 -->|"Spec gaps found"| V1
-    L5 --> DONE([DONE])
+    L5 --> MORE{{"More features in plan?"}}
+    MORE -->|Yes| NEXT_FEATURE
+    MORE -->|No| DONE([ALL DONE])
+```
+
+---
+
+## The Two Cadences
+
+| Aspect | Design Cluster | Implementation Cluster |
+|--------|---------------|----------------------|
+| **When** | Once at project start | Once per feature |
+| **Duration** | Heavy — may span sessions | Lightweight — mostly autonomous |
+| **User involvement** | High — user drives every decision | Low — user approves at start and end |
+| **Scope** | Entire project: all features, architecture, conventions | Single feature from the plan |
+| **Outputs** | Global specs, all feature specs, global plan | Working code, merged specs, archived feature |
+| **Repeats?** | No (unless triggered by unplanned feature) | Yes, for each feature in the plan |
+
+### The Rhythm
+
+```
+Session 1 (heavy):     DESIGN CLUSTER → global specs + feature specs + plan
+Session 2:             Feature A: VERIFY → IMPLEMENT → REVIEW → LEARN
+Session 3:             Feature B: VERIFY → IMPLEMENT → REVIEW → LEARN
+Session 4:             Feature C: VERIFY → IMPLEMENT → REVIEW → LEARN
+...
+Session N (exception): New unplanned Feature X discovered
+                       mini Design Cluster for X → amend plan → continue
+Session N+1:           Feature X: VERIFY → IMPLEMENT → REVIEW → LEARN
 ```
 
 ---
 
 ## Global vs Feature Spec Lifecycle
 
-How feature specs are created, used, and merged.
+How feature specs are created during bootstrap, consumed during implementation, and merged after shipping.
 
 ```mermaid
 flowchart LR
-    subgraph "Design Cluster"
-        READ_GLOBAL["Read global specs"] --> CREATE_FEATURE["Create .spec/features/dark-mode/"]
-        CREATE_FEATURE --> WRITE_PRODUCT["Write feature product.md"]
-        WRITE_PRODUCT --> WRITE_TECH["Write feature tech.md"]
-        WRITE_TECH --> WRITE_PLAN["Write feature plan.md"]
+    subgraph "Design Cluster (once)"
+        RESEARCH_ALL["Research codebase"] --> DISCUSS_ALL["Discuss all features"]
+        DISCUSS_ALL --> GLOBAL_SPECS["Write global specs"]
+        GLOBAL_SPECS --> FEATURE_A["Write .spec/features/dark-mode/"]
+        GLOBAL_SPECS --> FEATURE_B["Write .spec/features/auth-flow/"]
+        GLOBAL_SPECS --> FEATURE_C["Write .spec/features/search/"]
+        FEATURE_A & FEATURE_B & FEATURE_C --> GLOBAL_PLAN["Write global plan.md"]
     end
 
-    subgraph "Implementation Cluster"
-        VERIFY_SPEC["VERIFY: scan codebase"] --> READ_FEATURE["Read feature specs<br/>(read-only)"]
-        READ_FEATURE --> IMPLEMENT_CODE["IMPLEMENT"]
-        IMPLEMENT_CODE --> REVIEW_CODE["REVIEW"]
+    subgraph "Per-Feature Implementation"
+        VERIFY_A["VERIFY dark-mode spec"] --> IMPL_A["IMPLEMENT"] --> LEARN_A["LEARN + merge"]
     end
 
-    subgraph "Merge (LEARN Phase)"
-        EXTRACT["Extract cross-cutting decisions"] --> UPDATE_GLOBAL["Update global product.md / tech.md"]
-        UPDATE_GLOBAL --> ARCHIVE["Archive .spec/features/dark-mode/"]
-    end
-
-    WRITE_PLAN --> VERIFY_SPEC
-    REVIEW_CODE --> EXTRACT
+    GLOBAL_PLAN --> VERIFY_A
+    LEARN_A -->|"merge cross-cutting"| GLOBAL_UPDATED["Global Specs (updated)"]
+    LEARN_A -->|"archive"| ARCHIVE["Archive dark-mode/"]
 ```
 
 ### Feature Spec Directory Structure
@@ -178,24 +205,28 @@ flowchart LR
 ├── tech.md                             # GLOBAL: project-wide tech spec
 ├── product-design.md                   # GLOBAL: project-wide design
 ├── lessons.md                          # GLOBAL: accumulated learnings
-├── plan.md                             # GLOBAL: overall roadmap
+├── plan.md                             # GLOBAL: sequenced roadmap for ALL features
 │
-├── features/
-│   ├── dark-mode/                      # FEATURE: ephemeral during development
+├── features/                           # ALL feature specs written during bootstrap
+│   ├── dark-mode/
 │   │   ├── product.md                  #   What dark mode does (user experience)
 │   │   ├── tech.md                     #   How dark mode is built (architecture)
-│   │   ├── plan.md                     #   Implementation waves + tasks
-│   │   └── research.md                 #   Research findings (codebase scan)
+│   │   └── research.md                 #   Research findings from bootstrap
 │   │
-│   └── auth-flow/                      # Another feature in parallel
+│   ├── auth-flow/
+│   │   ├── product.md
+│   │   └── tech.md
+│   │
+│   └── search/
 │       ├── product.md
-│       ├── tech.md
-│       └── plan.md
+│       └── tech.md
 │
 ├── archive/                            # Archived feature specs (post-merge)
 │   └── dark-mode/                      #   Kept for history, not loaded
 │       └── ...
 ```
+
+**Note:** Feature specs do NOT have their own `plan.md`. All feature implementation plans live in the global `plan.md`, sequenced across features. This prevents plan fragmentation and ensures cross-feature dependencies are visible in one place.
 
 ### What Gets Merged vs Archived
 
@@ -211,11 +242,12 @@ flowchart LR
 
 ## The VERIFY Phase
 
-The key insight: **pre-implementation research on the codebase is necessary, but re-doing spec writing is not.** VERIFY is a lightweight check, not a repeat of the Design Cluster.
+The key insight: **pre-implementation codebase research is necessary, but re-doing spec writing is not.** VERIFY is a quick check before each feature's implementation, not a repeat of the Design Cluster.
 
 ```mermaid
 flowchart TD
-    START["VERIFY phase begins"] --> SCAN["Scan codebase for changes<br/>since Design Cluster completed"]
+    START["VERIFY begins for feature X"] --> READ["Read feature spec from .spec/features/X/"]
+    READ --> SCAN["Scan codebase for changes<br/>since bootstrap / last feature shipped"]
 
     SCAN --> CHECK_FILES{{"Referenced files<br/>still exist?"}}
     CHECK_FILES -->|All present| CHECK_INTERFACES
@@ -236,16 +268,46 @@ flowchart TD
 ```
 
 **What VERIFY does:**
-- Scans codebase for changes since the Design Cluster completed
-- Checks that file paths referenced in the feature spec still exist
-- Checks that interfaces/APIs the feature depends on haven't changed
-- Checks that dependencies are still available and compatible
+- Reads the feature spec written during bootstrap
+- Scans codebase for changes since bootstrap completed (or since the last feature shipped, which may have changed shared code)
+- Checks that file paths, interfaces, and dependencies referenced in the spec still hold
+- If drift is found: amends the feature spec with targeted fixes
 
 **What VERIFY does NOT do:**
 - Rewrite the product spec
 - Rewrite the tech spec
 - Re-run the full research phase
-- Re-discuss scope with the user (unless drift is major)
+- Re-discuss scope with the user (unless drift is major enough to invalidate the feature)
+
+**Why this matters between features:** Feature A's implementation may change shared code that Feature B's spec depends on. VERIFY catches this drift before Feature B starts, without requiring a full re-spec.
+
+---
+
+## Unplanned Feature: Exception Path
+
+When a new feature emerges mid-project that wasn't part of the original bootstrap.
+
+```mermaid
+flowchart TD
+    DISCOVER["New feature discovered<br/>during implementation"] --> MINI_DESIGN["Mini Design Cluster"]
+
+    subgraph MINI_DESIGN ["Scoped Bootstrap (just this feature)"]
+        direction TB
+        MR["RESEARCH: scan codebase<br/>for this feature only"]
+        MR --> MD["DISCUSS: clarify scope"]
+        MD --> MS["SPEC: write feature spec<br/>.spec/features/new-feature/"]
+    end
+
+    MS --> AMEND_PLAN["Amend global plan.md<br/>Insert feature into sequence"]
+    AMEND_PLAN --> QUEUE["Feature joins implementation queue"]
+    QUEUE --> VERIFY["Normal: VERIFY → IMPLEMENT → REVIEW → LEARN"]
+```
+
+The mini Design Cluster:
+- Does NOT rewrite global specs (they're already established)
+- Only researches, discusses, and specs the new feature
+- Amends the global plan to insert the feature at the right point in the sequence
+- Then the feature follows the normal per-feature Implementation Cluster
 
 ---
 
@@ -288,7 +350,7 @@ flowchart LR
     WARN --> FALLBACK["Use built-in default"]
     DELEGATE --> EXECUTE["Execute phase"]
     FALLBACK --> EXECUTE
-    EXECUTE --> WRITE_SPEC["Write output to feature spec"]
+    EXECUTE --> WRITE_SPEC["Write output to spec"]
     WRITE_SPEC --> NEXT["Advance to next phase"]
 ```
 
@@ -307,7 +369,7 @@ flowchart TD
     CHECK -->|"RESEARCH"| ALLOW_R["✅ Allow: .spec/features/*/research.md, .spec/research/"]
     CHECK -->|"DISCUSS"| BLOCK_D["❌ Block: no file writes"]
     CHECK -->|"SPEC"| ALLOW_S["✅ Allow: .spec/features/*/*.md, .spec/*.md"]
-    CHECK -->|"PLAN"| ALLOW_P["✅ Allow: .spec/features/*/plan.md, .spec/plan*.md"]
+    CHECK -->|"PLAN"| ALLOW_P["✅ Allow: .spec/plan*.md"]
     CHECK -->|"VERIFY"| ALLOW_V["✅ Allow: .spec/features/*/*.md (amendments only)"]
     CHECK -->|"IMPLEMENT"| ALLOW_I["✅ Allow: all files"]
     CHECK -->|"REVIEW"| ALLOW_FIX["✅ Allow: fixes only"]
@@ -318,11 +380,11 @@ flowchart TD
 
 ## Wave-Based Implementation
 
-How tasks are grouped and executed within the IMPLEMENT phase. Unchanged from previous design — waves are a proven pattern.
+How tasks are grouped and executed within the IMPLEMENT phase. Waves are scoped to a single feature — the global plan sequences features, waves sequence tasks within a feature.
 
 ```mermaid
 flowchart TD
-    PLAN["Read feature plan.md"] --> GROUP["Group tasks by dependencies"]
+    PLAN["Read feature's section in plan.md"] --> GROUP["Group tasks by dependencies"]
     GROUP --> W1["Wave 1: Independent tasks"]
     GROUP --> W2["Wave 2: Depends on Wave 1"]
     GROUP --> W3["Wave 3: Depends on Wave 2"]
@@ -356,20 +418,20 @@ flowchart TD
 
 ## Session Resumption
 
-How the framework handles interrupted work. The `.phase` file now encodes both cluster and phase.
+How the framework handles interrupted work. The `.phase` file encodes cluster, phase, and current feature.
 
 ```mermaid
 flowchart TD
-    START(["/develop feature-x"]) --> CHECK{".phase file exists?"}
-    CHECK -->|No| FRESH["Start at DESIGN:RESEARCH"]
+    START(["/develop"]) --> CHECK{".phase file exists?"}
+    CHECK -->|No| FRESH["Start Design Cluster bootstrap"]
     CHECK -->|Yes| READ["Read .phase"]
     READ --> WHICH_CLUSTER{{"Which cluster?"}}
 
     WHICH_CLUSTER -->|DESIGN| LOAD_GLOBAL["Load global specs + research"]
     WHICH_CLUSTER -->|IMPL| LOAD_FEATURE["Load feature specs + plan"]
 
-    LOAD_GLOBAL --> STATUS_D["'Resuming Design Cluster.<br/>Phase: SPEC. Feature: dark-mode.'"]
-    LOAD_FEATURE --> STATUS_I["'Resuming Implementation.<br/>Last wave: 2. Next: 3.'"]
+    LOAD_GLOBAL --> STATUS_D["'Resuming bootstrap.<br/>Phase: SPEC.<br/>3 of 5 feature specs written.'"]
+    LOAD_FEATURE --> STATUS_I["'Resuming dark-mode implementation.<br/>Phase: IMPLEMENT. Wave 2 of 3.'"]
 
     STATUS_D --> CONTINUE["Continue from saved phase"]
     STATUS_I --> CONTINUE
@@ -380,98 +442,171 @@ flowchart TD
 ### Phase File Format
 
 ```
-# .spec/.phase
-DESIGN:RESEARCH          # Currently in Design Cluster, RESEARCH phase
-DESIGN:DISCUSS           # Currently in Design Cluster, DISCUSS phase
-DESIGN:SPEC              # Currently in Design Cluster, SPEC phase
-DESIGN:PLAN              # Currently in Design Cluster, PLAN phase
-IMPL:VERIFY              # Currently in Implementation Cluster, VERIFY phase
-IMPL:IMPLEMENT           # Currently in Implementation Cluster, IMPLEMENT phase
-IMPL:REVIEW              # Currently in Implementation Cluster, REVIEW phase
-IMPL:LEARN               # Currently in Implementation Cluster, LEARN phase
-DONE                     # Feature complete
+# .spec/.phase — encodes cluster:phase:feature
+DESIGN:RESEARCH                 # Bootstrap: researching codebase
+DESIGN:DISCUSS                  # Bootstrap: discussing scope
+DESIGN:SPEC                     # Bootstrap: writing specs
+DESIGN:PLAN                     # Bootstrap: writing global plan
+IMPL:VERIFY:dark-mode           # Implementing dark-mode: verifying spec
+IMPL:IMPLEMENT:dark-mode        # Implementing dark-mode: coding
+IMPL:REVIEW:dark-mode           # Implementing dark-mode: reviewing
+IMPL:LEARN:dark-mode            # Implementing dark-mode: learning + merging
+DONE                            # All features complete
 ```
 
 ---
 
 ## Interaction Patterns
 
-### Design Cluster — Dense, Collaborative
+### Design Cluster — Heavy Bootstrap Session
 
-The Design Cluster is a tight conversation between user and agent. Phases flow quickly because they're all about thinking, not coding.
-
-```
-User: /develop "Add dark mode toggle"
-
-Agent: [RESEARCH] Scanning codebase + reading global specs...
-  → Found: ThemeContext at src/contexts/theme.tsx
-  → Found: Design tokens in src/styles/tokens.ts
-  → Must build: Toggle component, CSS variables, persistence
-  → Risk: Existing components use hardcoded colors (HIGH)
-
-  [DISCUSS] A few questions before I write the feature spec:
-  1. Should dark mode apply to the entire app or just the main content area?
-  2. Persistence: localStorage, user preferences API, or system preference?
-  3. Default: light mode, or follow OS preference?
-
-User: Entire app, localStorage, follow OS.
-
-Agent: [SPEC] Writing feature specs to .spec/features/dark-mode/...
-  ✓ product.md — what users experience
-  ✓ tech.md — CSS custom properties, ThemeContext updates, migration strategy
-  ✓ Updated global tech.md — added theming section to architecture overview
-
-  [PLAN] Implementation plan:
-  Wave 1: CSS custom properties + toggle component + persistence hook
-  Wave 2: Wire ThemeContext + toggle integration
-  Wave 3: Migrate hardcoded colors + prefers-color-scheme
-
-  Ready to implement? Any changes to the design?
-
-User: Looks good. Go.
-```
-
-### Implementation Cluster — Autonomous, Verify-First
-
-The Implementation Cluster is mostly autonomous. The agent verifies, implements, reviews, and learns. User is notified at completion.
+The Design Cluster is a deep, collaborative session. The user and agent work through the entire project scope: all features, architecture, and constraints. This is the one heavy session.
 
 ```
-Agent: [VERIFY] Checking feature spec against current codebase...
-  ✓ ThemeContext still at src/contexts/theme.tsx
-  ✓ Design tokens still at src/styles/tokens.ts
-  ✓ No interface changes since design
-  Spec verified — proceeding to implement.
+User: /develop
+
+Agent: No existing specs found. Starting project bootstrap.
+
+  [RESEARCH] Scanning full codebase...
+  → Found: React 18 + TypeScript project
+  → Found: 47 components, 12 contexts, 8 API routes
+  → Found: Existing design tokens in src/styles/
+  → Found: No theming system, no auth, basic search
+  → Patterns: Component composition, context for state, Tailwind CSS
+
+  [DISCUSS] Let's scope the project. I see several feature areas:
+  1. Dark mode / theming — no existing support
+  2. Authentication — no auth system
+  3. Search — basic, needs improvement
+  4. Settings panel — doesn't exist yet
+
+  Questions:
+  - Which features are in scope for this round?
+  - Priority order?
+  - Any architectural constraints I should know?
+
+User: All four. Priority: auth first, then settings, dark mode, search.
+      Use Supabase for auth. Keep it simple.
+
+Agent: [SPEC] Writing specs...
+
+  Global specs:
+  ✓ product.md — project vision, 4 features, design principles
+  ✓ tech.md — React/TS/Supabase stack, component patterns, API layer
+
+  Feature specs:
+  ✓ .spec/features/auth/product.md — sign in/up, session, protected routes
+  ✓ .spec/features/auth/tech.md — Supabase Auth, context, middleware
+  ✓ .spec/features/settings/product.md — user prefs panel
+  ✓ .spec/features/settings/tech.md — settings context, localStorage
+  ✓ .spec/features/dark-mode/product.md — theme toggle, OS preference
+  ✓ .spec/features/dark-mode/tech.md — CSS custom props, ThemeContext
+  ✓ .spec/features/search/product.md — improved search UX
+  ✓ .spec/features/search/tech.md — search index, debounce, filters
+
+  [PLAN] Global implementation plan:
+
+  Feature 1: auth (3 waves, no dependencies)
+    Wave 1: Supabase client + AuthContext + sign-in page
+    Wave 2: Protected routes + session management
+    Wave 3: Sign-up flow + password reset
+
+  Feature 2: settings (2 waves, depends on auth)
+    Wave 1: Settings page + layout
+    Wave 2: User preferences + persistence
+
+  Feature 3: dark-mode (3 waves, depends on settings)
+    Wave 1: CSS custom properties + toggle component
+    Wave 2: ThemeContext + toggle wiring
+    Wave 3: Component migration + OS preference
+
+  Feature 4: search (2 waves, independent)
+    Wave 1: Search index + improved query
+    Wave 2: Filters + results UX
+
+  Ready to start implementing? Any changes?
+
+User: Looks good. Start with auth.
+```
+
+### Implementation Cluster — Per-Feature, Mostly Autonomous
+
+Each feature gets a lightweight, mostly autonomous implementation cycle. The agent checks the spec, implements, reviews, learns, and moves on.
+
+```
+Agent: Starting auth implementation (Feature 1 of 4).
+
+  [VERIFY] Checking auth feature spec against codebase...
+  ✓ No changes since bootstrap
+  ✓ Supabase dependency available
+  ✓ All referenced files exist
+  Spec verified.
 
   [IMPLEMENT]
   Wave 1: Spawning 3 parallel agents...
-    ✓ CSS custom properties added
-    ✓ Toggle component created
-    ✓ Persistence hook created
-  Tests: 42 passed, 0 failed
+    ✓ Supabase client configured
+    ✓ AuthContext created
+    ✓ Sign-in page built
+  Tests: 12 passed, 0 failed
 
   Wave 2: Spawning 2 parallel agents...
-    ✓ ThemeContext updated
-    ✓ Toggle wired
-  Tests: 45 passed, 0 failed
+    ✓ Protected routes added
+    ✓ Session management wired
+  Tests: 18 passed, 0 failed
 
-  Wave 3: Migrating hardcoded colors...
-    ✓ 12 components migrated
-    ✓ prefers-color-scheme added
-  Tests: 48 passed, 0 failed
+  Wave 3: Sign-up + password reset...
+    ✓ Sign-up flow complete
+    ✓ Password reset complete
+  Tests: 24 passed, 0 failed
 
   [REVIEW] Verifying against feature spec...
-  ✓ All requirements met
+  ✓ All auth requirements met
   ✓ Tests passing
-  ✓ /simplify found 1 suggestion (applied)
-  ✓ No spec gaps
+  ✓ /simplify: no issues
 
-  [LEARN] Extracting learnings...
-  + Added lesson: "Check for hardcoded colors before theming work"
-  - Pruned stale lesson: "Use old color system" (superseded)
-  → Merged into global tech.md: CSS custom properties as theming standard
-  → Archived .spec/features/dark-mode/ to .spec/archive/dark-mode/
+  [LEARN]
+  + Lesson: "Supabase client must be initialized before AuthContext"
+  → Merged into global tech.md: Supabase auth patterns
+  → Archived .spec/features/auth/
 
-  Feature complete. ✓
+  Auth complete ✓. Moving to settings (Feature 2 of 4).
+
+  [VERIFY] Checking settings feature spec...
+  ⚠ AuthContext interface changed during auth implementation
+    (added `user.preferences` field not in original settings spec)
+  → Amended settings feature spec to use new field
+  Spec verified.
+
+  [IMPLEMENT] ...
+```
+
+### Unplanned Feature — Mini Bootstrap
+
+```
+User: We need to add notifications. Wasn't in the original plan.
+
+Agent: Running mini bootstrap for notifications.
+
+  [RESEARCH] Scanning for notification-related code...
+  → No existing notification system
+  → Toast component exists at src/components/Toast.tsx
+
+  [DISCUSS] Quick questions:
+  1. In-app only, or also push/email?
+  2. Persistent (stored) or ephemeral (toast only)?
+
+User: In-app toast only for now. Ephemeral.
+
+Agent: [SPEC] Writing feature spec...
+  ✓ .spec/features/notifications/product.md
+  ✓ .spec/features/notifications/tech.md
+
+  Amended plan.md: notifications inserted after current feature,
+  before search (no dependencies).
+
+  Ready to implement notifications?
+
+User: Go.
 ```
 
 ---
@@ -480,55 +615,37 @@ Agent: [VERIFY] Checking feature spec against current codebase...
 
 ```mermaid
 stateDiagram-v2
-    [*] --> DESIGN_RESEARCH: /develop
+    [*] --> DESIGN_RESEARCH: /develop (new project)
 
-    state "Design Cluster" as DC {
+    state "Design Cluster (bootstrap)" as DC {
         DESIGN_RESEARCH --> DESIGN_DISCUSS: findings confirmed
         DESIGN_DISCUSS --> DESIGN_SPEC: scope clarified
-        DESIGN_SPEC --> DESIGN_PLAN: specs written
+        DESIGN_SPEC --> DESIGN_PLAN: all specs written
         DESIGN_RESEARCH --> DESIGN_RESEARCH: user requests more
         DESIGN_DISCUSS --> DESIGN_DISCUSS: more questions
         DESIGN_SPEC --> DESIGN_SPEC: user requests changes
         DESIGN_PLAN --> DESIGN_PLAN: user requests changes
     }
 
-    state "Implementation Cluster" as IC {
-        IMPL_VERIFY --> IMPL_IMPLEMENT: spec verified
-        IMPL_IMPLEMENT --> IMPL_REVIEW: all waves done
-        IMPL_REVIEW --> IMPL_LEARN: review clean
-        IMPL_REVIEW --> IMPL_VERIFY: spec gaps found
-        IMPL_IMPLEMENT --> IMPL_IMPLEMENT: wave progression
-        IMPL_VERIFY --> IMPL_VERIFY: amending spec
+    DESIGN_PLAN --> PICK_FEATURE: user approves design
+
+    state "Per-Feature Loop" as PFL {
+        PICK_FEATURE --> IMPL_VERIFY: next feature from plan
+
+        state "Implementation Cluster" as IC {
+            IMPL_VERIFY --> IMPL_IMPLEMENT: spec verified
+            IMPL_IMPLEMENT --> IMPL_REVIEW: all waves done
+            IMPL_REVIEW --> IMPL_LEARN: review clean
+            IMPL_REVIEW --> IMPL_VERIFY: spec gaps found
+            IMPL_IMPLEMENT --> IMPL_IMPLEMENT: wave progression
+        }
+
+        IMPL_LEARN --> PICK_FEATURE: more features in plan
     }
 
-    DESIGN_PLAN --> IMPL_VERIFY: user approves design
-    IMPL_LEARN --> DONE: learnings captured + merged
+    IMPL_LEARN --> DONE: no more features
+    PICK_FEATURE --> MINI_BOOTSTRAP: unplanned feature
+    MINI_BOOTSTRAP --> PICK_FEATURE: spec written + plan amended
 
     DONE --> [*]
 ```
-
----
-
-## Parallel Feature Development
-
-Because feature specs are isolated in their own directories, multiple features can be designed and implemented in parallel without conflicts.
-
-```mermaid
-flowchart LR
-    subgraph "Feature A: dark-mode"
-        A_DESIGN["Design Cluster"] --> A_IMPL["Implementation Cluster"]
-        A_IMPL --> A_MERGE["Merge → global"]
-    end
-
-    subgraph "Feature B: auth-flow"
-        B_DESIGN["Design Cluster"] --> B_IMPL["Implementation Cluster"]
-        B_IMPL --> B_MERGE["Merge → global"]
-    end
-
-    A_MERGE --> GLOBAL["Global Specs<br/>(updated sequentially)"]
-    B_MERGE --> GLOBAL
-
-    style GLOBAL fill:#f9f,stroke:#333
-```
-
-**Conflict resolution:** Merges into global specs happen sequentially. If Feature B's merge conflicts with changes Feature A already merged, the LEARN phase flags it and the user resolves.

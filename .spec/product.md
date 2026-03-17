@@ -50,21 +50,38 @@ The result: you get GSD's execution patterns, Superpowers' creative tools, Featu
 
 ## Two Clusters
 
-The lifecycle is organized into two clusters, not a flat sequence of phases:
+The lifecycle is organized into two clusters that run at different cadences:
 
-**Design Cluster** — Front-loaded thinking. All research, discussion, spec writing, and planning happens here. This cluster produces feature specs and an implementation plan. The user is heavily involved.
+**Design Cluster (project bootstrap)** — Runs once at project start (or when a new unplanned feature emerges). Front-loads ALL thinking: research the codebase, discuss scope, write global specs AND feature specs for every known feature, create a global implementation plan. The user is heavily involved. This is the heavy lift.
 
-**Implementation Cluster** — Execution. Agents verify the feature spec against the current codebase (not rewrite it), then implement, review, and learn. The user approves at cluster boundaries, not at every micro-step.
+**Implementation Cluster (per-feature, repeating)** — Runs once per feature from the plan. Agents verify the feature spec against the current codebase (a quick check, not a rewrite), then implement, review, and learn. Lightweight and mostly autonomous.
 
 ```
-┌─────────────── DESIGN CLUSTER ───────────────┐   ┌────────── IMPLEMENTATION CLUSTER ──────────┐
-│                                               │   │                                            │
-│  RESEARCH → DISCUSS → SPEC → PLAN            │──▶│  VERIFY → IMPLEMENT → REVIEW → LEARN       │
-│                                               │   │                                            │
-│  Outputs: feature specs, implementation plan  │   │  Inputs: feature specs (read-only)          │
-│  User: heavily involved                       │   │  Pre-step: codebase scan to confirm spec    │
-└───────────────────────────────────────────────┘   └────────────────────────────────────────────┘
+┌──────────────── DESIGN CLUSTER (once) ────────────────┐
+│                                                        │
+│  RESEARCH → DISCUSS → SPEC → PLAN                     │
+│                                                        │
+│  Outputs:                                              │
+│    • Global specs (product.md, tech.md)                │
+│    • Feature specs for ALL known features              │
+│    • Global plan (sequenced across features)           │
+│  User: heavily involved                                │
+└────────────────────────┬───────────────────────────────┘
+                         │
+                         ▼
+┌──── IMPLEMENTATION CLUSTER (per feature, repeating) ───┐
+│                                                        │
+│  VERIFY → IMPLEMENT → REVIEW → LEARN                  │
+│                                                        │
+│  Inputs: feature spec (read-only, already written)     │
+│  VERIFY: quick codebase scan to confirm spec validity  │
+│  LEARN: merge feature decisions → global specs         │
+│                                                        │
+│  Repeat for each feature in the plan                   │
+└────────────────────────────────────────────────────────┘
 ```
+
+**Exception path:** When a new feature emerges that wasn't part of the original plan, a mini Design Cluster runs for just that feature — research, discuss, write its feature spec, amend the global plan — then it joins the normal implementation queue.
 
 ## Global vs Feature Specs
 
@@ -94,13 +111,14 @@ AI-assisted developers who:
 
 ## User Stories
 
-1. **As a developer starting a new feature,** I run `/develop <description>` and the framework guides me through the Design Cluster (research → discuss → spec → plan), then the Implementation Cluster (verify → implement → review → learn).
-2. **As a developer setting up a new project,** I run `/setup-framework` and interactively choose which plugins to use for each phase, generating a config file.
+1. **As a developer starting a new project,** I run `/develop` and the framework bootstraps: researches the codebase, discusses scope with me, writes global specs and feature specs for all known features, and produces a global implementation plan. This is the one heavy session.
+2. **As a developer ready to build the next feature,** I run `/develop` and the framework picks the next feature from the plan, verifies its spec against the current codebase, and implements it. No re-speccing, no re-discussing — just verify and go.
 3. **As a developer with no plugins installed,** I run `/develop` and get a complete lifecycle using built-in defaults — parallel Explore agents for research, structured questions for discussion, spec-driven planning, wave-based implementation, and multi-agent review.
-4. **As a developer who installs a new plugin,** I re-run `/setup-framework`, enable it for specific phases, and my next `/develop` automatically routes to it.
+4. **As a developer who discovers a new feature mid-project,** a mini Design Cluster runs for just that feature — research, discuss, spec, amend plan — then it joins the implementation queue like any other feature.
 5. **As a developer resuming work,** I run `/develop` and it reads `.spec/.phase` to know where I left off, loads the relevant feature specs, and continues from that point.
-6. **As a developer starting implementation,** the agent scans the codebase to verify the feature spec still holds — it doesn't redo the spec writing, just confirms nothing has changed that invalidates the plan.
-7. **As a developer who shipped a feature,** the LEARN phase extracts lessons and merges feature-level decisions into global specs, then archives the feature spec directory.
+6. **As a developer starting implementation of a feature,** the agent does a quick codebase scan to verify the feature spec still holds — it doesn't redo the spec writing, just confirms nothing has invalidated the plan.
+7. **As a developer who shipped a feature,** the LEARN phase extracts lessons, merges feature-level decisions into global specs, archives the feature spec, and the framework moves to the next feature in the plan.
+8. **As a developer setting up plugin preferences,** I run `/setup-framework` and interactively choose which plugins to use for each phase, generating a config file.
 
 ## What We Build
 
@@ -124,13 +142,15 @@ AI-assisted developers who:
 
 ## Product Decisions
 
-1. **Two clusters, not a flat sequence.** Design Cluster front-loads all thinking. Implementation Cluster executes. This prevents the pattern of re-doing spec work during implementation.
-2. **Feature specs are ephemeral.** They live in `.spec/features/<name>/` during development and merge into global specs after shipping. This keeps global specs clean and focused.
-3. **Verify, don't rewrite.** Before implementation, agents scan the codebase to confirm the feature spec is still valid. If something has changed, they flag it — they don't silently rewrite the spec.
-4. **Config lives in `.spec/.framework.json`.** Project-specific (different projects may use different plugins), lives alongside the specs it configures.
-5. **Built-in defaults for every phase.** Framework is fully functional with zero external plugins. Plugins enhance, never gate.
-6. **User approval at cluster boundaries.** The user confirms after Design Cluster completes and after Implementation Cluster completes. Within clusters, phases flow without mandatory gates (but can be configured to pause).
-7. **LEARN is a distinct phase.** Inspired by Compound Engineering's "compound step." Learning is not a checkbox in review — it's a dedicated step that extracts lessons, prunes stale ones, and merges feature decisions into global specs.
+1. **Design Cluster is a project bootstrap.** It runs once at project start, producing global specs, all feature specs, and a global plan. It does NOT run per-feature.
+2. **Implementation Cluster is per-feature.** It repeats for each feature in the plan: verify → implement → review → learn. Lightweight and mostly autonomous.
+3. **Feature specs are ephemeral.** They live in `.spec/features/<name>/` during development and merge into global specs after shipping. This keeps global specs clean and focused.
+4. **Verify, don't rewrite.** Before implementation, agents scan the codebase to confirm the feature spec is still valid. If something has changed, they flag it — they don't silently rewrite the spec.
+5. **Unplanned features get a mini bootstrap.** When a new feature emerges mid-project, a scoped Design Cluster runs for just that feature, then it joins the implementation queue.
+6. **Config lives in `.spec/.framework.json`.** Project-specific (different projects may use different plugins), lives alongside the specs it configures.
+7. **Built-in defaults for every phase.** Framework is fully functional with zero external plugins. Plugins enhance, never gate.
+8. **User approval at cluster boundaries.** The user confirms after Design Cluster completes and before each feature's implementation starts. Within the Implementation Cluster, phases flow autonomously.
+9. **LEARN is a distinct phase.** Inspired by Compound Engineering's "compound step." Learning is not a checkbox in review — it's a dedicated step that extracts lessons, prunes stale ones, and merges feature decisions into global specs.
 
 ## Open Questions
 
