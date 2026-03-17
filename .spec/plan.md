@@ -1,146 +1,223 @@
 ---
 type: entrypoint
 scope: implementation
-covers: milestones, task breakdown, validation criteria, session planning
-updated: 2026-03-13
+covers: milestones, task breakdown, build waves, current state, progress tracking
+updated: 2026-03-14
 ---
 
 # Engineering Agent — Implementation Plan
 
 **Parent specs:** [product.md](product.md), [tech.md](tech.md)
+**Integration map:** [product-integration.md](product-integration.md)
+**Open questions:** [questions.md](questions.md)
 
 ---
 
-## Validation Summary
+## Current State
 
-Already exists (don't rebuild):
-- `/spec` skill — full spec management system with templates, validation, setup
-- `/develop` skill — phase lifecycle with RESEARCH/SPEC/PLAN/IMPLEMENT/REVIEW
-- `/simplify` skill — multi-agent code review
-- Phase gate hooks — PreToolUse enforcement in `.claude/hooks/check-phase.sh`
-- `.spec/.phase` tracking — phase state persistence
+### What Exists
 
-Must build:
-- `.framework.json` config schema and reader
-- Config-aware phase routing in `/develop`
-- Built-in default providers for each phase
-- Plugin detection scripts
-- `/setup-framework` interactive installer skill
-- Plugin adapter layer (superpowers, feature-dev)
-- Updated CLAUDE.md reflecting the meta-framework
+| Component | Status | Location |
+|-----------|--------|----------|
+| `/spec` skill | **Complete** | `.agents/skills/spec/` — templates, validation, setup, all working |
+| `/develop` skill | **Partial** | `.agents/skills/develop/` — 5-phase lifecycle. Needs rewrite for clusters, VERIFY, LEARN, config routing |
+| `/simplify` skill | **Available** | Referenced, available as skill. Default REVIEW provider |
+| Phase gate hook | **Partial** | `.claude/hooks/check-phase.sh` — works for 5 phases. Needs VERIFY, LEARN, DISCUSS, new `.phase` format |
+| Session start hook | **Complete** | `.claude/settings.json` — shows phase + lessons reminder |
+| Global specs | **Complete** | `.spec/product.md`, `tech.md`, `product-design.md`, `product-integration.md` |
+| Research docs | **Complete** | `.spec/research/` — 7 phase analyses + agreements + learn phase study |
+| Lessons | **Started** | `.spec/lessons.md` — 1 lesson captured |
 
-**Timeline:** 3-4 sessions
+### What's Missing
 
----
-
-## Critical Architecture Decisions
-
-### Decided
-- **Config in `.spec/.framework.json`:** Project-specific, lives with specs (agreed)
-- **Built-in defaults required:** Framework works with zero plugins (agreed)
-- **Phase names unchanged:** RESEARCH, SPEC, PLAN, IMPLEMENT, REVIEW (agreed)
-- **Spec system non-pluggable:** `/spec` is always the backbone (agreed)
-- **Shell scripts over app code:** Bash for detection/validation, markdown for everything else (agreed)
-
-### To Resolve
-- [ ] Exact plugin adapter interface (how does /develop delegate to superpowers?)
-- [ ] Per-phase model overrides in config?
-- [ ] Plugin version compatibility strategy
+| Component | Priority | Effort | Blocked By |
+|-----------|----------|--------|-----------|
+| `/develop` SKILL.md rewrite (clusters + 8 phases) | P0 | Large | Nothing — can start now |
+| Hook updates (new phases + `.phase` format) | P0 | Small | Nothing — can start now |
+| VERIFY phase logic | P0 | Medium | `/develop` rewrite |
+| LEARN phase logic | P0 | Medium | `/develop` rewrite |
+| Feature spec directory conventions | P0 | Small | `/develop` rewrite |
+| `.framework.json` schema + config reader | P0 | Medium | Nothing — can start now |
+| Global plan template (multi-feature) | P0 | Small | Nothing — can start now |
+| CLAUDE.md + Agents.md updates | P0 | Small | All P0 tasks |
+| `/setup-framework` skill | P1 | Medium | `.framework.json` schema |
+| Discussion prompt templates | P1 | Small | `/develop` rewrite |
+| Plugin adapters (superpowers, feature-dev, compound-eng) | P2 | Medium each | `/setup-framework` |
 
 ---
 
-## Implementation Roadmap
+## Build Waves
 
-| Milestone | Goal | Sessions | Risk |
-|-----------|------|----------|------|
-| **M1** | Core config + routing | 1 | Low |
-| **M2** | Built-in default providers | 1 | Low |
-| **M3** | Plugin detection + installer | 1 | Med |
-| **M4** | Plugin adapters + integration | 1-2 | Med |
+### Wave 1: Foundation (no dependencies, all parallel)
 
----
+Everything in this wave can be built simultaneously — no task depends on another.
 
-## M1: Core Config + Routing
+**1.1 — Rewrite `/develop` SKILL.md**
+The largest piece of work. Rewrite the skill to reflect:
+- Two clusters: Design Cluster (bootstrap) and Implementation Cluster (per-feature)
+- 8 phases: RESEARCH, DISCUSS, SPEC, PLAN, VERIFY, IMPLEMENT, REVIEW, LEARN
+- Feature spec directory flow: create during SPEC, consume during VERIFY+IMPLEMENT, merge during LEARN, archive after
+- Global plan as the feature sequencer
+- Config-driven routing stub (reads `.framework.json` or falls back to built-in)
+- Session resumption with `CLUSTER:PHASE:FEATURE` format
+- Per-phase built-in defaults written out explicitly
 
-**Goal:** `/develop` reads `.framework.json` and routes phases to providers.
-**Sessions:** 1 | **Risk:** Low
+Files touched:
+- `.agents/skills/develop/SKILL.md` (full rewrite)
+- `.agents/skills/develop/README.md` (update)
 
-Tasks:
-- [ ] Define `.framework.json` JSON schema (version, phases, installed_plugins)
-- [ ] Add config reader to `/develop` SKILL.md — load and parse at startup
-- [ ] Add fallback logic — if config missing, use all built-in defaults
-- [ ] Add provider validation — warn if configured provider not installed
-- [ ] Update phase transition logic to call provider-specific workflows
+**1.2 — Update phase gate hook**
+Update `check-phase.sh` to support:
+- New phases: DISCUSS, VERIFY, LEARN
+- New `.phase` format: `DESIGN:RESEARCH`, `IMPL:VERIFY:dark-mode`, etc.
+- Feature spec directory write rules (`.spec/features/<name>/`)
+- LEARN phase: allow writes to `.spec/*.md`, `lessons.md`, `.spec/archive/`
 
-**Done when:** `/develop` reads config file and routes to correct provider (or built-in fallback).
+Files touched:
+- `.claude/hooks/check-phase.sh`
 
----
+**1.3 — Define `.framework.json` schema**
+Create the JSON schema and a default config (zero plugins).
 
-## M2: Built-in Default Providers
+Files touched:
+- `.agents/skills/develop/schema/framework.schema.json` (new)
+- `.agents/skills/develop/defaults/framework.json` (new — zero-plugin default)
 
-**Goal:** Every phase works without any external plugins.
-**Sessions:** 1 | **Risk:** Low
+**1.4 — Create global plan template**
+New template for multi-feature plans that sequence features with cross-dependencies.
 
-Tasks:
-- [ ] Document built-in RESEARCH provider (parallel Explore agents)
-- [ ] Document built-in DISCUSS provider (structured AskUserQuestion)
-- [ ] Spec provider is already built (no change needed)
-- [ ] Document built-in PLAN provider (wave-grouped plan writing)
-- [ ] Document built-in IMPLEMENT provider (wave-based subagent execution)
-- [ ] Document built-in REVIEW provider (self-review + spec compliance)
-- [ ] Integrate GSD patterns: wave grouping, plan immutability, gap closure
-- [ ] Integrate Superpowers patterns: pressure resistance, phase enforcement
+Files touched:
+- `.agents/skills/spec/reference/templates/plan-global.md` (new)
 
-**Done when:** `/develop` completes full lifecycle with `.framework.json` set to all `built-in` providers.
+**1.5 — Create feature spec templates**
+Templates for feature-level product.md and tech.md inside `.spec/features/<name>/`.
 
----
+Files touched:
+- `.agents/skills/spec/reference/templates/feature-product.md` (new)
+- `.agents/skills/spec/reference/templates/feature-tech.md` (new)
 
-## M3: Plugin Detection + Installer
-
-**Goal:** `/setup-framework` detects installed plugins and generates config.
-**Sessions:** 1 | **Risk:** Medium
-
-Tasks:
-- [ ] Write `detect-plugins.sh` — scan `.agents/skills/` for known plugins
-- [ ] Write `generate-config.sh` — create `.framework.json` from user choices
-- [ ] Write `/setup-framework` SKILL.md — interactive installer flow
-- [ ] Handle edge cases: partial installs, conflicting providers, re-running setup
-- [ ] Validate generated config against schema
-
-**Done when:** Running `/setup-framework` detects plugins, asks user preferences, and writes valid `.framework.json`.
+**Done when:** `/develop` can be invoked, reads the new `.phase` format, understands both clusters, and has built-in defaults for all 8 phases. Hook enforces phase-appropriate writes for all phases.
 
 ---
 
-## M4: Plugin Adapters
+### Wave 2: Integration (depends on Wave 1)
 
-**Goal:** Superpowers, feature-dev, and simplify can be configured as phase providers.
-**Sessions:** 1-2 | **Risk:** Medium
+**2.1 — Add config reader to `/develop`**
+The routing logic that reads `.framework.json` and dispatches to the correct provider. If config is missing or provider is `"built-in"`, use the built-in default. If provider is a plugin name, delegate to that skill.
 
-Tasks:
-- [ ] Define adapter interface: what each plugin must expose
-- [ ] Write superpowers adapter: brainstorm (DISCUSS), TDD (IMPLEMENT), review (REVIEW)
-- [ ] Write feature-dev adapter: code-explorer (RESEARCH), code-architect (PLAN), code-reviewer (REVIEW)
-- [ ] Write simplify adapter: multi-agent review (REVIEW) — mostly exists already
-- [ ] Test each adapter with the actual plugin skills
-- [ ] Document how to add new plugin adapters
+Files touched:
+- `.agents/skills/develop/SKILL.md` (add routing section)
+- `.agents/skills/develop/scripts/read-config.sh` (new — parse `.framework.json`)
 
-**Done when:** Each supported plugin can be selected as a provider and the phase delegates correctly.
+**2.2 — Create discussion prompt templates**
+Structured question sets for the DISCUSS phase, organized by feature type (UI, API, data, infrastructure). The built-in DISCUSS provider uses these with AskUserQuestion.
+
+Files touched:
+- `.agents/skills/develop/prompts/discuss-ui.md` (new)
+- `.agents/skills/develop/prompts/discuss-api.md` (new)
+- `.agents/skills/develop/prompts/discuss-data.md` (new)
+- `.agents/skills/develop/prompts/discuss-general.md` (new)
+
+**2.3 — Update settings.json**
+Add permissions for new skills and update hook matchers.
+
+Files touched:
+- `.claude/settings.json`
+
+**2.4 — Update CLAUDE.md and Agents.md**
+Reflect the new architecture: two clusters, 8 phases, feature specs, config routing.
+
+Files touched:
+- `CLAUDE.md`
+- `Agents.md`
+
+**Done when:** `/develop` reads config, routes to providers (or built-in), DISCUSS has structured prompts, and all documentation reflects the new architecture.
+
+---
+
+### Wave 3: Installer (depends on Wave 2)
+
+**3.1 — Build `/setup-framework` skill**
+Interactive plugin detection and config generation. Scans `.agents/skills/` for known plugin signatures, asks the user which provider to use per phase, writes `.framework.json`.
+
+Files touched:
+- `.agents/skills/setup-framework/SKILL.md` (new)
+- `.agents/skills/setup-framework/README.md` (new)
+- `.agents/skills/setup-framework/scripts/detect-plugins.sh` (new)
+- `.agents/skills/setup-framework/scripts/generate-config.sh` (new)
+
+**Done when:** `/setup-framework` detects installed plugins, presents choices, generates valid `.framework.json`.
+
+---
+
+### Wave 4: Plugin Adapters (depends on Wave 3, only if plugins exist)
+
+**4.1 — Superpowers adapter**
+Routing logic for: DISCUSS → `/superpowers:brainstorm`, IMPLEMENT → TDD enforcement, REVIEW → dual-stage review.
+
+**4.2 — Feature-dev adapter**
+Routing logic for: RESEARCH → code-explorer agents, PLAN → competing code-architect agents, REVIEW → code-reviewer with confidence.
+
+**4.3 — Compound-engineering adapter**
+Routing logic for: LEARN → `/ce:compound`.
+
+All adapters are sections within `/develop` SKILL.md — conditional routing based on provider name.
+
+**Done when:** Each plugin can be selected in `.framework.json` and the phase delegates correctly.
 
 ---
 
 ## Critical Path
 
-M1 (config + routing) → M2 (built-in defaults) → M3 (installer) → M4 (plugin adapters)
+```
+Wave 1 ──────────────────────────────────────────── Wave 2 ─────────── Wave 3 ─── Wave 4
+  1.1 /develop rewrite ──┐                           2.1 config reader
+  1.2 hook updates ──────┤                           2.2 discuss prompts
+  1.3 .framework.json ───┼── all parallel ──────────▶ 2.3 settings.json  ──▶ 3.1 /setup-framework ──▶ 4.x adapters
+  1.4 global plan tpl ───┤                           2.4 CLAUDE.md update
+  1.5 feature spec tpl ──┘
+```
 
-M1 and M2 are partially parallelizable (routing logic + default provider docs can be written together).
+Wave 1 is the bulk of the work. Waves 2-4 are incremental.
+
+---
+
+## Validation Criteria
+
+### Minimum Viable Framework (end of Wave 2)
+
+- [ ] `/develop` orchestrates 8 phases across 2 clusters
+- [ ] Design Cluster: RESEARCH → DISCUSS → SPEC → PLAN (bootstrap, writes global + feature specs)
+- [ ] Implementation Cluster: VERIFY → IMPLEMENT → REVIEW → LEARN (per-feature, repeating)
+- [ ] Phase gate hook enforces write rules for all 8 phases
+- [ ] `.phase` file uses `CLUSTER:PHASE:FEATURE` format
+- [ ] Feature specs created in `.spec/features/<name>/`, archived after LEARN
+- [ ] Built-in defaults work for every phase with zero plugins
+- [ ] Config reader loads `.framework.json` or falls back to defaults
+- [ ] CLAUDE.md and Agents.md reflect current architecture
+
+### Full Framework (end of Wave 4)
+
+- [ ] `/setup-framework` detects plugins and generates config
+- [ ] Superpowers, feature-dev, compound-engineering can be selected as providers
+- [ ] Each provider delegates correctly to the plugin's skill
 
 ---
 
 ## Progress
 
-| Milestone | Status | Sessions Used | Estimate |
-|-----------|--------|---------------|----------|
-| M1 | NOT STARTED | 0 | 1 |
-| M2 | NOT STARTED | 0 | 1 |
-| M3 | NOT STARTED | 0 | 1 |
-| M4 | NOT STARTED | 0 | 1-2 |
+| Wave | Task | Status | Notes |
+|------|------|--------|-------|
+| 1 | 1.1 `/develop` SKILL.md rewrite | NOT STARTED | Largest task |
+| 1 | 1.2 Hook updates | NOT STARTED | |
+| 1 | 1.3 `.framework.json` schema | NOT STARTED | |
+| 1 | 1.4 Global plan template | NOT STARTED | |
+| 1 | 1.5 Feature spec templates | NOT STARTED | |
+| 2 | 2.1 Config reader | NOT STARTED | |
+| 2 | 2.2 Discussion prompts | NOT STARTED | |
+| 2 | 2.3 Settings.json update | NOT STARTED | |
+| 2 | 2.4 CLAUDE.md + Agents.md | NOT STARTED | |
+| 3 | 3.1 `/setup-framework` skill | NOT STARTED | |
+| 4 | 4.1 Superpowers adapter | NOT STARTED | |
+| 4 | 4.2 Feature-dev adapter | NOT STARTED | |
+| 4 | 4.3 Compound-eng adapter | NOT STARTED | |
