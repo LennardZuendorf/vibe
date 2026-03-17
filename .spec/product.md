@@ -3,6 +3,7 @@ type: entrypoint
 scope: product
 children:
   - product-design.md
+  - product-integration.md
 updated: 2026-03-14
 ---
 
@@ -163,3 +164,4 @@ AI-assisted developers who:
 | Document | Covers |
 |----------|--------|
 | **[product-design.md](product-design.md)** | Functional design, workflow diagrams, user flows |
+| **[product-integration.md](product-integration.md)** | Framework integration map, plugin routing, build-vs-reuse, dependencies |
