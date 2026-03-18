@@ -203,6 +203,50 @@ Recommendation: **A** — they're small markdown files in git. Storage is free. 
 
 ---
 
+## From Real-World Deployment (blocks Wave 1, task 1.6)
+
+### Q13: Should `context.md` be created during `/spec setup` by default?
+
+The deployment showed `context.md` (business/domain context) is essential for rework projects but unnecessary for greenfield.
+
+| Option | Behavior |
+|--------|----------|
+| **A. Always create** | `/spec setup` always creates `context.md` template. User fills it or deletes it. |
+| **B. Ask during setup** | `/spec setup` asks "Is this an existing codebase?" If yes, creates `context.md` + research/ + docs/. |
+| **C. Never auto-create** | User manually creates if needed. Template available but not scaffolded. |
+
+Recommendation: **B** — the setup flow should detect greenfield vs rework and scaffold accordingly.
+
+---
+
+### Q14: Should `docs/` and `reference/` be validated by `/spec validate`?
+
+These directories contain reference material, not specs. Should the validation script check them?
+
+| Option | Behavior |
+|--------|----------|
+| **A. Skip entirely** | Validation ignores docs/ and reference/. They're unstructured support material. |
+| **B. Check existence only** | Validation confirms directories exist if referenced by specs, but doesn't validate content. |
+| **C. Light validation** | Check that referenced files exist (e.g., if product-design.md links to reference/mockup.png, verify the file is there). |
+
+Recommendation: **C** — broken references are the main risk. Validate links, not content.
+
+---
+
+### Q15: How do `design` scope docs interact with the product/tech separation?
+
+Design docs cross the product/tech line. How do we handle this in practice?
+
+| Option | Naming |
+|--------|--------|
+| **A. `product-design-*.md`** | Design docs are product-prefixed but allowed to contain tech. The prefix indicates they're primarily product-facing. |
+| **B. `design-*.md`** | New prefix. Not product, not tech — its own thing. |
+| **C. Either prefix works** | `product-design-*.md` or `tech-design-*.md` depending on emphasis. |
+
+Recommendation: **A** — design docs are primarily product-facing (they describe what the user sees). The `product-design-` prefix maintains the naming convention while the `design` scope flag relaxes the content rules.
+
+---
+
 ## Summary
 
 | Question | Blocks | Recommendation | Status |
@@ -219,3 +263,6 @@ Recommendation: **A** — they're small markdown files in git. Storage is free. 
 | Q10: Custom built-in overrides | Non-blocking | A (no for v1) | OPEN |
 | Q11: Merge conflict strategy | Non-blocking | C (flag with suggestion) | OPEN |
 | Q12: Archive retention | Non-blocking | A (forever) | OPEN |
+| Q13: context.md in setup | Wave 1 (1.6) | B (ask greenfield vs rework) | OPEN |
+| Q14: docs/reference/ validation | Wave 1 (1.6) | C (validate links only) | OPEN |
+| Q15: Design scope naming | Wave 1 (1.6) | A (product-design-*.md prefix) | OPEN |

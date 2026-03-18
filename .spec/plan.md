@@ -96,7 +96,24 @@ Files touched:
 - `.agents/skills/spec/reference/templates/feature-product.md` (new)
 - `.agents/skills/spec/reference/templates/feature-tech.md` (new)
 
-**Done when:** `/develop` can be invoked, reads the new `.phase` format, understands both clusters, and has built-in defaults for all 8 phases. Hook enforces phase-appropriate writes for all phases.
+**1.6 — Add new spec file types to `/spec` skill**
+Based on real-world deployment findings, add support for:
+- `context.md` — optional entrypoint for business/domain context (upstream of product.md)
+- `docs/` — reference documentation directory (API maps, data dictionaries)
+- `reference/` — visual assets directory (screenshots, mockups, competitor examples)
+- `design` scope — branch docs that cross product/tech line (design tokens, component patterns)
+- "Current State" section in product.md template for rework projects
+- Goal-driven plan phases note in global plan template
+
+Files touched:
+- `.agents/skills/spec/SKILL.md` (add new file types, design scope, directory types)
+- `.agents/skills/spec/reference/templates/context.md` (new — context entrypoint template)
+- `.agents/skills/spec/reference/templates/product.md` (update — add Current State section)
+- `.agents/skills/spec/reference/templates/product-design-xxx.md` (new — design scope template)
+- `.agents/skills/spec/scripts/validate.sh` (update — recognize new types, skip docs/reference/)
+- `.agents/skills/spec/scripts/setup.sh` (update — optionally create context.md, docs/, reference/)
+
+**Done when:** `/develop` can be invoked, reads the new `.phase` format, understands both clusters, and has built-in defaults for all 8 phases. Hook enforces phase-appropriate writes for all phases. `/spec` recognizes all file types including context.md, design scope, and support directories.
 
 ---
 
@@ -213,6 +230,7 @@ Wave 1 is the bulk of the work. Waves 2-4 are incremental.
 | 1 | 1.3 `.framework.json` schema | NOT STARTED | |
 | 1 | 1.4 Global plan template | NOT STARTED | |
 | 1 | 1.5 Feature spec templates | NOT STARTED | |
+| 1 | 1.6 New spec file types (`/spec` skill) | NOT STARTED | context.md, docs/, reference/, design scope |
 | 2 | 2.1 Config reader | NOT STARTED | |
 | 2 | 2.2 Discussion prompts | NOT STARTED | |
 | 2 | 2.3 Settings.json update | NOT STARTED | |

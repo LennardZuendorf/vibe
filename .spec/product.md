@@ -84,13 +84,56 @@ The lifecycle is organized into two clusters that run at different cadences:
 
 **Exception path:** When a new feature emerges that wasn't part of the original plan, a mini Design Cluster runs for just that feature — research, discuss, write its feature spec, amend the global plan — then it joins the normal implementation queue.
 
+## Spec File Types
+
+The `.spec/` directory contains more than just product/tech specs. Real projects need business context, reference material, visual assets, and design system docs.
+
+### Entrypoints (required)
+
+| File | Scope | Purpose |
+|------|-------|---------|
+| `product.md` | product | What we're building and why. For rework projects, includes a "Current State" section. |
+| `tech.md` | tech | How we build it. Architecture, stack, patterns. |
+| `plan.md` | implementation | Global roadmap sequencing all features. |
+
+### Optional Entrypoints
+
+| File | Scope | Purpose |
+|------|-------|---------|
+| `context.md` | context | Business/domain context upstream of product. What company, what market, what users. Essential for rework projects where agents need to understand the world the product exists in. |
+| `lessons.md` | learning | Accumulated mistakes and rules. Review at session start. |
+
+### Branch Docs
+
+| Pattern | Scope | Purpose |
+|---------|-------|---------|
+| `product-*.md` | product | Deep-dive into a product area (UX, features, flows). Zero code. |
+| `tech-*.md` | tech | Deep-dive into a tech area (APIs, infra, patterns). Code welcome. |
+| `product-design-*.md` | design | Design system docs (tokens, components, patterns). **Crosses product/tech line** — allowed to contain both "what it looks like" and "exact values to implement." |
+
+### Directories
+
+| Directory | Purpose |
+|-----------|---------|
+| `research/` | Discovery/audit artifacts from RESEARCH phase. Codebase analysis, architecture reports, competitive analysis. Informs specs but isn't a spec. |
+| `docs/` | Reference documentation. API surface maps, data dictionaries, integration docs, environment configs. Factual, exhaustive, consulted during implementation. |
+| `reference/` | Visual assets. Screenshots, mockups, design exports, competitor examples. Referenced by design and product branch docs. |
+| `features/` | Feature specs. One subdirectory per feature with product.md + tech.md. Ephemeral — created during Design, merged after shipping. |
+| `archive/` | Archived feature specs post-merge. Kept for history, not loaded. |
+
+### The `design` Scope
+
+Design system docs (`product-design-*.md`) are a principled exception to the product/tech separation. Design tokens, component patterns, and visual language are inherently cross-cutting: `#00b054` is simultaneously a brand decision (product) and a hex value for the theme file (tech). Forcing this into pure product OR pure tech creates artificial splits.
+
+**Rule:** Files with `design` scope may contain both product concerns (what it looks like, why) and tech concerns (exact values, implementation patterns). All other scopes maintain the hard product/tech separation.
+
 ## Global vs Feature Specs
 
 | Aspect | Global Specs | Feature Specs |
 |--------|-------------|---------------|
-| **Location** | `.spec/product.md`, `.spec/tech.md`, `.spec/product-*.md`, `.spec/tech-*.md` | `.spec/features/<name>/product.md`, `.spec/features/<name>/tech.md`, `.spec/features/<name>/plan.md` |
+| **Location** | `.spec/product.md`, `.spec/tech.md`, `.spec/product-*.md`, `.spec/tech-*.md` | `.spec/features/<name>/product.md`, `.spec/features/<name>/tech.md` |
 | **Lifetime** | Persistent — evolves over the project lifetime | Ephemeral — created during Design, merged after shipping |
-| **Scope** | Entire project: architecture, design system, conventions, cross-cutting concerns | Single feature: what it does, how it's built, implementation plan |
+| **Scope** | Entire project: architecture, design system, conventions, cross-cutting concerns | Single feature: what it does, how it's built |
 | **Who writes** | Design Cluster (initial), LEARN phase (updates after merge) | Design Cluster only |
 | **Who reads** | Everyone, always | Implementation Cluster for that feature |
 | **Merging** | N/A | After REVIEW+LEARN, feature decisions that affect global architecture get merged into global specs. Feature spec directory is archived. |

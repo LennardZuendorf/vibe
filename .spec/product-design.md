@@ -197,21 +197,39 @@ flowchart LR
     LEARN_A -->|"archive"| ARCHIVE["Archive dark-mode/"]
 ```
 
-### Feature Spec Directory Structure
+### Full `.spec/` Directory Structure
 
 ```
 .spec/
+├── context.md                          # OPTIONAL: business/domain context (upstream of product)
 ├── product.md                          # GLOBAL: project-wide product spec
 ├── tech.md                             # GLOBAL: project-wide tech spec
-├── product-design.md                   # GLOBAL: project-wide design
+├── product-design.md                   # GLOBAL: functional design
+├── product-design-language.md          # GLOBAL: design system (design scope — crosses product/tech)
 ├── lessons.md                          # GLOBAL: accumulated learnings
 ├── plan.md                             # GLOBAL: sequenced roadmap for ALL features
 │
-├── features/                           # ALL feature specs written during bootstrap
+├── research/                           # Discovery/audit artifacts from RESEARCH phase
+│   ├── architecture.md                 #   Codebase architecture analysis
+│   ├── api-layer.md                    #   API patterns and coverage
+│   ├── state-management.md             #   State management audit
+│   └── ...                             #   (one file per research area)
+│
+├── docs/                               # Reference documentation
+│   ├── api-surface.md                  #   API endpoint map (factual, exhaustive)
+│   ├── data-dictionary.md              #   Data models and schemas
+│   └── ...                             #   (consulted during implementation)
+│
+├── reference/                          # Visual assets
+│   ├── current-platform.png            #   Screenshots of existing product
+│   ├── competitor-ux.png               #   Competitor benchmarks
+│   └── ...                             #   (referenced by design/product docs)
+│
+├── features/                           # Feature specs (written during bootstrap)
 │   ├── dark-mode/
 │   │   ├── product.md                  #   What dark mode does (user experience)
 │   │   ├── tech.md                     #   How dark mode is built (architecture)
-│   │   └── research.md                 #   Research findings from bootstrap
+│   │   └── research.md                 #   Feature-specific research findings
 │   │
 │   ├── auth-flow/
 │   │   ├── product.md
@@ -226,7 +244,10 @@ flowchart LR
 │       └── ...
 ```
 
-**Note:** Feature specs do NOT have their own `plan.md`. All feature implementation plans live in the global `plan.md`, sequenced across features. This prevents plan fragmentation and ensures cross-feature dependencies are visible in one place.
+**Notes:**
+- Feature specs do NOT have their own `plan.md`. All feature plans live in the global `plan.md`. This prevents plan fragmentation and keeps cross-feature dependencies visible.
+- `context.md` is optional but recommended for rework projects. For greenfield projects where the business context is obvious, it can be omitted.
+- `research/`, `docs/`, and `reference/` are support directories — they inform specs but aren't specs themselves. They're not validated by `/spec validate`.
 
 ### What Gets Merged vs Archived
 
