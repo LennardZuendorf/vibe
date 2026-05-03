@@ -1,13 +1,14 @@
 #!/bin/bash
 # Validate .spec/ documents for consistency
-# Checks: frontmatter, cross-references, naming conventions, orphaned files
+# Checks: frontmatter, cross-references, naming conventions, orphaned files,
+#         feature-folder structure
 
 SPEC_DIR=".spec"
 ERRORS=0
 WARNINGS=0
 
-red() { echo -e "\033[31m  ERROR: $1\033[0m"; ((ERRORS++)); }
-yellow() { echo -e "\033[33m  WARN:  $1\033[0m"; ((WARNINGS++)); }
+red() { echo -e "\033[31m  ERROR: $1\033[0m"; ((ERRORS++)) || true; }
+yellow() { echo -e "\033[33m  WARN:  $1\033[0m"; ((WARNINGS++)) || true; }
 green() { echo -e "\033[32m  OK:    $1\033[0m"; }
 
 echo "Validating $SPEC_DIR/..."
@@ -26,7 +27,8 @@ if [[ ${#specs[@]} -eq 0 ]]; then
   exit 1
 fi
 
-# Check all .md files exist and have frontmatter
+# ─── Validate root layer files ──────────────────────────────────────────────
+
 for f in "${specs[@]}"; do
   name=$(basename "$f")
   echo "--- $name ---"
@@ -44,7 +46,7 @@ for f in "${specs[@]}"; do
     continue
   fi
 
-  # Check required frontmatter fields
+  # Required frontmatter fields
   if ! grep -q "^type:" "$f"; then
     red "$name: missing 'type:' in frontmatter"
   fi
@@ -63,7 +65,7 @@ for f in "${specs[@]}"; do
     fi
   fi
 
-  # Branch docs must have parent
+  # Branch docs must have parent + scope + covers
   if grep -q "^type: branch" "$f"; then
     if ! grep -q "^parent:" "$f"; then
       red "$name: branch doc missing 'parent:' field"
@@ -76,14 +78,12 @@ for f in "${specs[@]}"; do
     fi
   fi
 
-  # Check naming convention: {area}-{topic}.md or entrypoints
+  # Naming convention for non-entrypoints: must start with product-, tech-, or plan-
   if [[ "$name" != "product.md" && "$name" != "tech.md" && "$name" != "plan.md" && "$name" != "lessons.md" ]]; then
-    # Branch docs must start with product-, tech-, or plan-
     if [[ "$name" != product-* && "$name" != tech-* && "$name" != plan-* ]]; then
       red "$name: must start with 'product-', 'tech-', or 'plan-' (e.g., product-design.md, tech-api.md, plan-editor.md)"
     fi
 
-    # Validate topic part is lowercase with hyphens only
     if [[ "$name" =~ ^(product|tech|plan)-(.+)\.md$ ]]; then
       topic="${BASH_REMATCH[2]}"
       if [[ ! "$topic" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; then
@@ -92,11 +92,11 @@ for f in "${specs[@]}"; do
     fi
   fi
 
-  # Check for broken internal links
+  # Internal link check
   while IFS= read -r link; do
     target=$(echo "$link" | sed 's/.*(\(.*\))/\1/' | sed 's/#.*//')
     if [[ -n "$target" && "$target" != http* && "$target" != ../  ]]; then
-      if [[ ! -f "$SPEC_DIR/$target" ]]; then
+      if [[ ! -f "$SPEC_DIR/$target" && ! -f "$(dirname "$f")/$target" ]]; then
         red "$name: broken link to '$target'"
       fi
     fi
@@ -106,8 +106,8 @@ for f in "${specs[@]}"; do
   echo ""
 done
 
-# Check that entrypoint children actually exist
-# Check that all entrypoint children actually exist
+# ─── Validate entrypoint children exist ─────────────────────────────────────
+
 for entrypoint in "$SPEC_DIR"/product.md "$SPEC_DIR"/tech.md "$SPEC_DIR"/plan.md; do
   if [[ -f "$entrypoint" ]]; then
     name=$(basename "$entrypoint")
@@ -131,7 +131,62 @@ for entrypoint in "$SPEC_DIR"/product.md "$SPEC_DIR"/tech.md "$SPEC_DIR"/plan.md
   fi
 done
 
-# Check CLAUDE.md references
+# ─── Validate feature folders ───────────────────────────────────────────────
+
+if [[ -d "$SPEC_DIR/features" ]]; then
+  for feature_dir in "$SPEC_DIR"/features/*/; do
+    [[ -d "$feature_dir" ]] || continue
+    feature_name=$(basename "$feature_dir")
+    echo "--- features/$feature_name/ ---"
+
+    # Required files
+    for required in product.md tech.md; do
+      f="$feature_dir$required"
+      if [[ ! -f "$f" ]]; then
+        red "features/$feature_name/: missing required '$required'"
+        continue
+      fi
+
+      # Frontmatter present
+      if ! head -1 "$f" | grep -q "^---$"; then
+        red "features/$feature_name/$required: missing YAML frontmatter"
+        continue
+      fi
+
+      # Required fields
+      if ! grep -q "^type:" "$f"; then
+        red "features/$feature_name/$required: missing 'type:' in frontmatter"
+      fi
+      if ! grep -q "^updated:" "$f"; then
+        red "features/$feature_name/$required: missing 'updated:' in frontmatter"
+      fi
+
+      # Expected type
+      expected_type="feature-${required%.md}"
+      if ! grep -q "^type: $expected_type" "$f"; then
+        yellow "features/$feature_name/$required: expected 'type: $expected_type'"
+      fi
+
+      # Internal link check (relative to feature dir, with ../../ support)
+      while IFS= read -r link; do
+        target=$(echo "$link" | sed 's/.*(\(.*\))/\1/' | sed 's/#.*//')
+        if [[ -n "$target" && "$target" != http* ]]; then
+          # Resolve relative to the file's directory
+          resolved=$(cd "$feature_dir" 2>/dev/null && [[ -f "$target" ]] && echo "ok" || echo "")
+          if [[ -z "$resolved" ]]; then
+            red "features/$feature_name/$required: broken link to '$target'"
+          fi
+        fi
+      done < <(grep -oE '\[.*?\]\([^)]+\.md[^)]*\)' "$f")
+    done
+
+    green "features/$feature_name/: checked"
+    echo ""
+  done
+fi
+
+# ─── Validate CLAUDE.md links ──────────────────────────────────────────────
+
 if [[ -f "CLAUDE.md" ]]; then
   echo "--- CLAUDE.md ---"
   while IFS= read -r link; do

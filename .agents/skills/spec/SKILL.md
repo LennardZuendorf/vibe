@@ -2,12 +2,12 @@
 name: spec
 description: Navigate and maintain design specs in .spec/. Use BEFORE writing code or making design decisions. Triggers: when starting features, reviewing architecture, updating documentation, validating spec consistency, or when user mentions "spec", "design doc", "product requirements", or "technical design".
 user-invocable: true
-argument-hint: [product|tech|plan|lessons|setup|validate]
+argument-hint: [product|tech|plan|lessons|feature|setup|validate]
 allowed-tools: Read, Bash(bash ~/.agents/skills/spec/scripts/validate.sh), Bash(bash ~/.agents/skills/spec/scripts/list-specs.sh), Bash(bash ~/.agents/skills/spec/scripts/setup.sh)
 compatibility: Requires bash. macOS and Linux.
 metadata:
   author: lennarddib
-  version: "1.1"
+  version: "1.2"
 ---
 
 # Spec System
@@ -23,134 +23,119 @@ Specs solve the context problem. Without them, every session starts from scratch
 - **Progressive disclosure** — load only what you need, when you need it
 - **Shared language** — consistent vocabulary between product and tech
 
-## Mental Model
+## The Two-Layer Model
 
-Think of `.spec/` as a tree with three roots:
+Specs come in two layers. Use the right one for the job — mixing them is the most common mistake.
 
 ```
 .spec/
-├── product.md                  # ENTRYPOINT: What & Why (zero code)
-├── tech.md                     # ENTRYPOINT: How (code welcome)
-├── plan.md                     # ENTRYPOINT: Implementation roadmap
-├── lessons.md                  # Accumulated mistakes and rules to prevent them
-├── product-{topic}.md          # Product branch docs (UX, features, flows)
-├── tech-{topic}.md             # Tech branch docs (architecture, APIs, infra)
-└── plan-{topic}.md             # Feature sub-plans (optional, scoped roadmaps)
+│
+│  ─── ROOT LAYER (high-level, persistent) ──────────────
+│
+├── product.md                # mini PRD — story, requirements, principles
+├── tech.md                   # architecture summary — stack, principles, basic implementation
+├── plan.md                   # implementation roadmap
+├── lessons.md                # accumulated mistakes, read at session start
+├── product-{topic}.md        # cross-cutting product branch (design system, conventions)
+├── tech-{topic}.md           # cross-cutting tech branch (infrastructure, observability)
+│
+│  ─── FEATURE LAYER (detailed, ephemeral) ──────────────
+│
+├── features/<name>/
+│   ├── product.md            # what this feature does (requirements)
+│   ├── tech.md               # how this feature is built (architecture)
+│   ├── plan.md               # optional, feature-scoped roadmap
+│   ├── design.md             # optional, design-system fragment
+│   └── research.md           # optional, discovery artifacts
+│
+└── archive/<name>/           # post-merge feature specs, kept for history
 ```
 
-**Six types of files:**
+**Root layer rules:**
+- `product.md` is the mini PRD: story, target user, requirements, design principles, non-goals. Never feature-level detail.
+- `tech.md` is the architecture summary: design philosophy, stack, file layout, state contracts, basic implementation, build sequence, risks. Never feature-level detail.
+- Branch docs (`product-{topic}.md`, `tech-{topic}.md`) cover **cross-cutting concerns only** — things that span every feature. Design system. Infrastructure. Naming conventions. If the topic is really about one feature, it belongs in the feature layer.
 
-| Type | File | Purpose |
-|------|------|---------|
-| **Product entrypoint** | `product.md` | High-level: what the product is, design principles, feature map. Read first. |
-| **Tech entrypoint** | `tech.md` | High-level: architecture, stack, key patterns. Read first. |
-| **Plan entrypoint** | `plan.md` | Overall implementation roadmap, milestones, progress. |
-| **Lessons** | `lessons.md` | Mistake patterns, corrections, and rules to prevent repeating them. |
-| **Branch doc** | `product-{topic}.md`, `tech-{topic}.md` | Deep-dive into a specific area. Assumes you've read the parent entrypoint. |
-| **Sub-plan** | `plan-{topic}.md` | Feature-specific implementation plan. Scoped roadmap for a complex area (3+ milestones). |
+**Feature layer rules:**
+- One directory per feature in `.spec/features/<name>/`. Always contains `product.md` and `tech.md`. Optionally `plan.md`, `design.md`, `research.md`.
+- Feature specs are **short-lived**: written during DESIGN, consumed during IMPL, merged into root layer during COMPOUND, then moved to `archive/<name>/`.
+- Cross-cutting decisions from a feature get merged into root `tech.md` or relevant branch doc. Feature-specific detail does not — it stays in the archive.
 
-## The Spec Writing Workflow
+## Decision: Feature vs Branch Doc
 
-Specs are written in a specific order. This order matters because each layer builds on the one before it.
+When you have content that doesn't fit in `product.md`/`tech.md`, ask one question:
+
+**"Does this describe one feature, or something that spans every feature?"**
+
+| Answer | Where it goes |
+|---|---|
+| One feature (a buildable, named unit of work) | `.spec/features/<name>/{product,tech}.md` |
+| Spans every feature (design system, infra, conventions, observability) | `.spec/{product,tech}-{topic}.md` |
+
+If unsure, default to feature. Cross-cutting concerns reveal themselves by recurring across features; you'll notice when it's time to extract them to a branch doc.
+
+## File Type Reference
+
+| Type | File | Purpose | Lifetime |
+|------|------|---------|----------|
+| Product entrypoint | `product.md` | Mini PRD — story, requirements, principles | Persistent |
+| Tech entrypoint | `tech.md` | Architecture summary — stack, principles, basic impl | Persistent |
+| Plan entrypoint | `plan.md` | Roadmap, milestones, progress | Persistent |
+| Lessons | `lessons.md` | Mistakes and rules. Read at session start | Persistent, append-only |
+| Product branch (cross-cutting) | `product-{topic}.md` | Design system, conventions | Persistent |
+| Tech branch (cross-cutting) | `tech-{topic}.md` | Infrastructure, observability, deployment | Persistent |
+| Sub-plan | `plan-{topic}.md` | Scoped roadmap when main plan grows large | Persistent |
+| Feature product | `features/<name>/product.md` | What this feature does | Ephemeral |
+| Feature tech | `features/<name>/tech.md` | How this feature is built | Ephemeral |
+| Feature design | `features/<name>/design.md` | Optional UI/UX detail for a feature | Ephemeral |
+| Feature research | `features/<name>/research.md` | Optional discovery artifacts | Ephemeral |
+| Archive | `archive/<name>/...` | Post-merge feature specs | Frozen |
+
+## Spec Writing Workflow
 
 ```
-Step 1:  product.md          — Define WHAT and WHY (the big picture)
-           |
-Step 2:  tech.md             — Define HOW (architecture, stack, patterns)
-           |
-Step 3:  product-{topic}.md  — Product branch docs for specific areas
-         tech-{topic}.md     — Matching tech branch docs for those areas
-           |                    (always write the product branch first,
-           |                     then its tech counterpart)
-           |
-Step 4:  plan.md             — Overall implementation roadmap
-           |
-Step 5:  plan-{topic}.md     — Sub-plans for complex features (optional)
+Step 1: product.md           — story / requirements / principles. Stay high-level.
+        tech.md              — architecture / stack / basic implementation. Stay high-level.
+
+Step 2: For each sub-part:
+        features/<name>/product.md    — feature requirements
+        features/<name>/tech.md       — feature architecture
+
+Step 3: Cross-cutting only — when you notice a concern spans every feature:
+        product-{topic}.md   — extract design-system, conventions, etc.
+        tech-{topic}.md      — extract infrastructure, observability, etc.
+
+Step 4: plan.md              — sequence the features into milestones
 ```
 
-**Why this order:**
-- You can't define HOW until you know WHAT
-- You can't deep-dive into features until the big picture exists
-- You can't plan implementation until product and tech specs are written
-- Sub-plans reference both the main plan and their feature's product/tech specs
-
-**In practice:** Steps 1-2 happen in the first session. Step 3 happens as features get detailed. Steps 4-5 happen once enough spec material exists to plan against.
+**Order matters:** root specs first (they constrain everything), then features. Branch docs come last and only when the cross-cutting concern is real, not anticipated.
 
 ## Navigation Rules
 
-1. **Always read the entrypoint first.** Branch docs assume you have parent context. Reading a branch doc without its entrypoint leads to misunderstanding.
-2. **Read lessons at session start.** Before writing any code, check `.spec/lessons.md` for the current project. Past mistakes inform current decisions.
-3. **Never load all specs at once.** Load what's relevant to your current task. Specs are designed for progressive disclosure.
-4. **Follow the links.** Entrypoints link to their branches. Branches cross-reference siblings. Trust the graph.
-
-## File Naming
-
-Entrypoints have fixed names: `product.md`, `tech.md`, `plan.md`.
-
-Branch docs follow: `{area}-{topic}.md`
-
-- **area**: `product`, `tech`, or `plan` (required)
-- **topic**: lowercase-with-hyphens, short and semantic (required)
-
-**Valid:**
-- `product-design.md` — UI/UX design decisions
-- `product-agent.md` — agent interaction model
-- `tech-infrastructure.md` — infra and build setup
-- `tech-agents.md` — agent-editor integration
-- `plan-editor.md` — sub-plan for editor feature
-- `plan-auth.md` — sub-plan for auth implementation
-
-**Invalid:**
-- `design.md` — missing area prefix
-- `product_design.md` — underscores not allowed
-- `Product-Design.md` — uppercase not allowed
-
-## Current Project State
-
-!`bash ~/.agents/skills/spec/scripts/list-specs.sh`
-
-## Routing
-
-**$ARGUMENTS determines behavior:**
-
-| Argument | Action | What to Load |
-|----------|--------|--------------|
-| `product` | Understand product requirements | `.spec/product.md` -> relevant branch |
-| `tech` | Understand technical implementation | `.spec/tech.md` -> relevant branch |
-| `plan` | Review implementation roadmap | `.spec/plan.md` -> relevant sub-plan |
-| `lessons` | Review past mistakes and rules | `.spec/lessons.md` |
-| `setup` | Initialize `.spec/` in current project | Run `setup.sh` |
-| `validate` | Check spec consistency | Run `validate.sh` |
-| _(none)_ | Infer from task context | See routing table below |
-
-**Route by task type when no argument given:**
-
-| Task | Load First | Then |
-|------|------------|------|
-| UI, layout, UX, user flows | `product.md` | Relevant product branch |
-| Feature scoping, priorities, requirements | `product.md` | — |
-| Architecture, code patterns, infra | `tech.md` | Relevant tech branch |
-| New feature (need full picture) | `product.md` + `tech.md` | Relevant branches |
-| Implementation planning, milestones | `plan.md` | Sub-plans as needed |
-| Feature-specific planning | `plan.md` + `plan-{topic}.md` | Product + tech for that feature |
+1. **Read entrypoints first.** Branch docs and feature specs assume you have parent context.
+2. **Read lessons at session start.** Past mistakes inform current decisions.
+3. **Never load all specs at once.** Load only what's relevant. Specs are designed for progressive disclosure.
+4. **Follow the links.** Entrypoints link to features and branches. Trust the graph.
 
 ## Strict Rules
 
 1. **Read before write.** Never edit a spec you haven't read in this session.
-2. **One concern per doc.** Product specs contain zero code, zero implementation details. Tech specs contain zero UX opinions. This separation is sacred.
-3. **Bump the `updated:` date.** Change the `updated:` frontmatter field every time you edit a spec.
-4. **Keep cross-references alive.** When you add a branch doc, link it from the parent entrypoint's `children:` list and Branch Documents table. When you reference a sibling, link both ways.
-5. **Validate after changes.** Run `bash ~/.agents/skills/spec/scripts/validate.sh` before you're done.
+2. **Root specs stay high-level.** No feature-level detail in `product.md` or `tech.md`. If you're tempted, create a feature.
+3. **One concern per doc.** Product specs contain zero code. Tech specs contain zero UX opinions. Design-system docs may cross the line — they're the only exception.
+4. **Bump `updated:`.** Change the `updated:` date every time you edit a spec.
+5. **Keep cross-references alive.** Link parent ↔ child both ways. List children in entrypoint frontmatter.
+6. **Validate after changes.** Run `bash ~/.agents/skills/spec/scripts/validate.sh` before you're done.
+7. **Feature specs are ephemeral.** Don't write them as if they're permanent. Cross-cutting decisions merge to root; feature-specific detail goes to archive.
 
 ## Product vs Tech — The Hard Line
 
-**Product specs** describe WHAT the user experiences and WHY it matters:
+**Product specs** describe WHAT the user experiences and WHY:
 ```markdown
 # GOOD (product)
 Search results appear in cards showing title, two-line excerpt, and relevance score.
 Users can filter by date range and content type.
 
-# BAD (product) — this is tech leaking in
+# BAD (product) — tech leaking in
 Use SearchResultCard component with props: title, excerpt, score.
 Implement with React.memo for performance.
 ```
@@ -162,112 +147,108 @@ SearchResultCard component:
   interface Props { title: string; excerpt: string; score: number }
   Located at src/components/SearchResultCard.tsx
 
-# BAD (tech) — this is product leaking in
+# BAD (tech) — product leaking in
 The search results should feel snappy and intuitive for the user.
 ```
 
+The only sanctioned exception: design-system docs. Design tokens, component patterns, and visual language are inherently cross-cutting. `#00b054` is simultaneously brand identity (product) and a hex value (tech). Files with `design` scope may contain both.
+
+## Feature Spec Lifecycle
+
+Features are the unit of work. They follow a deliberate lifecycle.
+
+```
+Created  →  Consumed  →  Merged  →  Archived
+   ↑           ↑           ↑           ↑
+ DESIGN      IMPL       COMPOUND     COMPOUND
+ phase       phase      phase        phase
+```
+
+1. **Created during DESIGN.** A feature spec is born when you start scoping a feature. `product.md` captures requirements; `tech.md` captures architecture decisions specific to that feature.
+2. **Consumed during IMPL.** Implementation reads the feature spec, doesn't rewrite it. If reality diverges enough, the spec is amended (targeted fix), not rewritten.
+3. **Merged during COMPOUND.** Cross-cutting decisions from `features/<name>/tech.md` get merged into root `tech.md`. Feature-specific detail does not.
+4. **Archived after merge.** `mv .spec/features/<name>/ .spec/archive/<name>/`. Kept for history, not loaded by default.
+
+If you don't have a `/code:feature`-style workflow, the lifecycle still applies: create the feature folder when scoping, archive it when done.
+
 ## Plans and Sub-Plans
 
-**`plan.md`** is the overall implementation roadmap. It covers the full project: all milestones, the critical path, and progress tracking.
+`plan.md` is the project-level roadmap. It sequences features and milestones. It does NOT contain feature-level task lists — those go in `features/<name>/plan.md` (optional) or directly in the feature's `tech.md`.
 
-**`plan-{topic}.md`** is a feature-specific sub-plan. Use one when:
-- A feature area has 3+ milestones of its own
-- The feature spans multiple sessions and needs independent progress tracking
-- Multiple people or agents might work on this feature area concurrently
-- The main plan would become unwieldy if it contained all the detail
-
-Sub-plans reference the main plan for overall sequencing but manage their own milestones and progress. They also reference the feature's product and tech specs for requirements and architecture.
-
-**Example:** A project with `plan.md` covering 8 milestones might have `plan-editor.md` breaking down the editor milestone into its own 4 sub-milestones with detailed tasks.
+`plan-{topic}.md` is for genuinely cross-cutting plans that don't belong to one feature (e.g., a migration that touches every feature). Rare. Default to feature-scoped plans.
 
 ## Lessons
 
-**`lessons.md`** is the self-improvement log. It captures mistakes made during implementation so they aren't repeated. Unlike specs which describe what to build, lessons describe what NOT to do.
-
-### When to Update
-
-- After ANY correction from the user
-- After a bug caused by a preventable mistake
-- After discovering a pattern that contradicts an assumption
-- After wasting time on an approach that was already tried and failed
+`lessons.md` is the self-improvement log. Mistakes made during implementation, captured so they aren't repeated. Append-only. Read at session start. **Never edit during implementation** — capture mid-flight thoughts elsewhere; promote them to lessons during the COMPOUND phase, when the lesson has cooled enough to phrase in terms of pattern + rule.
 
 ### Format
-
-Each lesson has three parts:
 
 ```markdown
 ### [Short description of the mistake]
 **Pattern:** What went wrong and why
 **Rule:** The concrete rule that prevents this from happening again
-**Date:** When this was learned
+**Date:** YYYY-MM-DD
 ```
 
-**Example:**
-```markdown
-### Don't mix custom atoms with NavigationState
-**Pattern:** Created custom Jotai atoms for view routing instead of using Craft Agents' existing NavigationState system. This caused state conflicts and required a full rewrite.
-**Rule:** Always use NavigationState for routing. Only create custom atoms for state that NavigationState doesn't handle.
-**Date:** 2026-02-15
-```
+**Be specific.** "Be more careful" is not a lesson. "Always use NavigationState for routing; only create custom atoms for state NavigationState doesn't handle." is.
 
-### How to Use
+**Prune when stale.** If a lesson references code that no longer exists, delete it.
 
-1. **Review at session start.** Before writing code, read `lessons.md` for the current project. This takes 30 seconds and can save hours.
-2. **Write immediately.** Don't wait until the end of a session. Capture the lesson while the mistake is fresh.
-3. **Be specific.** "Be more careful" is not a lesson. "Check that an atom exists before referencing it in a component" is.
-4. **Prune when stale.** If a lesson no longer applies (e.g., the code it references was removed), delete it.
+## Routing
 
-## Writing and Updating Specs
+**$ARGUMENTS:**
 
-### Setting Up
+| Argument | Action |
+|---|---|
+| `product` | Load `.spec/product.md` and follow links |
+| `tech` | Load `.spec/tech.md` and follow links |
+| `plan` | Load `.spec/plan.md` and relevant sub-plans |
+| `feature <name>` | Load `.spec/features/<name>/` |
+| `lessons` | Load `.spec/lessons.md` |
+| `setup` | Run `setup.sh` |
+| `validate` | Run `validate.sh` |
+| _(none)_ | Infer from task context (see table below) |
 
-Run `/spec setup` or `bash ~/.agents/skills/spec/scripts/setup.sh` to initialize `.spec/` with entrypoint templates.
+**Route by task type:**
 
-### Creating a New Spec
+| Task | Load First |
+|---|---|
+| New feature scoping | `product.md` + `tech.md`, then create `features/<name>/` |
+| Working on existing feature | `features/<name>/product.md` + `features/<name>/tech.md` |
+| Architecture, conventions, infrastructure | `tech.md` + relevant `tech-{topic}.md` |
+| Design system, UX patterns | `product.md` + `product-{topic}.md` |
+| Implementation planning, milestones | `plan.md` |
+| UI / layout / user flows in a feature | `features/<name>/product.md` + `features/<name>/design.md` |
 
-For detailed guidance on writing each type:
-- **Product specs:** [reference/product.md](reference/product.md)
-- **Tech specs:** [reference/tech.md](reference/tech.md)
-- **Implementation plans:** [reference/plan.md](reference/plan.md)
+## Current Project State
 
-**Quick checklist:**
-1. Pick the right type (product, tech, plan)
-2. Name it correctly: `{area}-{topic}.md`
-3. Add frontmatter (type, parent, scope, covers, updated)
-4. Write content following the type's style rules
-5. Link from parent entrypoint (`children:` list + Branch Documents table)
-6. Add sibling cross-references where relevant
-7. Validate: `bash ~/.agents/skills/spec/scripts/validate.sh`
+!`bash ~/.agents/skills/spec/scripts/list-specs.sh`
 
-### Updating an Existing Spec
+## Setup, Templates, Validation
 
-1. **Read the spec first** — never edit blind
-2. **Identify the correct file** — feature changes go in branch docs, scope changes go in entrypoints
-3. **Make the edit** — preserve existing style and structure
-4. **Bump `updated:` date** in frontmatter
-5. **Check cross-references** — if your change affects referenced content, update those references
-6. **Validate** — run the validation script
+### Setup
 
-### Resolving Open Questions
-
-Every spec can have an "Open Questions" section. When a question is resolved:
-1. Remove it from the open questions list
-2. Add the decision to the relevant section in the spec
-3. Check sibling docs for cross-cutting impact
-4. Bump the `updated:` date
+`/spec setup` or `bash ~/.agents/skills/spec/scripts/setup.sh` — initializes `.spec/` with entrypoint templates and an empty `lessons.md`. Does not create features (those are born when you scope a feature).
 
 ### Templates
 
-Use these as starting points:
-- **Product entrypoint:** [reference/templates/product.md](reference/templates/product.md)
-- **Tech entrypoint:** [reference/templates/tech.md](reference/templates/tech.md)
-- **Plan entrypoint:** [reference/templates/plan.md](reference/templates/plan.md)
-- **Product branch:** [reference/templates/product-xxx.md](reference/templates/product-xxx.md)
-- **Tech branch:** [reference/templates/tech-xxx.md](reference/templates/tech-xxx.md)
-- **Feature sub-plan:** [reference/templates/plan-xxx.md](reference/templates/plan-xxx.md)
+| File | Use for |
+|---|---|
+| `templates/product.md` | Root entrypoint |
+| `templates/tech.md` | Root entrypoint |
+| `templates/plan.md` | Project roadmap |
+| `templates/product-xxx.md` | Cross-cutting product branch doc |
+| `templates/tech-xxx.md` | Cross-cutting tech branch doc |
+| `templates/plan-xxx.md` | Cross-cutting sub-plan |
+| `templates/feature-product.md` | Feature requirements |
+| `templates/feature-tech.md` | Feature architecture |
+
+### Detailed Writing Guides
+
+- **Product specs:** [reference/product.md](reference/product.md) — root vs feature, cross-cutting branches
+- **Tech specs:** [reference/tech.md](reference/tech.md) — root vs feature, cross-cutting branches
+- **Plans:** [reference/plan.md](reference/plan.md)
 
 ### Validation
 
-Run: `bash ~/.agents/skills/spec/scripts/validate.sh`
-
-Checks frontmatter structure, naming conventions, broken internal links, and orphaned children.
+`bash ~/.agents/skills/spec/scripts/validate.sh` — checks frontmatter, naming, internal links, orphaned children, and feature-folder consistency.
