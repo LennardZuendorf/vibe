@@ -1,360 +1,216 @@
 ---
 type: entrypoint
 scope: implementation
-covers: milestones, task breakdown, build waves, current state, progress tracking
-updated: 2026-03-19
+covers: milestones, build sequence, validation criteria, open decisions
+updated: 2026-05-03
 ---
 
-# Engineering Agent — Implementation Plan
+# shards-code — Implementation Plan
 
 **Parent specs:** [product.md](product.md), [tech.md](tech.md)
-**Integration map:** [product-integration.md](product-integration.md)
-**Functional design:** [product-design.md](product-design.md)
+**Features:** [features/commands/](features/commands/product.md), [features/routing/](features/routing/product.md), [features/hooks/](features/hooks/product.md)
 
 ---
 
-## Current State
+## Validation Summary
 
-### What Exists
+shards-code orchestrates existing systems rather than building new ones. Most capability comes from upstream:
 
-| Component | Status | Location |
-|-----------|--------|----------|
-| `/spec` skill | **Complete** | `.agents/skills/spec/` — templates, validation, setup, all working |
-| `/develop` skill | **Partial** | `.agents/skills/develop/` — 5-phase lifecycle. Needs rewrite for clusters, VERIFY, LEARN, config routing |
-| `/simplify` skill | **Available** | Referenced, available as skill. Default REVIEW provider |
-| Phase gate hook | **Partial** | `.claude/hooks/check-phase.sh` — works for 5 phases. Needs VERIFY, LEARN, DISCUSS, new `.phase` format |
-| Session start hook | **Complete** | `.claude/settings.json` — shows phase + lessons reminder |
-| Global specs | **Draft** | `.spec/product.md`, `tech.md`, `product-design.md`, `product-integration.md` — exist but need revision |
-| Research docs | **Complete** | `.spec/research/` — 7 phase analyses + agreements + learn phase study + platform reference |
-| Lessons | **Started** | `.spec/lessons.md` — 4 lessons captured |
+**Already exists (don't rebuild):**
+- Compound Engineering: 51 agents, 36 skills, all `/ce-*` commands
+- Superpowers: 14 skills (brainstorming, TDD, subagent-driven dev, systematic debugging, etc.)
+- Bundled `/spec` skill: SKILL.md, scripts (setup, validate, list-specs), templates
+- Claude Code primitives: hooks, slash commands, subagent dispatch, skill loading
+- Prior art in `archive/engineering-agent/insights.md`: design philosophy, hook bash patterns, structural decisions
 
-### What's Missing
+**Must build:** ~890 LOC across 12 files, decomposed into three features:
 
-The specs describe the *vision* (two clusters, 8 phases, feature specs, plugin routing) but several areas need deeper product and technical specification before implementation can begin:
+| Feature | Files | LOC est |
+|---|---|---|
+| **routing** | `bin/detect-context.sh`, `bin/set-phase.sh` | ~180 |
+| **commands** | `commands/code-{quick,strategy,feature,amend}.md`, `bin/merge-feature.sh` | ~400 |
+| **hooks** | `hooks/{session-start,user-prompt-submit,pre-tool-use,stop}.sh`, `settings.json` | ~260 |
+| (basic implementation) | `claude/CLAUDE.md`, `install.sh`, `.gitignore`, `README.md` | ~150 |
 
-| Gap | Type | Why It Matters |
-|-----|------|---------------|
-| **Product spec needs platform grounding** | Product | Research uncovered Claude Code capabilities (hooks, subagents, skills, MCP, plugins) that should shape the product design. Current product.md was written before platform research. |
-| **Tech spec is skeletal** | Tech | `tech.md` has architecture overview but no tech branch docs. No `tech-develop-skill.md`, no `tech-hooks.md`, no `tech-config-system.md`. Implementation will drift without detailed tech specs. |
-| **Spec skill extensions unspecced** | Product + Tech | New file types (context.md, design scope, docs/, reference/) described in product.md but not formally specced in a tech branch doc. |
-| **VERIFY and LEARN phases underspecced** | Product + Tech | product-design.md has flowcharts but tech details (what scripts, what subagent config, what file operations) are missing. |
-| **Plugin adapter interfaces unspecced** | Tech | product-integration.md lists routing tables but the actual interface contract (input/output, error handling, fallback chain) needs a tech spec. |
-| **No feature-level specs exist** | Both | The framework's own features (develop skill, hook system, config system, installer) should have `.spec/features/` directories — eating our own dogfood. |
+**Timeline:** 3 sessions for v1 (one per milestone). v1.1 adds `/code:amend` and `.shards/config.json` only after v1 has been used on real projects.
 
 ---
 
-## Milestones
+## Critical Architecture Decisions
 
-### Milestone 0: Product & Tech Specs (CURRENT)
+### Decided
 
-**Goal:** Finalize the product and technical specifications so implementation has a solid foundation. This is the Design Cluster for our own framework.
+- **Keystone routing.** A single `bin/detect-context.sh` returns JSON; hooks and commands read it. No second source of truth.
+- **State as one line.** `.spec/.phase` holds `<workflow>:<phase>[:<feature>]`. Written only by `bin/set-phase.sh`.
+- **Three hard blocks.** PreToolUse blocks lessons.md outside COMPOUND, global specs outside SPEC/COMPOUND, and direct `.phase` edits. Everything else advisory.
+- **Three commands.** Quick, strategy, feature. `/code:amend` deferred to v1.1.
+- **Bash + jq + markdown.** No new runtime dependencies.
+- **Graceful degradation.** Missing skill, corrupt `.phase`, missing `.spec/` → warnings, never crashes.
+- **Symlink-based install.** No build step.
 
-**Why first:** Everything downstream — the develop skill rewrite, hook updates, config schema, templates — depends on clear specs. Writing code against draft specs creates rework.
+### To Resolve (Open)
 
-#### 0.1 — Revise `product.md`
-
-Ground the product spec in platform capabilities discovered during research. The current product.md describes the vision correctly but was written before the Claude Code platform research. Update to reflect:
-
-- How Claude Code's skill system maps to our skill design (frontmatter options, tool restrictions, context forking)
-- How hooks actually work (all 20+ event types, not just PreToolUse) and what that enables beyond phase gates
-- How subagents work (built-in types, custom agent definitions, worktree isolation, memory) and what that means for our wave execution model
-- How the plugin system works (plugin.json manifest, skill namespacing, bundled MCP/LSP) and what that means for our plugin adapters
-- Resolve open questions in product.md using platform knowledge
-
-Files:
-- `.spec/product.md` (revise)
-
-#### 0.2 — Revise `product-design.md`
-
-Update functional design to reflect platform-grounded decisions:
-
-- Session resumption: how does it interact with Claude Code's auto-memory and SessionStart hooks?
-- Phase gates: what hook events beyond PreToolUse should we use? (Stop hooks for completion validation, SubagentStart for context injection, PostToolUse for progress tracking)
-- Unplanned features: how does the mini Design Cluster interact with worktree isolation?
-
-Files:
-- `.spec/product-design.md` (revise)
-
-#### 0.3 — Revise `product-integration.md`
-
-Update integration map now that we know the actual plugin system:
-
-- Plugin adapters should use Claude Code's native plugin structure (`.claude-plugin/plugin.json`), not custom routing
-- Review chaining: can we use Claude Code's subagent composition instead of custom chaining logic?
-- Provider detection: use plugin manifest inspection instead of directory scanning
-
-Files:
-- `.spec/product-integration.md` (revise)
-
-#### 0.4 — Write `tech.md` (full rewrite)
-
-The current tech.md is skeletal. Rewrite with:
-
-- Full architecture showing how our skills, hooks, agents, and config map to Claude Code primitives
-- Tech stack: what Claude Code features we use, what shell scripts we write, what's pure markdown instruction
-- State management: `.phase` file format, `.framework.json` lifecycle, spec directory conventions
-- Subagent strategy: which built-in agents we use, which custom agents we define, model selection per task
-- Hook architecture: complete hook chain (SessionStart → PreToolUse → PostToolUse → Stop)
-- Error handling: what happens when plugins are missing, config is invalid, phases fail
-
-Files:
-- `.spec/tech.md` (full rewrite)
-
-#### 0.5 — Write tech branch docs
-
-Create detailed tech specs for each major subsystem:
-
-- `tech-develop-skill.md` — The `/develop` SKILL.md: frontmatter, phase orchestration logic, config reading, provider routing, session resumption, built-in defaults for all 8 phases
-- `tech-hooks.md` — Hook system: `check-phase.sh` logic, phase write rules, `.phase` file format, SessionStart context injection, Stop hook for completion gates
-- `tech-config-system.md` — `.framework.json` schema, validation, defaults, config reading (jq vs bash), plugin detection
-- `tech-spec-extensions.md` — New spec file types: context.md, design scope, docs/, reference/, feature spec directories, archive flow
-
-Files:
-- `.spec/tech-develop-skill.md` (new)
-- `.spec/tech-hooks.md` (new)
-- `.spec/tech-config-system.md` (new)
-- `.spec/tech-spec-extensions.md` (new)
-
-#### 0.6 — Update `lessons.md`
-
-Capture any new lessons from the research and spec revision process.
-
-Files:
-- `.spec/lessons.md` (update)
-
-**Done when:** All product specs reflect platform reality. All tech subsystems have dedicated branch docs. No implementation question requires guessing — the specs answer it.
-
-**Exit criteria:**
-- [ ] product.md grounded in Claude Code platform capabilities
-- [ ] product-design.md updated with platform-aware interaction patterns
-- [ ] product-integration.md updated with native plugin system
-- [ ] tech.md fully rewritten with complete architecture
-- [ ] 4 tech branch docs written (develop-skill, hooks, config-system, spec-extensions)
-- [ ] All specs pass validation (`bash ~/.agents/skills/spec/scripts/validate.sh`)
-- [ ] Open questions in product.md resolved or explicitly deferred with rationale
-- [ ] lessons.md updated
+- [ ] **OPEN-1: Quick mode plan threshold.** Default: stricter for v1, revisit after first dogfood. Affects [features/commands/](features/commands/product.md).
+- [ ] **OPEN-2: Hard-block list.** v1 has 3 (lessons, global specs, .phase). Watch for footguns; add only on evidence. Affects [features/hooks/](features/hooks/product.md).
+- [ ] **OPEN-3: `.shards/config.json`.** v1 or v1.1? Default: v1.1.
+- [ ] **OPEN-4: `/code:amend`.** v1 or v1.1? Default: v1.1.
+- [ ] **OPEN-5: Skill auto-loading.** Stderr-only (default) or actual skill activation? Default: stderr-only in v1.
+- [ ] **OPEN-6: Stop-hook turn counter location.** `.spec/.phase-turns` (default) vs session tmpfile.
+- [ ] **OPEN-7: Strategy refocus diff UX.** Sectioned (default) vs full-diff.
+- [ ] **OPEN-8: Feature reactivation from archive/.** Copy + resume from SPEC (default) vs fresh DESIGN.
+- [ ] **OPEN-9: Per-skill availability detection.** v1 = per-plugin. Per-skill is v1.1.
+- [ ] **OPEN-10: PreToolUse Bash matcher.** v1 = no. Add only on evidence of misuse.
 
 ---
 
-### Milestone 1: Foundation (depends on Milestone 0)
+## Implementation Roadmap
 
-Everything in this milestone can be built in parallel — no task depends on another. Implementation follows the tech specs written in Milestone 0.
-
-#### 1.1 — Rewrite `/develop` SKILL.md
-
-Per `tech-develop-skill.md`. The largest piece of work:
-
-- Two clusters: Design Cluster (bootstrap) and Implementation Cluster (per-feature)
-- 8 phases: RESEARCH, DISCUSS, SPEC, PLAN, VERIFY, IMPLEMENT, REVIEW, LEARN
-- Feature spec directory flow: create during SPEC, consume during VERIFY+IMPLEMENT, merge during LEARN, archive after
-- Global plan as the feature sequencer
-- Config-driven routing stub (reads `.framework.json` or falls back to built-in)
-- Session resumption with `CLUSTER:PHASE:FEATURE` format
-- Per-phase built-in defaults written out explicitly
-
-Files:
-- `.agents/skills/develop/SKILL.md` (full rewrite)
-
-#### 1.2 — Update phase gate hook
-
-Per `tech-hooks.md`:
-
-- New phases: DISCUSS, VERIFY, LEARN
-- New `.phase` format: `DESIGN:RESEARCH`, `IMPL:VERIFY:dark-mode`, etc.
-- Feature spec directory write rules (`.spec/features/<name>/`)
-- LEARN phase: allow writes to `.spec/*.md`, `lessons.md`, `.spec/archive/`
-
-Files:
-- `.claude/hooks/check-phase.sh`
-
-#### 1.3 — Define `.framework.json` schema
-
-Per `tech-config-system.md`:
-
-- JSON schema for validation
-- Default config (zero plugins)
-- Config reading approach (jq vs bash decision from tech spec)
-
-Files:
-- `.agents/skills/develop/schema/framework.schema.json` (new)
-- `.agents/skills/develop/defaults/framework.json` (new)
-
-#### 1.4 — Create global plan template
-
-Multi-feature plan template that sequences features with cross-dependencies.
-
-Files:
-- `.agents/skills/spec/reference/templates/plan-global.md` (new)
-
-#### 1.5 — Create feature spec templates
-
-Templates for feature-level product.md and tech.md inside `.spec/features/<name>/`.
-
-Files:
-- `.agents/skills/spec/reference/templates/feature-product.md` (new)
-- `.agents/skills/spec/reference/templates/feature-tech.md` (new)
-
-#### 1.6 — Add new spec file types to `/spec` skill
-
-Per `tech-spec-extensions.md`:
-
-- `context.md` — optional entrypoint for business/domain context
-- `docs/` — reference documentation directory
-- `reference/` — visual assets directory
-- `design` scope — branch docs that cross product/tech line
-- "Current State" section in product.md template for rework projects
-
-Files:
-- `.agents/skills/spec/SKILL.md` (update)
-- `.agents/skills/spec/reference/templates/context.md` (new)
-- `.agents/skills/spec/reference/templates/product.md` (update)
-- `.agents/skills/spec/reference/templates/product-design-xxx.md` (new)
-- `.agents/skills/spec/scripts/validate.sh` (update)
-- `.agents/skills/spec/scripts/setup.sh` (update)
-
-**Done when:** `/develop` can be invoked, reads the new `.phase` format, understands both clusters, and has built-in defaults for all 8 phases. Hook enforces phase-appropriate writes for all phases. `/spec` recognizes all file types.
+| Milestone | Goal | Sessions | Risk |
+|-----------|------|----------|------|
+| **M1: Foundation** | Routing keystone + state writer + first command + visibility hook | 1 | Low |
+| **M2: Enforcement** | PreToolUse phase gate + strategy command | 1 | Med |
+| **M3: Lifecycle** | Feature command + merge tooling + remaining hooks + installer | 1 | Med |
+| **v1.1** | Amend command + provider-override config | 1 | Low (deferred) |
 
 ---
 
-### Milestone 2: Integration (depends on Milestone 1)
+## M1: Foundation
 
-#### 2.1 — Add config reader to `/develop`
+**Goal:** Working `/code:quick` end-to-end. Keystone in place. SessionStart visibility hook firing.
 
-Routing logic that reads `.framework.json` and dispatches to the correct provider.
+**Sessions:** 1 | **Risk:** Low.
 
-Files:
-- `.agents/skills/develop/SKILL.md` (add routing section)
-- `.agents/skills/develop/scripts/read-config.sh` (new)
+| Task | Feature | Spec |
+|---|---|---|
+| `bin/detect-context.sh` (~150 LOC) | routing | [features/routing/tech.md](features/routing/tech.md) §detect-context.sh |
+| `bin/set-phase.sh` (~30 LOC) | routing | [features/routing/tech.md](features/routing/tech.md) §set-phase.sh |
+| `commands/code-quick.md` (~50 LOC) | commands | [features/commands/](features/commands/tech.md) |
+| `hooks/session-start.sh` (~40 LOC) | hooks | [features/hooks/tech.md](features/hooks/tech.md) §session-start.sh |
+| Initial `settings.json` registering only SessionStart + bash permissions | hooks | [features/hooks/tech.md](features/hooks/tech.md) §settings.json |
 
-#### 2.2 — Create discussion prompt templates
-
-Structured question sets for the DISCUSS phase, organized by feature type.
-
-Files:
-- `.agents/skills/develop/prompts/discuss-ui.md` (new)
-- `.agents/skills/develop/prompts/discuss-api.md` (new)
-- `.agents/skills/develop/prompts/discuss-data.md` (new)
-- `.agents/skills/develop/prompts/discuss-general.md` (new)
-
-#### 2.3 — Update settings.json
-
-Add permissions for new skills and update hook matchers.
-
-Files:
-- `.claude/settings.json`
-
-#### 2.4 — Update CLAUDE.md
-
-Reflect the new architecture: two clusters, 8 phases, feature specs, config routing.
-
-Files:
-- `CLAUDE.md`
-
-**Done when:** `/develop` reads config, routes to providers (or built-in), DISCUSS has structured prompts, and documentation reflects the new architecture.
+**Done when:**
+- `bash bin/detect-context.sh none` returns valid JSON in all four major states (no .spec, .spec without specs, .spec with specs, with active phase).
+- `bash bin/set-phase.sh quick` writes `.spec/.phase`; `bash bin/set-phase.sh garbage:state` exits non-zero.
+- `/code:quick "fix typo in README"` runs end-to-end on a sandbox project.
+- SessionStart prints phase and top lessons to stderr.
 
 ---
 
-### Milestone 3: Installer (depends on Milestone 2)
+## M2: Enforcement
 
-#### 3.1 — Build `/setup-framework` skill
+**Goal:** Gentle phase gate live. `/code:strategy` produces global specs. Three hard blocks fire correctly.
 
-Interactive plugin detection and config generation.
+**Sessions:** 1 | **Risk:** Med — block conditions must be tuned to avoid over- or under-blocking.
 
-Files:
-- `.agents/skills/setup-framework/SKILL.md` (new)
-- `.agents/skills/setup-framework/scripts/detect-plugins.sh` (new)
-- `.agents/skills/setup-framework/scripts/generate-config.sh` (new)
+| Task | Feature | Spec |
+|---|---|---|
+| `hooks/pre-tool-use.sh` (~100 LOC) | hooks | [features/hooks/tech.md](features/hooks/tech.md) §pre-tool-use.sh |
+| `commands/code-strategy.md` (~80 LOC) | commands | [features/commands/](features/commands/tech.md) |
+| Update `settings.json` to register PreToolUse with `Edit\|Write\|NotebookEdit` | hooks | [features/hooks/tech.md](features/hooks/tech.md) §settings.json |
+| Test enforcement on sandbox: hard blocks fire, warnings inform | — | — |
 
-**Done when:** `/setup-framework` detects installed plugins, presents choices, generates valid `.framework.json`.
+**Done when:**
+- `/code:strategy` on a fresh project produces `.spec/product.md` and `.spec/tech.md` matching templates.
+- `/code:strategy` re-runs without clobbering user-written branch docs.
+- Three hard blocks fire correctly; no false positives in normal `/code:quick` use.
+- `validate.sh` passes after a strategy run.
 
 ---
 
-### Milestone 4: Plugin Adapters (depends on Milestone 3, only if plugins exist)
+## M3: Lifecycle
 
-#### 4.1 — Superpowers adapter
+**Goal:** Full `/code:feature` lifecycle. Merge tooling. Remaining two hooks. Installer. v1 feature-complete.
 
-DISCUSS → `/superpowers:brainstorm`, IMPLEMENT → TDD enforcement, REVIEW → dual-stage review.
+**Sessions:** 1 | **Risk:** Med — `/code:feature` is the longest command; `merge-feature.sh` must be careful.
 
-#### 4.2 — Feature-dev adapter
+| Task | Feature | Spec |
+|---|---|---|
+| `commands/code-feature.md` (~150 LOC) | commands | [features/commands/](features/commands/tech.md) |
+| `bin/merge-feature.sh` (~60 LOC) | commands | [features/commands/tech.md](features/commands/tech.md) §merge-feature.sh |
+| `hooks/user-prompt-submit.sh` (~50 LOC) | hooks | [features/hooks/tech.md](features/hooks/tech.md) §user-prompt-submit.sh |
+| `hooks/stop.sh` (~40 LOC) | hooks | [features/hooks/tech.md](features/hooks/tech.md) §stop.sh |
+| `claude/CLAUDE.md` (~60 LOC) | (basic) | [tech.md](tech.md) §Basic Implementation |
+| `install.sh` (~80 LOC) | (basic) | [tech.md](tech.md) §Basic Implementation |
+| `.gitignore` at repo root | (basic) | — |
+| End-to-end test: `/code:feature dark-mode` on sandbox React project | — | — |
 
-RESEARCH → code-explorer agents, PLAN → competing code-architect agents, REVIEW → code-reviewer with confidence.
+**Done when:**
+- One full feature cycle (DESIGN → COMPOUND) succeeds end-to-end on a sandbox.
+- Global `.spec/tech.md` after COMPOUND shows the merged section (and only the merged section).
+- All four hooks active simultaneously without latency complaints.
+- `install.sh` works on a fresh machine — produces a working setup with one command.
 
-#### 4.3 — Compound-engineering adapter
+---
 
-LEARN → `/ce:compound`.
+## v1.1: Amend + Config
 
-All adapters are sections within `/develop` SKILL.md — conditional routing based on provider name.
+Deferred. Build only after v1 has been used on at least two real projects.
 
-**Done when:** Each plugin can be selected in `.framework.json` and the phase delegates correctly.
+| Task | Feature |
+|---|---|
+| `commands/code-amend.md` (~60 LOC) | commands |
+| `.shards/config.json` schema + reader | routing |
+
+**Done when:** the use cases that motivated each are demonstrated on a real project, not invented.
 
 ---
 
 ## Critical Path
 
 ```
-Milestone 0 (specs) ──────────────── Milestone 1 ─────────── Milestone 2 ─── Milestone 3 ─── Milestone 4
-  0.1 product.md revision ──┐         1.1 /develop rewrite
-  0.2 product-design.md ────┤         1.2 hook updates
-  0.3 product-integration ──┤         1.3 .framework.json        2.1 config     3.1 /setup-     4.x adapters
-  0.4 tech.md rewrite ──────┼─────▶   1.4 global plan tpl  ──▶  2.2 prompts ──▶   framework ──▶
-  0.5 tech branch docs ─────┤         1.5 feature spec tpl      2.3 settings
-  0.6 lessons.md ───────────┘         1.6 /spec extensions      2.4 CLAUDE.md
+M1 (Foundation) → M2 (Enforcement) → M3 (Lifecycle) → [dogfood] → v1.1
+                                                              ↑
+                                                              └─ deferred until needs surface
 ```
 
-Milestone 0 is the current blocker. Without finalized specs, implementation will drift.
+Each milestone is single-session-shaped and independently dogfoodable. M1 alone gives a working `/code:quick`. M1+M2 gives quick + strategy. M1+M2+M3 is v1 complete.
 
 ---
 
 ## Validation Criteria
 
-### Design Complete (end of Milestone 0)
+### Per milestone
+See "Done when:" under each milestone above.
 
-- [ ] All product specs grounded in Claude Code platform capabilities
-- [ ] All tech subsystems have dedicated branch docs with implementation detail
-- [ ] No open questions that block implementation
-- [ ] Specs pass validation
+### v1 complete (end of M3)
+- All three commands work end-to-end on a sandbox project.
+- All four hooks fire at the right times with stderr output that's helpful, not noisy.
+- `bin/detect-context.sh` outputs valid JSON for every (workflow, phase) combination.
+- `bin/set-phase.sh` validates and writes atomically.
+- The three hard blocks fire correctly.
+- `install.sh` produces a working install on a fresh machine.
+- `validate.sh` passes after a strategy run and after a feature COMPOUND.
 
-### Minimum Viable Framework (end of Milestone 2)
-
-- [ ] `/develop` orchestrates 8 phases across 2 clusters
-- [ ] Design Cluster: RESEARCH → DISCUSS → SPEC → PLAN (bootstrap, writes global + feature specs)
-- [ ] Implementation Cluster: VERIFY → IMPLEMENT → REVIEW → LEARN (per-feature, repeating)
-- [ ] Phase gate hook enforces write rules for all 8 phases
-- [ ] `.phase` file uses `CLUSTER:PHASE:FEATURE` format
-- [ ] Feature specs created in `.spec/features/<name>/`, archived after LEARN
-- [ ] Built-in defaults work for every phase with zero plugins
-- [ ] Config reader loads `.framework.json` or falls back to defaults
-- [ ] CLAUDE.md reflects current architecture
-
-### Full Framework (end of Milestone 4)
-
-- [ ] `/setup-framework` detects plugins and generates config
-- [ ] Superpowers, feature-dev, compound-engineering can be selected as providers
-- [ ] Each provider delegates correctly to the plugin's skill
+### Healthy after dogfood
+- One real project bootstrapped via `/code:strategy`.
+- One real feature shipped via `/code:feature` end-to-end.
+- At least three quick fixes via `/code:quick` without scope balloon.
+- Lessons appended to `.spec/lessons.md` from at least one COMPOUND run.
 
 ---
 
 ## Progress
 
-| Milestone | Task | Status | Notes |
-|-----------|------|--------|-------|
-| 0 | 0.1 Revise `product.md` | NOT STARTED | Ground in platform research |
-| 0 | 0.2 Revise `product-design.md` | NOT STARTED | Platform-aware interaction patterns |
-| 0 | 0.3 Revise `product-integration.md` | NOT STARTED | Native plugin system |
-| 0 | 0.4 Rewrite `tech.md` | NOT STARTED | Currently skeletal |
-| 0 | 0.5 Write tech branch docs (4 docs) | NOT STARTED | develop-skill, hooks, config, spec-extensions |
-| 0 | 0.6 Update `lessons.md` | NOT STARTED | |
-| 1 | 1.1 `/develop` SKILL.md rewrite | NOT STARTED | Largest implementation task |
-| 1 | 1.2 Hook updates | NOT STARTED | |
-| 1 | 1.3 `.framework.json` schema | NOT STARTED | |
-| 1 | 1.4 Global plan template | NOT STARTED | |
-| 1 | 1.5 Feature spec templates | NOT STARTED | |
-| 1 | 1.6 New spec file types (`/spec` skill) | NOT STARTED | context.md, docs/, reference/, design scope |
-| 2 | 2.1 Config reader | NOT STARTED | |
-| 2 | 2.2 Discussion prompts | NOT STARTED | |
-| 2 | 2.3 Settings.json update | NOT STARTED | |
-| 2 | 2.4 CLAUDE.md update | NOT STARTED | |
-| 3 | 3.1 `/setup-framework` skill | NOT STARTED | |
-| 4 | 4.1 Superpowers adapter | NOT STARTED | |
-| 4 | 4.2 Feature-dev adapter | NOT STARTED | |
-| 4 | 4.3 Compound-eng adapter | NOT STARTED | |
+| Milestone | Status | Sessions Used | Estimate |
+|-----------|--------|---------------|----------|
+| M1: Foundation | NOT STARTED | 0 | 1 |
+| M2: Enforcement | NOT STARTED | 0 | 1 |
+| M3: Lifecycle | NOT STARTED | 0 | 1 |
+| v1.1: Amend + Config | DEFERRED | 0 | 1 |
+
+| Component | Feature | Milestone | Status |
+|---|---|---|---|
+| `bin/detect-context.sh` | routing | M1 | NOT STARTED |
+| `bin/set-phase.sh` | routing | M1 | NOT STARTED |
+| `commands/code-quick.md` | commands | M1 | NOT STARTED |
+| `hooks/session-start.sh` | hooks | M1 | NOT STARTED |
+| `hooks/pre-tool-use.sh` | hooks | M2 | NOT STARTED |
+| `commands/code-strategy.md` | commands | M2 | NOT STARTED |
+| `commands/code-feature.md` | commands | M3 | NOT STARTED |
+| `bin/merge-feature.sh` | commands | M3 | NOT STARTED |
+| `hooks/user-prompt-submit.sh` | hooks | M3 | NOT STARTED |
+| `hooks/stop.sh` | hooks | M3 | NOT STARTED |
+| `claude/CLAUDE.md` | (basic) | M3 | NOT STARTED |
+| `install.sh` | (basic) | M3 | NOT STARTED |
+| `commands/code-amend.md` | commands | v1.1 | DEFERRED |
+| `.shards/config.json` | routing | v1.1 | DEFERRED |

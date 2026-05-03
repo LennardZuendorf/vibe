@@ -1,53 +1,90 @@
 # Writing Tech Specs
 
-Tech specs answer one question: **How** do we build it? They describe architecture, code patterns, data flow, and implementation details. Code examples are welcome. UX opinions are not — reference the product spec for that.
+Tech specs answer **how**. Architecture, code patterns, data flow, file paths, code examples — all welcome. UX opinions are not — reference the product spec instead.
 
-## The Tech Mindset
+There are three places tech content goes. Pick the right one.
 
-When writing a tech spec, you are speaking to the developer who will implement this (often a future version of yourself or another agent). You describe what code goes where, what patterns to follow, what already exists and shouldn't be rebuilt, and what the risks are.
+---
 
-A good tech spec lets someone start implementing immediately without guessing at architecture. It eliminates "where does this go?" and "how does this connect?" questions.
+## 1. Root: `tech.md`
 
-## Structure
+The architecture summary. **Stay high-level.** No feature-level detail.
 
-### Entrypoint: `tech.md`
+Sections:
+- **Design philosophy** — 3-7 technical principles that constrain decisions
+- **Architecture overview** — directory tree with annotations (NEW / inherited / extended)
+- **Tech stack** — inherited and added, with versions
+- **State / data contracts** — file formats, protocols, invariants that span features
+- **Build vs Inherit** — table of LOC by source so you know what you're actually writing
+- **Basic implementation** — small support pieces that don't warrant their own feature (installer scripts, conventions)
+- **Build sequence** — table mapping components to features and milestones
+- **Risks & mitigations** — technical risks at the project level
+- **Features index** — table linking to `features/<name>/tech.md`
 
-The tech entrypoint is the architecture overview. It contains:
+If you're describing how one feature is implemented, you're in the wrong file. Move to `features/<name>/tech.md`.
 
-- **Design philosophy** — 2-3 technical principles (e.g., "Inherit everything from upstream. Only build what's new.")
-- **Architecture overview** — directory tree showing project structure, highlighting new/modified/inherited parts
-- **Tech stack** — what's inherited and what's added, with versions
-- **Build vs Inherit vs Integrate** — table showing lines of code by source, so you know what you're actually writing
-- **Key patterns** — brief description of each major pattern with links to branch docs for details
-- **Risks & mitigations** — table of technical risks and how to handle them
-- **Branch documents table** — links to all tech branch docs with summaries
+---
 
-The architecture overview is the most important section. A clear directory tree with annotations ("NEW", "inherited", "extended") immediately tells you where new code goes and what to leave alone.
+## 2. Feature: `features/<name>/tech.md`
 
-### Branch Docs: `tech-{topic}.md`
+Where feature-level architecture lives. **Short-lived** — created during DESIGN, merged into root + archived after COMPOUND.
 
-Branch docs deep-dive into a specific technical area. Create one when:
-- An area has enough implementation detail to warrant its own document
-- Multiple milestones or tasks reference this area
-- The codebase area is complex enough that implementation guidance prevents mistakes
+Sections:
+- **Files** — what gets created or modified, with paths
+- **Contract / API** — interfaces, types, function signatures
+- **Implementation detail** — algorithms, data flow, code examples
+- **Performance budget** — if applicable
+- **Open questions** — feature-scoped technical questions
 
-Each branch doc has:
-- **Frontmatter** with type, parent, scope, covers, updated
-- **Summary paragraph** explaining what this doc covers technically
-- **Parent/sibling links** for navigation
-- **Detailed sections** with code examples, API surfaces, data flow descriptions
-- **Open Questions** for unresolved implementation decisions
+Mark cross-cutting sections with `<!-- merge -->` ... `<!-- /merge -->` so the COMPOUND merge tooling can promote them into root `tech.md`. Feature-specific detail is not marked and stays in archive.
+
+Frontmatter:
+```yaml
+---
+type: feature-tech
+feature: <name>
+sibling: product.md
+parent: ../../tech.md
+updated: YYYY-MM-DD
+---
+```
+
+---
+
+## 3. Branch: `tech-{topic}.md`
+
+**For cross-cutting concerns only.** Infrastructure. Observability. CI/CD. Deployment. Database conventions. Things that don't belong to one feature.
+
+Create when:
+- The technical area applies to every feature
+- Multiple features reference this area independently
+- Implementation guidance for this area prevents mistakes across the project
+
+Frontmatter:
+```yaml
+---
+type: branch
+parent: tech.md
+scope: <topic>
+covers: <comma-separated list>
+updated: YYYY-MM-DD
+---
+```
+
+If the topic is really about one feature, it's not a branch doc — it's a feature.
+
+---
 
 ## Style Rules
 
 **Do:**
 - Include real code examples with file path comments
 - Show interface/type definitions for key data structures
-- Use tables for API surfaces, IPC channels, configuration options
-- Reference actual file paths in the codebase
+- Use tables for API surfaces, channels, configuration
+- Reference actual codebase paths
 - Describe data flow with concrete steps
 - List what already exists and should NOT be rebuilt
-- State technical decisions with trade-off rationale
+- State decisions with trade-off rationale
 
 **Don't:**
 - Describe user experience or interaction design
@@ -59,48 +96,51 @@ Each branch doc has:
 ```markdown
 ## File Watcher
 
-Agent writes to disk -> main process detects change via `fs.watch` -> renderer reloads content into tiptap.
+Agent writes to disk → main process detects via `fs.watch` → renderer reloads.
 
 Conflict prevention:
 - Auto-save triggers before every agent query
 - Own-write tracking: main process records timestamps of writes it initiated
-- Writes within 500ms of own-write are ignored (prevents echo reloads)
+- Writes within 500ms of own-write are ignored
 
 ```typescript
 // apps/electron/src/main/services/files.ts
-const ownWrites = new Map<string, number>(); // path -> timestamp
+const ownWrites = new Map<string, number>();
 
 function onFileChange(filePath: string) {
   const ownWrite = ownWrites.get(filePath);
-  if (ownWrite && Date.now() - ownWrite < 500) return; // skip own write
+  if (ownWrite && Date.now() - ownWrite < 500) return;
   notifyRenderer('file:changed', { path: filePath });
 }
 ```
 ```
 
-Notice: real file paths, real code, concrete algorithm. No UX opinions about how the user perceives the reload.
+Real path. Real code. Concrete algorithm. No UX opinions.
+
+---
 
 ## Cross-References
 
-Tech specs should reference their product counterparts:
+Always link to your product counterpart:
 ```markdown
-**UX specs:** For what this looks and behaves like, see [product-design.md](product-design.md).
+**Requirements:** [product.md](product.md)
+**Requirements:** [../../product.md](../../product.md)  # from feature to root
 ```
 
-And link to inherited architecture docs when relevant:
-```markdown
-## Inherited Architecture Docs
-| Document | Covers |
-|----------|--------|
-| [`apps/electron/AGENTS.md`](../apps/electron/AGENTS.md) | Electron app architecture |
-```
+---
 
 ## When to Update vs Create
 
-- **Update** an existing branch doc when adding implementation detail to an existing technical area
-- **Create** a new branch doc when a genuinely new technical area emerges (new service, new integration layer, new subsystem)
-- **Never** create a branch doc for a single component or utility — that's too granular
+- **Update** an existing doc when adding detail to an existing area
+- **Create a feature** when scoping new architecture for a buildable unit of work
+- **Create a branch doc** only when a genuinely cross-cutting technical concern emerges
+- **Never** create a branch doc that's really about one feature — that's a feature
+- **Never** put feature-level implementation detail in `tech.md` — keep it high-level
 
-## Template
+---
 
-See [templates/tech.md](templates/tech.md) for entrypoint template and [templates/tech-xxx.md](templates/tech-xxx.md) for branch template.
+## Templates
+
+- **Root entrypoint:** [templates/tech.md](templates/tech.md)
+- **Feature spec:** [templates/feature-tech.md](templates/feature-tech.md)
+- **Cross-cutting branch:** [templates/tech-xxx.md](templates/tech-xxx.md)

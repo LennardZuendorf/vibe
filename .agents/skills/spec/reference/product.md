@@ -1,66 +1,100 @@
 # Writing Product Specs
 
-Product specs answer two questions: **What** are we building and **Why** does it matter? They describe the user's experience, not the developer's implementation. If you catch yourself writing code, component names, or architecture details — stop. That belongs in a tech spec.
+Product specs answer **what** and **why**. They describe user experience, not implementation. The moment you write code, component names, or architecture details — stop. That's a tech spec.
 
-## The Product Mindset
+There are three places product content goes. Pick the right one.
 
-When writing a product spec, you are the user's advocate. You describe what they see, what they do, and what happens. You explain the reasoning behind design choices. You define success from the user's perspective.
+---
 
-A good product spec lets someone who has never seen the codebase understand exactly what the product does and why each decision was made.
+## 1. Root: `product.md`
 
-## Structure
+The mini PRD. **Stay high-level.** No feature-level detail.
 
-### Entrypoint: `product.md`
-
-The product entrypoint is the single page that answers "what is this project?" It contains:
-
+Sections:
+- **Story** — the problem in one paragraph
 - **One-liner** — what the product is in one sentence
-- **Design principles** — 3-5 guiding rules that resolve ambiguity
-- **Target user** — who this is for (be specific)
-- **Feature overview** — table of features with priority and links to branch docs
-- **Implementation phases** — high-level phases with exit criteria
+- **Requirements** — what the product must do at a project level
+- **Design principles** — 3-7 rules that resolve ambiguity during implementation
+- **Target user** — concrete, not "everyone"
 - **Non-goals** — what you are explicitly NOT building
-- **Key product decisions** — numbered list of decisions with rationale
-- **Branch documents table** — links to all product branch docs with summaries
+- **Implementation phases** — high-level milestones with exit criteria
+- **Features index** — table linking to `features/<name>/product.md`
+- **Open questions** — project-level decisions still open
 
-Design principles are the most important section. When you face an ambiguous decision during implementation, the principles should resolve it. "Editor-first, agent-assisted" immediately tells you the editor panel takes priority over the chat panel.
+If you're describing how one feature works, you're in the wrong file. Move to `features/<name>/product.md`.
 
-### Branch Docs: `product-{topic}.md`
+---
 
-Branch docs deep-dive into a specific product area. Create one when:
-- A feature area needs more than ~100 lines of detail
-- Multiple implementation tasks will reference this area independently
-- The content doesn't fit naturally into an existing branch doc
+## 2. Feature: `features/<name>/product.md`
 
-Each branch doc has:
-- **Frontmatter** with type, parent, scope, covers, updated
-- **Summary paragraph** explaining what this doc covers
-- **Parent/sibling links** for navigation
-- **Detailed sections** describing the feature area
-- **Open Questions** for unresolved decisions
+Where feature-level UX and requirements live. **Short-lived** — created during DESIGN, archived after the feature ships.
+
+Sections:
+- **Why this feature exists** — the problem this feature solves, in one paragraph
+- **Requirements** — numbered, testable
+- **User experience** — what the user sees and does, with concrete examples
+- **Outputs** — what the feature produces
+- **Non-goals** — feature-scoped non-goals
+- **Open questions** — feature-scoped questions
+
+Frontmatter:
+```yaml
+---
+type: feature-product
+feature: <name>
+sibling: tech.md
+parent: ../../product.md
+updated: YYYY-MM-DD
+---
+```
+
+---
+
+## 3. Branch: `product-{topic}.md`
+
+**For cross-cutting concerns only.** Design system. Naming conventions. UX patterns that apply to every feature. If your "branch doc" is really about one feature, it's not a branch doc — it's a feature.
+
+Create when:
+- The topic spans multiple features
+- The content has its own evolution (e.g., a design language that grows over time)
+- Implementation guidance for this topic prevents mistakes across the project
+
+Frontmatter:
+```yaml
+---
+type: branch
+parent: product.md
+scope: <topic>
+covers: <comma-separated list>
+updated: YYYY-MM-DD
+---
+```
+
+The `design` scope is the only place product and tech content may legitimately mix (design tokens are both brand identity and hex values).
+
+---
 
 ## Style Rules
 
 **Do:**
 - Describe what the user sees and does
-- Use concrete examples: "The file tree shows `.md` files in alphabetical order"
-- State decisions with rationale: "Auto-save uses VS Code style (debounce 1.5s) because explicit save dialogs interrupt flow"
-- Use tables for structured feature comparisons
-- Include keyboard shortcuts and interaction patterns
+- Use concrete examples
+- State decisions with rationale
+- Use tables for structured comparisons
 - Write non-goals to prevent scope creep
 
 **Don't:**
 - Reference components, hooks, atoms, or any code constructs
-- Mention file paths in the codebase
+- Mention codebase file paths
 - Describe technical architecture or data flow
 - Use words like "implement", "render", "component", "API"
-- Write pseudocode or code examples of any kind
+- Write pseudocode
 
 **Example — Describing a Feature:**
 ```markdown
 ## Auto-Save
 
-Notes save automatically using VS Code-style behavior:
+Notes save automatically:
 - Debounce 1.5s after the last keystroke
 - Save on blur, tab switch, and window focus loss
 - Cmd+S works but is rarely needed
@@ -69,23 +103,34 @@ Notes save automatically using VS Code-style behavior:
 Dirty indicator (dot on tab title) appears immediately on edit, disappears on save.
 ```
 
-Notice: no mention of atoms, debounce implementations, event handlers, or file I/O. Pure user experience.
+No atoms, no event handlers, no file I/O. Pure user experience.
+
+---
 
 ## Cross-References
 
-Product specs should reference their tech counterparts:
+Always link to your tech counterpart:
 ```markdown
-**Tech implementation:** For code and architecture details, see [tech-infrastructure.md](tech-infrastructure.md).
+**Architecture:** [tech.md](tech.md)            # for feature/branch docs
+**Architecture:** [../../tech.md](../../tech.md)  # for feature docs pointing to root
 ```
 
-This creates a clean bridge: product says WHAT, tech says HOW, and the reader can navigate between them.
+This bridges WHAT to HOW so the reader can navigate.
+
+---
 
 ## When to Update vs Create
 
-- **Update** an existing branch doc when adding details to an existing feature area
-- **Create** a new branch doc when a genuinely new product area emerges that doesn't belong in any existing doc
-- **Never** create a branch doc for something small enough to be a section in an existing doc
+- **Update** an existing doc when adding detail to an existing area
+- **Create a feature** when scoping a new buildable unit of work
+- **Create a branch doc** only when a genuinely cross-cutting concern emerges
+- **Never** create a branch doc that's really about one feature — that's a feature
+- **Never** put feature-level detail in `product.md` — keep it high-level
 
-## Template
+---
 
-See [templates/product.md](templates/product.md) for entrypoint template and [templates/product-xxx.md](templates/product-xxx.md) for branch template.
+## Templates
+
+- **Root entrypoint:** [templates/product.md](templates/product.md)
+- **Feature spec:** [templates/feature-product.md](templates/feature-product.md)
+- **Cross-cutting branch:** [templates/product-xxx.md](templates/product-xxx.md)

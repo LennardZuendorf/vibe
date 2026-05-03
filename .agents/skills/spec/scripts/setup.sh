@@ -42,6 +42,7 @@ if [[ ! -d "$TEMPLATE_DIR" ]]; then
 fi
 
 # Copy entrypoint templates (only if they don't exist)
+# Use a non-postfix increment to play nice with set -e
 copied=0
 
 for entrypoint in product.md tech.md plan.md; do
@@ -51,14 +52,14 @@ for entrypoint in product.md tech.md plan.md; do
     if [[ -f "$TEMPLATE_DIR/$entrypoint" ]]; then
       cp "$TEMPLATE_DIR/$entrypoint" "$SPEC_DIR/$entrypoint"
       green "Created $SPEC_DIR/$entrypoint (from template)"
-      ((copied++))
+      copied=$((copied + 1))
     else
       red "ERROR: Template not found: $TEMPLATE_DIR/$entrypoint"
     fi
   fi
 done
 
-# Create lessons.md if it doesn't exist (no template needed — starts empty)
+# Create lessons.md if missing (no template — starts empty)
 if [[ -f "$SPEC_DIR/lessons.md" ]]; then
   yellow "SKIP: lessons.md already exists"
 else
@@ -75,12 +76,12 @@ Mistakes made and rules to prevent repeating them. Review at the start of every 
 -->
 LESSONS_EOF
   green "Created $SPEC_DIR/lessons.md"
-  ((copied++))
+  copied=$((copied + 1))
 fi
 
 echo ""
 
-# Add .spec/ to .gitignore reminder if git repo
+# .gitignore reminder
 if [[ -d ".git" ]]; then
   if [[ -f ".gitignore" ]]; then
     if ! grep -q "^\.spec/" ".gitignore" 2>/dev/null; then
@@ -100,19 +101,18 @@ else
 fi
 echo ""
 echo "  Spec writing order:"
-echo "    1. product.md           — Define WHAT you're building and WHY"
-echo "    2. tech.md              — Define HOW you'll build it"
-echo "    3. product-{topic}.md   — Product branch docs (write product first...)"
-echo "       tech-{topic}.md     — ...then matching tech branch doc"
-echo "    4. plan.md              — Overall implementation roadmap"
-echo "    5. plan-{topic}.md      — Feature sub-plans (optional, 3+ milestones)"
-echo "    *  lessons.md           — Updated after corrections (created automatically)"
+echo "    1. product.md           — Mini PRD (story / requirements / principles). Stay HIGH-LEVEL."
+echo "    2. tech.md              — Architecture summary (stack / philosophy / basic impl). Stay HIGH-LEVEL."
+echo "    3. features/<name>/     — Decompose sub-parts into features. Each has product.md + tech.md."
+echo "    4. plan.md              — Sequence features into milestones."
+echo "    *  product-{topic}.md   — Cross-cutting product branch (design system, conventions). Rare."
+echo "    *  tech-{topic}.md      — Cross-cutting tech branch (infrastructure, observability). Rare."
+echo "    *  lessons.md           — Updated only during COMPOUND. Read at session start."
 echo ""
-echo "  Entrypoint templates (product.md, tech.md, plan.md) have been copied above."
-echo "  Branch doc templates for step 3-5 are at:"
-echo "    $TEMPLATE_DIR/product-xxx.md"
-echo "    $TEMPLATE_DIR/tech-xxx.md"
-echo "    $TEMPLATE_DIR/plan-xxx.md"
+echo "  Templates:"
+echo "    Root entrypoints:        $TEMPLATE_DIR/{product,tech,plan}.md"
+echo "    Feature specs:           $TEMPLATE_DIR/feature-{product,tech}.md"
+echo "    Cross-cutting branches:  $TEMPLATE_DIR/{product,tech,plan}-xxx.md"
 echo ""
 echo "  Validate anytime: bash ~/.agents/skills/spec/scripts/validate.sh"
 echo ""
