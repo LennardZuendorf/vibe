@@ -52,13 +52,33 @@ Tool executes (or doesn't, if blocked)
 [ Stop hook ] ──► detect-context.sh ──► end-of-turn integrity check → stderr
 ```
 
-Three subsystems sit behind this flow:
+## Layers
 
-- **Routing** — the keystone (`bin/detect-context.sh`) and state writer (`bin/set-phase.sh`). One source of truth, JSON contract, validated state file. -> [features/routing/](features/routing/tech.md)
-- **Commands** — three markdown files (`commands/code-*.md`) that drive the workflow lifecycles. They consume the routing JSON and delegate to skills. -> [features/commands/](features/commands/tech.md)
-- **Hooks** — four bash scripts that wire the keystone into Claude Code's lifecycle events. -> [features/hooks/](features/hooks/tech.md)
+shards-code is four thin layers over existing skills. Each has a clear role; together they form the framework.
 
-Plus two small support scripts that don't warrant their own feature: `install.sh` and `bin/merge-feature.sh`.
+| Layer | Files | Role | Active or Reactive |
+|---|---|---|---|
+| **Workflow steering** | `hooks/*.sh`, `settings.json` | Phase-aware enforcement and stderr nudges. Calls the keystone, never delegates to skills. | Reactive — fires on Claude Code events. |
+| **Skill facades** | `commands/code-*.md` | The user surface. Three slash commands that interpret intent, drive sub-phases, and delegate to skills. | Active — initiates work, advances state. |
+| **Policy** | `claude/CLAUDE.md` | Prose telling Claude how to interpret prompts, when to suggest which command, what discipline to follow. | Informational — shapes reasoning. |
+| **State scripts** | `bin/detect-context.sh`, `bin/set-phase.sh`, `bin/merge-feature.sh` | Single source of routing truth (`detect-context`), the only sanctioned `.phase` writer (`set-phase`), and the COMPOUND merger. Read or write disk; no logic of their own. | Mechanical — pure functions over state. |
+
+What's NOT shards-code:
+
+| Component | Source | Bundled? | Why |
+|---|---|---|---|
+| **`/spec` skill** | `.agents/skills/spec/` — independently versioned (currently v1.2) | yes | It's mine, it's small, it travels with the framework. |
+| **Compound Engineering** | upstream plugin | no | Vendored separately — install yourself. |
+| **Superpowers** | upstream plugin | no | Vendored separately — install yourself. |
+
+The bundled `/spec` skill is treated like an external dependency: shards-code calls it but doesn't modify it. Its own SKILL.md governs its behavior. Updates to the skill happen via the skill's own versioning, not shards-code's.
+
+Detail per layer:
+- Workflow steering → [features/hooks/](features/hooks/tech.md)
+- Skill facades → [features/commands/](features/commands/tech.md)
+- State scripts → [features/routing/](features/routing/tech.md) (routing keystone) and [features/commands/](features/commands/tech.md) (`merge-feature.sh`)
+- Policy doc → §Basic Implementation below
+- `install.sh` → §Basic Implementation below
 
 ---
 
