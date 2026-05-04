@@ -25,7 +25,7 @@ shards-code is the thin orchestration layer. Three commands, one keystone routin
 
 At a project level, shards-code must:
 
-1. **Cover every workflow with at most three commands.** Quick fixes, project bootstrap, full feature lifecycle. No fourth command in v1.
+1. **Cover every workflow with at most three commands.** Quick fixes, project bootstrap, full feature lifecycle. No fourth workflow command in v1. Setup skills (one-shot, not recurring) don't count against this limit.
 2. **Make the current state visible.** At any moment the user (and Claude) can see which workflow is active, which phase, and which feature.
 3. **Route consistently from one source.** Hooks and commands ask the same script (`bin/detect-context.sh`) what to do. No parallel routing logic.
 4. **Enforce gently.** Warnings on stderr by default. Hard blocks reserved for invariants whose violation would corrupt downstream tools.
@@ -62,6 +62,14 @@ Me. One person. Personal config made portable, not a framework distributed to ot
 | **`/code:feature <name>`** | Build a real feature end-to-end | Feature specs → source → global spec deltas (only on COMPOUND) |
 
 Detailed UX and behavior live in [features/commands/product.md](features/commands/product.md).
+
+## The Setup Skill
+
+| Skill | When | What it does |
+|---|---|---|
+| **`/init`** | Once per project (new or existing) | Reads existing `AGENTS.md` + project conventions, then generates or intelligently merges `AGENTS.md` with the three-command surface, skill routing, and phase-gate rules. Symlinks `CLAUDE.md`. LLM-powered so it handles existing content gracefully — no blind overwrite. |
+
+`/init` is not a workflow command — it's a one-shot project bootstrapper, like `/spec setup`. A bash script can't merge `AGENTS.md` intelligently; the LLM can.
 
 ---
 

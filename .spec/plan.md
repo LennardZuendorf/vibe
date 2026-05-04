@@ -2,7 +2,7 @@
 type: entrypoint
 scope: implementation
 covers: milestones, build sequence, validation criteria, open decisions
-updated: 2026-05-03
+updated: 2026-05-04
 ---
 
 # shards-code — Implementation Plan
@@ -23,12 +23,12 @@ shards-code orchestrates existing systems rather than building new ones. Most ca
 - Claude Code primitives: hooks, slash commands, subagent dispatch, skill loading
 - Prior art in `archive/engineering-agent/insights.md`: design philosophy, hook bash patterns, structural decisions
 
-**Must build:** ~890 LOC across 12 files, decomposed into three features:
+**Must build:** ~940 LOC across 13 files, decomposed into three features:
 
 | Feature | Files | LOC est |
 |---|---|---|
 | **routing** | `bin/detect-context.sh`, `bin/set-phase.sh` | ~180 |
-| **commands** | `commands/code-{quick,strategy,feature,amend}.md`, `bin/merge-feature.sh` | ~400 |
+| **commands** | `commands/code-{quick,strategy,feature,amend}.md`, `commands/init.md`, `bin/merge-feature.sh` | ~450 |
 | **hooks** | `hooks/{session-start,user-prompt-submit,pre-tool-use,stop}.sh`, `settings.json` | ~260 |
 | (basic implementation) | `claude/CLAUDE.md`, `install.sh`, `.gitignore`, `README.md` | ~150 |
 
@@ -130,6 +130,7 @@ shards-code orchestrates existing systems rather than building new ones. Most ca
 | `hooks/user-prompt-submit.sh` (~50 LOC) | hooks | [features/hooks/tech.md](features/hooks/tech.md) §user-prompt-submit.sh |
 | `hooks/stop.sh` (~40 LOC) | hooks | [features/hooks/tech.md](features/hooks/tech.md) §stop.sh |
 | `claude/CLAUDE.md` (~60 LOC) | (basic) | [tech.md](tech.md) §Basic Implementation |
+| `commands/init.md` (~50 LOC) | (basic) | [tech.md](tech.md) §/init skill |
 | `install.sh` (~80 LOC) | (basic) | [tech.md](tech.md) §Basic Implementation |
 | `.gitignore` at repo root | (basic) | — |
 | End-to-end test: `/code:feature dark-mode` on sandbox React project | — | — |
@@ -139,6 +140,7 @@ shards-code orchestrates existing systems rather than building new ones. Most ca
 - Global `.spec/tech.md` after COMPOUND shows the merged section (and only the merged section).
 - All four hooks active simultaneously without latency complaints.
 - `install.sh` works on a fresh machine — produces a working setup with one command.
+- `/init` skill generates or merges `AGENTS.md` and symlinks `CLAUDE.md` correctly for both new and existing projects.
 
 ---
 
@@ -211,6 +213,7 @@ See "Done when:" under each milestone above.
 | `hooks/user-prompt-submit.sh` | hooks | M3 | NOT STARTED |
 | `hooks/stop.sh` | hooks | M3 | NOT STARTED |
 | `claude/CLAUDE.md` | (basic) | M3 | NOT STARTED |
+| `commands/init.md` | (basic) | M3 | NOT STARTED |
 | `install.sh` | (basic) | M3 | NOT STARTED |
 | `commands/code-amend.md` | commands | v1.1 | DEFERRED |
 | `.shards/config.json` | routing | v1.1 | DEFERRED |

@@ -180,7 +180,7 @@ Single-shot setup script. Idempotent. Reads its own location, then:
 1. Symlinks `bin/`, `hooks/`, `commands/` from this repo into `~/.claude/shards-code/`.
 2. Writes `<target-project>/.claude/settings.json` registering the four hooks (offers a unified diff if a settings file already exists; never auto-overwrites).
 3. Adds `.spec/.phase` and `.spec/.quick-plan.md` to the target project's `.gitignore`.
-4. Prints next-step suggestion (`/code:strategy` if no `.spec/`, `/code:quick` otherwise).
+4. Prints next-step suggestion (`run /init to bootstrap this project`).
 
 ~80 LOC. No build step. No package manager.
 
@@ -194,7 +194,22 @@ Called only during `feature:IMPL:COMPOUND`. Reads `.spec/features/<name>/tech.md
 
 Policy doc. Decision tree for picking a command, skill-loading rules ("the hooks tell me which skills to load — I check `detect-context.sh` output"), spec discipline (product.md = what & why, tech.md = how, lessons.md = read at session start, written only during COMPOUND), and the "what I never do" list (skip phases, edit `.phase` directly, write to lessons.md outside COMPOUND, inline review when `ce-code-review` is the right tool).
 
-`install.sh` symlinks it into per-project `<project>/CLAUDE.md`.
+`/init` skill symlinks it into per-project `<project>/CLAUDE.md`. This means any project running shards-code always reads the same policy doc — updating `claude/CLAUDE.md` in this repo propagates to all projects on next pull.
+
+### `/init` skill (`commands/init.md`)
+
+One-shot LLM-powered project bootstrapper. Works on new projects AND existing codebases. Invoked manually once per project.
+
+**What it does:**
+1. Reads `AGENTS.md` if it exists (existing project: merge mode; new project: write mode)
+2. Reads project structure to understand conventions already in place
+3. Generates or merges `AGENTS.md` with: three-command surface + when to use each, skill routing table (caveman subagents for research/execution/review), phase-gate conventions
+4. Creates `CLAUDE.md` as a symlink → `claude/CLAUDE.md` in this repo (skip if already correct symlink; warn and offer diff if plain file)
+5. Suggests next step (`/code:strategy` if no `.spec/`, `/code:quick` otherwise)
+
+**Why skill not script:** A bash script blindly overwrites. The LLM reads existing `AGENTS.md`, understands project-specific conventions already captured there, and merges intelligently — preserving custom rules while adding shards-code conventions. Handles greenfield and brownfield equally.
+
+~50 LOC SKILL.md. No bash scripts needed.
 
 ### `settings.json`
 
