@@ -1,73 +1,49 @@
-# Engineering Agent — Meta-Prompting Framework
+# shards-code — Claude Code Adapter
 
-Spec-driven AI engineering. Orchestrate skills. No skipping phases. No code without specs.
+This file is the Claude Code-facing adapter for shards-code. It is not the
+workflow source of truth.
 
-## Response Style
+## Canonical Core
 
-Default: caveman full mode. Override with "normal mode" for architecture/design sessions.
-Never caveman: security warnings, destructive ops, irreversible actions.
+- Durable planning lives in `.spec/`.
+- Runtime flow state lives in `.agents/flow/`.
+- Workflow shims are agent skills under `.agents/skills/code-*`.
+- Platform-specific Claude files under `.claude/` read the core; they do not own
+  a separate state model.
 
-## Think First
+## Workflow Rule
 
-1. Read task. Think. Produce numbered plan.
-2. State which skill handles this (see skill map).
-3. Wait for approval on plans touching >2 files.
-4. Act. Report one-line diff receipt.
+When the user asks for strategy, feature work, quick fixes, verification, or
+compounding, prefer the matching `code-*` skill:
 
----
+| Intent | Skill |
+|---|---|
+| Project strategy or refocus | `code-strategy` |
+| Named feature lifecycle | `code-feature` |
+| Small bounded fix | `code-quick` |
+| Evidence before completion | `code-verify` |
+| Lessons, promotion, archive | `code-compound` |
+| Scope correction | `code-amend` |
 
-## Skill Map — Route Explicitly, Don't Improvise
+Each `code-*` skill must inject exact `.spec/` output paths when delegating to
+other skills such as `spec` or `superpowers:*`.
 
-### Research / Exploration
-- Codebase search (4+ files, no writes) → `caveman:cavecrew-investigator` subagent
-- External docs/frameworks → `ce-framework-docs-researcher` or `ce-best-practices-researcher`
+## Adapter Boundary
 
-### Execution
-- 1–2 file surgical edits → `caveman:cavecrew-builder` subagent
-- UI / web components → `frontend-design` skill
-- Feature lifecycle → `/develop` skill (phase-gated, spec-driven)
-- Spec write/read → `/spec` skill
+Do not treat `.claude/state.json`, `.claude/state-machine.json`, or
+`.claude/skills/` as canonical. Claude commands and hooks should read
+`.agents/flow/state.json` and `.agents/flow/state-machine.json`.
 
-### Review
-- Code review → `caveman:cavecrew-reviewer` subagent
-- Multi-agent quality pass → `/simplify` skill
-- New/modified skills → `skill-creator` skill
+## Spec Framework
 
----
+Use `.agents/skills/spec/SKILL.md` for spec navigation and validation. The root
+spec model is:
 
-## Subagent Rules
+- `.spec/product.md`
+- `.spec/tech.md`
+- `.spec/design.md`
+- `.spec/plan.md`
+- `.spec/lessons.md`
 
-Spawn when: 4+ files to read, research with no writes, 3+ independent parallel tasks.
-Prefer caveman subagents (investigator/builder/reviewer) — emit ~60% fewer tokens.
-Return: compact summary only — what changed, what's next.
-
----
-
-## Development Workflow
-
-```
-/develop <feature>
-  RESEARCH    → caveman:investigator × N parallel agents
-  SPEC        → /spec (product.md → tech.md → branch docs)
-  PLAN        → wave-grouped tasks, dependencies explicit
-  IMPLEMENT   → wave by wave, subagents for independent tasks
-  REVIEW      → /simplify + goal-backward verification
-```
-
-Phase state tracked in `.spec/.phase`. Never skip. Never write code outside IMPLEMENT phase.
-
----
-
-## Hard Rules
-
-1. **Specs before code** — no implementation without `.spec/` entries
-2. **Read before write** — always read specs + lessons first
-3. **Phase gates enforced** — hooks block writes in wrong phase
-4. **Lessons mandatory** — update `.spec/lessons.md` after every correction
-5. **Compact at ~50 turns** — `/compact` on task switch or long sessions
-
-## Context Files
-
-- @.agents/skills/spec/SKILL.md — spec system
-- @.agents/skills/develop/SKILL.md — lifecycle skill
-- @.claude/settings.json — hooks + permissions
+Feature specs live under `.spec/features/<feature>/` with `product.md` and
+`tech.md` required, plus optional `design.md`, `plan.md`, and `research.md`.

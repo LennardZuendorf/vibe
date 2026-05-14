@@ -1,136 +1,148 @@
 ---
 type: entrypoint
 scope: product
-children: []
-updated: 2026-05-03
+children:
+  - features/spec-framework/product.md
+  - features/code-flow/product.md
+  - features/platform-adapters/product.md
+updated: 2026-05-14
 ---
 
 # shards-code — Product
 
-A personal Claude Code framework that orchestrates Compound Engineering, Superpowers, and a bundled `/spec` skill into a portable, gently-enforced workflow. It does not reimplement existing skills — it routes to them, encodes preferences as enforcement (hooks) rather than advice (CLAUDE.md alone), and exposes a small surface (three commands) that covers every real workflow without ceremony for trivial work.
+shards-code is a personal agent workflow framework. It combines a reusable
+file-based `spec` framework with a platform-neutral `code` flow harness, then
+exposes that workflow to Codex, Claude Code, and future agent runtimes through
+thin adapters.
 
-**One-liner:** Three commands, one keystone script, gently-enforced workflow — orchestration over reimplementation.
+**One-liner:** durable specs plus agent skills plus flow state, composed into a
+strict personal coding workflow.
 
 ---
 
 ## Story
 
-My Claude Code workflow lives in my head and in scattered CLAUDE.md fragments. It's not portable across machines, not enforced consistently, and assumes I'll remember to invoke the right skills at the right time. The existing ecosystem provides excellent building blocks — Compound Engineering's planning and review agents, Superpowers' brainstorming and TDD discipline, my own `/spec` skill for spec hygiene — but no one orchestrates them into a single coherent loop. Every project re-invents the lifecycle.
+My coding workflow has two separate needs. First, decisions need durable memory:
+what the project is, why it exists, how it is built, how it should feel, and what
+work remains. Second, agents need a runtime harness: clear phases, skill routing,
+workspace setup, and guardrails that work across Codex and Claude Code.
 
-shards-code is the thin orchestration layer. Three commands, one keystone routing script, four gentle hooks, gently enforced — and the existing ecosystem keeps doing what it's good at.
+shards-code exists to combine those pieces without blurring them. The `spec`
+framework owns planning memory in `.spec/`. The `code` flow owns agent execution
+state and skill orchestration in `.agents/`. Platform files such as `AGENTS.md`,
+`CLAUDE.md`, and `.claude/*` are adapters over that core, not the source of
+truth.
 
 ---
 
-## Requirements (Mini PRD)
+## Requirements
 
 At a project level, shards-code must:
 
-1. **Cover every workflow with at most three commands.** Quick fixes, project bootstrap, full feature lifecycle. No fourth workflow command in v1. Setup skills (one-shot, not recurring) don't count against this limit.
-2. **Make the current state visible.** At any moment the user (and Claude) can see which workflow is active, which phase, and which feature.
-3. **Route consistently from one source.** Hooks and commands ask the same script (`bin/detect-context.sh`) what to do. No parallel routing logic.
-4. **Enforce gently.** Warnings on stderr by default. Hard blocks reserved for invariants whose violation would corrupt downstream tools.
-5. **Degrade gracefully.** Missing skill, corrupt state file, missing `.spec/` — emit a warning, fall back to neutral, never crash a session.
-6. **Stay portable.** No build step. No CLI binary. No new runtime dependencies beyond what `/spec` already needs (bash, jq).
-7. **Be resumable.** State lives on disk in `.spec/.phase`. A session that ends mid-feature picks up exactly where it left off.
+1. **Keep planning and runtime state separate.** Durable product, tech, design,
+   plan, and lessons docs live in `.spec/`; mutable flow state lives outside
+   `.spec/`.
+2. **Make `spec` reusable on its own.** The `spec` skill must remain useful even
+   without the `code` flow harness.
+3. **Make `code` a set of first-class agent skills.** Workflow shims live under
+   `.agents/skills/code-*` and delegate to other skills with explicit routing.
+4. **Use platform-neutral flow state.** The canonical cursor and state machine
+   live under `.agents/flow/`, not `.claude/` or Codex-specific paths.
+5. **Treat Codex and Claude Code as adapters.** `AGENTS.md`, `CLAUDE.md`,
+   Claude slash commands, and hooks read the same `.agents/flow` core.
+6. **Inject output paths when delegating.** A `code-*` skill may call
+   `superpowers:*`, `spec`, or subagents, but it must tell them exactly which
+   `.spec/` paths to write.
+7. **Degrade gracefully.** Missing skills, missing adapters, or corrupt flow
+   state produce warnings and recovery paths, not session-ending failures.
 
 ---
 
 ## Design Principles
 
-1. **Orchestrate, don't reimplement.** Existing plugins are maintained by their authors. Routing to them means we get their updates for free and don't fork their bugs.
-2. **One source of routing truth.** A single keystone script determines current state and what to load. Hooks and commands both call it. No second source.
-3. **Gentle enforcement first.** Warnings to stderr are the default. Hard blocks are reserved for two known footguns. Adding more blocks requires evidence of repeated misuse.
-4. **Three commands cover everything.** Quick, strategy, feature. If something doesn't fit, it's either a quick task in disguise or a feature in disguise.
-5. **State is one line.** `.spec/.phase` is `<workflow>:<phase>[:<feature>]`. No JSON, no multiple files, no hidden state.
-6. **Specs are the backbone.** The `/spec` skill is bundled and always required. Every command reads or writes specs at known points.
-7. **Portable, not packaged.** Markdown plus bash plus Claude Code primitives. `install.sh` symlinks files into `~/.claude/` and the project.
+1. **Composition over reimplementation.** `code-*` skills route to existing
+   skills instead of copying their workflows.
+2. **Specs are memory, flow is runtime.** `.spec/` records durable thinking;
+   `.agents/flow/` records the current agent state.
+3. **Agent skills are the command surface.** The recurring workflow is expressed
+   as skills agents can invoke, not as loose markdown snippets.
+4. **Adapters stay thin.** Platform-specific files translate runtime events into
+   `code-*` skill invocations and `.agents/flow` reads/writes.
+5. **Canonical paths beat skill defaults.** Any delegated skill must write into
+   the project’s `.spec/` layout, not its own default doc folder.
+6. **Small shims, shared machinery.** State transitions and deterministic checks
+   belong in `.agents/flow/scripts/`; `SKILL.md` files stay concise.
 
 ---
 
 ## Target User
 
-Me. One person. Personal config made portable, not a framework distributed to others. Decisions favor my workflow, not generality. If someone else adopts it, they should expect to fork.
+Me: one developer shaping a portable personal coding workflow across agent
+runtimes. The system should be forkable, but decisions optimize for my working
+style rather than a broad marketplace audience.
 
 ---
 
-## The Three Commands (Summary)
+## Product Pieces
 
-| Command | When | Outputs |
+| Piece | What It Owns | Feature Spec |
 |---|---|---|
-| **`/code:quick <task>`** | Ad-hoc fix, ≤5 files, no architecture change | Source + ephemeral `.spec/.quick-plan.md` |
-| **`/code:strategy`** | Project bootstrap or major refocus | Global specs (`product.md`, `tech.md`, optional design + plan) |
-| **`/code:feature <name>`** | Build a real feature end-to-end | Feature specs → source → global spec deltas (only on COMPOUND) |
-
-Detailed UX and behavior live in [features/commands/product.md](features/commands/product.md).
-
-## The Setup Skill
-
-| Skill | When | What it does |
-|---|---|---|
-| **`/init`** | Once per project (new or existing) | Reads existing `AGENTS.md` + project conventions, then generates or intelligently merges `AGENTS.md` with the three-command surface, skill routing, and phase-gate rules. Symlinks `CLAUDE.md`. LLM-powered so it handles existing content gracefully — no blind overwrite. |
-
-`/init` is not a workflow command — it's a one-shot project bootstrapper, like `/spec setup`. A bash script can't merge `AGENTS.md` intelligently; the LLM can.
+| `spec` framework | `.spec/` docs, templates, validation, archive rules | [features/spec-framework/](features/spec-framework/product.md) |
+| `code` flow | `.agents/flow` state, `code-*` skills, phase routing | [features/code-flow/](features/code-flow/product.md) |
+| Platform adapters | `AGENTS.md`, `CLAUDE.md`, Claude commands/hooks, install/setup glue | [features/platform-adapters/](features/platform-adapters/product.md) |
 
 ---
 
-## External Dependencies
+## Workflow Surface
 
-shards-code orchestrates three external systems. It does not reimplement them.
+The primary user-facing workflow is a family of agent skills:
 
-| System | Surface | Used in |
+| Skill | When | Main Output |
 |---|---|---|
-| **Compound Engineering** | `/ce-strategy`, `/ce-ideate`, `/ce-plan`, `/ce-deepen-plan`, `/ce-code-review`, `/ce-commit-push-pr`, `/ce-compound`, `/ce-work` | strategy DESIGN, feature DESIGN/REVIEW/SHIP/COMPOUND |
-| **Superpowers** | `superpowers:brainstorming`, `:test-driven-development`, `:subagent-driven-development`, `:systematic-debugging` | DISCUSS phases, IMPL:WORK, debugging fallback |
-| **Bundled `/spec` skill** | `/spec`, `setup.sh`, `validate.sh` | every SPEC phase, validation gates |
+| `code-strategy` | Bootstrapping or refocusing project direction | Root `.spec/{product,tech,design,plan}.md` |
+| `code-feature` | Designing and building a named feature | `.spec/features/<name>/` plus implementation |
+| `code-quick` | Small fixes and bounded maintenance | Workspace edits, optional `.spec/quick/<slug>.md` |
+| `code-verify` | Evidence before completion | Test/build/review findings |
+| `code-compound` | End-of-work consolidation | Lessons, root spec updates, archive moves |
+| `code-amend` | Revising active scope | Updated feature or strategy specs |
 
-If a skill is missing at runtime, the routing layer drops it from the load list and emits a stderr warning. Workflows degrade, they don't fail.
-
----
-
-## Implementation Phases
-
-| Phase | Goal |
-|---|---|
-| **M1: Foundation** | Routing keystone + state writer + first command + visibility hook |
-| **M2: Enforcement** | Gentle phase gate (warnings + 2 hard blocks) + strategy command |
-| **M3: Lifecycle** | Feature command + merge tooling + remaining hooks + installer |
-| **v1.1** | `/code:amend` + `.shards/config.json` provider overrides (deferred) |
-
-Detailed milestone breakdown in [plan.md](plan.md). Per-feature requirements and architecture in [features/](features/).
+These are skills, not hidden prompts. Adapters may expose shortcuts, but the
+canonical workflow units are `.agents/skills/code-*`.
 
 ---
 
 ## Non-Goals
 
-- **Not a framework for others.** Personal config made portable. Forks expected.
-- **Not a CLI tool.** No binaries, no npm. Markdown + bash + Claude Code primitives.
-- **Not strict-by-default.** Hard blocks are two and only two in v1.
-- **Not a replacement for any plugin.** CE, Superpowers, `/spec` continue to work standalone.
-- **Not project-specific.** Lives in `~/.claude/` plus a per-project `.spec/`.
-- **Not a marketplace.** No plugin discovery, no user-installable extensions. The three external dependencies are pinned at the source-name level.
+- **Not a replacement for `spec`.** The `code` flow uses the spec framework; it
+  does not absorb it.
+- **Not Claude-only.** Claude Code integration is an adapter, not the core.
+- **Not Codex-only.** Codex reads `AGENTS.md`, but the flow state remains under
+  `.agents/flow`.
+- **Not a new implementation framework.** The repo is markdown, bash scripts,
+  and agent skills.
+- **Not strict by accident.** Hard blocks must protect real invariants and stay
+  understandable.
 
 ---
 
 ## Open Questions
 
-Project-level decisions still open. Feature-level questions live with each feature.
-
-1. **Quick mode plan threshold.** Currently "any logic change → plan, ≤2 lines literal text → direct." Stricter (always plan), default, or looser (only architecture changes plan)?
-2. **Hard-block list.** v1 has two. Are there other footguns once we run real workflows?
-3. **`.shards/config.json` for provider overrides.** v1 or v1.1?
-4. **`/code:amend`.** v1 or v1.1?
-5. **Skill auto-loading.** Stderr suggestions only, or actual skill activation when hooks detect a missing skill in the load list?
-
-Defaults if forced: stricter quick threshold, keep blocks minimal, defer config to v1.1, defer amend to v1.1, stderr-only first.
+1. **Git tracking for `.agents/flow/state.json`.** Default recommendation:
+   version the static state machine in this repo, gitignore mutable cursor files
+   in target projects.
+2. **Exact `code-*` skill count.** Start with strategy, feature, quick, verify,
+   compound, amend; merge if dogfooding shows extra ceremony.
+3. **Adapter installation.** Decide whether `install.sh` creates symlinks,
+   copies files, or offers diffs for each platform adapter.
+4. **Hook strictness.** Start with warnings and narrow hard blocks; expand only
+   after observed failures.
 
 ---
 
 ## Features
 
-Each feature has its own product (requirements) and tech (architecture) spec under `.spec/features/<name>/`. Features are short-lived: created during DESIGN, consumed during IMPL, merged into globals during COMPOUND, archived after.
-
 | Feature | Covers |
 |---|---|
-| **[features/commands/](features/commands/product.md)** | The three commands and their lifecycles. UX, sub-phases, gates, escape hatches. The user-facing surface. |
-| **[features/routing/](features/routing/product.md)** | The keystone routing layer: `bin/detect-context.sh` + `bin/set-phase.sh`. State management, JSON contract, validation. |
-| **[features/hooks/](features/hooks/product.md)** | The four hooks: SessionStart, UserPromptSubmit, PreToolUse, Stop. Warnings, the two hard blocks, performance contract. |
+| **[features/spec-framework/](features/spec-framework/product.md)** | Durable `.spec/` planning model: product, tech, design, plan, lessons, feature folders, validation. |
+| **[features/code-flow/](features/code-flow/product.md)** | Agent skill shims, `.agents/flow` state, state machine, phase routing, delegated skill output paths. |
+| **[features/platform-adapters/](features/platform-adapters/product.md)** | Codex and Claude Code integration files that expose the same code flow core. |

@@ -2,37 +2,33 @@
 type: entrypoint
 scope: implementation
 covers: milestones, build sequence, validation criteria, open decisions
-updated: 2026-05-04
+children: []
+updated: 2026-05-14
 ---
 
 # shards-code — Implementation Plan
 
-**Parent specs:** [product.md](product.md), [tech.md](tech.md)
-**Features:** [features/commands/](features/commands/product.md), [features/routing/](features/routing/product.md), [features/hooks/](features/hooks/product.md)
+**Parent specs:** [product.md](product.md), [tech.md](tech.md), [design.md](design.md)
+**Features:** [features/spec-framework/](features/spec-framework/product.md),
+[features/code-flow/](features/code-flow/product.md),
+[features/platform-adapters/](features/platform-adapters/product.md)
 
 ---
 
 ## Validation Summary
 
-shards-code orchestrates existing systems rather than building new ones. Most capability comes from upstream:
+The current repo is mostly specs and agent-skill scaffolding. The useful existing
+assets are:
 
-**Already exists (don't rebuild):**
-- Compound Engineering: 51 agents, 36 skills, all `/ce-*` commands
-- Superpowers: 14 skills (brainstorming, TDD, subagent-driven dev, systematic debugging, etc.)
-- Bundled `/spec` skill: SKILL.md, scripts (setup, validate, list-specs), templates
-- Claude Code primitives: hooks, slash commands, subagent dispatch, skill loading
-- Prior art in `archive/engineering-agent/insights.md`: design philosophy, hook bash patterns, structural decisions
+- Bundled `spec` skill under `.agents/skills/spec/`
+- Existing root `.spec/` docs
+- Existing platform adapter drafts in `CLAUDE.md` and `.claude/`
+- Prior strict-flow experiment, now superseded by the `code` flow direction
 
-**Must build:** ~940 LOC across 13 files, decomposed into three features:
+The core design decision for this cleanup is:
 
-| Feature | Files | LOC est |
-|---|---|---|
-| **routing** | `bin/detect-context.sh`, `bin/set-phase.sh` | ~180 |
-| **commands** | `commands/code-{quick,strategy,feature,amend}.md`, `commands/init.md`, `bin/merge-feature.sh` | ~450 |
-| **hooks** | `hooks/{session-start,user-prompt-submit,pre-tool-use,stop}.sh`, `settings.json` | ~260 |
-| (basic implementation) | `claude/CLAUDE.md`, `install.sh`, `.gitignore`, `README.md` | ~150 |
-
-**Timeline:** 3 sessions for v1 (one per milestone). v1.1 adds `/code:amend` and `.shards/config.json` only after v1 has been used on real projects.
+> `spec` owns durable planning in `.spec/`; `code-*` skills own agent workflow
+> orchestration; `.agents/flow` owns platform-neutral runtime state.
 
 ---
 
@@ -40,180 +36,162 @@ shards-code orchestrates existing systems rather than building new ones. Most ca
 
 ### Decided
 
-- **Keystone routing.** A single `bin/detect-context.sh` returns JSON; hooks and commands read it. No second source of truth.
-- **State as one line.** `.spec/.phase` holds `<workflow>:<phase>[:<feature>]`. Written only by `bin/set-phase.sh`.
-- **Three hard blocks.** PreToolUse blocks lessons.md outside COMPOUND, global specs outside SPEC/COMPOUND, and direct `.phase` edits. Everything else advisory.
-- **Three commands.** Quick, strategy, feature. `/code:amend` deferred to v1.1.
-- **Bash + jq + markdown.** No new runtime dependencies.
-- **Graceful degradation.** Missing skill, corrupt `.phase`, missing `.spec/` → warnings, never crashes.
-- **Symlink-based install.** No build step.
+- **Spec framework remains independent.** It can be used without the code flow.
+- **Root spec model is product, tech, design, plan, lessons.**
+- **Feature spec model is product and tech required; design, plan, research optional.**
+- **Code workflow shims are agent skills.** They live under `.agents/skills/code-*`.
+- **Canonical flow state is platform-neutral.** Use `.agents/flow`, not `.spec/.phase` or `.claude/state.json`.
+- **Adapters are thin.** `AGENTS.md`, `CLAUDE.md`, and `.claude/*` read the same `.agents/flow` core.
 
-### To Resolve (Open)
+### To Resolve
 
-- [ ] **OPEN-1: Quick mode plan threshold.** Default: stricter for v1, revisit after first dogfood. Affects [features/commands/](features/commands/product.md).
-- [ ] **OPEN-2: Hard-block list.** v1 has 3 (lessons, global specs, .phase). Watch for footguns; add only on evidence. Affects [features/hooks/](features/hooks/product.md).
-- [ ] **OPEN-3: `.shards/config.json`.** v1 or v1.1? Default: v1.1.
-- [ ] **OPEN-4: `/code:amend`.** v1 or v1.1? Default: v1.1.
-- [ ] **OPEN-5: Skill auto-loading.** Stderr-only (default) or actual skill activation? Default: stderr-only in v1.
-- [ ] **OPEN-6: Stop-hook turn counter location.** `.spec/.phase-turns` (default) vs session tmpfile.
-- [ ] **OPEN-7: Strategy refocus diff UX.** Sectioned (default) vs full-diff.
-- [ ] **OPEN-8: Feature reactivation from archive/.** Copy + resume from SPEC (default) vs fresh DESIGN.
-- [ ] **OPEN-9: Per-skill availability detection.** v1 = per-plugin. Per-skill is v1.1.
-- [ ] **OPEN-10: PreToolUse Bash matcher.** v1 = no. Add only on evidence of misuse.
+- [ ] **OPEN-1: Mutable state tracking.** Should target projects gitignore only
+  `.agents/flow/state.json`, or all runtime-generated `.agents/flow/*.json` except
+  the state machine?
+- [ ] **OPEN-2: Skill count.** Validate whether `code-verify` and `code-compound`
+  should be separate skills or phases inside `code-feature`.
+- [ ] **OPEN-3: Adapter install mode.** Symlink, copy, or merge-with-diff per file?
+- [ ] **OPEN-4: Hook strictness.** Which write surfaces should adapters block in
+  M1 versus warn about?
 
 ---
 
 ## Implementation Roadmap
 
 | Milestone | Goal | Sessions | Risk |
-|-----------|------|----------|------|
-| **M1: Foundation** | Routing keystone + state writer + first command + visibility hook | 1 | Low |
-| **M2: Enforcement** | PreToolUse phase gate + strategy command | 1 | Med |
-| **M3: Lifecycle** | Feature command + merge tooling + remaining hooks + installer | 1 | Med |
-| **v1.1** | Amend command + provider-override config | 1 | Low (deferred) |
+|---|---|---:|---|
+| M0: Spec cleanup | Update specs and spec skill to the new `spec + code flow + adapters` model | 1 | Low |
+| M1: Flow core | Add `.agents/flow` state machine and deterministic scripts | 1 | Medium |
+| M2: Code skills | Add `code-strategy`, `code-feature`, and `code-quick` skills | 1-2 | Medium |
+| M3: Verification and compound | Add `code-verify`, `code-compound`, `code-amend` and evidence/lessons flow | 1 | Medium |
+| M4: Platform adapters | Rewrite `AGENTS.md`, `CLAUDE.md`, Claude commands/hooks, installer | 1-2 | Medium |
+| M5: Dogfood | Run strategy, quick, and feature flows on a sandbox project | 1 | High |
 
 ---
 
-## M1: Foundation
+## M0: Spec Cleanup
 
-**Goal:** Working `/code:quick` end-to-end. Keystone in place. SessionStart visibility hook firing.
+**Goal:** The repository specs consistently describe the current architecture.
 
-**Sessions:** 1 | **Risk:** Low.
+**Tasks:**
 
-| Task | Feature | Spec |
-|---|---|---|
-| `bin/detect-context.sh` (~150 LOC) | routing | [features/routing/tech.md](features/routing/tech.md) §detect-context.sh |
-| `bin/set-phase.sh` (~30 LOC) | routing | [features/routing/tech.md](features/routing/tech.md) §set-phase.sh |
-| `commands/code-quick.md` (~50 LOC) | commands | [features/commands/](features/commands/tech.md) |
-| `hooks/session-start.sh` (~40 LOC) | hooks | [features/hooks/tech.md](features/hooks/tech.md) §session-start.sh |
-| Initial `settings.json` registering only SessionStart + bash permissions | hooks | [features/hooks/tech.md](features/hooks/tech.md) §settings.json |
+- [x] Update `spec` skill to include root `design.md`.
+- [x] Make setup/validation scripts work from a vendored skill path.
+- [x] Rewrite root product and tech specs around `spec`, `code flow`, and adapters.
+- [x] Add feature specs for `spec-framework`, `code-flow`, and `platform-adapters`.
+- [x] Retire or archive stale `commands`, `routing`, `hooks`, and `strict-flow` specs.
+- [x] Validate `.spec/`.
 
-**Done when:**
-- `bash bin/detect-context.sh none` returns valid JSON in all four major states (no .spec, .spec without specs, .spec with specs, with active phase).
-- `bash bin/set-phase.sh quick` writes `.spec/.phase`; `bash bin/set-phase.sh garbage:state` exits non-zero.
-- `/code:quick "fix typo in README"` runs end-to-end on a sandbox project.
-- SessionStart prints phase and top lessons to stderr.
+**Done when:** validation passes and no root spec names `.spec/.phase` or
+`.claude/state.json` as canonical.
 
 ---
 
-## M2: Enforcement
+## M1: Flow Core
 
-**Goal:** Gentle phase gate live. `/code:strategy` produces global specs. Three hard blocks fire correctly.
+**Goal:** Platform-neutral flow state exists and can be read/written safely.
 
-**Sessions:** 1 | **Risk:** Med — block conditions must be tuned to avoid over- or under-blocking.
+**Tasks:**
 
-| Task | Feature | Spec |
-|---|---|---|
-| `hooks/pre-tool-use.sh` (~100 LOC) | hooks | [features/hooks/tech.md](features/hooks/tech.md) §pre-tool-use.sh |
-| `commands/code-strategy.md` (~80 LOC) | commands | [features/commands/](features/commands/tech.md) |
-| Update `settings.json` to register PreToolUse with `Edit\|Write\|NotebookEdit` | hooks | [features/hooks/tech.md](features/hooks/tech.md) §settings.json |
-| Test enforcement on sandbox: hard blocks fire, warnings inform | — | — |
+- [ ] Add `.agents/flow/state-machine.json`.
+- [ ] Add `.agents/flow/state.example.json`.
+- [ ] Add `.agents/flow/scripts/detect-context.sh`.
+- [ ] Add `.agents/flow/scripts/set-state.sh`.
+- [ ] Add `.agents/flow/scripts/validate-state.sh`.
+- [ ] Document which mutable flow files target projects should gitignore.
 
-**Done when:**
-- `/code:strategy` on a fresh project produces `.spec/product.md` and `.spec/tech.md` matching templates.
-- `/code:strategy` re-runs without clobbering user-written branch docs.
-- Three hard blocks fire correctly; no false positives in normal `/code:quick` use.
-- `validate.sh` passes after a strategy run.
+**Done when:** state validation passes, legal transitions work, invalid transitions
+fail with a clear message, and no `.claude/*` file is required to use the core.
 
 ---
 
-## M3: Lifecycle
+## M2: Code Skills
 
-**Goal:** Full `/code:feature` lifecycle. Merge tooling. Remaining two hooks. Installer. v1 feature-complete.
+**Goal:** The primary workflow surface exists as agent skills.
 
-**Sessions:** 1 | **Risk:** Med — `/code:feature` is the longest command; `merge-feature.sh` must be careful.
+**Tasks:**
 
-| Task | Feature | Spec |
-|---|---|---|
-| `commands/code-feature.md` (~150 LOC) | commands | [features/commands/](features/commands/tech.md) |
-| `bin/merge-feature.sh` (~60 LOC) | commands | [features/commands/tech.md](features/commands/tech.md) §merge-feature.sh |
-| `hooks/user-prompt-submit.sh` (~50 LOC) | hooks | [features/hooks/tech.md](features/hooks/tech.md) §user-prompt-submit.sh |
-| `hooks/stop.sh` (~40 LOC) | hooks | [features/hooks/tech.md](features/hooks/tech.md) §stop.sh |
-| `claude/CLAUDE.md` (~60 LOC) | (basic) | [tech.md](tech.md) §Basic Implementation |
-| `commands/init.md` (~50 LOC) | (basic) | [tech.md](tech.md) §/init skill |
-| `install.sh` (~80 LOC) | (basic) | [tech.md](tech.md) §Basic Implementation |
-| `.gitignore` at repo root | (basic) | — |
-| End-to-end test: `/code:feature dark-mode` on sandbox React project | — | — |
+- [ ] Add `.agents/skills/code-strategy/SKILL.md`.
+- [ ] Add `.agents/skills/code-feature/SKILL.md`.
+- [ ] Add `.agents/skills/code-quick/SKILL.md`.
+- [ ] Keep each skill concise and delegate to `spec`, `superpowers:*`, and
+  subagents with explicit path injection.
+- [ ] Add shared references only if the skill bodies become too large.
 
-**Done when:**
-- One full feature cycle (DESIGN → COMPOUND) succeeds end-to-end on a sandbox.
-- Global `.spec/tech.md` after COMPOUND shows the merged section (and only the merged section).
-- All four hooks active simultaneously without latency complaints.
-- `install.sh` works on a fresh machine — produces a working setup with one command.
-- `/init` skill generates or merges `AGENTS.md` and symlinks `CLAUDE.md` correctly for both new and existing projects.
+**Done when:** each skill can be triggered by description, reads `.agents/flow`,
+and names the exact `.spec/` paths delegated skills may write.
 
 ---
 
-## v1.1: Amend + Config
+## M3: Verification and Compound
 
-Deferred. Build only after v1 has been used on at least two real projects.
+**Goal:** Completion is evidence-backed and lessons flow back into specs.
 
-| Task | Feature |
-|---|---|
-| `commands/code-amend.md` (~60 LOC) | commands |
-| `.shards/config.json` schema + reader | routing |
+**Tasks:**
 
-**Done when:** the use cases that motivated each are demonstrated on a real project, not invented.
+- [ ] Add `.agents/skills/code-verify/SKILL.md`.
+- [ ] Add `.agents/skills/code-compound/SKILL.md`.
+- [ ] Add `.agents/skills/code-amend/SKILL.md`.
+- [ ] Define how failed verification routes back to feature planning or
+  implementation.
+- [ ] Define how feature lessons promote into root `.spec/lessons.md`.
+
+**Done when:** a feature can move from design to implementation to verification
+to lessons/archive without using ad hoc prompts.
+
+---
+
+## M4: Platform Adapters
+
+**Goal:** Codex and Claude Code expose the same flow without owning it.
+
+**Tasks:**
+
+- [ ] Rewrite `AGENTS.md` as the Codex-facing adapter policy.
+- [ ] Rewrite `CLAUDE.md` as the Claude-facing adapter policy.
+- [ ] Update `.claude/commands/flow.md` to read/write `.agents/flow`.
+- [ ] Add optional Claude hooks that read `.agents/flow`.
+- [ ] Build installer behavior for copying or symlinking core and adapter files.
+
+**Done when:** both adapters point to `.agents/flow` and `.agents/skills/code-*`,
+and neither defines a separate state model or spec layout.
+
+---
+
+## M5: Dogfood
+
+**Goal:** Prove the workflow on a real project shape.
+
+**Tasks:**
+
+- [ ] Run `code-strategy` on a sandbox project.
+- [ ] Run `code-quick` for a small maintenance change.
+- [ ] Run `code-feature` through verification and compound.
+- [ ] Record at least one lesson from actual friction.
+
+**Done when:** the workflow completes without manual path correction and the
+adapter wording is understandable in both Codex and Claude Code.
 
 ---
 
 ## Critical Path
 
-```
-M1 (Foundation) → M2 (Enforcement) → M3 (Lifecycle) → [dogfood] → v1.1
-                                                              ↑
-                                                              └─ deferred until needs surface
+```text
+M0 -> M1 -> M2 -> M3 -> M4 -> M5
 ```
 
-Each milestone is single-session-shaped and independently dogfoodable. M1 alone gives a working `/code:quick`. M1+M2 gives quick + strategy. M1+M2+M3 is v1 complete.
-
----
-
-## Validation Criteria
-
-### Per milestone
-See "Done when:" under each milestone above.
-
-### v1 complete (end of M3)
-- All three commands work end-to-end on a sandbox project.
-- All four hooks fire at the right times with stderr output that's helpful, not noisy.
-- `bin/detect-context.sh` outputs valid JSON for every (workflow, phase) combination.
-- `bin/set-phase.sh` validates and writes atomically.
-- The three hard blocks fire correctly.
-- `install.sh` produces a working install on a fresh machine.
-- `validate.sh` passes after a strategy run and after a feature COMPOUND.
-
-### Healthy after dogfood
-- One real project bootstrapped via `/code:strategy`.
-- One real feature shipped via `/code:feature` end-to-end.
-- At least three quick fixes via `/code:quick` without scope balloon.
-- Lessons appended to `.spec/lessons.md` from at least one COMPOUND run.
+M1 and M2 are tightly coupled: the skills need a stable state contract. M4 should
+wait until the core flow stops moving.
 
 ---
 
 ## Progress
 
 | Milestone | Status | Sessions Used | Estimate |
-|-----------|--------|---------------|----------|
-| M1: Foundation | NOT STARTED | 0 | 1 |
-| M2: Enforcement | NOT STARTED | 0 | 1 |
-| M3: Lifecycle | NOT STARTED | 0 | 1 |
-| v1.1: Amend + Config | DEFERRED | 0 | 1 |
-
-| Component | Feature | Milestone | Status |
-|---|---|---|---|
-| `bin/detect-context.sh` | routing | M1 | NOT STARTED |
-| `bin/set-phase.sh` | routing | M1 | NOT STARTED |
-| `commands/code-quick.md` | commands | M1 | NOT STARTED |
-| `hooks/session-start.sh` | hooks | M1 | NOT STARTED |
-| `hooks/pre-tool-use.sh` | hooks | M2 | NOT STARTED |
-| `commands/code-strategy.md` | commands | M2 | NOT STARTED |
-| `commands/code-feature.md` | commands | M3 | NOT STARTED |
-| `bin/merge-feature.sh` | commands | M3 | NOT STARTED |
-| `hooks/user-prompt-submit.sh` | hooks | M3 | NOT STARTED |
-| `hooks/stop.sh` | hooks | M3 | NOT STARTED |
-| `claude/CLAUDE.md` | (basic) | M3 | NOT STARTED |
-| `commands/init.md` | (basic) | M3 | NOT STARTED |
-| `install.sh` | (basic) | M3 | NOT STARTED |
-| `commands/code-amend.md` | commands | v1.1 | DEFERRED |
-| `.shards/config.json` | routing | v1.1 | DEFERRED |
+|---|---|---:|---:|
+| M0: Spec cleanup | DONE | 1 | 1 |
+| M1: Flow core | NOT STARTED | 0 | 1 |
+| M2: Code skills | NOT STARTED | 0 | 1-2 |
+| M3: Verification and compound | NOT STARTED | 0 | 1 |
+| M4: Platform adapters | NOT STARTED | 0 | 1-2 |
+| M5: Dogfood | NOT STARTED | 0 | 1 |
