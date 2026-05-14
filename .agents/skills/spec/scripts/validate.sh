@@ -15,7 +15,7 @@ echo "Validating $SPEC_DIR/..."
 echo ""
 
 if [[ ! -d "$SPEC_DIR" ]]; then
-  red "No .spec/ directory found. Run setup first: bash ~/.agents/skills/spec/scripts/setup.sh"
+  red "No .spec/ directory found. Run setup first: bash .agents/skills/spec/scripts/setup.sh"
   exit 1
 fi
 
@@ -54,7 +54,7 @@ for f in "${specs[@]}"; do
     red "$name: missing 'updated:' in frontmatter"
   fi
 
-  # Entrypoints: product.md and tech.md must have children, plan.md warns if missing
+  # Entrypoints: product.md, tech.md, and design.md must have children, plan.md warns if missing
   if grep -q "^type: entrypoint" "$f"; then
     if ! grep -q "^children:" "$f"; then
       if [[ "$name" == "plan.md" ]]; then
@@ -79,7 +79,7 @@ for f in "${specs[@]}"; do
   fi
 
   # Naming convention for non-entrypoints: must start with product-, tech-, or plan-
-  if [[ "$name" != "product.md" && "$name" != "tech.md" && "$name" != "plan.md" && "$name" != "lessons.md" ]]; then
+  if [[ "$name" != "product.md" && "$name" != "tech.md" && "$name" != "design.md" && "$name" != "plan.md" && "$name" != "lessons.md" ]]; then
     if [[ "$name" != product-* && "$name" != tech-* && "$name" != plan-* ]]; then
       red "$name: must start with 'product-', 'tech-', or 'plan-' (e.g., product-design.md, tech-api.md, plan-editor.md)"
     fi
@@ -108,7 +108,7 @@ done
 
 # ─── Validate entrypoint children exist ─────────────────────────────────────
 
-for entrypoint in "$SPEC_DIR"/product.md "$SPEC_DIR"/tech.md "$SPEC_DIR"/plan.md; do
+for entrypoint in "$SPEC_DIR"/product.md "$SPEC_DIR"/tech.md "$SPEC_DIR"/design.md "$SPEC_DIR"/plan.md; do
   if [[ -f "$entrypoint" ]]; then
     name=$(basename "$entrypoint")
     in_children=false
@@ -178,6 +178,23 @@ if [[ -d "$SPEC_DIR/features" ]]; then
           fi
         fi
       done < <(grep -oE '\[.*?\]\([^)]+\.md[^)]*\)' "$f")
+    done
+
+    # Optional feature docs still need sane frontmatter when present.
+    for optional in design.md plan.md; do
+      f="$feature_dir$optional"
+      [[ -f "$f" ]] || continue
+
+      if ! head -1 "$f" | grep -q "^---$"; then
+        red "features/$feature_name/$optional: missing YAML frontmatter"
+        continue
+      fi
+      if ! grep -q "^type:" "$f"; then
+        red "features/$feature_name/$optional: missing 'type:' in frontmatter"
+      fi
+      if ! grep -q "^updated:" "$f"; then
+        red "features/$feature_name/$optional: missing 'updated:' in frontmatter"
+      fi
     done
 
     green "features/$feature_name/: checked"

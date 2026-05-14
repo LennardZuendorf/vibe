@@ -1,11 +1,13 @@
 #!/bin/bash
 # Initialize a .spec/ directory in the current project
-# Copies templates as starting points for product, tech, and plan entrypoints
+# Copies templates as starting points for product, tech, design, and plan entrypoints
 
 set -e
 
 SPEC_DIR=".spec"
-TEMPLATE_DIR="$HOME/.agents/skills/spec/reference/templates"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+TEMPLATE_DIR="$SKILL_DIR/reference/templates"
 
 green() { echo -e "\033[32m  $1\033[0m"; }
 yellow() { echo -e "\033[33m  $1\033[0m"; }
@@ -37,7 +39,7 @@ fi
 # Check template directory exists
 if [[ ! -d "$TEMPLATE_DIR" ]]; then
   red "ERROR: Template directory not found at $TEMPLATE_DIR"
-  red "Make sure the spec skill is installed at ~/.agents/skills/spec/"
+  red "Make sure the spec skill has its reference/templates directory."
   exit 1
 fi
 
@@ -45,7 +47,7 @@ fi
 # Use a non-postfix increment to play nice with set -e
 copied=0
 
-for entrypoint in product.md tech.md plan.md; do
+for entrypoint in product.md tech.md design.md plan.md; do
   if [[ -f "$SPEC_DIR/$entrypoint" ]]; then
     yellow "SKIP: $entrypoint already exists"
   else
@@ -103,16 +105,17 @@ echo ""
 echo "  Spec writing order:"
 echo "    1. product.md           — Mini PRD (story / requirements / principles). Stay HIGH-LEVEL."
 echo "    2. tech.md              — Architecture summary (stack / philosophy / basic impl). Stay HIGH-LEVEL."
-echo "    3. features/<name>/     — Decompose sub-parts into features. Each has product.md + tech.md."
-echo "    4. plan.md              — Sequence features into milestones."
+echo "    3. design.md            — Shared UX/design language. Stay HIGH-LEVEL."
+echo "    4. features/<name>/     — Decompose sub-parts into features. Each has product.md + tech.md."
+echo "    5. plan.md              — Sequence features into milestones."
 echo "    *  product-{topic}.md   — Cross-cutting product branch (design system, conventions). Rare."
 echo "    *  tech-{topic}.md      — Cross-cutting tech branch (infrastructure, observability). Rare."
 echo "    *  lessons.md           — Updated only during COMPOUND. Read at session start."
 echo ""
 echo "  Templates:"
-echo "    Root entrypoints:        $TEMPLATE_DIR/{product,tech,plan}.md"
-echo "    Feature specs:           $TEMPLATE_DIR/feature-{product,tech}.md"
-echo "    Cross-cutting branches:  $TEMPLATE_DIR/{product,tech,plan}-xxx.md"
+echo "    Root entrypoints:        $TEMPLATE_DIR/{product,tech,design,plan}.md"
+echo "    Feature specs:           $TEMPLATE_DIR/feature-{product,tech}.md plus optional design.md"
+echo "    Cross-cutting branches:  derive from root templates and rename product-/tech-/plan-<topic>.md"
 echo ""
-echo "  Validate anytime: bash ~/.agents/skills/spec/scripts/validate.sh"
+echo "  Validate anytime: bash .agents/skills/spec/scripts/validate.sh"
 echo ""
