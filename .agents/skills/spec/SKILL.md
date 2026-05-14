@@ -125,6 +125,34 @@ Specs come in two layers. Use the right one for the job — mixing them is the m
 | Implementation planning, milestones | `plan.md` |
 | UI / layout / user flows in a feature | `features/<name>/product.md` + `features/<name>/design.md` (if present) |
 
+## Design.md Compatibility
+
+For visual identity or UI design systems, prefer the public
+[`DESIGN.md` format](https://github.com/google-labs-code/design.md): YAML
+frontmatter for machine-readable tokens plus markdown prose for human rationale.
+Use it inside `.spec/design.md` or `.spec/features/<name>/design.md`; do not move
+design docs out of `.spec/`.
+
+Useful token groups:
+- `colors`
+- `typography`
+- `rounded`
+- `spacing`
+- `components`
+
+Recommended section order for visual design docs:
+1. Overview
+2. Colors
+3. Typography
+4. Layout
+5. Elevation & Depth
+6. Shapes
+7. Components
+8. Do's and Don'ts
+
+For non-visual workflow design, the same file may omit tokens and use prose-only
+sections such as interaction conventions, information hierarchy, and agent tone.
+
 ## Current Project State
 
 !`bash .agents/skills/spec/scripts/list-specs.sh`

@@ -37,15 +37,17 @@ transitions, and skill shims that delegate to existing skills with explicit
 | R4 | Delegation always injects canonical `.spec/` output paths. |
 | R5 | The state machine defines legal phases, transitions, required skills, write surfaces, and exit predicates. |
 | R6 | Mutable runtime files do not live under `.spec/`. |
+| R7 | `code-setup` bootstraps or repairs `.agents/flow`, `.agents/skills/code-*`, adapters, and baseline specs. |
+| R8 | Each state may declare a caveman level (`lite`, `full`, `ultra`) for communication density. |
 
 ---
 
 ## User Experience
 
-The user asks for strategy, a feature, a quick fix, verification, or compounding.
-The active agent invokes the matching `code-*` skill, which reads flow state,
-loads the right specs, delegates to specialized skills, and ends with evidence
-and the next legal transition.
+The user asks for setup, strategy, a feature, a quick fix, verification, or
+compounding. The active agent invokes the matching `code-*` skill, which reads
+flow state, loads the right specs, delegates to specialized skills, and ends
+with evidence and the next legal transition.
 
 ---
 

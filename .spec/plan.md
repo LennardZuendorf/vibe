@@ -49,10 +49,14 @@ The core design decision for this cleanup is:
   `.agents/flow/state.json`, or all runtime-generated `.agents/flow/*.json` except
   the state machine?
 - [ ] **OPEN-2: Skill count.** Validate whether `code-verify` and `code-compound`
-  should be separate skills or phases inside `code-feature`.
+  should stay separate skills, and whether `code-setup` should also own install
+  repair after initial bootstrap.
 - [ ] **OPEN-3: Adapter install mode.** Symlink, copy, or merge-with-diff per file?
 - [ ] **OPEN-4: Hook strictness.** Which write surfaces should adapters block in
   M1 versus warn about?
+- [ ] **OPEN-5: DESIGN.md validation.** Should `spec validate` shell out to
+  `npx @google/design.md lint` when visual tokens are present, or keep local
+  validation dependency-free?
 
 ---
 
@@ -62,7 +66,7 @@ The core design decision for this cleanup is:
 |---|---|---:|---|
 | M0: Spec cleanup | Update specs and spec skill to the new `spec + code flow + adapters` model | 1 | Low |
 | M1: Flow core | Add `.agents/flow` state machine and deterministic scripts | 1 | Medium |
-| M2: Code skills | Add `code-strategy`, `code-feature`, and `code-quick` skills | 1-2 | Medium |
+| M2: Code skills | Add `code-setup`, `code-strategy`, `code-feature`, and `code-quick` skills | 1-2 | Medium |
 | M3: Verification and compound | Add `code-verify`, `code-compound`, `code-amend` and evidence/lessons flow | 1 | Medium |
 | M4: Platform adapters | Rewrite `AGENTS.md`, `CLAUDE.md`, Claude commands/hooks, installer | 1-2 | Medium |
 | M5: Dogfood | Run strategy, quick, and feature flows on a sandbox project | 1 | High |
@@ -114,6 +118,8 @@ fail with a clear message, and no `.claude/*` file is required to use the core.
 - [ ] Add `.agents/skills/code-strategy/SKILL.md`.
 - [ ] Add `.agents/skills/code-feature/SKILL.md`.
 - [ ] Add `.agents/skills/code-quick/SKILL.md`.
+- [ ] Add `.agents/skills/code-setup/SKILL.md`.
+- [ ] Add caveman level metadata to the state machine contract.
 - [ ] Keep each skill concise and delegate to `spec`, `superpowers:*`, and
   subagents with explicit path injection.
 - [ ] Add shared references only if the skill bodies become too large.
@@ -138,6 +144,21 @@ and names the exact `.spec/` paths delegated skills may write.
 
 **Done when:** a feature can move from design to implementation to verification
 to lessons/archive without using ad hoc prompts.
+
+---
+
+## Spec Skill Follow-Up
+
+**Goal:** Tighten the spec framework after the flow core exists.
+
+**Tasks:**
+
+- [ ] Add `reference/design.md` with guidance derived from the `DESIGN.md`
+  token-plus-prose model.
+- [ ] Teach `list-specs.sh` to surface root and feature `design.md` docs.
+- [ ] Optionally validate `design.md` token structure when tokens are present.
+- [ ] Decide whether to support `npx @google/design.md lint` as an optional
+  external validator.
 
 ---
 

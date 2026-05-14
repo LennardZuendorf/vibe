@@ -1,6 +1,7 @@
 ---
 type: entrypoint
 scope: design
+design_format: google-labs-code/design.md-inspired
 children:
   - features/spec-framework/design.md
   - features/code-flow/design.md
@@ -13,6 +14,12 @@ updated: 2026-05-14
 Cross-cutting design language for the personal coding workflow. This is not a
 visual product; design here means interaction shape, information hierarchy,
 agent-facing tone, and the ergonomics of moving through work.
+
+For UI-heavy projects, `.spec/design.md` should follow or reference the
+google-labs-code [`DESIGN.md`](https://github.com/google-labs-code/design.md)
+pattern: design tokens in YAML frontmatter plus markdown rationale. shards-code
+uses the same idea, but this repo's current design doc is prose-first because
+the product is an agent workflow rather than a visual interface.
 
 **Product:** [product.md](product.md)
 **Architecture:** [tech.md](tech.md)

@@ -19,6 +19,7 @@ Use the matching `code-*` skill for recurring workflow work:
 
 | Intent | Skill |
 |---|---|
+| Setup or repair workflow harness | `code-setup` |
 | Strategy docs | `code-strategy` |
 | Feature lifecycle | `code-feature` |
 | Small fix | `code-quick` |
@@ -29,6 +30,12 @@ Use the matching `code-*` skill for recurring workflow work:
 `code-*` skills are shims: they delegate to other skills with injected routing.
 When they call `spec`, `superpowers:*`, or subagents, they must name the exact
 `.spec/` files that may be written.
+
+Use caveman levels from the active flow state when present:
+
+- `lite` for setup, strategy, compound, and scope amendment.
+- `full` for implementation and verification.
+- `ultra` for quick triage and compact subagent receipts.
 
 ## Spec Layout
 

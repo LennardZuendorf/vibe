@@ -18,6 +18,7 @@ compounding, prefer the matching `code-*` skill:
 
 | Intent | Skill |
 |---|---|
+| Setup or repair workflow harness | `code-setup` |
 | Project strategy or refocus | `code-strategy` |
 | Named feature lifecycle | `code-feature` |
 | Small bounded fix | `code-quick` |
@@ -27,6 +28,10 @@ compounding, prefer the matching `code-*` skill:
 
 Each `code-*` skill must inject exact `.spec/` output paths when delegating to
 other skills such as `spec` or `superpowers:*`.
+
+When `.agents/flow` names a caveman level, use it as the communication density:
+`lite` for nuanced setup/strategy, `full` for implementation/verification, and
+`ultra` for quick triage or compact receipts.
 
 ## Adapter Boundary
 

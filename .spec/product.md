@@ -99,6 +99,7 @@ The primary user-facing workflow is a family of agent skills:
 
 | Skill | When | Main Output |
 |---|---|---|
+| `code-setup` | Installing or repairing the workflow harness in a project | `.agents/flow`, adapter files, baseline `.spec/` |
 | `code-strategy` | Bootstrapping or refocusing project direction | Root `.spec/{product,tech,design,plan}.md` |
 | `code-feature` | Designing and building a named feature | `.spec/features/<name>/` plus implementation |
 | `code-quick` | Small fixes and bounded maintenance | Workspace edits, optional `.spec/quick/<slug>.md` |
@@ -108,6 +109,19 @@ The primary user-facing workflow is a family of agent skills:
 
 These are skills, not hidden prompts. Adapters may expose shortcuts, but the
 canonical workflow units are `.agents/skills/code-*`.
+
+## Communication Levels
+
+The `code` flow can request caveman compression levels per phase:
+
+| Level | Use When |
+|---|---|
+| `lite` | Strategy, setup, and user-facing review where nuance matters. |
+| `full` | Default implementation and verification work. |
+| `ultra` | Quick triage, mechanical receipts, or high-volume subagent summaries. |
+
+The level is advisory to the active agent skill, but state-machine entries should
+name the expected level so adapters and subagents stay consistent.
 
 ---
 

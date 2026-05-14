@@ -34,7 +34,8 @@ family of `code-*` agent skills.
     ├── code-quick/SKILL.md
     ├── code-verify/SKILL.md
     ├── code-compound/SKILL.md
-    └── code-amend/SKILL.md
+    ├── code-amend/SKILL.md
+    └── code-setup/SKILL.md
 ```
 
 ---
@@ -45,6 +46,7 @@ family of `code-*` agent skills.
 
 - allowed states and transitions
 - required `code-*` skill for each phase
+- optional caveman communication level (`lite`, `full`, `ultra`)
 - canonical `.spec/` paths for planned outputs
 - allowed write surfaces
 - exit predicates used by adapters or verification skills
@@ -70,15 +72,43 @@ Each `code-*` skill follows the same internal sequence:
 ## Delegation Examples
 
 ```text
+code-setup -> spec + skill-creator
+  Caveman: lite
+  Output: .agents/flow/*, .agents/skills/code-*/, AGENTS.md, CLAUDE.md, baseline .spec/
+
 code-strategy -> superpowers:brainstorming -> spec
+  Caveman: lite
   Output: .spec/product.md, .spec/tech.md, .spec/design.md, .spec/plan.md
 
 code-feature -> superpowers:brainstorming + writing-plans -> spec
+  Caveman: lite during design, full during implementation
   Output: .spec/features/<feature>/{product,tech,design,plan}.md
 
+code-quick -> systematic-debugging or TDD -> verification-before-completion
+  Caveman: ultra for triage, full for non-trivial fixes
+  Output: workspace edits, optional .spec/quick/<slug>.md
+
 code-verify -> verification-before-completion + systematic-debugging
+  Caveman: full
   Output: evidence summary, no spec edits unless failures change scope
 
 code-compound -> spec + finishing-a-development-branch
+  Caveman: lite
   Output: lessons, promoted root specs, archived feature folder
+
+code-amend -> spec + receiving-code-review or brainstorming
+  Caveman: lite
+  Output: targeted spec changes or revised flow state
 ```
+
+## External Skill Matrix
+
+| Code Skill | Primary External Skills | Caveman Level |
+|---|---|---|
+| `code-setup` | `spec`, `skill-creator`, optional `superpowers:brainstorming` | `lite` |
+| `code-strategy` | `superpowers:brainstorming`, `spec`, optional explorer subagents | `lite` |
+| `code-feature` | `superpowers:brainstorming`, `superpowers:writing-plans`, `spec`, `superpowers:test-driven-development`, `superpowers:subagent-driven-development`, `superpowers:executing-plans` | `lite` for design, `full` for implementation |
+| `code-quick` | `superpowers:systematic-debugging`, `superpowers:test-driven-development`, `superpowers:verification-before-completion` | `ultra` for triage, `full` for work |
+| `code-verify` | `superpowers:verification-before-completion`, `superpowers:requesting-code-review`, `superpowers:systematic-debugging` | `full` |
+| `code-compound` | `spec`, `superpowers:finishing-a-development-branch` | `lite` |
+| `code-amend` | `spec`, `superpowers:receiving-code-review`, `superpowers:brainstorming` | `lite` |

@@ -36,6 +36,7 @@ future work can resume without rediscovering the project.
 | R4 | Feature specs are ephemeral: created during design, consumed during implementation, merged when cross-cutting, then archived. |
 | R5 | Validation catches missing frontmatter, broken links, missing feature files, and invalid root/branch naming. |
 | R6 | The skill works both vendored in a repo and installed globally. |
+| R7 | Design docs can follow the google-labs-code `DESIGN.md` token-plus-prose pattern when visual identity matters. |
 
 ---
 

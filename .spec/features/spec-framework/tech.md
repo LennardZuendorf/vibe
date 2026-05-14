@@ -51,6 +51,10 @@ the `.spec/` document tree.
   root entrypoints.
 - Feature validation requires `product.md` and `tech.md`; optional `design.md`
   and `plan.md` must still have frontmatter when present.
+- `design.md` supports a token-plus-prose structure inspired by
+  `google-labs-code/design.md`: YAML token groups such as `colors`,
+  `typography`, `rounded`, `spacing`, and `components`, followed by markdown
+  rationale.
 
 ---
 
