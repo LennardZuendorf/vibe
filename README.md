@@ -1,8 +1,6 @@
-# shards-code
+# code
 
-A personal Claude Code framework. Three commands, four hooks, one routing script — orchestrating Compound Engineering, Superpowers, and a bundled `/spec` skill into a portable, gently-enforced workflow.
-
-> Personal config made portable. Expect to fork.
+A personal code framework. Three commands, four hooks, one routing script — orchestrating Compound Engineering, Superpowers, and a bundled `/spec` skill into a portable, gently-enforced workflow.
 
 ---
 
