@@ -29,9 +29,14 @@ compounding, prefer the matching `code-*` skill:
 Each `code-*` skill must inject exact `.spec/` output paths when delegating to
 other skills such as `spec` or `superpowers:*`.
 
-When `.agents/flow` names a caveman level, use it as the communication density:
-`lite` for nuanced setup/strategy, `full` for implementation/verification, and
-`ultra` for quick triage or compact receipts.
+A single inject owner (the `UserPromptSubmit` hook) emits one frozen string per
+`<flow>.<phase>` state, which also sets the caveman density level. Do not run a
+separate caveman tracker in parallel. Level definitions are canonical in
+`.spec/product.md` (Communication Levels): `lite` for setup/strategy/design/
+compound/amend, `full` for implementation/verification/quick work, `ultra` only
+for compound receipts and subagent summaries — never for triage. Regardless of
+level, keep security warnings and irreversible-action confirmations in normal
+prose; caveman compresses output, never reasoning.
 
 ## Adapter Boundary
 

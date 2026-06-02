@@ -31,11 +31,16 @@ Use the matching `code-*` skill for recurring workflow work:
 When they call `spec`, `superpowers:*`, or subagents, they must name the exact
 `.spec/` files that may be written.
 
-Use caveman levels from the active flow state when present:
+A single inject owner emits one frozen string per `<flow>.<phase>` state, which
+also sets the caveman density level (level definitions are canonical in
+`.spec/product.md`):
 
-- `lite` for setup, strategy, compound, and scope amendment.
-- `full` for implementation and verification.
-- `ultra` for quick triage and compact subagent receipts.
+- `lite` for setup, strategy, design, compound, and scope amendment.
+- `full` for implementation, verification, and quick work (including triage).
+- `ultra` only for compound receipts and subagent→orchestrator summaries.
+
+Caveman compresses output, not reasoning. Keep security warnings and
+irreversible-action confirmations in normal prose at any level.
 
 ## Spec Layout
 

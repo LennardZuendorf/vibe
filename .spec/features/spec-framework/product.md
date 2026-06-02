@@ -37,6 +37,7 @@ future work can resume without rediscovering the project.
 | R5 | Validation catches missing frontmatter, broken links, missing feature files, and invalid root/branch naming. |
 | R6 | The skill works both vendored in a repo and installed globally. |
 | R7 | Design docs can follow the google-labs-code `DESIGN.md` token-plus-prose pattern when visual identity matters. |
+| R8 | Lessons are tagged for retrieval, not just appended: each lesson carries a `tags:` line and a category so design/triage phases can find the relevant ones on entry. (D8) |
 
 ---
 

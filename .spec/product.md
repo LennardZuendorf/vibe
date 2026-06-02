@@ -33,6 +33,13 @@ state and skill orchestration in `.agents/`. Platform files such as `AGENTS.md`,
 `CLAUDE.md`, and `.claude/*` are adapters over that core, not the source of
 truth.
 
+The point is to take the planning load off myself. I should be able to say "I
+need X" and have the flow guide the agent through feature spec, planning,
+building, and TDD validation — encoding intent and instinct as constraints and
+injected resources rather than relying on the agent (or me) to remember the
+right next move. It borrows ideas from Compound Engineering — lessons that feed
+back, stable plan IDs — while staying KISS and personal, not a second toolchain.
+
 ---
 
 ## Requirements
@@ -112,16 +119,24 @@ canonical workflow units are `.agents/skills/code-*`.
 
 ## Communication Levels
 
-The `code` flow can request caveman compression levels per phase:
+The `code` flow requests a "caveman" communication-density level per state. The
+level names (`lite`/`full`/`ultra`) follow the upstream `JuliusBrussee/caveman`
+skill; the mapping of *level to workflow phase* is shards-code's own policy.
+Caveman is **output compression only** — it never reduces reasoning depth, and
+code, paths, and commands stay byte-exact.
 
-| Level | Use When |
-|---|---|
-| `lite` | Strategy, setup, and user-facing review where nuance matters. |
-| `full` | Default implementation and verification work. |
-| `ultra` | Quick triage, mechanical receipts, or high-volume subagent summaries. |
+| Level | Behaviour | Use When |
+|---|---|---|
+| `lite` | No filler or hedging; keep full sentences. | Strategy, setup, design, compound, amend — where nuance matters. |
+| `full` | Drop articles; fragments OK; short synonyms. The working default. | Implementation, verification, and quick fixes/triage. |
+| `ultra` | Abbreviate prose; `X → Y` arrows; one word where one word does. | Compound receipts and high-volume subagent→orchestrator summaries. |
 
-The level is advisory to the active agent skill, but state-machine entries should
-name the expected level so adapters and subagents stay consistent.
+`ultra` is *not* used for triage: it can drop edge cases, and triage is where a
+missed edge case is expensive. Regardless of level, security warnings and
+irreversible-action confirmations stay in normal prose.
+
+State-machine entries name the expected level, and a single inject owner emits it
+so adapters and subagents stay consistent (see features/code-flow).
 
 ---
 
