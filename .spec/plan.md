@@ -42,6 +42,12 @@ The core design decision for this cleanup is:
 - **Code workflow shims are agent skills.** They live under `.agents/skills/code-*`.
 - **Canonical flow state is platform-neutral.** Use `.agents/flow`, not `.spec/.phase` or `.claude/state.json`.
 - **Adapters are thin.** `AGENTS.md`, `CLAUDE.md`, and `.claude/*` read the same `.agents/flow` core.
+- **States are compound `<flow>.<phase>` keys.** Transitions and `next` arrays key on the compound state, not bare `phase`. The cursor drops the `notes` field.
+- **D8: Lessons are retrievable.** Tagged entries in `lessons.md`, read on entry to `*.design` and `*.triage`. KISS — one file, keyword scan, no schema.
+- **D9: Stable plan unit IDs.** `feature.plan` assigns `U1`, `U2`, …; `impl`/`verify` cite them so state survives re-planning.
+- **D10: One inject owner, frozen strings.** A single `UserPromptSubmit` inject per state names skill/writes/path/caveman/next and sets caveman; safety carve-outs override density; nothing turn-varying enters the inject (prompt-cache discipline).
+- **D11: Cherry-pick feature-dev subagents.** `code-explorer`/`code-architect` into `feature.design`, `code-reviewer` into `*.verify`; not the `/feature-dev` macro.
+- **Caveman provenance.** Levels follow `JuliusBrussee/caveman`; the phase→level mapping is ours. `ultra` is not used for triage.
 
 ### To Resolve
 
@@ -51,6 +57,14 @@ The core design decision for this cleanup is:
 - [ ] **OPEN-2: Skill count.** Validate whether `code-verify` and `code-compound`
   should stay separate skills, and whether `code-setup` should also own install
   repair after initial bootstrap.
+- [ ] **OPEN-6: R7 graceful degradation.** Port the archived detect-and-drop+warn
+  skill-availability check into `.agents/flow/scripts/`, or downgrade R7 to a hard
+  "require superpowers+spec, fail loudly" prerequisite. Include a 1-line caveman
+  fallback when the caveman plugin is absent.
+- [ ] **OPEN-7: Enforcement strictness.** Does "strict workflow" mean a real
+  PreToolUse block, or model-read prose only? Decide before M4 hooks.
+- [ ] **D7 (deferred): `feature.deepen`.** Optional confidence-gated deepen pass
+  between `plan` and `impl`. Revisit after the base feature arc is dogfooded.
 - [ ] **OPEN-3: Adapter install mode.** Symlink, copy, or merge-with-diff per file?
 - [ ] **OPEN-4: Hook strictness.** Which write surfaces should adapters block in
   M1 versus warn about?

@@ -136,20 +136,25 @@ under `.spec/`.
 
 ## Code Flow Contract
 
-The flow state lives under `.agents/flow`:
+The flow state lives under `.agents/flow`. States are compound `<flow>.<phase>`
+keys; the cursor carries only the moving parts and no turn-varying fields:
 
 ```json
 {
   "flow": "idle | setup | strategy | feature | quick",
-  "phase": "idle | detect | apply | plan | impl | verify | compound",
+  "phase": "idle | detect | apply | brainstorm | spec | design | plan | impl | verify | compound | triage | fix",
   "feature": null,
-  "updated": "2026-05-14T00:00:00Z"
+  "updated": "2026-06-02T00:00:00Z"
 }
 ```
 
-`state-machine.json` defines valid states, transitions, required `code-*` skill,
-allowed write surfaces, and exit predicates. `set-state.sh` is the only sanctioned
-writer. Adapter hooks may block direct writes to mutable state in target projects.
+`state-machine.json` defines each `<flow>.<phase>` state with its required `code-*`
+skill, caveman level, allowed write surfaces, exit predicate, and a static
+`inject` string. `caveman` and `inject` are static per state, never stored in the
+cursor, so the per-turn inject stays byte-stable and prompt-cache-safe. A single
+inject owner emits one frozen string per state (which also sets the caveman
+level). `set-state.sh` is the only sanctioned writer. Full per-state mapping lives
+in [features/code-flow/tech.md](features/code-flow/tech.md).
 
 ---
 
