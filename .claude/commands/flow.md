@@ -1,5 +1,5 @@
 ---
-description: Transition the code flow state machine to a new state
+description: Transition the vibe flow state machine to a new state
 argument-hint: <flow.phase>
 ---
 

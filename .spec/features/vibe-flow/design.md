@@ -1,14 +1,14 @@
 ---
 type: feature-design
-feature: code-flow
+feature: vibe-flow
 sibling: product.md
 parent: ../../design.md
 updated: 2026-06-02
 ---
 
-# Feature: Code Flow — Design
+# Feature: Vibe Flow — Design
 
-The code flow should make the next right action feel obvious. The user should be
+The vibe flow should make the next right action feel obvious. The user should be
 able to say "I need X" and not carry the planning load — the flow decides which
 phase they are in, which skill is mandatory, which files are in scope, and how
 terse to be, then guides them through spec → plan → build → TDD-validate.
@@ -26,7 +26,7 @@ not as a large second toolchain.
 
 ## Interaction Rules
 
-- Prefer named skills (`code-feature`) over slash-command-only workflows.
+- Prefer named skills (`vibe-feature`) over slash-command-only workflows.
 - Keep phase receipts short: state, changed files, verification, next transition.
 - Put exact output paths in every delegation prompt.
 - When scope grows, transition to a bigger flow rather than stretching quick mode.
@@ -46,7 +46,7 @@ the caveman level, and the next state. Principles:
   re-states them.
 - **Frozen per phase.** The same state always injects the same string, so prompt
   caching holds (see tech.md *Prompt Cache Discipline*).
-- **One owner.** Do not run competing injectors; shards-code's inject also sets
+- **One owner.** Do not run competing injectors; vibe's inject also sets
   the caveman level rather than delegating that to a separate hook.
 - **Safety overrides density.** Security warnings and irreversible-action
   confirmations are always normal prose, at any caveman level.

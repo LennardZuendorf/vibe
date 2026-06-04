@@ -1,15 +1,15 @@
 ---
 type: feature-tech
-feature: code-flow
+feature: vibe-flow
 sibling: product.md
 parent: ../../tech.md
 updated: 2026-06-02
 ---
 
-# Feature: Code Flow — Architecture
+# Feature: Vibe Flow — Architecture
 
-The code flow is a platform-neutral runtime layer under `.agents/flow` plus a
-family of `code-*` agent skills. Its job is to carry the planning load: the user
+The vibe flow is a platform-neutral runtime layer under `.agents/flow` plus a
+family of `vibe-*` agent skills. Its job is to carry the planning load: the user
 says "I need X" and the flow constrains the agent into the right phase, with the
 right skill, the right output path, and the right communication density already
 chosen for it.
@@ -32,13 +32,13 @@ chosen for it.
 │       ├── set-state.sh
 │       └── validate-state.sh
 └── skills/
-    ├── code-strategy/SKILL.md
-    ├── code-feature/SKILL.md
-    ├── code-quick/SKILL.md
-    ├── code-verify/SKILL.md
-    ├── code-compound/SKILL.md
-    ├── code-amend/SKILL.md
-    └── code-setup/SKILL.md
+    ├── vibe-strategy/SKILL.md
+    ├── vibe-feature/SKILL.md
+    ├── vibe-quick/SKILL.md
+    ├── vibe-verify/SKILL.md
+    ├── vibe-compound/SKILL.md
+    ├── vibe-amend/SKILL.md
+    └── vibe-setup/SKILL.md
 ```
 
 ---
@@ -71,7 +71,7 @@ the per-turn inject byte-stable:
 ```json
 {
   "feature.impl": {
-    "skill": "code-feature",
+    "skill": "vibe-feature",
     "delegates": ["superpowers:executing-plans", "superpowers:test-driven-development"],
     "caveman": "full",
     "reads": [".spec/features/<feature>/plan.md"],
@@ -129,7 +129,7 @@ a separate tracking system.
 
 ## Skill Shim Pattern
 
-Each `code-*` skill follows the same internal sequence:
+Each `vibe-*` skill follows the same internal sequence:
 
 1. Read `.agents/flow/state.json` and the relevant root or feature specs.
 2. On entry to a `*.design` or `*.triage` state, read `.spec/lessons.md` first (D8).
@@ -144,7 +144,7 @@ Each `code-*` skill follows the same internal sequence:
 
 There is **one inject owner**: the adapter's `UserPromptSubmit` hook (or its
 equivalent) reads the current `<flow>.<phase>` entry and emits that entry's static
-`inject` string. That single inject *also* sets the caveman level — shards-code
+`inject` string. That single inject *also* sets the caveman level — vibe
 does not run a separate caveman tracker hook in parallel, because two injectors
 collide and the agent follows the last one.
 
@@ -208,13 +208,13 @@ owned by the `spec` skill and superpowers `writing-plans`.
 
 | Code Skill | Primary External Skills | feature-dev agents | Caveman |
 |---|---|---|---|
-| `code-setup` | `spec`, `superpowers:writing-skills` | — | lite |
-| `code-strategy` | `superpowers:brainstorming`, `spec` | — | lite |
-| `code-feature` | `superpowers:brainstorming`, `superpowers:writing-plans`, `spec`, `superpowers:executing-plans`, `superpowers:test-driven-development`, `superpowers:subagent-driven-development` | `code-explorer`, `code-architect`, `code-reviewer` | lite (design/plan), full (impl/verify) |
-| `code-quick` | `superpowers:systematic-debugging`, `superpowers:test-driven-development`, `superpowers:verification-before-completion` | `code-reviewer` | full |
-| `code-verify` | `superpowers:verification-before-completion`, `superpowers:requesting-code-review`, `superpowers:systematic-debugging` | `code-reviewer` | full |
-| `code-compound` | `spec`, `superpowers:finishing-a-development-branch` | — | lite (receipts ultra) |
-| `code-amend` | `spec`, `superpowers:receiving-code-review` | — | lite |
+| `vibe-setup` | `spec`, `superpowers:writing-skills` | — | lite |
+| `vibe-strategy` | `superpowers:brainstorming`, `spec` | — | lite |
+| `vibe-feature` | `superpowers:brainstorming`, `superpowers:writing-plans`, `spec`, `superpowers:executing-plans`, `superpowers:test-driven-development`, `superpowers:subagent-driven-development` | `code-explorer`, `code-architect`, `code-reviewer` | lite (design/plan), full (impl/verify) |
+| `vibe-quick` | `superpowers:systematic-debugging`, `superpowers:test-driven-development`, `superpowers:verification-before-completion` | `code-reviewer` | full |
+| `vibe-verify` | `superpowers:verification-before-completion`, `superpowers:requesting-code-review`, `superpowers:systematic-debugging` | `code-reviewer` | full |
+| `vibe-compound` | `spec`, `superpowers:finishing-a-development-branch` | — | lite (receipts ultra) |
+| `vibe-amend` | `spec`, `superpowers:receiving-code-review` | — | lite |
 
 These external skills are assumed installed, not bundled (only `spec` ships). A
 missing delegated skill is a graceful-degradation concern tracked in the plan, not
