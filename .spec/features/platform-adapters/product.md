@@ -17,6 +17,7 @@ automatic and guard its invariants.
 **Parent:** [../../product.md](../../product.md)
 **Architecture:** [tech.md](tech.md)
 **Design:** [design.md](design.md)
+**Plan:** [plan.md](plan.md)
 
 ---
 
@@ -49,13 +50,14 @@ dogfooding (see [../../plan.md](../../plan.md) and the "earn the teeth" principl
 
 | Hook | Claude Code event | Role | Strength |
 |---|---|---|---|
-| **Inject** | `UserPromptSubmit` | Emit the current state's frozen `inject` string every turn (the daily driver — removes the human as the inject mechanism). | Guidance |
+| **Inject** | `UserPromptSubmit` | Pull the current state's orders from its linked `vibe-*` skill and inject them every turn (D12 — the daily driver, removes the human as the inject mechanism). | Guidance |
 | **Guard** | `PreToolUse` (`Edit\|Write\|NotebookEdit`) | Call the shared allow/warn/block decision policy; hard-block the three invariants, warn elsewhere. | Deterministic |
 | **Gate** | `Stop` | End-of-turn exit-predicate smell checks (stuck phase, impl without tests, forgotten `set-state.sh`). | Warn first |
 
 All three are thin shells over `.agents/flow/scripts/` — the inject reads
-`state-machine.json`; the guard and gate call `detect-context.sh`. No invariant
-logic is duplicated in the hooks.
+`state-machine.json` to resolve the state's linked skill and injects that skill's
+orders (D12); the guard and gate call `detect-context.sh`. No invariant logic or
+order text is duplicated in the hooks.
 
 ---
 

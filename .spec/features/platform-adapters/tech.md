@@ -16,6 +16,7 @@ plugin** whose hooks make the flow automatic.
 **Parent:** [../../tech.md](../../tech.md)
 **Requirements:** [product.md](product.md)
 **Design:** [design.md](design.md)
+**Plan:** [plan.md](plan.md)
 
 ---
 
@@ -31,7 +32,7 @@ CLAUDE.md                          # Claude Code adapter (prose + active-rules b
 │   └── flow.md                    # /flow transition command
 └── hooks/
     ├── hooks.json                 # event → script wiring
-    ├── user-prompt-submit-inject.sh  # emit current state's frozen inject
+    ├── user-prompt-submit-inject.sh  # inject linked skill's per-state orders (D12)
     ├── pre-tool-use-guard.sh         # allow/warn/block via detect-context.sh
     └── stop-gate.sh                  # end-of-turn exit-predicate smell checks
 ```
@@ -54,11 +55,13 @@ the skills, and the hooks against the platform-neutral core.
 ### Hooks (the Stage 2 enforcement layer)
 
 Each hook is a thin shell over `.agents/flow/scripts/`; the invariant logic lives
-once in `detect-context.sh`, never copied into a hook.
+once in `detect-context.sh`, never copied into a hook. The inject hook is likewise
+thin: it resolves the state's linked skill and injects that skill's orders (D12) —
+the orders are authored once, in the skill.
 
 | Hook script | Event | Reads | Behaviour |
 |---|---|---|---|
-| `user-prompt-submit-inject.sh` | `UserPromptSubmit` | `state.json`, `state-machine.json` | Print the current state's **frozen** `inject` string (~30 lines, no exit codes, no blocking). This is the daily driver — it reminds the agent every turn, so the human is no longer the inject mechanism. Frozen-string discipline: nothing turn-varying, or the prompt cache rebuilds each turn. |
+| `user-prompt-submit-inject.sh` | `UserPromptSubmit` | `state.json`, `state-machine.json`, the state's linked `vibe-*` skill | Resolve the current state's linked skill (D12) and inject that skill's per-state **orders block** (no exit codes, no blocking). This is the daily driver — it reminds the agent every turn, so the human is no longer the inject mechanism. Static-content discipline: nothing turn-varying, or the prompt cache rebuilds each turn. Skill-less states (`idle`, `amend`) fall back to the machine's inline string. |
 | `pre-tool-use-guard.sh` | `PreToolUse` matcher `Edit\|Write\|NotebookEdit` | `detect-context.sh decide <path>` | Exit 2 on the three hard blocks (`lessons.md` outside compound, root specs outside `strategy.spec`/`feature.compound`, direct `state.json` edits). Warnings (exit 0 + stderr) elsewhere. |
 | `stop-gate.sh` | `Stop` | `detect-context.sh` | End-of-turn smell checks: stuck phase (same state N turns), impl touched source without tests, verify entered without review, forgotten `set-state.sh`. Warn-only first; promote individual predicates to blocking only after dogfooding. |
 

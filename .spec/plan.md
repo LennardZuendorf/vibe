@@ -3,7 +3,7 @@ type: entrypoint
 scope: implementation
 covers: milestones, build sequence, validation criteria, open decisions
 children: []
-updated: 2026-06-03
+updated: 2026-06-04
 ---
 
 # vibe — Implementation Plan
@@ -44,7 +44,8 @@ The core design decision this rests on is:
 - **States are compound `<flow>.<phase>` keys.** Transitions and `next` arrays key on the compound state, not bare `phase`. The cursor drops the `notes` field.
 - **D8: Lessons are retrievable.** Tagged entries in `lessons.md`, read on entry to `*.design` and `*.triage`. KISS — one file, keyword scan, no schema.
 - **D9: Stable plan unit IDs.** `feature.plan` assigns `U1`, `U2`, …; `impl`/`verify` cite them so state survives re-planning.
-- **D10: One inject owner, frozen strings.** A single `UserPromptSubmit` inject per state names skill/writes/path/caveman/next and sets caveman; safety carve-outs override density; nothing turn-varying enters the inject (prompt-cache discipline).
+- **D10: One inject owner.** A single `UserPromptSubmit` inject per state names skill/writes/path/caveman/next and sets caveman; safety carve-outs override density; nothing turn-varying enters the inject (prompt-cache discipline).
+- **D12: Skill shim is the inject source (supersedes D10's frozen-string mechanism).** The per-turn orders live in each `vibe-*` skill, not in a hand-written `state-machine.json` `inject` string. The state's `skill` field links it to its shim; the `UserPromptSubmit` hook pulls that skill's per-`<flow>.<phase>` orders block and injects it. D10's invariants survive — one inject owner, nothing turn-varying, cache-stable. Skill-less states (`idle`, `amend`) keep a minimal inline fallback string. Implemented when the skill shims are updated; see [features/platform-adapters/plan.md](features/platform-adapters/plan.md) (U8 + U1).
 - **D11: Cherry-pick feature-dev subagents.** `code-explorer`/`code-architect` into `feature.design`, `code-reviewer` into `*.verify`; not the `/feature-dev` macro.
 - **Caveman provenance.** Levels follow `JuliusBrussee/caveman`; the phase→level mapping is ours. `ultra` is not used for triage.
 
@@ -187,6 +188,10 @@ to lessons/archive without using ad hoc prompts.
 **Goal:** Codex and Claude Code expose the same flow without owning it — and
 Claude Code installs it as a plugin whose hooks make the flow automatic.
 
+**Stage 2 unit-level plan:** the buildable breakdown (units `U1`–`U7`, stable
+IDs) lives in [features/platform-adapters/plan.md](features/platform-adapters/plan.md).
+The milestone checklist below stays the high-level roadmap view.
+
 **Stage 1 (done — guidance only):**
 
 - [x] Rewrite `AGENTS.md` as the Codex-facing adapter policy.
@@ -201,8 +206,13 @@ Claude Code installs it as a plugin whose hooks make the flow automatic.
   plugin bundling the `/flow` command, the `vibe-*` skills, and the hooks.
 - [ ] Add `.claude/hooks/hooks.json` wiring events to scripts via
   `${CLAUDE_PLUGIN_ROOT}`.
-- [ ] **Inject hook** (`UserPromptSubmit`): emit the current state's frozen
-  `inject` string every turn. No exit codes. Frozen-string discipline.
+- [ ] **Skill-as-inject-source (D12)** prerequisite: give each `vibe-*` skill a
+  per-state orders block and relink the state machine (`inject` → `null` for
+  skill-owning states; inline fallback only for `idle`/`amend`). See
+  features/platform-adapters/plan.md U8.
+- [ ] **Inject hook** (`UserPromptSubmit`): resolve the current state's linked
+  skill and inject that skill's per-state orders every turn (D12). No exit codes.
+  Static-content discipline.
 - [ ] **Guard hook** (`PreToolUse` `Edit|Write|NotebookEdit`): exit 2 on the
   three hard blocks, warn elsewhere, via `detect-context.sh decide`.
 - [ ] **Gate hook** (`Stop`): warn-first exit-predicate checks (stuck phase,
