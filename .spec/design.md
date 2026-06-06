@@ -3,10 +3,9 @@ type: entrypoint
 scope: design
 design_format: google-labs-code/design.md-inspired
 children:
-  - features/spec-framework/design.md
   - features/vibe-flow/design.md
   - features/platform-adapters/design.md
-updated: 2026-05-14
+updated: 2026-06-06
 ---
 
 # vibe — Design
@@ -66,10 +65,23 @@ the product is an agent workflow rather than a visual interface.
 
 ---
 
+## Spec Document Ergonomics
+
+The spec framework should feel like a small map, not a documentation maze:
+
+- Root docs answer project-level questions; feature docs answer one buildable unit.
+- Branch docs are rare — only for concerns spanning multiple features.
+- `design.md` is first-class when UX, interaction, language, or workflow ergonomics
+  matter; omit token groups for non-visual workflow design.
+- Feature authoring follows the 6-step interview flow in
+  `.agents/skills/spec/feature.md` (locate → WHAT → rigor gate → HOW → plan → skip).
+
+---
+
 ## Feature Design Index
 
 | Feature | Design Detail |
 |---|---|
-| spec-framework | [features/spec-framework/design.md](features/spec-framework/design.md) |
 | vibe-flow | [features/vibe-flow/design.md](features/vibe-flow/design.md) |
 | platform-adapters | [features/platform-adapters/design.md](features/platform-adapters/design.md) |
+| spec-framework (archived) | [archive/spec-framework/design.md](archive/spec-framework/design.md) |

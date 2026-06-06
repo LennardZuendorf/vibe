@@ -2,7 +2,6 @@
 type: entrypoint
 scope: product
 children:
-  - features/spec-framework/product.md
   - features/vibe-flow/product.md
   - features/platform-adapters/product.md
   - features/agent-instructions/product.md
@@ -101,7 +100,7 @@ style rather than a broad marketplace audience.
 
 | Piece | What It Owns | Feature Spec |
 |---|---|---|
-| `spec` framework | `.spec/` docs, templates, validation, archive rules | [features/spec-framework/](features/spec-framework/product.md) |
+| `spec` framework | `.spec/` docs, templates, validation, archive rules, feature authoring flow | Bundled `.agents/skills/spec/` (M0 done; [archive](archive/spec-framework/product.md)) |
 | `vibe` flow | `.agents/flow` state, `vibe-*` skills, phase routing | [features/vibe-flow/](features/vibe-flow/product.md) |
 | Platform adapters | `AGENTS.md`, `CLAUDE.md`, and a **Claude Code plugin** that bundles the `/flow` command, the `vibe-*` skills, and the flow **hooks**; install/setup glue | [features/platform-adapters/](features/platform-adapters/product.md) |
 
@@ -233,6 +232,6 @@ so adapters and subagents stay consistent (see features/vibe-flow).
 
 | Feature | Covers |
 |---|---|
-| **[features/spec-framework/](features/spec-framework/product.md)** | Durable `.spec/` planning model: product, tech, design, plan, lessons, feature folders, validation. |
+| **spec framework (M0 done)** | Durable `.spec/` planning model: two-layer docs, strict templates, warn-first validation, Requirement+Scenario format. History: [archive/spec-framework/](archive/spec-framework/product.md). |
 | **[features/vibe-flow/](features/vibe-flow/product.md)** | Agent skill shims, `.agents/flow` state, state machine, phase routing, delegated skill output paths. |
 | **[features/platform-adapters/](features/platform-adapters/product.md)** | Codex and Claude Code integration files that expose the same vibe flow core. |

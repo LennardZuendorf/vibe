@@ -14,7 +14,7 @@ updated: 2026-06-06
 
 | Feature | Product | Plan | Status |
 |---|---|---|---|
-| [spec-framework](features/spec-framework/product.md) | `.spec/` + `spec` skill | [plan.md](features/spec-framework/plan.md) | DONE (SF0–SF4 follow-up) |
+| spec-framework | `.spec/` + `spec` skill | [archive/plan.md](archive/spec-framework/plan.md) | DONE (SF0–SF16, archived) |
 | [vibe-flow](features/vibe-flow/product.md) | `.agents/flow` + `vibe-*` skills | [plan.md](features/vibe-flow/plan.md) | DONE (VF1→U8, VF2–VF3 open) |
 | [agent-instructions](features/agent-instructions/product.md) | `AGENTS.md` template + symlinks | [plan.md](features/agent-instructions/plan.md) | PARTIAL (Stage 1 done; AI0–AI5 open) |
 | [platform-adapters](features/platform-adapters/product.md) | plugin + hooks + installer | [plan.md](features/platform-adapters/plan.md) | PARTIAL (Stage 1 done; U8–U7 open) |
@@ -27,9 +27,12 @@ Stage 1 is built: bundled `spec` skill, root `.spec/` docs, `.agents/flow` state
 machine + scripts, seven `vibe-*` skill shims, and canonical `AGENTS.md` with
 `CLAUDE.md` symlinked. Superseded prior art removed from `.spec/archive/`.
 
-**Spec-vs-repo gap (audit 2026-06-06):** Target architecture (D12 orders-in-skills,
-`vibe:instructions` markers, symlink-safe regen) is documented ahead of
-implementation. Stage 1 still uses frozen `inject` strings and unmarked `AGENTS.md`.
+**Spec-vs-repo gap (audit 2026-06-06, updated post-SF16):** D12 orders-in-skills and
+`vibe:instructions` markers still ahead of repo. **Partially closed:** spec-framework
+SF16 aligned `feature.design`/`feature.plan` inject to spec authoring flow;
+`regen-active-rules.sh` now symlink-safe with path dedupe (partial U8 prereq).
+Legacy feature plans (vibe-flow, agent-instructions, platform-adapters) not yet
+migrated to new `### U1.` + Requirements Trace shape — 8 validate warnings remain.
 
 Core design decision:
 
@@ -87,7 +90,7 @@ Each feature owns one layer. Cross-feature work cites the owning plan's unit IDs
 - [ ] **OPEN-2:** Skill count — [vibe-flow/plan.md](features/vibe-flow/plan.md) VF2.
 - [ ] **OPEN-3:** Install mode — copy `.agents/**`; merge via agent-instructions; symlinks opt-in. U6.
 - [ ] **OPEN-4 / OPEN-7:** Hook strictness — warn-first. U7 after M5.
-- [ ] **OPEN-5:** DESIGN.md validation — [spec-framework/plan.md](features/spec-framework/plan.md) SF4.
+- [x] **OPEN-5:** DESIGN.md validation — local token checks (SF3, always-on) + opt-in `VIBE_DESIGN_LINT=1` → `npx @google/design.md lint` (SF4, network-gated, graceful-degrade). Bash-only contract preserved when unset.
 - [ ] **OPEN-6:** Skill degradation — vibe-flow VF3.
 - [ ] **D7 (deferred):** `feature.deepen` — VF4 after M5.
 
@@ -109,11 +112,25 @@ Each feature owns one layer. Cross-feature work cites the owning plan's unit IDs
 
 ## M0: Spec Framework
 
-**Plan:** [features/spec-framework/plan.md](features/spec-framework/plan.md) (SF0–SF4)
+**Plan:** [archive/spec-framework/plan.md](archive/spec-framework/plan.md) (SF0–SF16) — **arc complete, archived**
 
-- [x] Four-feature spec model, validation, bundled skill.
-- [ ] **SF0:** `setup.sh` lessons template includes `**Tags:**`.
-- [ ] **SF1–SF4:** design guide, list-specs, token validation (non-blocking).
+- [x] Four-feature spec model, validation, bundled skill (Stage 1).
+- [x] **SF0** — lessons `**Tags:**` bootstrap + validate warn.
+- [x] **SF1** — `reference/design.md` writing guide + `SKILL.md` link.
+- [x] **SF2** — `list-specs.sh` design area + feature folder surfacing.
+- [x] **SF3** — local design token checks (offline floor).
+- [x] **SF4** — opt-in `VIBE_DESIGN_LINT=1` → `npx @google/design.md lint` (OPEN-5 resolved).
+- [x] **SF5** — strict root templates (product/tech/plan).
+- [x] **SF6** — strict feature templates + `feature-design.md`.
+- [x] **SF7** — guardrail headers on all templates.
+- [x] **SF8–SF12** — validate.sh warn-first teeth (Scope, frontmatter, Requirement+Scenario, plan structure, ID traceability).
+- [x] **SF13** — README two-layer model.
+- [x] **SF14** — SKILL/strategy dedup.
+- [x] **SF15** — anti-slop in reference guides.
+- [x] **SF16** — feature authoring interview flow (spec-heavy); `vibe-feature` delegates.
+- [x] **Tests** — `tests/spec/run.sh` (17/17).
+- [x] **Compound** — lesson, OPEN-5, regen digest, regen symlink fix.
+- [ ] **Deferred** — migrate legacy feature plans; promote warn→error.
 
 ---
 
@@ -146,7 +163,7 @@ Each feature owns one layer. Cross-feature work cites the owning plan's unit IDs
 - [ ] **AI4:** `setup.apply` merge + opt-in symlinks + conditional regen.
 - [ ] **AI5:** Five dogfood scenarios.
 
-**Prerequisite:** regen symlink dedupe (U8 scope) before AI4 regen step with symlinks.
+**Prerequisite:** regen symlink dedupe (U8 scope) — **partially landed** in spec-framework compound (`regen-active-rules.sh` symlink-safe + dedupe); confirm in AI4/U8 acceptance.
 
 ---
 
@@ -161,7 +178,7 @@ Each feature owns one layer. Cross-feature work cites the owning plan's unit IDs
 
 **Stage 2:**
 
-- [ ] **U8:** D12 + regen dedupe (blocks U1, unblocks safe AI4/AI5).
+- [ ] **U8:** D12 + regen dedupe confirm (partial dedupe landed SF16 compound; blocks U1, unblocks safe AI4/AI5).
 - [ ] **U1–U4:** Hooks + `hooks.json`.
 - [ ] **U5:** `.claude-plugin/plugin.json`.
 - [ ] **U6:** `install.sh` (delegates merge to AI2).
@@ -202,7 +219,7 @@ M0 [DONE]
 
 | Prefix | Feature | Units |
 |---|---|---|
-| `SF` | spec-framework | SF0–SF4 |
+| `SF` | spec-framework | SF0–SF16 (arc complete) |
 | `VF` | vibe-flow | VF1–VF4 (`VF1` = `U8`) |
 | `AI` | agent-instructions | AI0–AI5 |
 | `U` | platform-adapters | U8, U1–U7 |
@@ -213,7 +230,7 @@ M0 [DONE]
 
 | Milestone | Status | Sessions |
 |---|---|---:|
-| M0 | DONE | 1 |
+| M0 | DONE (SF0–SF16) | 2 |
 | M1–M3 | DONE | 3 |
 | M4a | PARTIAL (Stage 1) | 0.5 |
 | M4b | PARTIAL (Stage 1) | 1 |

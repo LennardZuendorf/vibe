@@ -2,10 +2,9 @@
 type: entrypoint
 scope: technical
 children:
-  - features/spec-framework/tech.md
   - features/vibe-flow/tech.md
   - features/platform-adapters/tech.md
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 # vibe — Technical Architecture
@@ -115,7 +114,9 @@ adapter files for the agent runtimes they use.
 
 ## Spec Framework Contract
 
-The spec framework owns only durable planning artifacts:
+The spec framework owns only durable planning artifacts. It does **not** own flow
+state, agent instruction files, or platform hooks (see feature boundaries in root
+[plan.md](plan.md)).
 
 ```text
 .spec/
@@ -127,17 +128,54 @@ The spec framework owns only durable planning artifacts:
 ├── product-<topic>.md
 ├── tech-<topic>.md
 ├── plan-<topic>.md
-├── features/<feature>/
-│   ├── product.md
-│   ├── tech.md
-│   ├── design.md       # optional
-│   ├── plan.md         # optional
-│   └── research.md     # optional
-└── archive/<feature>/
+├── features/<feature>/     # ephemeral; archive after compound
+│   ├── product.md          # required — WHAT: Requirement+Scenario format
+│   ├── tech.md             # required — HOW: files, contracts
+│   ├── design.md           # optional (full-rigor / UI)
+│   ├── plan.md             # recommended — ### U1. units, Requirements Trace
+│   └── research.md         # optional
+└── archive/<feature>/      # post-merge history
 ```
 
 No mutable cursor, phase file, turn counter, hook cache, or runtime lock belongs
 under `.spec/`.
+
+### Bundled skill layout
+
+```text
+.agents/skills/spec/
+├── SKILL.md
+├── strategy.md
+├── feature.md              # 6-step feature authoring interview flow (SF16)
+├── scripts/
+│   ├── setup.sh            # bootstrap root entrypoints + lessons.md (**Tags:**)
+│   ├── validate.sh         # warn-first structural checks (SF8–SF12)
+│   └── list-specs.sh       # root + feature doc inventory
+├── reference/
+│   ├── product.md, tech.md, plan.md, design.md
+│   └── templates/          # hard-floor root + feature templates (SF5–SF7)
+└── tests/spec/run.sh       # behaviour tests (17 cases)
+```
+
+`setup.sh` resolves templates relative to its script directory (vendored or
+`~/.agents/skills/spec`).
+
+### Validation
+
+- Root entrypoints: `product.md`, `tech.md`, `design.md`, `plan.md`.
+- Feature folders: require `product.md` + `tech.md`; optional docs need frontmatter.
+- **Warn-first** structural checks (SF8–SF12): Scope table, frontmatter, Requirement+
+  Scenario (RFC-2119 + Given/When/Then), plan units, ID traceability. Promote to
+  errors after live specs migrate.
+- **Design tokens (SF3):** local empty-group check (offline floor).
+- **External linter (SF4, OPEN-5):** opt-in `VIBE_DESIGN_LINT=1` →
+  `npx @google/design.md lint`; skips when offline or unset.
+- **Lessons (D8):** format owned here (`**Tags:**` per entry); vibe-flow owns
+  read-on-entry; vibe-compound writes + `regen-active-rules.sh` digest.
+
+Feature specs are ephemeral: design → plan → impl → verify → compound →
+`archive/<feature>/`. Cross-cutting decisions promote into root specs; feature-only
+detail stays in archive. Promotable tech blocks use `<!-- merge -->` markers.
 
 ---
 
@@ -230,7 +268,7 @@ wiring is in [features/platform-adapters/tech.md](features/platform-adapters/tec
 
 | Order | Component | Feature |
 |---|---|---|
-| 1 | Update `spec` skill for product/tech/design/plan model | spec-framework |
+| 1 | Update `spec` skill for product/tech/design/plan model | spec-framework (M0 done) |
 | 2 | Create `.agents/flow/state-machine.json` and state scripts | vibe-flow |
 | 3 | Create `vibe-strategy`, `vibe-feature`, `vibe-quick` skills | vibe-flow |
 | 4 | Create `vibe-verify`, `vibe-compound`, `vibe-amend` skills | vibe-flow |
@@ -257,6 +295,6 @@ wiring is in [features/platform-adapters/tech.md](features/platform-adapters/tec
 
 | Feature | Covers |
 |---|---|
-| **[features/spec-framework/](features/spec-framework/tech.md)** | Spec skill, templates, validation, root/feature document contracts. |
+| **spec framework (M0 done)** | Spec skill, templates, validation, authoring flow. [archive/spec-framework/](archive/spec-framework/tech.md) |
 | **[features/vibe-flow/](features/vibe-flow/tech.md)** | `.agents/flow` state machine, scripts, `vibe-*` skill contracts. |
 | **[features/platform-adapters/](features/platform-adapters/tech.md)** | Codex/Claude adapter files and installer behavior. |
