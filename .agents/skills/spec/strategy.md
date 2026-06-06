@@ -9,7 +9,7 @@ Root-layer files in `.spec/` are **persistent**. They describe the whole product
 | `product.md` | Mini PRD — story, requirements, principles, features index | Persistent |
 | `tech.md` | Architecture summary — stack, principles, contracts, features index | Persistent |
 | `design.md` | Cross-cutting design language, UX principles, interaction conventions | Persistent |
-| `plan.md` | Roadmap, milestones, progress | Persistent |
+| `plan.md` | Milestones, feature map, unit-prefix registry, critical path | Persistent |
 | `lessons.md` | Mistakes and rules — read at session start | Persistent, append-only |
 | `product-{topic}.md` | Cross-cutting product (design system, conventions) | Persistent |
 | `tech-{topic}.md` | Cross-cutting tech (infra, observability, deployment) | Persistent |
@@ -25,20 +25,21 @@ Step 1: product.md     — story / requirements / principles. Stay high-level.
         design.md      — shared UX/design language. Stay high-level.
 
 Step 2: For each sub-part (parallel or sequential):
-        features/<name>/product.md
+        features/<name>/product.md   (include Scope: Owns / Does not own)
         features/<name>/tech.md
-        features/<name>/design.md (optional)
+        features/<name>/plan.md      (stable unit IDs; register prefix in root plan)
+        features/<name>/design.md    (optional)
 
 Step 3: Cross-cutting only — when a concern truly spans every feature:
         product-{topic}.md
         tech-{topic}.md
 
-Step 4: plan.md        — sequence features into milestones
+Step 4: plan.md        — milestones, feature table, unit-prefix registry, critical path
 ```
 
 **Order matters:** root entrypoints constrain everything; then feature folders; branch docs last and only when the cross-cutting concern is **real**, not anticipated.
 
-Templates: [reference/templates/product.md](reference/templates/product.md), [reference/templates/tech.md](reference/templates/tech.md), [reference/templates/plan.md](reference/templates/plan.md).
+Templates: [product](reference/templates/product.md), [tech](reference/templates/tech.md), [plan](reference/templates/plan.md), [feature-plan](reference/templates/feature-plan.md).
 
 ## Branch doc vs feature folder
 
@@ -87,7 +88,9 @@ Full guides: [reference/product.md](reference/product.md), [reference/tech.md](r
 
 ## Plans and sub-plans
 
-`plan.md` is the **project-level** roadmap. It sequences features and milestones. It does **not** contain feature-level task lists — those go in `features/<name>/plan.md` (optional) or in the feature's `tech.md`.
+**Two-tier planning:** root `plan.md` = milestones (M0…), feature boundaries, unit-prefix registry, critical path. `features/<name>/plan.md` = unit tables (`{PREFIX}{N}`), dependencies, verification. Never duplicate unit tables in the root plan.
+
+Unit IDs are stable — assign once, never renumber on reorder. Cite in commits and tests during `impl`. Register each feature prefix in the root plan.
 
 `plan-{topic}.md` is for genuinely **cross-cutting** plans that don't belong to one feature (e.g. a migration touching every feature). Rare. Default to feature-scoped plans.
 

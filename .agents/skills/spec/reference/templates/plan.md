@@ -1,86 +1,82 @@
 ---
-type: entrypoint
-scope: implementation
-covers: milestones, task breakdown, validation criteria, session planning
+type: plan
+parent: product.md
+children: []
 updated: {YYYY-MM-DD}
 ---
 
-# {Project Name} — Implementation Plan
+# Implementation Plan
 
-**Parent specs:** [product.md](product.md), [tech.md](tech.md)
+{One paragraph: current delivery focus, how features compose, and what milestone is active.}
 
----
-
-## Validation Summary
-
-{After validating against the codebase, document findings here.}
-
-Already exists (don't rebuild):
-- {Existing capability}
-- {Existing capability}
-
-Must build:
-- {New work required}
-- {New work required}
-
-**Timeline:** {N-N} sessions (realistic, not optimistic)
+**Product:** [product.md](product.md)
+**Architecture:** [tech.md](tech.md)
+**Design:** [design.md](design.md)
 
 ---
 
-## Critical Architecture Decisions
+## Features
 
-### Decided
-- **{Decision}:** {Choice made} ({rationale})
+| Feature | Product | Tech | Plan | Status |
+|---|---|---|---|---|
+| {name} | [features/{name}/product.md](features/{name}/product.md) | [features/{name}/tech.md](features/{name}/tech.md) | [features/{name}/plan.md](features/{name}/plan.md) | {planned / in progress / done} |
 
-### To Resolve
-- [ ] {Open decision that affects implementation}
-
----
-
-## Implementation Roadmap
-
-| Milestone | Goal | Sessions | Risk |
-|-----------|------|----------|------|
-| **M1** | {Goal} | {N} | {Low/Med/High} |
-| **M2** | {Goal} | {N-N} | {Low/Med/High} |
+Add a row per active feature. Unit-level detail lives in feature `plan.md` — not here.
 
 ---
 
-## M1: {Name}
+## Feature boundaries
 
-**Goal:** {One sentence describing the exit state.}
-**Sessions:** {N} | **Risk:** {Level}
+{ASCII diagram or table: what each feature owns vs does not own. Prevents scope bleed.}
 
-Tasks:
-- [ ] {Concrete, verifiable task}
-- [ ] {Concrete, verifiable task}
-
-**Done when:** {Validation criteria.}
+```
+{feature-a}  ── owns ──>  {paths / concerns}
+{feature-b}  ── owns ──>  {paths / concerns}
+```
 
 ---
 
-## M2: {Name}
+## Milestones
 
-**Goal:** {One sentence.}
-**Sessions:** {N-N} | **Risk:** {Level}
+| ID | Goal | Features | Exit |
+|---|---|---|---|
+| M0 | {Foundation} | {names} | {Observable exit criteria} |
+| M1 | {…} | {names} | {…} |
 
-Tasks:
-- [ ] {Task}
-- [ ] {Task}
-
-**Done when:** {Validation criteria.}
+Milestones are delivery phases at the **root** layer. Subdivide parallel tracks as M4a / M4b when needed. Map feature units to milestones in each feature plan — do not duplicate unit tables here.
 
 ---
 
-## Critical Path
+## Unit prefixes
 
-{M1} -> {M2} -> {M3} -> {M4}
+| Prefix | Feature | Plan |
+|---|---|---|
+| {XX} | {name} | [features/{name}/plan.md](features/{name}/plan.md) |
+
+Register every feature prefix once. Agents cite unit IDs (`{XX}1`) in commits and tests during `impl`.
 
 ---
 
-## Progress
+## Critical path
 
-| Milestone | Status | Sessions Used | Estimate |
-|-----------|--------|---------------|----------|
-| M1 | NOT STARTED | 0 | {N} |
-| M2 | NOT STARTED | 0 | {N-N} |
+```
+{dependency chain — e.g. SF0 → VF1 → AI0 → U3}
+```
+
+Hard dependencies only. Cross-feature ordering that blocks shipping belongs here and in the blocking feature's plan.
+
+---
+
+## Spec vs implementation
+
+| Gap | Feature / unit | Notes |
+|---|---|---|
+| {Known drift} | {XX}n | {One line} |
+
+Honest inventory of spec-ahead-of-code. Close via feature units; shrink this table over time.
+
+---
+
+## Current focus
+
+{Active milestone, active feature, next human gate.}

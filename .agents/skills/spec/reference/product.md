@@ -30,12 +30,15 @@ If you're describing how one feature works, you're in the wrong file. Move to `f
 Where feature-level UX and requirements live. **Short-lived** — created during DESIGN, archived after the feature ships.
 
 Sections:
+- **Scope** — Owns / Does not own table; explicit boundaries vs neighbour features
 - **Why this feature exists** — the problem this feature solves, in one paragraph
 - **Requirements** — numbered, testable
 - **User experience** — what the user sees and does, with concrete examples
 - **Outputs** — what the feature produces
 - **Non-goals** — feature-scoped non-goals
 - **Open questions** — feature-scoped questions
+
+Link to feature `plan.md` in the header when present. Planning conventions: [plan.md](plan.md) (writing guide in this folder).
 
 Frontmatter:
 ```yaml

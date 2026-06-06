@@ -1,202 +1,196 @@
-# Writing Implementation Plans
+# Writing Plans
 
-The plan is the bridge between specs and code. It takes the WHAT from `product.md` and the HOW from `tech.md` and turns them into a sequenced, validated roadmap of milestones and sessions.
+Plans sequence work. They reference product, tech, design, and feature specs — they do not duplicate them.
 
-## The Planning Mindset
+## Two layers
 
-A good plan is honest about complexity. It accounts for what already exists (don't rebuild it), what's genuinely new (estimate conservatively), and what depends on what (sequence correctly). Optimistic plans cause constant re-planning. Realistic plans let you focus on building.
+| Layer | File | Scope |
+|---|---|---|
+| **Root** | `.spec/plan.md` | Milestones, feature map, boundaries, unit-prefix registry, critical path, spec-vs-repo gaps |
+| **Feature** | `.spec/features/<name>/plan.md` | Unit tables, dependencies, verification, feature-scoped open questions |
 
-Plans are living documents. They get validated against the actual codebase, updated as milestones complete, and adjusted when reality diverges from estimates.
+**Rule:** root plan = *what ships when* across features. Feature plan = *how this feature is sliced* for implementation. If you are writing step-by-step tasks for one feature, they belong in the feature plan.
 
-## Structure
+Optional branch plans (`plan-{topic}.md`) follow the root pattern for cross-cutting workstreams (e.g. infrastructure rollout).
 
-### `plan.md`
+---
 
-The plan entrypoint contains:
+## When to write
 
-- **Validation summary** — what has been verified against the actual codebase (what exists, what must be built)
-- **Critical architecture decisions** — decided items and items still to resolve, with their status
-- **Implementation roadmap** — table of milestones with goals, session estimates, risk levels, and any changes from earlier versions
-- **Milestone details** — each milestone broken into concrete tasks with validation criteria
-- **Critical path** — the dependency chain that determines total timeline
-- **Progress tracking** — sessions used vs estimated, current milestone status
+| Moment | Write |
+|---|---|
+| Strategy / roadmap | Root `plan.md` — milestones, feature list, critical path |
+| Feature design complete | Feature `plan.md` — units with stable IDs |
+| Scope changes mid-flight | Amend the relevant plan; add units, never renumber |
+| Compound | Archive feature plan with the feature; promote cross-cutting sequencing into root `plan.md` |
 
-## Key Sections Explained
+Human gate: root plan milestones and feature unit tables should be approved before `impl`.
 
-### Validation Summary
+---
 
-Before a plan is trustworthy, it must be validated against the codebase. This section records:
+## Milestones (root)
 
-```markdown
-## Validation Summary
+Milestones are delivery phases — **not** implementation units.
 
-This plan has been validated against the actual codebase. Key findings:
+| Convention | Example |
+|---|---|
+| Sequential | M0, M1, M2, … |
+| Parallel tracks | M4a, M4b (same phase, independent streams) |
+| Exit criteria | Observable behaviour or artifact — not "units done" |
 
-Already exists (don't rebuild):
-- Mention system (useInlineMention hook, [file:path] support)
-- File operations (extensive IPC handlers)
-- Theme system (CSS custom properties)
+Each milestone names which features participate and what "done" means. Feature plans map their units to milestone IDs in the unit table's **Milestone** column.
 
-Must build:
-- Markdown editor (tiptap)
-- File tree UI
-- Local source type implementation
+---
+
+## Unit IDs (feature)
+
+Stable, citeable identifiers for implementation slices. Used in commits, tests, and verify evidence during `impl`.
+
+### Format
+
+```
+{PREFIX}{N}
 ```
 
-This prevents the most common planning mistake: estimating work for things that already exist.
+| Part | Rule |
+|---|---|
+| **PREFIX** | 2–4 uppercase letters from the feature slug (`spec-framework` → `SF`, `agent-instructions` → `AI`) |
+| **N** | Non-negative integer, assigned once, **never renumbered** on reorder |
 
-### Architecture Decisions
+### Rules
 
-Track decisions that affect the plan's structure. Use clear status markers:
+1. **One prefix per feature** — register in root plan's unit-prefix table.
+2. **Never renumber** — deprioritized work stays in the table; add new IDs for new work.
+3. **One unit = one reviewable slice** — testable, committable, independently verifiable.
+4. **Cite during impl** — commit subjects and test names reference the unit (`feat(flow): VF1 add orders blocks`).
+5. **Aliases allowed** — when restructuring, document equivalence (`VF1 = legacy U8`) in the feature plan; do not delete old IDs from git history references.
+6. **Cross-feature deps** — document in both the feature plan dependency table and root critical path.
 
-```markdown
-## Critical Architecture Decisions
+### Unit table columns
 
-### Decided
-- **IPC Namespace:** `notes:*` (not `file:*`)
-- **Session-File Binding:** Explicit attach/detach per session
+| Column | Purpose |
+|---|---|
+| **ID** | Stable prefix + number |
+| **Summary** | One line — what ships |
+| **Depends on** | Prior units (same or other features) |
+| **Milestone** | Root milestone this unit rolls into |
 
-### To Resolve
-- [ ] Route pattern for note views
-- [ ] Auto-save algorithm details
-```
+### Verification table
 
-### Milestone Breakdown
+Pair each unit with observable evidence — command, test path, script output, or behaviour check. Verify phase checks this table, not agent assertions.
 
-Each milestone needs:
-- **Goal** — one sentence describing the exit state
-- **Session estimate** — realistic, not optimistic
-- **Risk level** — Low / Medium / High
-- **Tasks** — concrete, verifiable items
-- **Validation criteria** — how you know the milestone is done
+---
 
-```markdown
-## M2: Editor Shell
+## Feature boundaries
 
-**Goal:** tiptap rendering in Electron with toolbar and theming.
-**Sessions:** 2-3 | **Risk:** Medium
+Every feature `product.md` includes a **Scope** table:
 
-Tasks:
-- [ ] Install tiptap dependencies
-- [ ] Scaffold simple-editor template
-- [ ] Wire editor component into layout
-- [ ] Connect theme tokens
+| | |
+|---|---|
+| **Owns** | Paths, scripts, contracts this feature may write |
+| **Does not own** | Neighbour features and root concerns — explicit negatives prevent bleed |
 
-**Done when:** Editor renders markdown, toolbar works, dark/light mode switches correctly.
-```
+Root `plan.md` summarizes boundaries across features (diagram or table). Feature plans do not redefine product scope — they reference `product.md`.
 
-### Critical Path
+---
 
-Show the dependency chain:
-```markdown
-## Critical Path
+## Standard feature doc headers
 
-Pre-M1 -> M1 -> M2+M3 -> M4a -> M5 -> M5b -> M7 -> M8
-```
-
-This tells you which milestones can be parallelized and which are sequential blockers.
-
-### Progress Tracking
-
-Update as you go. Valid status values: `NOT STARTED`, `IN PROGRESS`, `DONE`, `BLOCKED`, `SKIPPED`.
+Consistent cross-links across the feature folder:
 
 ```markdown
-## Progress
-
-| Milestone | Status | Sessions Used | Estimate |
-|-----------|--------|---------------|----------|
-| Pre-M1 | DONE | 0.5 | 0.5 |
-| M1 | DONE | 1 | 1 |
-| M2+M3 | DONE | 3 | 2-3 |
-| M4a | IN PROGRESS | 1 | 1.5-2 |
+**Parent:** [../../product.md](../../product.md)   # or ../../tech.md in tech.md
+**Architecture:** [tech.md](tech.md)              # product.md
+**Requirements:** [product.md](product.md)        # tech.md
+**Design:** [design.md](design.md)                # when present
+**Plan:** [plan.md](plan.md)                      # when present
+**Related:** [../other-feature/product.md](../other-feature/product.md)  # when coupled
 ```
 
-## Style Rules
+---
 
-**Do:**
-- Validate against the actual codebase before finalizing
-- Use session counts (not hours/days) as estimates
-- Mark tasks with checkboxes for tracking
-- Include "changes from original" when plans evolve
-- Keep milestones small enough to complete in 1-3 sessions
-- State validation criteria as concrete, verifiable conditions
+## Root plan sections
 
-**Don't:**
-- Plan more than one level of detail ahead (detail the next 2-3 milestones, keep future ones high-level)
-- Mix product decisions into the plan — reference the product spec
-- Include code in the plan — that's what tech specs are for
-- Create overly optimistic estimates — add buffer for integration complexity
+1. **Features** — table linking every active feature's product, tech, plan
+2. **Feature boundaries** — who owns what (compressed from feature Scope tables)
+3. **Milestones** — M0… with goals, participating features, exit criteria
+4. **Unit prefixes** — registry mapping prefix → feature → plan file
+5. **Critical path** — hard cross-feature dependencies
+6. **Spec vs implementation** — honest drift inventory with owning unit
+7. **Current focus** — active milestone and next gate
 
-## Relationship to Other Specs
+Do **not** duplicate feature unit tables in the root plan.
 
-The plan references both product and tech specs but doesn't duplicate their content:
+---
 
-```markdown
-**Parent specs:** [product.md](product.md), [tech.md](tech.md)
+## Feature plan sections
+
+1. **Unit prefix** — local declaration + link to root registry
+2. **Units** — full unit table
+3. **Dependencies** — within-feature and cross-feature blocks
+4. **Spec vs implementation** — feature-scoped gaps
+5. **Verification** — evidence per unit
+6. **Open questions** — planning blockers only
+
+Template: [templates/feature-plan.md](templates/feature-plan.md)
+
+---
+
+## Frontmatter
+
+**Root plan:**
+```yaml
+---
+type: plan
+parent: product.md
+children: []   # feature plan paths when registered
+updated: YYYY-MM-DD
+---
 ```
 
-When a milestone's tasks require detailed understanding, the plan points to the relevant spec section rather than restating it.
-
-## Sub-Plans: `plan-{topic}.md`
-
-When a feature area is complex enough that its implementation details would bloat the main plan, break it out into a sub-plan. Sub-plans are to `plan.md` what branch docs are to `product.md` and `tech.md` — a scoped deep-dive.
-
-### When to Create a Sub-Plan
-
-Create a `plan-{topic}.md` when:
-- A feature area has 3+ milestones of its own
-- The feature spans multiple sessions and needs independent progress tracking
-- Multiple agents might work on this area concurrently and need a clear scope
-- The main plan would exceed ~200 lines if all the detail were inline
-
-Don't create a sub-plan for:
-- Simple features that fit in a single milestone in the main plan
-- Work that doesn't have its own product and tech specs to reference
-- Temporary task lists (those belong in your session, not in specs)
-
-### Structure of a Sub-Plan
-
-A sub-plan mirrors the main plan structure but scoped to one feature:
-
-- **Parent/sibling links** — links back to `plan.md` (parent) and other sub-plans (siblings) for navigation
-- **Product and tech spec references** — links to the feature's `product-{topic}.md` and `tech-{topic}.md`
-- **Scope definition** — what this sub-plan covers vs what stays in the main plan
-- **Pre-implementation checklist** — specs reviewed, dependencies from main plan satisfied
-- **Feature-scoped milestones** — prefixed with the topic (e.g., `editor-M1`, `editor-M2`)
-- **Progress tracking** — independent from the main plan's progress table
-
-### How Sub-Plans Relate to the Main Plan
-
-The main plan references sub-plans but doesn't duplicate their detail:
-
-```markdown
-## M5: Editor
-
-**Goal:** Full markdown editor with file I/O.
-**Sessions:** 6-8 | **Risk:** High
-
-Detailed breakdown: [plan-editor.md](plan-editor.md)
+**Feature plan:**
+```yaml
+---
+type: feature-plan
+feature: <name>
+parent: ../../plan.md
+updated: YYYY-MM-DD
+---
 ```
 
-The sub-plan manages its own milestones and progress, but its top-level milestone (`M5: Editor`) is tracked in the main plan's progress table.
+List feature plans in root `children:` when you want validate to track them (optional but recommended).
 
-### Naming Convention
+---
 
-Sub-plans follow the same `{area}-{topic}.md` pattern as other branch docs:
-- `plan-editor.md` — editor implementation plan
-- `plan-auth.md` — authentication feature plan
-- `plan-file-sync.md` — file synchronization plan
+## Style rules
 
-The topic should match the corresponding product/tech branch docs when they exist (e.g., `plan-editor.md` pairs with `product-editor.md` and `tech-editor.md`).
+- Reference specs by link — never paste requirements or architecture inline.
+- Prefer tables for units, milestones, and boundaries.
+- Keep "Current focus" to 2–3 sentences — it rot fast; bump `updated:` when it changes.
+- Open questions belong in the plan that owns the blocker; close them by decision or new unit.
 
-## When to Update
+---
 
-- **Milestone completed** — mark as DONE, update sessions used
-- **Estimate changed** — update the milestone table with revised numbers
-- **Scope changed** — add/remove milestones, update critical path
-- **Architecture decision resolved** — move from "To Resolve" to "Decided"
-- **Plan validated** — add validation summary, adjust estimates based on findings
+## Example (multi-feature repo)
 
-## Templates
+Root `.spec/plan.md` might show:
 
-See [templates/plan.md](templates/plan.md) for the main plan template and [templates/plan-xxx.md](templates/plan-xxx.md) for the feature sub-plan template.
+| Prefix | Feature | Plan |
+|---|---|---|
+| SF | spec-framework | features/spec-framework/plan.md |
+| VF | vibe-flow | features/vibe-flow/plan.md |
+| AI | agent-instructions | features/agent-instructions/plan.md |
+
+Critical path excerpt:
+
+```
+SF0 (spec skill) → VF0 (state machine) → VF1 (per-turn orders) → AI0 (wrap AGENTS.md)
+```
+
+Feature `vibe-flow/plan.md` unit row:
+
+| ID | Summary | Depends on | Milestone |
+|---|---|---|---|
+| VF1 | Per-turn orders in vibe-* skills; strip frozen injects | VF0 | M2 |
+
+This pattern scales: add features, register prefixes, extend milestones — without rewriting history.

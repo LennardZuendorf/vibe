@@ -4,9 +4,10 @@ Each **named** unit of work gets `.spec/features/<name>/`. Specs here are **shor
 
 ## Examples in this repo
 
-- [.spec/features/vibe-flow/](../../../.spec/features/vibe-flow) — flow state machine, `vibe-*` skills
-- [.spec/features/spec-framework/](../../../.spec/features/spec-framework) — the `.spec/` planning model
-- [.spec/features/platform-adapters/](../../../.spec/features/platform-adapters) — Codex / Claude Code adapters
+- [.spec/features/vibe-flow/](../../../.spec/features/vibe-flow) — flow state machine, `vibe-*` skills (units `VF*`)
+- [.spec/features/spec-framework/](../../../.spec/features/spec-framework) — the `.spec/` planning model (units `SF*`)
+- [.spec/features/agent-instructions/](../../../.spec/features/agent-instructions) — `AGENTS.md` template and adapter symlinks (units `AI*`)
+- [.spec/features/platform-adapters/](../../../.spec/features/platform-adapters) — Codex / Claude Code adapters (units `U*`)
 
 ## Anatomy of `features/<name>/`
 
@@ -15,7 +16,7 @@ Each **named** unit of work gets `.spec/features/<name>/`. Specs here are **shor
 | `product.md` | yes | What this feature does (requirements, UX) |
 | `tech.md` | yes | How it is built (paths, contracts, implementation) |
 | `design.md` | optional | UI/UX or design-system fragment for this feature |
-| `plan.md` | optional | Feature-scoped roadmap |
+| `plan.md` | recommended | Stable unit IDs, dependencies, verification — see [reference/plan.md](reference/plan.md) |
 | `research.md` | optional | Discovery artifacts |
 
 **Frontmatter** (shape — adjust paths to your tree):
@@ -41,10 +42,12 @@ Created  →  Consumed  →  Merged  →  Archived
  phase       phase      phase        phase
 ```
 
-1. **Created during DESIGN.** `product.md` = requirements; `tech.md` = architecture for this feature only.
-2. **Consumed during IMPL.** Implementation reads the feature spec; amend with targeted fixes if reality diverges, don't wholesale rewrite.
-3. **Merged during COMPOUND.** Cross-cutting blocks from `features/<name>/tech.md` promote into root `tech.md` (or branch docs). Feature-only detail does not promote.
-4. **Archived after merge.** `mv .spec/features/<name>/ .spec/archive/<name>/`. Kept for archaeology, not loaded by default.
+1. **Created during DESIGN.** `product.md` = requirements + **Scope** table; `tech.md` = architecture for this feature only.
+2. **Planned before IMPL.** `plan.md` = unit table with stable IDs (`{PREFIX}{N}`); prefix registered in root `plan.md`. Human gate on units.
+3. **Consumed during IMPL.** Read feature specs; cite unit IDs in commits and tests; amend with targeted fixes if reality diverges.
+4. **Verified against plan.** Evidence checked per unit verification table — not agent assertions alone.
+5. **Merged during COMPOUND.** Cross-cutting blocks from `features/<name>/tech.md` promote into root `tech.md` (or branch docs). Feature-only detail does not promote.
+6. **Archived after merge.** `mv .spec/features/<name>/ .spec/archive/<name>/`. Kept for archaeology, not loaded by default.
 
 No `/code:feature` workflow? Same lifecycle: create folder when scoping, archive when done.
 
@@ -76,11 +79,14 @@ If everything you wrote applies to **every** future feature, that content belong
 ## Scaffold checklist (new feature)
 
 1. Create `.spec/features/<name>/`.
-2. Copy [reference/templates/feature-product.md](reference/templates/feature-product.md) → `product.md`; [reference/templates/feature-tech.md](reference/templates/feature-tech.md) → `tech.md`.
-3. Set frontmatter (`feature`, `parent`, `sibling`, `updated`).
-4. Link **product ↔ tech** inside the folder; link **root** `product.md` / `tech.md` features index tables to this folder (and bump root `updated:`).
-5. Optional: [reference/templates/design.md](reference/templates/design.md) → `design.md` if UI-heavy.
-6. Run `bash .agents/skills/spec/scripts/validate.sh` when vendored, or the equivalent global install path — [scripts/validate.sh](scripts/validate.sh).
+2. Copy templates → `product.md`, `tech.md`, `plan.md` ([feature-product](reference/templates/feature-product.md), [feature-tech](reference/templates/feature-tech.md), [feature-plan](reference/templates/feature-plan.md)).
+3. Set frontmatter (`feature`, `parent`, `sibling`, `updated`) in all three files.
+4. Fill **Scope** (Owns / Does not own) in `product.md`.
+5. Choose unit prefix; write units in `plan.md`; register prefix in root `plan.md` feature table and unit-prefix registry.
+6. Link **product ↔ tech ↔ plan** inside the folder; add standard headers (`Parent`, `Architecture`, `Plan`, `Related`).
+7. Link **root** `product.md`, `tech.md`, and `plan.md` to this feature (bump root `updated:`).
+8. Optional: [reference/templates/design.md](reference/templates/design.md) → `design.md` if UI-heavy.
+9. Run `bash .agents/skills/spec/scripts/validate.sh` when vendored, or the equivalent global install path — [scripts/validate.sh](scripts/validate.sh).
 
 ## Archive vs delete
 
@@ -88,7 +94,7 @@ If everything you wrote applies to **every** future feature, that content belong
 
 ## Templates and validation
 
-- Feature templates: [reference/templates/feature-product.md](reference/templates/feature-product.md), [reference/templates/feature-tech.md](reference/templates/feature-tech.md), optional [reference/templates/design.md](reference/templates/design.md)
-- Writing guides: [reference/product.md](reference/product.md), [reference/tech.md](reference/tech.md)
+- Feature templates: [feature-product](reference/templates/feature-product.md), [feature-tech](reference/templates/feature-tech.md), [feature-plan](reference/templates/feature-plan.md), optional [design](reference/templates/design.md)
+- Writing guides: [product](reference/product.md), [tech](reference/tech.md), [plan](reference/plan.md)
 
 Global layer handoff: [strategy.md](strategy.md).

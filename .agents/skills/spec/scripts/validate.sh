@@ -195,6 +195,11 @@ if [[ -d "$SPEC_DIR/features" ]]; then
       if ! grep -q "^updated:" "$f"; then
         red "features/$feature_name/$optional: missing 'updated:' in frontmatter"
       fi
+
+      expected_type="feature-${optional%.md}"
+      if ! grep -q "^type: $expected_type" "$f"; then
+        yellow "features/$feature_name/$optional: expected 'type: $expected_type'"
+      fi
     done
 
     green "features/$feature_name/: checked"

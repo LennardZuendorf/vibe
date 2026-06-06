@@ -12,6 +12,16 @@ updated: {YYYY-MM-DD}
 
 **Parent:** [../../product.md](../../product.md)
 **Architecture:** [tech.md](tech.md)
+**Plan:** [plan.md](plan.md)
+
+---
+
+## Scope
+
+| | |
+|---|---|
+| **Owns** | {Paths, scripts, contracts this feature writes} |
+| **Does not own** | {Neighbour features and root concerns — explicit negatives} |
 
 ---
 

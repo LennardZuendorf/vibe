@@ -9,12 +9,12 @@ description: |
   reviewing architecture, updating a spec, validating consistency, or user says
   spec, PRD, design doc, tech design, feature spec, branch doc.
 user-invocable: true
-argument-hint: "[strategy|feature|product|tech|plan|lessons|setup|validate]"
+argument-hint: "[strategy|feature|product|tech|plan|lessons|setup|spec]"
 allowed-tools: Read, Bash(bash .agents/skills/spec/scripts/validate.sh), Bash(bash .agents/skills/spec/scripts/list-specs.sh), Bash(bash .agents/skills/spec/scripts/setup.sh), Bash(bash ~/.agents/skills/spec/scripts/validate.sh), Bash(bash ~/.agents/skills/spec/scripts/list-specs.sh), Bash(bash ~/.agents/skills/spec/scripts/setup.sh)
 compatibility: Requires bash. macOS and Linux.
 metadata:
   author: lennarddib
-  version: "1.3"
+  version: "1.4"
 ---
 
 # Spec System
@@ -61,11 +61,11 @@ Specs come in two layers. Use the right one for the job — mixing them is the m
 - `product.md` is the mini PRD: story, target user, requirements, design principles, non-goals. Never feature-level detail.
 - `tech.md` is the architecture summary: design philosophy, stack, file layout, state contracts, basic implementation, build sequence, risks. Never feature-level detail.
 - `design.md` is the cross-cutting design language: UX principles, interaction conventions, interface tone, and reusable design patterns. It may bridge product and implementation vocabulary when that helps design stay actionable.
-- `plan.md` sequences the work. It references product, tech, design, and feature specs instead of duplicating them.
+- `plan.md` sequences the work at the **root** layer: milestones, feature map, unit-prefix registry, critical path. Unit-level detail lives in `features/<name>/plan.md`. See [reference/plan.md](reference/plan.md).
 - Branch docs (`product-{topic}.md`, `tech-{topic}.md`) cover **cross-cutting concerns only** — things that span every feature. Design system. Infrastructure. Naming conventions. If the topic is really about one feature, it belongs in the feature layer.
 
 **Feature layer rules:**
-- One directory per feature in `.spec/features/<name>/`. Always contains `product.md` and `tech.md`. Optionally `design.md`, `plan.md`, `research.md`.
+- One directory per feature in `.spec/features/<name>/`. Always contains `product.md` and `tech.md`. Recommended: `plan.md` with stable unit IDs (`{PREFIX}{N}`). Optionally `design.md`, `research.md`. Every feature `product.md` includes a **Scope** table (Owns / Does not own).
 - Feature specs are **short-lived**: written during DESIGN, consumed during IMPL, merged into root layer during COMPOUND, then moved to `archive/<name>/`.
 - Cross-cutting decisions from a feature get merged into root `tech.md` or relevant branch doc. Feature-specific detail does not — it stays in the archive.
 
@@ -119,10 +119,10 @@ Specs come in two layers. Use the right one for the job — mixing them is the m
 |---|---|
 | Project bootstrap, design language, conventions, infra spanning every feature | [strategy.md](strategy.md), then root `.spec/` as needed |
 | New feature scoping | `product.md` + `tech.md`, then [feature.md](feature.md) + create `features/<name>/` |
-| Working on existing feature | [feature.md](feature.md) + `features/<name>/product.md` + `features/<name>/tech.md` |
+| Working on existing feature | [feature.md](feature.md) + `features/<name>/product.md` + `features/<name>/tech.md` + `plan.md` when present |
 | Architecture, conventions, infrastructure | `tech.md` + relevant `tech-{topic}.md` |
 | Design system, UX patterns | `design.md` + relevant `product-{topic}.md` or `tech-{topic}.md` if needed |
-| Implementation planning, milestones | `plan.md` |
+| Implementation planning, milestones | root `plan.md` + `features/<name>/plan.md` + [reference/plan.md](reference/plan.md) |
 | UI / layout / user flows in a feature | `features/<name>/product.md` + `features/<name>/design.md` (if present) |
 
 ## Design.md Compatibility
@@ -175,6 +175,7 @@ Paths are under [reference/templates/](reference/templates/) (copy into your pro
 | [reference/templates/plan.md](reference/templates/plan.md) | Root `plan.md` |
 | [reference/templates/feature-product.md](reference/templates/feature-product.md) | `features/<name>/product.md` |
 | [reference/templates/feature-tech.md](reference/templates/feature-tech.md) | `features/<name>/tech.md` |
+| [reference/templates/feature-plan.md](reference/templates/feature-plan.md) | `features/<name>/plan.md` |
 | [reference/templates/design.md](reference/templates/design.md) | Optional `features/<name>/design.md` or design-system fragment |
 
 **Branch docs** (`product-{topic}.md`, `tech-{topic}.md`, `plan-{topic}.md`): no separate template files in this bundle — start from the root `product.md` / `tech.md` / `plan.md` templates, rename, set `type: branch` and parent/scope/covers per [reference/product.md](reference/product.md) and [reference/tech.md](reference/tech.md).

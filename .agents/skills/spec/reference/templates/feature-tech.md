@@ -12,6 +12,7 @@ updated: {YYYY-MM-DD}
 
 **Parent:** [../../tech.md](../../tech.md)
 **Requirements:** [product.md](product.md)
+**Plan:** [plan.md](plan.md)
 
 ---
 
