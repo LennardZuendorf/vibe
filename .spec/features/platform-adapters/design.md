@@ -3,14 +3,14 @@ type: feature-design
 feature: platform-adapters
 sibling: product.md
 parent: ../../design.md
-updated: 2026-05-14
+updated: 2026-06-04
 ---
 
 # Feature: Platform Adapters — Design
 
 Adapter docs should be calm, direct, and boring. They are not the product
 architecture; they are reminders that point the runtime back to `.agents/flow`
-and `.agents/skills/code-*`.
+and `.agents/skills/vibe-*`.
 
 **Parent:** [../../design.md](../../design.md)
 **Requirements:** [product.md](product.md)
@@ -23,3 +23,13 @@ and `.agents/skills/code-*`.
 - Put canonical paths near the top.
 - Avoid platform-specific reinventions of the workflow.
 - State what the adapter reads, what it writes, and what it must never own.
+
+## Hooks & plugin
+
+- The Claude Code plugin is the *packaging*, not a second core. It carries the
+  command, skills, and hooks; it owns no state.
+- Hooks stay thin and boring: read state or call `detect-context.sh`, translate
+  the verdict to Claude Code's exit-code convention, get out of the way.
+- Earn the teeth: ship hooks warn-first; a hook should never end a session.
+- The inject hook emits the frozen per-state string verbatim — it shapes nothing,
+  it just delivers the current orders every turn.

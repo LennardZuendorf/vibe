@@ -4,11 +4,9 @@ Each **named** unit of work gets `.spec/features/<name>/`. Specs here are **shor
 
 ## Examples in this repo
 
-- [.spec/features/commands/](../../../.spec/features/commands) — command surface, lifecycles
-- [.spec/features/hooks/](../../../.spec/features/hooks) — hook behavior, blocks
-- [.spec/features/routing/](../../../.spec/features/routing) — keystone scripts, state
-
-Post-archive example: [.spec/archive/engineering-agent/](../../../.spec/archive/engineering-agent) — history kept, not default-loaded.
+- [.spec/features/vibe-flow/](../../../.spec/features/vibe-flow) — flow state machine, `vibe-*` skills
+- [.spec/features/spec-framework/](../../../.spec/features/spec-framework) — the `.spec/` planning model
+- [.spec/features/platform-adapters/](../../../.spec/features/platform-adapters) — Codex / Claude Code adapters
 
 ## Anatomy of `features/<name>/`
 
@@ -57,7 +55,7 @@ Wrap **cross-cutting** sections so COMPOUND tooling (e.g. `bin/merge-feature.sh`
 ```markdown
 <!-- merge -->
 ## Single routing contract
-All `code-*` workflow skills and adapters call the same flow reader — one JSON shape everywhere.
+All `vibe-*` workflow skills and adapters call the same flow reader — one JSON shape everywhere.
 <!-- /merge -->
 ```
 
