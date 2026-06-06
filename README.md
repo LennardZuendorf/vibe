@@ -161,7 +161,7 @@ not a block.
 │       ├── detect-context.sh    # snapshot + allow/warn/block decision policy
 │       └── regen-active-rules.sh# lessons → adapter digest
 └── skills/
-    ├── code-{strategy,feature,quick,setup,verify,compound,amend}/SKILL.md
+    ├── vibe-{setup,strategy,feature,quick,verify,compound,amend}/SKILL.md
     └── spec/                    # bundled spec framework
 .spec/                           # durable memory (product/tech/design/plan/lessons)
 CLAUDE.md · AGENTS.md            # thin per-runtime adapters
