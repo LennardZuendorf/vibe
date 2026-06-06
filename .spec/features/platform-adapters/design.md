@@ -3,7 +3,7 @@ type: feature-design
 feature: platform-adapters
 sibling: product.md
 parent: ../../design.md
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 # Feature: Platform Adapters — Design
@@ -15,6 +15,7 @@ and `.agents/skills/vibe-*`.
 **Parent:** [../../design.md](../../design.md)
 **Requirements:** [product.md](product.md)
 **Architecture:** [tech.md](tech.md)
+**Plan:** [plan.md](plan.md)
 
 ---
 

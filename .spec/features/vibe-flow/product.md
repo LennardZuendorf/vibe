@@ -3,7 +3,7 @@ type: feature-product
 feature: vibe-flow
 sibling: tech.md
 parent: ../../product.md
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 # Feature: Vibe Flow — Product
@@ -15,6 +15,17 @@ verification, and compounding.
 **Parent:** [../../product.md](../../product.md)
 **Architecture:** [tech.md](tech.md)
 **Design:** [design.md](design.md)
+**Plan:** [plan.md](plan.md)
+
+---
+
+## Scope
+
+| Owns | Does not own |
+|---|---|
+| `.agents/flow/` state machine, cursor, scripts | `.spec/` document format (→ [spec-framework](../spec-framework/product.md)) |
+| `vibe-*` skill shims and delegation routing | `AGENTS.md` template merge / adapter symlinks (→ [agent-instructions](../agent-instructions/product.md)) |
+| Per-state caveman, reads/writes, transitions (D9–D12) | Claude plugin, hooks, `/flow` command (→ [platform-adapters](../platform-adapters/product.md)) |
 
 ---
 
@@ -39,7 +50,7 @@ as constraints and injected resources, not left to the agent to remember.
 | R4 | Delegation always injects canonical `.spec/` output paths. |
 | R5 | States are compound `<flow>.<phase>` keys; the state machine defines transitions, required skills, write surfaces, and exit predicates per state. |
 | R6 | Mutable runtime files do not live under `.spec/`; the cursor carries no turn-varying fields. |
-| R7 | `vibe-setup` bootstraps or repairs `.agents/flow`, `.agents/skills/vibe-*`, adapters, and baseline specs. |
+| R7 | `vibe-setup` bootstraps or repairs `.agents/flow`, `.agents/skills/vibe-*`, and baseline `.spec/`; adapter file provisioning is delegated to [agent-instructions](../agent-instructions/product.md). |
 | R8 | Each state declares a caveman level (`lite`, `full`, `ultra`) for communication density; level definitions are canonical in root `product.md`. |
 | R9 | A single inject owner emits one static per-turn inject (skill, write surface, output path, caveman level, next), with safety carve-outs that override density. The orders are sourced from the state's linked `vibe-*` skill, not a hand-written string; skill-less states (`idle`, `amend`) keep an inline fallback. (D10, D12) |
 | R10 | `*.design` and `*.triage` states read `.spec/lessons.md` on entry so lessons are retrieved, not just recorded. (D8) |

@@ -3,7 +3,7 @@ type: feature-tech
 feature: spec-framework
 sibling: product.md
 parent: ../../tech.md
-updated: 2026-05-14
+updated: 2026-06-06
 ---
 
 # Feature: Spec Framework — Architecture
@@ -14,6 +14,7 @@ the `.spec/` document tree.
 **Parent:** [../../tech.md](../../tech.md)
 **Requirements:** [product.md](product.md)
 **Design:** [design.md](design.md)
+**Plan:** [plan.md](plan.md)
 
 ---
 
@@ -69,12 +70,20 @@ Promotable tech blocks use `<!-- merge -->` markers.
 ## Lessons Retrieval (D8)
 
 `lessons.md` is a retrieval surface, not just an append log. Each lesson carries a
-one-line `Tags:` field (free-form keywords, e.g. `auth, async, migrations`) plus
-its existing pattern/rule/date. Keeping it KISS: one file, tagged entries, no
-external index or schema. Retrieval is a plain text/keyword scan.
+one-line `**Tags:**` field (free-form keywords, e.g. `auth, async, migrations`) plus
+Pattern/Rule/Date. Keeping it KISS: one file, tagged entries, no external index or
+schema.
 
-The `compound` phase writes new lessons here with tags. The `*.design` and
-`*.triage` phases read it on entry and surface entries whose tags match the work
-in hand, so past mistakes shape new work instead of being recorded and forgotten.
+**Ownership split (D8):**
+- **spec-framework** — lesson *format*, `setup.sh` bootstrap template, optional
+  future `validate.sh` warn for missing Tags.
+- **vibe-flow** — *runtime read* on `*.design` / `*.triage` entry ([R10](../vibe-flow/product.md));
+  agents scan Tags by keyword against the work in hand.
+- **vibe-compound** — writes new tagged lessons; `regen-active-rules.sh` projects a
+  separate top-5 digest into `AGENTS.md` (pinned/date — not tag-based).
+
 If the file grows unwieldy, shard by category into `lessons/<category>.md` — but
 not before it actually hurts.
+
+**Known gap:** `setup.sh` lessons bootstrap omits `**Tags:**` — tracked as SF0 in
+[plan.md](plan.md).

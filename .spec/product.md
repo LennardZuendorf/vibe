@@ -5,7 +5,8 @@ children:
   - features/spec-framework/product.md
   - features/vibe-flow/product.md
   - features/platform-adapters/product.md
-updated: 2026-06-04
+  - features/agent-instructions/product.md
+updated: 2026-06-06
 ---
 
 # vibe — Product

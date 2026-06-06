@@ -3,7 +3,7 @@ type: feature-product
 feature: spec-framework
 sibling: tech.md
 parent: ../../product.md
-updated: 2026-05-14
+updated: 2026-06-06
 ---
 
 # Feature: Spec Framework — Product
@@ -15,6 +15,17 @@ feature specs, and archives.
 **Parent:** [../../product.md](../../product.md)
 **Architecture:** [tech.md](tech.md)
 **Design:** [design.md](design.md)
+**Plan:** [plan.md](plan.md)
+
+---
+
+## Scope
+
+| Owns | Does not own |
+|---|---|
+| `.spec/` document tree and archive model | Runtime flow state (→ [vibe-flow](../vibe-flow/product.md)) |
+| Bundled `spec` skill, templates, setup/validate scripts | Agent instruction files (→ [agent-instructions](../agent-instructions/product.md)) |
+| Lessons format and retrieval contract (D8) | Platform hooks, plugins (→ [platform-adapters](../platform-adapters/product.md)) |
 
 ---
 
@@ -37,7 +48,7 @@ future work can resume without rediscovering the project.
 | R5 | Validation catches missing frontmatter, broken links, missing feature files, and invalid root/branch naming. |
 | R6 | The skill works both vendored in a repo and installed globally. |
 | R7 | Design docs can follow the google-labs-code `DESIGN.md` token-plus-prose pattern when visual identity matters. |
-| R8 | Lessons are tagged for retrieval, not just appended: each lesson carries a `tags:` line and a category so design/triage phases can find the relevant ones on entry. (D8) |
+| R8 | Lessons are tagged for retrieval, not just appended: each lesson carries a `**Tags:**` line (free-form keywords). Runtime read-on-entry and tag matching live in [vibe-flow](../vibe-flow/product.md) (R10); optional category sharding into `lessons/<category>.md` is deferred until the file grows unwieldy. (D8) |
 
 ---
 

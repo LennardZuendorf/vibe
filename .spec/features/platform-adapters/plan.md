@@ -4,7 +4,7 @@ feature: platform-adapters
 sibling: tech.md
 parent: ../../plan.md
 covers: M4 Stage 2 — Claude Code plugin, the three flow hooks, installer
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 # Feature: Platform Adapters — Implementation Plan
@@ -15,10 +15,25 @@ Stage-2 "earn the teeth" layer the root plan ([../../plan.md](../../plan.md))
 tracks as **M4 PARTIAL → DONE**.
 
 **Parent:** [../../plan.md](../../plan.md)
-**Requirements:** [product.md](product.md) (R5–R9)
+**Requirements:** [product.md](product.md)
 **Architecture:** [tech.md](tech.md)
+**Design:** [design.md](design.md)
+**Related:** [../agent-instructions/plan.md](../agent-instructions/plan.md),
+[../vibe-flow/plan.md](../vibe-flow/plan.md)
 
-Unit IDs (`U1`…`U7`) are **stable**: they never change on reorder or split, so
+Unit IDs are **stable** (D9). Section headings use legacy `U8`/`U1`–`U7`; root plan
+maps `U8` = `VF1` = D12 restructure:
+
+| Legacy | Scope |
+|---|---|
+| U8 | D12 skill-as-inject-source (PA-0) |
+| U1 | Inject hook (PA-1) |
+| U2 | Guard hook |
+| U3 | Gate hook |
+| U4 | hooks.json wiring |
+| U5 | plugin.json |
+| U6 | install.sh |
+| U7 | Dogfood + earn-the-teeth | they never change on reorder or split, so
 `impl`/`verify` can cite them and survive re-planning (D9).
 
 ---
@@ -43,6 +58,13 @@ audit via subagent).
 - `.gitignore` already ignores the mutable cursor `.agents/flow/state.json`.
 
 **Must build:**
+- **Symlink-aware adapter scripts (follow-up).** `CLAUDE.md` now symlinks
+  `AGENTS.md` (single source of truth). `regen-active-rules.sh` MUST dedupe
+  `TARGETS` by resolved path before writing — `mv -f` over a symlink replaces it
+  with a real file, so a `*.compound` run would silently break the link. Likewise,
+  `vibe-setup` `setup.apply` MUST edit `AGENTS.md` only when `CLAUDE.md` symlinks
+  it (do not recreate two files). Track as a small follow-up before the first
+  compound after the symlink lands.
 - Skill-as-inject-source restructure (D12): per-state orders blocks in each
   `vibe-*` skill + state-machine relink (U8). **Prerequisite for U1.**
 - `.claude/hooks/` — three thin shell hooks + `hooks.json` wiring (U1–U4).
@@ -65,8 +87,9 @@ PreToolUse stdin contract are the only real unknowns).
   the inject↔skill duplication (one source of truth). See root
   [../../plan.md](../../plan.md) D12 and [tech.md](tech.md) "Prompt Injection".
 - **Hooks are thin shells.** No allow/warn/block logic in any hook; it lives once
-  in `detect-context.sh decide`. Inject logic lives once in `state-machine.json`.
-  (R8, tech.md "Earn the teeth").
+  in `detect-context.sh decide`. Per-turn orders live once in each linked `vibe-*`
+  skill (D12); `state-machine.json` is a link table (`skill` + `inject: null`) with
+  inline fallback for `idle` only. (R8, tech.md "Earn the teeth").
 - **Earn the teeth, warn-first.** Ship inject (guide) + the three already-coded
   hard blocks (guard) + Stop smells as **warn-only** (gate). Promote any Stop
   predicate to blocking only after M5 dogfooding. (R7, R9, product "earn the teeth".)
@@ -124,20 +147,22 @@ inject↔skill duplication so behaviour is edited in one place.
   path, caveman level, next state). Format per the "orders granularity" decision
   above (recommended: a marked block the hook can slice).
 - In `state-machine.json`, set `inject` to `null` for every state that owns a skill
-  (the `skill` link is now the source). Keep a minimal inline `inject` only for the
-  skill-less states `idle` and `amend` (fallback).
-- Update `AGENTS.md` / `CLAUDE.md` adapter prose that still describes the
-  "frozen inject string" mechanism to the D12 skill-as-source model. (The
-  `vibe:active-rules` managed block is untouched — it is generated.)
-- Keep the orders content **byte-stable** per state (prompt-cache discipline); the
-  only allowed substitution is `<feature>`.
-- **Done when:** for any state, the orders extracted from its linked skill match
-  what the old `inject` conveyed; `state-machine.json` carries inline strings only
-  for `idle`/`amend`; adapter prose no longer references hand-written inject
-  strings; `spec validate.sh` stays clean.
+  (the `skill` link is now the source). Keep a minimal inline `inject` only for
+  `idle` (skill-less). **`amend` is not inject-resolved** — modifier; cursor never
+  becomes `amend`; inject hook uses stored cursor state (see vibe-flow tech.md).
+- Update `setup.apply` inject/exit strings when agent-instructions AI4 lands
+  (constitution → `vibe:instructions` terminology).
+- Update `AGENTS.md` prose that still describes frozen inject strings → D12 model.
+  (`vibe:active-rules` block untouched — generated.)
+- Keep orders **byte-stable** per state; only `<feature>` may interpolate.
+- Add **regen symlink dedupe** in `regen-active-rules.sh` (dedupe TARGETS by
+  resolved path) — prerequisite for agent-instructions AI4 and safe compound.
+- **Done when:** orders extracted from linked skills match old inject content;
+  `inject: null` on skill states; inline string on `idle` only; `$comment` updated;
+  regen dedupe landed; `spec validate.sh` clean.
 
-**PA-0 done when:** the single source of per-turn orders is the skill shim, and the
-state machine is a pure link table (plus the two fallbacks).
+**PA-0 done when:** single source of per-turn orders is the skill shim; machine is a
+link table + `idle` fallback; regen safe with symlinked adapters.
 
 ---
 
@@ -151,16 +176,17 @@ wired through `hooks.json`, each degrading to exit 0 on any missing keystone.
 - Resolve current `<flow>.<phase>` from `state.json` (default `idle`); follow the
   state's `skill` link in `state-machine.json`, extract that skill's per-state
   **orders block** (D12), and print it to stdout so it rides the user message
-  (post-cache-breakpoint). For skill-less states (`idle`, `amend`) print the
-  machine's inline fallback string instead.
+  (post-cache-breakpoint). For `idle` only, print the machine's inline fallback.
+  During amend work the cursor stays on the originating state — resolve orders from
+  that stored state, never from the `amend` machine entry.
 - Interpolate `<feature>` from the cursor when present; substitute **nothing** else
   (static-content / prompt-cache discipline).
 - Degrade: missing `jq`/`state.json`/`state-machine.json`/skill file → print a
   1-line `state=idle · pick a vibe-* flow` fallback and exit 0. Include the spec's
   1-line caveman fallback when the caveman plugin is absent (root OPEN-6).
 - **Done when:** for a cursor in `feature.impl`, the hook prints that state's orders
-  (sourced from `vibe-feature`) byte-for-byte; `idle`/`amend` print the inline
-  fallback; with no state file it prints the idle fallback; never non-zero.
+  (sourced from `vibe-feature`) byte-for-byte; `idle` prints inline fallback; with
+  no state file it prints the idle fallback; never non-zero.
 
 ### U2 — Guard hook (`pre-tool-use-guard.sh`)
 - **Event:** `PreToolUse`, matcher `Edit|Write|NotebookEdit`. **Strength:**
@@ -211,8 +237,9 @@ exits 0.
 ### U6 — Installer (`install.sh`)
 - Copy core `.agents/flow/**` and `.agents/skills/**` into a target repo (default
   **copy**, per OPEN-3); seed `state.json` from `state.example.json` if absent.
-- Merge-or-diff `AGENTS.md`/`CLAUDE.md` — never blind-overwrite (R5); preserve the
-  `vibe:active-rules` managed block.
+- Delegate `AGENTS.md` merge to [agent-instructions](../agent-instructions/plan.md)
+  (`merge-agents.sh`); create adapter symlinks per user choice. Never
+  blind-overwrite user-owned content outside managed markers (R5).
 - Register the Claude Code plugin via the manifest. Idempotent; safe re-runs.
 - **Done when:** running it on a fresh sandbox repo yields a working flow core +
   adapters with no manual path correction, and re-running changes nothing.

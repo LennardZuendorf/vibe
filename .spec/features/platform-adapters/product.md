@@ -3,7 +3,7 @@ type: feature-product
 feature: platform-adapters
 sibling: tech.md
 parent: ../../product.md
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 # Feature: Platform Adapters — Product
@@ -18,6 +18,18 @@ automatic and guard its invariants.
 **Architecture:** [tech.md](tech.md)
 **Design:** [design.md](design.md)
 **Plan:** [plan.md](plan.md)
+**Related:** [../agent-instructions/product.md](../agent-instructions/product.md),
+[../vibe-flow/product.md](../vibe-flow/product.md)
+
+---
+
+## Scope
+
+| Owns | Does not own |
+|---|---|
+| Claude Code plugin (`.claude-plugin/`), hooks, `/flow` command | `AGENTS.md` template merge and adapter symlinks (→ [agent-instructions](../agent-instructions/product.md)) |
+| `install.sh` — copy core `.agents/**`, register plugin | State machine and `vibe-*` skill bodies (→ [vibe-flow](../vibe-flow/product.md)) |
+| Runtime-specific hook wiring (`UserPromptSubmit`, `PreToolUse`, `Stop`) | `.spec/` document format (→ [spec-framework](../spec-framework/product.md)) |
 
 ---
 
@@ -65,8 +77,8 @@ order text is duplicated in the hooks.
 
 | # | Requirement |
 |---|---|
-| R1 | `AGENTS.md` mirrors the core workflow for Codex-style agents. |
-| R2 | `CLAUDE.md` mirrors the core workflow for Claude Code. |
+| R1 | `AGENTS.md` mirrors the core workflow for Codex-style agents. Provisioning and merge during init live in [agent-instructions](../agent-instructions/product.md). |
+| R2 | `CLAUDE.md` mirrors the core workflow for Claude Code (typically a symlink to `AGENTS.md`; see agent-instructions). |
 | R3 | Claude slash commands and hooks read `.agents/flow`, not `.claude/state.json`. |
 | R4 | Adapter files do not define a separate spec layout or state model. |
 | R5 | Installation preserves existing project instructions and offers diffs when merging. |
@@ -79,8 +91,6 @@ order text is duplicated in the hooks.
 
 ## Outputs
 
-- `AGENTS.md`
-- `CLAUDE.md`
 - `.claude-plugin/plugin.json` (plugin manifest)
 - `.claude/commands/flow.md`
 - `.claude/hooks/hooks.json` + the three hook scripts
@@ -91,6 +101,7 @@ order text is duplicated in the hooks.
 
 ## Non-Goals
 
+- `AGENTS.md` / `CLAUDE.md` content provisioning — [agent-instructions](../agent-instructions/product.md)
 - Duplicating the state machine per platform
 - Making `.claude/` canonical
 - Making Codex-specific desktop behavior part of the core flow

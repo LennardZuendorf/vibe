@@ -3,7 +3,7 @@ type: feature-tech
 feature: vibe-flow
 sibling: product.md
 parent: ../../tech.md
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 # Feature: Vibe Flow — Architecture
@@ -17,6 +17,9 @@ chosen for it.
 **Parent:** [../../tech.md](../../tech.md)
 **Requirements:** [product.md](product.md)
 **Design:** [design.md](design.md)
+**Plan:** [plan.md](plan.md)
+**Related:** [../platform-adapters/tech.md](../platform-adapters/tech.md),
+[../agent-instructions/tech.md](../agent-instructions/tech.md)
 
 ---
 
@@ -90,33 +93,68 @@ skill (see *Prompt Injection*), not from a hand-written `inject` string:
 
 ### States, skills, and artifacts
 
-| State (`flow.phase`) | superpowers | feature-dev agent | caveman | Spec artifact (R/W) | next |
-|---|---|---|---|---|---|
-| `idle` | `using-superpowers` | — | — | reads `lessons.md`, `plan.md` | setup.detect, strategy.brainstorm, feature.design, quick.triage |
-| `setup.detect` | — | — | lite | reads repo | setup.apply |
-| `setup.apply` | `writing-skills` | — | lite | **W** `.agents/**`, baseline `.spec/**` | idle |
-| `strategy.brainstorm` | `brainstorming` | — | lite | **R** `lessons.md`; scratch | strategy.spec |
-| `strategy.spec` | — | — | lite | **W** `.spec/{product,tech,design,plan}.md` | idle |
-| `feature.design` | `brainstorming` | `code-explorer`, `code-architect` | lite | **R** `lessons.md`; **W** `features/<f>/{product,tech}.md` | feature.plan |
-| `feature.plan` | `writing-plans` | `code-architect` | lite | **W** `features/<f>/plan.md` (stable unit IDs) | feature.impl |
-| `feature.impl` | `executing-plans` + `test-driven-development` | — | full | **W** `src/**`, `tests/**` (cite unit IDs) | feature.verify |
-| `feature.verify` | `verification-before-completion`, `requesting-code-review` (+`systematic-debugging` on fail) | `code-reviewer` | full | evidence | feature.compound, feature.plan, feature.impl |
-| `feature.compound` | `finishing-a-development-branch` | — | lite (receipts ultra) | **W** tagged `lessons.md`, promote root specs, archive feature | idle |
-| `quick.triage` | `systematic-debugging` | — | full | **R** `lessons.md` | quick.fix |
-| `quick.fix` | `test-driven-development` | — | full | **W** `src/**`; opt `.spec/quick/<slug>.md` | quick.verify |
-| `quick.verify` | `verification-before-completion` | `code-reviewer` | full | evidence | idle |
-| `amend` (modifier) | `receiving-code-review` | — | lite | **W** targeted spec edits only | returns to prior state |
+Canonical reference — must match `.agents/flow/state-machine.json`. Root
+[product.md](../../product.md) phase map mirrors this table.
+
+| State | Skill | Delegates | feature-dev | caveman | R/W surface | next |
+|---|---|---|---|---|---|---|
+| `idle` | — | `using-superpowers` | — | lite | R `lessons.md`, `plan.md` | setup.detect, strategy.brainstorm, feature.design, quick.triage |
+| `setup.detect` | `vibe-setup` | — | — | lite | R repo, adapters, `.agents/**`, `.spec/**` | setup.apply, idle |
+| `setup.apply` | `vibe-setup` | `spec`, `writing-skills` | — | lite | W `.agents/**`, baseline `.spec/**`¹ | idle |
+| `strategy.brainstorm` | `vibe-strategy` | `brainstorming` | — | lite | R `lessons.md`; scratch | strategy.spec |
+| `strategy.spec` | `vibe-strategy` | `spec` | — | lite | W root `.spec/{product,tech,design,plan}.md` | strategy.compound, idle |
+| `strategy.compound` | `vibe-compound` | `spec` | — | lite | W `lessons.md`, active-rules digest² | idle |
+| `feature.design` | `vibe-feature` | `brainstorming` | `code-explorer`, `code-architect` | lite | R `lessons.md`, root specs; W `features/<f>/{product,tech}.md` | feature.plan |
+| `feature.plan` | `vibe-feature` | `writing-plans` | `code-architect` | lite | W `features/<f>/plan.md` (U1…) | feature.impl |
+| `feature.impl` | `vibe-feature` | `executing-plans`, `test-driven-development` | — | full | W `src/**`, `tests/**` | feature.verify |
+| `feature.verify` | `vibe-verify` | `verification-before-completion`, `requesting-code-review`, `systematic-debugging` | `code-reviewer` | full | evidence only | feature.compound, feature.impl, feature.plan |
+| `feature.compound` | `vibe-compound` | `finishing-a-development-branch`, `spec` | — | lite³ | W `lessons.md`, root specs, archive, active-rules² | idle |
+| `quick.triage` | `vibe-quick` | `systematic-debugging` | — | full | R `lessons.md` | quick.fix, feature.design |
+| `quick.fix` | `vibe-quick` | `test-driven-development` | — | full | W `src/**`; opt `.spec/quick/<slug>.md` | quick.verify |
+| `quick.verify` | `vibe-verify` | `verification-before-completion` | `code-reviewer` | full | evidence only | idle |
+| `amend`⁴ | `vibe-amend` | `spec`, `receiving-code-review` | — | lite | W target state's write surface only | (returns to prior state) |
+
+¹ `setup.apply` still lists adapter active-rules in the machine **until**
+[agent-instructions AI4](../agent-instructions/plan.md) narrows adapter provisioning.
+² Active-rules digest via `regen-active-rules.sh`; requires symlink-aware dedupe before
+compound when `CLAUDE.md` symlinks `AGENTS.md`.
+³ Receipts `ultra`; body `lite`.
+⁴ Modifier — never a cursor state (`set-state.sh` rejects `amend`). Invoked via
+`vibe-amend` while cursor stays on the originating state; inject hook uses the
+**stored cursor state**, not `amend`.
 
 Three deliberate calls:
 
 - **`quick.triage` is `full`, not `ultra`.** `ultra` compresses hardest and can drop
   edge cases; triage is exactly where a missed edge case is expensive. `ultra` is
   reserved for `feature.compound` receipts and subagent→orchestrator summaries.
-- **`amend` is a modifier, not a flow.** It edits scope from any active state and
-  returns there. The inject for `amend` carries the *target* state's write rules,
-  not a separate amend block, to avoid colliding instructions.
+- **`amend` is a modifier, not a flow.** The cursor never becomes `amend`
+  (`set-state.sh` refuses it). `vibe-amend` applies a targeted scope edit using the
+  **current cursor state's** write rules, then returns there. The inject hook always
+  resolves orders from the stored cursor — not from the `amend` machine entry.
+  The `amend` entry in `state-machine.json` is reference-only for `vibe-amend` skill
+  prose; under D12 it does **not** receive per-turn inject.
 - **Failure routes back.** `feature.verify` can return to `feature.plan` or
   `feature.impl`, which resolves the failed-verification routing the plan left open.
+
+### Transition policy
+
+- **`set-state.sh` is the writer, not the gate.** It validates cursor shape and
+  writes atomically; it does **not** check whether the target ∈ current state's
+  `next`. Illegal transitions are refused by the **agent** (and eventually the
+  `/flow` command) before calling the script.
+- **`validate-state.sh`** checks cursor sanity (shape, machine key exists); not
+  transition history.
+- Future optional: legality check flag on `set-state.sh` — not implemented in Stage 1.
+
+### D12 implementation status (spec ahead of repo)
+
+**Target (documented):** per-turn orders live in each `vibe-*` skill; skill-owning
+states carry `inject: null`; inline fallback only for `idle`.
+
+**Repo today (Stage 1):** all 15 states still carry frozen `inject` strings; no
+orders blocks in skills; `$comment` still says inject is FROZEN. Implement via
+platform-adapters **U8** / vibe-flow **VF1** — see [plan.md](plan.md).
 
 ### Stable plan unit IDs (D9)
 
@@ -134,7 +172,8 @@ a separate tracking system.
 Each `vibe-*` skill follows the same internal sequence:
 
 1. Read `.agents/flow/state.json` and the relevant root or feature specs.
-2. On entry to a `*.design` or `*.triage` state, read `.spec/lessons.md` first (D8).
+2. On entry to a `*.design` or `*.triage` state, read `.spec/lessons.md` first (D8);
+   surface entries whose `**Tags:**` match the work in hand (keyword scan).
 3. Confirm or transition state through `set-state.sh`.
 4. Delegate to the specialized skill with the state's `reads`/`writes` paths injected.
 5. Run the relevant validation or verification.
@@ -168,10 +207,9 @@ Mechanics:
   for the current state, so the inject stays small (~30–60 tokens) and cache-stable
   rather than dumping the whole shim body. (Whole-shim vs orders-block injection is
   an implementation choice flagged in the platform-adapters plan.)
-- **Skill-less states keep an inline fallback.** `idle` (no skill) and `amend` (a
-  modifier that carries the *target* state's skill orders) retain a minimal inline
-  string in `state-machine.json`. `setup.detect` and pure-read moments need no more
-  than the legal `next` list.
+- **Skill-less `idle` keeps an inline fallback.** Only `idle` retains a minimal
+  inline string in `state-machine.json` after U8. `amend` is not inject-resolved
+  (modifier; see States table). Skill-owning states drop `inject` to `null`.
 
 Two carve-outs ride in **every** inject, regardless of caveman level — taken from
 the upstream caveman skill's own rules:
@@ -231,7 +269,7 @@ owned by the `spec` skill and superpowers `writing-plans`.
 |---|---|---|---|
 | `vibe-setup` | `spec`, `superpowers:writing-skills` | — | lite |
 | `vibe-strategy` | `superpowers:brainstorming`, `spec` | — | lite |
-| `vibe-feature` | `superpowers:brainstorming`, `superpowers:writing-plans`, `spec`, `superpowers:executing-plans`, `superpowers:test-driven-development`, `superpowers:subagent-driven-development` | `code-explorer`, `code-architect`, `code-reviewer` | lite (design/plan), full (impl/verify) |
+| `vibe-feature` | `superpowers:brainstorming`, `superpowers:writing-plans`, `spec`, `superpowers:executing-plans`, `superpowers:test-driven-development` | `code-explorer`, `code-architect`, `code-reviewer` | lite (design/plan), full (impl/verify) |
 | `vibe-quick` | `superpowers:systematic-debugging`, `superpowers:test-driven-development`, `superpowers:verification-before-completion` | `code-reviewer` | full |
 | `vibe-verify` | `superpowers:verification-before-completion`, `superpowers:requesting-code-review`, `superpowers:systematic-debugging` | `code-reviewer` | full |
 | `vibe-compound` | `spec`, `superpowers:finishing-a-development-branch` | — | lite (receipts ultra) |

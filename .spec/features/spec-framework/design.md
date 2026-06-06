@@ -3,7 +3,7 @@ type: feature-design
 feature: spec-framework
 sibling: product.md
 parent: ../../design.md
-updated: 2026-05-14
+updated: 2026-06-06
 ---
 
 # Feature: Spec Framework — Design
@@ -15,6 +15,7 @@ without reading everything.
 **Parent:** [../../design.md](../../design.md)
 **Requirements:** [product.md](product.md)
 **Architecture:** [tech.md](tech.md)
+**Plan:** [plan.md](plan.md)
 
 ---
 

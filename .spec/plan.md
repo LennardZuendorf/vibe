@@ -3,31 +3,65 @@ type: entrypoint
 scope: implementation
 covers: milestones, build sequence, validation criteria, open decisions
 children: []
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 # vibe — Implementation Plan
 
 **Parent specs:** [product.md](product.md), [tech.md](tech.md), [design.md](design.md)
-**Features:** [features/spec-framework/](features/spec-framework/product.md),
-[features/vibe-flow/](features/vibe-flow/product.md),
-[features/platform-adapters/](features/platform-adapters/product.md)
+
+**Feature plans (unit-level detail lives here, not duplicated below):**
+
+| Feature | Product | Plan | Status |
+|---|---|---|---|
+| [spec-framework](features/spec-framework/product.md) | `.spec/` + `spec` skill | [plan.md](features/spec-framework/plan.md) | DONE (SF0–SF4 follow-up) |
+| [vibe-flow](features/vibe-flow/product.md) | `.agents/flow` + `vibe-*` skills | [plan.md](features/vibe-flow/plan.md) | DONE (VF1→U8, VF2–VF3 open) |
+| [agent-instructions](features/agent-instructions/product.md) | `AGENTS.md` template + symlinks | [plan.md](features/agent-instructions/plan.md) | PARTIAL (Stage 1 done; AI0–AI5 open) |
+| [platform-adapters](features/platform-adapters/product.md) | plugin + hooks + installer | [plan.md](features/platform-adapters/plan.md) | PARTIAL (Stage 1 done; U8–U7 open) |
 
 ---
 
 ## Validation Summary
 
-Stage 1 is built: the bundled `spec` skill, the root `.spec/` docs, the
-`.agents/flow` state machine + scripts, the seven `vibe-*` skill shims, and the
-Codex/Claude adapters all exist. Superseded prior art (the engineering-agent
-import and the pre-vibe-flow command/hook/routing/strict-flow experiments) has
-been removed from `.spec/archive/`; the repo now reflects only the current
-design.
+Stage 1 is built: bundled `spec` skill, root `.spec/` docs, `.agents/flow` state
+machine + scripts, seven `vibe-*` skill shims, and canonical `AGENTS.md` with
+`CLAUDE.md` symlinked. Superseded prior art removed from `.spec/archive/`.
 
-The core design decision this rests on is:
+**Spec-vs-repo gap (audit 2026-06-06):** Target architecture (D12 orders-in-skills,
+`vibe:instructions` markers, symlink-safe regen) is documented ahead of
+implementation. Stage 1 still uses frozen `inject` strings and unmarked `AGENTS.md`.
 
-> `spec` owns durable planning in `.spec/`; `vibe-*` skills own agent workflow
-> orchestration; `.agents/flow` owns platform-neutral runtime state.
+Core design decision:
+
+> `spec` owns durable planning in `.spec/`; `vibe-*` skills own workflow
+> orchestration; `.agents/flow` owns platform-neutral runtime state; agent
+> instruction files are provisioned once via [agent-instructions](features/agent-instructions/product.md);
+> platform runtimes wire in via [platform-adapters](features/platform-adapters/product.md).
+
+---
+
+## Feature Boundaries
+
+Each feature owns one layer. Cross-feature work cites the owning plan's unit IDs.
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  spec-framework     .spec/ tree, spec skill, validate       │
+├─────────────────────────────────────────────────────────────┤
+│  vibe-flow          .agents/flow, vibe-* skills, D9–D12     │
+├─────────────────────────────────────────────────────────────┤
+│  agent-instructions AGENTS.md template, adapter symlinks    │
+├─────────────────────────────────────────────────────────────┤
+│  platform-adapters  plugin, hooks, /flow, install.sh        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+| Layer | Owns | Does not own |
+|---|---|---|
+| **spec-framework** | `.spec/` docs, templates, `validate.sh`, lesson format (D8) | Flow state, adapters, runtime lesson read (→ vibe-flow) |
+| **vibe-flow** | State machine, `vibe-*` shims, transitions, D8 read-on-entry | `AGENTS.md` content, hooks |
+| **agent-instructions** | `AGENTS.md` merge, `CLAUDE.md`/`WARP.md` symlinks | Plugin, `.claude/hooks/` |
+| **platform-adapters** | Plugin manifest, three hooks, `install.sh`, regen dedupe | Instruction file templates |
 
 ---
 
@@ -35,243 +69,155 @@ The core design decision this rests on is:
 
 ### Decided
 
-- **Spec framework remains independent.** It can be used without the vibe flow.
-- **Root spec model is product, tech, design, plan, lessons.**
-- **Feature spec model is product and tech required; design, plan, research optional.**
-- **Vibe workflow shims are agent skills.** They live under `.agents/skills/vibe-*`.
-- **Canonical flow state is platform-neutral.** Use `.agents/flow`, not `.spec/.phase` or `.claude/state.json`.
-- **Adapters are thin.** `AGENTS.md`, `CLAUDE.md`, and `.claude/*` read the same `.agents/flow` core.
-- **States are compound `<flow>.<phase>` keys.** Transitions and `next` arrays key on the compound state, not bare `phase`. The cursor drops the `notes` field.
-- **D8: Lessons are retrievable.** Tagged entries in `lessons.md`, read on entry to `*.design` and `*.triage`. KISS — one file, keyword scan, no schema.
-- **D9: Stable plan unit IDs.** `feature.plan` assigns `U1`, `U2`, …; `impl`/`verify` cite them so state survives re-planning.
-- **D10: One inject owner.** A single `UserPromptSubmit` inject per state names skill/writes/path/caveman/next and sets caveman; safety carve-outs override density; nothing turn-varying enters the inject (prompt-cache discipline).
-- **D12: Skill shim is the inject source (supersedes D10's frozen-string mechanism).** The per-turn orders live in each `vibe-*` skill, not in a hand-written `state-machine.json` `inject` string. The state's `skill` field links it to its shim; the `UserPromptSubmit` hook pulls that skill's per-`<flow>.<phase>` orders block and injects it. D10's invariants survive — one inject owner, nothing turn-varying, cache-stable. Skill-less states (`idle`, `amend`) keep a minimal inline fallback string. Implemented when the skill shims are updated; see [features/platform-adapters/plan.md](features/platform-adapters/plan.md) (U8 + U1).
-- **D11: Cherry-pick feature-dev subagents.** `code-explorer`/`code-architect` into `feature.design`, `code-reviewer` into `*.verify`; not the `/feature-dev` macro.
-- **Caveman provenance.** Levels follow `JuliusBrussee/caveman`; the phase→level mapping is ours. `ultra` is not used for triage.
+- **Spec framework remains independent.** Usable without the vibe flow.
+- **Root spec model:** `product`, `tech`, `design`, `plan`, `lessons`.
+- **Feature spec model:** `product` + `tech` required; `design`, `plan`, `research` optional.
+- **Vibe workflow shims** live under `.agents/skills/vibe-*`.
+- **Canonical flow state** is platform-neutral (`.agents/flow`).
+- **Agent instructions:** `AGENTS.md` is canonical; runtime adapters are symlinks.
+- **D8 split:** lesson format → spec-framework; read-on-entry + tag scan → vibe-flow.
+- **Adapters are thin.** Plugin/hooks read `.agents/flow`; they do not own state or spec layout.
+- **Transitions:** `set-state.sh` is writer not gate; agent refuses illegal `next` before calling.
+- **D12 target:** orders in skills, `inject: null` on skill states, `idle` inline fallback only.
+- **`amend`:** modifier only; cursor never `amend`; inject uses stored cursor state.
 
 ### To Resolve
 
-- [x] **OPEN-1: Mutable state tracking.** Resolved: gitignore the mutable cursor
-  `.agents/flow/state.json`; version the static `state-machine.json` and the
-  `state.example.json` template. (See `.gitignore`.)
-- [ ] **OPEN-2: Skill count.** Validate whether `vibe-verify` and `vibe-compound`
-  should stay separate skills, and whether `vibe-setup` should also own install
-  repair after initial bootstrap.
-- [ ] **OPEN-6: R7 graceful degradation.** Port the archived detect-and-drop+warn
-  skill-availability check into `.agents/flow/scripts/`, or downgrade R7 to a hard
-  "require superpowers+spec, fail loudly" prerequisite. Include a 1-line caveman
-  fallback when the caveman plugin is absent.
-- [ ] **OPEN-7: Enforcement strictness.** Does "strict workflow" mean a real
-  PreToolUse block, or model-read prose only? Decide before M4 hooks.
-- [ ] **D7 (deferred): `feature.deepen`.** Optional confidence-gated deepen pass
-  between `plan` and `impl`. Revisit after the base feature arc is dogfooded.
-- [ ] **OPEN-3: Adapter install mode.** Symlink, copy, or merge-with-diff per file?
-- [ ] **OPEN-4: Hook strictness.** Which write surfaces should adapters block in
-  M1 versus warn about?
-- [ ] **OPEN-5: DESIGN.md validation.** Should `spec validate` shell out to
-  `npx @google/design.md lint` when visual tokens are present, or keep local
-  validation dependency-free?
+- [x] **OPEN-1:** Mutable cursor gitignored; `state-machine.json` versioned.
+- [ ] **OPEN-2:** Skill count — [vibe-flow/plan.md](features/vibe-flow/plan.md) VF2.
+- [ ] **OPEN-3:** Install mode — copy `.agents/**`; merge via agent-instructions; symlinks opt-in. U6.
+- [ ] **OPEN-4 / OPEN-7:** Hook strictness — warn-first. U7 after M5.
+- [ ] **OPEN-5:** DESIGN.md validation — [spec-framework/plan.md](features/spec-framework/plan.md) SF4.
+- [ ] **OPEN-6:** Skill degradation — vibe-flow VF3.
+- [ ] **D7 (deferred):** `feature.deepen` — VF4 after M5.
 
 ---
 
 ## Implementation Roadmap
 
-| Milestone | Goal | Sessions | Risk |
-|---|---|---:|---|
-| M0: Spec cleanup | Update specs and spec skill to the new `spec + vibe flow + adapters` model | 1 | Low |
-| M1: Flow core | Add `.agents/flow` state machine and deterministic scripts | 1 | Medium |
-| M2: Vibe skills | Add `vibe-setup`, `vibe-strategy`, `vibe-feature`, and `vibe-quick` skills | 1-2 | Medium |
-| M3: Verification and compound | Add `vibe-verify`, `vibe-compound`, `vibe-amend` and evidence/lessons flow | 1 | Medium |
-| M4: Platform adapters | Rewrite `AGENTS.md`, `CLAUDE.md`, Claude commands/hooks, installer | 1-2 | Medium |
-| M5: Dogfood | Run strategy, quick, and feature flows on a sandbox project | 1 | High |
+| Milestone | Feature | Goal | Status |
+|---|---|---|---|
+| M0 | spec-framework | Specs + skill aligned to four-feature model | DONE |
+| M1 | vibe-flow | Flow core (state machine + scripts) | DONE |
+| M2 | vibe-flow | `vibe-*` skill shims (setup→amend) | DONE |
+| M3 | vibe-flow | Verify, compound, amend + lessons loop | DONE |
+| M4a | agent-instructions | `AGENTS.md` engineering guide + template init | PARTIAL |
+| M4b | platform-adapters | Plugin + hooks + installer (Stage 2) | PARTIAL |
+| M5 | all | Dogfood on sandbox project | NOT STARTED |
 
 ---
 
-## M0: Spec Cleanup
+## M0: Spec Framework
 
-**Goal:** The repository specs consistently describe the current architecture.
+**Plan:** [features/spec-framework/plan.md](features/spec-framework/plan.md) (SF0–SF4)
 
-**Tasks:**
-
-- [x] Update `spec` skill to include root `design.md`.
-- [x] Make setup/validation scripts work from a vendored skill path.
-- [x] Rewrite root product and tech specs around `spec`, `vibe flow`, and adapters.
-- [x] Add feature specs for `spec-framework`, `vibe-flow`, and `platform-adapters`.
-- [x] Retire or archive stale `commands`, `routing`, `hooks`, and `strict-flow` specs.
-- [x] Validate `.spec/`.
-
-**Done when:** validation passes and no root spec names `.spec/.phase` or
-`.claude/state.json` as canonical.
+- [x] Four-feature spec model, validation, bundled skill.
+- [ ] **SF0:** `setup.sh` lessons template includes `**Tags:**`.
+- [ ] **SF1–SF4:** design guide, list-specs, token validation (non-blocking).
 
 ---
 
-## M1: Flow Core
+## M1–M3: Vibe Flow
 
-**Goal:** Platform-neutral flow state exists and can be read/written safely.
+**Plan:** [features/vibe-flow/plan.md](features/vibe-flow/plan.md) (VF1–VF4)
 
-**Tasks:**
-
-- [x] Add `.agents/flow/state-machine.json` (all states from §4, frozen injects).
-- [x] Add `.agents/flow/state.example.json`.
-- [x] Add `.agents/flow/scripts/detect-context.sh` (snapshot + allow/warn/block
-  decision fn — the one place the invariant policy lives).
-- [x] Add `.agents/flow/scripts/set-state.sh` (validated atomic writer).
-- [x] Add `.agents/flow/scripts/validate-state.sh`.
-- [x] Add `.agents/flow/scripts/regen-active-rules.sh` (capped top-5 digest).
-- [x] Document which mutable flow files target projects should gitignore
-  (`.agents/flow/state.json`).
-
-**Done when:** state validation passes, legal transitions work, invalid transitions
-fail with a clear message, and no `.claude/*` file is required to use the core.
+- [x] State machine (15 states), four scripts, seven skills, D8–D11 documented.
+- [ ] **VF1 (= U8):** D12 orders blocks — spec ahead of repo.
+- [ ] **VF2–VF3:** OPEN-2 skill count, OPEN-6 degradation script.
+- **Interim:** `setup.apply` still writes adapter active-rules until AI4.
 
 ---
 
-## M2: Vibe Skills
+## M4a: Agent Instructions
 
-**Goal:** The primary workflow surface exists as agent skills.
+**Plan:** [features/agent-instructions/plan.md](features/agent-instructions/plan.md) (AI0–AI5)
 
-**Tasks:**
+**Stage 1 (done):**
 
-- [x] Add `.agents/skills/vibe-strategy/SKILL.md`.
-- [x] Add `.agents/skills/vibe-feature/SKILL.md`.
-- [x] Add `.agents/skills/vibe-quick/SKILL.md`.
-- [x] Add `.agents/skills/vibe-setup/SKILL.md` (detect→apply, constitution block,
-  plugin preflight).
-- [x] Add caveman level metadata to the state machine contract (per-state
-  `caveman` field + `caveman_levels`/`safety_carveouts` in the machine).
-- [x] Keep each skill concise and delegate to `spec`, `superpowers:*`, and
-  subagents with explicit path injection.
-- [x] Add shared references only if the skill bodies become too large. (Not
-  needed — bodies stayed concise.)
+- [x] `AGENTS.md` engineering guide (spec-first, flow routing).
+- [x] `CLAUDE.md` → symlink `AGENTS.md`.
 
-**Done when:** each skill can be triggered by description, reads `.agents/flow`,
-and names the exact `.spec/` paths delegated skills may write.
+**Stage 2:**
 
----
+- [ ] **AI0:** Wrap dogfood `AGENTS.md` in `vibe:instructions` markers.
+- [ ] **AI1:** Template + `adapters.json`.
+- [ ] **AI2:** `merge-agents.sh` (wrap, migrate, idempotent).
+- [ ] **AI3:** `setup.detect` audit surface.
+- [ ] **AI4:** `setup.apply` merge + opt-in symlinks + conditional regen.
+- [ ] **AI5:** Five dogfood scenarios.
 
-## M3: Verification and Compound
-
-**Goal:** Completion is evidence-backed and lessons flow back into specs.
-
-**Tasks:**
-
-- [x] Add `.agents/skills/vibe-verify/SKILL.md`.
-- [x] Add `.agents/skills/vibe-compound/SKILL.md`.
-- [x] Add `.agents/skills/vibe-amend/SKILL.md`.
-- [x] Define how failed verification routes back to feature planning or
-  implementation (`feature.verify.next` = compound | impl | plan).
-- [x] Define how feature lessons promote into root `.spec/lessons.md`
-  (vibe-compound + regen-active-rules.sh digest into the adapter blocks).
-
-**Done when:** a feature can move from design to implementation to verification
-to lessons/archive without using ad hoc prompts.
+**Prerequisite:** regen symlink dedupe (U8 scope) before AI4 regen step with symlinks.
 
 ---
 
-## Spec Skill Follow-Up
+## M4b: Platform Adapters
 
-**Goal:** Tighten the spec framework after the flow core exists.
+**Plan:** [features/platform-adapters/plan.md](features/platform-adapters/plan.md) (U8–U7)
 
-**Tasks:**
+**Stage 1 (done):**
 
-- [ ] Add `reference/design.md` with guidance derived from the `DESIGN.md`
-  token-plus-prose model.
-- [ ] Teach `list-specs.sh` to surface root and feature `design.md` docs.
-- [ ] Optionally validate `design.md` token structure when tokens are present.
-- [ ] Decide whether to support `npx @google/design.md lint` as an optional
-  external validator.
+- [x] `.claude/commands/flow.md`.
+- [x] `detect-context.sh`, canonical `AGENTS.md`.
 
----
+**Stage 2:**
 
-## M4: Platform Adapters & Claude Code Plugin
-
-**Goal:** Codex and Claude Code expose the same flow without owning it — and
-Claude Code installs it as a plugin whose hooks make the flow automatic.
-
-**Stage 2 unit-level plan:** the buildable breakdown (units `U1`–`U7`, stable
-IDs) lives in [features/platform-adapters/plan.md](features/platform-adapters/plan.md).
-The milestone checklist below stays the high-level roadmap view.
-
-**Stage 1 (done — guidance only):**
-
-- [x] Rewrite `AGENTS.md` as the Codex-facing adapter policy.
-- [x] Rewrite `CLAUDE.md` as the Claude-facing adapter policy (constitution +
-  flow-state/transition guidance + generated active-rules block).
-- [x] `.claude/commands/flow.md` reads `.agents/flow` and refuses illegal
-  transitions.
-
-**Stage 2 (the Claude Code plugin + hooks — earn the teeth):**
-
-- [ ] Add `.claude-plugin/plugin.json` so vibe installs as a Claude Code
-  plugin bundling the `/flow` command, the `vibe-*` skills, and the hooks.
-- [ ] Add `.claude/hooks/hooks.json` wiring events to scripts via
-  `${CLAUDE_PLUGIN_ROOT}`.
-- [ ] **Skill-as-inject-source (D12)** prerequisite: give each `vibe-*` skill a
-  per-state orders block and relink the state machine (`inject` → `null` for
-  skill-owning states; inline fallback only for `idle`/`amend`). See
-  features/platform-adapters/plan.md U8.
-- [ ] **Inject hook** (`UserPromptSubmit`): resolve the current state's linked
-  skill and inject that skill's per-state orders every turn (D12). No exit codes.
-  Static-content discipline.
-- [ ] **Guard hook** (`PreToolUse` `Edit|Write|NotebookEdit`): exit 2 on the
-  three hard blocks, warn elsewhere, via `detect-context.sh decide`.
-- [ ] **Gate hook** (`Stop`): warn-first exit-predicate checks (stuck phase,
-  impl-without-tests, verify-without-review, forgotten `set-state.sh`).
-- [ ] Keep every hook a thin shell over `.agents/flow/scripts/`; no invariant
-  logic duplicated. Graceful degrade: missing keystone → exit 0.
-- [ ] Build installer behavior for copying/symlinking core + adapter files and
-  registering the Claude Code plugin.
-
-**Done when:** both adapters point to `.agents/flow` and `.agents/skills/vibe-*`,
-the Claude Code plugin installs command + skills + hooks in one step, the inject
-fires every turn, the three invariants are guarded, and neither adapter defines a
-separate state model or spec layout. Blocking predicates are promoted only after
-M5 dogfooding earns them.
+- [ ] **U8:** D12 + regen dedupe (blocks U1, unblocks safe AI4/AI5).
+- [ ] **U1–U4:** Hooks + `hooks.json`.
+- [ ] **U5:** `.claude-plugin/plugin.json`.
+- [ ] **U6:** `install.sh` (delegates merge to AI2).
+- [ ] **U7:** Dogfood hooks.
 
 ---
 
 ## M5: Dogfood
 
-**Goal:** Prove the workflow on a real project shape.
-
-**Tasks:**
-
-- [ ] Run `vibe-strategy` on a sandbox project.
-- [ ] Run `vibe-quick` for a small maintenance change.
-- [ ] Run `vibe-feature` through verification and compound.
-- [ ] Record at least one lesson from actual friction.
-
-**Done when:** the workflow completes without manual path correction and the
-adapter wording is understandable in both Codex and Claude Code.
+- [ ] Strategy, quick, and feature arcs on sandbox project.
+- [ ] Record lesson from friction; close OPEN-2, OPEN-4, OPEN-7.
 
 ---
 
 ## Critical Path
 
 ```text
-M0 -> M1 -> M2 -> M3 -> M4 -> M5
+M0 [DONE]
+  → M1–M3 [DONE]
+  → U8/regen dedupe + AI0 wrap     (parallel entry)
+  → AI1 → AI2 → AI4               (agent-instructions)
+  → U8 → U1–U4 → U5 → U6 → U7     (platform-adapters; U8 blocks U1)
+  → M5
 ```
 
-M1 and M2 are tightly coupled: the skills need a stable state contract. M4 should
-wait until the core flow stops moving.
+**Hard dependencies:**
+
+| Prerequisite | Blocks |
+|---|---|
+| U8 (D12 + regen dedupe) | U1 inject hook; safe `*.compound` with symlinks |
+| AI0 wrap | AI4 no-op on dogfood repo |
+| AI2 `merge-agents.sh` | U6 `install.sh` |
+| U8 | VF1 acceptance |
+
+---
+
+## Unit ID prefixes (D9)
+
+| Prefix | Feature | Units |
+|---|---|---|
+| `SF` | spec-framework | SF0–SF4 |
+| `VF` | vibe-flow | VF1–VF4 (`VF1` = `U8`) |
+| `AI` | agent-instructions | AI0–AI5 |
+| `U` | platform-adapters | U8, U1–U7 |
 
 ---
 
 ## Progress
 
-| Milestone | Status | Sessions Used | Estimate |
-|---|---|---:|---:|
-| M0: Spec cleanup | DONE | 1 | 1 |
-| M1: Flow core | DONE | 1 | 1 |
-| M2: Vibe skills | DONE | 1 | 1-2 |
-| M3: Verification and compound | DONE | 1 | 1 |
-| M4: Platform adapters | PARTIAL | 1 | 1-2 |
-| M5: Dogfood | NOT STARTED | 0 | 1 |
+| Milestone | Status | Sessions |
+|---|---|---:|
+| M0 | DONE | 1 |
+| M1–M3 | DONE | 3 |
+| M4a | PARTIAL (Stage 1) | 0.5 |
+| M4b | PARTIAL (Stage 1) | 1 |
+| M5 | NOT STARTED | 0 |
 
-**Stage 1 complete** (per the design conclusion §10): the flow runs end-to-end on
-guidance alone — state machine as data, deterministic scripts, seven `vibe-*`
-skill shims, constitution wiring in both adapters, and the generated active-rules
-digest. Hooks (UserPromptSubmit inject, PreToolUse guard, Stop gate — §11 Stage 2)
-are intentionally deferred until M5 dogfooding validates the flow shape and counts
-overrides. M4 remains partial: adapter prose + `/flow` command done; hooks and an
-installer are the Stage-2 remainder.
+**Stage 1 complete:** flow runs on guidance alone. **Stage 2 remainder:** D12/regs,
+template merge, hooks, installer — then M5 dogfood.

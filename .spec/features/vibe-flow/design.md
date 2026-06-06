@@ -3,7 +3,7 @@ type: feature-design
 feature: vibe-flow
 sibling: product.md
 parent: ../../design.md
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 # Feature: Vibe Flow — Design
@@ -21,6 +21,7 @@ not as a large second toolchain.
 **Parent:** [../../design.md](../../design.md)
 **Requirements:** [product.md](product.md)
 **Architecture:** [tech.md](tech.md)
+**Plan:** [plan.md](plan.md)
 
 ---
 

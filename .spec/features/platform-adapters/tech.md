@@ -3,7 +3,7 @@ type: feature-tech
 feature: platform-adapters
 sibling: product.md
 parent: ../../tech.md
-updated: 2026-06-04
+updated: 2026-06-06
 ---
 
 # Feature: Platform Adapters — Architecture
@@ -17,14 +17,16 @@ plugin** whose hooks make the flow automatic.
 **Requirements:** [product.md](product.md)
 **Design:** [design.md](design.md)
 **Plan:** [plan.md](plan.md)
+**Related:** [../agent-instructions/tech.md](../agent-instructions/tech.md)
 
 ---
 
 ## Files
 
 ```text
-AGENTS.md                          # Codex adapter (prose)
-CLAUDE.md                          # Claude Code adapter (prose + active-rules block)
+# Agent instruction files → agent-instructions feature (AGENTS.md real file;
+# CLAUDE.md / WARP.md optional symlinks). This feature owns runtime wiring only.
+
 .claude-plugin/
 └── plugin.json                    # Claude Code plugin manifest
 .claude/
@@ -94,8 +96,7 @@ state exits 0 and never breaks the session.
 
 ## Install Behavior
 
-The installer should copy or symlink core `.agents` files, then install adapter
-files per selected runtime. For Claude Code, installation can also proceed via the
-plugin manifest (`.claude-plugin/plugin.json`), which registers the command,
-skills, and hooks in one step. Existing `AGENTS.md` and `CLAUDE.md` should be
-merged or presented as diffs, never blindly overwritten.
+The installer should copy core `.agents/**` files, register the Claude Code plugin,
+and delegate `AGENTS.md` merge + adapter symlinks to
+[agent-instructions](../agent-instructions/tech.md) (`merge-agents.sh`). Never
+blindly overwrite user-owned instruction content.
