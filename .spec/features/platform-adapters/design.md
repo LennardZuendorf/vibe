@@ -31,5 +31,5 @@ and `.agents/skills/vibe-*`.
 - Hooks stay thin and boring: read state or call `detect-context.sh`, translate
   the verdict to Claude Code's exit-code convention, get out of the way.
 - Earn the teeth: ship hooks warn-first; a hook should never end a session.
-- The inject hook emits the frozen per-state string verbatim — it shapes nothing,
-  it just delivers the current orders every turn.
+- The inject hook delivers the linked skill's per-state orders verbatim (D12) — it
+  shapes nothing, it just delivers the current orders every turn.

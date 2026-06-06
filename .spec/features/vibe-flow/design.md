@@ -3,7 +3,7 @@ type: feature-design
 feature: vibe-flow
 sibling: product.md
 parent: ../../design.md
-updated: 2026-06-02
+updated: 2026-06-04
 ---
 
 # Feature: Vibe Flow — Design
@@ -37,14 +37,17 @@ not as a large second toolchain.
 
 ## Injection Design
 
-The per-turn inject is the flow's main lever. One inject owner emits one frozen
-string per state, naming the mandatory skill, the write surface, the output path,
-the caveman level, and the next state. Principles:
+The per-turn inject is the flow's main lever. One inject owner emits one static
+set of orders per state, naming the mandatory skill, the write surface, the output
+path, the caveman level, and the next state. The orders are **sourced from the
+state's linked skill** (D12), not a separately authored string. Principles:
 
 - **Constrain, then resource.** Say what is in scope first, then which skill and
   paths to use. The agent should not have to remember conventions — the inject
   re-states them.
-- **Frozen per phase.** The same state always injects the same string, so prompt
+- **One source per state.** The orders live in the linked skill, so behaviour is
+  edited in one place; the inject hook just delivers them (D12).
+- **Static per phase.** The same state always injects the same orders, so prompt
   caching holds (see tech.md *Prompt Cache Discipline*).
 - **One owner.** Do not run competing injectors; vibe's inject also sets
   the caveman level rather than delegating that to a separate hook.

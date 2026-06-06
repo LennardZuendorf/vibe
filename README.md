@@ -29,7 +29,7 @@ The three above are the first cut.
 Everything starts at `idle`. The agent self-locates, then drives one flow. The
 cursor `.agents/flow/state.json` = `{flow, phase, feature}` points at one entry
 in `.agents/flow/state-machine.json` — the source of truth that holds each
-state's skill, delegates, caveman level, write surface, frozen inject, and legal
+state's skill, delegates, caveman level, write surface, and legal
 `next`. Transition only via `set-state.sh <flow.phase>`.
 
 ```mermaid
@@ -95,29 +95,17 @@ writes, and what the stage is for. This mirrors `state-machine.json`.
 External skills are `superpowers:*` unless noted (`spec` is bundled). Subagents
 are Anthropic's feature-dev agents, cherry-picked per phase.
 
-### Frozen inject strings
+### Per-turn orders (D12)
 
-One inject owner emits one **frozen** string per state (byte-stable so the prompt
-cache holds; only `<feature>` interpolates). It names the skill, write surface,
-caveman level, and next state — the per-turn "current orders."
-
-| Phase | Inject (verbatim) |
-|---|---|
-| `idle` | `state=idle · no active flow · pick one: vibe-setup, vibe-strategy, vibe-feature, vibe-quick · next: setup.detect \| strategy.brainstorm \| feature.design \| quick.triage` |
-| `setup.detect` | `skill=vibe-setup · READ-ONLY audit of repo + harness · report what is missing/present · do NOT write yet · caveman=lite · next: setup.apply` |
-| `setup.apply` | `skill=vibe-setup · WRITE/MERGE bootstrap: constitution block, .agents/flow scaffold, baseline .spec/** · NEVER clobber existing content (diff + ask on divergence) · caveman=lite · next: idle` |
-| `strategy.brainstorm` | `skill=vibe-strategy · delegate superpowers:brainstorming · READ .spec/lessons.md first · scratch only, no source, no spec writes yet · caveman=lite · next: strategy.spec` |
-| `strategy.spec` | `skill=vibe-strategy · delegate spec · WRITE root .spec/{product,tech,design,plan}.md ONLY · no source, no lessons.md · validate after · caveman=lite · next: strategy.compound (if a durable lesson surfaced) \| idle` |
-| `strategy.compound` | `skill=vibe-compound · WRITE .spec/lessons.md (tagged entry) · regen-active-rules.sh refreshes CLAUDE/AGENTS active-rules block · receipts caveman=ultra, body=lite · next: idle` |
-| `feature.design` | `skill=vibe-feature · READ .spec/lessons.md first · delegate brainstorming + code-explorer (trace) + code-architect (sketch) · WRITE .spec/features/<feature>/{product,tech}.md ONLY · no source yet · caveman=lite · next: feature.plan` |
-| `feature.plan` | `skill=vibe-feature · delegate superpowers:writing-plans + code-architect · WRITE .spec/features/<feature>/plan.md with STABLE unit IDs (U1, U2 ...) · IDs never change on reorder/split · no source yet · caveman=lite · HUMAN GATE before impl · next: feature.impl` |
-| `feature.impl` | `skill=vibe-feature · delegate executing-plans + TDD · WRITE src/**, tests/** · do NOT edit .spec/** · cite plan unit IDs (U1...) in tests/commits · caveman=full · next: feature.verify` |
-| `feature.verify` | `skill=vibe-verify · delegate verification-before-completion + requesting-code-review + code-reviewer (systematic-debugging on fail) · gather EVIDENCE per plan unit ID · no spec writes · caveman=full · HUMAN GATE before ship · next: feature.compound (pass) \| feature.impl (targeted fix) \| feature.plan (major drift)` |
-| `feature.compound` | `skill=vibe-compound · delegate finishing-a-development-branch · WRITE tagged .spec/lessons.md, promote cross-cutting decisions to root specs, archive .spec/features/<feature> -> .spec/archive/<feature> · regen-active-rules.sh refreshes digest · receipts caveman=ultra, body=lite · next: idle` |
-| `quick.triage` | `skill=vibe-quick · READ .spec/lessons.md first · delegate superpowers:systematic-debugging · diagnose, do NOT fix yet · caveman=full (NOT ultra: triage must keep edge cases) · if scope balloons, escalate to feature.design · next: quick.fix` |
-| `quick.fix` | `skill=vibe-quick · delegate TDD · WRITE src/** (+ optional .spec/quick/<slug>.md note) · no root spec writes · caveman=full · next: quick.verify` |
-| `quick.verify` | `skill=vibe-verify · delegate verification-before-completion + code-reviewer · gather EVIDENCE the fix works and breaks nothing · no spec writes · caveman=full · next: idle` |
-| `amend` | `MODIFIER=amend · edit scope for the CURRENT state, then RETURN to it · carry the target state's write rules (do NOT widen them) · caveman=lite · next: <state you came from>` |
+One inject owner delivers one set of "current orders" per state — the skill, the
+write surface, the caveman level, and the next state. Under **D12** those orders
+are **sourced from the state's linked `vibe-*` skill** (the single source of
+truth), not a hand-written string duplicated here; skill-less states (`idle`,
+`amend`) keep a minimal inline fallback in `state-machine.json`. The orders are
+static per state (byte-stable so the prompt cache holds; only `<feature>`
+interpolates), and once the flow hooks ship the `UserPromptSubmit` inject delivers
+them every turn. See the phase map above for each state's skill, delegates, and
+write surface.
 
 ### Caveman levels
 
@@ -194,9 +182,10 @@ the generated active-rules digest.
 
 **Stage 2 in progress** (earn the teeth) — vibe ships as a **Claude Code
 plugin** (`.claude-plugin/plugin.json`) bundling the `/flow` command, the `vibe-*`
-skills, and three **hooks**: a `UserPromptSubmit` inject (fires the frozen inject
-every turn), a `PreToolUse` guard (hard-blocks the three invariants via the shared
-`detect-context.sh` policy), and a `Stop` gate (warn-first exit-predicate checks).
+skills, and three **hooks**: a `UserPromptSubmit` inject (delivers the current
+state's linked-skill orders every turn — D12), a `PreToolUse` guard (hard-blocks
+the three invariants via the shared `detect-context.sh` policy), and a `Stop` gate
+(warn-first exit-predicate checks).
 Hooks are thin shells over `.agents/flow/scripts/`, added warn-first and promoted
 to blocking only as dogfooding earns it. See
 [features/platform-adapters](.spec/features/platform-adapters/product.md).

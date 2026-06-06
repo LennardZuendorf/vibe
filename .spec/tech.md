@@ -77,9 +77,10 @@ vibe/
 │   │   ├── state-machine.json          # static flow definition
 │   │   ├── state.example.json          # neutral cursor template
 │   │   └── scripts/
-│   │       ├── detect-context.sh       # read flow + repo state, emit JSON
+│   │       ├── detect-context.sh       # read flow + repo state, emit JSON / decide
 │   │       ├── set-state.sh            # validated state writer
-│   │       └── validate-state.sh       # state-machine consistency checks
+│   │       ├── validate-state.sh       # state-machine consistency checks
+│   │       └── regen-active-rules.sh   # project lessons digest into adapter blocks
 │   └── skills/
 │       ├── spec/
 │       ├── vibe-strategy/
@@ -94,7 +95,7 @@ vibe/
 │   ├── commands/flow.md                # Claude adapter, reads .agents/flow
 │   └── hooks/
 │       ├── hooks.json                  # event → script wiring
-│       ├── user-prompt-submit-inject.sh  # emit frozen inject each turn
+│       ├── user-prompt-submit-inject.sh  # inject linked skill's orders each turn
 │       ├── pre-tool-use-guard.sh         # allow/warn/block via detect-context.sh
 │       └── stop-gate.sh                  # end-of-turn exit-predicate checks
 └── .spec/
@@ -155,12 +156,14 @@ keys; the cursor carries only the moving parts and no turn-varying fields:
 ```
 
 `state-machine.json` defines each `<flow>.<phase>` state with its required `vibe-*`
-skill, caveman level, allowed write surfaces, exit predicate, and a static
-`inject` string. `caveman` and `inject` are static per state, never stored in the
-cursor, so the per-turn inject stays byte-stable and prompt-cache-safe. A single
-inject owner emits one frozen string per state (which also sets the caveman
-level). `set-state.sh` is the only sanctioned writer. Full per-state mapping lives
-in [features/vibe-flow/tech.md](features/vibe-flow/tech.md).
+skill, caveman level, allowed write surfaces, and exit predicate. The `skill` field
+**links** the state to its owning shim; under D12 the per-turn orders are sourced
+from that linked skill rather than a hand-written `inject` string. A single inject
+owner (the `UserPromptSubmit` hook) pulls the current state's orders from its
+linked skill and injects them once per turn (which also sets the caveman level),
+keeping the inject byte-stable and prompt-cache-safe. `set-state.sh` is the only
+sanctioned writer. Full per-state mapping lives in
+[features/vibe-flow/tech.md](features/vibe-flow/tech.md).
 
 ---
 
@@ -212,7 +215,7 @@ turn rather than only when the agent remembers:
 
 | Hook | Event | Role |
 |---|---|---|
-| Inject | `UserPromptSubmit` | Emit the current state's frozen `inject` string every turn. |
+| Inject | `UserPromptSubmit` | Pull the current state's orders from its linked `vibe-*` skill and inject them every turn (D12). |
 | Guard | `PreToolUse` (`Edit\|Write\|NotebookEdit`) | Hard-block the three invariants, warn elsewhere, via `detect-context.sh decide`. |
 | Gate | `Stop` | Warn-first exit-predicate checks (stuck phase, impl-without-tests, forgotten `set-state.sh`). |
 

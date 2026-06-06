@@ -3,7 +3,7 @@ type: feature-tech
 feature: vibe-flow
 sibling: product.md
 parent: ../../tech.md
-updated: 2026-06-02
+updated: 2026-06-04
 ---
 
 # Feature: Vibe Flow — Architecture
@@ -30,7 +30,8 @@ chosen for it.
 │   └── scripts/
 │       ├── detect-context.sh
 │       ├── set-state.sh
-│       └── validate-state.sh
+│       ├── validate-state.sh
+│       └── regen-active-rules.sh
 └── skills/
     ├── vibe-strategy/SKILL.md
     ├── vibe-feature/SKILL.md
@@ -64,9 +65,10 @@ There is **no `notes` field**. Anything that varies turn-to-turn stays out of th
 cursor so the per-turn inject can be cache-stable (see *Prompt Injection*). The
 `updated` timestamp lives in the cursor only, never in injected text.
 
-`state-machine.json` defines each state as a static entry. `caveman` and `inject`
-are static per state — never stored in the mutable cursor — which is what keeps
-the per-turn inject byte-stable:
+`state-machine.json` defines each state as a static entry. `caveman` is static per
+state and the `skill` field **links** the state to its owning shim — never stored
+in the mutable cursor. Under D12 the per-turn orders are sourced from that linked
+skill (see *Prompt Injection*), not from a hand-written `inject` string:
 
 ```json
 {
@@ -76,7 +78,7 @@ the per-turn inject byte-stable:
     "caveman": "full",
     "reads": [".spec/features/<feature>/plan.md"],
     "writes": ["src/**", "tests/**"],
-    "inject": "skill=executing-plans+TDD · WRITE src/**, tests/** · do NOT edit .spec/** · cite plan unit IDs · caveman=full · next: verify",
+    "inject": null,
     "next": ["feature.verify"],
     "exit": "tests reference plan unit IDs and pass"
   }
@@ -140,19 +142,36 @@ Each `vibe-*` skill follows the same internal sequence:
 
 ---
 
-## Prompt Injection & Caveman (D10)
+## Prompt Injection & Caveman (D10 → D12)
 
-There is **one inject owner**: the adapter's `UserPromptSubmit` hook (or its
-equivalent) reads the current `<flow>.<phase>` entry and emits that entry's static
-`inject` string. That single inject *also* sets the caveman level — vibe
-does not run a separate caveman tracker hook in parallel, because two injectors
-collide and the agent follows the last one.
+There is **one inject owner**: the adapter's `UserPromptSubmit` hook. It reads the
+current `<flow>.<phase>` entry, follows that entry's `skill` link, and injects that
+**skill shim's per-state orders**. The skill is the single source of the per-turn
+orders, not a separate hand-written string (**D12 — supersedes the
+frozen-`inject`-string mechanism of D10; D10's single-owner and cache-stable
+invariants are retained**). That single inject *also* sets the caveman level —
+vibe does not run a separate caveman tracker hook in parallel, because two
+injectors collide and the agent follows the last one.
 
-The inject is small (~30–60 tokens) and names: the mandatory skill, the allowed
-write surface, the required output path, the caveman level, and the next legal
-state. It is injected only where drift is costly (states with a mandatory skill +
-forbidden writes). `idle`, `setup.detect`, and pure-read moments need no inject
-beyond the legal `next` list.
+Why the skill is the source: the orders (mandatory skill, allowed write surface,
+output path, caveman level, next legal state) were previously duplicated in both
+the state machine's `inject` string and the skill body, and two copies drift apart.
+Making the skill canonical removes the duplication — behaviour is edited in one
+place.
+
+Mechanics:
+
+- `state-machine.json` keeps the `skill` field as the **link**; the hand-written
+  `inject` string is dropped (`null`) for states that own a skill.
+- Each `vibe-*` skill exposes a small, **machine-extractable per-`<flow>.<phase>`
+  orders block** — the content the old inject carried. The hook extracts the block
+  for the current state, so the inject stays small (~30–60 tokens) and cache-stable
+  rather than dumping the whole shim body. (Whole-shim vs orders-block injection is
+  an implementation choice flagged in the platform-adapters plan.)
+- **Skill-less states keep an inline fallback.** `idle` (no skill) and `amend` (a
+  modifier that carries the *target* state's skill orders) retain a minimal inline
+  string in `state-machine.json`. `setup.detect` and pure-read moments need no more
+  than the legal `next` list.
 
 Two carve-outs ride in **every** inject, regardless of caveman level — taken from
 the upstream caveman skill's own rules:
@@ -174,15 +193,17 @@ The injection pattern is cache-safe only if the cache boundary is respected:
   **cached prefix** and must stay byte-identical across turns.
 - The per-turn inject rides the **user message** (post-breakpoint), which is why
   `UserPromptSubmit` is the right hook — it never mutates the cached prefix.
-- Each state's `inject` is a **frozen string**. Do not template per-turn values
-  (timestamps, turn counters, changed-file lists, the dropped `notes` field) into
-  it, or the cache rebuilds every turn.
-- `<feature>` interpolated into an inject is acceptable: it sits post-breakpoint
-  and is stable within a feature session.
+- Each state's orders block (sourced from its linked skill, D12) is **static** —
+  byte-identical across turns. Do not template per-turn values (timestamps, turn
+  counters, changed-file lists, the dropped `notes` field) into it, or the cache
+  rebuilds every turn.
+- `<feature>` interpolated into the injected orders is acceptable: it sits
+  post-breakpoint and is stable within a feature session.
 - Caveman compression has no cache impact — it changes output tokens, not the
   cached input prefix.
-- Skill bodies load on invoke (the `Skill` tool injects a SKILL.md). Invoke lazily
-  per state; do not preload the whole skill catalog.
+- The hook injects only the current state's **orders block**, not the whole skill
+  body. Full SKILL.md bodies still load lazily on `Skill`-tool invoke; do not
+  preload the whole skill catalog.
 
 ---
 

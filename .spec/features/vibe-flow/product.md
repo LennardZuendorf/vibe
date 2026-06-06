@@ -3,7 +3,7 @@ type: feature-product
 feature: vibe-flow
 sibling: tech.md
 parent: ../../product.md
-updated: 2026-05-14
+updated: 2026-06-04
 ---
 
 # Feature: Vibe Flow — Product
@@ -41,7 +41,7 @@ as constraints and injected resources, not left to the agent to remember.
 | R6 | Mutable runtime files do not live under `.spec/`; the cursor carries no turn-varying fields. |
 | R7 | `vibe-setup` bootstraps or repairs `.agents/flow`, `.agents/skills/vibe-*`, adapters, and baseline specs. |
 | R8 | Each state declares a caveman level (`lite`, `full`, `ultra`) for communication density; level definitions are canonical in root `product.md`. |
-| R9 | A single inject owner emits one frozen string per state (skill, write surface, output path, caveman level, next), with safety carve-outs that override density. (D10) |
+| R9 | A single inject owner emits one static per-turn inject (skill, write surface, output path, caveman level, next), with safety carve-outs that override density. The orders are sourced from the state's linked `vibe-*` skill, not a hand-written string; skill-less states (`idle`, `amend`) keep an inline fallback. (D10, D12) |
 | R10 | `*.design` and `*.triage` states read `.spec/lessons.md` on entry so lessons are retrieved, not just recorded. (D8) |
 | R11 | `feature.plan` assigns stable unit IDs (`U1`, `U2`, …); `impl` and `verify` reference them so state survives re-planning. (D9) |
 

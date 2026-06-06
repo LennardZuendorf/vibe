@@ -148,8 +148,8 @@ flowchart LR
 Each phase, its driving skill shim, the external skills and feature-dev subagents
 it delegates to, its caveman density, the spec artifact it reads/writes, and what
 the stage is for. This is the canonical workflow contract; the full per-state
-record (frozen inject strings, `next` arrays, exit predicates) lives in
-`.agents/flow/state-machine.json` and is detailed in
+record (skill link, `next` arrays, exit predicates — orders sourced from the
+linked skill per D12) lives in `.agents/flow/state-machine.json` and is detailed in
 [features/vibe-flow/tech.md](features/vibe-flow/tech.md).
 
 | Phase | Skill shim | External skills | Subagents | Caveman | Spec artifact (R/W) | What the stage does |
@@ -172,9 +172,10 @@ record (frozen inject strings, `next` arrays, exit predicates) lives in
 
 External skills are `superpowers:*` unless noted (`spec` is bundled). Subagents
 are Anthropic's feature-dev agents, cherry-picked per phase. Each phase also emits
-one **frozen inject** string (the per-turn "current orders" — skill, write
-surface, caveman level, next state); the verbatim strings live in
-`.agents/flow/state-machine.json`.
+one per-turn **inject** — the "current orders" (skill, write surface, caveman
+level, next state). Under D12 these orders are sourced from the phase's linked
+`vibe-*` skill shim (the single source of truth); skill-less states (`idle`,
+`amend`) keep a minimal inline string in `.agents/flow/state-machine.json`.
 
 ## Communication Levels
 
