@@ -107,6 +107,26 @@ normal prose at every level. Levels are canonical in `.spec/product.md`:
 
 One inject owner sets the level; do not run a separate caveman tracker in parallel.
 
+## Flow State & Transitions
+
+- **Read state:** `.agents/flow/state.json` = `{flow, phase, feature, updated}`.
+  The compound `<flow>.<phase>` key indexes `.agents/flow/state-machine.json`,
+  which holds each state's skill, delegates, caveman level, read/write surface,
+  frozen `inject` string, and legal `next` array.
+- **Transition only via** `bash .agents/flow/scripts/set-state.sh <flow.phase>
+  [feature]`. Never edit `state.json` directly. Check the current state's `next`
+  before moving; refuse illegal transitions. Transitions are agent-*suggested* —
+  name the next state and confirm before calling the script.
+- **Follow the inject literally.** It names the one skill, the write surface, the
+  output path, the caveman level, and the next legal state.
+- **Helper scripts:** `validate-state.sh` (cursor sanity), `detect-context.sh`
+  (state snapshot + allow/warn/block write decision), `regen-active-rules.sh`
+  (rebuild the active-rules digest below from `lessons.md` during compound).
+
+The active-rules block at the bottom of this file is **generated** from
+`.spec/lessons.md` by `regen-active-rules.sh`. Do not edit inside its markers;
+edit `lessons.md` during a compound phase and re-run the script.
+
 ## Spec Framework
 
 Use `.agents/skills/spec/SKILL.md` for spec navigation and validation. Root model:
