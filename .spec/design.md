@@ -84,4 +84,3 @@ The spec framework should feel like a small map, not a documentation maze:
 |---|---|
 | vibe-flow | [features/vibe-flow/design.md](features/vibe-flow/design.md) |
 | platform-adapters | [features/platform-adapters/design.md](features/platform-adapters/design.md) |
-| spec-framework (archived) | [archive/spec-framework/design.md](archive/spec-framework/design.md) |

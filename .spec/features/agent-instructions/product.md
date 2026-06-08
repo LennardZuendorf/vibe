@@ -28,7 +28,7 @@ platform-specific **symlink adapters** (`CLAUDE.md`, `WARP.md`, …) that point 
 |---|---|
 | `AGENTS.md` template, marker-aware merge during `vibe-setup` | Flow state machine, `vibe-*` skill bodies (→ [vibe-flow](../vibe-flow/product.md)) |
 | Optional adapter symlinks (`CLAUDE.md`, `WARP.md`, …) | Claude plugin, hooks, `/flow` (→ [platform-adapters](../platform-adapters/product.md)) |
-| `vibe:instructions` managed block; preserves `vibe:active-rules` | `.spec/` document format (→ [spec-framework](../spec-framework/product.md)) |
+| `vibe:instructions` managed block; preserves `vibe:active-rules` | `.spec/` document format (→ root [tech.md](../../tech.md) Spec Framework Contract) |
 
 ---
 

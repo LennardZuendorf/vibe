@@ -29,7 +29,7 @@ automatic and guard its invariants.
 |---|---|
 | Claude Code plugin (`.claude-plugin/`), hooks, `/flow` command | `AGENTS.md` template merge and adapter symlinks (→ [agent-instructions](../agent-instructions/product.md)) |
 | `install.sh` — copy core `.agents/**`, register plugin | State machine and `vibe-*` skill bodies (→ [vibe-flow](../vibe-flow/product.md)) |
-| Runtime-specific hook wiring (`UserPromptSubmit`, `PreToolUse`, `Stop`) | `.spec/` document format (→ [spec-framework](../spec-framework/product.md)) |
+| Runtime-specific hook wiring (`UserPromptSubmit`, `PreToolUse`, `Stop`) | `.spec/` document format (→ root [tech.md](../../tech.md) Spec Framework Contract) |
 
 ---
 

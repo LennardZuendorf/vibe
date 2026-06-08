@@ -295,6 +295,6 @@ wiring is in [features/platform-adapters/tech.md](features/platform-adapters/tec
 
 | Feature | Covers |
 |---|---|
-| **spec framework (M0 done)** | Spec skill, templates, validation, authoring flow. [archive/spec-framework/](archive/spec-framework/tech.md) |
+| **spec framework (M0 done)** | Spec skill, templates, validation, authoring flow. [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) |
 | **[features/vibe-flow/](features/vibe-flow/tech.md)** | `.agents/flow` state machine, scripts, `vibe-*` skill contracts. |
 | **[features/platform-adapters/](features/platform-adapters/tech.md)** | Codex/Claude adapter files and installer behavior. |

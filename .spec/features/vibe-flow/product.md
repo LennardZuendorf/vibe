@@ -23,7 +23,7 @@ verification, and compounding.
 
 | Owns | Does not own |
 |---|---|
-| `.agents/flow/` state machine, cursor, scripts | `.spec/` document format (→ [spec-framework](../spec-framework/product.md)) |
+| `.agents/flow/` state machine, cursor, scripts | `.spec/` document format (→ root [tech.md](../../tech.md) Spec Framework Contract) |
 | `vibe-*` skill shims and delegation routing | `AGENTS.md` template merge / adapter symlinks (→ [agent-instructions](../agent-instructions/product.md)) |
 | Per-state caveman, reads/writes, transitions (D9–D12) | Claude plugin, hooks, `/flow` command (→ [platform-adapters](../platform-adapters/product.md)) |
 

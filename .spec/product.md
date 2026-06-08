@@ -100,7 +100,7 @@ style rather than a broad marketplace audience.
 
 | Piece | What It Owns | Feature Spec |
 |---|---|---|
-| `spec` framework | `.spec/` docs, templates, validation, archive rules, feature authoring flow | Bundled `.agents/skills/spec/` (M0 done; [archive](archive/spec-framework/product.md)) |
+| `spec` framework | `.spec/` docs, templates, validation, wrap-up rules, feature authoring flow | Bundled [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) (M0 done) |
 | `vibe` flow | `.agents/flow` state, `vibe-*` skills, phase routing | [features/vibe-flow/](features/vibe-flow/product.md) |
 | Platform adapters | `AGENTS.md`, `CLAUDE.md`, and a **Claude Code plugin** that bundles the `/flow` command, the `vibe-*` skills, and the flow **hooks**; install/setup glue | [features/platform-adapters/](features/platform-adapters/product.md) |
 
@@ -232,6 +232,6 @@ so adapters and subagents stay consistent (see features/vibe-flow).
 
 | Feature | Covers |
 |---|---|
-| **spec framework (M0 done)** | Durable `.spec/` planning model: two-layer docs, strict templates, warn-first validation, Requirement+Scenario format. History: [archive/spec-framework/](archive/spec-framework/product.md). |
+| **spec framework (M0 done)** | Durable `.spec/` planning model: two-layer docs, strict templates, warn-first validation, Requirement+Scenario format. Live: [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md). |
 | **[features/vibe-flow/](features/vibe-flow/product.md)** | Agent skill shims, `.agents/flow` state, state machine, phase routing, delegated skill output paths. |
 | **[features/platform-adapters/](features/platform-adapters/product.md)** | Codex and Claude Code integration files that expose the same vibe flow core. |

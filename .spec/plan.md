@@ -14,7 +14,7 @@ updated: 2026-06-06
 
 | Feature | Product | Plan | Status |
 |---|---|---|---|
-| spec-framework | `.spec/` + `spec` skill | [archive/plan.md](archive/spec-framework/plan.md) | DONE (SF0–SF16, archived) |
+| spec-framework | `.spec/` + `spec` skill | [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) · [`tests/spec/run.sh`](../tests/spec/run.sh) | DONE (SF0–SF17, wrapped up) |
 | [vibe-flow](features/vibe-flow/product.md) | `.agents/flow` + `vibe-*` skills | [plan.md](features/vibe-flow/plan.md) | DONE (VF1→U8, VF2–VF3 open) |
 | [agent-instructions](features/agent-instructions/product.md) | `AGENTS.md` template + symlinks | [plan.md](features/agent-instructions/plan.md) | PARTIAL (Stage 1 done; AI0–AI5 open) |
 | [platform-adapters](features/platform-adapters/product.md) | plugin + hooks + installer | [plan.md](features/platform-adapters/plan.md) | PARTIAL (Stage 1 done; U8–U7 open) |
@@ -112,7 +112,7 @@ Each feature owns one layer. Cross-feature work cites the owning plan's unit IDs
 
 ## M0: Spec Framework
 
-**Plan:** [archive/spec-framework/plan.md](archive/spec-framework/plan.md) (SF0–SF16) — **arc complete, archived**
+**Live surface:** [`.agents/skills/spec/SKILL.md`](../.agents/skills/spec/SKILL.md), root `.spec/` entrypoints, [`tests/spec/run.sh`](../tests/spec/run.sh) (SF0–SF17) — **arc complete, feature folder removed**
 
 - [x] Four-feature spec model, validation, bundled skill (Stage 1).
 - [x] **SF0** — lessons `**Tags:**` bootstrap + validate warn.
