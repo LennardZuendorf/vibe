@@ -200,5 +200,5 @@ Features: `.spec/features/<feature>/{product,tech}.md` required; `design.md`,
 
 ### Active Rules
 
-_No lessons recorded yet._
+- **Spec strictness: warn-first, then migrate** — Ship structural validators warn-first; promote warn→error only after live specs are migrated during compound. Pair every validator with a behaviour test in `tests/spec/run.sh`.
 <!-- vibe:active-rules:end -->

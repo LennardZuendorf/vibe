@@ -15,7 +15,7 @@ Root-layer files in `.spec/` are **persistent**. They describe the whole product
 | `tech-{topic}.md` | Cross-cutting tech (infra, observability, deployment) | Persistent |
 | `plan-{topic}.md` | Cross-cutting sub-plan when main `plan.md` grows large | Persistent |
 
-**Root `product.md` / `tech.md`:** never feature-level detail. If you're describing how one feature works, you're in the wrong file — use `features/<name>/product.md` or `tech.md`.
+**Root `product.md` / `tech.md`:** stay high-level — see [SKILL.md](SKILL.md) § Strict Rules (rule 2) for the canonical boundary.
 
 ## Writing order
 
@@ -43,18 +43,7 @@ Templates: [product](reference/templates/product.md), [tech](reference/templates
 
 ## Branch doc vs feature folder
 
-When content doesn't fit in root `product.md` / `tech.md`, ask:
-
-**"Does this describe one feature, or something that spans every feature?"**
-
-| Answer | Where it goes |
-|---|---|
-| One feature (buildable, named unit of work) | `.spec/features/<name>/{product,tech}.md` |
-| Spans every feature (design system, infra, conventions, observability) | `.spec/{product,tech}-{topic}.md` |
-
-If unsure, default to **feature**. Recurring patterns across features signal time to extract a branch doc.
-
-A branch doc is **not** a feature with extra steps.
+When content doesn't fit in root entrypoints, use the two-layer decision in [SKILL.md](SKILL.md) § The Two-Layer Model and § Strategy vs Feature. Default to `features/<name>/`; extract to branch docs only when a concern truly spans every feature.
 
 ## Product vs Tech — the hard line
 
@@ -117,7 +106,7 @@ Guide: [reference/plan.md](reference/plan.md).
 
 ## Promotion from feature layer (COMPOUND)
 
-During **COMPOUND**, cross-cutting decisions from `features/<name>/tech.md` merge into root `tech.md` (or a branch `tech-{topic}.md`). Feature-specific detail does **not** merge — it stays in the folder when it moves to `archive/<name>/`.
+During **COMPOUND**, cross-cutting decisions from `features/<name>/tech.md` merge into root `tech.md` (or a branch `tech-{topic}.md`). Feature-specific detail does **not** merge. Then remove `features/<name>/` — archive optional. See [SKILL.md](SKILL.md) § Wrapped-up features.
 
 **How to mark promotable blocks** in feature `tech.md`: wrap sections in `<!-- merge -->` ... `<!-- /merge -->`, or use frontmatter `merge: true` where your project's merge tooling expects it (see root `tech.md` for `merge-feature.sh` behavior if documented in your repo).
 

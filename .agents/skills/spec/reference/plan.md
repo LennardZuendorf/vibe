@@ -162,6 +162,18 @@ List feature plans in root `children:` when you want validate to track them (opt
 
 ---
 
+## Anti-slop
+
+Plans sequence decisions — they are not implementation dumps.
+
+- **Repo-relative paths only** — link `.spec/features/<name>/plan.md`, not absolute paths.
+- **No process exhaust** — no brainstorming, triage notes, or "how we got here" in the plan file.
+- **No qualifiers or hedges** — units state what ships; delete "maybe", "TBD unless".
+- **Omit empty sections** — skip placeholder tables and headers with no rows.
+- **Decisions, not code** — no code snippets, pseudocode, or pasted API shapes; link to `tech.md`.
+
+---
+
 ## Style rules
 
 - Reference specs by link — never paste requirements or architecture inline.
@@ -177,7 +189,7 @@ Root `.spec/plan.md` might show:
 
 | Prefix | Feature | Plan |
 |---|---|---|
-| SF | spec-framework | features/spec-framework/plan.md |
+| SF | spec-framework | `.agents/skills/spec/` + root `plan.md` M0 (wrapped up) |
 | VF | vibe-flow | features/vibe-flow/plan.md |
 | AI | agent-instructions | features/agent-instructions/plan.md |
 

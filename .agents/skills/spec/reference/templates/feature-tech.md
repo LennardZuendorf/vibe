@@ -6,13 +6,20 @@ parent: ../../tech.md
 updated: {YYYY-MM-DD}
 ---
 
+<!--
+  TEMPLATE GUARDRAIL — feature tech.md
+  Job: HOW this feature is built (files, contracts, algorithms). Link to product.md for WHAT.
+  Do NOT: UX opinions, product requirements, plan units, root architecture essays.
+  Omit optional sections entirely when empty — placeholder prose is worse than absence.
+-->
+
 # Feature: {Name} — Architecture
 
-{One-paragraph summary: how this feature is built, what files it touches, what's the contract.}
+{One-paragraph summary: how this feature is built, what files it touches, what the contract is.}
 
 **Parent:** [../../tech.md](../../tech.md)
 **Requirements:** [product.md](product.md)
-**Plan:** [plan.md](plan.md)
+<!-- Add Design and Plan header links when design.md / plan.md exist (both optional). -->
 
 ---
 
@@ -47,14 +54,18 @@ interface {Name} {
 Use this for cross-cutting decisions that affect the whole project.}
 <!-- /merge -->
 
----
+<!-- include-when-material: Performance Budget — omit when not applicable -->
 
 ## Performance Budget
 
-{If applicable. Concrete latency / memory / size targets.}
+{Concrete latency / memory / size targets.}
 
----
+<!-- /include-when-material -->
+
+<!-- include-when-material: Open Questions — omit when no technical blockers -->
 
 ## Open Questions
 
 1. **{Question}** — {Context and trade-offs.}
+
+<!-- /include-when-material -->

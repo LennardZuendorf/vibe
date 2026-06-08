@@ -8,7 +8,7 @@ There are three places product content goes. Pick the right one.
 
 ## 1. Root: `product.md`
 
-The mini PRD. **Stay high-level.** No feature-level detail.
+The mini PRD. **Stay high-level** — no feature-level detail (canonical: [SKILL.md](../SKILL.md) § Strict Rules).
 
 Sections:
 - **Story** — the problem in one paragraph
@@ -21,7 +21,7 @@ Sections:
 - **Features index** — table linking to `features/<name>/product.md`
 - **Open questions** — project-level decisions still open
 
-If you're describing how one feature works, you're in the wrong file. Move to `features/<name>/product.md`.
+Feature-level UX belongs in `features/<name>/product.md`.
 
 ---
 
@@ -77,6 +77,17 @@ The `design` scope is the only place product and tech content may legitimately m
 
 ---
 
+## Anti-slop
+
+Artifacts are durable memory — not session transcripts.
+
+- **Repo-relative paths only** — `.spec/features/foo/product.md`, not absolute or machine-specific paths.
+- **No process exhaust** — omit interview notes, brainstorming dumps, and "we considered X" unless the decision matters.
+- **No qualifiers or hedges** — state decisions; delete "maybe", "probably", "might want to".
+- **Omit empty sections** — if a section has no content yet, leave it out; add when there is something to say.
+
+---
+
 ## Style Rules
 
 **Do:**
@@ -128,7 +139,7 @@ This bridges WHAT to HOW so the reader can navigate.
 - **Create a feature** when scoping a new buildable unit of work
 - **Create a branch doc** only when a genuinely cross-cutting concern emerges
 - **Never** create a branch doc that's really about one feature — that's a feature
-- **Never** put feature-level detail in `product.md` — keep it high-level
+- **Never** put feature-level detail in root `product.md` — canonical rule in [SKILL.md](../SKILL.md) § Strict Rules
 
 ---
 

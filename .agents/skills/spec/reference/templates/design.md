@@ -23,6 +23,14 @@ spacing:
   md: 16px
 ---
 
+<!--
+  TEMPLATE GUARDRAIL — root design.md
+  Job: cross-cutting look, feel, and design language (tokens + prose). Link down via Feature Design Index.
+  Do NOT: feature-specific interaction detail, code, plan units, implementation paths.
+  Omit optional sections entirely when empty — placeholder prose is worse than absence.
+  Non-visual projects: delete unused token groups from frontmatter; keep prose sections that apply.
+-->
+
 # {Project Name} — Design
 
 Cross-cutting design language for the product. This template follows the spirit
@@ -41,25 +49,47 @@ design.
 {Describe the product's look, feel, interaction personality, target audience,
 and what agents should preserve when making design decisions.}
 
+<!-- include-when-material: Colors — omit when no visual interface or tokens deleted -->
+
 ## Colors
 
 {Explain semantic color roles and how the YAML tokens should be applied.}
+
+<!-- /include-when-material -->
+
+<!-- include-when-material: Typography — omit when not applicable -->
 
 ## Typography
 
 {Explain type hierarchy, font roles, rhythm, and reading density.}
 
+<!-- /include-when-material -->
+
+<!-- include-when-material: Layout — omit when not applicable -->
+
 ## Layout
 
 {Explain spacing, grid, density, responsive behavior, and containment.}
+
+<!-- /include-when-material -->
+
+<!-- include-when-material: Elevation & Depth — omit when not applicable -->
 
 ## Elevation & Depth
 
 {Explain shadows, borders, layers, tonal contrast, or the lack of elevation.}
 
+<!-- /include-when-material -->
+
+<!-- include-when-material: Shapes — omit when not applicable -->
+
 ## Shapes
 
 {Explain radius, edge language, icon shape, and component silhouettes.}
+
+<!-- /include-when-material -->
+
+<!-- include-when-material: Components — omit when no reusable component patterns yet -->
 
 ## Components
 
@@ -67,13 +97,21 @@ and what agents should preserve when making design decisions.}
 |---|---|---|
 | {Pattern} | {Situation} | {Constraint or example} |
 
+<!-- /include-when-material -->
+
+<!-- include-when-material: Do's and Don'ts — omit when overview is sufficient -->
+
 ## Do's and Don'ts
 
 - Do {guideline}
 - Don't {pitfall}
+
+<!-- /include-when-material -->
 
 ## Feature Design Index
 
 | Feature | Design Detail |
 |---|---|
 | {Feature} | [features/{name}/design.md](features/{name}/design.md) |
+
+Feature-level interaction and copy live in `features/<name>/design.md` — not here.

@@ -1,10 +1,10 @@
 # Spec Skill — Design Documentation System
 
-> **For humans:** This README explains how the spec skill works. Claude reads SKILL.md instead.
+> **For humans:** This README explains how the spec skill works. Agents read [SKILL.md](SKILL.md) instead.
 
 ## What This Skill Does
 
-The **spec** skill teaches agents to write and maintain design documentation in `.spec/`. It enforces a strict separation between product requirements (what & why) and technical implementation (how), and provides a structured workflow for going from idea to implementation plan.
+The **spec** skill teaches agents to write and maintain design documentation in `.spec/`. It enforces separation between product (what & why), tech (how), design (UX language), and plans (when & in what order). Two layers: persistent root specs and ephemeral per-feature folders.
 
 ## Quick Start
 
@@ -13,223 +13,142 @@ The **spec** skill teaches agents to write and maintain design documentation in 
 /spec setup
 
 # Navigate specs
-/spec product          # Load product requirements
-/spec tech             # Load technical docs
-/spec plan             # Load implementation plan
+/spec strategy          # Root layer — global specs
+/spec feature <name>    # Feature layer — one named unit of work
+/spec product           # Load product requirements
+/spec tech              # Load technical docs
+/spec plan              # Load implementation plan
 
 # Maintenance
-/spec validate         # Check consistency
+/spec validate          # Check consistency
 ```
 
-## The Spec Writing Workflow
-
-Specs are written in a deliberate order. Each layer builds on the one before it:
-
-```
-Step 1:  product.md          — WHAT and WHY (the big picture)
-           |
-Step 2:  tech.md             — HOW (architecture, stack, patterns)
-           |
-Step 3:  product-{topic}.md  — Product branch docs (write product first...)
-         tech-{topic}.md     — ...then matching tech branch doc
-           |
-Step 4:  plan.md             — Overall implementation roadmap
-           |
-Step 5:  plan-{topic}.md     — Feature sub-plans (optional)
-```
-
-**Why this order matters:**
-- You can't define HOW until you know WHAT
-- You can't deep-dive into features until the big picture exists
-- You can't plan implementation until product and tech specs are written
-- Sub-plans reference both the main plan and their feature's product/tech specs
-
-## Directory Structure
+## The Two-Layer Model
 
 ```
 .spec/
-├── product.md                  # Entrypoint: product requirements
-├── tech.md                     # Entrypoint: technical design
-├── plan.md                     # Entrypoint: implementation roadmap
-├── product-{topic}.md          # Product branch docs
-├── tech-{topic}.md             # Tech branch docs
-└── plan-{topic}.md             # Feature sub-plans (optional)
+│
+├── product.md, tech.md, design.md, plan.md, lessons.md   # ROOT — persistent, high-level
+├── product-{topic}.md, tech-{topic}.md                     # ROOT — cross-cutting branches (rare)
+│
+├── features/<name>/                                        # FEATURE — ephemeral, detailed
+│   ├── product.md          # required
+│   ├── tech.md             # required
+│   ├── plan.md             # recommended — stable unit IDs
+│   ├── design.md           # optional — UI/UX when needed
+│   └── research.md         # optional
+│
+└── archive/<name>/         # post-merge feature history
 ```
 
-## File Naming Rules
+**Root** answers project-level questions. **Feature** answers one buildable unit of work. Feature specs are written during design, consumed during implementation, merged when cross-cutting, then archived.
 
-Entrypoints: `product.md`, `tech.md`, `plan.md` (fixed names).
+Canonical rules: [SKILL.md](SKILL.md) § The Two-Layer Model.
 
-Branch docs: `{area}-{topic}.md`
+## Writing Order
 
-- **area:** `product`, `tech`, or `plan`
-- **topic:** lowercase-with-hyphens, short and semantic
+### Bootstrap (strategy)
 
-### Examples
-- `product-design.md` — UI/UX design decisions
-- `tech-infrastructure.md` — infra and build setup
-- `plan-editor.md` — editor feature sub-plan
-
-## Mental Model
-
-```mermaid
-graph TD
-    A[User Task] --> B{What do you need?}
-    B -->|Requirements| C[product.md]
-    B -->|Architecture| D[tech.md]
-    B -->|Planning| P[plan.md]
-    B -->|Full picture| E[product.md + tech.md]
-
-    C --> F{Need details?}
-    D --> G{Need details?}
-    P --> Q{Feature-specific?}
-
-    F -->|Yes| H[product-topic.md]
-    G -->|Yes| I[tech-topic.md]
-    Q -->|Yes| R[plan-topic.md]
-
-    H --> J[Implement]
-    I --> J
-    R --> J
-
-    J --> K{Spec update needed?}
-    K -->|Yes| L[Edit spec + bump date + validate]
-    K -->|No| M[Done]
-    L --> M
-
-    style C fill:#e1f5ff
-    style D fill:#ffe1f5
-    style P fill:#f5ffe1
-    style H fill:#e1f5ff
-    style I fill:#ffe1f5
-    style R fill:#f5ffe1
 ```
+product.md → tech.md → design.md → plan.md (milestones, feature map, unit-prefix registry)
+```
+
+Branch docs (`product-{topic}.md`, `tech-{topic}.md`) only when a concern spans **every** feature — not as a substitute for feature folders.
+
+### New feature (feature authoring flow)
+
+Follow [feature.md](feature.md):
+
+```
+1. Locate & name     — confirm name; read root product/tech + lessons.md
+2. Interview WHAT    — Scope, SHALL/MUST requirements, GWT scenarios → product.md
+3. Rigor gate        — lite vs full (need design.md?)
+4. Sketch HOW        — trace codebase → tech.md (+ design.md if full)
+5. Plan units        — stable IDs, verification → plan.md (human gate)
+6. Skip check        — atomic/no-decisions? → vibe-quick instead
+```
+
+Register the feature and unit prefix in root `plan.md`. Run `/spec validate` when done.
 
 ## Key Principles
 
-### 1. Strict Separation
+### Strict separation
 
-**Product specs** (what & why):
-- No code, not even pseudocode
-- No implementation details
-- Describe user experience and requirements
+| Doc | Contains | Never contains |
+|---|---|---|
+| Product | User experience, requirements, rationale | Code, file paths, architecture |
+| Tech | Paths, contracts, implementation | UX opinions |
+| Plan | Unit IDs, dependencies, verification | Code snippets, requirement prose |
+| Design | Tokens, interaction patterns, visual language | Implementation detail (except tokens) |
 
-**Tech specs** (how):
-- Code examples welcome
-- Implementation details and architecture
-- Reference product specs for the "why"
+### Progressive disclosure
 
-**Plans** (when & in what order):
-- No code — that's what tech specs are for
-- No UX decisions — that's what product specs are for
-- Milestones, tasks, validation criteria, progress tracking
+- Read entrypoints and lessons first
+- Load only what the task needs
+- Follow links — don't load the whole tree
 
-### 2. Progressive Disclosure
+### Planning at two levels
 
-- **Always** read entrypoints first
-- **Never** load all specs at once
-- Branch docs assume you've read the parent
+- **Root `plan.md`** — milestones, feature map, boundaries, unit-prefix registry, critical path
+- **`features/<name>/plan.md`** — unit tables (`{PREFIX}{N}`), dependencies, verification per unit
 
-### 3. Plans at Two Levels
-
-- **`plan.md`** covers the whole project: all milestones, critical path, overall progress
-- **`plan-{topic}.md`** covers one feature area: scoped milestones, feature-specific progress
-- Sub-plans exist when a feature is complex enough to need its own breakdown (3+ milestones)
-- The main plan references sub-plans but doesn't duplicate their detail
+Do not duplicate feature unit tables in the root plan.
 
 ## Workflow Examples
 
-### Starting a New Project
+### Starting a new project
 
 ```bash
-# 1. Initialize
 /spec setup
-
-# 2. Write product.md first (what & why)
-# 3. Write tech.md (how)
-# 4. Write branch docs for major features (product branch first, then tech branch)
-# 5. Write plan.md (implementation roadmap)
-# 6. Write plan-{topic}.md for complex features (optional)
-# 7. Validate
+# Write root product.md, tech.md, design.md, plan.md
 /spec validate
 ```
 
-### Starting a New Feature
+### Starting a new feature
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant C as Claude
-    participant S as .spec/
-
-    U->>C: Let's add feature X
-    C->>S: Read product.md
-    C->>S: Read tech.md
-    C->>U: Here's my understanding, let me spec it
-    C->>S: Write product-x.md (what & why)
-    C->>S: Write tech-x.md (how)
-    C->>S: Update plan.md or write plan-x.md
-    C->>S: Validate
-    C->>U: Specs ready, shall I implement?
+```bash
+/spec feature my-feature    # loads feature.md + folder if it exists
+# Run the 6-step authoring flow in feature.md
+/spec validate
 ```
 
-### Resolving a Design Question
+### Resolving a design question
 
-```mermaid
-graph LR
-    A[Open Question in spec] --> B[Discuss]
-    B --> C[Decision made]
-    C --> D[Remove from Open Questions]
-    D --> E[Add to relevant section]
-    E --> F[Bump updated: date]
-    F --> G[Validate]
-```
+Discuss → decide → update the relevant spec → bump `updated:` → `/spec validate`.
 
 ## Validation
 
-The validation script checks:
-- Frontmatter structure (type, parent, scope, covers, updated)
-- Naming conventions (`{area}-{topic}.md`)
-- Broken internal links
-- Orphaned children (listed but missing)
-
 ```bash
-bash ~/.agents/skills/spec/scripts/validate.sh
+bash .agents/skills/spec/scripts/validate.sh   # vendored
+bash ~/.agents/skills/spec/scripts/validate.sh # global install
 ```
+
+Checks frontmatter, naming, internal links, orphaned children, and feature-folder consistency.
 
 ## References
 
-- **Writing product specs:** `reference/product.md`
-- **Writing tech specs:** `reference/tech.md`
-- **Writing plans:** `reference/plan.md`
-- **Templates:** `reference/templates/`
-  - `product.md` — product entrypoint
-  - `tech.md` — tech entrypoint
-  - `plan.md` — plan entrypoint
-  - `product-xxx.md` — product branch
-  - `tech-xxx.md` — tech branch
-  - `plan-xxx.md` — feature sub-plan
-- **Scripts:** `scripts/`
-  - `setup.sh` — initialize `.spec/` in a project
-  - `validate.sh` — validate spec consistency
-  - `list-specs.sh` — list all spec files
+- **Skill entrypoint:** [SKILL.md](SKILL.md)
+- **Root layer:** [strategy.md](strategy.md)
+- **Feature layer:** [feature.md](feature.md)
+- **Writing guides:** [reference/product.md](reference/product.md), [reference/tech.md](reference/tech.md), [reference/plan.md](reference/plan.md), [reference/design.md](reference/design.md)
+- **Templates:** [reference/templates/](reference/templates/)
+- **Scripts:** [scripts/](scripts/) — `setup.sh`, `validate.sh`, `list-specs.sh`
 
 ## FAQ
+
+**Q: Feature folder or branch doc?**
+One named buildable unit → `features/<name>/`. Something spanning every feature → branch doc. Default to feature.
 
 **Q: Can I have code in product specs?**
 No. Product specs describe **what** and **why**, never **how**.
 
-**Q: When should I create a sub-plan?**
-When a feature has 3+ milestones of its own and would bloat the main plan with detail. If it fits in one milestone, keep it in `plan.md`.
+**Q: When do I need `design.md`?**
+UI layout, interaction flows, visual language, or human-readable API/contract specs. Skip for pure backend/script work.
 
 **Q: What order do I write specs in?**
-Product first, then tech, then branch docs (product branch first, then matching tech branch for each), then plan, then sub-plans. Each layer builds on the previous.
+Root entrypoints first (strategy). Per feature: product → tech → (design?) → plan. See [feature.md](feature.md).
 
-**Q: How do I know if I should update vs create?**
-- **Update:** Adding to an existing feature or changing details
-- **Create:** New feature area needs its own dedicated spec (100+ lines of detail)
-
-**Q: Do I need a sub-plan for every feature?**
-No. Most features are fine as milestones in the main plan. Sub-plans are for complex features with 3+ milestones that need their own breakdown and progress tracking.
+**Q: Where do unit IDs live?**
+In `features/<name>/plan.md`. Register the prefix in root `plan.md`. Cite IDs in commits and tests during implementation.
 
 ---

@@ -1,11 +1,73 @@
 # Feature layer — ephemeral per-feature specs
 
-Each **named** unit of work gets `.spec/features/<name>/`. Specs here are **short-lived**: created in DESIGN, read in IMPL, merged in COMPOUND, then the whole folder moves to `archive/<name>/`. Global, long-living rules stay in root files — see [strategy.md](strategy.md).
+Each **named** unit of work gets `.spec/features/<name>/`. Specs here are **short-lived**: created in DESIGN, read in IMPL, merged in COMPOUND, then the folder is **removed** — optionally moved to `archive/<name>/` first. Global, long-living rules stay in root files — see [strategy.md](strategy.md). Wrap-up procedure: [SKILL.md](SKILL.md) § Wrapped-up features.
+
+## Feature authoring flow
+
+Six-step interview micro-flow. Run steps 1–5 for every named feature; step 6 is the escape hatch.
+
+### 1. Locate & name
+
+Confirm the feature name with the user. Read root `.spec/product.md`, `.spec/tech.md`, and `.spec/lessons.md` before writing anything. Create `.spec/features/<name>/` when the name is settled.
+
+### 2. Interview for WHAT
+
+Dialogue — not a form fill. Cover:
+
+- **Problem / why** — one paragraph; push back on vague goals
+- **Scope** — Owns / Does not own / Deferred table; explicit boundaries vs neighbour features
+- **Requirements** — `### Requirement: <title>` with SHALL/MUST language; each requirement gets `#### Scenario:` blocks in Given/When/Then form
+
+Reject hand-wavy requirements. If the user cannot state observable behaviour, keep interviewing.
+
+Write to `product.md`. Use [reference/product.md](reference/product.md) § feature product. Omit empty sections.
+
+### 3. Rigor gate
+
+Choose **lite** (product + tech + plan) vs **full** (+ `design.md`):
+
+| Need `design.md` when… | Skip when… |
+|---|---|
+| UI layout, interaction flows, visual language | Pure backend / script / config |
+| API or data contract needs a human-readable spec | Contracts fit in `tech.md` alone |
+| Migration or rollout has UX-facing steps | No user-visible surface |
+
+If unsure, default lite. Do not create `design.md` "just in case."
+
+### 4. Sketch HOW
+
+Trace the codebase (existing files, contracts, KTDs). Write **only sections with content** to `tech.md` — paths, interfaces, file layout, risks. No speculative boilerplate.
+
+Delegate tracing to `code-explorer`; sketch approaches with `code-architect` when needed. Use [reference/tech.md](reference/tech.md) § feature tech.
+
+Optional: write `design.md` when step 3 chose full. Template: [reference/templates/feature-design.md](reference/templates/feature-design.md). Guide: [reference/design.md](reference/design.md); token format: [SKILL.md](SKILL.md) § Design.md Compatibility.
+
+### 5. Plan units
+
+Write `plan.md` with stable unit IDs (`### U1.`, `### U2.`, … or `{PREFIX}{N}` per [reference/plan.md](reference/plan.md)):
+
+- Each unit cites requirement IDs from `product.md`
+- Each unit names test scenarios and verification evidence (command, test path, behaviour check)
+- Register the unit prefix in root `.spec/plan.md`
+
+**Human gate:** confirm units before implementation.
+
+### 6. Skip conditions
+
+Route to `vibe-quick` instead of this flow when **all** hold:
+
+- Atomic change — one file or one bounded fix
+- No architectural decisions
+- No new requirements needing Scope negotiation
+
+If any condition fails, stay in the feature flow.
+
+---
 
 ## Examples in this repo
 
 - [.spec/features/vibe-flow/](../../../.spec/features/vibe-flow) — flow state machine, `vibe-*` skills (units `VF*`)
-- [.spec/features/spec-framework/](../../../.spec/features/spec-framework) — the `.spec/` planning model (units `SF*`)
+- [`.agents/skills/spec/`](../../) — spec framework (units `SF*`, M0 done — wrapped up; no feature folder)
 - [.spec/features/agent-instructions/](../../../.spec/features/agent-instructions) — `AGENTS.md` template and adapter symlinks (units `AI*`)
 - [.spec/features/platform-adapters/](../../../.spec/features/platform-adapters) — Codex / Claude Code adapters (units `U*`)
 
@@ -36,20 +98,20 @@ Full conventions: [reference/product.md](reference/product.md) § feature produc
 ## Lifecycle
 
 ```
-Created  →  Consumed  →  Merged  →  Archived
-   ↑           ↑           ↑           ↑
- DESIGN      IMPL       COMPOUND     COMPOUND
- phase       phase      phase        phase
+Created  →  Consumed  →  Merged  →  Removed (optional archive)
+   ↑           ↑           ↑              ↑
+ DESIGN      IMPL       COMPOUND         COMPOUND
+ phase       phase      phase            phase
 ```
 
-1. **Created during DESIGN.** `product.md` = requirements + **Scope** table; `tech.md` = architecture for this feature only.
-2. **Planned before IMPL.** `plan.md` = unit table with stable IDs (`{PREFIX}{N}`); prefix registered in root `plan.md`. Human gate on units.
+1. **Created during DESIGN.** Steps 1–4 of the authoring flow → `product.md`, `tech.md`, optional `design.md`.
+2. **Planned before IMPL.** Step 5 → `plan.md` with stable IDs; human gate on units.
 3. **Consumed during IMPL.** Read feature specs; cite unit IDs in commits and tests; amend with targeted fixes if reality diverges.
 4. **Verified against plan.** Evidence checked per unit verification table — not agent assertions alone.
 5. **Merged during COMPOUND.** Cross-cutting blocks from `features/<name>/tech.md` promote into root `tech.md` (or branch docs). Feature-only detail does not promote.
-6. **Archived after merge.** `mv .spec/features/<name>/ .spec/archive/<name>/`. Kept for archaeology, not loaded by default.
+6. **Removed after merge.** Delete `.spec/features/<name>/` once root specs and live surfaces are updated. Optionally `mv` to `archive/<name>/` first — see § Archive vs delete.
 
-No `/code:feature` workflow? Same lifecycle: create folder when scoping, archive when done.
+No `/code:feature` workflow? Same lifecycle: create folder when scoping, remove when done.
 
 ## Marking content for promotion (tech)
 
@@ -62,39 +124,36 @@ All `vibe-*` workflow skills and adapters call the same flow reader — one JSON
 <!-- /merge -->
 ```
 
-Feature-only sections (one file's line count, one hook's exit code table) stay **outside** merge markers — they stay in the archive after move.
+Feature-only sections (one file's line count, one hook's exit code table) stay **outside** merge markers — they are discarded at wrap-up unless you archive the folder.
 
 Details: [reference/tech.md](reference/tech.md) (merge markers, feature `tech.md` sections).
 
 ## What stays vs what graduates
 
-| Stays in `features/<name>/` (archive) | Graduates to root / branch |
+| Stays in feature folder (discarded or archived) | Graduates to root / branch |
 |---|---|
 | Per-hook matcher strings, per-command LOC estimates | "Every hook delegates to keystone" |
 | Feature file list for this build | Global file layout diagram |
 | One feature's user-visible copy | Reusable design principles in root `product.md` |
 
-If everything you wrote applies to **every** future feature, that content belongs in [strategy.md](strategy.md) / root branch docs — move it up, don't bury it in a feature folder.
-
-## Scaffold checklist (new feature)
-
-1. Create `.spec/features/<name>/`.
-2. Copy templates → `product.md`, `tech.md`, `plan.md` ([feature-product](reference/templates/feature-product.md), [feature-tech](reference/templates/feature-tech.md), [feature-plan](reference/templates/feature-plan.md)).
-3. Set frontmatter (`feature`, `parent`, `sibling`, `updated`) in all three files.
-4. Fill **Scope** (Owns / Does not own) in `product.md`.
-5. Choose unit prefix; write units in `plan.md`; register prefix in root `plan.md` feature table and unit-prefix registry.
-6. Link **product ↔ tech ↔ plan** inside the folder; add standard headers (`Parent`, `Architecture`, `Plan`, `Related`).
-7. Link **root** `product.md`, `tech.md`, and `plan.md` to this feature (bump root `updated:`).
-8. Optional: [reference/templates/design.md](reference/templates/design.md) → `design.md` if UI-heavy.
-9. Run `bash .agents/skills/spec/scripts/validate.sh` when vendored, or the equivalent global install path — [scripts/validate.sh](scripts/validate.sh).
+If everything you wrote applies to **every** future feature, that content belongs in [strategy.md](strategy.md) / root branch docs — move it up, don't bury it in a feature folder. Canonical two-layer rules: [SKILL.md](SKILL.md) § The Two-Layer Model.
 
 ## Archive vs delete
 
-**Move** `features/<name>/` to `archive/<name>/`, do not delete. History preserves decisions, diffs, and "why we didn't" for later sessions.
+After promote, **remove** `.spec/features/<name>/`. Then:
+
+| Archive (`mv features/<name>/ archive/<name>/`) | Delete (no archive) |
+|---|---|
+| Keep unit tables, rejected alternatives, plan archaeology | Live artifacts already capture truth (skill bundle, root specs, tests) |
+| Typical domain features you may revisit | Foundational infra (e.g. `spec-framework` → `.agents/skills/spec/` + root `.spec/`) |
+
+**Delete checklist:** root `plan.md` row → DONE with live-surface link; no links pointing at `features/<name>/` or `archive/<name>/`; do not restore the folder if validation complains — wrapped-up features are expected to be absent from `features/`.
+
+Canonical wrap-up sequence: [SKILL.md](SKILL.md) § Wrapped-up features.
 
 ## Templates and validation
 
-- Feature templates: [feature-product](reference/templates/feature-product.md), [feature-tech](reference/templates/feature-tech.md), [feature-plan](reference/templates/feature-plan.md), optional [design](reference/templates/design.md)
-- Writing guides: [product](reference/product.md), [tech](reference/tech.md), [plan](reference/plan.md)
+- Feature templates: [feature-product](reference/templates/feature-product.md), [feature-tech](reference/templates/feature-tech.md), [feature-plan](reference/templates/feature-plan.md), optional [feature-design](reference/templates/feature-design.md)
+- Writing guides: [product](reference/product.md), [tech](reference/tech.md), [plan](reference/plan.md), [design](reference/design.md)
 
 Global layer handoff: [strategy.md](strategy.md).
