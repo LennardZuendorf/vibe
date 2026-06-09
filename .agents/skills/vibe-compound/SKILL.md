@@ -33,16 +33,24 @@ for receipts. Serves `feature.compound` and `strategy.compound`; both end at
    detail stays in the archive, not in root specs.
 4. **Archive (feature.compound only).** Delegate to
    `superpowers:finishing-a-development-branch`. Move
-   `.spec/features/<feature>/` → `.spec/archive/<feature>/`.
+   `.spec/features/<feature>/` → `.spec/archive/<feature>/`. Archive is a
+   **transient safety net** (e.g. CI fails right after wrapup) — never a store for
+   active work. CODE IS TRUTH.
 5. **Regenerate digest.** Run `bash .agents/flow/scripts/regen-active-rules.sh` to
    refresh the managed active-rules block in `CLAUDE.md`/`AGENTS.md` from the
    updated lessons (capped top-5, pinned first). Graceful degrade: if the script
    errors, warn — `lessons.md` is still written.
-6. **Receipt (ultra).** Emit a compact receipt: `lesson +1 → <tag>`, promoted
-   files, archived path, `digest refreshed`. Then `set-state.sh idle`.
+6. **Prompt to delete archive (feature.compound only).** After validation passes,
+   prompt the user to delete `.spec/archive/<feature>/`. The folder should be gone
+   **before the branch merges**; keeping it is the justified exception (standalone
+   decision archaeology), not the default.
+7. **Receipt (ultra).** Emit a compact receipt: `lesson +1 → <tag>`, promoted
+   files, archived path, `delete prompted`, `digest refreshed`. Then
+   `set-state.sh idle`.
 
 ## Rules
 
 - `regen-active-rules.sh` is the only writer of the active-rules block; never
   hand-edit inside its markers.
+- Archive is cold and transient; never read it for active work. CODE IS TRUTH.
 - Caveman lite body, ultra receipts. Security/irreversible actions normal prose.
