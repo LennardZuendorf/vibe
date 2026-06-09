@@ -197,8 +197,9 @@ check_feature_plan_structure() {
 
   [[ -f "$file" ]] || return 0
 
+  # Accept canonical 'feature/n' headings and legacy '{PREFIX}{N}' (back-compat).
   local has_units=false
-  if grep -qE '^### [A-Z]{1,4}[0-9]+' "$file"; then
+  if grep -qE '^### ([a-z0-9][a-z0-9-]*/[0-9]+|[A-Z]{1,4}[0-9]+)' "$file"; then
     has_units=true
   fi
 
@@ -208,7 +209,7 @@ check_feature_plan_structure() {
   fi
 
   if ! $has_units; then
-    yellow "$label: plan missing '### {PREFIX}{N}' unit sections (e.g. '### SF3 — ...')"
+    yellow "$label: plan missing '### <feature>/<n>' unit sections (e.g. '### vibe-flow/1 — ...')"
   fi
   if ! $has_trace; then
     yellow "$label: plan missing 'Requirements Trace' section linking R-IDs to units"
@@ -225,10 +226,10 @@ check_root_plan_milestones() {
   awk '
     /^## M[0-9]/ { in_milestone = 1; next }
     /^## / { in_milestone = 0 }
-    in_milestone && /^### [A-Z]{1,4}[0-9]+/ {
+    in_milestone && /^### ([a-z0-9][a-z0-9-]*\/[0-9]+|[A-Z]{1,4}[0-9]+)/ {
       print "milestone section embeds unit heading (move to feature plan) -> " $0
     }
-    in_milestone && /^\|[[:space:]]*[A-Z]{1,4}[0-9]+[[:space:]]*\|/ {
+    in_milestone && /^\|[[:space:]]*([a-z0-9][a-z0-9-]*\/[0-9]+|[A-Z]{1,4}[0-9]+)[[:space:]]*\|/ {
       print "milestone section embeds unit table row (move to feature plan) -> " $0
     }
   ' "$file" | while IFS= read -r msg; do
@@ -246,8 +247,8 @@ check_plan_id_traceability() {
 
   while IFS= read -r dup; do
     [[ -n "$dup" ]] && yellow "$label: duplicate unit heading ID '$dup' in plan"
-  done < <(grep -E '^### [A-Z]{1,4}[0-9]+' "$plan" 2>/dev/null \
-    | grep -oE '[A-Z]{1,4}[0-9]+' \
+  done < <(grep -E '^### ([a-z0-9][a-z0-9-]*/[0-9]+|[A-Z]{1,4}[0-9]+)' "$plan" 2>/dev/null \
+    | grep -oE '([a-z0-9][a-z0-9-]*/[0-9]+|[A-Z]{1,4}[0-9]+)' \
     | sort | uniq -d)
 
   [[ -f "$product" ]] || return 0
@@ -286,6 +287,22 @@ check_plan_id_traceability() {
     in_req { req_buf = req_buf "\n" $0 }
     END { if (in_req) emit_r_ids(req_buf) }
   ' "$product" | sort -u)
+}
+
+# I1 — feature plan declares same-feature deps only; cross-feature order is a
+# whole-feature gate in the root plan, never a unit-to-unit edge. Warn-only.
+check_cross_feature_deps() {
+  local plan="$1"
+  local feature="$2"
+  local label="$3"
+
+  [[ -f "$plan" ]] || return 0
+
+  while IFS= read -r dep; do
+    [[ -n "$dep" ]] && yellow "$label: cross-feature unit dependency '$dep' — use a whole-feature gate in the root plan Feature Sequence, not a unit edge"
+  done < <(grep -oE '\b[a-z][a-z0-9-]*/[0-9]+\b' "$plan" 2>/dev/null \
+    | grep -vE "^${feature}/[0-9]+$" \
+    | sort -u)
 }
 
 echo "Validating $SPEC_DIR/..."
@@ -505,6 +522,7 @@ if [[ -d "$SPEC_DIR/features" ]]; then
       if [[ "$optional" == "plan.md" ]]; then
         check_feature_plan_structure "$f" "features/$feature_name/plan.md"
         check_plan_id_traceability "$feature_dir/product.md" "$f" "features/$feature_name"
+        check_cross_feature_deps "$f" "$feature_name" "features/$feature_name/plan.md"
       fi
 
       check_requirements_scenarios "$f" "features/$feature_name/$optional"
