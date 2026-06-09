@@ -54,7 +54,7 @@ as constraints and injected resources, not left to the agent to remember.
 | R8 | Each state declares a caveman level (`lite`, `full`, `ultra`) for communication density; level definitions are canonical in root `product.md`. |
 | R9 | A single inject owner emits one static per-turn inject (skill, write surface, output path, caveman level, next), with safety carve-outs that override density. The orders are sourced from the state's linked `vibe-*` skill, not a hand-written string; skill-less states (`idle`, `amend`) keep an inline fallback. (D10, D12) |
 | R10 | `*.design` and `*.triage` states read `.spec/lessons.md` on entry so lessons are retrieved, not just recorded. (D8) |
-| R11 | `feature.plan` assigns stable unit IDs (`U1`, `U2`, …); `impl` and `verify` reference them so state survives re-planning. (D9) |
+| R11 | `feature.plan` assigns stable unit IDs (`<feature>/1`, `<feature>/2`, …); `impl` and `verify` reference them so state survives re-planning. (D9) |
 
 ---
 

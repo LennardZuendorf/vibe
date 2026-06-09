@@ -3,287 +3,259 @@ type: feature-plan
 feature: platform-adapters
 sibling: tech.md
 parent: ../../plan.md
-covers: M4 Stage 2 — Claude Code plugin, the three flow hooks, installer
-updated: 2026-06-06
+covers: Claude Code plugin, the three flow hooks, installer
+updated: 2026-06-08
 ---
 
 # Feature: Platform Adapters — Implementation Plan
 
-Buildable plan for the remaining platform-adapters work: the Claude Code
-**plugin**, the three flow **hooks**, and the **installer**. This is the
-Stage-2 "earn the teeth" layer the root plan ([../../plan.md](../../plan.md))
-tracks as **M4 PARTIAL → DONE**.
+The Claude Code **plugin**, the three flow **hooks**, and the **installer**. A
+closed, deliverable, testable box that wires runtime platforms to a frozen core —
+it consumes the orders-in-skills artifact (D12, owned by `vibe-flow`) and the
+`merge-agents.sh` artifact (owned by `agent-instructions`); it builds neither.
 
 **Parent:** [../../plan.md](../../plan.md)
 **Requirements:** [product.md](product.md)
 **Architecture:** [tech.md](tech.md)
 **Design:** [design.md](design.md)
-**Related:** [../agent-instructions/plan.md](../agent-instructions/plan.md),
-[../vibe-flow/plan.md](../vibe-flow/plan.md)
 
-Unit IDs are **stable** (D9). Section headings use legacy `U8`/`U1`–`U7`; root plan
-maps `U8` = `VF1` = D12 restructure:
+**Feature gate:** Starts when `agent-instructions` is `DONE` (root [plan.md](../../plan.md)
+Feature Sequence). That transitively requires `vibe-flow` DONE, so D12 orders blocks
+already exist in the `vibe-*` skills and `merge-agents.sh` already exists — the hooks
+and installer consume those frozen artifacts. No cross-feature unit edges.
 
-| Legacy | Scope |
-|---|---|
-| U8 | D12 skill-as-inject-source (PA-0) |
-| U1 | Inject hook (PA-1) |
-| U2 | Guard hook |
-| U3 | Gate hook |
-| U4 | hooks.json wiring |
-| U5 | plugin.json |
-| U6 | install.sh |
-| U7 | Dogfood + earn-the-teeth | they never change on reorder or split, so
-`impl`/`verify` can cite them and survive re-planning (D9).
+Unit IDs are `platform-adapters/n` — assigned once, never renumbered.
+
+---
+
+## Requirements Trace
+
+| ID | Requirement area | Units |
+|---|---|---|
+| R1, R2, R4 | Adapter files mirror core, define no separate layout (provisioning delegated to `agent-instructions`) | — |
+| R3 | Hooks read `.agents/flow` | platform-adapters/1 |
+| R7, R8 | Three hooks + wiring; policy lives once in `detect-context.sh` | platform-adapters/1, platform-adapters/2, platform-adapters/3, platform-adapters/4 |
+| R9 | Graceful degrade (exit 0); warn-first blocks | platform-adapters/1, platform-adapters/2, platform-adapters/3 |
+| R6 | Installable Claude Code plugin | platform-adapters/5 |
+| R5 | Installer merges with diff, never blind-overwrite | platform-adapters/6 |
 
 ---
 
 ## Validation Summary
 
-Validated against the repo on 2026-06-04 (spec `validate.sh` clean; build-state
-audit via subagent).
+Validated against the repo on 2026-06-08 (spec `validate.sh` clean).
 
 **Already exists (do NOT rebuild):**
-- `.agents/flow/scripts/detect-context.sh` with **both** modes the hooks need:
-  `snapshot` (JSON state) and `decide <path> [state]` → `allow | warn:<r> |
-  block:<r>`. The three hard blocks are already coded here.
-- `.agents/flow/scripts/set-state.sh` (sole `state.json` writer),
-  `validate-state.sh` (cursor sanity), `regen-active-rules.sh` (digest).
-- `.agents/flow/state-machine.json` — all 15 states carry a `skill` link, a
-  `caveman` level, and (today) a frozen `inject` string. **U8 replaces those
-  strings with the linked skill's orders** (D12); after U8 the inject hook reads
-  the linked skill, not an inline string.
-- `AGENTS.md`, `CLAUDE.md` (with the `vibe:active-rules` managed block),
-  `.claude/commands/flow.md`. All seven `vibe-*` skills + `spec` skill.
-- `.gitignore` already ignores the mutable cursor `.agents/flow/state.json`.
+- `.agents/flow/scripts/detect-context.sh` with both `snapshot` and `decide <path>
+  [state]` → `allow | warn:<r> | block:<r>`; the three hard blocks are coded here.
+- `set-state.sh` (sole `state.json` writer), `validate-state.sh`,
+  `regen-active-rules.sh` (symlink-safe, realpath-deduped).
+- `AGENTS.md`, `CLAUDE.md` (with `vibe:active-rules`), `.claude/commands/flow.md`.
+- `.gitignore` ignores the mutable cursor `.agents/flow/state.json`.
+
+**Consumed from upstream features (frozen before this feature starts):**
+- D12 orders blocks in each `vibe-*` skill + `inject: null` on skill states (from
+  `vibe-flow`). The inject hook reads the linked skill's orders, not an inline string.
+- `merge-agents.sh` marker-aware merge (from `agent-instructions`) for the installer.
 
 **Must build:**
-- **Symlink-aware adapter scripts (follow-up).** `CLAUDE.md` now symlinks
-  `AGENTS.md` (single source of truth). `regen-active-rules.sh` MUST dedupe
-  `TARGETS` by resolved path before writing — `mv -f` over a symlink replaces it
-  with a real file, so a `*.compound` run would silently break the link. Likewise,
-  `vibe-setup` `setup.apply` MUST edit `AGENTS.md` only when `CLAUDE.md` symlinks
-  it (do not recreate two files). Track as a small follow-up before the first
-  compound after the symlink lands.
-- Skill-as-inject-source restructure (D12): per-state orders blocks in each
-  `vibe-*` skill + state-machine relink (U8). **Prerequisite for U1.**
-- `.claude/hooks/` — three thin shell hooks + `hooks.json` wiring (U1–U4).
-- `.claude-plugin/plugin.json` — the plugin manifest that bundles command +
-  skills + hooks (U5).
-- `install.sh` — copy core, merge-with-diff adapters, register the plugin (U6).
-- Dogfood + earn-the-teeth review of the hooks (U7), feeding root **M5**.
+- `.claude/hooks/` — three thin shell hooks + `hooks.json` (units 1–4).
+- `.claude-plugin/plugin.json` — manifest bundling command + skills + hooks (unit 5).
+- `install.sh` — copy core, delegate `AGENTS.md` merge, register plugin (unit 6).
+- Dogfood + earn-the-teeth review (unit 7), feeding root dogfood.
 
-**Timeline:** 1–2 sessions. Risk: Medium (hook exit-code semantics and the
-PreToolUse stdin contract are the only real unknowns).
+**Timeline:** 1–2 sessions. Risk: Medium (hook exit-code semantics, PreToolUse stdin).
 
 ---
 
-## Critical Architecture Decisions
+## Decided (inherited from specs — do not relitigate)
 
-### Decided (inherited from specs — do not relitigate)
-- **D12 — skill shim is the inject source.** The per-turn orders live in each
-  `vibe-*` skill, not in a hand-written `inject` string. The state's `skill` field
-  is the link; the inject hook pulls the linked skill's per-state orders. Removes
-  the inject↔skill duplication (one source of truth). See root
-  [../../plan.md](../../plan.md) D12 and [tech.md](tech.md) "Prompt Injection".
-- **Hooks are thin shells.** No allow/warn/block logic in any hook; it lives once
-  in `detect-context.sh decide`. Per-turn orders live once in each linked `vibe-*`
-  skill (D12); `state-machine.json` is a link table (`skill` + `inject: null`) with
-  inline fallback for `idle` only. (R8, tech.md "Earn the teeth").
-- **Earn the teeth, warn-first.** Ship inject (guide) + the three already-coded
-  hard blocks (guard) + Stop smells as **warn-only** (gate). Promote any Stop
-  predicate to blocking only after M5 dogfooding. (R7, R9, product "earn the teeth".)
+- **Hooks are thin shells.** No allow/warn/block logic in any hook; it lives once in
+  `detect-context.sh decide`. `state-machine.json` is a link table (orders sourced
+  from skills via D12). (R8, tech.md "Earn the teeth".)
+- **Earn the teeth, warn-first.** Ship inject (guide) + the three already-coded hard
+  blocks (guard) + Stop smells as warn-only (gate). Promote any Stop predicate to
+  blocking only after dogfood. (R7, R9.)
 - **Graceful degrade = exit 0.** Missing script, missing `jq`, unreadable state →
   exit 0, never end a session. (R9.)
-- **Relocatable.** `hooks.json` references scripts via `${CLAUDE_PLUGIN_ROOT}`;
-  the plugin owns no state and no spec layout. (tech.md "No new state".)
+- **Relocatable.** `hooks.json` references scripts via `${CLAUDE_PLUGIN_ROOT}`; the
+  plugin owns no state and no spec layout. (R4.)
 - **Static orders.** The inject hook emits the linked skill's per-state orders
-  verbatim (D12); it templates nothing turn-varying (prompt-cache discipline, D10).
-  `<feature>` interpolation is the only allowed substitution.
+  verbatim (D12); `<feature>` interpolation is the only allowed substitution. (D10.)
 
-### To Resolve (surface at the human gate before `impl`)
-- [ ] **Orders granularity (U8/U1).** Inject the **whole** linked skill body every
-  turn (simplest; heavier per-turn tokens) **or** a small machine-extractable
-  per-`<flow>.<phase>` **orders block** the skill exposes (leaner + cache-stable,
-  recommended). Decide before U8 fixes the skill format.
-- [ ] **OPEN-3 install mode.** Default proposed: **copy** core `.agents/**` files
-  (portable, no broken symlinks across machines); **merge-with-diff** for
-  `AGENTS.md`/`CLAUDE.md` (R5 — never blind-overwrite); register the Claude Code
-  plugin by manifest. Confirm before building U6, or pick symlink for a live-edit
+### To Resolve (human gate before `impl`)
+
+- [ ] **OPEN-3 install mode.** Default: **copy** core `.agents/**` (portable);
+  **merge-with-diff** for `AGENTS.md`/`CLAUDE.md` (R5); register the plugin by
+  manifest. Confirm before building the installer, or pick symlink for a live-edit
   dogfood loop.
-- [ ] **PreToolUse stdin contract.** Confirm the field name Claude Code passes for
-  the target path (`tool_input.file_path`) and the block exit code (**exit 2**)
-  against the installed Claude Code version before finalizing U2. Spec already
-  assumes exit 2 = block.
+- [ ] **PreToolUse stdin contract.** Confirm the field Claude Code passes for the
+  target path (`tool_input.file_path`) and the block exit code (**exit 2**) against
+  the installed Claude Code version before finalizing the guard hook.
 - [ ] **Closes root OPEN-4 / OPEN-7** (hook strictness) by shipping warn-first with
-  only the three pre-existing hard blocks active. No new blocks this milestone.
+  only the three pre-existing hard blocks active. No new blocks this feature.
 
 ---
 
-## Implementation Roadmap
+## Units
 
-| Milestone | Goal | Units | Sessions | Risk |
-|---|---|---|---:|---|
-| **PA-0** | Skills become the inject source (D12); state machine relinked | U8 | 0.5–1 | Med |
-| **PA-1** | The three hooks exist and are wired, thin, and degrade gracefully | U1–U4 | 1 | Med |
-| **PA-2** | Plugin packaging + installer | U5–U6 | 0.5–1 | Med |
-| **PA-3** | Dogfood the hooks; earn-the-teeth review | U7 | 0.5 | Low |
-
-Critical path: **U8 → U1 → U2 → U3 → U4 → U5 → U6 → U7** (U8 must land before U1,
-which consumes the skill orders blocks; U2/U3 are independent of U1 and may be
-built in any order; U4 wires whatever exists).
-
----
-
-## PA-0: Skills Become the Inject Source (D12)
-
-**Goal:** Each `vibe-*` skill owns its per-state orders; the state machine links to
-the skill instead of carrying a hand-written `inject` string. Removes the
-inject↔skill duplication so behaviour is edited in one place.
-
-### U8 — Skill-as-inject-source restructure
-- Give each `vibe-*` skill a machine-extractable per-`<flow>.<phase>` **orders
-  block** carrying what the old inject string held (skill, write surface, output
-  path, caveman level, next state). Format per the "orders granularity" decision
-  above (recommended: a marked block the hook can slice).
-- In `state-machine.json`, set `inject` to `null` for every state that owns a skill
-  (the `skill` link is now the source). Keep a minimal inline `inject` only for
-  `idle` (skill-less). **`amend` is not inject-resolved** — modifier; cursor never
-  becomes `amend`; inject hook uses stored cursor state (see vibe-flow tech.md).
-- Update `setup.apply` inject/exit strings when agent-instructions AI4 lands
-  (constitution → `vibe:instructions` terminology).
-- Update `AGENTS.md` prose that still describes frozen inject strings → D12 model.
-  (`vibe:active-rules` block untouched — generated.)
-- Keep orders **byte-stable** per state; only `<feature>` may interpolate.
-- Add **regen symlink dedupe** in `regen-active-rules.sh` (dedupe TARGETS by
-  resolved path) — prerequisite for agent-instructions AI4 and safe compound.
-- **Done when:** orders extracted from linked skills match old inject content;
-  `inject: null` on skill states; inline string on `idle` only; `$comment` updated;
-  regen dedupe landed; `spec validate.sh` clean.
-
-**PA-0 done when:** single source of per-turn orders is the skill shim; machine is a
-link table + `idle` fallback; regen safe with symlinked adapters.
+| ID | Seq | Summary | Depends | Status |
+|---|---:|---|---|---|
+| platform-adapters/1 | 1 | Inject hook (`UserPromptSubmit`) — emits linked-skill orders | — | NOT STARTED |
+| platform-adapters/2 | 2 | Guard hook (`PreToolUse`) — verdict translator over `detect-context.sh` | — | NOT STARTED |
+| platform-adapters/3 | 3 | Gate hook (`Stop`) — warn-only smells | — | NOT STARTED |
+| platform-adapters/4 | 4 | `hooks.json` wiring | platform-adapters/1, platform-adapters/2, platform-adapters/3 | NOT STARTED |
+| platform-adapters/5 | 5 | `.claude-plugin/plugin.json` manifest | platform-adapters/4 | NOT STARTED |
+| platform-adapters/6 | 6 | `install.sh` (delegates merge to `agent-instructions`) | platform-adapters/5 | NOT STARTED |
+| platform-adapters/7 | 7 | Dogfood the hooks; earn-the-teeth review | platform-adapters/6 | NOT STARTED |
 
 ---
 
-## PA-1: The Three Hooks
+### platform-adapters/1 — Inject hook (`user-prompt-submit-inject.sh`)
 
-**Goal:** `.claude/hooks/` holds three thin shells over `.agents/flow/scripts/`,
-wired through `hooks.json`, each degrading to exit 0 on any missing keystone.
+**Goal:** on `UserPromptSubmit`, resolve `<flow>.<phase>` from `state.json`
+(default `idle`), follow the state's `skill` link, extract that skill's per-state
+orders block (D12 — already present), and print it so it rides the user message.
+For `idle` only, print the machine's inline fallback. Interpolate `<feature>` only.
 
-### U1 — Inject hook (`user-prompt-submit-inject.sh`) — depends on U8
-- **Event:** `UserPromptSubmit`. **Strength:** guidance (no exit codes that block).
-- Resolve current `<flow>.<phase>` from `state.json` (default `idle`); follow the
-  state's `skill` link in `state-machine.json`, extract that skill's per-state
-  **orders block** (D12), and print it to stdout so it rides the user message
-  (post-cache-breakpoint). For `idle` only, print the machine's inline fallback.
-  During amend work the cursor stays on the originating state — resolve orders from
-  that stored state, never from the `amend` machine entry.
-- Interpolate `<feature>` from the cursor when present; substitute **nothing** else
-  (static-content / prompt-cache discipline).
-- Degrade: missing `jq`/`state.json`/`state-machine.json`/skill file → print a
-  1-line `state=idle · pick a vibe-* flow` fallback and exit 0. Include the spec's
-  1-line caveman fallback when the caveman plugin is absent (root OPEN-6).
-- **Done when:** for a cursor in `feature.impl`, the hook prints that state's orders
-  (sourced from `vibe-feature`) byte-for-byte; `idle` prints inline fallback; with
-  no state file it prints the idle fallback; never non-zero.
+**Requirements:** R3, R7, R9
 
-### U2 — Guard hook (`pre-tool-use-guard.sh`)
-- **Event:** `PreToolUse`, matcher `Edit|Write|NotebookEdit`. **Strength:**
-  deterministic block on the three invariants only.
-- Read the tool payload from stdin, extract the target path (`tool_input.file_path`),
-  call `detect-context.sh decide <path>`, and translate:
-  `block:<r>` → print reason to stderr, **exit 2**; `warn:<r>` → stderr, exit 0;
-  `allow` → exit 0.
-- No policy logic in the hook — it is a verdict translator only (R8).
-- Degrade: unparsable stdin, missing `detect-context.sh`, missing `jq` → exit 0.
-- **Done when:** a Write to `.spec/lessons.md` outside `*.compound` exits 2 with the
-  reason; a Write to `src/foo` outside an impl state warns but exits 0; a Write
-  during the legal state exits 0; corrupt stdin exits 0.
+**Dependencies:** — (consumes `vibe-flow` D12, frozen before this feature starts)
 
-### U3 — Gate hook (`stop-gate.sh`)
-- **Event:** `Stop`. **Strength:** warn-only this milestone (earn the teeth).
-- Run end-of-turn smell checks via `detect-context.sh` snapshot: stuck phase,
-  `impl` touched `src/**` with no `tests/**`, `verify` entered without review,
-  cursor not advanced (`set-state.sh` apparently forgotten). Emit warnings to
-  stderr; **always exit 0** (no predicate is blocking yet).
-- Leave a TODO marker per predicate noting it is promotion-eligible after M5.
-- **Done when:** each smell prints a distinct warning when its condition is
-  synthesized, and the hook never returns non-zero.
-
-### U4 — Hook wiring (`hooks.json`)
-- Map `UserPromptSubmit → U1`, `PreToolUse (Edit|Write|NotebookEdit) → U2`,
-  `Stop → U3`, each referenced via `${CLAUDE_PLUGIN_ROOT}/.claude/hooks/<script>`.
-- `chmod +x` all three scripts.
-- **Done when:** `hooks.json` is valid JSON, each event points at an existing
-  executable script, and paths are plugin-root-relative (no absolute paths).
-
-**PA-1 done when:** the three hooks run from a clean checkout, the inject fires
-with the correct linked-skill orders (D12), the guard blocks exactly the three
-invariants and warns elsewhere, the gate only warns, and every degradation path
-exits 0.
+**Done when:** for a cursor in `feature.impl` the hook prints that state's orders
+(sourced from `vibe-feature`) byte-for-byte; `idle` prints the inline fallback; no
+state file prints the idle fallback; never non-zero (missing `jq`/state/skill → 1-line
+fallback, exit 0).
 
 ---
 
-## PA-2: Plugin Packaging & Installer
+### platform-adapters/2 — Guard hook (`pre-tool-use-guard.sh`)
 
-### U5 — Plugin manifest (`.claude-plugin/plugin.json`)
-- Declare name (`vibe`), version, description, and bundle the `/flow` command,
-  the `vibe-*` + `spec` skills, and `hooks/hooks.json`.
-- Owns no cursor and no spec layout — it is packaging, not a second core.
-- **Done when:** the manifest is valid against the Claude Code plugin schema and a
-  plugin install discovers the command, all skills, and the three hooks.
+**Goal:** on `PreToolUse` (matcher `Edit|Write|NotebookEdit`), read stdin, extract
+`tool_input.file_path`, call `detect-context.sh decide <path>`, translate
+`block:<r>` → stderr + **exit 2**; `warn:<r>` → stderr, exit 0; `allow` → exit 0.
+No policy logic in the hook (R8).
 
-### U6 — Installer (`install.sh`)
-- Copy core `.agents/flow/**` and `.agents/skills/**` into a target repo (default
-  **copy**, per OPEN-3); seed `state.json` from `state.example.json` if absent.
-- Delegate `AGENTS.md` merge to [agent-instructions](../agent-instructions/plan.md)
-  (`merge-agents.sh`); create adapter symlinks per user choice. Never
-  blind-overwrite user-owned content outside managed markers (R5).
-- Register the Claude Code plugin via the manifest. Idempotent; safe re-runs.
-- **Done when:** running it on a fresh sandbox repo yields a working flow core +
-  adapters with no manual path correction, and re-running changes nothing.
+**Requirements:** R7, R8, R9
 
-**PA-2 done when:** a single plugin install wires command + skills + hooks, and
-`install.sh` provisions a target repo non-destructively.
+**Dependencies:** —
+
+**Done when:** a Write to `.spec/lessons.md` outside `*.compound` exits 2 with the
+reason; a Write to `src/foo` outside an impl state warns but exits 0; a legal-state
+Write exits 0; corrupt/missing stdin or missing `detect-context.sh`/`jq` exits 0.
 
 ---
 
-## PA-3: Dogfood & Earn the Teeth
+### platform-adapters/3 — Gate hook (`stop-gate.sh`)
 
-### U7 — Dogfood the hooks (feeds root M5)
-- Run a `quick` flow and a short `feature` arc with the hooks live; record which
-  warnings fire, which blocks trip, and any false positives.
-- Decide per Stop predicate whether it earned promotion from warn → block; record
-  the decision (and any friction) as a tagged `lessons.md` entry during compound.
-- **Done when:** at least one real lesson is recorded and the warn/block strength
-  of each predicate is an explicit, justified decision rather than a default.
+**Goal:** on `Stop`, run end-of-turn smell checks via `detect-context.sh` snapshot
+(stuck phase; `impl` touched `src/**` with no `tests/**`; `verify` without review;
+cursor not advanced). Emit warnings to stderr; **always exit 0** (warn-only).
+
+**Requirements:** R7, R9
+
+**Dependencies:** —
+
+**Done when:** each smell prints a distinct warning when synthesized; the hook never
+returns non-zero; each predicate carries a TODO noting it is promotion-eligible after
+dogfood.
+
+---
+
+### platform-adapters/4 — Hook wiring (`hooks.json`)
+
+**Goal:** map `UserPromptSubmit` → inject, `PreToolUse (Edit|Write|NotebookEdit)` →
+guard, `Stop` → gate, each via `${CLAUDE_PLUGIN_ROOT}/.claude/hooks/<script>`;
+`chmod +x` all three.
+
+**Requirements:** R7, R8
+
+**Dependencies:** platform-adapters/1, platform-adapters/2, platform-adapters/3
+
+**Done when:** `hooks.json` is valid JSON, each event points at an existing
+executable script, and paths are plugin-root-relative (no absolute paths).
+
+---
+
+### platform-adapters/5 — Plugin manifest (`.claude-plugin/plugin.json`)
+
+**Goal:** declare name (`vibe`), version, description; bundle the `/flow` command,
+the `vibe-*` + `spec` skills, and `hooks/hooks.json`. Owns no cursor and no spec
+layout.
+
+**Requirements:** R6
+
+**Dependencies:** platform-adapters/4
+
+**Done when:** the manifest is valid against the Claude Code plugin schema and a
+plugin install discovers the command, all skills, and the three hooks.
+
+---
+
+### platform-adapters/6 — Installer (`install.sh`)
+
+**Goal:** copy core `.agents/flow/**` and `.agents/skills/**` into a target repo
+(default copy, OPEN-3); seed `state.json` from `state.example.json` if absent;
+delegate `AGENTS.md` merge to `agent-instructions` (`merge-agents.sh`); create
+adapter symlinks per user choice; register the plugin. Idempotent.
+
+**Requirements:** R5
+
+**Dependencies:** platform-adapters/5
+
+**Done when:** running it on a fresh sandbox repo yields a working flow core +
+adapters with no manual path correction, never blind-overwrites user content outside
+managed markers, and re-running changes nothing.
+
+---
+
+### platform-adapters/7 — Dogfood the hooks
+
+**Goal:** run a `quick` flow and a short `feature` arc with the hooks live; record
+which warnings fire, which blocks trip, and any false positives; decide per Stop
+predicate whether it earned promotion warn → block.
+
+**Requirements:** R9
+
+**Dependencies:** platform-adapters/6
+
+**Done when:** at least one real lesson is recorded and the warn/block strength of
+each predicate is an explicit, justified decision. Feeds root dogfood.
 
 ---
 
 ## Critical Path
 
 ```text
-              U1 ─┐
-U8 ─> U1; U2 ─┼─> U4 ─> U5 ─> U6 ─> U7
-              U3 ─┘
+platform-adapters/1 ─┐
+platform-adapters/2 ─┼─> /4 ─> /5 ─> /6 ─> /7
+platform-adapters/3 ─┘
 ```
 
-U8 makes the skills the inject source (must land first). U1 consumes it; U2/U3 are
-independent shells; U4 wires them; U5–U6 package and install; U7 dogfoods and
-decides which teeth to keep. PA-3 closes root **M4** and opens root **M5**.
+Units 1–3 are independent thin shells (built in any order); unit 4 wires them; 5–6
+package and install; 7 dogfoods and decides which teeth to keep. Whole-feature gate:
+`agent-instructions` DONE (and transitively `vibe-flow` DONE) before any unit starts.
 
 ---
 
 ## Progress
 
-| Unit | Description | Status |
-|---|---|---|
-| U8 | Skills become the inject source (D12) + relink machine | NOT STARTED |
-| U1 | Inject hook (consumes U8) | NOT STARTED |
-| U2 | Guard hook | NOT STARTED |
-| U3 | Gate hook | NOT STARTED |
-| U4 | hooks.json wiring | NOT STARTED |
-| U5 | plugin.json manifest | NOT STARTED |
-| U6 | install.sh | NOT STARTED |
-| U7 | Dogfood + earn-the-teeth | NOT STARTED |
+| Unit | Status |
+|---|---|
+| platform-adapters/1 | NOT STARTED |
+| platform-adapters/2 | NOT STARTED |
+| platform-adapters/3 | NOT STARTED |
+| platform-adapters/4 | NOT STARTED |
+| platform-adapters/5 | NOT STARTED |
+| platform-adapters/6 | NOT STARTED |
+| platform-adapters/7 | NOT STARTED |
+
+---
+
+## Legacy aliases
+
+One-time map for git grep (old IDs → `feature/n`); do not use for new work. The old
+`U8` (D12) moved into the `vibe-flow` feature and is no longer owned here. `U1` =
+`platform-adapters/1`, `U2` = `platform-adapters/2`, `U3` = `platform-adapters/3`,
+`U4` = `platform-adapters/4`, `U5` = `platform-adapters/5`, `U6` =
+`platform-adapters/6`, `U7` = `platform-adapters/7`.

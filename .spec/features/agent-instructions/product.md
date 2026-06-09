@@ -136,10 +136,10 @@ trivial to add to the same manifest.
 
 1. **Managed marker name:** `vibe:instructions` (replaces `vibe:constitution`). One-time
    migration from constitution markers when detected. Dogfood repo needs **wrap
-   migration** — see [plan.md](plan.md) AI0.
-2. **Non-interactive mode** — defer `--adapters` flag unless `install.sh` (U6) needs it.
+   migration** — see [plan.md](plan.md) `agent-instructions/1`.
+2. **Non-interactive mode** — defer `--adapters` flag unless the `platform-adapters` installer needs it.
 
 ## Open Questions
 
 1. **Non-interactive mode** — should `setup.apply` accept `--adapters claude,warp` or read
-   `.vibe/adapters.json` for CI/scripted init? Defer unless needed for platform-adapters U6.
+   `.vibe/adapters.json` for CI/scripted init? Defer unless needed for the `platform-adapters` installer.

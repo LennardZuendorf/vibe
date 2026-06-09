@@ -4,7 +4,7 @@ scope: technical
 children:
   - features/vibe-flow/tech.md
   - features/platform-adapters/tech.md
-updated: 2026-06-06
+updated: 2026-06-08
 ---
 
 # vibe — Technical Architecture
@@ -151,10 +151,11 @@ under `.spec/`.
 │   ├── setup.sh            # bootstrap root entrypoints + lessons.md (**Tags:**)
 │   ├── validate.sh         # warn-first structural checks (SF8–SF12)
 │   └── list-specs.sh       # root + feature doc inventory
-├── reference/
-│   ├── product.md, tech.md, plan.md, design.md
-│   └── templates/          # hard-floor root + feature templates (SF5–SF7)
-└── tests/spec/run.sh       # behaviour tests (17 cases)
+└── reference/
+    ├── product.md, tech.md, plan.md, design.md
+    └── templates/          # hard-floor root + feature templates (SF5–SF7)
+
+tests/spec/run.sh           # repo-root behaviour tests (41 cases, SF0–SF17)
 ```
 
 `setup.sh` resolves templates relative to its script directory (vendored or
@@ -268,7 +269,7 @@ wiring is in [features/platform-adapters/tech.md](features/platform-adapters/tec
 
 | Order | Component | Feature |
 |---|---|---|
-| 1 | Update `spec` skill for product/tech/design/plan model | spec-framework (M0 done) |
+| 1 | Update `spec` skill for product/tech/design/plan model | `spec` skill bundle (M0 done) |
 | 2 | Create `.agents/flow/state-machine.json` and state scripts | vibe-flow |
 | 3 | Create `vibe-strategy`, `vibe-feature`, `vibe-quick` skills | vibe-flow |
 | 4 | Create `vibe-verify`, `vibe-compound`, `vibe-amend` skills | vibe-flow |
