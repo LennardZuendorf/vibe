@@ -1,6 +1,6 @@
 # Strategy layer — global / long-living specs
 
-Root-layer files in `.spec/` are **persistent**. They describe the whole product and architecture at a level that does not dive into one feature's implementation detail. Feature-level detail lives under `.spec/features/<name>/` — see [feature.md](feature.md).
+Root-layer files in `.spec/` are **persistent in role, current in content**. They describe the whole product and architecture at a level that does not dive into one feature's implementation detail. The files persist; their content is kept current — delivered work in `plan.md` cleanses to a one-line note, and no long-horizon backlog is hoarded (that lives in an external tracker). Feature-level detail lives under `.spec/features/<name>/` — see [feature.md](feature.md).
 
 ## What lives at root
 
@@ -9,7 +9,7 @@ Root-layer files in `.spec/` are **persistent**. They describe the whole product
 | `product.md` | Mini PRD — story, requirements, principles, features index | Persistent |
 | `tech.md` | Architecture summary — stack, principles, contracts, features index | Persistent |
 | `design.md` | Cross-cutting design language, UX principles, interaction conventions | Persistent |
-| `plan.md` | Milestones, feature map, unit-prefix registry, critical path | Persistent |
+| `plan.md` | Feature sequence (binary gates), feature map, current focus | Persistent file, current content |
 | `lessons.md` | Mistakes and rules — read at session start | Persistent, append-only |
 | `product-{topic}.md` | Cross-cutting product (design system, conventions) | Persistent |
 | `tech-{topic}.md` | Cross-cutting tech (infra, observability, deployment) | Persistent |
@@ -24,17 +24,17 @@ Step 1: product.md     — story / requirements / principles. Stay high-level.
         tech.md        — architecture / stack / basic implementation. Stay high-level.
         design.md      — shared UX/design language. Stay high-level.
 
-Step 2: For each sub-part (parallel or sequential):
+Step 2: For each feature (a closed, deliverable, testable box):
         features/<name>/product.md   (include Scope: Owns / Does not own)
         features/<name>/tech.md
-        features/<name>/plan.md      (stable unit IDs; register prefix in root plan)
+        features/<name>/plan.md      (stable `<name>/n` units; same-feature deps only)
         features/<name>/design.md    (optional)
 
 Step 3: Cross-cutting only — when a concern truly spans every feature:
         product-{topic}.md
         tech-{topic}.md
 
-Step 4: plan.md        — milestones, feature table, unit-prefix registry, critical path
+Step 4: plan.md        — feature table, Feature Sequence (binary gates), current focus
 ```
 
 **Order matters:** root entrypoints constrain everything; then feature folders; branch docs last and only when the cross-cutting concern is **real**, not anticipated.
@@ -77,9 +77,9 @@ Full guides: [reference/product.md](reference/product.md), [reference/tech.md](r
 
 ## Plans and sub-plans
 
-**Two-tier planning:** root `plan.md` = milestones (M0…), feature boundaries, unit-prefix registry, critical path. `features/<name>/plan.md` = unit tables (`{PREFIX}{N}`), dependencies, verification. Never duplicate unit tables in the root plan.
+**Two-tier planning:** root `plan.md` = feature boundaries, Feature Sequence with **binary whole-feature gates** (upstream DONE before downstream starts), current focus. `features/<name>/plan.md` = unit tables (`<name>/n`), **same-feature** dependencies, verification. Never duplicate unit tables in the root plan; cross-feature order lives only in the root Feature Sequence.
 
-Unit IDs are stable — assign once, never renumber on reorder. Cite in commits and tests during `impl`. Register each feature prefix in the root plan.
+Unit IDs are `<name>/n` — assigned once, never renumbered on reorder (add a new `<name>/n` for new work). Cite in commits and tests during `impl`.
 
 `plan-{topic}.md` is for genuinely **cross-cutting** plans that don't belong to one feature (e.g. a migration touching every feature). Rare. Default to feature-scoped plans.
 
@@ -106,7 +106,7 @@ Guide: [reference/plan.md](reference/plan.md).
 
 ## Promotion from feature layer (COMPOUND)
 
-During **COMPOUND**, cross-cutting decisions from `features/<name>/tech.md` merge into root `tech.md` (or a branch `tech-{topic}.md`). Feature-specific detail does **not** merge. Then remove `features/<name>/` — archive optional. See [SKILL.md](SKILL.md) § Wrapped-up features.
+During **COMPOUND**, cross-cutting decisions from `features/<name>/tech.md` merge into root `tech.md` (or a branch `tech-{topic}.md`). Feature-specific detail does **not** merge. Then move `features/<name>/` to `archive/` as a transient safety net; the agent prompts to delete it after validation, before the branch merges. CODE IS TRUTH — archive is never read for active work. See [SKILL.md](SKILL.md) § Wrapped-up features.
 
 **How to mark promotable blocks** in feature `tech.md`: wrap sections in `<!-- merge -->` ... `<!-- /merge -->`, or use frontmatter `merge: true` where your project's merge tooling expects it (see root `tech.md` for `merge-feature.sh` behavior if documented in your repo).
 

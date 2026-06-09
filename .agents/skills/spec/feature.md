@@ -1,6 +1,6 @@
 # Feature layer — ephemeral per-feature specs
 
-Each **named** unit of work gets `.spec/features/<name>/`. Specs here are **short-lived**: created in DESIGN, read in IMPL, merged in COMPOUND, then the folder is **removed** — optionally moved to `archive/<name>/` first. Global, long-living rules stay in root files — see [strategy.md](strategy.md). Wrap-up procedure: [SKILL.md](SKILL.md) § Wrapped-up features.
+Each **named** unit of work gets `.spec/features/<name>/`. Specs here are **branch-scoped**: created in DESIGN, read in IMPL, wrapped up in COMPOUND (promote cross-cutting decisions, move folder to `archive/`), then **deleted before the branch merges**. Archive is a transient safety net, never a store for active work — **CODE IS TRUTH**. Global, long-living rules stay in root files — see [strategy.md](strategy.md). Wrap-up procedure: [SKILL.md](SKILL.md) § Wrapped-up features.
 
 ## Feature authoring flow
 
@@ -44,11 +44,12 @@ Optional: write `design.md` when step 3 chose full. Template: [reference/templat
 
 ### 5. Plan units
 
-Write `plan.md` with stable unit IDs (`### U1.`, `### U2.`, … or `{PREFIX}{N}` per [reference/plan.md](reference/plan.md)):
+Write `plan.md` with stable `feature/n` unit IDs (`### <name>/1`, `### <name>/2`, … per [reference/plan.md](reference/plan.md)):
 
 - Each unit cites requirement IDs from `product.md`
 - Each unit names test scenarios and verification evidence (command, test path, behaviour check)
-- Register the unit prefix in root `.spec/plan.md`
+- Same-feature dependencies only — cross-feature order is a whole-feature gate in root `.spec/plan.md` Feature Sequence
+- Add the feature to the root `.spec/plan.md` Feature Sequence
 
 **Human gate:** confirm units before implementation.
 
@@ -66,10 +67,10 @@ If any condition fails, stay in the feature flow.
 
 ## Examples in this repo
 
-- [.spec/features/vibe-flow/](../../../.spec/features/vibe-flow) — flow state machine, `vibe-*` skills (units `VF*`)
-- [`.agents/skills/spec/`](../../) — spec framework (units `SF*`, M0 done — wrapped up; no feature folder)
-- [.spec/features/agent-instructions/](../../../.spec/features/agent-instructions) — `AGENTS.md` template and adapter symlinks (units `AI*`)
-- [.spec/features/platform-adapters/](../../../.spec/features/platform-adapters) — Codex / Claude Code adapters (units `U*`)
+- [.spec/features/vibe-flow/](../../../.spec/features/vibe-flow) — flow state machine, `vibe-*` skills (units `vibe-flow/n`)
+- [`.agents/skills/spec/`](../../) — spec framework (units `spec/n`, delivered — wrapped up; no feature folder)
+- [.spec/features/agent-instructions/](../../../.spec/features/agent-instructions) — `AGENTS.md` template and adapter symlinks (units `agent-instructions/n`)
+- [.spec/features/platform-adapters/](../../../.spec/features/platform-adapters) — Codex / Claude Code adapters (units `platform-adapters/n`)
 
 ## Anatomy of `features/<name>/`
 
@@ -98,10 +99,10 @@ Full conventions: [reference/product.md](reference/product.md) § feature produc
 ## Lifecycle
 
 ```
-Created  →  Consumed  →  Merged  →  Removed (optional archive)
-   ↑           ↑           ↑              ↑
- DESIGN      IMPL       COMPOUND         COMPOUND
- phase       phase      phase            phase
+Created  →  Consumed  →  Merged  →  Archived  →  Deleted (before merge)
+   ↑           ↑           ↑           ↑              ↑
+ DESIGN      IMPL       COMPOUND    COMPOUND       after validation
+ phase       phase      phase       phase          (agent prompts)
 ```
 
 1. **Created during DESIGN.** Steps 1–4 of the authoring flow → `product.md`, `tech.md`, optional `design.md`.
@@ -109,7 +110,7 @@ Created  →  Consumed  →  Merged  →  Removed (optional archive)
 3. **Consumed during IMPL.** Read feature specs; cite unit IDs in commits and tests; amend with targeted fixes if reality diverges.
 4. **Verified against plan.** Evidence checked per unit verification table — not agent assertions alone.
 5. **Merged during COMPOUND.** Cross-cutting blocks from `features/<name>/tech.md` promote into root `tech.md` (or branch docs). Feature-only detail does not promote.
-6. **Removed after merge.** Delete `.spec/features/<name>/` once root specs and live surfaces are updated. Optionally `mv` to `archive/<name>/` first — see § Archive vs delete.
+6. **Archived then deleted.** Move `.spec/features/<name>/` to `archive/<name>/` at wrapup as a transient safety net. After validation passes, the agent prompts the user to delete the archive — the folder is gone **before the branch merges**. CODE IS TRUTH; archive is never read for active work. See § Archive and delete.
 
 No `/code:feature` workflow? Same lifecycle: create folder when scoping, remove when done.
 
@@ -138,16 +139,13 @@ Details: [reference/tech.md](reference/tech.md) (merge markers, feature `tech.md
 
 If everything you wrote applies to **every** future feature, that content belongs in [strategy.md](strategy.md) / root branch docs — move it up, don't bury it in a feature folder. Canonical two-layer rules: [SKILL.md](SKILL.md) § The Two-Layer Model.
 
-## Archive vs delete
+## Archive and delete
 
-After promote, **remove** `.spec/features/<name>/`. Then:
+After promote, move `.spec/features/<name>/` to `archive/<name>/`. Archive is a **transient safety net** — useful if CI fails right after wrapup and the feature context is briefly needed. It is **never** a store for active work, and never read while building — **CODE IS TRUTH**.
 
-| Archive (`mv features/<name>/ archive/<name>/`) | Delete (no archive) |
-|---|---|
-| Keep unit tables, rejected alternatives, plan archaeology | Live artifacts already capture truth (skill bundle, root specs, tests) |
-| Typical domain features you may revisit | Foundational infra (e.g. `spec-framework` → `.agents/skills/spec/` + root `.spec/`) |
+Once validation passes, the agent **prompts the user to delete the archive**, and the folder is gone **before the branch merges**. Keeping an archive past the branch is the exception, not the default; justify it (rejected alternatives, plan archaeology worth standalone history) or delete it.
 
-**Delete checklist:** root `plan.md` row → DONE with live-surface link; no links pointing at `features/<name>/` or `archive/<name>/`; do not restore the folder if validation complains — wrapped-up features are expected to be absent from `features/`.
+**Delete checklist:** root `plan.md` Feature Sequence row → DONE with live-surface link; no links pointing at `features/<name>/` or `archive/<name>/`; do not restore the folder if validation complains — wrapped-up features are expected to be absent from `features/`.
 
 Canonical wrap-up sequence: [SKILL.md](SKILL.md) § Wrapped-up features.
 

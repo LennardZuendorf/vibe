@@ -4,7 +4,7 @@
 
 ## What This Skill Does
 
-The **spec** skill teaches agents to write and maintain design documentation in `.spec/`. It enforces separation between product (what & why), tech (how), design (UX language), and plans (when & in what order). Two layers: persistent root specs and ephemeral per-feature folders.
+The **spec** skill teaches agents to write and maintain design documentation in `.spec/`. It enforces separation between product (what & why), tech (how), design (UX language), and plans (when & in what order). Two layers: persistent root specs (current content, no backlog) and branch-scoped per-feature folders (deleted before merge).
 
 ## Quick Start
 
@@ -31,17 +31,17 @@ The **spec** skill teaches agents to write and maintain design documentation in 
 ├── product.md, tech.md, design.md, plan.md, lessons.md   # ROOT — persistent, high-level
 ├── product-{topic}.md, tech-{topic}.md                     # ROOT — cross-cutting branches (rare)
 │
-├── features/<name>/                                        # FEATURE — ephemeral, detailed
+├── features/<name>/                                        # FEATURE — branch-scoped, detailed
 │   ├── product.md          # required
 │   ├── tech.md             # required
-│   ├── plan.md             # recommended — stable unit IDs
+│   ├── plan.md             # recommended — stable `<name>/n` units
 │   ├── design.md           # optional — UI/UX when needed
 │   └── research.md         # optional
 │
-└── archive/<name>/         # post-merge feature history
+└── archive/<name>/         # transient post-wrapup safety net (deleted before merge)
 ```
 
-**Root** answers project-level questions. **Feature** answers one buildable unit of work. Feature specs are written during design, consumed during implementation, merged when cross-cutting, then archived.
+**Root** answers project-level questions. **Feature** answers one closed, deliverable, testable box. Feature specs are written during design, consumed during implementation, merged when cross-cutting, archived transiently, then deleted before the branch merges (CODE IS TRUTH).
 
 Canonical rules: [SKILL.md](SKILL.md) § The Two-Layer Model.
 
@@ -50,7 +50,7 @@ Canonical rules: [SKILL.md](SKILL.md) § The Two-Layer Model.
 ### Bootstrap (strategy)
 
 ```
-product.md → tech.md → design.md → plan.md (milestones, feature map, unit-prefix registry)
+product.md → tech.md → design.md → plan.md (feature map, Feature Sequence with binary gates)
 ```
 
 Branch docs (`product-{topic}.md`, `tech-{topic}.md`) only when a concern spans **every** feature — not as a substitute for feature folders.
@@ -68,7 +68,7 @@ Follow [feature.md](feature.md):
 6. Skip check        — atomic/no-decisions? → vibe-quick instead
 ```
 
-Register the feature and unit prefix in root `plan.md`. Run `/spec validate` when done.
+Add the feature to the root `plan.md` Feature Sequence. Run `/spec validate` when done.
 
 ## Key Principles
 
@@ -78,7 +78,7 @@ Register the feature and unit prefix in root `plan.md`. Run `/spec validate` whe
 |---|---|---|
 | Product | User experience, requirements, rationale | Code, file paths, architecture |
 | Tech | Paths, contracts, implementation | UX opinions |
-| Plan | Unit IDs, dependencies, verification | Code snippets, requirement prose |
+| Plan | `feature/n` units, same-feature deps, verification | Code snippets, requirement prose, backlog |
 | Design | Tokens, interaction patterns, visual language | Implementation detail (except tokens) |
 
 ### Progressive disclosure
@@ -89,10 +89,10 @@ Register the feature and unit prefix in root `plan.md`. Run `/spec validate` whe
 
 ### Planning at two levels
 
-- **Root `plan.md`** — milestones, feature map, boundaries, unit-prefix registry, critical path
-- **`features/<name>/plan.md`** — unit tables (`{PREFIX}{N}`), dependencies, verification per unit
+- **Root `plan.md`** — feature map, boundaries, Feature Sequence (binary gates), current focus
+- **`features/<name>/plan.md`** — unit tables (`<name>/n`), same-feature dependencies, verification per unit
 
-Do not duplicate feature unit tables in the root plan.
+Do not duplicate feature unit tables in the root plan; cross-feature order lives only in the root Feature Sequence.
 
 ## Workflow Examples
 
@@ -149,6 +149,6 @@ UI layout, interaction flows, visual language, or human-readable API/contract sp
 Root entrypoints first (strategy). Per feature: product → tech → (design?) → plan. See [feature.md](feature.md).
 
 **Q: Where do unit IDs live?**
-In `features/<name>/plan.md`. Register the prefix in root `plan.md`. Cite IDs in commits and tests during implementation.
+In `features/<name>/plan.md` as `<name>/n` (e.g. `vibe-flow/1`). Add the feature to the root `plan.md` Feature Sequence. Cite IDs in commits and tests during implementation.
 
 ---

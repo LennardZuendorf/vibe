@@ -15,12 +15,14 @@ updated: {YYYY-MM-DD}
 
 # Feature: {Name} — Implementation Plan
 
-{One-paragraph summary: what this feature delivers, in what order, and how units map to root milestones.}
+{One-paragraph summary: what this feature delivers and in what order. This feature is a closed, deliverable, testable box.}
 
 **Parent:** [../../plan.md](../../plan.md)
 **Requirements:** [product.md](product.md)
 **Architecture:** [tech.md](tech.md)
 <!-- Add Design header link when design.md exists (optional). -->
+
+**Feature gate:** Starts when {upstream feature} is `DONE` (root [plan.md](../../plan.md) Feature Sequence). Does not depend on any other feature's units — only on the whole upstream feature.
 
 ---
 
@@ -34,8 +36,8 @@ updated: {YYYY-MM-DD}
 
 | ID | Requirement | Units |
 |---|---|---|
-| R1 | [{Short name}](product.md#{anchor}) | U1, U2 |
-| R2 | [{Short name}](product.md#{anchor}) | U3 |
+| R1 | [{Short name}](product.md#{anchor}) | {name}/1, {name}/2 |
+| R2 | [{Short name}](product.md#{anchor}) | {name}/3 |
 
 Every unit below MUST cite the R-IDs it satisfies. Add rows as requirements grow; do not renumber R-IDs.
 
@@ -48,23 +50,19 @@ Every unit below MUST cite the R-IDs it satisfies. Add rows as requirements grow
 
 ---
 
-## Unit Prefix
+## Unit IDs
 
-| Prefix | Feature | Example |
-|---|---|---|
-| {XX} | {name} | {XX}0, {XX}1, … |
-
-Derive the prefix from the feature slug (2–4 uppercase letters). Register it in the root [plan.md](../../plan.md) unit-prefix table. Never renumber units when reordering work — add new IDs instead.
+Units are `{name}/n` — the feature slug plus an integer assigned once and **never renumbered** on reorder (add a new `{name}/n` for new work). An optional **Seq** holds rewriteable execution order. Cite IDs in commits and tests during impl (`feat({name}): {name}/1 ...`).
 
 ---
 
-### U1. {Unit name}
+### {name}/1 — {Unit name}
 
 **Goal:** {One sentence — what ships in this slice.}
 
 **Requirements:** R1, R2
 
-**Dependencies:** {Prior units or cross-feature units; use `—` when none.}
+**Dependencies:** {Prior **same-feature** units only; use `—` when none. Cross-feature order lives in the root Feature Sequence, never here.}
 
 **Files:**
 
@@ -82,13 +80,13 @@ Derive the prefix from the feature slug (2–4 uppercase letters). Register it i
 
 ---
 
-### U2. {Unit name}
+### {name}/2 — {Unit name}
 
 **Goal:** {…}
 
 **Requirements:** R2
 
-**Dependencies:** U1
+**Dependencies:** {name}/1
 
 **Files:**
 
@@ -110,9 +108,9 @@ Derive the prefix from the feature slug (2–4 uppercase letters). Register it i
 
 | Unit | Blocks | Blocked by |
 |---|---|---|
-| U2 | {downstream units or features} | U1, {other-feature unit} |
+| {name}/2 | {downstream same-feature units} | {name}/1 |
 
-Cross-feature dependencies belong here **and** in the root plan critical path.
+Same-feature dependencies only. Cross-feature order is a whole-feature gate in the root [plan.md](../../plan.md) Feature Sequence, not a unit edge here.
 
 <!-- /include-when-material -->
 
@@ -122,7 +120,7 @@ Cross-feature dependencies belong here **and** in the root plan critical path.
 
 | Gap | Tracked in | Notes |
 |---|---|---|
-| {Known delta between spec and repo} | U{n} | {One line} |
+| {Known delta between spec and repo} | {name}/n | {One line} |
 
 <!-- /include-when-material -->
 
@@ -132,8 +130,8 @@ Cross-feature dependencies belong here **and** in the root plan critical path.
 
 | Unit | Status |
 |---|---|
-| U1 | NOT STARTED |
-| U2 | NOT STARTED |
+| {name}/1 | NOT STARTED |
+| {name}/2 | NOT STARTED |
 
 <!-- /include-when-material -->
 

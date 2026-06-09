@@ -2,9 +2,9 @@
 name: spec
 description: |
   Maintains `.spec/` design docs across two layers: persistent root specs
-  (product, tech, design, plan, lessons, branch docs) and ephemeral
-  `features/<name>/` folders that merge to root then archive or delete when
-  wrapped up.
+  (product, tech, design, plan, lessons, branch docs) kept current with no
+  backlog, and branch-scoped `features/<name>/` folders that merge to root,
+  archive transiently, then delete before the branch merges.
   Use when scoping a feature, bootstrapping strategy, reviewing architecture,
   updating a spec, validating consistency, or the user mentions spec, PRD,
   design doc, tech design, feature spec, or branch doc.
@@ -14,7 +14,7 @@ allowed-tools: Read, Bash(bash .agents/skills/spec/scripts/validate.sh), Bash(ba
 compatibility: Requires bash. macOS and Linux.
 metadata:
   author: lennarddib
-  version: "1.7"
+  version: "1.8"
 ---
 
 # Spec System
@@ -51,29 +51,29 @@ Specs come in two layers. Use the right one for the job — mixing them is the m
 ├── product-{topic}.md        # cross-cutting product branch (design system, conventions)
 ├── tech-{topic}.md           # cross-cutting tech branch (infrastructure, observability)
 │
-│  ─── FEATURE LAYER (detailed, ephemeral) ──────────────
+│  ─── FEATURE LAYER (detailed, branch-scoped) ──────────────
 │
 ├── features/<name>/
 │   ├── product.md            # what this feature does (requirements)
 │   ├── tech.md               # how this feature is built (architecture)
 │   ├── design.md             # optional, feature UX / interaction detail
-│   ├── plan.md               # optional, feature-scoped roadmap
+│   ├── plan.md               # optional, feature-scoped roadmap (`<name>/n` units)
 │   └── research.md           # optional, discovery artifacts
 │
-└── archive/<name>/           # optional post-merge history (see Wrapped-up features)
+└── archive/<name>/           # transient post-wrapup safety net (deleted before merge)
 ```
 
 **Root layer rules:**
 - `product.md` is the mini PRD: story, target user, requirements, design principles, non-goals.
 - `tech.md` is the architecture summary: design philosophy, stack, file layout, state contracts, basic implementation, build sequence, risks.
 - `design.md` is the cross-cutting design language: UX principles, interaction conventions, interface tone, and reusable design patterns. It may bridge product and implementation vocabulary when that helps design stay actionable.
-- `plan.md` sequences the work at the **root** layer: milestones, feature map, unit-prefix registry, critical path. Unit-level detail lives in `features/<name>/plan.md`. See [reference/plan.md](reference/plan.md).
+- `plan.md` sequences the work at the **root** layer: feature map, Feature Sequence with binary whole-feature gates, current focus. Current-only — no long-horizon backlog. Unit-level detail (`<name>/n`) lives in `features/<name>/plan.md`. See [reference/plan.md](reference/plan.md).
 - Branch docs (`product-{topic}.md`, `tech-{topic}.md`) cover **cross-cutting concerns only** — things that span every feature. Design system. Infrastructure. Naming conventions. If the topic is really about one feature, it belongs in the feature layer.
 
 **Feature layer rules:**
-- One directory per feature in `.spec/features/<name>/`. Always contains `product.md` and `tech.md`. Recommended: `plan.md` with stable unit IDs (`{PREFIX}{N}`). Optionally `design.md`, `research.md`. Every feature `product.md` includes a **Scope** table (Owns / Does not own).
-- Feature specs are **short-lived**: written during DESIGN, consumed during IMPL, merged into root layer during COMPOUND, then the feature folder is **removed** — optionally kept under `archive/<name>/` (see [Wrapped-up features](#wrapped-up-features)).
-- Cross-cutting decisions from a feature get merged into root `tech.md` or relevant branch doc. Feature-specific detail does not promote — it is discarded or kept in archive only when you chose to retain history.
+- One directory per feature in `.spec/features/<name>/`. Always contains `product.md` and `tech.md`. Recommended: `plan.md` with stable unit IDs (`<name>/n`). Optionally `design.md`, `research.md`. Every feature `product.md` includes a **Scope** table (Owns / Does not own). Each feature is a closed, deliverable, testable box; cross-feature order is a whole-feature gate in the root plan, never a unit-to-unit edge.
+- Feature specs are **branch-scoped**: written during DESIGN, consumed during IMPL, merged into root layer during COMPOUND, archived as a transient safety net, then **deleted before the branch merges** (agent prompts after validation). CODE IS TRUTH; archive is never read for active work (see [Wrapped-up features](#wrapped-up-features)).
+- Cross-cutting decisions from a feature get merged into root `tech.md` or relevant branch doc. Feature-specific detail does not promote — it is discarded with the deleted folder.
 
 ## Strategy vs Feature — Which layer?
 
@@ -109,7 +109,7 @@ Full steps, rigor gate, and skip conditions: [feature.md](feature.md).
 4. **Bump `updated:`.** Change the `updated:` date every time you edit a spec.
 5. **Keep cross-references alive.** Link parent ↔ child both ways. List children in entrypoint frontmatter.
 6. **Validate after changes.** Run `bash .agents/skills/spec/scripts/validate.sh` when the skill is vendored, or the equivalent global install path.
-7. **Feature specs are ephemeral.** Don't write them as if they're permanent. Cross-cutting decisions merge to root; the feature folder goes away at wrap-up (archive optional — see below).
+7. **Feature specs are branch-scoped.** Don't write them as if they're permanent. Cross-cutting decisions merge to root; the feature folder is archived transiently then deleted before the branch merges (see below). No backlog in any spec — work-ready items only; long-term ideas live in an external tracker.
 
 ## Wrapped-up features
 
@@ -117,24 +117,19 @@ When a feature arc completes (COMPOUND / wrap-up), follow this sequence:
 
 1. **Promote** — merge cross-cutting blocks from `features/<name>/tech.md` (and product/design when relevant) into root `.spec/{product,tech,design,plan}.md`. Use `<!-- merge -->` markers or hand-merge; see [reference/tech.md](reference/tech.md).
 2. **Record** — append a tagged lesson to `.spec/lessons.md` when a durable rule surfaced (via `vibe-compound`).
-3. **Update root plan** — set the feature row to **DONE** in `.spec/plan.md`. Link the **live surface** (skill path, root doc section, test suite) — not the removed feature folder.
-4. **Remove the feature folder** — delete `.spec/features/<name>/` after promotion. This is required; do not leave stale active feature specs.
+3. **Update root plan** — set the feature to **DONE** in the `.spec/plan.md` Feature Sequence and cleanse delivered detail to a one-line note. Link the **live surface** (skill path, root doc section, test suite) — not the removed feature folder.
+4. **Archive transiently** — `mv features/<name>/ archive/<name>/` as a safety net (e.g. CI fails right after wrapup). Archive is **never** read for active work — CODE IS TRUTH.
+5. **Prompt to delete** — after validation passes, prompt the user to delete `archive/<name>/`. The folder should be gone **before the branch merges**; keeping it is the justified exception, not the default.
 
-Then choose **archive** or **delete** for the removed folder contents:
-
-| Keep archive (`mv features/<name>/ archive/<name>/`) | Delete (no archive) |
-|---|---|
-| You want unit archaeology, rejected alternatives, or detailed plan history | Live artifacts already hold the truth |
-| Typical app or domain features with unique decision history | Foundational infra whose product *is* the repo (e.g. spec-framework → skill bundle + root `.spec/` + tests) |
-| You may revisit "why we decided X" later | Nothing unique remains in the feature folder after promote |
+**Why delete and not hoard:** the repo holds value-prop + architecture + current plan only. Decision archaeology that has standalone value can be kept in archive deliberately; otherwise delete — live artifacts (skill bundle, root specs, tests) are the truth.
 
 **This repo:** `spec-framework` was **deleted, not archived** — truth lives in this skill bundle, root `.spec/` entrypoints, and `tests/spec/run.sh`.
 
 **Agent rules after wrap-up:**
 
-- Route to root `plan.md` feature table + live implementation paths — **never** restore `features/<name>/` because validation failed on a wrapped-up feature.
-- Do not load `archive/<name>/` by default; it is cold storage when it exists.
-- Full lifecycle steps: [feature.md](feature.md) § Lifecycle and § Archive vs delete.
+- Route to root `plan.md` Feature Sequence + live implementation paths — **never** restore `features/<name>/` because validation failed on a wrapped-up feature.
+- Do not load `archive/<name>/` by default; it is cold, transient storage when it exists.
+- Full lifecycle steps: [feature.md](feature.md) § Lifecycle and § Archive and delete.
 
 ## Routing
 
@@ -164,7 +159,7 @@ Then choose **archive** or **delete** for the removed folder contents:
 | Working on existing feature | [feature.md](feature.md) + `features/<name>/product.md` + `features/<name>/tech.md` + `plan.md` when present |
 | Architecture, conventions, infrastructure | `tech.md` + relevant `tech-{topic}.md` |
 | Design system, UX patterns | `design.md` + relevant `product-{topic}.md` or `tech-{topic}.md` if needed |
-| Implementation planning, milestones | root `plan.md` + `features/<name>/plan.md` + [reference/plan.md](reference/plan.md) |
+| Implementation planning, feature sequence | root `plan.md` + `features/<name>/plan.md` + [reference/plan.md](reference/plan.md) |
 | UI / layout / user flows in a feature | `features/<name>/product.md` + `features/<name>/design.md` (if present) |
 
 ## Design.md Compatibility

@@ -109,7 +109,7 @@ echo "    1. product.md           — Mini PRD (story / requirements / principle
 echo "    2. tech.md              — Architecture summary (stack / philosophy / basic impl). Stay HIGH-LEVEL."
 echo "    3. design.md            — Shared UX/design language. Stay HIGH-LEVEL."
 echo "    4. features/<name>/     — Decompose sub-parts into features. Each has product.md + tech.md."
-echo "    5. plan.md              — Sequence features into milestones."
+echo "    5. plan.md              — Feature Sequence with binary gates (current-only; no backlog)."
 echo "    *  product-{topic}.md   — Cross-cutting product branch (design system, conventions). Rare."
 echo "    *  tech-{topic}.md      — Cross-cutting tech branch (infrastructure, observability). Rare."
 echo "    *  lessons.md           — Updated only during COMPOUND. Read at session start."

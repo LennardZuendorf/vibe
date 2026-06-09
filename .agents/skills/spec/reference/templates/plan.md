@@ -1,7 +1,7 @@
 ---
 type: entrypoint
 scope: implementation
-covers: milestones, build sequence, validation criteria, open decisions
+covers: feature sequence, build order, validation criteria, open decisions
 children: []
 updated: {YYYY-MM-DD}
 ---
@@ -15,7 +15,7 @@ updated: {YYYY-MM-DD}
 
 # {Project Name} — Implementation Plan
 
-{One paragraph: current delivery focus, how features compose, and what milestone is active.}
+{One paragraph: current delivery focus, how features compose, and which feature is active. Current-only — no long-horizon backlog.}
 
 **Parent specs:** [product.md](product.md), [tech.md](tech.md), [design.md](design.md)
 
@@ -50,38 +50,22 @@ updated: {YYYY-MM-DD}
 
 ---
 
-## Milestones
+## Feature Sequence
 
-| ID | Goal | Features | Exit |
-|---|---|---|---|
-| M0 | {Foundation} | {names} | {Observable exit criteria} |
-| M1 | {…} | {names} | {…} |
+Whole-feature delivery order with **binary** gates — a downstream feature starts only when its upstream is `DONE`. Units (`feature/n`) live in feature plans, never here.
 
-Milestones are delivery phases at the **root** layer. Subdivide parallel tracks as M4a / M4b when needed. Map feature units to milestones in each feature plan — do not duplicate unit tables here.
+| Order | Feature | Deliverable | Test | Status | Starts when |
+|---:|---|---|---|---|---|
+| 1 | {name} | {artifact set} | `tests/{name}/...` | {NOT STARTED / ACTIVE / DONE} | — |
+| 2 | {name} | {artifact set} | `tests/{name}/...` | {…} | {feature 1} DONE |
 
----
+Pick by repo shape:
 
-## Unit Prefixes
+- **Single-goal / small repo** — the strategy *is* the one end goal; this numbered list **is** the roadmap (no separate milestone layer).
+- **Larger repo** — keep the binary-gate table; promote big features into sibling feature folders rather than nesting.
+- **No single endgame** — drop the order column and list features as an **unordered cluster** with no cross-edges. Do not force a linear arc onto unrelated work.
 
-| Prefix | Feature | Plan |
-|---|---|---|
-| {XX} | {name} | [features/{name}/plan.md](features/{name}/plan.md) |
-
-Register every feature prefix once. Agents cite unit IDs (`{XX}1`) in commits and tests during `impl`.
-
----
-
-<!-- include-when-material: Critical Path — omit when no hard cross-feature dependencies yet -->
-
-## Critical Path
-
-```
-{dependency chain — e.g. SF0 → VF1 → AI0 → U3}
-```
-
-Hard dependencies only. Cross-feature ordering that blocks shipping belongs here and in the blocking feature's plan.
-
-<!-- /include-when-material -->
+Cross-feature order is **only** here. Feature plans declare same-feature unit deps only.
 
 <!-- include-when-material: Spec vs Implementation — omit when spec and repo are aligned -->
 
@@ -89,16 +73,16 @@ Hard dependencies only. Cross-feature ordering that blocks shipping belongs here
 
 | Gap | Feature / unit | Notes |
 |---|---|---|
-| {Known drift} | {XX}n | {One line} |
+| {Known drift} | {name}/n | {One line} |
 
 Honest inventory of spec-ahead-of-code. Close via feature units; shrink this table over time.
 
 <!-- /include-when-material -->
 
-<!-- include-when-material: Current Focus — omit when idle between milestones -->
+<!-- include-when-material: Current Focus — omit when idle between features -->
 
 ## Current Focus
 
-{Active milestone, active feature, next human gate. Keep to 2–3 sentences; bump `updated:` when it changes.}
+{Active feature, next human gate. Keep to 2–3 sentences; bump `updated:` when it changes. No long-horizon backlog — work-ready items only.}
 
 <!-- /include-when-material -->
