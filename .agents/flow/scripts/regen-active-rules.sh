@@ -72,7 +72,17 @@ build_digest() {
 # block if the markers are absent. Idempotent.
 write_block() {
   local file="$1" digest="$2"
-  [[ -f "$file" ]] || { warn "WARN: $file not found; skipping."; return 0; }
+  local target="$file"
+  if [[ -L "$file" ]]; then
+    local link
+    link="$(readlink "$file")"
+    if [[ "$link" == /* ]]; then
+      target="$link"
+    else
+      target="$(cd "$(dirname "$file")" && pwd)/$link"
+    fi
+  fi
+  [[ -f "$target" ]] || { warn "WARN: $target not found; skipping."; return 0; }
 
   local block
   block="$START
@@ -84,28 +94,46 @@ write_block() {
 $digest
 $END"
 
-  local tmp; tmp="$(mktemp "${file}.XXXXXX")"
-  trap 'rm -f "$tmp"' RETURN
+  local tmp blockfile
+  tmp="$(mktemp "${file}.XXXXXX")"
+  blockfile="$(mktemp "${file}.block.XXXXXX")"
+  trap 'rm -f "$tmp" "$blockfile"' RETURN
+  printf '%s\n' "$block" > "$blockfile"
 
-  if grep -qF "$START" "$file" && grep -qF "$END" "$file"; then
-    # Replace existing block in place.
-    awk -v start="$START" -v end="$END" -v block="$block" '
-      $0 == start { print block; skip=1; next }
-      $0 == end   { skip=0; next }
-      !skip       { print }
-    ' "$file" > "$tmp"
+  if grep -qF "$START" "$target" && grep -qF "$END" "$target"; then
+    awk -v start="$START" -v end="$END" -v blockfile="$blockfile" '
+      $0 == start {
+        while ((getline line < blockfile) > 0) print line
+        close(blockfile)
+        skip = 1
+        next
+      }
+      $0 == end { skip = 0; next }
+      !skip { print }
+    ' "$target" > "$tmp"
   else
-    # Append a fresh block, separated by a blank line.
-    cat "$file" > "$tmp"
-    printf '\n%s\n' "$block" >> "$tmp"
+    cat "$target" > "$tmp"
+    printf '\n' >> "$tmp"
+    cat "$blockfile" >> "$tmp"
   fi
 
-  mv -f "$tmp" "$file"
+  mv -f "$tmp" "$target"
   trap - RETURN
-  echo "regen-active-rules: updated $(basename "$file")"
+  echo "regen-active-rules: updated $(basename "$target")"
 }
 
 DIGEST="$(build_digest)"
+seen=""
 for t in "${TARGETS[@]}"; do
+  resolved="$t"
+  if command -v realpath >/dev/null 2>&1; then
+    resolved="$(realpath "$t" 2>/dev/null || echo "$t")"
+  elif command -v python3 >/dev/null 2>&1; then
+    resolved="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$t" 2>/dev/null || echo "$t")"
+  fi
+  if printf '%s\n' "$seen" | grep -Fxq "$resolved"; then
+    continue
+  fi
+  seen="${seen}${resolved}"$'\n'
   write_block "$t" "$DIGEST"
 done
