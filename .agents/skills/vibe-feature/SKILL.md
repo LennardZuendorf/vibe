@@ -30,17 +30,18 @@ Everything between is autonomous.
    and set it: `bash .agents/flow/scripts/set-state.sh feature.design <name>`.
    The name is carried in the cursor across all feature states.
 
-2. **Design** (`feature.design`, caveman lite). Read `.spec/lessons.md` first.
-   Delegate to `superpowers:brainstorming` for the human dialogue, plus the
-   `code-explorer` subagent to trace the codebase and `code-architect` to sketch
-   approaches — they compose, they do not compete. Write **only**
-   `.spec/features/<name>/product.md` and `tech.md` (inject those exact paths).
-   Suggest `feature.plan` when the approach is chosen.
+2. **Design** (`feature.design`, caveman lite). Follow the spec skill
+   [feature.md authoring flow](.agents/skills/spec/feature.md) steps 1–4:
+   locate & name → interview WHAT → rigor gate → sketch HOW. Read
+   `.spec/lessons.md` first. Delegate `superpowers:brainstorming` (dialogue),
+   `code-explorer` (trace), `code-architect` (sketch) — they compose. Write
+   **only** `.spec/features/<name>/product.md`, `tech.md`, and `design.md`
+   when the rigor gate says full. Suggest `feature.plan` when HOW is sketched.
 
-3. **Plan** (`feature.plan`, caveman lite). Delegate to `superpowers:writing-plans`
-   + `code-architect`. Write `.spec/features/<name>/plan.md`. Give every
-   implementation unit a **stable ID** (`U1`, `U2`, …); IDs never change on
-   reorder or split. **Human gate:** confirm the plan before moving to impl.
+3. **Plan** (`feature.plan`, caveman lite). Follow [feature.md](.agents/skills/spec/feature.md)
+   step 5 (plan units). Delegate `superpowers:writing-plans` + `code-architect`.
+   Write `.spec/features/<name>/plan.md` with **stable unit IDs**; IDs never
+   change on reorder or split. **Human gate:** confirm the plan before impl.
 
 4. **Impl** (`feature.impl`, caveman full). Delegate to
    `superpowers:executing-plans` + `superpowers:test-driven-development`. Write

@@ -83,10 +83,10 @@
       "delegates": ["superpowers:brainstorming", "code-explorer", "code-architect"],
       "caveman": "lite",
       "reads": [".spec/lessons.md", ".spec/product.md", ".spec/tech.md"],
-      "writes": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md"],
-      "inject": "skill=vibe-feature · READ .spec/lessons.md first · delegate brainstorming + code-explorer (trace) + code-architect (sketch) · WRITE .spec/features/<feature>/{product,tech}.md ONLY · no source yet · caveman=lite · next: feature.plan",
+      "writes": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/design.md"],
+      "inject": "skill=vibe-feature · spec feature.md flow steps 1–4 (locate→interview WHAT→rigor gate→sketch HOW) · READ lessons.md · WRITE .spec/features/<feature>/{product,tech,design?}.md ONLY · no source · caveman=lite · next: feature.plan",
       "next": ["feature.plan"],
-      "exit": "feature product.md + tech.md written; approach chosen"
+      "exit": "feature product.md + tech.md written; design.md when full rigor; approach chosen"
     },
     "feature.plan": {
       "skill": "vibe-feature",
@@ -94,7 +94,7 @@
       "caveman": "lite",
       "reads": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md"],
       "writes": [".spec/features/<feature>/plan.md"],
-      "inject": "skill=vibe-feature · delegate superpowers:writing-plans + code-architect · WRITE .spec/features/<feature>/plan.md with STABLE unit IDs (U1, U2 ...) · IDs never change on reorder/split · no source yet · caveman=lite · HUMAN GATE before impl · next: feature.impl",
+      "inject": "skill=vibe-feature · spec feature.md step 5 (plan units) · WRITE .spec/features/<feature>/plan.md · STABLE unit IDs cite R-IDs · verification per unit · no source · caveman=lite · HUMAN GATE before impl · next: feature.impl",
       "next": ["feature.impl"],
       "exit": "plan.md has stable unit IDs; human approved moving to impl"
     },
