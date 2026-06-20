@@ -3,9 +3,10 @@ name: vibe-setup
 description: |
   Install or repair the vibe workflow harness in a repo. Read-only audit
   (detect) then write/merge bootstrap (apply) — never clobbers existing content.
-  Writes the constitution block, scaffolds .agents/flow + .spec, preflights
-  required plugins. Trigger on: set up vibe, bootstrap the harness, repair
-  the workflow, install, onboard a repo, or user says setup.
+  Merges the AGENTS.md instructions block, offers adapter symlinks, scaffolds
+  .agents/flow + .spec, preflights required plugins. Trigger on: set up vibe,
+  bootstrap the harness, repair the workflow, install, onboard a repo, or user
+  says setup.
 user-invocable: true
 argument-hint: ""
 allowed-tools: Read, Edit, Write, Bash
@@ -25,80 +26,82 @@ Brings a fresh (or drifted) repo under the harness. Two states:
 `bash .agents/flow/scripts/set-state.sh setup.detect`. Audit only — write nothing.
 Report present vs missing:
 
-- `.agents/flow/state-machine.json`, `state.example.json`, and the four scripts
-  (`set-state.sh`, `validate-state.sh`, `detect-context.sh`, `regen-active-rules.sh`).
+- `.agents/flow/state-machine.json`, `state.example.json`, and the scripts
+  (`set-state.sh`, `validate-state.sh`, `detect-context.sh`, `regen-active-rules.sh`,
+  `orders.sh`, `check-skills.sh`).
 - `.agents/skills/vibe-*` shims and the bundled `spec` skill.
-- Constitution block in `CLAUDE.md` / `AGENTS.md` (markers
-  `<!-- vibe:constitution:start -->` / `:end`).
+- **`AGENTS.md` health** (per [agent-instructions](../../../.spec/features/agent-instructions/tech.md)):
+  - `AGENTS.md`: missing / present-no-markers / present-managed-ok / present-managed-stale (differs from template).
+  - `vibe:instructions` block: absent / current / stale.
+  - `vibe:constitution` block (legacy): absent / present-needs-migration.
+  - `vibe:active-rules` block: absent / empty / populated.
+- **Adapter rows** — one per entry in `reference/adapters.json`
+  (`CLAUDE.md`, `WARP.md`, …): absent / symlink-ok / symlink-wrong-target /
+  real-file / broken-link.
 - `.spec/lessons.md` and the root specs.
 
-**Plugin preflight** — verify required skills are installed; warn + list any
-missing, never hard-fail:
-
-- `spec` (bundled), `superpowers:*`, feature-dev subagents (`code-explorer`,
-  `code-architect`, `code-reviewer`), `caveman` (optional → fall back to the
-  1-line caveman definitions in the constitution if absent).
+**Plugin preflight** — `bash .agents/flow/scripts/check-skills.sh <state>` lists
+which delegated skills are verifiable vs assumed-installed. Warn + list any that
+can't be confirmed; never hard-fail. Covers `spec` (bundled), `superpowers:*`,
+feature-dev subagents (`code-explorer`, `code-architect`, `code-reviewer`), and
+`caveman` (optional → `check-skills.sh caveman <level>` prints the 1-line fallback
+when absent).
 
 ## 2. Apply (write/merge, caveman lite)
 
 `bash .agents/flow/scripts/set-state.sh setup.apply`. Bootstrap without
 clobbering:
 
-1. **Constitution block.** Write/merge the managed block (see template below)
-   into `CLAUDE.md` and `AGENTS.md` between
-   `<!-- vibe:constitution:start -->` and `:end`. Content outside markers is
-   user-owned — diff and ask on any divergence.
-2. **Flow scaffold.** Ensure `.agents/flow/` files exist. Seed the cursor only if
+1. **Instructions block.** Run `bash .agents/skills/vibe-setup/scripts/merge-agents.sh`
+   to merge the canonical `AGENTS.md` template (in `reference/templates/AGENTS.md`)
+   into the repo-root `AGENTS.md` **inside the `vibe:instructions` markers only**.
+   Create it if missing; migrate a legacy `vibe:constitution` block; wrap an
+   unmarked equivalent guide; never touch content outside the markers. (Supersedes
+   the old constitution-block merge — see [agent-instructions](../../../.spec/features/agent-instructions/product.md).)
+2. **Adapter symlinks (user-driven).** Read `reference/adapters.json` and offer the
+   adapters the user wants (default: `CLAUDE.md`, `WARP.md`). For each chosen one,
+   `bash .agents/skills/vibe-setup/scripts/merge-agents.sh link <adapter>`. It skips
+   a correct symlink, relinks a wrong target, and **refuses to replace a real file**
+   — show a diff and confirm before clobbering. Never create a symlink the user
+   didn't request.
+3. **Flow scaffold.** Ensure `.agents/flow/` files exist. Seed the cursor only if
    missing: `cp .agents/flow/state.example.json .agents/flow/state.json`. Add
    `.agents/flow/state.json` to `.gitignore`.
-3. **Spec scaffold.** If `.spec/` is bare, run `bash .agents/skills/spec/scripts/setup.sh`.
+4. **Spec scaffold.** If `.spec/` is bare, run `bash .agents/skills/spec/scripts/setup.sh`.
    Ensure `.spec/lessons.md` exists with the `Tags:`/`Pinned-by:` format.
-4. **Active rules.** Run `bash .agents/flow/scripts/regen-active-rules.sh` to seed
-   the managed active-rules block.
+5. **Active rules.** Run `bash .agents/flow/scripts/regen-active-rules.sh` to seed
+   the managed `vibe:active-rules` block (it is symlink-aware and dedupes targets by
+   resolved path, so the `CLAUDE.md` → `AGENTS.md` symlink survives).
 
 Finish at `idle`. Report what was created, merged, skipped, and any missing
 plugins.
 
-## Constitution block template
+## Template & manifest
 
-```md
-<!-- vibe:constitution:start -->
-## vibe Constitution
-
-Three flows exist — **strategy** (direction, no code), **feature** (build loop),
-**quick** (small fixes). Plus **setup** and the **amend** modifier.
-
-**Read state:** `.agents/flow/state.json` = `{flow, phase, feature, updated}`.
-The compound `<flow>.<phase>` keys into `.agents/flow/state-machine.json`, which
-holds each state's skill, delegates, caveman level, read/write surface, frozen
-inject, and legal `next`.
-
-**Transition:** only via `bash .agents/flow/scripts/set-state.sh <flow.phase>`.
-Never edit `state.json` by hand. Transitions are agent-suggested — name the next
-state and confirm before moving.
-
-**Canonical paths:** durable specs in `.spec/**`; runtime state in
-`.agents/flow/**`; workflow shims in `.agents/skills/vibe-*`. Delegated skills
-(`spec`, `superpowers:*`, subagents) must be told the exact `.spec/` path to
-write.
-
-**Caveman density** (output compression only — never reasoning; code/paths/
-commands byte-exact; security + irreversible-action confirmations always normal
-prose): `lite` = full sentences, no filler (strategy/setup/design/compound/
-amend); `full` = drop articles, fragments OK (impl/verify/quick.*); `ultra` =
-arrows, one word where one does (compound receipts + subagent summaries only,
-never triage).
-
-**Follow the inject literally.** It names the one skill, the write surface, the
-path, the caveman level, and the next legal state.
-
-The active-rules block below is generated from `.spec/lessons.md` by
-`regen-active-rules.sh`; to change it, edit `lessons.md` during compound.
-<!-- vibe:constitution:end -->
-```
+The canonical instruction-file content lives in
+[`reference/templates/AGENTS.md`](reference/templates/AGENTS.md) (vibe-owned body
+wrapped in `vibe:instructions` markers, with an empty `vibe:active-rules` block
+below). The adapter catalogue lives in
+[`reference/adapters.json`](reference/adapters.json). Both are **data** — extend
+the manifest to add runtimes without editing this skill's prose.
 
 ## Rules
 
 - Never overwrite user content; merge inside markers, diff + ask outside.
 - Missing plugin = warn and degrade, never hard-fail.
 - Caveman lite throughout.
+
+## Orders (D12)
+
+Machine-extractable per-state orders. The `UserPromptSubmit` inject hook resolves
+the current `<flow>.<phase>`, follows its `skill` link, and emits the matching
+block verbatim via `.agents/flow/scripts/orders.sh`. `<feature>` is the only
+interpolation; keep each block byte-stable.
+
+<!-- vibe:orders:setup.detect -->
+skill=vibe-setup · READ-ONLY audit of repo + harness · report what is missing/present (AGENTS.md health, adapter rows from adapters.json, .agents/flow scripts, vibe-* shims, bundled spec) · preflight required plugins · do NOT write yet · caveman=lite · next: setup.apply
+<!-- /vibe:orders -->
+
+<!-- vibe:orders:setup.apply -->
+skill=vibe-setup · WRITE/MERGE bootstrap: merge-agents.sh AGENTS.md instructions block, .agents/flow scaffold, baseline .spec/**, optional adapter symlinks (user-driven) · NEVER clobber existing content (diff + ask on divergence) · regen-active-rules.sh after merge · caveman=lite · next: idle
+<!-- /vibe:orders -->

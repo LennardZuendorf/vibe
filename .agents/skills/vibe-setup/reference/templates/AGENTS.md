@@ -206,9 +206,5 @@ Features: `.spec/features/<feature>/{product,tech}.md` required; `design.md`,
 
 ### Active Rules
 
-- **An installer must preserve per-project runtime state across a re-copy** — A provisioner that refreshes managed files must snapshot per-project runtime state (the flow cursor) before the copy and restore it after, seeding only when genuinely absent. "Idempotent" has to hold for *user* state, not just managed files; pin it with a regression test that a live cursor (`feature.impl <feature>`) survives a re-install.
-- **Marker-bounded merge must validate marker pairing before rewriting** — Any tool that rewrites a region between managed markers must confirm the markers exist as exact lines AND that start precedes end before mutating — refuse (never mangle) on reversed/overlapping markers, and always write via temp + atomic rename. Pair it with a test that a reversed-marker file is left byte-untouched.
-- **A Claude Code plugin cannot bundle skills outside ./skills/** — Let the *plugin* carry only the Claude-specific runtime wiring it uniquely provides (`commands` + `hooks` via `${CLAUDE_PLUGIN_ROOT}`); deliver the platform-neutral core (the `spec`/`vibe-*` skills and `.agents/flow`) as project files through `install.sh`. "Single install" = run the installer. Keeps adapters thin and the core canonical.
-- **Single-source the per-turn orders; don't duplicate them in the machine** — Author the orders once, in the linked skill, as a machine-extractable `<!-- vibe:orders:<state> -->` block; carry `inject: null` in the machine for skill-owning states (only `idle` keeps an inline fallback); resolve via `orders.sh` (cursor → `skill` link → block → interpolate `<feature>` only, so the prompt cache stays byte-stable). Hooks are thin shells over that resolver.
-- **Spec strictness: warn-first, then migrate** — Ship structural validators warn-first; promote warn→error only after live specs are migrated during compound. Pair every validator with a behaviour test in `tests/spec/run.sh`.
+_No lessons recorded yet._
 <!-- vibe:active-rules:end -->
