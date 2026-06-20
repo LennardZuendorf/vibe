@@ -19,7 +19,7 @@ echo ""
 
 # Check if .spec/ already exists
 if [[ -d "$SPEC_DIR" ]]; then
-  existing=$(ls "$SPEC_DIR"/*.md 2>/dev/null | wc -l | tr -d ' ')
+  existing=$(find "$SPEC_DIR" -maxdepth 1 -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
   if [[ "$existing" -gt 0 ]]; then
     yellow "WARN: $SPEC_DIR/ already exists with $existing file(s)."
     echo ""
