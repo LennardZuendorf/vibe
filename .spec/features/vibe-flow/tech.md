@@ -3,7 +3,7 @@ type: feature-tech
 feature: vibe-flow
 sibling: product.md
 parent: ../../tech.md
-updated: 2026-06-06
+updated: 2026-06-18
 ---
 
 # Feature: Vibe Flow — Architecture
@@ -147,14 +147,18 @@ Three deliberate calls:
   transition history.
 - Future optional: legality check flag on `set-state.sh` — not implemented in Stage 1.
 
-### D12 implementation status (spec ahead of repo)
+### D12 implementation status (delivered)
 
-**Target (documented):** per-turn orders live in each `vibe-*` skill; skill-owning
-states carry `inject: null`; inline fallback only for `idle`.
-
-**Repo today (Stage 1):** all 15 states still carry frozen `inject` strings; no
-orders blocks in skills; `$comment` still says inject is FROZEN. Implement via
-platform-adapters **U8** / vibe-flow **VF1** — see [plan.md](plan.md).
+Per-turn orders live in each `vibe-*` skill as a `## Orders (D12)` section of
+`<!-- vibe:orders:<state> -->` … `<!-- /vibe:orders -->` blocks. Every
+skill-owning state carries `inject: null` in `state-machine.json`; only `idle`
+keeps an inline `inject` (skill-less fallback). `.agents/flow/scripts/orders.sh`
+resolves the cursor `<flow>.<phase>` (default `idle`), follows the `skill` link,
+extracts that state's block, interpolates `<feature>` (the only substitution, so
+the inject stays prompt-cache stable), and prints it — degrading to the machine
+inject then a generic one-liner, always exit 0. The `UserPromptSubmit` inject
+hook is a thin shell over `orders.sh`. Verified by `tests/flow/run.sh`
+(`vibe-flow/1`).
 
 ### Stable plan unit IDs (D9)
 

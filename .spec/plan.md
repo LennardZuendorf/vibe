@@ -3,7 +3,7 @@ type: entrypoint
 scope: implementation
 covers: feature sequence, binary gates, validation criteria, open decisions
 children: []
-updated: 2026-06-08
+updated: 2026-06-18
 ---
 
 # vibe — Implementation Plan
@@ -61,14 +61,17 @@ hooks consume frozen skills rather than reaching across a boundary.)
 
 | Order | Feature | Deliverable | Test | Status | Starts when |
 |---:|---|---|---|---|---|
-| 1 | spec | `.spec/` docs + templates + `validate.sh` | `tests/spec/run.sh` | DONE | — |
-| 2 | vibe-flow | state machine + `vibe-*` skills + D12 orders | flow scenarios | ACTIVE | spec DONE |
-| 3 | agent-instructions | `AGENTS.md` template + merge + symlinks | merge scenarios | BLOCKED | vibe-flow DONE |
-| 4 | platform-adapters | plugin + three hooks + `install.sh` | hook dogfood | BLOCKED | agent-instructions DONE |
-| 5 | dogfood | strategy/quick/feature arcs on sandbox | manual + lessons | BLOCKED | platform-adapters DONE |
+| 1 | spec | `.spec/` docs + templates + `validate.sh` | `tests/spec/run.sh` (44) | DONE | — |
+| 2 | vibe-flow | state machine + `vibe-*` skills + D12 orders | `tests/flow/run.sh` (26) | DONE | spec DONE |
+| 3 | agent-instructions | `AGENTS.md` template + merge + symlinks | `tests/adapters/run.sh` | DONE | vibe-flow DONE |
+| 4 | platform-adapters | plugin + three hooks + `install.sh` | `tests/adapters/run.sh` (39) | DONE | agent-instructions DONE |
+| 5 | dogfood | hook/merge/install behaviours + earn-the-teeth | scripted + lessons | DONE | platform-adapters DONE |
 
-**Active focus:** vibe-flow — close `vibe-flow/1` (D12 orders blocks + machine
-`inject: null` on skill states). See [features/vibe-flow/plan.md](features/vibe-flow/plan.md).
+**Active focus:** none — all five features DONE. The harness is self-hosting end to
+end: D12 orders resolve from the linked skills, the three hooks are wired in the
+Claude Code plugin (warn-first), and `install.sh` provisions a fresh repo. Next work
+is real-world dogfood lessons (promote any `Stop` predicate warn→block only once it
+proves accidental, not deliberate) and the deferred `vibe-flow/4` `feature.deepen`.
 
 ---
 
@@ -87,21 +90,29 @@ hooks consume frozen skills rather than reaching across a boundary.)
 - **D12 owned by vibe-flow.** Orders live in `vibe-*` skills; `inject: null` on skill states; platform-adapters consumes the frozen skills.
 - **Binary feature gates.** Features couple as whole boxes; no cross-feature unit edges.
 
-### To Resolve
+### Resolved
 
-- [ ] **OPEN-2:** Skill count — [vibe-flow/plan.md](features/vibe-flow/plan.md) `vibe-flow/2`.
-- [ ] **OPEN-3:** Install mode — copy `.agents/**`; merge via agent-instructions; symlinks opt-in.
-- [ ] **OPEN-4 / OPEN-7:** Hook strictness — warn-first; revisit during dogfood.
-- [ ] **OPEN-6:** Skill degradation — [vibe-flow/plan.md](features/vibe-flow/plan.md) `vibe-flow/3`.
+- [x] **OPEN-2:** Skill count — keep all seven `vibe-*` shims; `vibe-verify` and
+  `vibe-compound` stay separate (distinct write surfaces + caveman). `vibe-flow/2`.
+- [x] **OPEN-3:** Install mode — `install.sh` **copies** core `.agents/**` + Claude
+  adapter, seeds+gitignores the cursor, merges `AGENTS.md` via `merge-agents.sh`,
+  symlinks adapters opt-in (`--adapters`), idempotent. `platform-adapters/6`.
+- [x] **OPEN-4 / OPEN-7:** Hook strictness — shipped warn-first; only the three
+  pre-existing `detect-context.sh` hard blocks deny; every `Stop` predicate is
+  warn-only with a `TODO(earn-the-teeth)`. `platform-adapters/3`.
+- [x] **OPEN-6:** Skill degradation — `.agents/flow/scripts/check-skills.sh` warns on
+  unverifiable delegates + prints the caveman fallback; never hard-fails. `vibe-flow/3`.
 
 ---
 
 ## Spec vs Implementation
 
-| Gap | Owning unit | Notes |
+No open drift. The two former gaps are closed:
+
+| Former gap | Owning unit | Resolution |
 |---|---|---|
-| D12 orders-in-skills documented, not implemented | `vibe-flow/1` | all states still carry frozen `inject` strings |
-| `vibe:instructions` markers ahead of repo | `agent-instructions/1` | gated on vibe-flow DONE |
+| D12 orders-in-skills documented, not implemented | `vibe-flow/1` | orders live in each skill (`## Orders`); machine `inject: null`; `orders.sh` resolves; tested |
+| `vibe:instructions` markers ahead of repo | `agent-instructions/1` | repo `AGENTS.md` wrapped + driven from the template via `merge-agents.sh` |
 
 Honest drift inventory; shrink as features complete. No backlog beyond work-ready units.
 
@@ -114,9 +125,18 @@ Cleansed notes for shipped work — detail lives in live surfaces, not this plan
 - **spec skill bundle — DONE.** Four-layer model, warn-first `validate.sh`, strict
   templates, feature-authoring flow, skill discovery/routing; `tests/spec/run.sh`
   green. `.spec/features/spec-framework/` deleted (truth = skill bundle + tests).
-- **vibe-flow Stage 1 — landed.** 15-state machine, four scripts, seven `vibe-*`
-  skills, D8–D11 documented. Remaining: `vibe-flow/1` (D12).
-- **agent-instructions Stage 1 — landed.** Canonical `AGENTS.md` engineering guide;
-  `CLAUDE.md` → `AGENTS.md` symlink. Remaining work gated on vibe-flow DONE.
-- **platform-adapters Stage 1 — landed.** `.claude/commands/flow.md`,
-  `detect-context.sh`. Remaining work gated on agent-instructions DONE.
+- **vibe-flow — DONE.** 15-state machine, six scripts (`set-state`, `validate-state`,
+  `detect-context`, `regen-active-rules`, `orders`, `check-skills`), seven `vibe-*`
+  skills. D12 orders sourced from each skill via `orders.sh`; D8–D11 in place.
+  `tests/flow/run.sh` green. Specs kept as living architecture docs (root entrypoints
+  link them as children) rather than archived.
+- **agent-instructions — DONE.** Canonical `AGENTS.md` template + `adapters.json` under
+  `vibe-setup/reference/`; `merge-agents.sh` (marker merge + constitution migration +
+  adapter symlinks); `vibe-setup` detect/apply rewritten off the constitution path.
+  Repo `AGENTS.md` wrapped in `vibe:instructions`; `CLAUDE.md` → `AGENTS.md`.
+- **platform-adapters — DONE.** Three hooks (inject/guard/gate) as thin shells over
+  `.agents/flow/scripts/`; `hooks.json`; `.claude-plugin/plugin.json`; `install.sh`.
+  Warn-first; graceful-degrade (exit 0). `tests/adapters/run.sh` green.
+- **dogfood — DONE (scripted).** Hook block/warn/allow/graceful, merge scenarios, and a
+  full `install.sh` into a sandbox are exercised in `tests/adapters/run.sh`; the build
+  itself was the end-to-end arc. Real-session earn-the-teeth promotions stay future work.

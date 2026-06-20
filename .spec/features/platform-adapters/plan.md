@@ -4,7 +4,7 @@ feature: platform-adapters
 sibling: tech.md
 parent: ../../plan.md
 covers: Claude Code plugin, the three flow hooks, installer
-updated: 2026-06-08
+updated: 2026-06-18
 ---
 
 # Feature: Platform Adapters — Implementation Plan
@@ -58,11 +58,17 @@ Validated against the repo on 2026-06-08 (spec `validate.sh` clean).
   `vibe-flow`). The inject hook reads the linked skill's orders, not an inline string.
 - `merge-agents.sh` marker-aware merge (from `agent-instructions`) for the installer.
 
-**Must build:**
-- `.claude/hooks/` — three thin shell hooks + `hooks.json` (units 1–4).
-- `.claude-plugin/plugin.json` — manifest bundling command + skills + hooks (unit 5).
-- `install.sh` — copy core, delegate `AGENTS.md` merge, register plugin (unit 6).
-- Dogfood + earn-the-teeth review (unit 7), feeding root dogfood.
+**Delivered (2026-06-18):**
+- `.claude/hooks/` — `user-prompt-submit-inject.sh` (over `orders.sh`),
+  `pre-tool-use-guard.sh` (over `detect-context.sh decide`), `stop-gate.sh`
+  (warn-only smells) + `hooks.json` wiring (units 1–4).
+- `.claude-plugin/plugin.json` — manifest bundling the `/flow` command + hooks
+  via `${CLAUDE_PLUGIN_ROOT}` (unit 5). Skills/flow core ship as project files via
+  `install.sh` (no `skills` manifest field exists; `../` is banned in component paths).
+- `install.sh` — copy core, seed+gitignore cursor, delegate `AGENTS.md` merge,
+  opt-in adapter symlinks, print plugin-registration guidance; idempotent (unit 6).
+- Hook behaviour (block/warn/allow/graceful) + installer + merge dogfooded in
+  `tests/adapters/run.sh` (unit 7); all `Stop` predicates shipped warn-first.
 
 **Timeline:** 1–2 sessions. Risk: Medium (hook exit-code semantics, PreToolUse stdin).
 
@@ -83,17 +89,19 @@ Validated against the repo on 2026-06-08 (spec `validate.sh` clean).
 - **Static orders.** The inject hook emits the linked skill's per-state orders
   verbatim (D12); `<feature>` interpolation is the only allowed substitution. (D10.)
 
-### To Resolve (human gate before `impl`)
+### Resolved (2026-06-18)
 
-- [ ] **OPEN-3 install mode.** Default: **copy** core `.agents/**` (portable);
-  **merge-with-diff** for `AGENTS.md`/`CLAUDE.md` (R5); register the plugin by
-  manifest. Confirm before building the installer, or pick symlink for a live-edit
-  dogfood loop.
-- [ ] **PreToolUse stdin contract.** Confirm the field Claude Code passes for the
-  target path (`tool_input.file_path`) and the block exit code (**exit 2**) against
-  the installed Claude Code version before finalizing the guard hook.
-- [ ] **Closes root OPEN-4 / OPEN-7** (hook strictness) by shipping warn-first with
-  only the three pre-existing hard blocks active. No new blocks this feature.
+- [x] **OPEN-3 install mode.** Shipped **copy** of core `.agents/**` + Claude adapter;
+  `merge-agents.sh` handles `AGENTS.md` inside markers; cursor seeded from the example
+  and gitignored; opt-in adapter symlinks via `--adapters`. `install.sh` refuses to
+  run against the source repo and is idempotent.
+- [x] **PreToolUse stdin contract.** Guard reads `tool_input.file_path` (falls back to
+  `tool_input.notebook_path` for `NotebookEdit`); `block:` → stderr + **exit 2**;
+  `warn:`/`allow` → exit 0. Confirmed against the hook-development reference and
+  exercised in `tests/adapters/run.sh`.
+- [x] **Closes root OPEN-4 / OPEN-7** (hook strictness): shipped warn-first with only
+  the three pre-existing `detect-context.sh` hard blocks active; every `Stop` predicate
+  is warn-only and carries a `TODO(earn-the-teeth)` promotion note. No new blocks.
 
 ---
 
@@ -101,13 +109,13 @@ Validated against the repo on 2026-06-08 (spec `validate.sh` clean).
 
 | ID | Seq | Summary | Depends | Status |
 |---|---:|---|---|---|
-| platform-adapters/1 | 1 | Inject hook (`UserPromptSubmit`) — emits linked-skill orders | — | NOT STARTED |
-| platform-adapters/2 | 2 | Guard hook (`PreToolUse`) — verdict translator over `detect-context.sh` | — | NOT STARTED |
-| platform-adapters/3 | 3 | Gate hook (`Stop`) — warn-only smells | — | NOT STARTED |
-| platform-adapters/4 | 4 | `hooks.json` wiring | platform-adapters/1, platform-adapters/2, platform-adapters/3 | NOT STARTED |
-| platform-adapters/5 | 5 | `.claude-plugin/plugin.json` manifest | platform-adapters/4 | NOT STARTED |
-| platform-adapters/6 | 6 | `install.sh` (delegates merge to `agent-instructions`) | platform-adapters/5 | NOT STARTED |
-| platform-adapters/7 | 7 | Dogfood the hooks; earn-the-teeth review | platform-adapters/6 | NOT STARTED |
+| platform-adapters/1 | 1 | Inject hook (`UserPromptSubmit`) — emits linked-skill orders | — | DONE |
+| platform-adapters/2 | 2 | Guard hook (`PreToolUse`) — verdict translator over `detect-context.sh` | — | DONE |
+| platform-adapters/3 | 3 | Gate hook (`Stop`) — warn-only smells | — | DONE |
+| platform-adapters/4 | 4 | `hooks.json` wiring | platform-adapters/1, platform-adapters/2, platform-adapters/3 | DONE |
+| platform-adapters/5 | 5 | `.claude-plugin/plugin.json` manifest | platform-adapters/4 | DONE |
+| platform-adapters/6 | 6 | `install.sh` (delegates merge to `agent-instructions`) | platform-adapters/5 | DONE |
+| platform-adapters/7 | 7 | Dogfood the hooks; earn-the-teeth review | platform-adapters/6 | DONE |
 
 ---
 
@@ -242,13 +250,13 @@ package and install; 7 dogfoods and decides which teeth to keep. Whole-feature g
 
 | Unit | Status |
 |---|---|
-| platform-adapters/1 | NOT STARTED |
-| platform-adapters/2 | NOT STARTED |
-| platform-adapters/3 | NOT STARTED |
-| platform-adapters/4 | NOT STARTED |
-| platform-adapters/5 | NOT STARTED |
-| platform-adapters/6 | NOT STARTED |
-| platform-adapters/7 | NOT STARTED |
+| platform-adapters/1 | DONE |
+| platform-adapters/2 | DONE |
+| platform-adapters/3 | DONE |
+| platform-adapters/4 | DONE |
+| platform-adapters/5 | DONE |
+| platform-adapters/6 | DONE |
+| platform-adapters/7 | DONE |
 
 ---
 

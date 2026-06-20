@@ -17,7 +17,8 @@ walk the agent through it.
 |---|---|---|
 | **Vibe flow** | A state-machine-driven coding workflow (strategy / feature / quick) that routes each phase to the right skills, subagents, and output paths. The centerpiece. | `.agents/flow/`, `.agents/skills/vibe-*` |
 | **Spec framework** | A durable `.spec/` planning skill — product/tech/design/plan/lessons docs with templates and validation. Usable on its own, with or without the flow. | `.agents/skills/spec/` |
-| **Agent-file template** | `AGENTS.md` / `CLAUDE.md` adapters + a managed constitution block, so any runtime reads the same neutral core. | `CLAUDE.md`, `AGENTS.md` |
+| **Agent-file template** | `AGENTS.md` template + `merge-agents.sh` (managed `vibe:instructions` block) and opt-in adapter symlinks (`CLAUDE.md`, `WARP.md`), so any runtime reads the same neutral core. | `CLAUDE.md`, `AGENTS.md`, `.agents/skills/vibe-setup/` |
+| **Claude Code plugin** | `.claude-plugin/plugin.json` + three hooks (inject / guard / gate) + `install.sh`, so the flow fires every turn and guards its invariants. | `.claude/`, `install.sh` |
 
 More tools will land over time; this is a personal collection, not a product.
 The three above are the first cut.
@@ -100,12 +101,14 @@ are Anthropic's feature-dev agents, cherry-picked per phase.
 One inject owner delivers one set of "current orders" per state — the skill, the
 write surface, the caveman level, and the next state. Under **D12** those orders
 are **sourced from the state's linked `vibe-*` skill** (the single source of
-truth), not a hand-written string duplicated here; skill-less states (`idle`,
-`amend`) keep a minimal inline fallback in `state-machine.json`. The orders are
+truth), not a hand-written string duplicated here; only `idle` keeps a minimal
+inline fallback in `state-machine.json` (`amend` is a modifier, never a cursor
+state — `set-state.sh` rejects it — so `orders.sh` is never resolved for it; its
+skill carries a reference-only block). The orders are
 static per state (byte-stable so the prompt cache holds; only `<feature>`
-interpolates), and once the flow hooks ship the `UserPromptSubmit` inject delivers
-them every turn. See the phase map above for each state's skill, delegates, and
-write surface.
+interpolates), resolved by `.agents/flow/scripts/orders.sh` and delivered every
+turn by the `UserPromptSubmit` inject hook. See the phase map above for each
+state's skill, delegates, and write surface.
 
 ### Caveman levels
 
@@ -138,8 +141,8 @@ The write-decision policy lives once, in `detect-context.sh`. These three are
 hard blocks; everything else is a warning:
 
 1. `.spec/lessons.md` — writable only during a `*.compound` state.
-2. Root `.spec/{product,tech,design,plan}.md` — only during `strategy.spec` or
-   `feature.compound`.
+2. Root `.spec/{product,tech,design,plan}.md` — only during `strategy.spec`,
+   `feature.compound`, or `setup.apply`.
 3. `.agents/flow/state.json` — only via `set-state.sh`, never by direct edit.
 
 The active-rules block in `CLAUDE.md`/`AGENTS.md` is **generated** from
@@ -159,6 +162,8 @@ not a block.
 │       ├── set-state.sh         # only sanctioned cursor writer
 │       ├── validate-state.sh    # cursor sanity
 │       ├── detect-context.sh    # snapshot + allow/warn/block decision policy
+│       ├── orders.sh            # D12: resolve per-state orders from linked skill
+│       ├── check-skills.sh      # external-skill availability + caveman fallback
 │       └── regen-active-rules.sh# lessons → adapter digest
 └── skills/
     ├── vibe-{setup,strategy,feature,quick,verify,compound,amend}/SKILL.md
@@ -176,25 +181,28 @@ warning, never a hard fail.
 
 ## Status
 
-**Stage 1 complete** — the flow runs end-to-end on guidance alone: state machine
-as data, deterministic scripts, seven `vibe-*` skill shims, adapter wiring, and
-the generated active-rules digest.
+**Stage 1 & 2 complete** — the flow runs end-to-end. State machine as data,
+deterministic scripts, seven `vibe-*` skill shims, D12 orders sourced from each
+linked skill (resolved by `orders.sh`), and the generated active-rules digest.
 
-**Stage 2 in progress** (earn the teeth) — vibe ships as a **Claude Code
-plugin** (`.claude-plugin/plugin.json`) bundling the `/flow` command, the `vibe-*`
-skills, and three **hooks**: a `UserPromptSubmit` inject (delivers the current
-state's linked-skill orders every turn — D12), a `PreToolUse` guard (hard-blocks
-the three invariants via the shared `detect-context.sh` policy), and a `Stop` gate
-(warn-first exit-predicate checks).
+**Stage 2 (earn the teeth) shipped** — vibe ships as a **Claude Code plugin**
+(`.claude-plugin/plugin.json`) bundling the `/flow` command and three **hooks**: a
+`UserPromptSubmit` inject (delivers the current state's linked-skill orders every
+turn — D12), a `PreToolUse` guard (hard-blocks the three invariants via the shared
+`detect-context.sh` policy), and a `Stop` gate (warn-first exit-predicate checks).
 Hooks are thin shells over `.agents/flow/scripts/`, added warn-first and promoted
-to blocking only as dogfooding earns it. See
+to blocking only as dogfooding earns it. `install.sh` provisions the core + adapter
+into any repo. See
 [features/platform-adapters](.spec/features/platform-adapters/product.md).
+
+Tests: `tests/spec/run.sh` (44), `tests/flow/run.sh` (26), `tests/adapters/run.sh`
+(39) — all green; every script is shellcheck-clean.
 
 | Milestone | Status |
 |---|---|
 | M0 Spec cleanup · M1 Flow core · M2 Vibe skills · M3 Verify/compound | done |
-| M4 Adapters + Claude Code plugin | partial (adapter prose + `/flow` done; plugin manifest, hooks, installer pending) |
-| M5 Dogfood | not started |
+| M4 Adapters + Claude Code plugin (template merge, three hooks, plugin manifest, installer) | done |
+| M5 Dogfood (hook/merge/install behaviours, scripted) | done |
 
 ---
 

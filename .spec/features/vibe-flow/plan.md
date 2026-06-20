@@ -4,7 +4,7 @@ feature: vibe-flow
 sibling: tech.md
 parent: ../../plan.md
 covers: flow state machine, vibe-* skills, inject-source restructure
-updated: 2026-06-08
+updated: 2026-06-18
 ---
 
 # Feature: Vibe Flow — Implementation Plan
@@ -45,15 +45,23 @@ Unit IDs are `vibe-flow/n` — assigned once, never renumbered.
 - Per-state `caveman`, `skill`, `reads`/`writes`, `next`, `exit` in machine.
 - D8 lessons retrieval, D9 stable plan IDs, D10/D12 inject model documented.
 
-**Spec ahead of repo (audit 2026-06-08):**
-- D12 documented in tech.md but **not implemented** — all states still carry frozen
-  `inject` strings; no orders blocks in skills. `vibe-flow/1` closes this gap.
+**Delivered (Stage 2, 2026-06-18):**
+- `vibe-flow/1` — D12 implemented. Every skill-owning state carries `inject: null`;
+  orders live in each `vibe-*` skill's `## Orders (D12)` `<!-- vibe:orders:<state> -->`
+  block; `.agents/flow/scripts/orders.sh` resolves the cursor → skill → block and
+  interpolates `<feature>`. Verified by `tests/flow/run.sh`.
+- `vibe-flow/3` — `.agents/flow/scripts/check-skills.sh` warns on unverifiable
+  delegated skills and prints the caveman fallback; never hard-fails.
 
-**Must build / decide:**
-- `vibe-flow/1` — D12 skill-as-inject-source restructure.
-- `vibe-flow/2` — OPEN-2 skill count (verify vs compound, setup scope).
-- `vibe-flow/3` — OPEN-6 graceful degradation for missing delegated skills.
-- `vibe-flow/4` — D7 `feature.deepen` (deferred).
+**Decided:**
+- `vibe-flow/2` — OPEN-2 skill count: **keep all seven** `vibe-*` shims. `vibe-verify`
+  and `vibe-compound` stay separate (distinct write surfaces and caveman levels:
+  verify writes no specs at `full`; compound writes lessons/root specs at `lite`/`ultra`
+  receipts). `vibe-setup` owns flow/skill bootstrap; adapter-file provisioning is
+  delegated to `agent-instructions`. No merge.
+
+**Deferred:**
+- `vibe-flow/4` — D7 `feature.deepen` (spec-only until dogfood proves the need).
 
 ---
 
@@ -61,9 +69,9 @@ Unit IDs are `vibe-flow/n` — assigned once, never renumbered.
 
 | ID | Seq | Summary | Depends | Status |
 |---|---:|---|---|---|
-| vibe-flow/1 | 1 | D12 orders blocks in each `vibe-*` skill + machine `inject: null` on skill states | — | NOT STARTED |
-| vibe-flow/2 | 2 | OPEN-2 skill-count review (document decision) | — | NOT STARTED |
-| vibe-flow/3 | 3 | OPEN-6 skill-availability check in flow scripts | — | NOT STARTED |
+| vibe-flow/1 | 1 | D12 orders blocks in each `vibe-*` skill + machine `inject: null` on skill states + `orders.sh` | — | DONE |
+| vibe-flow/2 | 2 | OPEN-2 skill-count review (document decision) | — | DONE |
+| vibe-flow/3 | 3 | OPEN-6 skill-availability check in flow scripts (`check-skills.sh`) | — | DONE |
 | vibe-flow/4 | — | D7 `feature.deepen` (deferred — spec only until dogfood) | — | DEFERRED |
 
 ---
@@ -129,9 +137,9 @@ the session.
 
 | Unit | Status |
 |---|---|
-| vibe-flow/1 | NOT STARTED |
-| vibe-flow/2 | NOT STARTED |
-| vibe-flow/3 | NOT STARTED |
+| vibe-flow/1 | DONE |
+| vibe-flow/2 | DONE |
+| vibe-flow/3 | DONE |
 | vibe-flow/4 | DEFERRED |
 
 ---

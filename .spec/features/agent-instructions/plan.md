@@ -4,7 +4,7 @@ feature: agent-instructions
 sibling: tech.md
 parent: ../../plan.md
 covers: vibe-setup AGENTS.md template merge + optional adapter symlinks
-updated: 2026-06-08
+updated: 2026-06-18
 ---
 
 # Feature: Agent Instructions — Implementation Plan
@@ -45,12 +45,15 @@ Unit IDs are `agent-instructions/n` — assigned once, never renumbered.
 - `vibe-setup` skill with detect/apply and constitution-block template (legacy).
 - `regen-active-rules.sh` — symlink-safe writes + resolved-path dedupe (landed).
 
-**Must build:**
-- Wrap dogfood `AGENTS.md` in `vibe:instructions` markers (`agent-instructions/1`).
-- Template file + adapter manifest under `vibe-setup/reference/`.
-- Merge script (marker-aware, idempotent).
-- Updated `setup.detect` / `setup.apply` in `vibe-setup` skill.
-- Constitution → instructions marker migration path.
+**Delivered (2026-06-18):**
+- Dogfood `AGENTS.md` wrapped in `vibe:instructions` markers; re-merge is a byte no-op.
+- `vibe-setup/reference/templates/AGENTS.md` + `reference/adapters.json` (CLAUDE.md, WARP.md).
+- `vibe-setup/scripts/merge-agents.sh` — create / replace-in-markers / migrate
+  constitution / wrap-equivalent / append-divergent, plus a `link` mode for adapter
+  symlinks (skip-correct, relink-wrong, refuse-real-file). Idempotent.
+- `vibe-setup` skill `setup.detect` audit surface + `setup.apply` flow rewritten
+  off the constitution path onto `merge-agents.sh` + adapter symlinks + regen.
+- Five merge/symlink scenarios covered by `tests/adapters/run.sh`.
 
 ---
 
@@ -58,12 +61,12 @@ Unit IDs are `agent-instructions/n` — assigned once, never renumbered.
 
 | ID | Seq | Summary | Depends | Status |
 |---|---:|---|---|---|
-| agent-instructions/1 | 1 | Wrap-migrate dogfood `AGENTS.md` (unmarked guide → `vibe:instructions`) | — | NOT STARTED |
-| agent-instructions/2 | 2 | `reference/templates/AGENTS.md` + `reference/adapters.json` | agent-instructions/1 | NOT STARTED |
-| agent-instructions/3 | 3 | `vibe-setup/scripts/merge-agents.sh` (marker merge + migration) | agent-instructions/2 | NOT STARTED |
-| agent-instructions/4 | 4 | `setup.detect` audit surface in `vibe-setup` skill | agent-instructions/2 | NOT STARTED |
-| agent-instructions/5 | 5 | `setup.apply`: merge template, prompt symlinks, conditional regen | agent-instructions/3, agent-instructions/4 | NOT STARTED |
-| agent-instructions/6 | 6 | Dogfood five scenarios | agent-instructions/5 | NOT STARTED |
+| agent-instructions/1 | 1 | Wrap-migrate dogfood `AGENTS.md` (unmarked guide → `vibe:instructions`) | — | DONE |
+| agent-instructions/2 | 2 | `reference/templates/AGENTS.md` + `reference/adapters.json` | agent-instructions/1 | DONE |
+| agent-instructions/3 | 3 | `vibe-setup/scripts/merge-agents.sh` (marker merge + migration) | agent-instructions/2 | DONE |
+| agent-instructions/4 | 4 | `setup.detect` audit surface in `vibe-setup` skill | agent-instructions/2 | DONE |
+| agent-instructions/5 | 5 | `setup.apply`: merge template, prompt symlinks, conditional regen | agent-instructions/3, agent-instructions/4 | DONE |
+| agent-instructions/6 | 6 | Dogfood five scenarios | agent-instructions/5 | DONE |
 
 ---
 
@@ -164,12 +167,12 @@ sandbox creates `AGENTS.md` and optional symlinks; never overwrites user preambl
 
 | Unit | Status |
 |---|---|
-| agent-instructions/1 | NOT STARTED |
-| agent-instructions/2 | NOT STARTED |
-| agent-instructions/3 | NOT STARTED |
-| agent-instructions/4 | NOT STARTED |
-| agent-instructions/5 | NOT STARTED |
-| agent-instructions/6 | NOT STARTED |
+| agent-instructions/1 | DONE |
+| agent-instructions/2 | DONE |
+| agent-instructions/3 | DONE |
+| agent-instructions/4 | DONE |
+| agent-instructions/5 | DONE |
+| agent-instructions/6 | DONE |
 
 ---
 
