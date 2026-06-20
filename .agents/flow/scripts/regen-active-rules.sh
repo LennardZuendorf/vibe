@@ -43,8 +43,10 @@ build_digest() {
     function emit() {
       if (have) printf "%d\t%s\t%s\t%s\n", pinned, (date=="" ? "0000-00-00" : date), title, rule
     }
-    # Skip anything inside HTML comment blocks (e.g. the format template).
-    /<!--/ { in_comment=1 }
+    # Skip HTML comment blocks (e.g. the trailing format template). Only a line
+    # that STARTS with <!-- opens a block, so a Rule/Pattern body may contain an
+    # inline <!-- ... --> token (e.g. a marker example) without being dropped.
+    /^[[:space:]]*<!--/ { in_comment=1 }
     in_comment { if ($0 ~ /-->/) in_comment=0; next }
     /^### / { emit(); have=1; title=substr($0,5); rule=""; date=""; pinned=0; next }
     /^\*\*Rule:\*\*/      { r=$0; sub(/^\*\*Rule:\*\* */,"",r); rule=r; next }
@@ -94,9 +96,12 @@ write_block() {
 $digest
 $END"
 
+  # Temp files live beside $target (the mv destination), not $file (which may be
+  # a symlink pointing elsewhere) — so the final mv is always a same-directory
+  # atomic rename. The RETURN trap is the sole cleanup path.
   local tmp blockfile
-  tmp="$(mktemp "${file}.XXXXXX")"
-  blockfile="$(mktemp "${file}.block.XXXXXX")"
+  tmp="$(mktemp "${target}.XXXXXX")"
+  blockfile="$(mktemp "${target}.block.XXXXXX")"
   trap 'rm -f "$tmp" "$blockfile"' RETURN
   printf '%s\n' "$block" > "$blockfile"
 
@@ -118,7 +123,6 @@ $END"
   fi
 
   mv -f "$tmp" "$target"
-  trap - RETURN
   echo "regen-active-rules: updated $(basename "$target")"
 }
 

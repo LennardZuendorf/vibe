@@ -43,3 +43,16 @@ Serves two states:
 - Evidence is observed behaviour, not assertion. Show the command and its output.
 - No spec writes from verify.
 - Caveman full; security/irreversible actions in normal prose.
+
+## Orders (D12)
+
+Machine-extractable per-state orders, emitted verbatim by the inject hook via
+`.agents/flow/scripts/orders.sh`. Keep each block byte-stable.
+
+<!-- vibe:orders:feature.verify -->
+skill=vibe-verify · delegate verification-before-completion + requesting-code-review + code-reviewer (systematic-debugging on fail) · gather EVIDENCE per plan unit ID · no spec writes · caveman=full · HUMAN GATE before ship · next: feature.compound (pass) | feature.impl (targeted fix) | feature.plan (major drift)
+<!-- /vibe:orders -->
+
+<!-- vibe:orders:quick.verify -->
+skill=vibe-verify · delegate verification-before-completion + code-reviewer · gather EVIDENCE the fix works and breaks nothing · no spec writes · caveman=full · next: idle
+<!-- /vibe:orders -->

@@ -65,3 +65,22 @@ Everything between is autonomous.
 - If a `quick` task escalated here, start at `feature.design`.
 - Caveman compresses output, never reasoning. Security/irreversible actions stay
   in normal prose at every level.
+
+## Orders (D12)
+
+Machine-extractable per-state orders, emitted verbatim by the inject hook via
+`.agents/flow/scripts/orders.sh`. `<feature>` is the only interpolation; keep each
+block byte-stable. (`feature.verify` is owned by `vibe-verify`,
+`feature.compound` by `vibe-compound`.)
+
+<!-- vibe:orders:feature.design -->
+skill=vibe-feature · spec feature.md flow steps 1–4 (locate→interview WHAT→rigor gate→sketch HOW) · READ lessons.md + root product/tech · WRITE .spec/features/<feature>/{product,tech,design?}.md ONLY · no source · caveman=lite · next: feature.plan
+<!-- /vibe:orders -->
+
+<!-- vibe:orders:feature.plan -->
+skill=vibe-feature · spec feature.md step 5 (plan units) · WRITE .spec/features/<feature>/plan.md · STABLE unit IDs (<feature>/n) cite R-IDs · verification per unit · no source · caveman=lite · HUMAN GATE before impl · next: feature.impl
+<!-- /vibe:orders -->
+
+<!-- vibe:orders:feature.impl -->
+skill=vibe-feature · delegate executing-plans + TDD · WRITE src/**, tests/** · do NOT edit .spec/** · cite plan unit IDs (<feature>/n) in tests/commits · caveman=full · next: feature.verify
+<!-- /vibe:orders -->

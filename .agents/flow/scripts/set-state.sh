@@ -28,7 +28,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FLOW_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 MACHINE="$FLOW_DIR/state-machine.json"
 STATE="$FLOW_DIR/state.json"
-EXAMPLE="$FLOW_DIR/state.example.json"
 
 err() { echo "set-state: $1" >&2; }
 

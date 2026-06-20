@@ -54,3 +54,17 @@ for receipts. Serves `feature.compound` and `strategy.compound`; both end at
   hand-edit inside its markers.
 - Archive is cold and transient; never read it for active work. CODE IS TRUTH.
 - Caveman lite body, ultra receipts. Security/irreversible actions normal prose.
+
+## Orders (D12)
+
+Machine-extractable per-state orders, emitted verbatim by the inject hook via
+`.agents/flow/scripts/orders.sh`. `<feature>` is the only interpolation; keep each
+block byte-stable.
+
+<!-- vibe:orders:strategy.compound -->
+skill=vibe-compound · WRITE .spec/lessons.md (tagged entry) · regen-active-rules.sh refreshes CLAUDE/AGENTS active-rules block · receipts caveman=ultra, body=lite · next: idle
+<!-- /vibe:orders -->
+
+<!-- vibe:orders:feature.compound -->
+skill=vibe-compound · delegate finishing-a-development-branch · WRITE tagged .spec/lessons.md, promote cross-cutting decisions to root specs, archive .spec/features/<feature> -> .spec/archive/<feature> · regen-active-rules.sh refreshes digest · prompt to delete archive after validation · receipts caveman=ultra, body=lite · next: idle
+<!-- /vibe:orders -->

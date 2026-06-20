@@ -43,3 +43,13 @@ same state. Caveman **lite**.
 - Never widen the write surface beyond the current state's rules.
 - Preserve stable plan unit IDs when amending a plan.
 - Caveman lite; security/irreversible actions normal prose.
+
+## Orders (D12)
+
+`amend` is a modifier: the cursor never becomes `amend` (`set-state.sh` rejects
+it), so the inject hook never resolves orders for it — it always uses the **stored
+cursor state**. This block is reference-only for parity with the other shims.
+
+<!-- vibe:orders:amend -->
+MODIFIER=amend · edit scope for the CURRENT state, then RETURN to it · carry the target state's write rules (do NOT widen them) · caveman=lite · next: <state you came from>
+<!-- /vibe:orders -->

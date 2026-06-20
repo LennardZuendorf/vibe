@@ -42,3 +42,17 @@ States: `quick.triage → quick.fix → quick.verify → idle`.
 - Transitions agent-suggested; confirm before `set-state.sh`.
 - Caveman compresses output, not reasoning. Security/irreversible actions in
   normal prose.
+
+## Orders (D12)
+
+Machine-extractable per-state orders, emitted verbatim by the inject hook via
+`.agents/flow/scripts/orders.sh`. Keep each block byte-stable. (`quick.verify` is
+owned by `vibe-verify`.)
+
+<!-- vibe:orders:quick.triage -->
+skill=vibe-quick · READ .spec/lessons.md first · delegate superpowers:systematic-debugging · diagnose, do NOT fix yet · caveman=full (NOT ultra: triage must keep edge cases) · if scope balloons, escalate to feature.design · next: quick.fix
+<!-- /vibe:orders -->
+
+<!-- vibe:orders:quick.fix -->
+skill=vibe-quick · delegate TDD · WRITE src/** (+ optional .spec/quick/<slug>.md note) · no root spec writes · caveman=full · next: quick.verify
+<!-- /vibe:orders -->

@@ -1,5 +1,5 @@
 {
-  "$comment": "vibe flow state machine. Static source of truth for the flow. States are compound <flow>.<phase> keys. caveman and inject are FROZEN per state (byte-stable across turns; only <feature> interpolates) so the per-turn inject is prompt-cache safe. Edit this file to reshape the flow; do not template turn-varying values into any inject. set-state.sh is the only sanctioned writer of state.json.",
+  "$comment": "vibe flow state machine. Static source of truth for the flow. States are compound <flow>.<phase> keys. caveman is FROZEN per state (byte-stable across turns). Under D12 the per-turn orders are NOT stored here: skill-owning states carry inject:null and the orders live in the linked vibe-* skill's `## Orders (D12)` section (a <!-- vibe:orders:<state> --> block), resolved by .agents/flow/scripts/orders.sh. Only `idle` keeps an inline inject (skill-less fallback). The orders block is byte-stable; only <feature> interpolates, so the per-turn inject stays prompt-cache safe. set-state.sh is the only sanctioned writer of state.json.",
   "version": "1",
   "initial": "idle",
   "flows": ["idle", "setup", "strategy", "feature", "quick"],
@@ -32,7 +32,7 @@
       "caveman": "lite",
       "reads": ["repo tree", "CLAUDE.md", "AGENTS.md", ".agents/**", ".spec/**"],
       "writes": [],
-      "inject": "skill=vibe-setup · READ-ONLY audit of repo + harness · report what is missing/present · do NOT write yet · caveman=lite · next: setup.apply",
+      "inject": null,
       "next": ["setup.apply", "idle"],
       "exit": "audit complete: missing/present harness pieces listed, plugin preflight run"
     },
@@ -42,9 +42,9 @@
       "caveman": "lite",
       "reads": [".agents/flow/state-machine.json"],
       "writes": [".agents/**", "CLAUDE.md#active-rules", "AGENTS.md#active-rules", ".spec/lessons.md", ".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md"],
-      "inject": "skill=vibe-setup · WRITE/MERGE bootstrap: constitution block, .agents/flow scaffold, baseline .spec/** · NEVER clobber existing content (diff + ask on divergence) · caveman=lite · next: idle",
+      "inject": null,
       "next": ["idle"],
-      "exit": "constitution block present, .agents/flow scaffolded, lessons.md exists, never clobbered user content"
+      "exit": "instructions block present, .agents/flow scaffolded, lessons.md exists, never clobbered user content"
     },
 
     "strategy.brainstorm": {
@@ -53,7 +53,7 @@
       "caveman": "lite",
       "reads": [".spec/lessons.md"],
       "writes": [],
-      "inject": "skill=vibe-strategy · delegate superpowers:brainstorming · READ .spec/lessons.md first · scratch only, no source, no spec writes yet · caveman=lite · next: strategy.spec",
+      "inject": null,
       "next": ["strategy.spec"],
       "exit": "direction is clear enough to write into root specs"
     },
@@ -63,7 +63,7 @@
       "caveman": "lite",
       "reads": [".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md"],
       "writes": [".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md"],
-      "inject": "skill=vibe-strategy · delegate spec · WRITE root .spec/{product,tech,design,plan}.md ONLY · no source, no lessons.md · validate after · caveman=lite · next: strategy.compound (if a durable lesson surfaced) | idle",
+      "inject": null,
       "next": ["strategy.compound", "idle"],
       "exit": "root specs updated and validated; skip to idle unless a durable lesson surfaced"
     },
@@ -73,7 +73,7 @@
       "caveman": "lite",
       "reads": [".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md", ".spec/lessons.md"],
       "writes": [".spec/lessons.md", "CLAUDE.md#active-rules", "AGENTS.md#active-rules"],
-      "inject": "skill=vibe-compound · WRITE .spec/lessons.md (tagged entry) · regen-active-rules.sh refreshes CLAUDE/AGENTS active-rules block · receipts caveman=ultra, body=lite · next: idle",
+      "inject": null,
       "next": ["idle"],
       "exit": "lesson recorded with Tags; active-rules digest regenerated"
     },
@@ -84,7 +84,7 @@
       "caveman": "lite",
       "reads": [".spec/lessons.md", ".spec/product.md", ".spec/tech.md"],
       "writes": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/design.md"],
-      "inject": "skill=vibe-feature · spec feature.md flow steps 1–4 (locate→interview WHAT→rigor gate→sketch HOW) · READ lessons.md · WRITE .spec/features/<feature>/{product,tech,design?}.md ONLY · no source · caveman=lite · next: feature.plan",
+      "inject": null,
       "next": ["feature.plan"],
       "exit": "feature product.md + tech.md written; design.md when full rigor; approach chosen"
     },
@@ -94,7 +94,7 @@
       "caveman": "lite",
       "reads": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md"],
       "writes": [".spec/features/<feature>/plan.md"],
-      "inject": "skill=vibe-feature · spec feature.md step 5 (plan units) · WRITE .spec/features/<feature>/plan.md · STABLE unit IDs cite R-IDs · verification per unit · no source · caveman=lite · HUMAN GATE before impl · next: feature.impl",
+      "inject": null,
       "next": ["feature.impl"],
       "exit": "plan.md has stable unit IDs; human approved moving to impl"
     },
@@ -104,7 +104,7 @@
       "caveman": "full",
       "reads": [".spec/features/<feature>/plan.md"],
       "writes": ["src/**", "tests/**"],
-      "inject": "skill=vibe-feature · delegate executing-plans + TDD · WRITE src/**, tests/** · do NOT edit .spec/** · cite plan unit IDs (U1...) in tests/commits · caveman=full · next: feature.verify",
+      "inject": null,
       "next": ["feature.verify"],
       "exit": "plan units implemented with tests that cite their unit IDs and pass"
     },
@@ -114,7 +114,7 @@
       "caveman": "full",
       "reads": [".spec/features/<feature>/plan.md", "src/**", "tests/**"],
       "writes": ["evidence: test/build output, review notes"],
-      "inject": "skill=vibe-verify · delegate verification-before-completion + requesting-code-review + code-reviewer (systematic-debugging on fail) · gather EVIDENCE per plan unit ID · no spec writes · caveman=full · HUMAN GATE before ship · next: feature.compound (pass) | feature.impl (targeted fix) | feature.plan (major drift)",
+      "inject": null,
       "next": ["feature.compound", "feature.impl", "feature.plan"],
       "exit": "evidence shows plan units satisfied; review clean; human approved shipping"
     },
@@ -124,7 +124,7 @@
       "caveman": "lite",
       "reads": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/plan.md", ".spec/lessons.md"],
       "writes": [".spec/lessons.md", ".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md", "CLAUDE.md#active-rules", "AGENTS.md#active-rules", ".spec/archive/<feature>/**"],
-      "inject": "skill=vibe-compound · delegate finishing-a-development-branch · WRITE tagged .spec/lessons.md, promote cross-cutting decisions to root specs, archive .spec/features/<feature> -> .spec/archive/<feature> · regen-active-rules.sh refreshes digest · receipts caveman=ultra, body=lite · next: idle",
+      "inject": null,
       "next": ["idle"],
       "exit": "lesson recorded; cross-cutting decisions promoted; feature archived; digest regenerated"
     },
@@ -135,7 +135,7 @@
       "caveman": "full",
       "reads": [".spec/lessons.md"],
       "writes": [],
-      "inject": "skill=vibe-quick · READ .spec/lessons.md first · delegate superpowers:systematic-debugging · diagnose, do NOT fix yet · caveman=full (NOT ultra: triage must keep edge cases) · if scope balloons, escalate to feature.design · next: quick.fix",
+      "inject": null,
       "next": ["quick.fix", "feature.design"],
       "exit": "root cause identified; fix is small and bounded (else escalate to feature)"
     },
@@ -145,7 +145,7 @@
       "caveman": "full",
       "reads": [".spec/lessons.md"],
       "writes": ["src/**", ".spec/quick/<slug>.md"],
-      "inject": "skill=vibe-quick · delegate TDD · WRITE src/** (+ optional .spec/quick/<slug>.md note) · no root spec writes · caveman=full · next: quick.verify",
+      "inject": null,
       "next": ["quick.verify"],
       "exit": "fix implemented with a test that reproduces and resolves the issue"
     },
@@ -155,7 +155,7 @@
       "caveman": "full",
       "reads": ["src/**", "tests/**"],
       "writes": ["evidence: test/build output, review notes"],
-      "inject": "skill=vibe-verify · delegate verification-before-completion + code-reviewer · gather EVIDENCE the fix works and breaks nothing · no spec writes · caveman=full · next: idle",
+      "inject": null,
       "next": ["idle"],
       "exit": "evidence shows fix works and regressions clear"
     },
@@ -166,7 +166,7 @@
       "caveman": "lite",
       "reads": ["the target state's reads"],
       "writes": ["targeted .spec edits only (target state's write surface)"],
-      "inject": "MODIFIER=amend · edit scope for the CURRENT state, then RETURN to it · carry the target state's write rules (do NOT widen them) · caveman=lite · next: <state you came from>",
+      "inject": null,
       "next": [],
       "exit": "scope edit applied; returned to the originating state"
     }

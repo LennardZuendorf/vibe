@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# tests/flow/run.sh — behaviour tests for the vibe-flow core: the state machine,
+# set-state.sh / validate-state.sh, D12 orders (orders.sh + per-skill blocks),
+# and graceful degradation (check-skills.sh). Pure bash; no bats.
+#
+# Each test cites its plan unit ID (vibe-flow/n). Exit 0 = all pass.
+#
+# These tests never depend on a live cursor: they pass explicit state args or
+# seed a throwaway state.json and restore the original.
+
+set -uo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+FLOW="$REPO_ROOT/.agents/flow"
+SCRIPTS="$FLOW/scripts"
+MACHINE="$FLOW/state-machine.json"
+SKILLS="$REPO_ROOT/.agents/skills"
+STATE="$FLOW/state.json"
+
+PASS=0
+FAIL=0
+pass() { echo "  PASS [$1] $2"; PASS=$((PASS + 1)); }
+fail() { echo "  FAIL [$1] $2"; FAIL=$((FAIL + 1)); }
+assert_contains()     { if [[ "$3" == *"$4"* ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        expected to contain: $4"; echo "        got: $3"; fi; }
+assert_not_contains() { if [[ "$3" != *"$4"* ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        expected NOT to contain: $4"; fi; }
+assert_eq()           { if [[ "$3" == "$4" ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        expected: $4"; echo "        got:      $3"; fi; }
+
+# Save/restore any real cursor so tests are side-effect free.
+BACKUP=""
+if [[ -f "$STATE" ]]; then BACKUP="$(mktemp)"; cp "$STATE" "$BACKUP"; fi
+restore_state() {
+  if [[ -n "$BACKUP" ]]; then cp "$BACKUP" "$STATE"; rm -f "$BACKUP"; else rm -f "$STATE"; fi
+}
+trap restore_state EXIT
+
+echo "=== vibe-flow/1 — D12 orders source ==="
+
+# orders.sh idle fallback (no cursor).
+rm -f "$STATE"
+out="$(bash "$SCRIPTS/orders.sh")"
+assert_contains "vibe-flow/1" "orders.sh idle prints machine inline fallback" "$out" "state=idle"
+
+# Every skill-owning state (skill != null, not idle) has inject:null in the
+# machine AND resolves to a non-empty orders block in its linked skill.
+states="$(jq -r '.states | to_entries[] | select(.key != "idle") | select(.value.skill != null) | .key' "$MACHINE")"
+all_null=1; all_block=1
+while IFS= read -r s; do
+  [[ -z "$s" ]] && continue
+  inj="$(jq -r --arg s "$s" '.states[$s].inject' "$MACHINE")"
+  [[ "$inj" == "null" ]] || { all_null=0; echo "        $s inject not null: $inj"; }
+  skill="$(jq -r --arg s "$s" '.states[$s].skill' "$MACHINE")"
+  block="$(bash "$SCRIPTS/orders.sh" "$s")"
+  if [[ -z "$block" ]] || [[ "$block" == *"state=unknown"* ]]; then
+    all_block=0; echo "        $s resolved no orders block (skill=$skill)"
+  fi
+  grep -qF "<!-- vibe:orders:$s -->" "$SKILLS/$skill/SKILL.md" || { all_block=0; echo "        $skill missing block for $s"; }
+done <<< "$states"
+assert_eq "vibe-flow/1" "all skill-owning states carry inject:null" "$all_null" "1"
+assert_eq "vibe-flow/1" "all skill-owning states resolve a non-empty orders block from the linked skill" "$all_block" "1"
+
+# idle keeps an inline inject in the machine (skill-less fallback).
+idle_inj="$(jq -r '.states.idle.inject' "$MACHINE")"
+assert_not_contains "vibe-flow/1" "idle retains inline inject (not null)" "$idle_inj" "null"
+
+# <feature> interpolation is stable and substitutes from the cursor.
+out="$(bash "$SCRIPTS/orders.sh" feature.impl)"
+assert_contains "vibe-flow/1" "orders without cursor feature keep <feature> placeholder" "$out" "<feature>/n"
+cp "$FLOW/state.example.json" "$STATE"
+bash "$SCRIPTS/set-state.sh" feature.impl widget >/dev/null
+out="$(bash "$SCRIPTS/orders.sh")"
+assert_contains "vibe-flow/1" "orders interpolate cursor feature" "$out" "widget/n"
+assert_not_contains "vibe-flow/1" "no leftover placeholder after interpolation" "$out" "<feature>/n"
+
+# orders.sh degrades when jq is absent (still exits 0, prints fallback). Build a
+# throwaway PATH carrying only the coreutils orders.sh needs (dirname) but NOT jq,
+# so the no-jq path is exercised on any platform (jq is /usr/bin/jq on Linux).
+BASH_BIN="$(command -v bash)"
+nojq="$(mktemp -d)"
+ln -sf "$(command -v dirname)" "$nojq/dirname"
+out="$(PATH="$nojq" "$BASH_BIN" "$SCRIPTS/orders.sh" 2>/dev/null; echo "rc=$?")"
+rm -rf "$nojq"
+assert_contains "vibe-flow/1" "orders.sh exits 0 even without jq" "$out" "rc=0"
+assert_not_contains "vibe-flow/1" "orders.sh without jq does not crash blank" "$out" "rc=127"
+assert_contains "vibe-flow/1" "orders.sh without jq still prints a fallback" "$out" "state="
+
+echo ""
+echo "=== vibe-flow/3 — graceful skill degradation ==="
+out="$(bash "$SCRIPTS/check-skills.sh" feature.design 2>&1; echo "rc=$?")"
+assert_contains "vibe-flow/3" "check-skills warns on assumed-installed superpowers" "$out" "superpowers:brainstorming"
+assert_contains "vibe-flow/3" "check-skills never hard-fails (exit 0)" "$out" "rc=0"
+out="$(bash "$SCRIPTS/check-skills.sh" caveman ultra)"
+assert_contains "vibe-flow/3" "caveman fallback prints level definition" "$out" "caveman[ultra]"
+out="$(bash "$SCRIPTS/check-skills.sh" setup.detect)"
+assert_contains "vibe-flow/3" "check-skills confirms bundled spec when delegated" "$(bash "$SCRIPTS/check-skills.sh" strategy.spec 2>&1)" "spec"
+
+echo ""
+echo "=== set-state.sh — writer, not gate ==="
+cp "$FLOW/state.example.json" "$STATE"
+out="$(bash "$SCRIPTS/set-state.sh" amend 2>&1; echo "rc=$?")"
+assert_contains "vibe-flow/core" "set-state.sh rejects amend (modifier)" "$out" "modifier"
+assert_not_contains "vibe-flow/core" "set-state.sh does not accept amend (rc!=0)" "$out" "rc=0"
+out="$(bash "$SCRIPTS/set-state.sh" bogus.state 2>&1; echo "rc=$?")"
+assert_contains "vibe-flow/core" "set-state.sh rejects unknown state" "$out" "not a known state"
+bash "$SCRIPTS/set-state.sh" feature.design alpha >/dev/null
+bash "$SCRIPTS/set-state.sh" feature.plan >/dev/null
+feat="$(jq -r '.feature' "$STATE")"
+assert_eq "vibe-flow/core" "set-state.sh preserves feature across transitions" "$feat" "alpha"
+bash "$SCRIPTS/set-state.sh" idle >/dev/null
+feat="$(jq -r '.feature' "$STATE")"
+assert_eq "vibe-flow/core" "idle clears the feature pointer" "$feat" "null"
+
+echo ""
+echo "=== validate-state.sh — cursor sanity ==="
+cp "$FLOW/state.example.json" "$STATE"
+out="$(bash "$SCRIPTS/validate-state.sh" 2>&1; echo "rc=$?")"
+assert_contains "vibe-flow/core" "validate-state OK on a fresh cursor" "$out" "rc=0"
+printf '{not json' > "$STATE"
+out="$(bash "$SCRIPTS/validate-state.sh" 2>&1; echo "rc=$?")"
+assert_contains "vibe-flow/core" "validate-state fails on corrupt JSON" "$out" "rc=1"
+
+echo ""
+echo "=== state-machine.json — internal consistency ==="
+# every `next` target is a known state
+bad_next="$(jq -r '
+  .states as $s
+  | [ $s | to_entries[] | .value.next[]? ] | unique
+  | map(select(. as $n | ($s | has($n)) | not)) | join(",")
+' "$MACHINE")"
+assert_eq "vibe-flow/core" "every next target is a known state" "$bad_next" ""
+# every non-null skill links to an existing skill dir
+missing_skill=0
+while IFS= read -r sk; do
+  [[ -z "$sk" ]] && continue
+  [[ -f "$SKILLS/$sk/SKILL.md" ]] || { missing_skill=1; echo "        missing skill dir: $sk"; }
+done <<< "$(jq -r '.states[].skill | select(. != null)' "$MACHINE" | sort -u)"
+assert_eq "vibe-flow/core" "every linked skill has a SKILL.md" "$missing_skill" "0"
+
+echo ""
+echo "=== regen-active-rules.sh — digest from lessons ==="
+d="$(mktemp -d)"
+mkdir -p "$d/.spec" "$d/.agents/flow/scripts"
+cp "$SCRIPTS/regen-active-rules.sh" "$d/.agents/flow/scripts/"
+cat > "$d/.spec/lessons.md" <<'EOF'
+# Lessons
+
+### Inline comment lesson
+**Pattern:** mentions a marker token.
+**Rule:** keep the `<!-- vibe:orders:x -->` token intact in the body.
+**Tags:** t
+**Date:** 2026-06-18
+
+<!-- Format for each lesson:
+### Should be ignored
+**Rule:** this template line must not become a digest entry
+-->
+EOF
+printf '# T\n<!-- vibe:active-rules:start -->\nold\n<!-- vibe:active-rules:end -->\n' > "$d/AGENTS.md"
+bash "$d/.agents/flow/scripts/regen-active-rules.sh" >/dev/null 2>&1
+block="$(awk '/active-rules:start/,/active-rules:end/' "$d/AGENTS.md")"
+assert_contains "vibe-flow/core" "regen captures rule body even with an inline <!-- token" "$block" "keep the"
+assert_not_contains "vibe-flow/core" "regen excludes the format-template comment lesson" "$block" "must not become a digest entry"
+# regression: regen leaves no stray temp files beside the target — neither the
+# .block.* blockfile nor the .XXXXXX mktemp tmp (both are named AGENTS.md.*).
+strays="$(find "$d" -name 'AGENTS.md.*' | wc -l | tr -d ' ')"
+assert_eq "vibe-flow/core" "regen leaves no stray temp files beside the target" "$strays" "0"
+rm -rf "$d"
+
+echo ""
+echo "=== results: $PASS passed, $FAIL failed ==="
+[[ $FAIL -eq 0 ]]

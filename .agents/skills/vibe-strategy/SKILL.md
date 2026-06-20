@@ -47,3 +47,16 @@ States: `strategy.brainstorm → strategy.spec → (strategy.compound | idle)`.
   confirm before calling `set-state.sh`.
 - Keep receipts short: state, files written, validation result, next transition.
 - Security warnings and irreversible actions stay in normal prose.
+
+## Orders (D12)
+
+Machine-extractable per-state orders, emitted verbatim by the inject hook via
+`.agents/flow/scripts/orders.sh`. Keep each block byte-stable.
+
+<!-- vibe:orders:strategy.brainstorm -->
+skill=vibe-strategy · delegate superpowers:brainstorming · READ .spec/lessons.md first · scratch only, no source, no spec writes yet · caveman=lite · next: strategy.spec
+<!-- /vibe:orders -->
+
+<!-- vibe:orders:strategy.spec -->
+skill=vibe-strategy · delegate spec · WRITE root .spec/{product,tech,design,plan}.md ONLY · no source, no lessons.md · validate after · caveman=lite · next: strategy.compound (if a durable lesson surfaced) | idle
+<!-- /vibe:orders -->
