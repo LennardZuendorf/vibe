@@ -39,6 +39,8 @@ Step 4: plan.md        — feature table, Feature Sequence (binary gates), curre
 
 **Order matters:** root entrypoints constrain everything; then feature folders; branch docs last and only when the cross-cutting concern is **real**, not anticipated.
 
+> **Superpower tip (Step 1):** Before writing root specs, use `superpowers:brainstorming` to shape the product direction in dialogue with the user. Inject root `product.md` and `tech.md` templates as constraint context so the output lands in the right format. Tell the user: *"I can run a `superpowers:brainstorming` session to draw out the product story and architecture before we commit anything to `.spec/` — want to do that first?"*
+
 Templates: [product](reference/templates/product.md), [tech](reference/templates/tech.md), [plan](reference/templates/plan.md), [feature-plan](reference/templates/feature-plan.md).
 
 ## Branch doc vs feature folder
@@ -107,6 +109,8 @@ Guide: [reference/plan.md](reference/plan.md).
 ## Promotion from feature layer (COMPOUND)
 
 During **COMPOUND**, cross-cutting decisions from `features/<name>/tech.md` merge into root `tech.md` (or a branch `tech-{topic}.md`). Feature-specific detail does **not** merge. Then move `features/<name>/` to `archive/` as a transient safety net; the agent prompts to delete it after validation, before the branch merges. CODE IS TRUTH — archive is never read for active work. See [SKILL.md](SKILL.md) § Wrapped-up features.
+
+> **Superpower tip (COMPOUND):** Delegate the synthesis step to `superpowers:finishing-a-development-branch`. It is purpose-built for wrap-up: identifying what crosses the merge boundary, summarising what was delivered, and drafting a durable lesson. Inject the `§ Lessons` format (from this file) as constraint so the lesson entry comes out correctly tagged. Tell the user: *"I'll hand the compound step to `superpowers:finishing-a-development-branch` — it handles this synthesis better than working through it manually."*
 
 **How to mark promotable blocks** in feature `tech.md`: wrap sections in `<!-- merge -->` ... `<!-- /merge -->`, or use frontmatter `merge: true` where your project's merge tooling expects it (see root `tech.md` for `merge-feature.sh` behavior if documented in your repo).
 

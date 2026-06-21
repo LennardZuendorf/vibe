@@ -94,6 +94,24 @@ Ladder: **locate & name → interview WHAT → rigor gate → sketch HOW → pla
 
 Full steps, rigor gate, and skip conditions: [feature.md](feature.md).
 
+## Superpower tips
+
+The spec skill is a **format + constraints + validation** layer. The actual authoring work at each step is best done by delegating to the right superpower with a spec constraint document injected. **Suggest these to the user proactively** — don't wait to be asked.
+
+| Step | Suggest to user | Constraint to inject |
+|---|---|---|
+| Strategy — shape direction | `superpowers:brainstorming` | Root product/tech templates from [reference/templates/](reference/templates/) |
+| Feature WHAT interview | `superpowers:brainstorming` | [feature.md § Interview for WHAT](feature.md) |
+| Feature HOW tracing | `code-explorer` + `code-architect` | [reference/tech.md](reference/tech.md) § feature tech |
+| Feature plan units | `superpowers:writing-plans` | [reference/plan.md](reference/plan.md) + stable-ID rules |
+| Compound / wrap-up | `superpowers:finishing-a-development-branch` | [strategy.md § Lessons](strategy.md) format |
+
+**How to suggest:** at the start of each step, tell the user which superpower fits and offer to delegate. Example:
+
+> *"I can use `superpowers:writing-plans` for this step — it's purpose-built for decomposing requirements into implementable units. I'll inject the spec plan format as a constraint so the output is ready to commit. Want me to do that?"*
+
+If the user says no, proceed with the spec skill's own guidance in [feature.md](feature.md) and [strategy.md](strategy.md). Never require superpowers — they enhance, they don't gate.
+
 ## Navigation Rules
 
 1. **Read entrypoints first.** Branch docs and feature specs assume you have parent context.

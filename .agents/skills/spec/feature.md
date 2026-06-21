@@ -20,6 +20,8 @@ Dialogue — not a form fill. Cover:
 
 Reject hand-wavy requirements. If the user cannot state observable behaviour, keep interviewing.
 
+> **Superpower tip:** Delegate the dialogue to `superpowers:brainstorming`. Before delegating, inject this section (`feature.md § Interview for WHAT`) as the constraint context so the dialogue stays on-format — RFC-2119 keywords, GWT scenarios, Scope table boundaries. Tell the user: *"I can use `superpowers:brainstorming` to run this as an interactive dialogue that enforces spec format as we go — want me to?"*
+
 Write to `product.md`. Use [reference/product.md](reference/product.md) § feature product. Omit empty sections.
 
 ### 3. Rigor gate
@@ -38,7 +40,7 @@ If unsure, default lite. Do not create `design.md` "just in case."
 
 Trace the codebase (existing files, contracts, KTDs). Write **only sections with content** to `tech.md` — paths, interfaces, file layout, risks. No speculative boilerplate.
 
-Delegate tracing to `code-explorer`; sketch approaches with `code-architect` when needed. Use [reference/tech.md](reference/tech.md) § feature tech.
+> **Superpower tip:** Delegate tracing to `code-explorer` and approach sketching to `code-architect`. Inject [reference/tech.md](reference/tech.md) § feature tech as the constraint so they know which sections to populate and where merge markers go. Tell the user: *"I'll use `code-explorer` to trace the codebase and `code-architect` to sketch the approach — this gives you a grounded HOW section rather than speculation."*
 
 Optional: write `design.md` when step 3 chose full. Template: [reference/templates/feature-design.md](reference/templates/feature-design.md). Guide: [reference/design.md](reference/design.md); token format: [SKILL.md](SKILL.md) § Design.md Compatibility.
 
@@ -50,6 +52,8 @@ Write `plan.md` with stable `feature/n` unit IDs (`### <name>/1`, `### <name>/2`
 - Each unit names test scenarios and verification evidence (command, test path, behaviour check)
 - Same-feature dependencies only — cross-feature order is a whole-feature gate in root `.spec/plan.md` Feature Sequence
 - Add the feature to the root `.spec/plan.md` Feature Sequence
+
+> **Superpower tip:** Delegate plan decomposition to `superpowers:writing-plans`. Before delegating, inject [reference/plan.md](reference/plan.md) plus the stable-ID rules (`<name>/n`, never renumber, same-feature deps only) as constraint context, along with the feature's `product.md` requirements. Tell the user: *"I can hand this to `superpowers:writing-plans` — it's purpose-built for decomposing requirements into implementable units. Want me to do that?"*
 
 **Human gate:** confirm units before implementation.
 
@@ -110,6 +114,9 @@ Created  →  Consumed  →  Merged  →  Archived  →  Deleted (before merge)
 3. **Consumed during IMPL.** Read feature specs; cite unit IDs in commits and tests; amend with targeted fixes if reality diverges.
 4. **Verified against plan.** Evidence checked per unit verification table — not agent assertions alone.
 5. **Merged during COMPOUND.** Cross-cutting blocks from `features/<name>/tech.md` promote into root `tech.md` (or branch docs). Feature-only detail does not promote.
+
+   > **Superpower tip:** Use `superpowers:finishing-a-development-branch` to help identify what promotes vs what stays and to draft the lesson entry. Inject `strategy.md § Lessons` format as constraint context so the lesson comes out in the right shape. Tell the user: *"I'll use `superpowers:finishing-a-development-branch` for the wrap-up — it's designed for this synthesis step and will help draft a solid lesson entry."*
+
 6. **Archived then deleted.** Move `.spec/features/<name>/` to `archive/<name>/` at wrapup as a transient safety net. After validation passes, the agent prompts the user to delete the archive — the folder is gone **before the branch merges**. CODE IS TRUTH; archive is never read for active work. See § Archive and delete.
 
 No `/code:feature` workflow? Same lifecycle: create folder when scoping, remove when done.
