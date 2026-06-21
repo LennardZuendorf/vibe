@@ -104,7 +104,7 @@ The spec skill is a **format + constraints + validation** layer. The actual auth
 | Feature WHAT interview | `superpowers:brainstorming` | [feature.md § Interview for WHAT](feature.md) |
 | Feature HOW tracing | `code-explorer` + `code-architect` | [reference/tech.md](reference/tech.md) § feature tech |
 | Feature plan units | `superpowers:writing-plans` | [reference/plan.md](reference/plan.md) + stable-ID rules |
-| Compound / wrap-up | `superpowers:finishing-a-development-branch` | [strategy.md § Lessons](strategy.md) format |
+| Compound / wrap-up | Follow [SKILL.md § Wrapped-up features](SKILL.md) — spec skill owns this sequence | — |
 
 **How to suggest:** at the start of each step, tell the user which superpower fits and offer to delegate. Example:
 

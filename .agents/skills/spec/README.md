@@ -116,7 +116,7 @@ constraint document the agent injects before delegating.
 | Validate | `/spec validate` or `/spec audit` | — (deterministic script) | `validate.sh` |
 | Quality assessment | `/spec audit` | `score.sh` JSON output as context | `superpowers:verification-before-completion` |
 | Compound promotion | `/spec promote <name>` | — (deterministic script) | `promote.sh` |
-| Lesson entry | during `/spec promote` | `strategy.md § Lessons` format | `superpowers:finishing-a-development-branch` |
+| Compound wrap-up | [SKILL.md § Wrapped-up features](SKILL.md) — spec skill owns this sequence | spec skill (promote.sh + lesson format + validate) |
 
 **Why this separation matters:** the spec skill's constraint documents
 (templates, reference guides, format rules) improve independently of the

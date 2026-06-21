@@ -115,7 +115,7 @@ Created  →  Consumed  →  Merged  →  Archived  →  Deleted (before merge)
 4. **Verified against plan.** Evidence checked per unit verification table — not agent assertions alone.
 5. **Merged during COMPOUND.** Cross-cutting blocks from `features/<name>/tech.md` promote into root `tech.md` (or branch docs). Feature-only detail does not promote.
 
-   > **Superpower tip:** Use `superpowers:finishing-a-development-branch` to help identify what promotes vs what stays and to draft the lesson entry. Inject `strategy.md § Lessons` format as constraint context so the lesson comes out in the right shape. Tell the user: *"I'll use `superpowers:finishing-a-development-branch` for the wrap-up — it's designed for this synthesis step and will help draft a solid lesson entry."*
+   > **Compound note:** The compound sequence is spec-skill-owned — follow [SKILL.md § Wrapped-up features](SKILL.md): promote `<!-- merge -->` blocks → record a tagged lesson ([strategy.md § Lessons](strategy.md) format) → update plan DONE row → archive folder → run `validate.sh` → prompt to delete. `superpowers:finishing-a-development-branch` handles the narrow git-cleanup step after the spec work is done (archive move + final commit). Don't hand it the full compound procedure — it doesn't know the spec format.
 
 6. **Archived then deleted.** Move `.spec/features/<name>/` to `archive/<name>/` at wrapup as a transient safety net. After validation passes, the agent prompts the user to delete the archive — the folder is gone **before the branch merges**. CODE IS TRUTH; archive is never read for active work. See § Archive and delete.
 
