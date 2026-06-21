@@ -14,6 +14,15 @@ This feature adds: a composable subagent architecture, structural SKILL.md
 fixes that unblock direct invocation, mechanical automation for compound, and
 machine-readable spec formats for better tooling and validation.
 
+**Design principle — Promote first, self-suffice always:**
+At every authoring step the skill SHOULD surface the optimal executor (a
+superpower or subagent) as a proactive offer to the user before executing
+anything itself. The fallback — the agent running the step directly with
+constraint docs as its guide — MUST always work without external dependencies.
+The order is: suggest the best tool, wait for the user's answer, then
+self-execute if declined or unavailable. Never silently skip the offer;
+never block on the answer.
+
 **Research:** [research.md](research.md)
 
 ---
@@ -56,6 +65,13 @@ that receives the script output as context.
 Each role MUST be invocable as a discrete `/spec <role>` argument without
 requiring the full 6-step flow to run.
 
+Each role with a superpower or subagent executor MUST proactively offer that
+executor to the user before running anything — phrased as "I can use X for
+this, which gives you Y — want me to?" The role MUST then self-execute the
+step directly (using its constraint document as guidance) if the user declines
+or the executor is unavailable. Silent delegation and silent self-execution are
+both forbidden; the offer is the handshake.
+
 #### Scenario: spec-interviewer delegates to superpowers:brainstorming
 
 **Given** a user invoking `/spec interview my-feature`
@@ -70,6 +86,24 @@ script runs
 **When** the user invokes `/spec feature my-feature` at the plan step
 **Then** the spec-planner role injects `reference/plan.md` + stable-ID rules
 and delegates unit decomposition to `superpowers:writing-plans`
+
+#### Scenario: Role proactively offers executor before running
+
+**Given** a user invokes `/spec feature my-feature` at the plan step
+**When** the spec-planner role activates
+**Then** it tells the user "I can use `superpowers:writing-plans` for this —
+it's purpose-built for decomposing requirements into stable-ID units. Want me
+to?" and waits for an answer before writing anything; if the user declines, it
+runs the decomposition directly using `reference/plan.md` as its constraint
+
+#### Scenario: Role self-executes when executor unavailable
+
+**Given** a user invokes `/spec interview my-feature` but `superpowers:brainstorming`
+is not available in the current environment
+**When** the spec-interviewer role activates
+**Then** it conducts the WHAT interview directly using `feature.md § Interview
+for WHAT` as its constraint, producing the same output format as if brainstorming
+had run — no error, no degraded output quality signal
 
 #### Scenario: Role sections are machine-readable
 
