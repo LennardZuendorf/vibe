@@ -40,28 +40,46 @@ are proven and correct. This feature enriches the skill around those foundations
 
 ## Requirements
 
-### Requirement: Specialized subagent role profiles
+### Requirement: Subagent role profiles as superpowers delegation contexts
 
-The spec skill SHALL define four named authoring roles — spec-interviewer,
-spec-architect, spec-auditor, spec-compactor — each with explicit cognitive
-mode, delegation chain, input/output contracts, and validation criteria.
+The spec skill SHALL define four named authoring roles in `SKILL.md § Roles` —
+spec-interviewer, spec-architect, spec-planner, spec-auditor — where each role
+is a **delegation context**, not a custom tool: it names the executor superpower
+and the constraint document to inject, not a bespoke implementation.
+
+Roles that have a superpower executor (spec-interviewer → `superpowers:brainstorming`;
+spec-planner → `superpowers:writing-plans`) MUST document: the superpower name,
+the constraint section from the spec skill to inject, and the output validation
+criteria the resulting spec must satisfy.
+
+Roles that are spec-unique (spec-auditor → `validate.sh`; spec-compactor →
+`promote.sh`) MUST document: the script to run and any secondary superpower
+that receives the script output as context.
 
 Each role MUST be invocable as a discrete `/spec <role>` argument without
-requiring the user to run the full 6-step flow.
+requiring the full 6-step flow to run.
 
-#### Scenario: Role invocation without full flow
+#### Scenario: spec-interviewer delegates to superpowers:brainstorming
 
-**Given** a feature with an existing `product.md`
-**When** the user runs `/spec audit`
-**Then** only the spec-auditor role activates, running `validate.sh` and
-presenting findings without re-running the WHAT interview
+**Given** a user invoking `/spec interview my-feature`
+**When** the spec-interviewer role activates
+**Then** it injects `feature.md § Interview for WHAT` as the constraint document
+and delegates the dialogue to `superpowers:brainstorming` — no custom interview
+script runs
+
+#### Scenario: spec-planner delegates to superpowers:writing-plans
+
+**Given** a feature with product.md and tech.md already written
+**When** the user invokes `/spec feature my-feature` at the plan step
+**Then** the spec-planner role injects `reference/plan.md` + stable-ID rules
+and delegates unit decomposition to `superpowers:writing-plans`
 
 #### Scenario: Role sections are machine-readable
 
-**Given** SKILL.md with `## Role: spec-interviewer` section
-**When** a skill-discovery tool scans SKILL.md
-**Then** it can identify the role, its inputs, outputs, and superpower delegates
-by parsing the structured section header and frontmatter fields
+**Given** SKILL.md with `## Roles` section containing role subsections
+**When** a skill-discovery tool reads the frontmatter `delegates:` field
+**Then** it can enumerate all roles, their executor superpowers, and I/O contracts
+without parsing the prose body
 
 ---
 

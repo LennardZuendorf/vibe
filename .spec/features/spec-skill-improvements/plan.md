@@ -29,10 +29,14 @@ is deleted; only extended or supplemented.
 | spec-skill-improvements/8 | validate.sh SF14 — scope conflict detector | — | planned |
 
 Deferred (tier-3, not in this feature):
-- `scripts/score.sh` (quality scorecard)
-- `scripts/interview.sh` (guided requirement builder)
+- `scripts/score.sh` (spec-specific quality metrics for superpowers context; Improvement 7)
+- Superpowers constraint context snippets in feature.md (text additions; Improvement 8 revised)
 - SF15 cross-feature unit dep check (extends I1)
 - SF16 unit ID drift detector (requires history file)
+
+Explicitly NOT in scope: `scripts/interview.sh`. WHAT-phase interviewing is
+done by `superpowers:brainstorming` with `feature.md § Interview for WHAT` as
+constraint context. No custom interview CLI is needed or wanted.
 
 ---
 
@@ -67,15 +71,19 @@ presence of each new frontmatter key.
 
 ### spec-skill-improvements/2 — Subagent role profiles in SKILL.md
 
-**Requirements:** R-roles (Specialized subagent role profiles)
+**Requirements:** R-roles (Subagent role profiles as superpowers delegation contexts)
 
 **Scope:** Edit `.agents/skills/spec/SKILL.md` body — add `## Roles` section
 before `## Routing`.
 
 **Changes:**
 - Add `## Roles` section with subsections per tech.md spec:
-  `### Role: spec-interviewer`, `spec-architect`, `spec-auditor`, `spec-compactor`
-- Each subsection has: Cognitive mode, Phase, Inputs, Outputs, Delegates, Validation
+  `### Role: spec-interviewer`, `spec-architect`, `spec-planner`, `spec-auditor`, `spec-compactor`
+- Each subsection has: Executor, Phase, Constraint document to inject, Inputs, Outputs, Validation criteria
+- spec-interviewer: executor = `superpowers:brainstorming`; constraint = feature.md § Interview for WHAT
+- spec-planner: executor = `superpowers:writing-plans`; constraint = reference/plan.md
+- spec-auditor: executor = validate.sh (no superpower); feeds score.sh JSON to verification-before-completion
+- spec-compactor: executor = promote.sh + superpowers:finishing-a-development-branch for lesson narrative
 
 **Verification:**
 ```bash

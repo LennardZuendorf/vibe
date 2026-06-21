@@ -18,9 +18,16 @@ The **spec** skill teaches agents to write and maintain design documentation in 
 /spec product           # Load product requirements
 /spec tech              # Load technical docs
 /spec plan              # Load implementation plan
+/spec lessons           # Load lessons
+
+# Authoring shortcuts (delegate to superpowers with constraint context)
+/spec interview <name>  # WHAT interview → superpowers:brainstorming
+/spec promote <name>    # Compound promotion → promote.sh
 
 # Maintenance
-/spec validate          # Check consistency
+/spec validate          # Check structural consistency
+/spec audit             # validate + quality metrics + superpowers assessment
+/spec lessons-for <tag> # Extract lessons matching tag (for D8 injection)
 ```
 
 ## The Two-Layer Model
@@ -93,6 +100,28 @@ Add the feature to the root `plan.md` Feature Sequence. Run `/spec validate` whe
 - **`features/<name>/plan.md`** — unit tables (`<name>/n`), same-feature dependencies, verification per unit
 
 Do not duplicate feature unit tables in the root plan; cross-feature order lives only in the root Feature Sequence.
+
+## Superpowers interoperability
+
+The spec skill is a **format + constraints + validation** layer. It does not
+perform authoring itself — it provides the framework within which the right
+superpowers do the work. Each authoring step has a named executor and a
+constraint document the agent injects before delegating.
+
+| Step | Invoke as | Constraint document | Executor |
+|---|---|---|---|
+| WHAT interview | `/spec interview <name>` | `feature.md § Interview for WHAT` | `superpowers:brainstorming` |
+| HOW sketch | `/spec feature <name>` (step 4) | `reference/tech.md` + feature-tech template | `code-explorer`, `code-architect` |
+| Plan units | `/spec feature <name>` (step 5) | `reference/plan.md` + stable-ID rules | `superpowers:writing-plans` |
+| Validate | `/spec validate` or `/spec audit` | — (deterministic script) | `validate.sh` |
+| Quality assessment | `/spec audit` | `score.sh` JSON output as context | `superpowers:verification-before-completion` |
+| Compound promotion | `/spec promote <name>` | — (deterministic script) | `promote.sh` |
+| Lesson entry | during `/spec promote` | `strategy.md § Lessons` format | `superpowers:finishing-a-development-branch` |
+
+**Why this separation matters:** the spec skill's constraint documents
+(templates, reference guides, format rules) improve independently of the
+superpowers. Better templates → better output from `superpowers:writing-plans`
+automatically, with no changes to the executor.
 
 ## Workflow Examples
 

@@ -197,7 +197,71 @@ delegates:
 This makes the delegation contract explicit for both human readers and future
 tooling (skill dependency graphs, auto-composition).
 
-### 3d. Specialized Subagents — Role-Based Architecture
+### 3d. OpenSpec — Interoperability, Not Adoption
+
+No canonical "OpenSpec" standard exists at time of writing. The useful framing
+is the pattern OpenAPI established: a machine-readable structure sitting
+*alongside* prose, not replacing it, enabling tooling to consume requirements
+without parsing natural language.
+
+The spec skill already has the right instinct: R-ID conventions, `### Requirement:`
+headings, GWT scenarios. The interoperability gap is that these are parseable
+only by convention, not by a declared marker. Adding opt-in `<!-- spec:requirement
+id="R1" strength="SHALL" -->` HTML-comment markers makes R-IDs addressable by
+external tools (Linear, CI dashboards, test-traceability reporters) without
+forcing all authors to adopt the overhead.
+
+**Key principle:** spec prose stays canonical; structured markers are a
+machine-readable shadow of the same content, not a replacement. Export tooling
+reads markers when present, falls back to heuristic heading parsing when absent.
+
+### 3e. The Right Interoperability Model — Spec as Framework, Superpowers as Executor
+
+This is the most important cross-cutting insight, and it corrects a trap
+the improvement catalog can fall into.
+
+**Wrong model:** build tools inside the spec skill that do things superpowers
+already does. Examples of the trap:
+- Build `interview.sh` → re-implements `superpowers:brainstorming`
+- Build `score.sh` as quality assessment → re-implements what `superpowers:verification-before-completion` does when given spec artifacts
+
+**Right model:**
+
+```
+Spec skill  =  FORMAT + CONSTRAINTS + VALIDATION SCRIPTS
+Superpowers =  EXECUTION WITHIN THAT FORMAT
+```
+
+The spec skill's job for each authoring phase is to:
+1. Supply the **constraint document** (the template, the format rules, the
+   example, the validation criteria) — this is what feature.md, strategy.md,
+   and the reference guides already do
+2. Name the **executor** — which `superpowers:*` reads those constraints and
+   does the actual work
+
+| Authoring step | Spec skill provides | Executor |
+|---|---|---|
+| WHAT interview (step 2) | `feature.md § Interview for WHAT` as constraint context | `superpowers:brainstorming` |
+| HOW sketching (step 4) | `reference/tech.md` + feature template as constraint | `code-explorer`, `code-architect` |
+| Plan units (step 5) | `reference/plan.md` + stable ID rules as constraint | `superpowers:writing-plans` |
+| Validation | `validate.sh` script (deterministic, not a superpower) | spec skill itself |
+| Compound promotion | `promote.sh` script (deterministic, not a superpower) | spec skill itself |
+| Quality assessment | `score.sh` metrics (spec-specific; superpowers can't derive RFC-2119 compliance) | `superpowers:verification-before-completion` receives score output as context |
+
+The test for any proposed improvement: *is this something the spec skill uniquely knows (file format, structural rule, domain-specific metric) or is it general-purpose capability a superpower already handles?*
+
+- Unique to spec: R-ID traceability, merge marker validation, stale-link detection,
+  RFC-2119 compliance checking, frontmatter schema, Scope table parsing
+- Covered by superpowers: dialogue for requirement elicitation, plan unit
+  decomposition, implementation execution, code review, quality assessment framing
+
+**Practical implication for this feature:** the roles section in SKILL.md should
+express explicit `superpowers:` delegation for every authoring step, not build
+competing tools. `spec-interviewer` is not a CLI — it is a named context that
+routes to `superpowers:brainstorming` with `feature.md § Interview for WHAT`
+injected as the constraint document.
+
+### 3f. Specialized Subagents — Role-Based Architecture
 
 Currently the spec skill is monolithic: one SKILL.md handles all authoring
 phases. But the phases have very different cognitive profiles:
@@ -213,38 +277,41 @@ phases. But the phases have very different cognitive profiles:
 A **subagent architecture** would split these into specialized roles that the
 `spec` skill composes:
 
-**`spec-interviewer`** — WHAT phase specialist
-- Deep RFC-2119 vocabulary (SHALL vs MUST vs SHOULD vs MAY semantics)
-- Given/When/Then structure enforcer
-- Pushes back on vague requirements ("users can filter things" → "users SHALL
-  filter search results by one or more of: date range, content type, author")
-- Suggests Scope table boundaries based on neighbouring features
+**`spec-interviewer`** — WHAT phase delegation context
+- Supplies `feature.md § Interview for WHAT` as constraint document for `superpowers:brainstorming`
+- Adds RFC-2119 vocabulary reminder (SHALL vs MUST vs SHOULD vs MAY) and GWT scaffolding
+- Does NOT build a custom interview CLI — `superpowers:brainstorming` is the dialogue engine
 - Outputs: `features/<name>/product.md`
 
-**`spec-architect`** — HOW phase specialist
-- Delegates to `code-explorer` and `code-architect`
-- Knows the feature tech.md sections and which to populate
-- Marks `<!-- merge -->` blocks automatically for cross-cutting decisions
-- Validates that tech.md cites real file paths
+**`spec-architect`** — HOW phase delegation context
+- Supplies `reference/tech.md` template and merge-marker convention as constraint
+- Delegates to `code-explorer` (trace) and `code-architect` (sketch approach)
+- Does NOT trace code itself — `code-explorer` reads the repo; the role frames the output contract
 - Outputs: `features/<name>/tech.md`
 
-**`spec-auditor`** — Validation specialist
-- Runs and interprets `validate.sh` output
-- Provides fix suggestions per warning
-- Tracks validation history (which warnings are new vs recurring)
-- Integrates with CI
-- Outputs: structured validation report
+**`spec-planner`** — Plan units delegation context
+- Supplies `reference/plan.md` + stable-ID rules as constraint document for `superpowers:writing-plans`
+- Provides the `<name>/n` ID convention, Requirements Trace table format, and verification row template
+- Does NOT write plan units itself — `superpowers:writing-plans` does; the role frames the format
+- Outputs: `features/<name>/plan.md`
 
-**`spec-compactor`** — Compound specialist
-- Extracts `<!-- merge -->` blocks and promotes to root
-- Identifies what "graduates" vs "stays"
-- Drafts the lesson entry based on compound evidence
-- Prompts for archive → delete
-- Outputs: merged root specs + `lessons.md` entry
+**`spec-auditor`** — Validation role (spec-unique; no superpower substitute)
+- Runs `validate.sh` (deterministic, spec-format-aware; superpowers can't derive this)
+- Interprets output and provides fix suggestions per warning
+- Optionally runs `score.sh` and passes structured metrics to `superpowers:verification-before-completion`
+  as additional context for quality assessment
+- Outputs: structured validation report to stdout
 
-**Implementation:** Not necessarily separate SKILL.md files — can be sections
-in the main SKILL.md with dedicated subsections per role, callable as
-`/spec interview`, `/spec audit`, `/spec promote`.
+**`spec-compactor`** — Compound role (spec-unique for promotion; lesson drafting delegates)
+- Runs `promote.sh` (deterministic merge-marker extraction; superpowers can't know the format)
+- Identifies what "graduates" vs "stays" using the `<!-- merge -->` convention
+- For the lesson entry: supplies pattern/rule/tags template as constraint, then delegates to
+  `superpowers:finishing-a-development-branch` for narrative polish
+- Outputs: merged root specs; draft lesson entry for human review
+
+**Implementation:** Named sections in the main SKILL.md (not separate files), callable as
+`/spec interview`, `/spec audit`, `/spec promote`. Each section is a delegation context
+(constraint doc + named executor), not a custom tool body.
 
 ---
 
@@ -444,81 +511,85 @@ future tooling).
 
 ---
 
-### Improvement 7: `scripts/score.sh` — Spec Quality Scorecard
+### Improvement 7: `scripts/score.sh` — Spec-Specific Quality Metrics
 
-**What:** `bash .agents/skills/spec/scripts/score.sh` produces a quality
-scorecard for the current `.spec/` tree with dimensions:
+**What:** `bash .agents/skills/spec/scripts/score.sh` emits machine-readable
+quality metrics for the `.spec/` tree across dimensions that `validate.sh`
+doesn't cover and that superpowers cannot derive without spec-format knowledge:
 
-| Dimension | Weight | How measured |
-|---|---|---|
-| Completeness | 30% | All required sections present; no empty placeholders |
-| Precision | 25% | RFC-2119 keywords in all requirements; GWT in all scenarios |
-| Traceability | 25% | All R-IDs cited in plan; all plan units have verification |
-| Freshness | 10% | `updated:` dates within current feature's active period |
-| Lesson capture | 10% | At least one lesson per completed feature |
+| Dimension | Measured how |
+|---|---|
+| RFC-2119 compliance | % of requirement blocks containing SHALL/MUST/SHOULD/MAY |
+| GWT coverage | % of requirements with ≥1 scenario; % of scenarios with Given+When+Then |
+| R-ID traceability | % of R-IDs in product.md cited in plan.md |
+| Unit verification completeness | % of plan units with non-empty verification row |
+| `updated:` freshness | Days since last edit per file |
 
-Emits a score (0–100) and dimension breakdown. Designed for trend tracking:
-run in CI, log the score, surface regressions.
+Emits structured JSON (for CI ingestion) and a human-readable summary.
 
-**Why:** `validate.sh` catches structural errors; `score.sh` measures quality.
-Structural validity ≠ authoring quality. A spec with correct frontmatter but
-vague requirements scores low on precision.
+**Interoperability note:** `score.sh` is NOT a quality assessor — it is a
+metrics probe. Quality assessment is done by `superpowers:verification-before-completion`
+receiving the score output as structured context:
 
-**Effort:** Medium (100-line script). **ROI:** Medium (motivational + CI signal).
+```
+bash .agents/skills/spec/scripts/score.sh > /tmp/spec-score.json
+# Agent then: "Review these spec quality metrics and surface the most critical gaps"
+# → superpowers:verification-before-completion reads the JSON and assesses
+```
+
+`score.sh` knows RFC-2119 and the R-ID format; `verification-before-completion`
+knows how to assess and communicate gaps. Neither duplicates the other.
+
+**Effort:** Medium (80-line script). **ROI:** Medium (useful for multi-feature
+repos and CI; less critical for dogfood-scale use).
 
 ---
 
-### Improvement 8: `scripts/interview.sh` — Guided Requirement Builder
+### Improvement 8: Constraint Context Documents for Superpowers Delegation
 
-**What:** Interactive CLI that walks the WHAT phase of feature authoring step
-by step, validating each input before proceeding:
+**What** (revised from "build `interview.sh`")**:** Rather than building a
+custom interview CLI that duplicates `superpowers:brainstorming`, add explicit
+**constraint context documents** to `feature.md` and `strategy.md` that an
+agent injects into the superpowers delegation call.
 
-```
-$ bash .agents/skills/spec/scripts/interview.sh my-feature
-
-Step 1: Problem / Why
-> Describe the problem this feature solves:
-  → [user types]
-  ✓ Accepted (38 words, specific outcome named)
-
-Step 2: Scope — What does this feature OWN?
-> List owned responsibilities (one per line, empty to finish):
-  → [user types]
-  ✓ Accepted (3 items)
-
-Step 3: Scope — What does this feature NOT OWN (but might be confused with)?
-> List explicit non-ownerships:
-  → [user types]
-
-Step 4: Requirements
-> Requirement title:
-  → [user types]
-> Strength (SHALL/MUST/SHOULD/MAY):
-  → [user types]
-> Description (must use chosen strength word):
-  → [user types]
-  ✓ RFC-2119 keyword found: SHALL
-> Add a scenario? (y/n): y
-> Given:  [user types]
-> When:   [user types]
-> Then:   [user types]
-  ✓ GWT complete
-
-...
-Writing .spec/features/my-feature/product.md ...
-Done.
+**The wrong approach (what NOT to build):**
+```bash
+# A 200-line bash interview script that asks questions in a terminal loop
+# → duplicates superpowers:brainstorming; lower quality than the real thing
+bash .agents/skills/spec/scripts/interview.sh my-feature
 ```
 
-**Why:** The 6-step authoring flow depends on the agent's ability to enforce
-RFC-2119 + GWT. A scaffolded CLI makes quality requirements accessible to
-humans writing specs directly (not via agent) and acts as a validation harness
-for agent-generated output.
+**The right approach:**
+```
+Agent at feature.design step 2:
+  "I'm about to run the WHAT interview. Constraint document:"
+  [injects feature.md § Interview for WHAT: RFC-2119 rules, GWT format,
+   Scope table format, rigor gate criteria]
+  → delegates to superpowers:brainstorming with those constraints active
 
-**When not:** When the agent is running the interview interactively — it doesn't
-need the CLI. This is for human-first authoring and offline spec work.
+Agent at feature.plan step 5:
+  "I'm about to write plan units. Constraint document:"
+  [injects reference/plan.md: stable-ID convention, Requirements Trace
+   table format, verification row template, human-gate reminder]
+  → delegates to superpowers:writing-plans with those constraints active
+```
 
-**Effort:** Medium-large (150-200 line bash script). **ROI:** Medium (high
-value for human authors; lower for pure-agent flows).
+**What to actually build:** Short **context snippets** in `feature.md` and
+`strategy.md` formatted as ready-to-inject agent briefings — one paragraph per
+step that names the executor, the constraint document section to inject, and
+the validation criteria the output must pass.
+
+**Why this is better:**
+- `superpowers:brainstorming` is purpose-built for Socratic dialogue; a bash
+  CLI cannot match its quality
+- `superpowers:writing-plans` understands decomposition, dependency mapping,
+  and estimation; a custom script would be a poor imitation
+- The spec skill's constraint documents improve over time without touching
+  the executor — separation of format from execution
+- Zero implementation cost compared to a 200-line bash script
+
+**Effort:** Small (text additions to feature.md). **ROI:** High (applies to
+every feature, every session; superpowers quality > custom CLI quality).
 
 ---
 
@@ -584,32 +655,45 @@ all other improvements).
 
 ## 5. Cross-Cutting Themes
 
-### Theme A: Source over convention
+### Theme A: Spec as framework, superpowers as executor
 
-The best improvements (promote.sh, lessons-for.sh) automate what is currently
-documented-but-manual. The spec skill has excellent conventions; the gap is
-mechanical automation that enforces them.
+The most important structural principle. The spec skill owns FORMAT + CONSTRAINTS
++ SPEC-SPECIFIC SCRIPTS. Superpowers own EXECUTION within that format. Any
+proposed improvement must pass this test: *does the spec skill uniquely know
+this, or does a superpower already handle it?*
 
-### Theme B: Progressive enrichment over mandatory overhead
+Spec-unique work: structural validation, R-ID traceability, merge marker
+extraction, stale-link detection, RFC-2119 compliance metrics. Superpower
+work: dialogue, plan writing, code review, quality assessment framing.
+The spec skill provides constraint documents; superpowers read them.
 
-Requirements-as-data (OpenSpec markers) and spec scoring are high value only
-if they're optional enrichment, not additional mandatory structure. The spec
-skill's power comes from its low barrier to entry; improvements must not raise
-the floor.
+### Theme B: Automate what is mechanical; delegate what requires judgment
 
-### Theme C: Subagents as named sections, not separate files
+The best improvements (promote.sh, lessons-for.sh) automate the mechanical,
+error-prone parts (merge marker extraction, tag matching) that are currently
+documented-but-manual. They do NOT attempt to automate judgment calls
+(requirement quality, scope negotiation, lesson selection) — those stay with
+superpowers and the human.
 
-Creating separate SKILL.md files for each role (spec-interviewer, spec-auditor,
-etc.) adds file-management overhead. Defining them as named sections in the
-existing SKILL.md, callable via `/spec <role>`, preserves the single-file
-discipline while enabling role-specific dispatch.
+### Theme C: Progressive enrichment over mandatory overhead
 
-### Theme D: Cavekit compatibility is about output contracts, not compression
+OpenSpec markers and spec scoring are high value only as optional enrichment.
+The spec skill's power comes from low barrier to entry; improvements must not
+raise the floor.
 
-The right move is not to compress spec output (brevity is not always good for
-specs) but to define **which sections are mandatory** at each caveman level.
-A lite spec has all the required sections at appropriate depth — it's precise,
-not truncated.
+### Theme D: Roles as delegation contexts, not separate tools
+
+Roles (spec-interviewer, spec-planner, spec-compactor) are named sections in
+SKILL.md that define the constraint document to inject and the superpower to
+call — not custom CLI implementations. Single-file discipline preserved;
+role-specific dispatch enabled.
+
+### Theme E: Cavekit compatibility is about output contracts, not truncation
+
+Defining which sections are mandatory at each caveman level is not compression
+— it is precision. A lite spec has all required sections at the right depth.
+The spec skill's output profiles tell agents WHAT to produce at each level;
+superpowers within the level produce it correctly.
 
 ---
 
@@ -617,24 +701,24 @@ not truncated.
 
 ### Tier 1 — High ROI, Low Risk (ship first)
 
-1. **Subagent profiles** in SKILL.md (text only; Improvement 1)
+1. **Role profiles** in SKILL.md as delegation contexts (text only; Improvement 1)
 2. **Cavekit output profiles** in feature.md (text only; Improvement 4)
-3. **SKILL.md metadata enrichment** (frontmatter additions; Improvement 5)
-4. **Routing expansion** in SKILL.md + argument-hint (text only; Improvement 10)
-5. **SF13 cross-reference integrity** (extend validate.sh; Improvement 9 partial)
+3. **Superpowers constraint context snippets** in feature.md per step (text; Improvement 8 revised)
+4. **SKILL.md metadata enrichment** with `delegates:` (frontmatter additions; Improvement 5)
+5. **Routing expansion** in SKILL.md + argument-hint (text only; Improvement 10)
 6. **`scripts/lessons-for.sh`** (40 lines; Improvement 3)
+7. **SF13 cross-reference integrity** (extend validate.sh; Improvement 9 partial)
 
 ### Tier 2 — Medium ROI, Medium Effort (ship second)
 
-7. **`scripts/promote.sh`** (60 lines; Improvement 2)
-8. **SF14–SF15 scope/dependency validators** (extend validate.sh; Improvement 9)
-9. **OpenSpec requirement markers** + **export-requirements.sh** (Improvement 6)
+8. **`scripts/promote.sh`** (60 lines; Improvement 2)
+9. **SF14 scope conflict detector** (extend validate.sh; Improvement 9)
+10. **OpenSpec requirement markers** + **export-requirements.sh** (Improvement 6)
 
-### Tier 3 — Higher Effort, Future Work
+### Tier 3 — Deferred (higher effort, lower urgency)
 
-10. **`scripts/score.sh`** (Improvement 7)
-11. **`scripts/interview.sh`** (Improvement 8)
-12. **SF16 unit ID drift** (requires history file; Improvement 9 partial)
+11. **`scripts/score.sh`** (spec-specific metrics; Improvement 7)
+12. **SF15–SF16** validators (cross-feature dep check + unit drift; Improvement 9)
 
 ---
 

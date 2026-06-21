@@ -98,50 +98,68 @@ Add a new section **before** `## Routing` in SKILL.md body. Structure:
 ```markdown
 ## Roles
 
-Four composable roles. Invoke via `/spec <role>` or by phase-routing below.
-Each role has a defined cognitive mode and explicit I/O contract.
+Four composable delegation contexts. Invoke via `/spec <role>` or by
+phase-routing below. Each role names an executor and the constraint document to
+inject — roles are NOT custom tools; they are wiring between spec constraints
+and the appropriate superpowers executor.
 
 ### Role: spec-interviewer
 
-**Cognitive mode:** Socratic dialogue. Push back on vague requirements.
+**Executor:** `superpowers:brainstorming`
 **Phase:** feature.design steps 1–2 (WHAT interview)
-**Inputs:** root product.md + tech.md + lessons.md
-**Outputs:** features/<name>/product.md
-**Delegates:** superpowers:brainstorming (dialogue), no code tools
-**Validation:** RFC-2119 keyword in every requirement; ≥1 GWT scenario per req
+**Constraint document to inject:** `feature.md § Interview for WHAT` — covers
+RFC-2119 vocabulary, Scope table format, GWT scenario structure, and rigor gate
+**Inputs (spec skill reads):** root product.md + tech.md + lessons.md
+**Outputs (spec skill writes):** features/<name>/product.md
+**Validation criteria on output:** RFC-2119 keyword in every requirement body;
+≥1 GWT scenario per requirement; Scope table has Owns + Does not own columns
 
 RFC-2119 usage: SHALL = mandatory feature behaviour; MUST = implementation
-invariant; SHOULD = strong recommendation, deviation needs justification; MAY =
-optional. Choose at authoring time; do not change without explicit scope review.
+invariant; SHOULD = strong recommendation; MAY = optional. Spec skill validates
+these; `superpowers:brainstorming` applies them during dialogue.
 
 ### Role: spec-architect
 
-**Cognitive mode:** Code archaeology + contract sketching.
+**Executor:** `code-explorer` (trace) + `code-architect` (sketch)
 **Phase:** feature.design steps 3–4 (HOW sketch)
-**Inputs:** root tech.md + feature product.md + codebase
-**Outputs:** features/<name>/tech.md (+ design.md if rigor gate = full)
-**Delegates:** code-explorer (trace), code-architect (sketch)
-**Validation:** All cited paths exist in repo; only filled sections written
+**Constraint document to inject:** `reference/tech.md` + feature-tech template
+**Inputs (spec skill reads):** root tech.md + feature product.md + codebase
+**Outputs (spec skill writes):** features/<name>/tech.md (+ design.md if full)
+**Validation criteria on output:** All cited paths exist in repo; only sections
+with real content written; no UX opinions in tech.md
+
+### Role: spec-planner
+
+**Executor:** `superpowers:writing-plans`
+**Phase:** feature.plan step 5 (plan units)
+**Constraint document to inject:** `reference/plan.md` — covers stable-ID
+convention (`<name>/n`), Requirements Trace table format, verification row
+template, same-feature-only dependency rule, and human-gate reminder
+**Inputs (spec skill reads):** feature product.md + tech.md
+**Outputs (spec skill writes):** features/<name>/plan.md
+**Validation criteria on output:** All unit IDs follow `<name>/n`; each unit
+cites ≥1 R-ID; verification column is non-empty per unit
 
 ### Role: spec-auditor
 
-**Cognitive mode:** Rule enforcement + gap analysis.
-**Phase:** any (invocable standalone via `/spec audit`)
+**Executor:** `validate.sh` (spec-unique; no superpower substitute)
+**Phase:** any (standalone via `/spec audit`)
 **Inputs:** .spec/ tree
-**Outputs:** structured validation report (stdout)
-**Delegates:** none
-**Procedure:** Run validate.sh; run score.sh; surface critical warnings with
-fix suggestions; track which warnings are recurring vs new
+**Outputs:** structured validation report (stdout); optionally passes `score.sh`
+JSON to `superpowers:verification-before-completion` for quality assessment framing
+**Procedure:** Run validate.sh → surface warnings → (optionally) run score.sh →
+pass metrics JSON as context to superpowers:verification-before-completion
 
 ### Role: spec-compactor
 
-**Cognitive mode:** Synthesis + cleanup.
+**Executor:** `promote.sh` (spec-unique extraction); `superpowers:finishing-a-development-branch` (lesson narrative)
 **Phase:** feature.compound
+**Constraint document for lesson:** `strategy.md § Lessons` format — pattern,
+rule, tags, date
 **Inputs:** features/<name>/tech.md (merge markers); root tech.md; lessons.md
-**Outputs:** root tech.md (promoted blocks); lessons.md (new entry); plan.md (DONE row)
-**Delegates:** promote.sh (extraction); none for lesson draft
-**Invariants:** Never promotes feature-only detail; lesson is human-drafted
-from compactor output, not auto-generated
+**Outputs:** root tech.md (promoted blocks via promote.sh); draft lesson entry
+for human review; plan.md DONE row
+**Invariant:** lesson is reviewed by human before appending; never auto-committed
 ```
 
 ---
