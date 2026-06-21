@@ -756,4 +756,284 @@ raw material (what promoted, what was discarded) but does not draft the lesson.
 
 ---
 
-*Research completed: 2026-06-21. Informs `spec-skill-improvements` product.md and tech.md.*
+---
+
+## 8. Second-Round Analysis — Structural Improvements (2026-06-21 review)
+
+This section records a detailed second-pass review that identified both gaps
+in the original catalog and a higher-priority restructuring of the entire skill.
+
+### 8a. The Composable Architecture Insight
+
+The deepest structural finding: the current `spec/SKILL.md` is monolithic. It
+routes everything through one 230-line file. The right end-state is a thin
+routing shell (`SKILL.md`) that dispatches to dedicated subagent SKILL.md files:
+
+```
+.agents/skills/spec/
+├── SKILL.md                        ← thin: routing + two-layer model + superpower tips
+├── subagents/
+│   ├── spec-interviewer/SKILL.md   ← WHAT interview (step 2)
+│   ├── spec-tracer/SKILL.md        ← HOW sketch (step 4); read-only; runs parallel
+│   ├── spec-promoter/SKILL.md      ← COMPOUND merge marker extraction + diff + execute
+│   └── spec-health/SKILL.md        ← systemic health scoring beyond validate.sh
+├── reference/                       ← (existing writing guides)
+├── scripts/                         ← existing + scan-merges.sh
+└── templates/                       ← existing + branch doc templates
+```
+
+This matches how `vibe-*` skills compose already. The main SKILL.md becomes
+the entry point and router; cognitive work lives in subagents.
+
+**Key parallel-execution opportunity:** `spec-tracer` is read-only (traces the
+codebase for `tech.md`). It can run in parallel with `spec-interviewer` during
+`feature.design` since they touch different outputs. `vibe-feature` would invoke
+both simultaneously, cutting wall-clock time for the design phase.
+
+### 8b. The `allowed-tools` Gap
+
+The current SKILL.md declares:
+```yaml
+allowed-tools: Read, Bash(bash .agents/skills/spec/scripts/validate.sh), Bash(...)
+```
+
+This means when a user invokes `/spec feature <name>` directly (without vibe-flow),
+the spec skill can only **read** — it cannot write specs. All spec writing falls
+through to `vibe-*` skills. This is correct for the flow-integrated case but
+**breaks direct invocation**. The skill should be able to write specs when invoked
+standalone:
+
+```yaml
+allowed-tools: Read, Edit, Write, Glob, Grep,
+  Bash(bash .agents/skills/spec/scripts/validate.sh),
+  Bash(bash .agents/skills/spec/scripts/list-specs.sh),
+  Bash(bash .agents/skills/spec/scripts/setup.sh),
+  Bash(bash ~/.agents/skills/spec/scripts/*)
+```
+
+Priority: **HIGH** — blocks direct use of `/spec` without vibe-flow.
+
+### 8c. Missing Session-Start Context Injection
+
+`AGENTS.md` says "Read lessons at session start" but this relies on the agent
+remembering to do it. A `context:` frontmatter key in SKILL.md would make the
+harness auto-inject these files on every `/spec` invocation:
+
+```yaml
+context:
+  session-start:
+    - .spec/lessons.md
+    - .spec/plan.md
+```
+
+This matches the D8 intent without depending on agent memory.
+
+### 8d. Subagent Manifest in SKILL.md
+
+The composable architecture requires a machine-readable manifest so skill-discovery
+tools and the harness can find and invoke subagents:
+
+```yaml
+subagents:
+  - name: spec-interviewer
+    path: subagents/spec-interviewer/SKILL.md
+    trigger: "feature step 2 — interview for WHAT"
+    caveman: lite
+  - name: spec-tracer
+    path: subagents/spec-tracer/SKILL.md
+    trigger: "feature step 4 — sketch HOW"
+    caveman: full
+    parallel-safe: true
+  - name: spec-promoter
+    path: subagents/spec-promoter/SKILL.md
+    trigger: "feature.compound — promote merge markers"
+    caveman: lite
+  - name: spec-health
+    path: subagents/spec-health/SKILL.md
+    trigger: "spec health check beyond validate.sh"
+    caveman: full
+```
+
+### 8e. Four Subagent Contracts
+
+**`spec-interviewer`** (priority: LOW — feature.md step 2 already good)
+- Structured 5-question dialogue: problem → scope → first scenario → failure modes → done signal
+- Challenges vague requirements ("what's the observable outcome?")
+- Outputs a partial `features/<name>/product.md` draft for human review
+- Does NOT write the final file — produces a draft for agent + human to refine
+- Caveman: lite (dialogue, never compress reasoning)
+
+**`spec-tracer`** (priority: MEDIUM)
+- Read-only: traces existing codebase, maps file ownership, reads interfaces
+- Fills only sections with content — no speculative boilerplate
+- Parallel-safe: can run simultaneously with spec-interviewer (different output)
+- Outputs: `features/<name>/tech.md` with real paths, real contracts, real risks
+- Caveman: full (output is path lists and interface shapes, not prose)
+
+**`spec-promoter`** (priority: MEDIUM)
+- Scans all `<!-- merge -->` blocks in `features/<name>/tech.md`
+- Shows a structured diff: what promotes vs what gets archived
+- Executes the merge into root specs only after user confirmation
+- Updates root `plan.md` feature sequence to DONE + one-line note
+- More precise than asking vibe-compound to handle this broadly
+- Replaces the standalone `promote.sh` script — the subagent wraps the script
+  and adds the user-confirmation dialogue
+
+**`spec-health`** (priority: LOW)
+- Checks beyond validate.sh: stale `updated:` dates (>30 days with git activity),
+  requirements without test evidence in plan.md, orphaned `<!-- merge -->` blocks
+  in archived features, feature plans with no verification column, root specs
+  exceeding ~200 lines (feature-level detail leak)
+- Outputs a scored health report per spec
+- Distinct from spec-auditor: auditor runs validate.sh + structural checks;
+  health checks systemic decay signals that validate.sh can't see
+
+### 8f. OpenSpec Structured Frontmatter
+
+Three optional frontmatter additions:
+
+**1. Machine-readable requirements in product.md:**
+```yaml
+requirements:
+  - id: R1
+    title: Feature SHALL do X
+    priority: MUST
+    scenarios: 2          # expected scenario count
+    unit: feature/1       # traced to plan unit
+```
+Enables validate.sh to count scenarios against declared count, and check
+every R-ID in frontmatter is traced to a plan unit.
+
+**2. Structured GWT blocks using fenced Gherkin:**
+```markdown
+#### Scenario: Name
+` ` `gherkin
+Given a user with an active session
+When they invoke the command
+Then the result appears within 2 seconds
+` ` `
+```
+Enables automated parsing of scenarios and machine-readable test generation.
+
+**3. Plan units as machine-readable frontmatter:**
+```yaml
+units:
+  - id: feature/1
+    seq: 1
+    summary: "Ship the keystone hook"
+    depends: []
+    verification: "tests/feature/run.sh exits 0"
+    req-ids: [R1, R2]
+```
+Unlocks CI reading the spec and running verification commands automatically.
+
+Migration: all warn-only initially per the existing lesson. Hard error only
+after migration completes. Export via `scripts/export-requirements.sh`.
+
+### 8g. Superpowers Frontmatter Declaration
+
+The current SKILL.md doesn't declare which superpowers it uses, even though
+every `vibe-*` skill that calls the spec skill does reference them. Add:
+
+```yaml
+superpowers:
+  strategy: [brainstorming]
+  feature-what: [requirements-elicitation, brainstorming]
+  feature-how: [code-exploration, architecture-sketching]
+  plan: [writing-plans, dependency-analysis]
+  compound: []    # spec-promoter owns this; finishing-a-development-branch is git-only
+```
+
+Map routing table rows to superpowers entries so each row explicitly declares
+which superpowers fire. Currently the routing table is text-only.
+
+Add `caveman: lite` as a top-level key (spec work is dialogic; never compress
+reasoning in spec sessions).
+
+### 8h. New Commands
+
+| Route | What | Priority |
+|---|---|---|
+| `/spec diff` | `git diff HEAD~1 --stat -- .spec/` rendered as human-readable summary | HIGH |
+| `/spec health` | Invoke `spec-health` subagent | LOW |
+| `/spec research <name>` | Open or create `features/<name>/research.md` with structured template | MEDIUM |
+| `/spec lessons <tag>` | Call `lessons-for.sh <tag>` and surface results | HIGH (daily value) |
+| `/spec promote <name>` | Invoke `spec-promoter` subagent for named feature | MEDIUM |
+
+`/spec diff` is pure git; small wrapper. `/spec lessons <tag>` completes the
+`lessons-for.sh` script (unit 6) with a proper route. Both are high-daily-value
+additions that cost almost nothing.
+
+`/spec research <name>` fills a documented gap: research.md is listed as optional
+in the anatomy table but there is no template and barely any guidance. A structured
+template covering problem → approaches tried → measurements → rejected alternatives →
+references would make research artifacts first-class.
+
+### 8i. Missing Branch Doc Templates
+
+The templates directory has 8 templates but zero for branch docs:
+- `product-{topic}.md`
+- `tech-{topic}.md`
+- `plan-{topic}.md`
+
+`strategy.md` says "no separate template files — start from root templates and
+rename." This is unnecessary friction. Branch doc templates would pre-fill:
+- `type: branch` frontmatter
+- `parent:`, `scope:`, `covers:` fields (currently validated but not templated)
+- Cross-reference stub to root entrypoints
+
+Small addition; eliminates a class of validate.sh warnings on first creation.
+Priority: **HIGH** — removes friction every time a branch doc is needed.
+
+### 8j. `scripts/scan-merges.sh`
+
+A pre-compound script that shows exactly what would promote before anything is
+touched:
+
+```
+scripts/scan-merges.sh <feature-name>
+→ finds all <!-- merge --> ... <!-- /merge --> blocks
+→ reports: how many blocks, which files, estimated line count
+→ outputs structured list for spec-promoter to consume
+```
+
+Currently `<!-- merge -->` markers are defined as convention in feature.md and
+referenced in strategy.md but no script reads them. Making them executable turns
+them from convention into mechanism. `spec-promoter` would call `scan-merges.sh`
+as its first step to produce the structured diff before asking for user confirmation.
+
+### 8k. Validation Enhancements (SF15–SF16)
+
+**SF15 — Root spec line count (LOW):**
+If `product.md` or `tech.md` exceeds ~200 lines, warn that feature-level detail
+may have leaked in. Complementary to the "root specs stay high-level" invariant.
+
+**SF16 — Lessons tag coverage (LOW):**
+If `lessons.md` has entries with no `**Tags:**` line, emit a WARN. Per the
+warn-first lesson, this is warn-only initially; upgrade to error after migration.
+(Existing entries all have tags; this guards future entries.)
+
+**Priority note:** The user's review classified SF13-SF16 as LOW, behind the
+structural items (allowed-tools, branch templates, /spec diff, /spec lessons).
+Units 7 and 8 in this spec cover SF13 and SF14; SF15-SF16 are new additions
+planned after the structural tier.
+
+### 8l. Revised Priority Ordering
+
+| Priority | Item | Units |
+|---|---|---|
+| HIGH | `allowed-tools` fix (adds Edit/Write/Glob/Grep) | 1 (expand) |
+| HIGH | Branch doc templates (3 files) | 9 |
+| HIGH | `/spec diff` script | 10 |
+| HIGH | `/spec lessons <tag>` route | 3 (expand), 6 |
+| MEDIUM | `scan-merges.sh` | 11 |
+| MEDIUM | OpenSpec machine-readable frontmatter | 12 |
+| MEDIUM | `spec-tracer` subagent | 13 |
+| MEDIUM | Superpowers frontmatter declaration | 14 |
+| MEDIUM | `/spec research <name>` route + template | 3 (expand), 9 (template) |
+| LOW | `spec-interviewer` subagent | 2 (revise) |
+| LOW | `spec-health` subagent | 15 |
+| LOW | SF15–SF16 validators | 16 |
+| STRUCTURAL | Composable SKILL.md architecture (thin shell + subagents/ folder) | 17 |
+
+*Research updated: 2026-06-21.*

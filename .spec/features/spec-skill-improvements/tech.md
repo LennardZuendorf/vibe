@@ -17,30 +17,76 @@ the core two-layer model and 6-step authoring flow are left untouched.
 
 ```
 .agents/skills/spec/
-├── SKILL.md                    ← extend frontmatter + add ## Roles section
-├── feature.md                  ← add ## Output profiles section
-├── strategy.md                 ← no changes
+├── SKILL.md                      ← v2.0: allowed-tools, context, subagents, superpowers
+│                                    frontmatter; ## Roles manifest section
+├── feature.md                    ← add ## Output profiles section
+├── strategy.md                   ← no changes
+├── subagents/                    ← NEW composable subagent folder
+│   ├── spec-tracer/
+│   │   └── SKILL.md              ← NEW read-only codebase tracer (parallel-safe)
+│   ├── spec-promoter/
+│   │   └── SKILL.md              ← NEW compound merge-marker promoter (diff-first)
+│   ├── spec-interviewer/
+│   │   └── SKILL.md              ← NEW WHAT-phase interview delegator
+│   └── spec-health/
+│       └── SKILL.md              ← NEW structural health assessor
 ├── scripts/
-│   ├── validate.sh             ← extend with SF13, SF14
-│   ├── setup.sh                ← no changes
-│   ├── list-specs.sh           ← no changes
-│   ├── promote.sh              ← NEW
-│   ├── lessons-for.sh          ← NEW
-│   └── score.sh                ← NEW (deferred tier-3)
+│   ├── validate.sh               ← extend with SF13, SF14, SF15, SF16
+│   ├── setup.sh                  ← no changes
+│   ├── list-specs.sh             ← no changes
+│   ├── promote.sh                ← NEW
+│   ├── lessons-for.sh            ← NEW
+│   └── scan-merges.sh            ← NEW
 └── reference/
-    ├── product.md              ← document OpenSpec marker convention (opt-in)
-    └── templates/              ← no changes
+    ├── product.md                ← document OpenSpec frontmatter convention (opt-in)
+    └── templates/
+        ├── (existing templates)
+        ├── product-topic.md      ← NEW branch doc template
+        ├── tech-topic.md         ← NEW branch doc template
+        ├── plan-topic.md         ← NEW branch doc template
+        └── research.md           ← NEW research template
 ```
 
 ---
 
-## SKILL.md Frontmatter Extensions
+## SKILL.md Frontmatter v2.0
 
-Add the following YAML fields to the existing frontmatter block (after
-`metadata:`). Must be valid YAML; must not break existing parsers that read
-only name/description/user-invocable.
+Bump to `version: 2.0`. Add the following YAML fields to the existing
+frontmatter block (after `metadata:`). Must be valid YAML; existing parsers
+that read only `name/description/user-invocable` continue to work.
 
 ```yaml
+version: 2.0
+
+allowed-tools:
+  - Read
+  - Edit
+  - Write
+  - Glob
+  - Grep
+  - Bash
+  - Agent
+
+context:
+  - .agents/skills/spec/feature.md
+  - .agents/skills/spec/strategy.md
+  - .agents/skills/spec/reference/product.md
+  - .agents/skills/spec/reference/tech.md
+  - .agents/skills/spec/reference/plan.md
+
+subagents:
+  - spec-tracer:     subagents/spec-tracer/SKILL.md
+  - spec-promoter:   subagents/spec-promoter/SKILL.md
+  - spec-interviewer: subagents/spec-interviewer/SKILL.md
+  - spec-health:     subagents/spec-health/SKILL.md
+
+superpowers:
+  - superpowers:brainstorming          # WHAT interview (step 2)
+  - superpowers:writing-plans          # plan units (step 5)
+  - code-explorer                      # HOW codebase trace (step 4)
+  - code-architect                     # HOW approach sketch (step 4)
+  - superpowers:verification-before-completion  # audit quality framing
+
 outputs:
   - .spec/features/<name>/product.md
   - .spec/features/<name>/tech.md
@@ -88,6 +134,15 @@ caveman:
 
 `<name>` is a placeholder; tools reading this field should treat it as a
 pattern, not a literal path.
+
+**`allowed-tools:` rationale:** Without explicit allowed-tools, agents in
+constrained environments default to Read-only and cannot write spec files.
+Listing Edit, Write, Glob, Grep, Bash, Agent here surfaces the full write
+surface to the tool runner without needing per-session escalation.
+
+**`context:` rationale:** Lists constraint documents the skill injects before
+delegating to executors. Allows tooling to pre-load the right reference docs
+without the agent having to discover them.
 
 ---
 
@@ -476,6 +531,413 @@ check_sf14_scope_conflicts() {
   done
 }
 ```
+
+---
+
+## Routing Extension (Updated)
+
+Add to the existing Routing table in SKILL.md (replacing the earlier partial
+table):
+
+| Argument | Action |
+|---|---|
+| `interview [<name>]` | Load spec-interviewer subagent; run steps 1–2 for `<name>` |
+| `promote <name>` | Run `scripts/promote.sh <name>` via spec-promoter subagent |
+| `audit` | Load spec-auditor role; run `validate.sh` + pass to verification-before-completion |
+| `score` | Run `scripts/score.sh` (deferred) |
+| `lessons-for <tag>` | Run `scripts/lessons-for.sh <tag>` |
+| `diff <name>` | Run `scripts/scan-merges.sh <name>` — show pending merge blocks |
+| `health` | Invoke spec-health subagent — structural assessment of .spec/ tree |
+| `research <name>` | Open `.spec/features/<name>/research.md`; suggest spec-tracer for discovery |
+
+Update `argument-hint:` to: `strategy|feature <name>|interview [<name>]|promote <name>|audit|diff <name>|health|research <name>|lessons-for <tag>|validate|setup`.
+
+---
+
+## Composable Subagent Architecture
+
+Thin SKILL.md root routes to `subagents/<name>/SKILL.md` for each
+specialised role. The root SKILL.md holds the routing manifest and phase
+wiring; the subagent files hold the deep context for each role.
+
+**Folder contract:**
+- Each subagent folder is `subagents/<role-name>/SKILL.md`
+- Subagent SKILL.md files are self-contained; they can be invoked standalone
+- They inherit the parent's `allowed-tools:` unless they declare their own
+
+### subagents/spec-tracer/SKILL.md
+
+**Purpose:** Read-only codebase tracer for HOW phase (feature.design step 4).
+Finds existing files, interfaces, and contracts relevant to a feature. Feeds
+output to spec-architect for the HOW sketch.
+
+**Allowed-tools:** Read, Glob, Grep (read-only; never Edit/Write)
+
+**Parallel-safe:** yes — multiple spec-tracer instances can run concurrently
+since they only read.
+
+**Contract:**
+```yaml
+name: spec-tracer
+description: Read-only codebase tracer for spec HOW phase
+user-invocable: false
+allowed-tools: [Read, Glob, Grep]
+```
+
+**Orders:** Given a feature name and product.md requirements, trace:
+1. Relevant existing files (Glob patterns from tech.md contracts)
+2. Interface signatures (Grep for function/type declarations)
+3. Cross-references in root tech.md that apply
+4. Gaps (requirements with no existing code path)
+
+Output: structured trace document injected into spec-architect context.
+
+### subagents/spec-promoter/SKILL.md
+
+**Purpose:** Compound-phase merge-marker extractor. Shows diff first, then
+executes `promote.sh` with human confirmation.
+
+**Allowed-tools:** Read, Bash (for promote.sh execution)
+
+**Diff-first invariant:** MUST print the would-promote blocks (dry-run output)
+and receive explicit human confirmation before executing the live promote.
+
+**Contract:**
+```yaml
+name: spec-promoter
+description: Compound merge-marker extractor with diff-first confirmation
+user-invocable: false
+allowed-tools: [Read, Bash]
+```
+
+**Orders:**
+1. Run `bash .agents/skills/spec/scripts/promote.sh <name> --dry-run`
+2. Show output to user: "These blocks will promote to root tech.md — confirm?"
+3. On explicit confirmation: run without `--dry-run`
+4. Report: n blocks promoted, paths written
+
+### subagents/spec-interviewer/SKILL.md
+
+**Purpose:** WHAT-phase interview delegator. Injects constraint context then
+hands off to `superpowers:brainstorming`.
+
+**Allowed-tools:** Read (constraint loading only)
+
+**Delegation contract:** Must inject `feature.md § Interview for WHAT` as
+context before invoking brainstorming. Offers the delegation to the user;
+does not silently run it.
+
+**Contract:**
+```yaml
+name: spec-interviewer
+description: WHAT-phase interview — injects constraints, delegates to superpowers:brainstorming
+user-invocable: false
+allowed-tools: [Read]
+delegates-to: superpowers:brainstorming
+```
+
+**Orders:**
+1. Read `.agents/skills/spec/feature.md` § Interview for WHAT
+2. Read `.spec/product.md`, `.spec/tech.md`, `.spec/lessons.md`
+3. Tell user: *"I can run this as a `superpowers:brainstorming` session with
+   spec format constraints pre-loaded — want me to?"*
+4. On yes: invoke `superpowers:brainstorming` with constraint context
+
+### subagents/spec-health/SKILL.md
+
+**Purpose:** Structural health assessor. Reads the full `.spec/` tree and
+produces a prioritised list of structural problems beyond what `validate.sh`
+checks — staleness, balance, missing sections, spec drift.
+
+**Allowed-tools:** Read, Glob, Grep, Bash (validate.sh run)
+
+**Contract:**
+```yaml
+name: spec-health
+description: Structural health assessor for .spec/ tree
+user-invocable: true
+allowed-tools: [Read, Glob, Grep, Bash]
+```
+
+**Orders:**
+1. Run `validate.sh` and capture output
+2. Read root product.md, tech.md, plan.md, lessons.md
+3. Check: are all features in plan.md Feature Sequence?
+4. Check: do any feature folders have no corresponding plan entry?
+5. Check: are any feature folder plans missing unit IDs?
+6. Check: do any root specs exceed 300 lines (over-loaded)?
+7. Report a prioritised health list: CRITICAL / WARN / INFO items
+
+---
+
+## Branch Doc Templates
+
+New template files under `reference/templates/`. Mirror the existing
+`feature-product.md` / `feature-tech.md` pattern but for cross-cutting docs.
+
+### `reference/templates/product-topic.md`
+
+```markdown
+---
+type: product-topic
+topic: <topic>
+parent: product.md
+updated: YYYY-MM-DD
+---
+
+# <topic> — Product
+
+One paragraph: why this cross-cutting concern exists and who it affects.
+
+## Principles
+
+- Principle 1
+- Principle 2
+
+## Requirements
+
+### Requirement: <title>
+
+<feature> SHALL/MUST <observable behaviour>.
+
+#### Scenario: <title>
+
+**Given** …
+**When** …
+**Then** …
+```
+
+**When to create:** Only when a concern truly spans every feature — not as a
+substitute for a feature folder. Examples: design system, accessibility
+conventions, naming conventions that every feature enforces.
+
+### `reference/templates/tech-topic.md`
+
+```markdown
+---
+type: tech-topic
+topic: <topic>
+parent: tech.md
+updated: YYYY-MM-DD
+---
+
+# <topic> — Tech
+
+One paragraph: what this cross-cutting technical concern governs.
+
+## Contract
+
+<Invariant every feature must satisfy.>
+
+## File Layout
+
+```
+path/to/shared/
+├── file.ext     ← purpose
+```
+
+## Integration Points
+
+| Feature | How it integrates |
+|---|---|
+| <name> | … |
+```
+
+### `reference/templates/plan-topic.md`
+
+```markdown
+---
+type: plan-topic
+topic: <topic>
+parent: plan.md
+updated: YYYY-MM-DD
+---
+
+# <topic> — Sub-plan
+
+One paragraph: why this cross-cutting plan exists separately from root plan.md.
+
+## Sequence
+
+| Step | Feature or sub-task | Gate |
+|---|---|---|
+| 1 | … | … |
+
+## Current Focus
+
+<What is being worked on now in this sub-plan.>
+```
+
+**When to create:** Only when root `plan.md` grows unwieldy because a
+cross-cutting plan (e.g. a multi-feature migration) needs its own sequence.
+Default to keeping everything in root `plan.md`.
+
+### `reference/templates/research.md`
+
+```markdown
+---
+type: feature-research
+feature: <name>
+parent: product.md
+updated: YYYY-MM-DD
+---
+
+# <name> — Research
+
+Discovery artifacts for the feature. Deleted with the feature folder at
+wrapup — never promoted to root. If a finding should persist, extract it
+to a lesson (lessons.md) or root tech.md section.
+
+## Question
+
+<What are we trying to learn?>
+
+## Findings
+
+### Finding: <title>
+
+<What was found and where.>
+
+## Decision
+
+<What the research led to — and what was ruled out.>
+```
+
+---
+
+## `scripts/scan-merges.sh`
+
+**Contract:** `scan-merges.sh [<feature-name>] [--format table|json|plain]`
+
+**Purpose:** Report all `<!-- merge -->` / `<!-- /merge -->` blocks across the
+.spec/ tree, or for a single feature. Structured alternative to grepping for
+merge markers manually.
+
+**Algorithm:**
+1. If `<feature-name>` given: scan `.spec/features/<name>/tech.md` only
+2. Else: scan all `.spec/features/*/tech.md`
+3. For each file: collect block count, line ranges, first-line preview of each block
+4. Detect unclosed markers; report as error
+5. Format output per `--format` (default: table)
+
+**Format contracts:**
+- `table` — human-readable: `feature | file | blocks | first-line-preview`
+- `json` — `[{"feature":…,"file":…,"blocks":[{"start":n,"end":n,"preview":…}]}]`
+- `plain` — one line per block: `<file>:<start>-<end>: <preview>`
+
+**Exit codes:**
+- `0` — scan complete (even if no blocks found)
+- `1` — unclosed marker detected (file name and line printed to stderr)
+
+**Safety:** Read-only. Never modifies files. Safe to run at any time.
+
+---
+
+## `validate.sh` Extensions — SF15 and SF16
+
+### SF15 — Root spec length check
+
+Insert after SF14. Warn when any root spec file exceeds 200 lines.
+
+```bash
+check_sf15_root_spec_length() {
+  local max_lines=200
+  local root_files=(".spec/product.md" ".spec/tech.md" ".spec/design.md"
+                    ".spec/plan.md" ".spec/lessons.md")
+  for f in "${root_files[@]}"; do
+    [[ -f "$f" ]] || continue
+    local count
+    count="$(wc -l < "$f")"
+    if [[ $count -gt $max_lines ]]; then
+      yellow "SF15: $f is $count lines (>${max_lines}); consider splitting \
+into a branch doc (product-{topic}.md, tech-{topic}.md)"
+    fi
+  done
+}
+```
+
+Rationale: root specs that grow past 200 lines usually contain feature-level
+detail that belongs in a feature folder or branch doc. The 200-line threshold
+is a heuristic; adjust via env `SPEC_ROOT_MAX_LINES` if needed.
+
+### SF16 — Lessons entries without Tags
+
+Insert after SF15. Warn on any lesson block in `lessons.md` that lacks a
+`**Tags:**` line.
+
+```bash
+check_sf16_lessons_tags() {
+  local lessons=".spec/lessons.md"
+  [[ -f "$lessons" ]] || return 0
+  local current_title=""
+  local has_tags=0
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^###\  ]]; then
+      if [[ -n "$current_title" && $has_tags -eq 0 ]]; then
+        yellow "SF16: lesson '$current_title' in lessons.md has no **Tags:** line"
+      fi
+      current_title="${line#\#\#\# }"
+      has_tags=0
+    elif [[ "$line" =~ ^\*\*Tags:\*\* ]]; then
+      has_tags=1
+    fi
+  done < "$lessons"
+  # Check final entry
+  if [[ -n "$current_title" && $has_tags -eq 0 ]]; then
+    yellow "SF16: lesson '$current_title' in lessons.md has no **Tags:** line"
+  fi
+}
+```
+
+**Tags rationale:** `lessons-for.sh` uses `**Tags:**` lines for extraction.
+Entries without tags are invisible to D8 injection hooks.
+
+---
+
+## OpenSpec Frontmatter Format
+
+Optional machine-readable overlay. Fields are added to existing frontmatter;
+their absence does not affect validate.sh (SF0-SF16 do not require them).
+
+### product.md — `requirements:` list
+
+```yaml
+requirements:
+  - id: R-1
+    title: "Login with email"
+    strength: SHALL
+    scenarios: 2
+  - id: R-2
+    title: "Password reset flow"
+    strength: SHALL
+    scenarios: 1
+```
+
+**Purpose:** allows tooling to extract requirement IDs without parsing prose.
+The `scenarios:` count is informational; validate.sh SF-opt (warn-only, opt-in)
+can check it against actual GWT blocks.
+
+### plan.md — `units:` list
+
+```yaml
+units:
+  - id: "spec-skill-improvements/1"
+    title: "SKILL.md metadata enrichment"
+    status: planned
+    requires: []
+  - id: "spec-skill-improvements/2"
+    title: "Subagent role profiles"
+    status: planned
+    requires: ["spec-skill-improvements/1"]
+```
+
+**Purpose:** allows tooling to compute dependency graphs and status summaries
+without parsing markdown tables.
+
+**Adoption rule:** OpenSpec frontmatter is opt-in per file. Reference documents
+(`reference/product.md`, `reference/plan.md`) note the convention as optional.
+Validate.sh does not error on absence; a future opt-in SF check may warn on
+malformed entries when the field is present.
 
 ---
 

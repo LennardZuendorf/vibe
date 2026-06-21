@@ -9,12 +9,10 @@ updated: 2026-06-21
 # spec-skill-improvements — Product Spec
 
 Elevate the spec skill from a complete v1.8 framework to an excellent v2.0
-platform: specialized roles, mechanical automation for the most error-prone
-phase (compound), machine-readable output for tooling, and self-describing
-metadata that makes the skill composable with the superpowers ecosystem.
-
-The core two-layer model and the 6-step authoring flow are NOT changed — they
-are proven and correct. This feature enriches the skill around those foundations.
+platform. The core two-layer model and 6-step authoring flow are NOT changed.
+This feature adds: a composable subagent architecture, structural SKILL.md
+fixes that unblock direct invocation, mechanical automation for compound, and
+machine-readable spec formats for better tooling and validation.
 
 **Research:** [research.md](research.md)
 
@@ -24,17 +22,16 @@ are proven and correct. This feature enriches the skill around those foundations
 
 | Owns | Does not own |
 |---|---|
-| `.agents/skills/spec/SKILL.md` metadata and role sections | Flow state machine transitions |
-| `.agents/skills/spec/feature.md` output profiles | `vibe-compound` procedural logic |
-| `.agents/skills/spec/strategy.md` additions | `vibe-feature` delegation ordering |
-| `scripts/promote.sh` — compound promotion automation | Platform adapter hooks |
-| `scripts/lessons-for.sh` — D8 tag-based extraction | `lessons.md` content (written by vibe-flow/D8) |
-| `scripts/score.sh` — spec quality scorecard | CI pipeline wiring (deferred) |
-| `validate.sh` extensions SF13–SF15 | vibe-flow D8 read-on-entry mechanism |
-| New `argument-hint` routes and `## Routing` entries | Skill discovery registry |
-| OpenSpec-compatible requirement markers (opt-in convention) | External tool integrations |
-| `reference/product.md` additions for markers | `vibe-compound` script body |
-| SKILL.md `delegates:`, `outputs:`, `reads:`, `phases:`, `caveman:` frontmatter | superpowers:* namespace ownership |
+| `.agents/skills/spec/SKILL.md` — all frontmatter and body changes | Flow state machine transitions |
+| `.agents/skills/spec/subagents/*/SKILL.md` — four subagent definitions | `vibe-compound` procedural logic |
+| `.agents/skills/spec/feature.md` output profiles | `vibe-feature` delegation ordering |
+| `.agents/skills/spec/strategy.md` additions | Platform adapter hooks |
+| `scripts/promote.sh`, `scripts/lessons-for.sh`, `scripts/scan-merges.sh` | `lessons.md` content (written by vibe-flow/D8) |
+| `validate.sh` extensions SF13–SF16 | vibe-flow D8 read-on-entry mechanism |
+| `reference/templates/` — new branch doc templates + research template | Skill discovery registry |
+| New `argument-hint` routes and `## Routing` entries | `vibe-compound` script body |
+| OpenSpec-compatible frontmatter (opt-in, warn-only initially) | External tool integrations |
+| SKILL.md `allowed-tools`, `context:`, `subagents:`, `superpowers:`, `caveman:` frontmatter | superpowers:* namespace ownership |
 
 ---
 
@@ -251,17 +248,204 @@ also owns `flow state` in its Scope table
 ### Requirement: `argument-hint` and routing expansion
 
 The SKILL.md `argument-hint` and `## Routing` table SHALL be extended to cover:
-`interview [<name>]`, `promote <name>`, `audit`, `score`, `lessons-for <tag>`.
+`interview [<name>]`, `promote <name>`, `audit`, `diff`, `health`,
+`research <name>`, `lessons <tag>`.
 
 Each new route MUST have a one-line description in the Routing table and invoke
-the corresponding script.
+the corresponding subagent or script.
 
 #### Scenario: New routes are discoverable
 
 **Given** a user running `/spec` with no argument in an environment that shows
 argument hints
-**Then** the hint includes `interview`, `promote`, `audit`, `score`,
-and `lessons-for` alongside the existing options
+**Then** the hint includes `diff`, `health`, `research`, `lessons`, `promote`,
+`interview`, and `audit` alongside the existing options
+
+---
+
+### Requirement: SKILL.md `allowed-tools` expansion
+
+The SKILL.md `allowed-tools` field SHALL include `Edit`, `Write`, `Glob`, and
+`Grep` so that the spec skill can write spec files when invoked directly without
+vibe-flow.
+
+The current restriction to Read-only tools MUST be lifted because a user running
+`/spec feature <name>` without the vibe flow active expects the skill to produce
+spec files, not just read them.
+
+#### Scenario: Direct invocation writes a spec
+
+**Given** a user runs `/spec feature my-feature` without a vibe-flow cursor active
+**When** the spec skill runs the feature authoring flow
+**Then** it can write `features/my-feature/product.md` and `features/my-feature/tech.md`
+directly without erroring on a missing write permission
+
+---
+
+### Requirement: SKILL.md structural frontmatter additions
+
+The SKILL.md frontmatter SHALL add: `context:` (session-start auto-injection list),
+`subagents:` (manifest of subagent SKILL.md paths with trigger and caveman fields),
+`superpowers:` (per-phase declaration), and `caveman: lite` (top-level default).
+
+The metadata version SHALL be bumped to `2.0` to signal the structural additions.
+
+The `context: session-start:` list MUST include `.spec/lessons.md` and `.spec/plan.md`
+so the harness can auto-inject them on every `/spec` invocation.
+
+The `subagents:` manifest MUST list all four subagents with `name`, `path`,
+`trigger`, `caveman`, and optionally `parallel-safe: true` for spec-tracer.
+
+#### Scenario: Harness auto-injects session-start files
+
+**Given** SKILL.md with `context: session-start: [.spec/lessons.md, .spec/plan.md]`
+**When** the user invokes any `/spec` command
+**Then** the harness loads both files into context before the skill body runs,
+without the agent needing to remember to read them
+
+#### Scenario: spec-tracer marked parallel-safe
+
+**Given** the `subagents:` manifest entry for `spec-tracer` has `parallel-safe: true`
+**When** `vibe-feature` reads the manifest at `feature.design`
+**Then** it knows to invoke `spec-tracer` and `spec-interviewer` simultaneously
+
+---
+
+### Requirement: Composable subagent architecture
+
+The spec skill SHALL organise four dedicated subagent SKILL.md files under
+`subagents/<name>/SKILL.md` — replacing the current approach of role sections
+embedded in the main SKILL.md body.
+
+Each subagent MUST be a complete, standalone SKILL.md with its own
+`allowed-tools`, `caveman`, input/output contracts, and validation criteria.
+
+`spec-interviewer` MUST conduct a structured 5-question dialogue (problem →
+scope → first scenario → failure modes → done signal) and output a partial
+`product.md` draft for human review, not a committed file.
+
+`spec-tracer` MUST be read-only (only `Read`, `Glob`, `Grep`, `Bash` for
+read-only commands) and MUST declare `parallel-safe: true` in its manifest
+entry because it does not touch any files written by `spec-interviewer`.
+
+`spec-promoter` MUST call `scan-merges.sh` first to produce a structured diff,
+present it to the user, and execute the merge to root specs only after explicit
+confirmation. It MUST update the root `plan.md` feature sequence to DONE.
+
+`spec-health` MUST check: stale `updated:` dates (>30 days with git activity on
+the file), requirements with no test evidence in plan.md, orphaned `<!-- merge -->`
+blocks in archived features, feature plans with empty verification columns, and
+root specs exceeding 200 lines. It MUST output a per-spec health report.
+
+#### Scenario: spec-tracer runs parallel with spec-interviewer
+
+**Given** vibe-feature enters `feature.design` and reads the subagents manifest
+**When** it invokes the design phase
+**Then** spec-tracer and spec-interviewer start simultaneously; spec-tracer
+reads the codebase while spec-interviewer conducts the WHAT dialogue
+
+#### Scenario: spec-promoter shows diff before executing
+
+**Given** `features/my-feature/tech.md` has two `<!-- merge -->` blocks
+**When** the user invokes `/spec promote my-feature`
+**Then** spec-promoter calls `scan-merges.sh`, displays a structured diff of
+the two blocks and their destination in root `tech.md`, and waits for explicit
+user confirmation before writing anything
+
+---
+
+### Requirement: Branch doc templates
+
+The `reference/templates/` directory SHALL contain three new templates:
+`product-topic.md`, `tech-topic.md`, and `plan-topic.md` for branch docs.
+
+Each template MUST pre-fill `type: branch` frontmatter and include `parent:`,
+`scope:`, and `covers:` fields (currently validated by validate.sh but not
+templated anywhere), plus a cross-reference stub to root entrypoints.
+
+Additionally, a `research.md` template SHALL be added covering: problem being
+investigated, approaches tried, measurements/results, rejected alternatives with
+rationale, and references.
+
+#### Scenario: Branch doc template eliminates validation warnings
+
+**Given** a user creates `tech-infra.md` by copying `product-topic.md` template
+**When** `validate.sh` runs
+**Then** no warnings are emitted for missing frontmatter fields (type, parent,
+scope, covers), because the template pre-fills them correctly
+
+---
+
+### Requirement: `scripts/scan-merges.sh`
+
+The spec skill SHALL provide `scripts/scan-merges.sh <feature-name>` that reads
+`features/<name>/tech.md`, finds all `<!-- merge -->` / `<!-- /merge -->` blocks,
+and outputs a structured report: block count, source file, line ranges, estimated
+line count per block, and the content preview.
+
+The script MUST exit 0 with a "no merge blocks found" message when the feature
+has no markers (graceful degrade).
+
+`spec-promoter` MUST call `scan-merges.sh` as its first step to produce the
+diff preview before asking for user confirmation.
+
+#### Scenario: Scan reports merge blocks before promotion
+
+**Given** `features/my-feature/tech.md` with two `<!-- merge -->` blocks
+**When** `scan-merges.sh my-feature` is run
+**Then** it prints: block count (2), line ranges for each block, and a preview
+of the content that would promote to root `tech.md`
+
+---
+
+### Requirement: OpenSpec-compatible optional frontmatter
+
+Feature `product.md` SHOULD support an optional `requirements:` YAML block in
+frontmatter where each entry declares `id`, `title`, `priority` (RFC-2119 strength),
+`scenarios` (expected count), and `unit` (traced plan unit ID).
+
+Feature `plan.md` SHOULD support an optional `units:` YAML block where each entry
+declares `id`, `seq`, `summary`, `depends`, `verification`, and `req-ids`.
+
+Both additions MUST be opt-in — specs without them pass validation unchanged.
+
+`validate.sh` SHOULD add a warn-only check: when `requirements:` frontmatter is
+present, the declared `scenarios` count SHOULD match the actual `#### Scenario:`
+block count in the file body.
+
+#### Scenario: Requirement frontmatter is optional and non-blocking
+
+**Given** a feature `product.md` with no `requirements:` frontmatter
+**When** `validate.sh` runs
+**Then** no warning is emitted about missing structured requirements
+
+#### Scenario: Scenario count mismatch warns
+
+**Given** a `product.md` with `requirements: [{id: R1, scenarios: 3}]` but
+only 2 `#### Scenario:` blocks under the R1 requirement
+**When** `validate.sh` runs
+**Then** a WARN is emitted about the count mismatch (never an error)
+
+---
+
+### Requirement: SF15 and SF16 validators
+
+`validate.sh` SHALL add two new warn-only checks:
+
+**SF15 — Root spec length:** if `product.md` or `tech.md` exceeds 200 lines,
+emit a WARN that feature-level detail may have leaked into the root layer.
+
+**SF16 — Lessons tag coverage:** if any lesson entry in `lessons.md` has no
+`**Tags:**` line, emit a WARN. (All current entries have tags; this guards
+future entries against the format degrading.)
+
+Both SHALL be warn-only with no path to error promotion in this feature.
+
+#### Scenario: Oversized root spec triggers SF15
+
+**Given** `.spec/product.md` is 250 lines long
+**When** `validate.sh` runs
+**Then** SF15 emits a WARN: "product.md exceeds 200 lines — check for feature-level detail"
 
 ---
 
@@ -270,8 +454,8 @@ and `lessons-for` alongside the existing options
 - Changing the two-layer model (root + feature layers)
 - Changing the 6-step feature authoring interview flow
 - Rewriting existing SF0–SF12 validators
-- Adding mandatory structure to requirements (OpenSpec markers are opt-in)
+- Making OpenSpec frontmatter mandatory (always opt-in, warn-only)
 - Shipping a CI pipeline (wiring is deferred; scripts work standalone)
-- Creating a separate SKILL.md file per subagent role (roles are sections, not files)
-- Modifying `vibe-compound` body (spec skill provides `promote.sh`; vibe-compound calls it)
+- Modifying `vibe-compound` body (spec skill provides tooling; vibe-compound calls it)
 - Owning the `superpowers:*` namespace
+- Implementing spec-interviewer or spec-health before structural items ship (see priority)

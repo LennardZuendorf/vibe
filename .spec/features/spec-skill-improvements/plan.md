@@ -17,100 +17,114 @@ is deleted; only extended or supplemented.
 
 ## Unit Table
 
-| ID | Title | Requires | Status |
-|---|---|---|---|
-| spec-skill-improvements/1 | SKILL.md metadata enrichment | — | planned |
-| spec-skill-improvements/2 | Subagent role profiles in SKILL.md | 1 | planned |
-| spec-skill-improvements/3 | Routing expansion + argument-hint | 1, 2 | planned |
-| spec-skill-improvements/4 | feature.md output profiles (Cavekit) | — | planned |
-| spec-skill-improvements/5 | `scripts/promote.sh` | — | planned |
-| spec-skill-improvements/6 | `scripts/lessons-for.sh` | — | planned |
-| spec-skill-improvements/7 | validate.sh SF13 — stale link checker | — | planned |
-| spec-skill-improvements/8 | validate.sh SF14 — scope conflict detector | — | planned |
-
-Deferred (tier-3, not in this feature):
-- `scripts/score.sh` (spec-specific quality metrics for superpowers context; Improvement 7)
-- Superpowers constraint context snippets in feature.md (text additions; Improvement 8 revised)
-- SF15 cross-feature unit dep check (extends I1)
-- SF16 unit ID drift detector (requires history file)
+| ID | Title | Priority | Requires | Status |
+|---|---|---|---|---|
+| spec-skill-improvements/1 | SKILL.md v2.0 frontmatter (allowed-tools, context, subagents, superpowers) | HIGH | — | planned |
+| spec-skill-improvements/2 | `## Roles` manifest section in SKILL.md | HIGH | 1 | planned |
+| spec-skill-improvements/3 | Routing expansion (`diff`, `health`, `research`, `lessons`, `interview`, `promote`) | MEDIUM | 1, 2 | planned |
+| spec-skill-improvements/4 | `feature.md` output profiles (Cavekit lite/full/ultra) | MEDIUM | — | planned |
+| spec-skill-improvements/5 | `scripts/promote.sh` | MEDIUM | — | planned |
+| spec-skill-improvements/6 | `scripts/lessons-for.sh` | MEDIUM | — | planned |
+| spec-skill-improvements/7 | `validate.sh` SF13 — stale link checker | MEDIUM | — | planned |
+| spec-skill-improvements/8 | `validate.sh` SF14 — scope conflict detector | MEDIUM | — | planned |
+| spec-skill-improvements/9 | Branch doc templates (product-topic, tech-topic, plan-topic, research) | HIGH | — | planned |
+| spec-skill-improvements/10 | `scripts/scan-merges.sh` | MEDIUM | — | planned |
+| spec-skill-improvements/11 | OpenSpec machine-readable frontmatter (requirements:, units:) | MEDIUM | — | planned |
+| spec-skill-improvements/12 | `subagents/spec-tracer/SKILL.md` | MEDIUM | 1 | planned |
+| spec-skill-improvements/13 | `subagents/spec-promoter/SKILL.md` | MEDIUM | 1, 5 | planned |
+| spec-skill-improvements/14 | `subagents/spec-interviewer/SKILL.md` | LOW | 1 | planned |
+| spec-skill-improvements/15 | `subagents/spec-health/SKILL.md` | LOW | 1 | planned |
+| spec-skill-improvements/16 | `validate.sh` SF15 (root length) + SF16 (lessons tags) | LOW | — | planned |
+| spec-skill-improvements/17 | Composable subagents/ folder wiring in root SKILL.md | STRUCTURAL | 12, 13, 14, 15 | planned |
 
 Explicitly NOT in scope: `scripts/interview.sh`. WHAT-phase interviewing is
 done by `superpowers:brainstorming` with `feature.md § Interview for WHAT` as
 constraint context. No custom interview CLI is needed or wanted.
 
+Deferred (tier-3, not in this feature):
+- `scripts/score.sh` (spec-specific quality metrics for superpowers context)
+
 ---
 
 ## Unit Detail
 
-### spec-skill-improvements/1 — SKILL.md metadata enrichment
+### spec-skill-improvements/1 — SKILL.md v2.0 frontmatter
 
-**Requirements:** R-metadata (SKILL.md metadata enrichment)
+**Requirements:** R-metadata, R-allowed-tools, R-skill-manifest
 
 **Scope:** Edit `.agents/skills/spec/SKILL.md` frontmatter only.
 
 **Changes:**
+- Bump `version:` to `2.0`
+- Add `allowed-tools:` list: Read, Edit, Write, Glob, Grep, Bash, Agent
+- Add `context:` list: feature.md, strategy.md, reference/product.md, reference/tech.md, reference/plan.md
+- Add `subagents:` map: spec-tracer, spec-promoter, spec-interviewer, spec-health → their SKILL.md paths
+- Add `superpowers:` list: brainstorming, writing-plans, code-explorer, code-architect, verification-before-completion
 - Add `outputs:`, `reads:`, `delegates:`, `phases:`, `caveman:` YAML fields
-  after `metadata:` block
-- `delegates:` lists four roles with `when:` and `superpowers:` sub-fields
-- `caveman:` has three keys: `lite`, `full`, `ultra`
 
 **Verification:**
 ```bash
-# Frontmatter fields present
+grep -q 'version: 2.0' .agents/skills/spec/SKILL.md
+grep -q 'allowed-tools:' .agents/skills/spec/SKILL.md
+grep -q 'context:' .agents/skills/spec/SKILL.md
+grep -q 'subagents:' .agents/skills/spec/SKILL.md
+grep -q 'superpowers:' .agents/skills/spec/SKILL.md
 grep -q 'delegates:' .agents/skills/spec/SKILL.md
-grep -q 'phases:' .agents/skills/spec/SKILL.md
 grep -q 'caveman:' .agents/skills/spec/SKILL.md
-grep -q 'outputs:' .agents/skills/spec/SKILL.md
-grep -q 'reads:' .agents/skills/spec/SKILL.md
 ```
 
-**Test:** `tests/spec/run.sh` → add `test_skill_metadata_fields` covering
-presence of each new frontmatter key.
+**Test:** `tests/spec/run.sh` → add `test_skill_v2_frontmatter_fields` covering
+presence of each new frontmatter key and the version bump.
 
 ---
 
-### spec-skill-improvements/2 — Subagent role profiles in SKILL.md
+### spec-skill-improvements/2 — `## Roles` manifest section in SKILL.md
 
 **Requirements:** R-roles (Subagent role profiles as superpowers delegation contexts)
 
 **Scope:** Edit `.agents/skills/spec/SKILL.md` body — add `## Roles` section
-before `## Routing`.
+before `## Routing`. This section is a routing manifest: it names executors
+and constraint documents. The actual subagent SKILL.md files live under
+`subagents/` and are authored in units 12-15.
 
 **Changes:**
-- Add `## Roles` section with subsections per tech.md spec:
+- Add `## Roles` section with subsections:
   `### Role: spec-interviewer`, `spec-architect`, `spec-planner`, `spec-auditor`, `spec-compactor`
-- Each subsection has: Executor, Phase, Constraint document to inject, Inputs, Outputs, Validation criteria
-- spec-interviewer: executor = `superpowers:brainstorming`; constraint = feature.md § Interview for WHAT
-- spec-planner: executor = `superpowers:writing-plans`; constraint = reference/plan.md
-- spec-auditor: executor = validate.sh (no superpower); feeds score.sh JSON to verification-before-completion
-- spec-compactor: executor = promote.sh + superpowers:finishing-a-development-branch for lesson narrative
+- Each subsection: Executor, Phase, Constraint document to inject, Inputs,
+  Outputs, Validation criteria on output
+- spec-interviewer: executor = `superpowers:brainstorming`; constraint = `feature.md § Interview for WHAT`
+- spec-planner: executor = `superpowers:writing-plans`; constraint = `reference/plan.md`
+- spec-auditor: executor = validate.sh (no superpower substitute); passes JSON to verification-before-completion
+- spec-compactor: executor = promote.sh for extraction; lesson is human-reviewed before appending
 
 **Verification:**
 ```bash
 grep -q '## Roles' .agents/skills/spec/SKILL.md
-grep -q '### Role: spec-interviewer' .agents/skills/spec/SKILL.md
-grep -q '### Role: spec-auditor' .agents/skills/spec/SKILL.md
+grep -q 'spec-interviewer' .agents/skills/spec/SKILL.md
+grep -q 'spec-planner' .agents/skills/spec/SKILL.md
+grep -q 'spec-auditor' .agents/skills/spec/SKILL.md
+grep -q 'spec-compactor' .agents/skills/spec/SKILL.md
 ```
 
 **Test:** `tests/spec/run.sh` → add `test_skill_roles_section` asserting
-all four role headers are present.
+all five role headers are present.
 
 ---
 
-### spec-skill-improvements/3 — Routing expansion + argument-hint
+### spec-skill-improvements/3 — Routing expansion
 
-**Requirements:** R-routing (argument-hint and routing expansion)
+**Requirements:** R-routing, R-routing-extended
 
 **Scope:** Edit `.agents/skills/spec/SKILL.md` — update `argument-hint` and
 `## Routing` table.
 
 **Changes:**
-- Update `argument-hint:` to include new routes
-- Add rows to `## Routing` `$ARGUMENTS:` table for: `interview`, `promote`,
-  `audit`, `score`, `lessons-for`
+- Update `argument-hint:` to full route list
+- Add rows to Routing table for: `interview [<name>]`, `promote <name>`,
+  `audit`, `lessons-for <tag>`, `diff <name>`, `health`, `research <name>`,
+  `lessons <tag>` (alias for lessons-for)
 
-**Prerequisite:** Units 1, 2 (roles and metadata must exist before routing
-references them).
+**Prerequisite:** Units 1, 2.
 
 **Verification:**
 ```bash
@@ -118,10 +132,13 @@ grep -q 'interview' .agents/skills/spec/SKILL.md
 grep -q 'promote' .agents/skills/spec/SKILL.md
 grep -q 'audit' .agents/skills/spec/SKILL.md
 grep -q 'lessons-for' .agents/skills/spec/SKILL.md
+grep -q 'diff' .agents/skills/spec/SKILL.md
+grep -q 'health' .agents/skills/spec/SKILL.md
+grep -q 'research' .agents/skills/spec/SKILL.md
 ```
 
 **Test:** `tests/spec/run.sh` → add `test_skill_routing_new_routes` asserting
-new route names appear in SKILL.md routing table.
+all route names appear in SKILL.md routing table.
 
 ---
 
@@ -266,15 +283,280 @@ rm -rf /tmp/spec-sf14
 
 ---
 
+### spec-skill-improvements/9 — Branch doc templates
+
+**Requirements:** R-branch-templates
+
+**Priority:** HIGH — small, structural, no new concepts.
+
+**Scope:** Create four template files under
+`.agents/skills/spec/reference/templates/`:
+- `product-topic.md`
+- `tech-topic.md`
+- `plan-topic.md`
+- `research.md`
+
+**Changes:** New files only; content per tech.md spec. No changes to existing
+templates or scripts.
+
+**Verification:**
+```bash
+ls .agents/skills/spec/reference/templates/product-topic.md
+ls .agents/skills/spec/reference/templates/tech-topic.md
+ls .agents/skills/spec/reference/templates/plan-topic.md
+ls .agents/skills/spec/reference/templates/research.md
+grep -q 'type: product-topic' .agents/skills/spec/reference/templates/product-topic.md
+grep -q 'type: tech-topic' .agents/skills/spec/reference/templates/tech-topic.md
+```
+
+**Test:** `tests/spec/run.sh` → add `test_branch_doc_templates_exist` asserting
+all four template files are present and have valid frontmatter types.
+
+---
+
+### spec-skill-improvements/10 — `scripts/scan-merges.sh`
+
+**Requirements:** R-scan-merges
+
+**Priority:** MEDIUM.
+
+**Scope:** Create `.agents/skills/spec/scripts/scan-merges.sh`.
+
+**Changes:**
+- New file: full implementation per tech.md spec
+- Scans all feature tech.md files or one named feature
+- Formats as table, json, or plain
+- Exits 1 on unclosed marker; exits 0 otherwise
+- Read-only; never modifies files
+
+**Verification:**
+```bash
+# With a feature that has merge blocks:
+bash .agents/skills/spec/scripts/scan-merges.sh spec-skill-improvements
+# Exit 0; table output shows blocks found
+# Run shellcheck
+shellcheck .agents/skills/spec/scripts/scan-merges.sh
+```
+
+**Test:** `tests/spec/run.sh` → add:
+- `test_scan_merges_finds_blocks` — reports blocks in feature with markers
+- `test_scan_merges_unclosed_exits_nonzero` — unclosed marker triggers exit 1
+- `test_scan_merges_empty_feature` — feature with no markers exits 0, empty output
+
+---
+
+### spec-skill-improvements/11 — OpenSpec machine-readable frontmatter
+
+**Requirements:** R-openspec
+
+**Priority:** MEDIUM.
+
+**Scope:** Edit `.agents/skills/spec/reference/product.md` and
+`.agents/skills/spec/reference/plan.md` to document the optional
+`requirements:` and `units:` frontmatter fields. No changes to validate.sh
+(convention is warn-only, opt-in).
+
+**Changes:**
+- `reference/product.md`: Add `## OpenSpec frontmatter (optional)` section
+  documenting the `requirements:` list format with id, title, strength, scenarios
+- `reference/plan.md`: Add `## OpenSpec frontmatter (optional)` section
+  documenting the `units:` list format with id, title, status, requires
+- Note in both: "opt-in; validate.sh does not error on absence"
+
+**Verification:**
+```bash
+grep -q 'requirements:' .agents/skills/spec/reference/product.md
+grep -q 'units:' .agents/skills/spec/reference/plan.md
+grep -q 'opt-in' .agents/skills/spec/reference/product.md
+```
+
+**Test:** `tests/spec/run.sh` → add `test_openspec_docs_present` asserting
+the optional frontmatter sections exist in both reference files.
+
+---
+
+### spec-skill-improvements/12 — `subagents/spec-tracer/SKILL.md`
+
+**Requirements:** R-composable
+
+**Priority:** MEDIUM.
+
+**Scope:** Create `.agents/skills/spec/subagents/spec-tracer/SKILL.md`.
+
+**Invariants:**
+- `allowed-tools:` must be `[Read, Glob, Grep]` — no write tools
+- Must be parallel-safe (no state written; safe to run concurrently)
+- Output is a structured trace document, not a product or tech spec
+
+**Verification:**
+```bash
+ls .agents/skills/spec/subagents/spec-tracer/SKILL.md
+grep -q 'allowed-tools' .agents/skills/spec/subagents/spec-tracer/SKILL.md
+grep -q 'Read' .agents/skills/spec/subagents/spec-tracer/SKILL.md
+# Confirm no write tools listed:
+grep -v 'Edit\|Write\|Bash' .agents/skills/spec/subagents/spec-tracer/SKILL.md | grep -q 'allowed-tools'
+```
+
+**Test:** `tests/spec/run.sh` → add `test_spec_tracer_read_only` asserting
+SKILL.md lists no write tools in allowed-tools.
+
+---
+
+### spec-skill-improvements/13 — `subagents/spec-promoter/SKILL.md`
+
+**Requirements:** R-composable
+
+**Priority:** MEDIUM.
+
+**Depends on:** spec-skill-improvements/5 (promote.sh must exist)
+
+**Scope:** Create `.agents/skills/spec/subagents/spec-promoter/SKILL.md`.
+
+**Invariants:**
+- MUST run promote.sh with `--dry-run` first; MUST show output to user
+- MUST require explicit human confirmation before live run
+- `allowed-tools:` is `[Read, Bash]`
+
+**Verification:**
+```bash
+ls .agents/skills/spec/subagents/spec-promoter/SKILL.md
+grep -q 'dry-run' .agents/skills/spec/subagents/spec-promoter/SKILL.md
+grep -q 'confirm' .agents/skills/spec/subagents/spec-promoter/SKILL.md
+```
+
+**Test:** `tests/spec/run.sh` → add `test_spec_promoter_diff_first` asserting
+the SKILL.md contains dry-run + confirmation language.
+
+---
+
+### spec-skill-improvements/14 — `subagents/spec-interviewer/SKILL.md`
+
+**Requirements:** R-composable
+
+**Priority:** LOW.
+
+**Scope:** Create `.agents/skills/spec/subagents/spec-interviewer/SKILL.md`.
+
+**Invariants:**
+- MUST inject `feature.md § Interview for WHAT` before delegating
+- MUST offer delegation (not silently invoke brainstorming)
+- `allowed-tools:` is `[Read]`
+
+**Verification:**
+```bash
+ls .agents/skills/spec/subagents/spec-interviewer/SKILL.md
+grep -q 'Interview for WHAT' .agents/skills/spec/subagents/spec-interviewer/SKILL.md
+grep -q 'brainstorming' .agents/skills/spec/subagents/spec-interviewer/SKILL.md
+```
+
+**Test:** `tests/spec/run.sh` → add `test_spec_interviewer_constraint_injection`
+asserting constraint reference and delegation offer language are present.
+
+---
+
+### spec-skill-improvements/15 — `subagents/spec-health/SKILL.md`
+
+**Requirements:** R-composable
+
+**Priority:** LOW.
+
+**Scope:** Create `.agents/skills/spec/subagents/spec-health/SKILL.md`.
+
+**Invariants:**
+- MUST run validate.sh and capture output
+- MUST check: feature-plan-sequence alignment, oversized root specs, missing unit IDs
+- `allowed-tools:` is `[Read, Glob, Grep, Bash]`
+- Output is prioritised list: CRITICAL / WARN / INFO
+
+**Verification:**
+```bash
+ls .agents/skills/spec/subagents/spec-health/SKILL.md
+grep -q 'validate.sh' .agents/skills/spec/subagents/spec-health/SKILL.md
+grep -q 'CRITICAL' .agents/skills/spec/subagents/spec-health/SKILL.md
+```
+
+**Test:** `tests/spec/run.sh` → add `test_spec_health_output_levels` asserting
+CRITICAL/WARN/INFO levels are documented in SKILL.md.
+
+---
+
+### spec-skill-improvements/16 — `validate.sh` SF15 + SF16
+
+**Requirements:** R-sf15-sf16
+
+**Priority:** LOW.
+
+**Scope:** Extend `.agents/skills/spec/scripts/validate.sh`.
+
+**Changes:**
+- SF15: add `check_sf15_root_spec_length()` — warn when root spec > 200 lines
+  (configurable via `SPEC_ROOT_MAX_LINES` env)
+- SF16: add `check_sf16_lessons_tags()` — warn when lesson entry has no `**Tags:**`
+
+**Verification:**
+```bash
+# SF15: create oversized root spec
+python3 -c "print('---\ntype: entrypoint\nscope: product\nupdated: 2026-01-01\n---\n'); [print(f'## Section {i}\nLine.') for i in range(100)]" > /tmp/spec-sf15/.spec/product.md
+(cd /tmp/spec-sf15 && bash "$OLDPWD/.agents/skills/spec/scripts/validate.sh") 2>&1 | grep -q 'SF15'
+# SF16: create lesson without Tags
+(cd /tmp/spec-sf15 && echo $'### Missing tags\n**Pattern:** test\n**Rule:** test\n**Date:** 2026' >> .spec/lessons.md)
+bash .agents/skills/spec/scripts/validate.sh 2>&1 | grep -q 'SF16'
+```
+
+**Test:** `tests/spec/run.sh` → add:
+- `test_sf15_long_root_warns` — root spec >200 lines triggers WARN
+- `test_sf16_lesson_no_tags_warns` — tagless lesson triggers WARN
+- `test_sf16_lesson_with_tags_passes` — tagged lesson passes silently
+
+---
+
+### spec-skill-improvements/17 — Composable subagents/ folder wiring
+
+**Requirements:** R-composable
+
+**Priority:** STRUCTURAL (depends on 12, 13, 14, 15).
+
+**Scope:** Wire the `subagents/` folder into root SKILL.md routing.
+
+**Changes:**
+- Confirm `subagents:` map in frontmatter (from unit 1) references correct paths
+- Confirm `## Routing` table (from unit 3) references subagent invocations for
+  `interview`, `promote`, `diff`, `health`
+- No new files — this is integration verification that units 1, 3, 12-15 work together
+
+**Verification:**
+```bash
+# All subagent SKILL.md files present
+ls .agents/skills/spec/subagents/spec-tracer/SKILL.md
+ls .agents/skills/spec/subagents/spec-promoter/SKILL.md
+ls .agents/skills/spec/subagents/spec-interviewer/SKILL.md
+ls .agents/skills/spec/subagents/spec-health/SKILL.md
+# Root SKILL.md subagents: map populated
+grep -A 5 'subagents:' .agents/skills/spec/SKILL.md | grep -q 'spec-tracer'
+```
+
+**Test:** `tests/spec/run.sh` → add `test_subagents_folder_wiring` asserting
+all four subagent paths in SKILL.md frontmatter map to existing files.
+
+---
+
 ## Requirements Trace
 
 | Requirement | Unit(s) | Validator |
 |---|---|---|
-| Specialized subagent role profiles | 2, 3 | test_skill_roles_section |
-| Compound promotion automation | 5 | test_promote_*, shellcheck |
-| Tag-based lessons extraction | 6 | test_lessons_for_*, shellcheck |
-| Cavekit-aware output profiles | 4 | test_feature_output_profiles |
-| SKILL.md metadata enrichment | 1 | test_skill_metadata_fields |
-| SF13 cross-reference integrity | 7 | test_sf13_* |
-| SF14 scope conflict detection | 8 | test_sf14_* |
-| Routing expansion + argument-hint | 3 | test_skill_routing_new_routes |
+| R-metadata: SKILL.md metadata enrichment | 1 | test_skill_v2_frontmatter_fields |
+| R-allowed-tools: allowed-tools expansion | 1 | test_skill_v2_frontmatter_fields |
+| R-skill-manifest: subagents/superpowers declaration | 1 | test_skill_v2_frontmatter_fields |
+| R-roles: Subagent role profiles (delegation manifest) | 2, 3 | test_skill_roles_section |
+| R-routing: Routing expansion + argument-hint | 3 | test_skill_routing_new_routes |
+| R-routing-extended: diff/health/research/lessons | 3 | test_skill_routing_new_routes |
+| R-cavekit: Cavekit-aware output profiles | 4 | test_feature_output_profiles |
+| R-promote: Compound promotion automation | 5, 13 | test_promote_*, test_spec_promoter_diff_first |
+| R-lessons: Tag-based lessons extraction | 6 | test_lessons_for_*, shellcheck |
+| R-sf13: SF13 cross-reference integrity | 7 | test_sf13_* |
+| R-sf14: SF14 scope conflict detection | 8 | test_sf14_* |
+| R-branch-templates: Branch doc templates | 9 | test_branch_doc_templates_exist |
+| R-scan-merges: scan-merges.sh | 10 | test_scan_merges_* |
+| R-openspec: OpenSpec machine-readable frontmatter | 11 | test_openspec_docs_present |
+| R-composable: Composable subagent architecture | 12, 13, 14, 15, 17 | test_subagents_folder_wiring |
+| R-sf15-sf16: SF15 root length + SF16 lessons tags | 16 | test_sf15_*, test_sf16_* |
