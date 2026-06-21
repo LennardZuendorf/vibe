@@ -41,6 +41,8 @@ never block on the answer.
 | New `argument-hint` routes and `## Routing` entries | `vibe-compound` script body |
 | OpenSpec-compatible frontmatter (opt-in, warn-only initially) | External tool integrations |
 | SKILL.md `allowed-tools`, `context:`, `subagents:`, `superpowers:`, `caveman:` frontmatter | superpowers:* namespace ownership |
+| SKILL.md `## Setup` interview flow + `## Config` section | `setup.sh` mechanical file copy (unchanged) |
+| `.spec/.config.yaml` creation and consumption | Per-user IDE or OS preferences |
 
 ---
 
@@ -385,6 +387,74 @@ reads the codebase while spec-interviewer conducts the WHAT dialogue
 **Then** spec-promoter calls `scan-merges.sh`, displays a structured diff of
 the two blocks and their destination in root `tech.md`, and waits for explicit
 user confirmation before writing anything
+
+---
+
+### Requirement: Interactive setup interview
+
+`/spec setup` SHALL conduct a short conversational interview before initializing
+`.spec/` — asking the user how they intend to work — and persist the answers to
+`.spec/.config.yaml`. The interview MUST cover four questions:
+
+1. **Workflow orchestration** — Are you using vibe-flow feature dev skills
+   (`vibe-feature`, `vibe-compound`, etc.), or will you run `/spec` commands
+   manually? Answer determines whether caveman level is auto-managed by the
+   flow cursor or needs a static default.
+
+2. **Default caveman level** — Only asked when not using vibe-flow. Options:
+   `lite` (scope + req titles + unit IDs only), `full` (all sections per
+   template), or `auto` (match to current phase when possible, fall back to full).
+
+3. **Available superpowers** — Which superpowers and feature-dev skills are in
+   the environment? Options: all, none, or custom list. Controls which executors
+   the skill will offer at each step.
+
+4. **Proactive suggestions** — Should the skill surface superpower and subagent
+   offers at each authoring step, or stay quiet and self-execute? Default: yes.
+
+The interview MUST be conversational (not a form fill). The agent MUST explain
+briefly what each choice means before asking. After collecting answers, the
+agent MUST show a summary and ask for confirmation before writing anything.
+
+On re-run (`/spec setup` when `.spec/` already exists), the skill MUST detect
+the existing `.spec/.config.yaml`, show the current settings, and offer to
+update individual answers rather than re-running the full interview.
+
+`.spec/.config.yaml` MUST be created even if the user accepts all defaults, so
+downstream tooling can detect whether setup has been completed.
+
+The mechanical file copy (`setup.sh`) MUST run after the interview, not before.
+
+#### Scenario: First-time setup with superpowers available
+
+**Given** a new project with no `.spec/` directory
+**When** the user runs `/spec setup`
+**Then** the agent conducts the 4-question interview, shows the collected
+answers, and on confirmation: writes `.spec/.config.yaml`, then runs
+`setup.sh` to create the entrypoint templates — in that order
+
+#### Scenario: Setup with no superpowers
+
+**Given** a user who selects "none" for available superpowers
+**When** setup completes
+**Then** `.spec/.config.yaml` has `suggest-superpowers: false` and
+`superpowers: []`, and subsequent `/spec` invocations suppress all
+"Superpower tip" callouts and self-execute every step directly
+
+#### Scenario: vibe-flow user skips caveman question
+
+**Given** a user who selects "yes, using vibe-flow"
+**When** the interview reaches question 2 (caveman level)
+**Then** the agent skips it and notes: "Caveman level is auto-managed by
+the flow cursor — no static default needed"
+
+#### Scenario: Re-run updates one setting
+
+**Given** `.spec/.config.yaml` already exists with `suggest-superpowers: true`
+**When** the user runs `/spec setup`
+**Then** the agent shows current settings and asks "Which setting would you
+like to update?" — the user can change one answer without re-running the
+full interview
 
 ---
 

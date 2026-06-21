@@ -36,6 +36,7 @@ is deleted; only extended or supplemented.
 | spec-skill-improvements/15 | `subagents/spec-health/SKILL.md` | LOW | 1 | planned |
 | spec-skill-improvements/16 | `validate.sh` SF15 (root length) + SF16 (lessons tags) | LOW | — | planned |
 | spec-skill-improvements/17 | Composable subagents/ folder wiring in root SKILL.md | STRUCTURAL | 12, 13, 14, 15 | planned |
+| spec-skill-improvements/18 | Interactive setup interview + `.spec/.config.yaml` | HIGH | 1 | planned |
 
 Explicitly NOT in scope: `scripts/interview.sh`. WHAT-phase interviewing is
 done by `superpowers:brainstorming` with `feature.md § Interview for WHAT` as
@@ -510,6 +511,52 @@ bash .agents/skills/spec/scripts/validate.sh 2>&1 | grep -q 'SF16'
 
 ---
 
+### spec-skill-improvements/18 — Interactive setup interview + `.spec/.config.yaml`
+
+**Requirements:** R-setup-interview
+
+**Priority:** HIGH.
+
+**Depends on:** spec-skill-improvements/1 (v2.0 frontmatter defines allowed-tools
+that includes Edit/Write — needed to create `.spec/.config.yaml`).
+
+**Scope:** Two changes:
+1. Replace the `## Setup` section in `.agents/skills/spec/SKILL.md` with the
+   4-question interview flow per tech.md spec
+2. Add `## Config` subsection documenting `.spec/.config.yaml` format and how
+   the skill reads it at session start
+
+**Changes:**
+- `SKILL.md § Setup` — full replacement with interview flow (Q1-Q4), summary +
+  confirm step, post-setup next-steps, and re-run branch
+- `SKILL.md` — add `## Config` section before `## Setup, Templates, Validation`
+  documenting config keys, defaults when absent, and behavior adjustments per key
+- No changes to `setup.sh` — mechanical script is unchanged; interview is agent-layer only
+
+**Invariants:**
+- Interview MUST be conversational; agent explains each choice before asking
+- `setup.sh` MUST NOT be called until the user confirms the summary
+- `.spec/.config.yaml` MUST be written even when user accepts all defaults
+- Re-run MUST NOT repeat the full interview when config already exists
+- `suggest-superpowers: false` MUST suppress all "Superpower tip" callouts
+  across feature.md, strategy.md, and any subagent files
+
+**Verification:**
+```bash
+grep -q '## Config' .agents/skills/spec/SKILL.md
+grep -q '.config.yaml' .agents/skills/spec/SKILL.md
+grep -q 'Q1' .agents/skills/spec/SKILL.md
+grep -q 'suggest-superpowers' .agents/skills/spec/SKILL.md
+# Setup section no longer just a one-liner:
+wc -l .agents/skills/spec/SKILL.md | awk '{print $1}' # should be substantially longer
+```
+
+**Test:** `tests/spec/run.sh` → add:
+- `test_config_defaults_when_absent` — skill reads absent config and applies defaults
+- `test_setup_section_has_interview_flow` — SKILL.md Setup section contains Q1-Q4 markers
+
+---
+
 ### spec-skill-improvements/17 — Composable subagents/ folder wiring
 
 **Requirements:** R-composable
@@ -560,3 +607,4 @@ all four subagent paths in SKILL.md frontmatter map to existing files.
 | R-openspec: OpenSpec machine-readable frontmatter | 11 | test_openspec_docs_present |
 | R-composable: Composable subagent architecture | 12, 13, 14, 15, 17 | test_subagents_folder_wiring |
 | R-sf15-sf16: SF15 root length + SF16 lessons tags | 16 | test_sf15_*, test_sf16_* |
+| R-setup-interview: Interactive setup interview + config | 18 | test_config_defaults_when_absent, test_setup_section_has_interview_flow |
