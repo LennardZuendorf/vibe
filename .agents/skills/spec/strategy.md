@@ -2,6 +2,8 @@
 
 Root-layer files in `.spec/` are **persistent in role, current in content**. They describe the whole product and architecture at a level that does not dive into one feature's implementation detail. The files persist; their content is kept current — delivered work in `plan.md` cleanses to a one-line note, and no long-horizon backlog is hoarded (that lives in an external tracker). Feature-level detail lives under `.spec/features/<name>/` — see [feature.md](feature.md).
 
+> **Config note:** If `.spec/.config.yaml` sets `suggest-superpowers: false`, skip all "Superpower tip" callouts in this file and self-execute each step directly. See [SKILL.md § Config](SKILL.md#config) for the full config reference.
+
 ## What lives at root
 
 | File | Purpose | Lifetime |

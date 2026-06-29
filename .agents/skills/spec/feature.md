@@ -2,6 +2,8 @@
 
 Each **named** unit of work gets `.spec/features/<name>/`. Specs here are **branch-scoped**: created in DESIGN, read in IMPL, wrapped up in COMPOUND (promote cross-cutting decisions, move folder to `archive/`), then **deleted before the branch merges**. Archive is a transient safety net, never a store for active work — **CODE IS TRUTH**. Global, long-living rules stay in root files — see [strategy.md](strategy.md). Wrap-up procedure: [SKILL.md](SKILL.md) § Wrapped-up features.
 
+> **Config note:** If `.spec/.config.yaml` sets `suggest-superpowers: false`, skip all "Superpower tip" callouts in this file and self-execute each step directly. See [SKILL.md § Config](SKILL.md#config) for the full config reference.
+
 ## Feature authoring flow
 
 Six-step interview micro-flow. Run steps 1–5 for every named feature; step 6 is the escape hatch.
@@ -66,6 +68,33 @@ Route to `vibe-quick` instead of this flow when **all** hold:
 - No new requirements needing Scope negotiation
 
 If any condition fails, stay in the feature flow.
+
+---
+
+## Output profiles
+
+Match caveman level to phase — compress at the source, not the sink.
+
+### Lite (feature.design, feature.plan)
+
+Produce precise, minimal spec sections — not truncated prose but no padding.
+
+| File | Mandatory | Compressed | Omit |
+|---|---|---|---|
+| product.md | Frontmatter, problem paragraph, Scope table, req titles + strength | Scenarios → one-line Given/When/Then | Rationale paragraphs, examples |
+| tech.md | Frontmatter, file paths, interface signatures | Risks → one-line bullets | Implementation narrative, decision history |
+| plan.md | Frontmatter, unit ID list with R-IDs | Verification table → command only | Full evidence prose |
+
+### Full (feature.plan reference, feature.impl, feature.verify)
+
+All sections per template; standard Requirement+Scenario blocks; full prose. No compression. This is the default for inter-phase reading.
+
+### Ultra (feature.compound receipts)
+
+All sections plus:
+- Unit traceability matrix (unit ID → test path → pass/fail)
+- Validation evidence summary (validate.sh run output)
+- Draft lesson entry (pattern, rule, tags — human edits before promoting)
 
 ---
 
