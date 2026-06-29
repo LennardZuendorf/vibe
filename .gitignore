@@ -5,3 +5,4 @@
 # Mutable flow cursor (OPEN-1): version the static state-machine.json, not the
 # per-session cursor. state.example.json is the tracked template.
 .agents/flow/state.json
+.serena/
