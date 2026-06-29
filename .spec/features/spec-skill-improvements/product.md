@@ -3,7 +3,7 @@ type: feature-product
 feature: spec-skill-improvements
 sibling: tech.md
 parent: ../../product.md
-updated: 2026-06-21
+updated: 2026-06-29
 ---
 
 # spec-skill-improvements — Product Spec
@@ -32,7 +32,7 @@ never block on the answer.
 | Owns | Does not own |
 |---|---|
 | `.agents/skills/spec/SKILL.md` — all frontmatter and body changes | Flow state machine transitions |
-| `.agents/skills/spec/subagents/*/SKILL.md` — four subagent definitions | `vibe-compound` procedural logic |
+| `.agents/skills/spec/agents/*/SKILL.md` — four subagent definitions | `vibe-compound` procedural logic |
 | `.agents/skills/spec/feature.md` output profiles | `vibe-feature` delegation ordering |
 | `.agents/skills/spec/strategy.md` additions | Platform adapter hooks |
 | `scripts/promote.sh`, `scripts/lessons-for.sh`, `scripts/scan-merges.sh` | `lessons.md` content (written by vibe-flow/D8) |
@@ -40,7 +40,7 @@ never block on the answer.
 | `reference/templates/` — new branch doc templates + research template | Skill discovery registry |
 | New `argument-hint` routes and `## Routing` entries | `vibe-compound` script body |
 | OpenSpec-compatible frontmatter (opt-in, warn-only initially) | External tool integrations |
-| SKILL.md `allowed-tools`, `context:`, `subagents:`, `superpowers:`, `caveman:` frontmatter | superpowers:* namespace ownership |
+| SKILL.md `allowed-tools`, `context:`, `agents:`, `superpowers:`, `caveman:` frontmatter | superpowers:* namespace ownership |
 | SKILL.md `## Setup` interview flow + `## Config` section | `setup.sh` mechanical file copy (unchanged) |
 | `.spec/.config.yaml` creation and consumption | Per-user IDE or OS preferences |
 
@@ -321,7 +321,7 @@ directly without erroring on a missing write permission
 ### Requirement: SKILL.md structural frontmatter additions
 
 The SKILL.md frontmatter SHALL add: `context:` (session-start auto-injection list),
-`subagents:` (manifest of subagent SKILL.md paths with trigger and caveman fields),
+`agents:` (manifest of subagent SKILL.md paths with trigger and caveman fields),
 `superpowers:` (per-phase declaration), and `caveman: lite` (top-level default).
 
 The metadata version SHALL be bumped to `2.0` to signal the structural additions.
@@ -329,7 +329,7 @@ The metadata version SHALL be bumped to `2.0` to signal the structural additions
 The `context: session-start:` list MUST include `.spec/lessons.md` and `.spec/plan.md`
 so the harness can auto-inject them on every `/spec` invocation.
 
-The `subagents:` manifest MUST list all four subagents with `name`, `path`,
+The `agents:` manifest MUST list all four subagents with `name`, `path`,
 `trigger`, `caveman`, and optionally `parallel-safe: true` for spec-tracer.
 
 #### Scenario: Harness auto-injects session-start files
@@ -341,7 +341,7 @@ without the agent needing to remember to read them
 
 #### Scenario: spec-tracer marked parallel-safe
 
-**Given** the `subagents:` manifest entry for `spec-tracer` has `parallel-safe: true`
+**Given** the `agents:` manifest entry for `spec-tracer` has `parallel-safe: true`
 **When** `vibe-feature` reads the manifest at `feature.design`
 **Then** it knows to invoke `spec-tracer` and `spec-interviewer` simultaneously
 
@@ -350,7 +350,7 @@ without the agent needing to remember to read them
 ### Requirement: Composable subagent architecture
 
 The spec skill SHALL organise four dedicated subagent SKILL.md files under
-`subagents/<name>/SKILL.md` — replacing the current approach of role sections
+`agents/<name>/SKILL.md` — replacing the current approach of role sections
 embedded in the main SKILL.md body.
 
 Each subagent MUST be a complete, standalone SKILL.md with its own
@@ -455,6 +455,37 @@ the flow cursor — no static default needed"
 **Then** the agent shows current settings and asks "Which setting would you
 like to update?" — the user can change one answer without re-running the
 full interview
+
+---
+
+### Requirement: Config read at session start
+
+The spec skill SHALL read `.spec/.config.yaml` at session start (on any `/spec`
+invocation) and adjust runtime behavior per its config keys. Absent file or
+missing keys MUST fall back to documented defaults without error.
+
+The skill MUST apply the following adjustments when keys are present:
+- `suggest-superpowers: false` → suppress all "Superpower tip" callouts across
+  feature.md, strategy.md, and all subagent files; self-execute every step
+- `vibe-flow: true` → do not ask for or apply a static caveman default; note
+  that the flow cursor manages it
+- `caveman: lite` → apply lite output profile by default; notify the user
+- `superpowers.<key>: false` → don't offer that executor; route silently to
+  self-execution for that step
+
+#### Scenario: Config suppresses superpower tips
+
+**Given** `.spec/.config.yaml` with `suggest-superpowers: false`
+**When** the user runs `/spec feature my-feature` reaching the WHAT interview step
+**Then** the spec skill executes the step directly without offering
+`superpowers:brainstorming`, and no "Superpower tip" callout appears
+
+#### Scenario: Absent config uses defaults
+
+**Given** no `.spec/.config.yaml` exists
+**When** the user runs any `/spec` command
+**Then** the skill behaves as if `suggest-superpowers: true`, `caveman: full`,
+and all superpowers available — no error or warning about the missing file
 
 ---
 

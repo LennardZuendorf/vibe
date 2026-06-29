@@ -772,7 +772,7 @@ routing shell (`SKILL.md`) that dispatches to dedicated subagent SKILL.md files:
 ```
 .agents/skills/spec/
 ├── SKILL.md                        ← thin: routing + two-layer model + superpower tips
-├── subagents/
+├── agents/
 │   ├── spec-interviewer/SKILL.md   ← WHAT interview (step 2)
 │   ├── spec-tracer/SKILL.md        ← HOW sketch (step 4); read-only; runs parallel
 │   ├── spec-promoter/SKILL.md      ← COMPOUND merge marker extraction + diff + execute
@@ -836,20 +836,20 @@ tools and the harness can find and invoke subagents:
 ```yaml
 subagents:
   - name: spec-interviewer
-    path: subagents/spec-interviewer/SKILL.md
+    path: agents/spec-interviewer/SKILL.md
     trigger: "feature step 2 — interview for WHAT"
     caveman: lite
   - name: spec-tracer
-    path: subagents/spec-tracer/SKILL.md
+    path: agents/spec-tracer/SKILL.md
     trigger: "feature step 4 — sketch HOW"
     caveman: full
     parallel-safe: true
   - name: spec-promoter
-    path: subagents/spec-promoter/SKILL.md
+    path: agents/spec-promoter/SKILL.md
     trigger: "feature.compound — promote merge markers"
     caveman: lite
   - name: spec-health
-    path: subagents/spec-health/SKILL.md
+    path: agents/spec-health/SKILL.md
     trigger: "spec health check beyond validate.sh"
     caveman: full
 ```
@@ -1034,6 +1034,6 @@ planned after the structural tier.
 | LOW | `spec-interviewer` subagent | 2 (revise) |
 | LOW | `spec-health` subagent | 15 |
 | LOW | SF15–SF16 validators | 16 |
-| STRUCTURAL | Composable SKILL.md architecture (thin shell + subagents/ folder) | 17 |
+| STRUCTURAL | Composable SKILL.md architecture (thin shell + agents/ folder) | 17 |
 
 *Research updated: 2026-06-21.*

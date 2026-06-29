@@ -3,7 +3,7 @@ type: feature-tech
 feature: spec-skill-improvements
 sibling: product.md
 parent: ../../tech.md
-updated: 2026-06-21
+updated: 2026-06-29
 ---
 
 # spec-skill-improvements — Tech Spec
@@ -17,11 +17,11 @@ the core two-layer model and 6-step authoring flow are left untouched.
 
 ```
 .agents/skills/spec/
-├── SKILL.md                      ← v2.0: allowed-tools, context, subagents, superpowers
+├── SKILL.md                      ← v2.0: allowed-tools, context, agents, superpowers
 │                                    frontmatter; ## Roles manifest section
 ├── feature.md                    ← add ## Output profiles section
 ├── strategy.md                   ← no changes
-├── subagents/                    ← NEW composable subagent folder
+├── agents/                       ← NEW composable subagent folder
 │   ├── spec-tracer/
 │   │   └── SKILL.md              ← NEW read-only codebase tracer (parallel-safe)
 │   ├── spec-promoter/
@@ -38,7 +38,8 @@ the core two-layer model and 6-step authoring flow are left untouched.
 │   ├── lessons-for.sh            ← NEW
 │   └── scan-merges.sh            ← NEW
 └── reference/
-    ├── product.md                ← document OpenSpec frontmatter convention (opt-in)
+    ├── product.md                ← document OpenSpec requirements: frontmatter (opt-in)
+    ├── plan.md                   ← document OpenSpec units: frontmatter (opt-in)
     └── templates/
         ├── (existing templates)
         ├── product-topic.md      ← NEW branch doc template
@@ -74,11 +75,11 @@ context:
   - .agents/skills/spec/reference/tech.md
   - .agents/skills/spec/reference/plan.md
 
-subagents:
-  - spec-tracer:     subagents/spec-tracer/SKILL.md
-  - spec-promoter:   subagents/spec-promoter/SKILL.md
-  - spec-interviewer: subagents/spec-interviewer/SKILL.md
-  - spec-health:     subagents/spec-health/SKILL.md
+agents:
+  - spec-tracer:     agents/spec-tracer/SKILL.md
+  - spec-promoter:   agents/spec-promoter/SKILL.md
+  - spec-interviewer: agents/spec-interviewer/SKILL.md
+  - spec-health:     agents/spec-health/SKILL.md
 
 superpowers:
   - superpowers:brainstorming          # WHAT interview (step 2)
@@ -284,8 +285,9 @@ All sections plus:
    - Collect all blocks into a BLOCKS variable
 4. If `--dry-run`: print `"--- would promote to $TARGET ---"` then print
    BLOCKS; exit 0
-5. Write to `TMPFILE=$(mktemp)`; copy TARGET to TMPFILE; append BLOCKS;
-   `mv "$TMPFILE" "$TARGET"` (atomic rename)
+5. Write to `TMPFILE=$(mktemp "$(dirname "$TARGET")/.promote.XXXXXX")` (same
+   filesystem as target for atomic rename); copy TARGET to TMPFILE; append BLOCKS;
+   `mv "$TMPFILE" "$TARGET"`
 6. Print: `"PROMOTED $n block(s) from $FEATURE_TECH → $TARGET"`
 
 **Safety invariants (active rules):**
@@ -357,7 +359,7 @@ if [[ $DRY_RUN -eq 1 ]]; then
   exit 0
 fi
 
-TMPFILE="$(mktemp)"
+TMPFILE="$(mktemp "$(dirname "$TARGET")/.promote.XXXXXX")"
 cat "$TARGET" > "$TMPFILE"
 printf '\n%s\n' "$BLOCKS" >> "$TMPFILE"
 mv "$TMPFILE" "$TARGET"
@@ -392,18 +394,13 @@ set -euo pipefail
 FORMAT="markdown"
 TAGS=()
 
-for arg in "$@"; do
-  case "$arg" in
-    --format) : ;;        # handled by shift below; placeholder
-    markdown|inject|json) FORMAT="$arg" ;;
-    *) TAGS+=("$arg") ;;
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --format) FORMAT="${2:?--format requires a value (markdown|inject|json)}"; shift 2 ;;
+    markdown|inject|json) FORMAT="$1"; shift ;;
+    -*) echo "Unknown option: $1" >&2; exit 1 ;;
+    *) TAGS+=("$1"); shift ;;
   esac
-done
-# Handle --format <value> pair
-for i in "${!@}"; do
-  if [[ "${@:$i:1}" == "--format" ]]; then
-    FORMAT="${@:$((i+1)):1}"
-  fi
 done
 
 LESSONS_FILE=".spec/lessons.md"
@@ -487,16 +484,12 @@ check_sf13_stale_feature_links() {
   local root_files=(".spec/product.md" ".spec/tech.md" ".spec/design.md" ".spec/plan.md")
   for f in "${root_files[@]}"; do
     [[ -f "$f" ]] || continue
-    while IFS= read -r link; do
-      # Extract relative path targets pointing to features/ or archive/
-      if [[ "$link" =~ features/([^/)]+) || "$link" =~ archive/([^/)]+) ]]; then
-        local target
-        target="$(echo "$link" | grep -oP '(?<=\()features/[^)]+|(?<=\()archive/[^)]+' | head -1)"
-        [[ -z "$target" ]] && continue
-        local abs_target=".spec/$target"
-        [[ -e "$abs_target" ]] || yellow "SF13: stale link in $f → $target (not found)"
-      fi
-    done < <(grep -nP '\[.*?\]\(.*?\)' "$f" || true)
+    # Extract link targets matching features/ or archive/ using portable grep -oE
+    grep -oE '\(features/[^)]+\)|\(archive/[^)]+\)' "$f" 2>/dev/null \
+      | sed 's/^(//;s/)$//' \
+      | while IFS= read -r target; do
+          [[ -e ".spec/$target" ]] || yellow "SF13: stale link in $f → $target (not found)"
+        done
   done
 }
 ```
@@ -508,27 +501,34 @@ Add `check_sf13_stale_feature_links` call in the main validation run sequence.
 ```bash
 check_sf14_scope_conflicts() {
   local feature_dirs=(.spec/features/*/product.md)
-  declare -A owns_map
+  # Use a temp file as a poor-man's map for bash 3.2 compat (no declare -A)
+  local seen_file
+  seen_file="$(mktemp)"
   for f in "${feature_dirs[@]}"; do
     [[ -f "$f" ]] || continue
     local feature
     feature="$(basename "$(dirname "$f")")"
     local in_owns=0
     while IFS= read -r line; do
-      [[ "$line" =~ "| Owns" ]] && in_owns=1 && continue
-      [[ "$line" =~ "| Does not own" ]] && in_owns=0 && continue
-      if [[ $in_owns -eq 1 && "$line" =~ ^\|[^|]+\| ]]; then
+      echo "$line" | grep -q "| Owns"        && in_owns=1 && continue
+      echo "$line" | grep -q "| Does not own" && in_owns=0 && continue
+      if [[ $in_owns -eq 1 ]] && echo "$line" | grep -qE '^\|[^|]+\|'; then
         local item
         item="$(echo "$line" | awk -F'|' '{print $2}' | tr '[:upper:]' '[:lower:]' | xargs)"
-        [[ -z "$item" ]] && continue
-        if [[ -v "owns_map[$item]" ]]; then
-          yellow "SF14: scope conflict — both '${owns_map[$item]}' and '$feature' own: $item"
+        [[ ${#item} -lt 5 || -z "$item" ]] && continue
+        local existing
+        existing="$(grep "^${item}	" "$seen_file" 2>/dev/null || true)"
+        if [[ -n "$existing" ]]; then
+          local other
+          other="$(echo "$existing" | awk '{print $2}')"
+          yellow "SF14: scope conflict — '${other}' and '${feature}' both own: ${item}"
         else
-          owns_map["$item"]="$feature"
+          printf '%s\t%s\n' "$item" "$feature" >> "$seen_file"
         fi
       fi
     done < "$f"
   done
+  rm -f "$seen_file"
 }
 ```
 
@@ -556,16 +556,16 @@ Update `argument-hint:` to: `strategy|feature <name>|interview [<name>]|promote 
 
 ## Composable Subagent Architecture
 
-Thin SKILL.md root routes to `subagents/<name>/SKILL.md` for each
+Thin SKILL.md root routes to `agents/<name>/SKILL.md` for each
 specialised role. The root SKILL.md holds the routing manifest and phase
 wiring; the subagent files hold the deep context for each role.
 
 **Folder contract:**
-- Each subagent folder is `subagents/<role-name>/SKILL.md`
+- Each subagent folder is `agents/<role-name>/SKILL.md`
 - Subagent SKILL.md files are self-contained; they can be invoked standalone
 - They inherit the parent's `allowed-tools:` unless they declare their own
 
-### subagents/spec-tracer/SKILL.md
+### agents/spec-tracer/SKILL.md
 
 **Purpose:** Read-only codebase tracer for HOW phase (feature.design step 4).
 Finds existing files, interfaces, and contracts relevant to a feature. Feeds
@@ -592,7 +592,7 @@ allowed-tools: [Read, Glob, Grep]
 
 Output: structured trace document injected into spec-architect context.
 
-### subagents/spec-promoter/SKILL.md
+### agents/spec-promoter/SKILL.md
 
 **Purpose:** Compound-phase merge-marker extractor. Shows diff first, then
 executes `promote.sh` with human confirmation.
@@ -616,7 +616,7 @@ allowed-tools: [Read, Bash]
 3. On explicit confirmation: run without `--dry-run`
 4. Report: n blocks promoted, paths written
 
-### subagents/spec-interviewer/SKILL.md
+### agents/spec-interviewer/SKILL.md
 
 **Purpose:** WHAT-phase interview delegator. Injects constraint context then
 hands off to `superpowers:brainstorming`.
@@ -643,7 +643,7 @@ delegates-to: superpowers:brainstorming
    spec format constraints pre-loaded — want me to?"*
 4. On yes: invoke `superpowers:brainstorming` with constraint context
 
-### subagents/spec-health/SKILL.md
+### agents/spec-health/SKILL.md
 
 **Purpose:** Structural health assessor. Reads the full `.spec/` tree and
 produces a prioritised list of structural problems beyond what `validate.sh`
@@ -793,7 +793,7 @@ New template files under `reference/templates/`. Mirror the existing
 type: product-topic
 topic: <topic>
 parent: product.md
-updated: YYYY-MM-DD
+updated: 2026-06-29
 ---
 
 # <topic> — Product
@@ -829,7 +829,7 @@ conventions, naming conventions that every feature enforces.
 type: tech-topic
 topic: <topic>
 parent: tech.md
-updated: YYYY-MM-DD
+updated: 2026-06-29
 ---
 
 # <topic> — Tech
@@ -861,7 +861,7 @@ path/to/shared/
 type: plan-topic
 topic: <topic>
 parent: plan.md
-updated: YYYY-MM-DD
+updated: 2026-06-29
 ---
 
 # <topic> — Sub-plan
@@ -890,7 +890,7 @@ Default to keeping everything in root `plan.md`.
 type: feature-research
 feature: <name>
 parent: product.md
-updated: YYYY-MM-DD
+updated: 2026-06-29
 ---
 
 # <name> — Research
@@ -1056,12 +1056,13 @@ malformed entries when the field is present.
 
 **Risk: promote.sh atomicity on NFS / cross-device mounts**
 `mv` is not atomic across devices. The temp file must be created on the same
-filesystem as the target. Mitigate: use `mktemp --tmpdir="$(dirname "$TARGET")"`.
+filesystem as the target. Mitigate: `mktemp "$(dirname "$TARGET")/.promote.XXXXXX"`
+(same directory, no `--tmpdir` flag — `--tmpdir` is GNU-specific and unavailable on macOS).
 
 **Risk: lessons-for.sh bash associative arrays on macOS bash 3**
-macOS ships bash 3.2 which lacks `declare -A`. Mitigate: use Python-style
-awk for the JSON path; use only basic bash for markdown/inject formats.
-`promote.sh` and `validate.sh` already use only bash 3-compatible constructs.
+macOS ships bash 3.2 which lacks `declare -A`. Mitigate: lessons-for.sh uses only
+basic bash 3-compatible constructs (arrays, shift-loop arg parsing).
+SF14 uses a temp file as a portable map instead of `declare -A`.
 
 **Risk: SF14 false positives on partial keyword matches**
 Substring matching can flag unrelated items (e.g., "state" matching "flow state"
