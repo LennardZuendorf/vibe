@@ -47,7 +47,7 @@ whole-feature gate (Feature Sequence), never a unit-to-unit edge.
 | Layer | Owns | Does not own |
 |---|---|---|
 | **`spec` skill bundle** | `.spec/` docs, templates, `validate.sh`, lesson format, `tests/spec/run.sh` | Flow state, adapters, runtime lesson read |
-| **vibe-flow** | State machine, `vibe-*` shims, transitions, D8 read-on-entry, **D12 orders-in-skills** | `AGENTS.md` content, hooks |
+| **vibe-flow** | State machine, `vibe` skill phases, transitions, D8 read-on-entry, **D12 orders-in-skills** | `AGENTS.md` content, hooks |
 | **agent-instructions** | `AGENTS.md` merge, `CLAUDE.md`/`WARP.md` symlinks | Plugin, `.claude/hooks/` |
 | **platform-adapters** | Plugin manifest, three hooks, `install.sh` | Instruction file templates, skill bodies |
 
@@ -61,10 +61,10 @@ hooks consume frozen skills rather than reaching across a boundary.)
 
 | Order | Feature | Deliverable | Test | Status | Starts when |
 |---:|---|---|---|---|---|
-| 1 | spec | `.spec/` docs + templates + `validate.sh` | `tests/spec/run.sh` (44) | DONE | — |
-| 2 | vibe-flow | state machine + `vibe-*` skills + D12 orders | `tests/flow/run.sh` (26) | DONE | spec DONE |
+| 1 | spec | `.spec/` docs + templates + `validate.sh` | `tests/spec/run.sh` | DONE | — |
+| 2 | vibe-flow | state machine + `vibe` skill + D12 orders | `tests/flow/run.sh` | DONE | spec DONE |
 | 3 | agent-instructions | `AGENTS.md` template + merge + symlinks | `tests/adapters/run.sh` | DONE | vibe-flow DONE |
-| 4 | platform-adapters | plugin + three hooks + `install.sh` | `tests/adapters/run.sh` (39) | DONE | agent-instructions DONE |
+| 4 | platform-adapters | plugin + three hooks + `install.sh` | `tests/adapters/run.sh` | DONE | agent-instructions DONE |
 | 5 | dogfood | hook/merge/install behaviours + earn-the-teeth | scripted + lessons | DONE | platform-adapters DONE |
 | 6 | [monorepo-split](features/monorepo-split/plan.md) | `spec/`+`flow/` split + symlinks + truth sweep + orphan compound | suites + validate + grep evidence | NOT STARTED | — |
 | 7 | [install-tooling](features/install-tooling/plan.md) | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `tests/adapters/run.sh` + `tests/flow/run.sh` | NOT STARTED | monorepo-split DONE |
@@ -89,13 +89,15 @@ self-hosting. Still deferred: real-world earn-the-teeth promotions and
 - **Agent instructions:** `AGENTS.md` is canonical; runtime adapters are symlinks.
 - **D8 split:** lesson format → `spec` skill bundle; read-on-entry + tag scan → vibe-flow.
 - **Adapters are thin.** Plugin/hooks read `.agents/skills/vibe`; they do not own state or spec layout.
-- **D12 owned by vibe-flow.** Orders live in `vibe-*` skills; `inject: null` on skill states; platform-adapters consumes the frozen skills.
+- **D12 owned by vibe-flow.** Orders live in the `vibe` skill phase files; `inject: null` on skill states; platform-adapters consumes the frozen skill.
+- **Repo stores canonical halves at `spec/` + `flow/`.** `.agents/skills/{spec,vibe}` are compat symlinks — the portable runtime interface; installs materialize real dirs (`cp -RL`). `monorepo-split/1`.
 - **Binary feature gates.** Features couple as whole boxes; no cross-feature unit edges.
 
 ### Resolved
 
-- [x] **OPEN-2:** Skill count — keep all seven `vibe-*` shims; `vibe-verify` and
-  `vibe-compound` stay separate (distinct write surfaces + caveman). `vibe-flow/2`.
+- [x] **OPEN-2:** Skill count — originally seven `vibe-*` shims (`vibe-flow/2`);
+  consolidated 2026-06-29 into one `vibe` skill with seven phase files, distinct
+  write surfaces + caveman levels preserved per phase (`vibe-skill-consolidation`).
 - [x] **OPEN-3:** Install mode — `install.sh` **copies** core `.agents/**` + Claude
   adapter, seeds+gitignores the cursor, merges `AGENTS.md` via `merge-agents.sh`,
   symlinks adapters opt-in (`--adapters`), idempotent. `platform-adapters/6`.
@@ -109,12 +111,10 @@ self-hosting. Still deferred: real-world earn-the-teeth promotions and
 
 ## Spec vs Implementation
 
-No open drift. The two former gaps are closed:
-
-| Former gap | Owning unit | Resolution |
-|---|---|---|
-| D12 orders-in-skills documented, not implemented | `vibe-flow/1` | orders live in each skill (`## Orders`); machine `inject: null`; `orders.sh` resolves; tested |
-| `vibe:instructions` markers ahead of repo | `agent-instructions/1` | repo `AGENTS.md` wrapped + driven from the template via `merge-agents.sh` |
+No open drift as of the 2026-07-03 truth sweep (`monorepo-split/4`–`/5`): stale
+`.agents/flow` references retired, three shipped-but-uncompounded features
+(spec-skill-improvements, vibe-skill-consolidation, vibe-flow-collapse) compounded
+to Delivered notes and archived.
 
 Honest drift inventory; shrink as features complete. No backlog beyond work-ready units.
 
@@ -128,10 +128,21 @@ Cleansed notes for shipped work — detail lives in live surfaces, not this plan
   templates, feature-authoring flow, skill discovery/routing; `tests/spec/run.sh`
   green. `.spec/features/spec-framework/` deleted (truth = skill bundle + tests).
 - **vibe-flow — DONE.** 15-state machine, six scripts (`set-state`, `validate-state`,
-  `detect-context`, `regen-active-rules`, `orders`, `check-skills`), seven `vibe-*`
-  skills. D12 orders sourced from each skill via `orders.sh`; D8–D11 in place.
+  `detect-context`, `regen-active-rules`, `orders`, `check-skills`), originally seven
+  `vibe-*` skills. D12 orders sourced from each skill via `orders.sh`; D8–D11 in place.
   `tests/flow/run.sh` green. Specs kept as living architecture docs (root entrypoints
   link them as children) rather than archived.
+- **spec-skill-improvements — DONE (2026-06-29).** Spec skill v2.0: four subagent
+  SKILL.md roles, `promote.sh`/`lessons-for.sh`/`scan-merges.sh`, SF13–SF16 validators,
+  branch-doc templates, config-driven setup. Truth = `spec/` bundle + `tests/spec/run.sh`.
+- **vibe-skill-consolidation — DONE (2026-06-29).** Seven `vibe-*` shim dirs collapsed
+  into one `vibe` skill (router `SKILL.md` + seven phase files); machine `skill` links
+  repointed; orders blocks preserved byte-stable. Truth = `flow/` + `tests/flow/run.sh`.
+- **vibe-flow-collapse — DONE (2026-06/07, compounded 2026-07-03).** `.agents/flow/`
+  engine merged into the vibe skill dir (now `flow/` post-split): scripts, machine,
+  cursor all one bundle; hooks/installer/gitignore repointed; `tests/adapters/run.sh`
+  asserts `.agents/flow` absent. Plan was never status-updated pre-compound — caught
+  by the 2026-07-03 audit.
 - **agent-instructions — DONE.** Canonical `AGENTS.md` template + `adapters.json` under
   `vibe-setup/reference/`; `merge-agents.sh` (marker merge + constitution migration +
   adapter symlinks); `vibe-setup` detect/apply rewritten off the constitution path.

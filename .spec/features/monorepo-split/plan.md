@@ -160,8 +160,8 @@ install.sh  tests/adapters/run.sh
 
 | Unit | Status |
 |---|---|
-| monorepo-split/1 | NOT STARTED |
-| monorepo-split/2 | NOT STARTED |
-| monorepo-split/3 | NOT STARTED |
-| monorepo-split/4 | NOT STARTED |
-| monorepo-split/5 | NOT STARTED |
+| monorepo-split/1 | DONE (606dd5e) |
+| monorepo-split/2 | DONE (c44dc23) |
+| monorepo-split/3 | DONE (8758720) |
+| monorepo-split/4 | DONE (9f5e671) |
+| monorepo-split/5 | DONE |
