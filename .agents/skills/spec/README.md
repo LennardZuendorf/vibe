@@ -65,7 +65,7 @@ Follow [feature.md](feature.md):
 3. Rigor gate        — lite vs full (need design.md?)
 4. Sketch HOW        — trace codebase → tech.md (+ design.md if full)
 5. Plan units        — stable IDs, verification → plan.md (human gate)
-6. Skip check        — atomic/no-decisions? → vibe-quick instead
+6. Skip check        — atomic/no-decisions? → vibe quick instead
 ```
 
 Add the feature to the root `plan.md` Feature Sequence. Run `/spec validate` when done.
