@@ -25,8 +25,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Template resolves relative to this script (vendored) or the global install.
 TEMPLATE="$SCRIPT_DIR/../reference/templates/AGENTS.md"
-if [[ ! -f "$TEMPLATE" && -f "$HOME/.agents/skills/vibe-setup/reference/templates/AGENTS.md" ]]; then
-  TEMPLATE="$HOME/.agents/skills/vibe-setup/reference/templates/AGENTS.md"
+if [[ ! -f "$TEMPLATE" && -f "$HOME/.agents/skills/vibe/reference/templates/AGENTS.md" ]]; then
+  TEMPLATE="$HOME/.agents/skills/vibe/reference/templates/AGENTS.md"
 fi
 
 I_START="<!-- vibe:instructions:start -->"

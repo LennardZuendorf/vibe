@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# set-state.sh — the ONLY sanctioned writer of .agents/flow/state.json.
+# set-state.sh — the ONLY sanctioned writer of .agents/skills/vibe/state.json.
 #
 # Usage:
 #   set-state.sh <flow.phase> [feature]
@@ -25,9 +25,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FLOW_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-MACHINE="$FLOW_DIR/state-machine.json"
-STATE="$FLOW_DIR/state.json"
+SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+MACHINE="$SKILL_DIR/state-machine.json"
+STATE="$SKILL_DIR/state.json"
 
 err() { echo "set-state: $1" >&2; }
 
@@ -51,7 +51,7 @@ fi
 
 # amend is a modifier, not a stored cursor state — it edits scope and returns.
 if [[ "$TARGET" == "amend" ]]; then
-  err "amend is a modifier, not a cursor state. Run vibe-amend for a targeted"
+  err "amend is a modifier, not a cursor state. Run vibe amend (amend.md) for a targeted"
   err "scope edit, then continue in your current state. The cursor is unchanged."
   exit 1
 fi

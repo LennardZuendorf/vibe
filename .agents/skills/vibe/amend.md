@@ -1,20 +1,4 @@
----
-name: vibe-amend
-description: |
-  Correct the scope of the work in flight without leaving the current state. A
-  modifier, not a flow: edits the target state's spec surface, then returns there.
-  Trigger on: amend scope, adjust the plan, revise the spec mid-flight, scope
-  changed, that's not quite right, or user says amend.
-user-invocable: true
-argument-hint: "[what to change]"
-allowed-tools: Read, Edit, Write, Bash
-compatibility: Requires bash + jq. macOS and Linux.
-metadata:
-  author: lennarddib
-  version: "1.0"
----
-
-# vibe-amend — scope correction (modifier)
+# amend — scope correction (modifier)
 
 `amend` is a **modifier**, not a flow. It does not change the cursor. It makes a
 targeted scope edit from whatever state you are in, then you continue in that
@@ -43,13 +27,3 @@ same state. Caveman **lite**.
 - Never widen the write surface beyond the current state's rules.
 - Preserve stable plan unit IDs when amending a plan.
 - Caveman lite; security/irreversible actions normal prose.
-
-## Orders (D12)
-
-`amend` is a modifier: the cursor never becomes `amend` (`set-state.sh` rejects
-it), so the inject hook never resolves orders for it — it always uses the **stored
-cursor state**. This block is reference-only for parity with the other shims.
-
-<!-- vibe:orders:amend -->
-MODIFIER=amend · edit scope for the CURRENT state, then RETURN to it · carry the target state's write rules (do NOT widen them) · caveman=lite · next: <state you came from>
-<!-- /vibe:orders -->

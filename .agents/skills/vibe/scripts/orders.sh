@@ -21,12 +21,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FLOW_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-AGENTS_DIR="$(cd "$FLOW_DIR/.." && pwd)"
-MACHINE="$FLOW_DIR/state-machine.json"
-STATE="$FLOW_DIR/state.json"
+SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+SKILLS_DIR="$(cd "$SKILL_DIR/.." && pwd)"
+MACHINE="$SKILL_DIR/state-machine.json"
+STATE="$SKILL_DIR/state.json"
 
-GENERIC_FALLBACK="state=unknown · read .agents/flow/state-machine.json and pick a vibe-* skill · transition via set-state.sh"
+GENERIC_FALLBACK="state=unknown · read .agents/skills/vibe/state-machine.json and pick a vibe-* skill · transition via set-state.sh"
 
 have_jq() { command -v jq >/dev/null 2>&1; }
 
@@ -91,7 +91,7 @@ FEATURE="$(current_feature)"
 # 1. Prefer the linked skill's orders block (D12).
 SKILL="$(machine_skill "$STATE_KEY" || true)"
 if [[ -n "$SKILL" ]]; then
-  BLOCK="$(extract_block "$AGENTS_DIR/skills/$SKILL/SKILL.md" "$STATE_KEY" || true)"
+  BLOCK="$(extract_block "$SKILLS_DIR/$SKILL/SKILL.md" "$STATE_KEY" || true)"
   if [[ -n "$BLOCK" ]]; then
     interpolate "$BLOCK" "$FEATURE"
     exit 0

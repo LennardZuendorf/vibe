@@ -16,10 +16,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FLOW_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-AGENTS_DIR="$(cd "$FLOW_DIR/.." && pwd)"
-MACHINE="$FLOW_DIR/state-machine.json"
-STATE="$FLOW_DIR/state.json"
+SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+SKILLS_DIR="$(cd "$SKILL_DIR/.." && pwd)"
+MACHINE="$SKILL_DIR/state-machine.json"
+STATE="$SKILL_DIR/state.json"
 
 warn() { echo "check-skills: WARN — $1" >&2; }
 note() { echo "check-skills: $1"; }
@@ -88,10 +88,10 @@ check_state() {
     [[ -z "$d" ]] && continue
     case "$d" in
       spec)
-        if [[ -f "$AGENTS_DIR/skills/spec/SKILL.md" ]]; then
+        if [[ -f "$SKILLS_DIR/spec/SKILL.md" ]]; then
           note "ok: bundled skill 'spec' present."
         else
-          warn "bundled skill 'spec' missing at $AGENTS_DIR/skills/spec — flow degrades to inline guidance."
+          warn "bundled skill 'spec' missing at $SKILLS_DIR/spec — flow degrades to inline guidance."
         fi
         ;;
       superpowers:*)

@@ -1,21 +1,4 @@
----
-name: vibe-feature
-description: |
-  Design and build a named feature end to end: design → plan → impl → verify →
-  compound. The main build loop. Writes feature specs under
-  .spec/features/<name>/ then source under src/ and tests/.
-  Trigger on: building a feature, "I need <feature>", implement, add capability,
-  feature work, or user says feature.
-user-invocable: true
-argument-hint: "<feature-name>"
-allowed-tools: Read, Edit, Write, Bash
-compatibility: Requires bash + jq. macOS and Linux.
-metadata:
-  author: lennarddib
-  version: "1.0"
----
-
-# vibe-feature — build loop
+# feature — build loop
 
 Carries a named feature from spec to verified code. Five states with **two human
 gates**: after `plan` (before impl) and after `verify` (before ship/compound).
@@ -48,14 +31,14 @@ Everything between is autonomous.
    `src/**` and `tests/**` only — do **not** edit `.spec/**`. Cite plan unit IDs
    in tests/commits so state survives re-planning.
 
-5. **Verify** (`feature.verify`, caveman full). Hand to `vibe-verify` /
+5. **Verify** (`feature.verify`, caveman full). Hand to `verify.md` /
    `superpowers:verification-before-completion` + `requesting-code-review` +
    `code-reviewer`. Gather evidence per unit ID. **Human gate** before ship.
    Route: pass → `feature.compound`; targeted fix → `feature.impl`; major drift →
    `feature.plan`.
 
 6. **Compound** (`feature.compound`, caveman lite; receipts ultra). Hand to
-   `vibe-compound`: record a tagged lesson, promote cross-cutting decisions to
+   `compound.md`: record a tagged lesson, promote cross-cutting decisions to
    root specs, archive the feature folder, regenerate the active-rules digest.
 
 ## Rules
@@ -65,22 +48,3 @@ Everything between is autonomous.
 - If a `quick` task escalated here, start at `feature.design`.
 - Caveman compresses output, never reasoning. Security/irreversible actions stay
   in normal prose at every level.
-
-## Orders (D12)
-
-Machine-extractable per-state orders, emitted verbatim by the inject hook via
-`.agents/flow/scripts/orders.sh`. `<feature>` is the only interpolation; keep each
-block byte-stable. (`feature.verify` is owned by `vibe-verify`,
-`feature.compound` by `vibe-compound`.)
-
-<!-- vibe:orders:feature.design -->
-skill=vibe-feature · spec feature.md flow steps 1–4 (locate→interview WHAT→rigor gate→sketch HOW) · READ lessons.md + root product/tech · WRITE .spec/features/<feature>/{product,tech,design?}.md ONLY · no source · caveman=lite · next: feature.plan
-<!-- /vibe:orders -->
-
-<!-- vibe:orders:feature.plan -->
-skill=vibe-feature · spec feature.md step 5 (plan units) · WRITE .spec/features/<feature>/plan.md · STABLE unit IDs (<feature>/n) cite R-IDs · verification per unit · no source · caveman=lite · HUMAN GATE before impl · next: feature.impl
-<!-- /vibe:orders -->
-
-<!-- vibe:orders:feature.impl -->
-skill=vibe-feature · delegate executing-plans + TDD · WRITE src/**, tests/** · do NOT edit .spec/** · cite plan unit IDs (<feature>/n) in tests/commits · caveman=full · next: feature.verify
-<!-- /vibe:orders -->

@@ -19,8 +19,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FLOW_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO_ROOT="$(cd "$FLOW_DIR/../.." && pwd)"
+SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SKILL_DIR/../../.." && pwd)"
 
 LESSONS="$REPO_ROOT/.spec/lessons.md"
 TARGETS=("$REPO_ROOT/CLAUDE.md" "$REPO_ROOT/AGENTS.md")
