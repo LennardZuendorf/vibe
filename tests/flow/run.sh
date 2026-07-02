@@ -166,5 +166,51 @@ assert_eq "vibe-flow/core" "regen leaves no stray temp files beside the target" 
 rm -rf "$d"
 
 echo ""
+echo "=== path parity — symlinked vs real path ==="
+# Scripts self-locate via ${BASH_SOURCE}; invoking through the canonical flow/
+# path and through the .agents/skills/vibe symlink alias must be byte-identical
+# (same state file, same machine, same output). Seed a deterministic cursor so
+# both spellings read identical state.
+REAL_SCRIPTS="$REPO_ROOT/flow/scripts"
+ALIAS_SCRIPTS="$REPO_ROOT/.agents/skills/vibe/scripts"
+cp "$FLOW/state.example.json" "$STATE"
+bash "$SCRIPTS/set-state.sh" feature.impl widget >/dev/null
+for st in idle feature.impl strategy.spec feature.compound quick.fix; do
+  a="$(bash "$REAL_SCRIPTS/orders.sh" "$st" 2>&1)"
+  b="$(bash "$ALIAS_SCRIPTS/orders.sh" "$st" 2>&1)"
+  assert_eq "path-parity" "orders.sh identical via real vs symlink path ($st)" "$a" "$b"
+done
+a="$(bash "$REAL_SCRIPTS/detect-context.sh" snapshot 2>&1)"
+b="$(bash "$ALIAS_SCRIPTS/detect-context.sh" snapshot 2>&1)"
+assert_eq "path-parity" "detect-context snapshot identical via both paths" "$a" "$b"
+a="$(bash "$REAL_SCRIPTS/detect-context.sh" decide .spec/lessons.md 2>&1)"
+b="$(bash "$ALIAS_SCRIPTS/detect-context.sh" decide .spec/lessons.md 2>&1)"
+assert_eq "path-parity" "detect-context decide identical via both paths" "$a" "$b"
+a="$(bash "$REAL_SCRIPTS/validate-state.sh" 2>&1)"
+b="$(bash "$ALIAS_SCRIPTS/validate-state.sh" 2>&1)"
+assert_eq "path-parity" "validate-state identical via both paths" "$a" "$b"
+
+# regen-active-rules resolves the repo root by marker search, so a sandbox reached
+# via a real flow/ path and via a .agents/skills/vibe symlink yields the same
+# rewrite (a fixed `..` hop overshot the root on the flow/ path).
+pr="$(mktemp -d)"
+mkdir -p "$pr/flow/scripts" "$pr/.agents/skills" "$pr/.spec"
+cp "$SCRIPTS/regen-active-rules.sh" "$pr/flow/scripts/"
+( cd "$pr/.agents/skills" && ln -s ../../flow vibe )
+cat > "$pr/.spec/lessons.md" <<'EOF'
+# Lessons
+
+### Parity lesson
+**Rule:** paths resolve the same via symlink or real dir.
+**Date:** 2026-07-03
+EOF
+seed_agents() { printf '# T\n<!-- vibe:active-rules:start -->\nold\n<!-- vibe:active-rules:end -->\n' > "$pr/AGENTS.md"; }
+seed_agents; bash "$pr/flow/scripts/regen-active-rules.sh" >/dev/null 2>&1; real_out="$(cat "$pr/AGENTS.md")"
+seed_agents; bash "$pr/.agents/skills/vibe/scripts/regen-active-rules.sh" >/dev/null 2>&1; alias_out="$(cat "$pr/AGENTS.md")"
+assert_eq "path-parity" "regen-active-rules identical via both paths" "$real_out" "$alias_out"
+assert_contains "path-parity" "regen via real flow/ path resolves the repo root" "$real_out" "paths resolve the same"
+rm -rf "$pr"
+
+echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

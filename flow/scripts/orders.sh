@@ -22,7 +22,21 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-SKILLS_DIR="$(cd "$SKILL_DIR/.." && pwd)"
+
+# Address the name-aliased skills under .agents/skills. SKILL_DIR/.. lands there
+# only via the .agents/skills/vibe symlink alias; via the canonical flow/ path it
+# lands on the repo root — so walk up for a .spec/.git marker and derive the
+# skills dir from the root, so both invocation spellings agree.
+find_repo_root() {
+  local d="$1"
+  while [[ -n "$d" && "$d" != "/" ]]; do
+    if [[ -d "$d/.spec" || -e "$d/.git" ]]; then printf '%s\n' "$d"; return 0; fi
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")" || REPO_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
+SKILLS_DIR="$REPO_ROOT/.agents/skills"
 MACHINE="$SKILL_DIR/state-machine.json"
 STATE="$SKILL_DIR/state.json"
 

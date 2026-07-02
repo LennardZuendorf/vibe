@@ -20,7 +20,19 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO_ROOT="$(cd "$SKILL_DIR/../../.." && pwd)"
+
+# Walk up for a .spec/.git marker rather than counting `..` hops: the skill dir
+# sits one level under the repo root on the canonical flow/ path but three levels
+# under it via the .agents/skills/vibe symlink alias (and in the test sandbox).
+find_repo_root() {
+  local d="$1"
+  while [[ -n "$d" && "$d" != "/" ]]; do
+    if [[ -d "$d/.spec" || -e "$d/.git" ]]; then printf '%s\n' "$d"; return 0; fi
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")" || REPO_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
 
 LESSONS="$REPO_ROOT/.spec/lessons.md"
 TARGETS=("$REPO_ROOT/CLAUDE.md" "$REPO_ROOT/AGENTS.md")
