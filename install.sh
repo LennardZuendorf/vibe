@@ -58,7 +58,9 @@ if [[ -f "$TARGET/.agents/skills/vibe/state.json" ]]; then
   SAVED_CURSOR="$(mktemp)"
   cp "$TARGET/.agents/skills/vibe/state.json" "$SAVED_CURSOR"
 fi
-cp -R "$SRC/.agents/skills" "$TARGET/.agents/"
+# -L dereferences: source stores canonical dirs at spec/ + flow/ behind
+# .agents/skills/* symlinks; targets always get real directories.
+cp -RL "$SRC/.agents/skills" "$TARGET/.agents/"
 if [[ -n "$SAVED_CURSOR" ]]; then
   mv -f "$SAVED_CURSOR" "$TARGET/.agents/skills/vibe/state.json"
   note "preserved existing flow cursor across re-install"
