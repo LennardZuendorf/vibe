@@ -148,3 +148,30 @@ This bridges WHAT to HOW so the reader can navigate.
 - **Root entrypoint:** [templates/product.md](templates/product.md)
 - **Feature spec:** [templates/feature-product.md](templates/feature-product.md)
 - **Cross-cutting branch:** [templates/product-xxx.md](templates/product-xxx.md)
+
+---
+
+## OpenSpec frontmatter (optional)
+
+Feature `product.md` files may include a machine-readable `requirements:` list in their YAML frontmatter. This is **opt-in** — files without it pass `validate.sh` unchanged.
+
+```yaml
+requirements:
+  - id: R-1
+    title: "Login with email"
+    strength: SHALL
+    scenarios: 2
+  - id: R-2
+    title: "Password reset flow"
+    strength: SHALL
+    scenarios: 1
+```
+
+Fields:
+- `id` — short stable ID (referenced in plan.md unit `Depends` column and Requirements Trace)
+- `title` — requirement title (matches `### Requirement: <title>`)
+- `strength` — RFC-2119 keyword: SHALL / MUST / SHOULD / MAY
+- `scenarios` — expected count of `#### Scenario:` blocks under this requirement
+
+`validate.sh` does not error on absence. When `requirements:` is present, a warn-only check compares the declared `scenarios` count against actual GWT blocks in the file body.
+

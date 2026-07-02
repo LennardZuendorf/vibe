@@ -570,6 +570,492 @@ test_sf17_templates
 test_sf17_skill_size
 test_sf17_companion_docs
 
+# ── spec-skill-improvements: Unit 1 — SKILL.md v2.0 frontmatter ─────────────
+test_skill_v2_frontmatter_fields() {
+  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
+  assert_contains "spec-skill-improvements/1" "SKILL.md version 2.0" "$skill" "version: 2.0"
+  assert_contains "spec-skill-improvements/1" "SKILL.md has allowed-tools:" "$skill" "allowed-tools:"
+  assert_contains "spec-skill-improvements/1" "SKILL.md has context:" "$skill" "context:"
+  assert_contains "spec-skill-improvements/1" "SKILL.md has agents:" "$skill" "agents:"
+  assert_contains "spec-skill-improvements/1" "SKILL.md has superpowers:" "$skill" "superpowers:"
+  assert_contains "spec-skill-improvements/1" "SKILL.md has delegates:" "$skill" "delegates:"
+  assert_contains "spec-skill-improvements/1" "SKILL.md has caveman:" "$skill" "caveman:"
+}
+
+# ── spec-skill-improvements: Unit 2 — ## Roles section ──────────────────────
+test_skill_roles_section() {
+  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
+  assert_contains "spec-skill-improvements/2" "SKILL.md has ## Roles" "$skill" "## Roles"
+  assert_contains "spec-skill-improvements/2" "SKILL.md has spec-interviewer role" "$skill" "spec-interviewer"
+  assert_contains "spec-skill-improvements/2" "SKILL.md has spec-planner role" "$skill" "spec-planner"
+  assert_contains "spec-skill-improvements/2" "SKILL.md has spec-auditor role" "$skill" "spec-auditor"
+  assert_contains "spec-skill-improvements/2" "SKILL.md has spec-compactor role" "$skill" "spec-compactor"
+}
+
+# ── spec-skill-improvements: Unit 3 — Routing expansion ──────────────────────
+test_skill_routing_new_routes() {
+  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
+  assert_contains "spec-skill-improvements/3" "SKILL.md routing has interview" "$skill" "interview"
+  assert_contains "spec-skill-improvements/3" "SKILL.md routing has promote" "$skill" "promote"
+  assert_contains "spec-skill-improvements/3" "SKILL.md routing has audit" "$skill" "audit"
+  assert_contains "spec-skill-improvements/3" "SKILL.md routing has lessons-for" "$skill" "lessons-for"
+  assert_contains "spec-skill-improvements/3" "SKILL.md routing has diff" "$skill" "diff"
+  assert_contains "spec-skill-improvements/3" "SKILL.md routing has health" "$skill" "health"
+  assert_contains "spec-skill-improvements/3" "SKILL.md routing has research" "$skill" "research"
+}
+
+# ── spec-skill-improvements: Unit 4 — feature.md output profiles ─────────────
+test_feature_output_profiles() {
+  local fm; fm="$(cat "$SPEC_SKILL/feature.md")"
+  assert_contains "spec-skill-improvements/4" "feature.md has ## Output profiles" "$fm" "## Output profiles"
+  assert_contains "spec-skill-improvements/4" "feature.md has Lite profile" "$fm" "### Lite"
+  assert_contains "spec-skill-improvements/4" "feature.md has Ultra profile" "$fm" "### Ultra"
+}
+
+# ── spec-skill-improvements: Unit 5 — promote.sh dry-run no mutation ─────────
+test_promote_dry_run_no_mutation() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/feat"
+  printf '<!-- merge -->\n## promoted section\n<!-- /merge -->\n' > "$d/.spec/features/feat/tech.md"
+  echo "# root" > "$d/.spec/tech.md"
+  local before; before="$(cat "$d/.spec/tech.md")"
+  (cd "$d" && bash "$SPEC_SKILL/scripts/promote.sh" feat --dry-run) >/dev/null
+  local after; after="$(cat "$d/.spec/tech.md")"
+  assert_contains "spec-skill-improvements/5" "dry-run leaves target unchanged" "$before" "$after"
+  rm -rf "$d"
+}
+
+test_promote_reversed_markers_refused() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/feat"
+  printf '<!-- /merge -->\n## bad\n<!-- merge -->\n' > "$d/.spec/features/feat/tech.md"
+  echo "# root" > "$d/.spec/tech.md"
+  local before; before="$(cat "$d/.spec/tech.md")"
+  local rc=0
+  (cd "$d" && bash "$SPEC_SKILL/scripts/promote.sh" feat) >/dev/null 2>&1 || rc=$?
+  local after; after="$(cat "$d/.spec/tech.md")"
+  if [[ $rc -ne 0 ]]; then pass "spec-skill-improvements/5" "reversed markers exit non-zero"
+  else fail "spec-skill-improvements/5" "reversed markers exit non-zero"; fi
+  assert_contains "spec-skill-improvements/5" "reversed markers: target byte-unchanged" "$before" "$after"
+  rm -rf "$d"
+}
+
+test_promote_valid_blocks() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/feat"
+  printf '<!-- merge -->\n## promoted section\n<!-- /merge -->\n' > "$d/.spec/features/feat/tech.md"
+  echo "# root" > "$d/.spec/tech.md"
+  (cd "$d" && bash "$SPEC_SKILL/scripts/promote.sh" feat) >/dev/null
+  local after; after="$(cat "$d/.spec/tech.md")"
+  assert_contains "spec-skill-improvements/5" "valid blocks appended to target" "$after" "promoted section"
+  rm -rf "$d"
+}
+
+# ── spec-skill-improvements: Unit 6 — lessons-for.sh ───────────────────────
+test_lessons_for_match() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec"
+  printf '### Test lesson\n**Pattern:** p\n**Rule:** r\n**Tags:** spec, validate\n**Date:** 2026-01-01\n' > "$d/.spec/lessons.md"
+  local out; out="$(cd "$d" && bash "$SPEC_SKILL/scripts/lessons-for.sh" validate)"
+  assert_contains "spec-skill-improvements/6" "lessons-for tag match returns lesson" "$out" "Test lesson"
+  rm -rf "$d"
+}
+
+test_lessons_for_no_match() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec"
+  printf '### Test lesson\n**Pattern:** p\n**Rule:** r\n**Tags:** spec\n**Date:** 2026-01-01\n' > "$d/.spec/lessons.md"
+  local out rc=0
+  out="$(cd "$d" && bash "$SPEC_SKILL/scripts/lessons-for.sh" nonexistent 2>/dev/null)" || rc=$?
+  if [[ $rc -eq 0 ]]; then pass "spec-skill-improvements/6" "no-match exit 0"
+  else fail "spec-skill-improvements/6" "no-match exit 0"; fi
+  assert_not_contains "spec-skill-improvements/6" "no-match empty output" "$out" "Test lesson"
+  rm -rf "$d"
+}
+
+test_lessons_for_inject_format() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec"
+  printf '### Test lesson\n**Pattern:** p\n**Rule:** r\n**Tags:** spec\n**Date:** 2026-01-01\n' > "$d/.spec/lessons.md"
+  local out; out="$(cd "$d" && bash "$SPEC_SKILL/scripts/lessons-for.sh" spec --format inject)"
+  assert_contains "spec-skill-improvements/6" "inject format has open delimiter" "$out" "<!-- lessons:"
+  assert_contains "spec-skill-improvements/6" "inject format has close delimiter" "$out" "<!-- /lessons -->"
+  rm -rf "$d"
+}
+
+# ── spec-skill-improvements: Unit 7 — SF13 stale link checker ───────────────
+test_sf13_stale_link_warns() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec"
+  cat > "$d/.spec/product.md" <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-01-01
+---
+[old](features/deleted/product.md)
+EOF
+  local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
+  assert_contains "spec-skill-improvements/7" "SF13 warns on stale feature link" "$out" "SF13"
+  rm -rf "$d"
+}
+
+test_sf13_valid_links_pass() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/existing"
+  cat > "$d/.spec/product.md" <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-01-01
+---
+[here](features/existing/product.md)
+EOF
+  touch "$d/.spec/features/existing/product.md"
+  local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
+  assert_not_contains "spec-skill-improvements/7" "SF13 silent on valid links" "$out" "SF13"
+  rm -rf "$d"
+}
+
+# ── spec-skill-improvements: Unit 8 — SF14 scope conflict ───────────────────
+test_sf14_conflict_warns() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/alpha" "$d/.spec/features/beta"
+  cat > "$d/.spec/product.md" <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-01-01
+---
+# P
+EOF
+  cat > "$d/.spec/features/alpha/product.md" <<'EOF'
+---
+type: feature-product
+feature: alpha
+sibling: tech.md
+parent: ../../product.md
+updated: 2026-01-01
+---
+## Scope
+| Owns | Does not own |
+|---|---|
+| state machine | adapters |
+EOF
+  cat > "$d/.spec/features/alpha/tech.md" <<'EOF'
+---
+type: feature-tech
+feature: alpha
+sibling: product.md
+parent: ../../tech.md
+updated: 2026-01-01
+---
+# Tech
+EOF
+  cat > "$d/.spec/features/beta/product.md" <<'EOF'
+---
+type: feature-product
+feature: beta
+sibling: tech.md
+parent: ../../product.md
+updated: 2026-01-01
+---
+## Scope
+| Owns | Does not own |
+|---|---|
+| state machine | hooks |
+EOF
+  cat > "$d/.spec/features/beta/tech.md" <<'EOF'
+---
+type: feature-tech
+feature: beta
+sibling: product.md
+parent: ../../tech.md
+updated: 2026-01-01
+---
+# Tech
+EOF
+  local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
+  assert_contains "spec-skill-improvements/8" "SF14 warns on conflicting Owns terms" "$out" "SF14"
+  assert_contains "spec-skill-improvements/8" "SF14 message names first feature" "$out" "alpha"
+  assert_contains "spec-skill-improvements/8" "SF14 message names second feature" "$out" "beta"
+  rm -rf "$d"
+}
+
+test_sf14_no_conflict_passes() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/alpha" "$d/.spec/features/beta"
+  cat > "$d/.spec/product.md" <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-01-01
+---
+# P
+EOF
+  cat > "$d/.spec/features/alpha/product.md" <<'EOF'
+---
+type: feature-product
+feature: alpha
+sibling: tech.md
+parent: ../../product.md
+updated: 2026-01-01
+---
+## Scope
+| Owns | Does not own |
+|---|---|
+| state machine | adapters |
+EOF
+  cat > "$d/.spec/features/alpha/tech.md" <<'EOF'
+---
+type: feature-tech
+feature: alpha
+sibling: product.md
+parent: ../../tech.md
+updated: 2026-01-01
+---
+# Tech
+EOF
+  cat > "$d/.spec/features/beta/product.md" <<'EOF'
+---
+type: feature-product
+feature: beta
+sibling: tech.md
+parent: ../../product.md
+updated: 2026-01-01
+---
+## Scope
+| Owns | Does not own |
+|---|---|
+| routing hooks | adapters |
+EOF
+  cat > "$d/.spec/features/beta/tech.md" <<'EOF'
+---
+type: feature-tech
+feature: beta
+sibling: product.md
+parent: ../../tech.md
+updated: 2026-01-01
+---
+# Tech
+EOF
+  local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
+  assert_not_contains "spec-skill-improvements/8" "SF14 silent on distinct Owns terms" "$out" "SF14"
+  rm -rf "$d"
+}
+
+# ── spec-skill-improvements: Unit 9 — branch doc templates ──────────────────
+test_branch_doc_templates_exist() {
+  local templates_dir="$SPEC_SKILL/reference/templates"
+  for t in product-topic.md tech-topic.md plan-topic.md research.md; do
+    if [[ -f "$templates_dir/$t" ]]; then pass "spec-skill-improvements/9" "template exists: $t"
+    else fail "spec-skill-improvements/9" "template exists: $t"; fi
+  done
+  local product_topic; product_topic="$(cat "$templates_dir/product-topic.md")"
+  local tech_topic; tech_topic="$(cat "$templates_dir/tech-topic.md")"
+  assert_contains "spec-skill-improvements/9" "product-topic.md has type: product-topic" "$product_topic" "type: product-topic"
+  assert_contains "spec-skill-improvements/9" "tech-topic.md has type: tech-topic" "$tech_topic" "type: tech-topic"
+}
+
+# ── spec-skill-improvements: Unit 10 — scan-merges.sh ───────────────────────
+test_scan_merges_finds_blocks() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/feat"
+  printf '# Tech\n<!-- merge -->\n## promoted\n<!-- /merge -->\nmore text\n' > "$d/.spec/features/feat/tech.md"
+  local out; out="$(cd "$d" && bash "$SPEC_SKILL/scripts/scan-merges.sh" feat)"
+  assert_contains "spec-skill-improvements/10" "scan-merges finds blocks" "$out" "feat"
+  rm -rf "$d"
+}
+
+test_scan_merges_unclosed_exits_nonzero() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/feat"
+  printf '<!-- merge -->\n## unclosed block\n' > "$d/.spec/features/feat/tech.md"
+  local rc=0
+  (cd "$d" && bash "$SPEC_SKILL/scripts/scan-merges.sh" feat) >/dev/null 2>&1 || rc=$?
+  if [[ $rc -ne 0 ]]; then pass "spec-skill-improvements/10" "unclosed marker exits non-zero"
+  else fail "spec-skill-improvements/10" "unclosed marker exits non-zero"; fi
+  rm -rf "$d"
+}
+
+test_scan_merges_empty_feature() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/feat"
+  echo "# Tech only, no merge blocks" > "$d/.spec/features/feat/tech.md"
+  local rc=0
+  (cd "$d" && bash "$SPEC_SKILL/scripts/scan-merges.sh" feat) >/dev/null || rc=$?
+  if [[ $rc -eq 0 ]]; then pass "spec-skill-improvements/10" "no-block feature exits 0"
+  else fail "spec-skill-improvements/10" "no-block feature exits 0"; fi
+  rm -rf "$d"
+}
+
+# ── spec-skill-improvements: Unit 11 — OpenSpec frontmatter docs ─────────────
+test_openspec_docs_present() {
+  local product_ref; product_ref="$(cat "$SPEC_SKILL/reference/product.md")"
+  local plan_ref; plan_ref="$(cat "$SPEC_SKILL/reference/plan.md")"
+  assert_contains "spec-skill-improvements/11" "reference/product.md has requirements: section" "$product_ref" "requirements:"
+  assert_contains "spec-skill-improvements/11" "reference/plan.md has units: section" "$plan_ref" "units:"
+  assert_contains "spec-skill-improvements/11" "reference/product.md notes opt-in" "$product_ref" "opt-in"
+}
+
+# ── spec-skill-improvements: Unit 12 — spec-tracer read-only ─────────────────
+test_spec_tracer_read_only() {
+  local tracer; tracer="$(cat "$SPEC_SKILL/agents/spec-tracer/SKILL.md")"
+  assert_contains "spec-skill-improvements/12" "spec-tracer has allowed-tools" "$tracer" "allowed-tools"
+  assert_contains "spec-skill-improvements/12" "spec-tracer lists Read" "$tracer" "Read"
+  assert_not_contains "spec-skill-improvements/12" "spec-tracer has no Edit in allowed-tools" "$(grep -A5 'allowed-tools' "$SPEC_SKILL/agents/spec-tracer/SKILL.md" | head -5)" "Edit"
+  assert_not_contains "spec-skill-improvements/12" "spec-tracer has no Write in allowed-tools" "$(grep -A5 'allowed-tools' "$SPEC_SKILL/agents/spec-tracer/SKILL.md" | head -5)" "Write"
+}
+
+# ── spec-skill-improvements: Unit 13 — spec-promoter diff-first ──────────────
+test_spec_promoter_diff_first() {
+  local promoter; promoter="$(cat "$SPEC_SKILL/agents/spec-promoter/SKILL.md")"
+  assert_contains "spec-skill-improvements/13" "spec-promoter has dry-run language" "$promoter" "dry-run"
+  assert_contains "spec-skill-improvements/13" "spec-promoter has confirmation language" "$promoter" "confirm"
+}
+
+# ── spec-skill-improvements: Unit 14 — spec-interviewer constraint ────────────
+test_spec_interviewer_constraint_injection() {
+  local interviewer; interviewer="$(cat "$SPEC_SKILL/agents/spec-interviewer/SKILL.md")"
+  assert_contains "spec-skill-improvements/14" "spec-interviewer references Interview for WHAT" "$interviewer" "Interview for WHAT"
+  assert_contains "spec-skill-improvements/14" "spec-interviewer references brainstorming" "$interviewer" "brainstorming"
+}
+
+# ── spec-skill-improvements: Unit 15 — spec-health output levels ─────────────
+test_spec_health_output_levels() {
+  local health; health="$(cat "$SPEC_SKILL/agents/spec-health/SKILL.md")"
+  assert_contains "spec-skill-improvements/15" "spec-health has CRITICAL level" "$health" "CRITICAL"
+  assert_contains "spec-skill-improvements/15" "spec-health has WARN level" "$health" "WARN"
+  assert_contains "spec-skill-improvements/15" "spec-health has INFO level" "$health" "INFO"
+}
+
+# ── spec-skill-improvements: Unit 16 — SF15 + SF16 ───────────────────────────
+test_sf15_long_root_warns() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec"
+  {
+    cat <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-01-01
+---
+EOF
+    python3 -c "[print(f'## Section {i}\nLine.') for i in range(110)]"
+  } > "$d/.spec/product.md"
+  local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
+  assert_contains "spec-skill-improvements/16" "SF15 warns on long root spec" "$out" "SF15"
+  rm -rf "$d"
+}
+
+test_sf16_lesson_no_tags_warns() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec"
+  cat > "$d/.spec/product.md" <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-01-01
+---
+# P
+EOF
+  cat > "$d/.spec/lessons.md" <<'EOF'
+### Missing tags
+**Pattern:** test
+**Rule:** test
+**Date:** 2026-01-01
+EOF
+  local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
+  assert_contains "spec-skill-improvements/16" "SF16 warns on tagless lesson" "$out" "SF16"
+  rm -rf "$d"
+}
+
+test_sf16_lesson_with_tags_passes() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec"
+  cat > "$d/.spec/product.md" <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-01-01
+---
+# P
+EOF
+  cat > "$d/.spec/lessons.md" <<'EOF'
+### Tagged lesson
+**Pattern:** test
+**Rule:** test
+**Tags:** foo, bar
+**Date:** 2026-01-01
+EOF
+  local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
+  assert_not_contains "spec-skill-improvements/16" "SF16 silent on tagged lesson" "$out" "SF16"
+  rm -rf "$d"
+}
+
+# ── spec-skill-improvements: Unit 17 — subagents folder wiring ───────────────
+test_subagents_folder_wiring() {
+  for agent in spec-tracer spec-promoter spec-interviewer spec-health; do
+    if [[ -f "$SPEC_SKILL/agents/$agent/SKILL.md" ]]; then
+      pass "spec-skill-improvements/17" "subagent SKILL.md exists: $agent"
+    else
+      fail "spec-skill-improvements/17" "subagent SKILL.md exists: $agent"
+    fi
+  done
+  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
+  assert_contains "spec-skill-improvements/17" "root SKILL.md agents: map has spec-tracer" "$skill" "spec-tracer"
+}
+
+# ── spec-skill-improvements: Unit 18 — setup interview flow ──────────────────
+test_setup_section_has_interview_flow() {
+  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
+  assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q1" "$skill" "Q1"
+  assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q2" "$skill" "Q2"
+  assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q3" "$skill" "Q3"
+  assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q4" "$skill" "Q4"
+  assert_contains "spec-skill-improvements/18" "SKILL.md Setup references .config.yaml" "$skill" ".config.yaml"
+}
+
+# ── spec-skill-improvements: Unit 19 — config section + defaults ─────────────
+test_config_section_present() {
+  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
+  assert_contains "spec-skill-improvements/19" "SKILL.md has ## Config section" "$skill" "## Config"
+  assert_contains "spec-skill-improvements/19" "SKILL.md Config references .config.yaml" "$skill" ".config.yaml"
+  assert_contains "spec-skill-improvements/19" "SKILL.md Config has suggest-superpowers" "$skill" "suggest-superpowers"
+}
+
+test_config_defaults_documented() {
+  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
+  assert_contains "spec-skill-improvements/19" "SKILL.md Config documents vibe-flow key" "$skill" "vibe-flow"
+  assert_contains "spec-skill-improvements/19" "SKILL.md Config documents caveman key" "$skill" "caveman"
+  assert_contains "spec-skill-improvements/19" "SKILL.md Config documents suggest-superpowers key" "$skill" "suggest-superpowers"
+}
+
+# ── Run new tests ────────────────────────────────────────────────────────────
+echo ""
+echo "=== spec-skill-improvements v2.0 tests ==="
+test_skill_v2_frontmatter_fields
+test_skill_roles_section
+test_skill_routing_new_routes
+test_feature_output_profiles
+test_promote_dry_run_no_mutation
+test_promote_reversed_markers_refused
+test_promote_valid_blocks
+test_lessons_for_match
+test_lessons_for_no_match
+test_lessons_for_inject_format
+test_sf13_stale_link_warns
+test_sf13_valid_links_pass
+test_sf14_conflict_warns
+test_sf14_no_conflict_passes
+test_branch_doc_templates_exist
+test_scan_merges_finds_blocks
+test_scan_merges_unclosed_exits_nonzero
+test_scan_merges_empty_feature
+test_openspec_docs_present
+test_spec_tracer_read_only
+test_spec_promoter_diff_first
+test_spec_interviewer_constraint_injection
+test_spec_health_output_levels
+test_sf15_long_root_warns
+test_sf16_lesson_no_tags_warns
+test_sf16_lesson_with_tags_passes
+test_subagents_folder_wiring
+test_setup_section_has_interview_flow
+test_config_section_present
+test_config_defaults_documented
+
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

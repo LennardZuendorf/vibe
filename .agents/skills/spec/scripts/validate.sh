@@ -289,6 +289,91 @@ check_plan_id_traceability() {
   ' "$product" | sort -u)
 }
 
+# SF13 — cross-reference integrity: warn on stale links to features/ or archive/ paths
+check_sf13_stale_feature_links() {
+  local root_files=(".spec/product.md" ".spec/tech.md" ".spec/design.md" ".spec/plan.md")
+  for f in "${root_files[@]}"; do
+    [[ -f "$f" ]] || continue
+    while IFS= read -r target; do
+      [[ -e ".spec/$target" ]] || yellow "SF13: stale link in $f → $target (not found)"
+    done < <(grep -oE '\(features/[^)]+\)|\(archive/[^)]+\)' "$f" 2>/dev/null \
+              | sed 's/^(//;s/)$//' || true)
+  done
+}
+
+# SF14 — scope conflict detection: warn when two features claim the same Owns item
+check_sf14_scope_conflicts() {
+  local seen_file
+  seen_file="$(mktemp)"
+  for f in .spec/features/*/product.md; do
+    [[ -f "$f" ]] || continue
+    local feature
+    feature="$(basename "$(dirname "$f")")"
+    local in_owns=0
+    while IFS= read -r line; do
+      if printf '%s\n' "$line" | grep -q "| Owns"; then
+        in_owns=1
+        continue
+      fi
+      if printf '%s\n' "$line" | grep -q "| Does not own"; then
+        in_owns=0
+        continue
+      fi
+      if [[ $in_owns -eq 1 ]] && printf '%s\n' "$line" | grep -qE '^\|[^|]+\|'; then
+        local item
+        item="$(printf '%s\n' "$line" | awk -F'|' '{print $2}' | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        [[ ${#item} -lt 5 || -z "$item" ]] && continue
+        local existing
+        existing="$(grep "^${item}"$'\t' "$seen_file" 2>/dev/null || true)"
+        if [[ -n "$existing" ]]; then
+          local other
+          other="$(printf '%s\n' "$existing" | awk -F'\t' '{print $2}')"
+          yellow "SF14: scope conflict — '${other}' and '${feature}' both own: ${item}"
+        else
+          printf '%s\t%s\n' "$item" "$feature" >> "$seen_file"
+        fi
+      fi
+    done < "$f"
+  done
+  rm -f "$seen_file"
+}
+
+# SF15 — root spec length: warn when a root spec exceeds 200 lines
+check_sf15_root_spec_length() {
+  local max_lines="${SPEC_ROOT_MAX_LINES:-200}"
+  local root_files=(".spec/product.md" ".spec/tech.md" ".spec/design.md" ".spec/plan.md" ".spec/lessons.md")
+  for f in "${root_files[@]}"; do
+    [[ -f "$f" ]] || continue
+    local count
+    count="$(wc -l < "$f")"
+    if [[ $count -gt $max_lines ]]; then
+      yellow "SF15: $f is $count lines (>${max_lines}); consider splitting into a branch doc (product-{topic}.md, tech-{topic}.md)"
+    fi
+  done
+}
+
+# SF16 — lessons tags coverage: warn on any lesson entry without **Tags:**
+check_sf16_lessons_tags() {
+  local lessons=".spec/lessons.md"
+  [[ -f "$lessons" ]] || return 0
+  local current_title=""
+  local has_tags=0
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^###[[:space:]] ]]; then
+      if [[ -n "$current_title" && $has_tags -eq 0 ]]; then
+        yellow "SF16: lesson '$current_title' in lessons.md has no **Tags:** line"
+      fi
+      current_title="${line#\#\#\# }"
+      has_tags=0
+    elif [[ "$line" =~ ^\*\*Tags:\*\* ]]; then
+      has_tags=1
+    fi
+  done < "$lessons"
+  if [[ -n "$current_title" && $has_tags -eq 0 ]]; then
+    yellow "SF16: lesson '$current_title' in lessons.md has no **Tags:** line"
+  fi
+}
+
 # I1 — feature plan declares same-feature deps only; cross-feature order is a
 # whole-feature gate in the root plan, never a unit-to-unit edge. Warn-only.
 check_cross_feature_deps() {
@@ -546,6 +631,11 @@ if [[ -f "CLAUDE.md" ]]; then
   green "CLAUDE.md: checked"
   echo ""
 fi
+
+check_sf13_stale_feature_links
+check_sf14_scope_conflicts
+check_sf15_root_spec_length
+check_sf16_lessons_tags
 
 echo "========================"
 echo "Errors:   $ERRORS"

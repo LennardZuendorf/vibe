@@ -233,3 +233,29 @@ Feature `vibe-flow/plan.md` unit rows:
 | vibe-flow/2 | 2 | Skill-count decision | vibe-flow/1 | review note |
 
 This pattern scales: add features, promote sub-features to siblings, extend the sequence — without cross-feature unit locks and without rewriting history.
+
+---
+
+## OpenSpec frontmatter (optional)
+
+Feature `plan.md` files may include a machine-readable `units:` list in their YAML frontmatter. This is **opt-in** — files without it pass `validate.sh` unchanged.
+
+```yaml
+units:
+  - id: "spec-skill-improvements/1"
+    title: "SKILL.md metadata enrichment"
+    status: planned
+    requires: []
+  - id: "spec-skill-improvements/2"
+    title: "Subagent role profiles"
+    status: planned
+    requires: ["spec-skill-improvements/1"]
+```
+
+Fields:
+- `id` — stable `<feature>/<n>` ID (matches `### <feature>/<n>` heading in plan body)
+- `title` — unit title
+- `status` — planned / in-progress / done
+- `requires` — list of same-feature unit IDs this unit depends on (cross-feature order lives in root plan Feature Sequence, never here)
+
+`validate.sh` does not error on absence. Tooling can compute dependency graphs and status summaries from this list without parsing markdown tables. Adoption rule: opt-in per file; reference docs note the convention as optional.
