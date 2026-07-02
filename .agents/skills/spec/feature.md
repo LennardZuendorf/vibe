@@ -61,7 +61,7 @@ Write `plan.md` with stable `feature/n` unit IDs (`### <name>/1`, `### <name>/2`
 
 ### 6. Skip conditions
 
-Route to `vibe-quick` instead of this flow when **all** hold:
+Route to `vibe` quick instead of this flow when **all** hold:
 
 - Atomic change — one file or one bounded fix
 - No architectural decisions

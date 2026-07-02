@@ -11,9 +11,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FLOW_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-MACHINE="$FLOW_DIR/state-machine.json"
-STATE="$FLOW_DIR/state.json"
+SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+MACHINE="$SKILL_DIR/state-machine.json"
+STATE="$SKILL_DIR/state.json"
 
 ok() { echo "validate-state: OK — $1"; }
 bad() { echo "validate-state: FAIL — $1" >&2; }
@@ -29,7 +29,7 @@ if [[ ! -f "$MACHINE" ]]; then
 fi
 
 if [[ ! -f "$STATE" ]]; then
-  bad "state.json not found. Copy the template: cp $FLOW_DIR/state.example.json $STATE"
+  bad "state.json not found. Copy the template: cp $SKILL_DIR/state.example.json $STATE"
   exit 1
 fi
 

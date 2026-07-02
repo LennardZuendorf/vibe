@@ -82,12 +82,7 @@ vibe/
 │   │       └── regen-active-rules.sh   # project lessons digest into adapter blocks
 │   └── skills/
 │       ├── spec/
-│       ├── vibe-strategy/
-│       ├── vibe-feature/
-│       ├── vibe-quick/
-│       ├── vibe-verify/
-│       ├── vibe-compound/
-│       └── vibe-amend/
+│       └── vibe/                       # consolidated workflow skill (SKILL.md + phase files)
 ├── .claude-plugin/
 │   └── plugin.json                     # Claude Code plugin manifest (bundles cmd+skills+hooks)
 ├── .claude/

@@ -5,9 +5,9 @@
 #
 # What it does (OPEN-3 default = COPY the platform-neutral core; MERGE the
 # instruction file with markers; never blind-overwrite user content):
-#   1. Copy the core   .agents/flow/** and .agents/skills/** into the target.
+#   1. Copy the core   .agents/skills/** (skills + vibe flow engine) into the target.
 #   2. Copy the Claude adapter   .claude/commands, .claude/hooks, .claude-plugin/.
-#   3. Seed   .agents/flow/state.json from state.example.json if absent.
+#   3. Seed   .agents/skills/vibe/state.json from state.example.json if absent.
 #   4. Ignore the mutable cursor in the target .gitignore.
 #   5. Merge   AGENTS.md via the target's merge-agents.sh (agent-instructions).
 #   6. Symlink requested adapters (CLAUDE.md, WARP.md) — opt-in, never clobber.
@@ -54,17 +54,16 @@ fi
 note "copying core .agents/ into $TARGET"
 mkdir -p "$TARGET/.agents"
 SAVED_CURSOR=""
-if [[ -f "$TARGET/.agents/flow/state.json" ]]; then
+if [[ -f "$TARGET/.agents/skills/vibe/state.json" ]]; then
   SAVED_CURSOR="$(mktemp)"
-  cp "$TARGET/.agents/flow/state.json" "$SAVED_CURSOR"
+  cp "$TARGET/.agents/skills/vibe/state.json" "$SAVED_CURSOR"
 fi
-cp -R "$SRC/.agents/flow" "$TARGET/.agents/"
 cp -R "$SRC/.agents/skills" "$TARGET/.agents/"
 if [[ -n "$SAVED_CURSOR" ]]; then
-  mv -f "$SAVED_CURSOR" "$TARGET/.agents/flow/state.json"
+  mv -f "$SAVED_CURSOR" "$TARGET/.agents/skills/vibe/state.json"
   note "preserved existing flow cursor across re-install"
 else
-  rm -f "$TARGET/.agents/flow/state.json"
+  rm -f "$TARGET/.agents/skills/vibe/state.json"
 fi
 
 # 2. Claude Code adapter (command + hooks + plugin manifest).
@@ -74,25 +73,25 @@ cp -R "$SRC/.claude/commands" "$TARGET/.claude/"
 cp -R "$SRC/.claude/hooks" "$TARGET/.claude/"
 mkdir -p "$TARGET/.claude-plugin"
 cp "$SRC/.claude-plugin/plugin.json" "$TARGET/.claude-plugin/"
-chmod +x "$TARGET"/.agents/flow/scripts/*.sh "$TARGET"/.claude/hooks/*.sh \
+chmod +x "$TARGET"/.claude/hooks/*.sh \
          "$TARGET"/.agents/skills/spec/scripts/*.sh \
-         "$TARGET"/.agents/skills/vibe-setup/scripts/*.sh 2>/dev/null || true
+         "$TARGET"/.agents/skills/vibe/scripts/*.sh 2>/dev/null || true
 
 # 3. Seed the cursor if absent.
-if [[ ! -f "$TARGET/.agents/flow/state.json" ]]; then
-  cp "$TARGET/.agents/flow/state.example.json" "$TARGET/.agents/flow/state.json"
-  note "seeded .agents/flow/state.json from template"
+if [[ ! -f "$TARGET/.agents/skills/vibe/state.json" ]]; then
+  cp "$TARGET/.agents/skills/vibe/state.example.json" "$TARGET/.agents/skills/vibe/state.json"
+  note "seeded .agents/skills/vibe/state.json from template"
 fi
 
 # 4. Ignore the mutable cursor.
 GI="$TARGET/.gitignore"
-if ! { [[ -f "$GI" ]] && grep -qF ".agents/flow/state.json" "$GI"; }; then
-  printf '\n# vibe mutable flow cursor (runtime; version state-machine.json, not this)\n.agents/flow/state.json\n' >> "$GI"
-  note "added .agents/flow/state.json to .gitignore"
+if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/vibe/state.json" "$GI"; }; then
+  printf '\n# vibe mutable flow cursor (runtime; version state-machine.json, not this)\n.agents/skills/vibe/state.json\n' >> "$GI"
+  note "added .agents/skills/vibe/state.json to .gitignore"
 fi
 
 # 5. Merge AGENTS.md via the copied merge script (agent-instructions).
-MERGE="$TARGET/.agents/skills/vibe-setup/scripts/merge-agents.sh"
+MERGE="$TARGET/.agents/skills/vibe/scripts/merge-agents.sh"
 if [[ -f "$MERGE" ]]; then
   bash "$MERGE" "$TARGET"
 else
@@ -116,6 +115,6 @@ cat <<EOF
 install: done.
 install: to activate the Claude Code hooks + /flow command, register the plugin:
 install:   - local dev:  add "$TARGET" as a plugin (it has .claude-plugin/plugin.json)
-install:   - the inject/guard/gate hooks read .agents/flow via \${CLAUDE_PROJECT_DIR}.
-install: the spec + vibe-* skills are installed as project files under .agents/skills/.
+install:   - the inject/guard/gate hooks read .agents/skills/vibe via \${CLAUDE_PROJECT_DIR}.
+install: the spec + vibe skills are installed as project files under .agents/skills/.
 EOF

@@ -12,9 +12,9 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-MERGE="$REPO_ROOT/.agents/skills/vibe-setup/scripts/merge-agents.sh"
-TEMPLATE="$REPO_ROOT/.agents/skills/vibe-setup/reference/templates/AGENTS.md"
-ADAPTERS_JSON="$REPO_ROOT/.agents/skills/vibe-setup/reference/adapters.json"
+MERGE="$REPO_ROOT/.agents/skills/vibe/scripts/merge-agents.sh"
+TEMPLATE="$REPO_ROOT/.agents/skills/vibe/reference/templates/AGENTS.md"
+ADAPTERS_JSON="$REPO_ROOT/.agents/skills/vibe/reference/adapters.json"
 HOOKS="$REPO_ROOT/.claude/hooks"
 HOOKS_JSON="$HOOKS/hooks.json"
 PLUGIN="$REPO_ROOT/.claude-plugin/plugin.json"
@@ -102,7 +102,7 @@ echo ""
 echo "=== platform-adapters/1,2,3 — hooks against a real install ==="
 SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 export CLAUDE_PROJECT_DIR="$SB"
-SS="$SB/.agents/flow/scripts/set-state.sh"
+SS="$SB/.agents/skills/vibe/scripts/set-state.sh"
 # inject
 out="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh"; echo "rc=$?")"
 assert_contains "platform-adapters/1" "inject prints idle orders, exit 0" "$out" "state=idle"
@@ -112,7 +112,7 @@ out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".spec/lessons.md"
 assert_contains "platform-adapters/2" "guard blocks lessons.md (exit 2)" "$out" "rc=2"
 assert_contains "platform-adapters/2" "guard gives a reason" "$out" "BLOCKED"
 # guard: state.json direct edit always blocked
-out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/flow/state.json"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
+out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vibe/state.json"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
 assert_contains "platform-adapters/2" "guard blocks direct state.json edit" "$out" "rc=2"
 # guard: allow src in impl
 bash "$SS" feature.impl demo >/dev/null
@@ -139,17 +139,20 @@ echo ""
 echo "=== platform-adapters/6 — installer ==="
 SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 ok=1
-for p in .agents/flow/scripts/orders.sh .agents/skills/vibe-feature/SKILL.md .claude/hooks/hooks.json .claude-plugin/plugin.json AGENTS.md .agents/flow/state.json; do
+for p in .agents/skills/vibe/scripts/orders.sh .agents/skills/vibe/SKILL.md .claude/hooks/hooks.json .claude-plugin/plugin.json AGENTS.md .agents/skills/vibe/state.json; do
   [[ -e "$SB/$p" ]] || { ok=0; echo "        missing $p"; }
 done
 assert_eq "platform-adapters/6" "install lays down core + adapter + cursor" "$ok" "1"
-grep -qF '.agents/flow/state.json' "$SB/.gitignore" && pass "platform-adapters/6" "install gitignores the cursor" || fail "platform-adapters/6" "gitignore"
+grep -qF '.agents/skills/vibe/state.json' "$SB/.gitignore" && pass "platform-adapters/6" "install gitignores the cursor" || fail "platform-adapters/6" "gitignore"
 before="$(cat "$SB/AGENTS.md")"; bash "$INSTALL" "$SB" >/dev/null 2>&1; after="$(cat "$SB/AGENTS.md")"
 assert_eq "platform-adapters/6" "re-install is idempotent (AGENTS.md unchanged)" "$before" "$after"
 # a live cursor must survive a re-install — idempotency may not clobber flow state
-bash "$SB/.agents/flow/scripts/set-state.sh" feature.impl widget >/dev/null
-before_cur="$(cat "$SB/.agents/flow/state.json")"; bash "$INSTALL" "$SB" >/dev/null 2>&1; after_cur="$(cat "$SB/.agents/flow/state.json")"
+bash "$SB/.agents/skills/vibe/scripts/set-state.sh" feature.impl widget >/dev/null
+before_cur="$(cat "$SB/.agents/skills/vibe/state.json")"; bash "$INSTALL" "$SB" >/dev/null 2>&1; after_cur="$(cat "$SB/.agents/skills/vibe/state.json")"
 assert_eq "platform-adapters/6" "re-install preserves a live cursor (feature.impl widget)" "$before_cur" "$after_cur"
+[[ ! -e "$SB/.agents/flow" ]] && pass "platform-adapters/6" ".agents/flow does not exist after install" || fail "platform-adapters/6" ".agents/flow must not exist after install"
+agents_entries="$(ls "$SB/.agents/")"
+assert_eq "platform-adapters/6" ".agents/ contains only skills/" "$agents_entries" "skills"
 if bash "$INSTALL" "$REPO_ROOT" >/dev/null 2>&1; then fail "platform-adapters/6" "must refuse self-install"; else pass "platform-adapters/6" "refuses self-install"; fi
 rm -rf "$SB"
 

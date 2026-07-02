@@ -11,7 +11,7 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FLOW="$REPO_ROOT/.agents/flow"
+FLOW="$REPO_ROOT/.agents/skills/vibe"
 SCRIPTS="$FLOW/scripts"
 MACHINE="$FLOW/state-machine.json"
 SKILLS="$REPO_ROOT/.agents/skills"
@@ -138,8 +138,8 @@ assert_eq "vibe-flow/core" "every linked skill has a SKILL.md" "$missing_skill" 
 echo ""
 echo "=== regen-active-rules.sh — digest from lessons ==="
 d="$(mktemp -d)"
-mkdir -p "$d/.spec" "$d/.agents/flow/scripts"
-cp "$SCRIPTS/regen-active-rules.sh" "$d/.agents/flow/scripts/"
+mkdir -p "$d/.spec" "$d/.agents/skills/vibe/scripts"
+cp "$SCRIPTS/regen-active-rules.sh" "$d/.agents/skills/vibe/scripts/"
 cat > "$d/.spec/lessons.md" <<'EOF'
 # Lessons
 
@@ -155,7 +155,7 @@ cat > "$d/.spec/lessons.md" <<'EOF'
 -->
 EOF
 printf '# T\n<!-- vibe:active-rules:start -->\nold\n<!-- vibe:active-rules:end -->\n' > "$d/AGENTS.md"
-bash "$d/.agents/flow/scripts/regen-active-rules.sh" >/dev/null 2>&1
+bash "$d/.agents/skills/vibe/scripts/regen-active-rules.sh" >/dev/null 2>&1
 block="$(awk '/active-rules:start/,/active-rules:end/' "$d/AGENTS.md")"
 assert_contains "vibe-flow/core" "regen captures rule body even with an inline <!-- token" "$block" "keep the"
 assert_not_contains "vibe-flow/core" "regen excludes the format-template comment lesson" "$block" "must not become a digest entry"

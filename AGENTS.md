@@ -34,14 +34,14 @@ Know what exists before you read or create files.
 | `.spec/` | **Live** — primary source of truth; read every session |
 | `.agents/skills/spec/` | **Live** — spec skill + `validate.sh` |
 | `AGENTS.md` / `CLAUDE.md` | **Live** — this guide; `CLAUDE.md` → `AGENTS.md` |
-| `.agents/flow/state-machine.json` | **Present** — static flow definition (data to edit when building flow) |
-| `.agents/flow/scripts/` | **Present** — `set-state.sh`, `detect-context.sh`, etc. |
-| `.agents/flow/state.example.json` | **Present** — template for the cursor file |
-| `.agents/flow/state.json` | **Often absent** — gitignored runtime cursor; missing is normal |
-| `.agents/skills/vibe-*` | **Present** — skill shims; bodies may be ahead of wiring |
+| `.agents/skills/vibe/state-machine.json` | **Present** — static flow definition (data to edit when building flow) |
+| `.agents/skills/vibe/scripts/` | **Present** — `set-state.sh`, `detect-context.sh`, etc. |
+| `.agents/skills/vibe/state.example.json` | **Present** — template for the cursor file |
+| `.agents/skills/vibe/state.json` | **Often absent** — gitignored runtime cursor; missing is normal |
+| `.agents/skills/vibe/` | **Present** — workflow skill (SKILL.md router + phase files) |
 | `.claude/` hooks, plugin, `install.sh` | **Present** — Claude Code adapter (plugin + three hooks + installer) |
 | **`flow.json`** | **Does not exist** — never expect, read, or create this file |
-| Per-turn inject / D12 orders-in-skills | **Live** — orders sourced from linked `vibe-*` skill via `orders.sh` |
+| Per-turn inject / D12 orders-in-skills | **Live** — orders sourced from linked `vibe` skill via `orders.sh` |
 
 When in doubt, read [.spec/plan.md](.spec/plan.md) for spec-vs-repo gaps.
 
@@ -53,8 +53,8 @@ Sessions are ephemeral; `.spec/` is the memory.
 2. Identify the **feature** you are building (table in `plan.md`) and load its specs:
    `.spec/features/<name>/{product,tech,plan}.md`.
 3. Route by intent (table below). Do **not** block on flow state.
-4. **Optional** — if `.agents/flow/state.json` exists and you are explicitly continuing
-   a flow session, read `{flow, phase, feature}` and resume the linked `vibe-*` skill.
+4. **Optional** — if `.agents/skills/vibe/state.json` exists and you are explicitly continuing
+   a flow session, read `{flow, phase, feature}` and resume the linked `vibe` skill.
    If the file is missing, treat as `idle` and proceed with specs.
 
 ## Working model (default)
@@ -87,12 +87,12 @@ Route by **intent**, not by flow cursor.
 | Build a named feature | `.spec/features/<name>/` + root `plan.md` | per feature Scope |
 | Small bounded fix | relevant feature spec or `.spec/quick/<slug>.md` | minimal |
 | Spec / plan work | `.agents/skills/spec/SKILL.md` | `.spec/**` per write rules |
-| Build flow machinery | `.spec/features/vibe-flow/` | `.agents/flow/`, `vibe-*` skills |
+| Build flow machinery | `.spec/features/vibe-flow/` | `.agents/skills/vibe/`, `vibe` skill |
 | Build adapters / hooks | `.spec/features/platform-adapters/` | `.claude/`, `install.sh` |
 | Build AGENTS.md provisioning | `.spec/features/agent-instructions/` | templates, merge scripts |
-| Set up or repair harness | `.agents/skills/vibe-setup/SKILL.md` | `.agents/**`, managed blocks |
+| Set up or repair harness | `.agents/skills/vibe/SKILL.md` | `.agents/**`, managed blocks |
 
-`vibe-*` skills are **helpers** for their domains. Read the matching feature spec first;
+`vibe` skill phases are **helpers** for their domains. Read the matching feature spec first;
 the skill does not override `.spec/`.
 
 ## Target harness
@@ -100,14 +100,14 @@ the skill does not override `.spec/`.
 This is the **end-state** the repo is building. Reference when implementing
 [vibe-flow](.spec/features/vibe-flow/product.md) or [platform-adapters](.spec/features/platform-adapters/product.md) — not for ordinary feature work.
 
-- **Cursor:** `.agents/flow/state.json` — `{flow, phase, feature, updated}`; create from
+- **Cursor:** `.agents/skills/vibe/state.json` — `{flow, phase, feature, updated}`; create from
   `state.example.json` only when testing transitions.
-- **Machine:** `.agents/flow/state-machine.json` — static states, skills, legal `next`.
-- **Transitions:** only via `bash .agents/flow/scripts/set-state.sh <flow.phase> [feature]`;
+- **Machine:** `.agents/skills/vibe/state-machine.json` — static states, skills, legal `next`.
+- **Transitions:** only via `bash .agents/skills/vibe/scripts/set-state.sh <flow.phase> [feature]`;
   never edit `state.json` by hand.
-- **Routing:** per-turn orders live in `vibe-*` skill bodies (D12, `## Orders`); the machine
+- **Routing:** per-turn orders live in the `vibe` skill (D12, `## Orders` in `SKILL.md`); the machine
   holds the `skill` link, not prose. `orders.sh` resolves the current state's orders.
-- **Adapters:** hooks read `.agents/flow`, not `.claude/state.json`.
+- **Adapters:** hooks read `.agents/skills/vibe`, not `.claude/state.json`.
 
 `.claude/` is a runtime adapter — not canonical.
 
@@ -117,12 +117,12 @@ Policy lives in `detect-context.sh decide` (defaults to `idle` when `state.json`
 
 1. `.spec/lessons.md` — writable only in `*.compound` (or when explicitly recording lessons with user approval).
 2. Root `.spec/{product,tech,design,plan}.md` — only in `strategy.spec`, `feature.compound`, or `setup.apply`.
-3. `.agents/flow/state.json` — only via `set-state.sh`.
+3. `.agents/skills/vibe/state.json` — only via `set-state.sh`.
 
 Everything else is allow/warn. Check before writing:
 
 ```bash
-bash .agents/flow/scripts/detect-context.sh decide <path>
+bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
 ```
 
 ## Repo layout
@@ -130,8 +130,8 @@ bash .agents/flow/scripts/detect-context.sh decide <path>
 ```text
 .spec/                 # durable memory (product/tech/design/plan/lessons + features/)
 .agents/skills/spec/   # bundled spec framework
-.agents/skills/vibe-*  # workflow shims (orchestration)
-.agents/flow/          # state machine + scripts
+.agents/skills/vibe/   # workflow skill (router + phase files)
+.agents/skills/vibe/          # state machine + scripts
 AGENTS.md              # this file (canonical)
 CLAUDE.md              # symlink → AGENTS.md
 ```
@@ -143,13 +143,13 @@ CLAUDE.md              # symlink → AGENTS.md
 bash .agents/skills/spec/scripts/validate.sh
 
 # Write policy (works without state.json)
-bash .agents/flow/scripts/detect-context.sh
-bash .agents/flow/scripts/detect-context.sh decide <path>
+bash .agents/skills/vibe/scripts/detect-context.sh
+bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
 
 # Flow tooling — only when explicitly testing or building flow
-cp .agents/flow/state.example.json .agents/flow/state.json   # seed cursor
-bash .agents/flow/scripts/set-state.sh <flow.phase> [feature]
-bash .agents/flow/scripts/validate-state.sh
+cp .agents/skills/vibe/state.example.json .agents/skills/vibe/state.json   # seed cursor
+bash .agents/skills/vibe/scripts/set-state.sh <flow.phase> [feature]
+bash .agents/skills/vibe/scripts/validate-state.sh
 ```
 
 ## Conventions
@@ -208,7 +208,7 @@ Features: `.spec/features/<feature>/{product,tech}.md` required; `design.md`,
 
 - **An installer must preserve per-project runtime state across a re-copy** — A provisioner that refreshes managed files must snapshot per-project runtime state (the flow cursor) before the copy and restore it after, seeding only when genuinely absent. "Idempotent" has to hold for *user* state, not just managed files; pin it with a regression test that a live cursor (`feature.impl <feature>`) survives a re-install.
 - **Marker-bounded merge must validate marker pairing before rewriting** — Any tool that rewrites a region between managed markers must confirm the markers exist as exact lines AND that start precedes end before mutating — refuse (never mangle) on reversed/overlapping markers, and always write via temp + atomic rename. Pair it with a test that a reversed-marker file is left byte-untouched.
-- **A Claude Code plugin cannot bundle skills outside ./skills/** — Let the *plugin* carry only the Claude-specific runtime wiring it uniquely provides (`commands` + `hooks` via `${CLAUDE_PLUGIN_ROOT}`); deliver the platform-neutral core (the `spec`/`vibe-*` skills and `.agents/flow`) as project files through `install.sh`. "Single install" = run the installer. Keeps adapters thin and the core canonical.
+- **A Claude Code plugin cannot bundle skills outside ./skills/** — Let the *plugin* carry only the Claude-specific runtime wiring it uniquely provides (`commands` + `hooks` via `${CLAUDE_PLUGIN_ROOT}`); deliver the platform-neutral core (the `spec`/`vibe-*` skills and `.agents/skills/vibe`) as project files through `install.sh`. "Single install" = run the installer. Keeps adapters thin and the core canonical.
 - **Single-source the per-turn orders; don't duplicate them in the machine** — Author the orders once, in the linked skill, as a machine-extractable `<!-- vibe:orders:<state> -->` block; carry `inject: null` in the machine for skill-owning states (only `idle` keeps an inline fallback); resolve via `orders.sh` (cursor → `skill` link → block → interpolate `<feature>` only, so the prompt cache stays byte-stable). Hooks are thin shells over that resolver.
 - **Spec strictness: warn-first, then migrate** — Ship structural validators warn-first; promote warn→error only after live specs are migrated during compound. Pair every validator with a behaviour test in `tests/spec/run.sh`.
 <!-- vibe:active-rules:end -->

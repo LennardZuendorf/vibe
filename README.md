@@ -15,7 +15,7 @@ walk the agent through it.
 
 | Tool | What it gives you | Lives in |
 |---|---|---|
-| **Vibe flow** | A state-machine-driven coding workflow (strategy / feature / quick) that routes each phase to the right skills, subagents, and output paths. The centerpiece. | `.agents/flow/`, `.agents/skills/vibe-*` |
+| **Vibe flow** | A state-machine-driven coding workflow (strategy / feature / quick) that routes each phase to the right skills, subagents, and output paths. The centerpiece. | `.agents/skills/vibe/`, `.agents/skills/vibe-*` |
 | **Spec framework** | A durable `.spec/` planning skill — product/tech/design/plan/lessons docs with templates and validation. Usable on its own, with or without the flow. | `.agents/skills/spec/` |
 | **Agent-file template** | `AGENTS.md` template + `merge-agents.sh` (managed `vibe:instructions` block) and opt-in adapter symlinks (`CLAUDE.md`, `WARP.md`), so any runtime reads the same neutral core. | `CLAUDE.md`, `AGENTS.md`, `.agents/skills/vibe-setup/` |
 | **Claude Code plugin** | `.claude-plugin/plugin.json` + three hooks (inject / guard / gate) + `install.sh`, so the flow fires every turn and guards its invariants. | `.claude/`, `install.sh` |
@@ -28,8 +28,8 @@ The three above are the first cut.
 ## The vibe flow
 
 Everything starts at `idle`. The agent self-locates, then drives one flow. The
-cursor `.agents/flow/state.json` = `{flow, phase, feature}` points at one entry
-in `.agents/flow/state-machine.json` — the source of truth that holds each
+cursor `.agents/skills/vibe/state.json` = `{flow, phase, feature}` points at one entry
+in `.agents/skills/vibe/state-machine.json` — the source of truth that holds each
 state's skill, delegates, caveman level, write surface, and legal
 `next`. Transition only via `set-state.sh <flow.phase>`.
 
@@ -106,7 +106,7 @@ inline fallback in `state-machine.json` (`amend` is a modifier, never a cursor
 state — `set-state.sh` rejects it — so `orders.sh` is never resolved for it; its
 skill carries a reference-only block). The orders are
 static per state (byte-stable so the prompt cache holds; only `<feature>`
-interpolates), resolved by `.agents/flow/scripts/orders.sh` and delivered every
+interpolates), resolved by `.agents/skills/vibe/scripts/orders.sh` and delivered every
 turn by the `UserPromptSubmit` inject hook. See the phase map above for each
 state's skill, delegates, and write surface.
 
@@ -186,7 +186,7 @@ Three strictly separated layers keep the toolbox portable:
 | Layer | Lives in | Role |
 |---|---|---|
 | **Durable memory** | `.spec/**` | What we're building, why, how, lessons |
-| **Runtime state** | `.agents/flow/**` | Where we are now (cursor + state machine) |
+| **Runtime state** | `.agents/skills/vibe/**` | Where we are now (cursor + state machine) |
 | **Workflow shims** | `.agents/skills/vibe-*` | Skills that delegate to real skills |
 | **Adapters** | `CLAUDE.md`, `AGENTS.md`, `.claude/**` | Thin per-runtime translation |
 
@@ -198,7 +198,7 @@ hard blocks; everything else is a warning:
 1. `.spec/lessons.md` — writable only during a `*.compound` state.
 2. Root `.spec/{product,tech,design,plan}.md` — only during `strategy.spec`,
    `feature.compound`, or `setup.apply`.
-3. `.agents/flow/state.json` — only via `set-state.sh`, never by direct edit.
+3. `.agents/skills/vibe/state.json` — only via `set-state.sh`, never by direct edit.
 
 The active-rules block in `CLAUDE.md`/`AGENTS.md` is **generated** from
 `.spec/lessons.md` by `regen-active-rules.sh` (top-5, pinned first) — a warning,
@@ -245,7 +245,7 @@ linked skill (resolved by `orders.sh`), and the generated active-rules digest.
 `UserPromptSubmit` inject (delivers the current state's linked-skill orders every
 turn — D12), a `PreToolUse` guard (hard-blocks the three invariants via the shared
 `detect-context.sh` policy), and a `Stop` gate (warn-first exit-predicate checks).
-Hooks are thin shells over `.agents/flow/scripts/`, added warn-first and promoted
+Hooks are thin shells over `.agents/skills/vibe/scripts/`, added warn-first and promoted
 to blocking only as dogfooding earns it. `install.sh` provisions the core + adapter
 into any repo. See
 [features/platform-adapters](.spec/features/platform-adapters/product.md).

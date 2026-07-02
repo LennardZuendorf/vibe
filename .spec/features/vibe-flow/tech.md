@@ -36,13 +36,17 @@ chosen for it.
 │       ├── validate-state.sh
 │       └── regen-active-rules.sh
 └── skills/
-    ├── vibe-strategy/SKILL.md
-    ├── vibe-feature/SKILL.md
-    ├── vibe-quick/SKILL.md
-    ├── vibe-verify/SKILL.md
-    ├── vibe-compound/SKILL.md
-    ├── vibe-amend/SKILL.md
-    └── vibe-setup/SKILL.md
+    └── vibe/
+        ├── SKILL.md            # lean router + all 14 orders blocks
+        ├── setup.md            # phase files: one per flow group
+        ├── strategy.md
+        ├── feature.md
+        ├── quick.md
+        ├── verify.md
+        ├── compound.md
+        ├── amend.md
+        ├── scripts/            # merge-agents.sh
+        └── reference/          # adapters.json, templates/
 ```
 
 ---

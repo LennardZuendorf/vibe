@@ -15,14 +15,14 @@
 #   1. .spec/lessons.md            — only during a *.compound state
 #   2. root .spec/{product,tech,design,plan}.md
 #                                  — only during strategy.spec or feature.compound
-#   3. .agents/flow/state.json     — never by direct edit; only via set-state.sh
+#   3. .agents/skills/vibe/state.json — never by direct edit; only via set-state.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FLOW_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-MACHINE="$FLOW_DIR/state-machine.json"
-STATE="$FLOW_DIR/state.json"
+SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+MACHINE="$SKILL_DIR/state-machine.json"
+STATE="$SKILL_DIR/state.json"
 
 have_jq() { command -v jq >/dev/null 2>&1; }
 
@@ -76,7 +76,7 @@ decide() {
 
   # Block 3: state.json is writer-only.
   case "$path" in
-    .agents/flow/state.json|*/.agents/flow/state.json)
+    .agents/skills/vibe/state.json|*/.agents/skills/vibe/state.json)
       echo "block:state.json is written only via set-state.sh, never by direct edit"
       return 0
       ;;

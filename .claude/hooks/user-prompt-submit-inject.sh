@@ -4,7 +4,7 @@
 # Event: UserPromptSubmit. The daily driver — every turn it injects the current
 # flow state's "orders" so the human is no longer the inject mechanism (D12).
 #
-# Thin shell: all logic lives in .agents/flow/scripts/orders.sh, which resolves
+# Thin shell: all logic lives in .agents/skills/vibe/scripts/orders.sh, which resolves
 # the cursor state, follows its `skill` link, and emits that skill's per-state
 # orders block (idle falls back to the machine's inline string). stdout on exit 0
 # is added to the prompt context. Static-content discipline: orders.sh emits a
@@ -18,7 +18,7 @@ set -euo pipefail
 cat >/dev/null 2>&1 || true   # consume stdin; we don't need it
 
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-ORDERS="$ROOT/.agents/flow/scripts/orders.sh"
+ORDERS="$ROOT/.agents/skills/vibe/scripts/orders.sh"
 
 [[ -f "$ORDERS" ]] || exit 0
 

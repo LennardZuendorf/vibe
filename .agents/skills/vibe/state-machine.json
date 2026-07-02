@@ -1,5 +1,5 @@
 {
-  "$comment": "vibe flow state machine. Static source of truth for the flow. States are compound <flow>.<phase> keys. caveman is FROZEN per state (byte-stable across turns). Under D12 the per-turn orders are NOT stored here: skill-owning states carry inject:null and the orders live in the linked vibe-* skill's `## Orders (D12)` section (a <!-- vibe:orders:<state> --> block), resolved by .agents/flow/scripts/orders.sh. Only `idle` keeps an inline inject (skill-less fallback). The orders block is byte-stable; only <feature> interpolates, so the per-turn inject stays prompt-cache safe. set-state.sh is the only sanctioned writer of state.json.",
+  "$comment": "vibe flow state machine. Static source of truth for the flow. States are compound <flow>.<phase> keys. caveman is FROZEN per state (byte-stable across turns). Under D12 the per-turn orders are NOT stored here: skill-owning states carry inject:null and the orders live in the linked vibe-* skill's `## Orders (D12)` section (a <!-- vibe:orders:<state> --> block), resolved by .agents/skills/vibe/scripts/orders.sh. Only `idle` keeps an inline inject (skill-less fallback). The orders block is byte-stable; only <feature> interpolates, so the per-turn inject stays prompt-cache safe. set-state.sh is the only sanctioned writer of state.json.",
   "version": "1",
   "initial": "idle",
   "flows": ["idle", "setup", "strategy", "feature", "quick"],
@@ -21,13 +21,13 @@
       "caveman": "lite",
       "reads": [".spec/lessons.md", ".spec/plan.md"],
       "writes": [],
-      "inject": "state=idle · no active flow · pick one: vibe-setup, vibe-strategy, vibe-feature, vibe-quick · next: setup.detect | strategy.brainstorm | feature.design | quick.triage",
+      "inject": "state=idle · no active flow · run vibe (setup|strategy|feature|quick) · next: setup.detect | strategy.brainstorm | feature.design | quick.triage",
       "next": ["setup.detect", "strategy.brainstorm", "feature.design", "quick.triage"],
       "exit": "user has named the work; agent has chosen a flow and called set-state.sh"
     },
 
     "setup.detect": {
-      "skill": "vibe-setup",
+      "skill": "vibe",
       "delegates": [],
       "caveman": "lite",
       "reads": ["repo tree", "CLAUDE.md", "AGENTS.md", ".agents/**", ".spec/**"],
@@ -37,18 +37,18 @@
       "exit": "audit complete: missing/present harness pieces listed, plugin preflight run"
     },
     "setup.apply": {
-      "skill": "vibe-setup",
+      "skill": "vibe",
       "delegates": ["spec", "superpowers:writing-skills"],
       "caveman": "lite",
-      "reads": [".agents/flow/state-machine.json"],
+      "reads": [".agents/skills/vibe/state-machine.json"],
       "writes": [".agents/**", "CLAUDE.md#active-rules", "AGENTS.md#active-rules", ".spec/lessons.md", ".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md"],
       "inject": null,
       "next": ["idle"],
-      "exit": "instructions block present, .agents/flow scaffolded, lessons.md exists, never clobbered user content"
+      "exit": "instructions block present, .agents/skills/vibe scaffolded, lessons.md exists, never clobbered user content"
     },
 
     "strategy.brainstorm": {
-      "skill": "vibe-strategy",
+      "skill": "vibe",
       "delegates": ["superpowers:brainstorming"],
       "caveman": "lite",
       "reads": [".spec/lessons.md"],
@@ -58,7 +58,7 @@
       "exit": "direction is clear enough to write into root specs"
     },
     "strategy.spec": {
-      "skill": "vibe-strategy",
+      "skill": "vibe",
       "delegates": ["spec"],
       "caveman": "lite",
       "reads": [".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md"],
@@ -68,7 +68,7 @@
       "exit": "root specs updated and validated; skip to idle unless a durable lesson surfaced"
     },
     "strategy.compound": {
-      "skill": "vibe-compound",
+      "skill": "vibe",
       "delegates": ["spec"],
       "caveman": "lite",
       "reads": [".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md", ".spec/lessons.md"],
@@ -79,7 +79,7 @@
     },
 
     "feature.design": {
-      "skill": "vibe-feature",
+      "skill": "vibe",
       "delegates": ["superpowers:brainstorming", "code-explorer", "code-architect"],
       "caveman": "lite",
       "reads": [".spec/lessons.md", ".spec/product.md", ".spec/tech.md"],
@@ -89,7 +89,7 @@
       "exit": "feature product.md + tech.md written; design.md when full rigor; approach chosen"
     },
     "feature.plan": {
-      "skill": "vibe-feature",
+      "skill": "vibe",
       "delegates": ["superpowers:writing-plans", "code-architect"],
       "caveman": "lite",
       "reads": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md"],
@@ -99,7 +99,7 @@
       "exit": "plan.md has stable unit IDs; human approved moving to impl"
     },
     "feature.impl": {
-      "skill": "vibe-feature",
+      "skill": "vibe",
       "delegates": ["superpowers:executing-plans", "superpowers:test-driven-development"],
       "caveman": "full",
       "reads": [".spec/features/<feature>/plan.md"],
@@ -109,7 +109,7 @@
       "exit": "plan units implemented with tests that cite their unit IDs and pass"
     },
     "feature.verify": {
-      "skill": "vibe-verify",
+      "skill": "vibe",
       "delegates": ["superpowers:verification-before-completion", "superpowers:requesting-code-review", "superpowers:systematic-debugging", "code-reviewer"],
       "caveman": "full",
       "reads": [".spec/features/<feature>/plan.md", "src/**", "tests/**"],
@@ -119,7 +119,7 @@
       "exit": "evidence shows plan units satisfied; review clean; human approved shipping"
     },
     "feature.compound": {
-      "skill": "vibe-compound",
+      "skill": "vibe",
       "delegates": ["superpowers:finishing-a-development-branch", "spec"],
       "caveman": "lite",
       "reads": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/plan.md", ".spec/lessons.md"],
@@ -130,7 +130,7 @@
     },
 
     "quick.triage": {
-      "skill": "vibe-quick",
+      "skill": "vibe",
       "delegates": ["superpowers:systematic-debugging"],
       "caveman": "full",
       "reads": [".spec/lessons.md"],
@@ -140,7 +140,7 @@
       "exit": "root cause identified; fix is small and bounded (else escalate to feature)"
     },
     "quick.fix": {
-      "skill": "vibe-quick",
+      "skill": "vibe",
       "delegates": ["superpowers:test-driven-development"],
       "caveman": "full",
       "reads": [".spec/lessons.md"],
@@ -150,7 +150,7 @@
       "exit": "fix implemented with a test that reproduces and resolves the issue"
     },
     "quick.verify": {
-      "skill": "vibe-verify",
+      "skill": "vibe",
       "delegates": ["superpowers:verification-before-completion", "code-reviewer"],
       "caveman": "full",
       "reads": ["src/**", "tests/**"],
@@ -161,7 +161,7 @@
     },
 
     "amend": {
-      "skill": "vibe-amend",
+      "skill": "vibe",
       "delegates": ["spec", "superpowers:receiving-code-review"],
       "caveman": "lite",
       "reads": ["the target state's reads"],

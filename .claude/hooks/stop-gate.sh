@@ -7,7 +7,7 @@
 # crossed by accident, not on purpose ("earn the teeth"). Each predicate below
 # carries a TODO marking it promotion-eligible.
 #
-# Thin shell: state comes from .agents/flow/scripts/detect-context.sh snapshot;
+# Thin shell: state comes from .agents/skills/vibe/scripts/detect-context.sh snapshot;
 # no flow policy is duplicated here.
 #
 # Graceful degrade (R9): missing jq / detect-context.sh / not a git repo -> the
@@ -18,7 +18,7 @@ set -euo pipefail
 cat >/dev/null 2>&1 || true   # consume stdin
 
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-DETECT="$ROOT/.agents/flow/scripts/detect-context.sh"
+DETECT="$ROOT/.agents/skills/vibe/scripts/detect-context.sh"
 
 command -v jq >/dev/null 2>&1 || exit 0
 [[ -f "$DETECT" ]] || exit 0
