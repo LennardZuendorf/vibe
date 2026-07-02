@@ -3,7 +3,7 @@ type: entrypoint
 scope: implementation
 covers: feature sequence, binary gates, validation criteria, open decisions
 children: []
-updated: 2026-06-18
+updated: 2026-07-03
 ---
 
 # vibe — Implementation Plan
@@ -66,12 +66,14 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 3 | agent-instructions | `AGENTS.md` template + merge + symlinks | `tests/adapters/run.sh` | DONE | vibe-flow DONE |
 | 4 | platform-adapters | plugin + three hooks + `install.sh` | `tests/adapters/run.sh` (39) | DONE | agent-instructions DONE |
 | 5 | dogfood | hook/merge/install behaviours + earn-the-teeth | scripted + lessons | DONE | platform-adapters DONE |
+| 6 | [monorepo-split](features/monorepo-split/plan.md) | `spec/`+`flow/` split + symlinks + truth sweep + orphan compound | suites + validate + grep evidence | NOT STARTED | — |
+| 7 | [install-tooling](features/install-tooling/plan.md) | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `tests/adapters/run.sh` + `tests/flow/run.sh` | NOT STARTED | monorepo-split DONE |
+| 8 | [release-docs](features/release-docs/plan.md) | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | NOT STARTED | install-tooling DONE |
 
-**Active focus:** none — all five features DONE. The harness is self-hosting end to
-end: D12 orders resolve from the linked skills, the three hooks are wired in the
-Claude Code plugin (warn-first), and `install.sh` provisions a fresh repo. Next work
-is real-world dogfood lessons (promote any `Stop` predicate warn→block only once it
-proves accidental, not deliberate) and the deferred `vibe-flow/4` `feature.deepen`.
+**Active focus:** release-polish branch (2026-07-03 overnight) — features 6–8
+finalize the repo for public shareability. Prior five features remain DONE and
+self-hosting. Still deferred: real-world earn-the-teeth promotions and
+`vibe-flow/4` `feature.deepen`.
 
 ---
 
