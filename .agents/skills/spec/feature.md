@@ -2,6 +2,8 @@
 
 Each **named** unit of work gets `.spec/features/<name>/`. Specs here are **branch-scoped**: created in DESIGN, read in IMPL, wrapped up in COMPOUND (promote cross-cutting decisions, move folder to `archive/`), then **deleted before the branch merges**. Archive is a transient safety net, never a store for active work — **CODE IS TRUTH**. Global, long-living rules stay in root files — see [strategy.md](strategy.md). Wrap-up procedure: [SKILL.md](SKILL.md) § Wrapped-up features.
 
+> **Config note:** If `.spec/.config.yaml` sets `suggest-superpowers: false`, skip all "Superpower tip" callouts in this file and self-execute each step directly. See [SKILL.md § Config](SKILL.md#config) for the full config reference.
+
 ## Feature authoring flow
 
 Six-step interview micro-flow. Run steps 1–5 for every named feature; step 6 is the escape hatch.
@@ -19,6 +21,8 @@ Dialogue — not a form fill. Cover:
 - **Requirements** — `### Requirement: <title>` with SHALL/MUST language; each requirement gets `#### Scenario:` blocks in Given/When/Then form
 
 Reject hand-wavy requirements. If the user cannot state observable behaviour, keep interviewing.
+
+> **Superpower tip:** Delegate the dialogue to `superpowers:brainstorming`. Before delegating, inject this section (`feature.md § Interview for WHAT`) as the constraint context so the dialogue stays on-format — RFC-2119 keywords, GWT scenarios, Scope table boundaries. Tell the user: *"I can use `superpowers:brainstorming` to run this as an interactive dialogue that enforces spec format as we go — want me to?"*
 
 Write to `product.md`. Use [reference/product.md](reference/product.md) § feature product. Omit empty sections.
 
@@ -38,7 +42,7 @@ If unsure, default lite. Do not create `design.md` "just in case."
 
 Trace the codebase (existing files, contracts, KTDs). Write **only sections with content** to `tech.md` — paths, interfaces, file layout, risks. No speculative boilerplate.
 
-Delegate tracing to `code-explorer`; sketch approaches with `code-architect` when needed. Use [reference/tech.md](reference/tech.md) § feature tech.
+> **Superpower tip:** Delegate tracing to `code-explorer` and approach sketching to `code-architect`. Inject [reference/tech.md](reference/tech.md) § feature tech as the constraint so they know which sections to populate and where merge markers go. Tell the user: *"I'll use `code-explorer` to trace the codebase and `code-architect` to sketch the approach — this gives you a grounded HOW section rather than speculation."*
 
 Optional: write `design.md` when step 3 chose full. Template: [reference/templates/feature-design.md](reference/templates/feature-design.md). Guide: [reference/design.md](reference/design.md); token format: [SKILL.md](SKILL.md) § Design.md Compatibility.
 
@@ -51,6 +55,8 @@ Write `plan.md` with stable `feature/n` unit IDs (`### <name>/1`, `### <name>/2`
 - Same-feature dependencies only — cross-feature order is a whole-feature gate in root `.spec/plan.md` Feature Sequence
 - Add the feature to the root `.spec/plan.md` Feature Sequence
 
+> **Superpower tip:** Delegate plan decomposition to `superpowers:writing-plans`. Before delegating, inject [reference/plan.md](reference/plan.md) plus the stable-ID rules (`<name>/n`, never renumber, same-feature deps only) as constraint context, along with the feature's `product.md` requirements. Tell the user: *"I can hand this to `superpowers:writing-plans` — it's purpose-built for decomposing requirements into implementable units. Want me to do that?"*
+
 **Human gate:** confirm units before implementation.
 
 ### 6. Skip conditions
@@ -62,6 +68,33 @@ Route to `vibe-quick` instead of this flow when **all** hold:
 - No new requirements needing Scope negotiation
 
 If any condition fails, stay in the feature flow.
+
+---
+
+## Output profiles
+
+Match caveman level to phase — compress at the source, not the sink.
+
+### Lite (feature.design, feature.plan)
+
+Produce precise, minimal spec sections — not truncated prose but no padding.
+
+| File | Mandatory | Compressed | Omit |
+|---|---|---|---|
+| product.md | Frontmatter, problem paragraph, Scope table, req titles + strength | Scenarios → one-line Given/When/Then | Rationale paragraphs, examples |
+| tech.md | Frontmatter, file paths, interface signatures | Risks → one-line bullets | Implementation narrative, decision history |
+| plan.md | Frontmatter, unit ID list with R-IDs | Verification table → command only | Full evidence prose |
+
+### Full (feature.plan reference, feature.impl, feature.verify)
+
+All sections per template; standard Requirement+Scenario blocks; full prose. No compression. This is the default for inter-phase reading.
+
+### Ultra (feature.compound receipts)
+
+All sections plus:
+- Unit traceability matrix (unit ID → test path → pass/fail)
+- Validation evidence summary (validate.sh run output)
+- Draft lesson entry (pattern, rule, tags — human edits before promoting)
 
 ---
 
@@ -110,6 +143,9 @@ Created  →  Consumed  →  Merged  →  Archived  →  Deleted (before merge)
 3. **Consumed during IMPL.** Read feature specs; cite unit IDs in commits and tests; amend with targeted fixes if reality diverges.
 4. **Verified against plan.** Evidence checked per unit verification table — not agent assertions alone.
 5. **Merged during COMPOUND.** Cross-cutting blocks from `features/<name>/tech.md` promote into root `tech.md` (or branch docs). Feature-only detail does not promote.
+
+   > **Compound note:** The compound sequence is spec-skill-owned — follow [SKILL.md § Wrapped-up features](SKILL.md): promote `<!-- merge -->` blocks → record a tagged lesson ([strategy.md § Lessons](strategy.md) format) → update plan DONE row → archive folder → run `validate.sh` → prompt to delete. `superpowers:finishing-a-development-branch` handles the narrow git-cleanup step after the spec work is done (archive move + final commit). Don't hand it the full compound procedure — it doesn't know the spec format.
+
 6. **Archived then deleted.** Move `.spec/features/<name>/` to `archive/<name>/` at wrapup as a transient safety net. After validation passes, the agent prompts the user to delete the archive — the folder is gone **before the branch merges**. CODE IS TRUTH; archive is never read for active work. See § Archive and delete.
 
 No `/code:feature` workflow? Same lifecycle: create folder when scoping, remove when done.

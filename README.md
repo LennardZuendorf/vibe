@@ -124,6 +124,61 @@ normal prose at every level.
 
 ---
 
+## Spec framework
+
+Every project using vibe gets a `.spec/` tree — the single source of truth for
+what you're building, why, and how. It ships as a bundled skill (`spec`) that
+works standalone (no flow required) or integrates with the vibe flow phases.
+
+### Two-layer model
+
+```
+.spec/
+├── product.md, tech.md, design.md, plan.md, lessons.md   ← ROOT (persistent, high-level)
+└── features/<name>/
+    ├── product.md    required   what this feature does (requirements + Scope table)
+    ├── tech.md       required   how it's built (paths, contracts, file layout)
+    ├── plan.md       recommended  stable <name>/n unit IDs; verification per unit
+    └── design.md     optional   UI/UX or design-system fragment
+```
+
+Root files are **persistent in role, current in content** — no backlog, no
+archaeology. Feature folders are **branch-scoped** — written during design,
+consumed during impl, merged (cross-cutting sections only) at compound, then
+deleted before the branch merges. CODE IS TRUTH.
+
+### Superpowers integration
+
+The spec skill is a **format + constraints + validation** layer. Execution at
+each authoring step is delegated to the appropriate superpower, with the spec
+skill supplying the constraint document:
+
+| Phase | Spec supplies | Executor |
+|---|---|---|
+| `feature.design` step 2 (WHAT) | `feature.md § Interview for WHAT` as constraint | `superpowers:brainstorming` |
+| `feature.design` steps 3–4 (HOW) | `reference/tech.md` + feature template | `code-explorer`, `code-architect` |
+| `feature.plan` step 5 | `reference/plan.md` + stable-ID rules | `superpowers:writing-plans` |
+| `feature.verify` | `validate.sh` output as structured context | `superpowers:verification-before-completion` |
+| `feature.compound` | `promote.sh` + lesson format | `superpowers:finishing-a-development-branch` |
+
+This separation means improving the spec constraints (templates, reference guides,
+validators) immediately improves every superpower's output without touching the
+executors.
+
+### Quick start
+
+```bash
+/spec setup                    # initialise .spec/ with templates
+/spec strategy                 # write root product/tech/design/plan
+/spec feature <name>           # scope and design a named feature
+/spec validate                 # check structural consistency
+```
+
+Skill entrypoint: [`.agents/skills/spec/SKILL.md`](.agents/skills/spec/SKILL.md).
+Human-facing overview: [`.agents/skills/spec/README.md`](.agents/skills/spec/README.md).
+
+---
+
 ## Architecture
 
 Three strictly separated layers keep the toolbox portable:

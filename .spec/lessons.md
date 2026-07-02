@@ -34,6 +34,12 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** agent-instructions, merge, markers, content-safety, atomic
 **Date:** 2026-06-20
 
+### Skill design: promote superpowers proactively, remain self-sufficient
+**Pattern:** When a skill can delegate to superpowers or subagents, two failure modes appear: (1) the skill silently self-executes every step, never surfacing that a better executor exists — users never learn the tools; (2) the skill hard-couples to superpowers and fails or degrades silently when they're unavailable.
+**Rule:** Skills SHOULD proactively offer their optimal executor at each step — "I can use X for this, want me to?" — and MUST self-execute from their constraint documents if the user declines or the executor is unavailable. The order is always: offer first, self-suffice second. Never silently skip the offer; never block on the answer.
+**Tags:** spec, superpowers, subagents, skill-design, interoperability
+**Date:** 2026-06-21
+
 <!-- Format for each lesson:
 ### [Short description]
 **Pattern:** What went wrong and why
