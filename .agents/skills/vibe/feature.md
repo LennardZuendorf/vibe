@@ -9,8 +9,8 @@ Everything between is autonomous.
 
 ## Procedure
 
-1. **Locate + name.** Read `.agents/flow/state.json`. Establish the feature name
-   and set it: `bash .agents/flow/scripts/set-state.sh feature.design <name>`.
+1. **Locate + name.** Read `.agents/skills/vibe/state.json`. Establish the feature name
+   and set it: `bash .agents/skills/vibe/scripts/set-state.sh feature.design <name>`.
    The name is carried in the cursor across all feature states.
 
 2. **Design** (`feature.design`, caveman lite). Follow the spec skill

@@ -11,7 +11,7 @@ Serves two states:
 
 ## Procedure
 
-1. **Locate.** Read `.agents/flow/state.json`; confirm you are in a `*.verify`
+1. **Locate.** Read `.agents/skills/vibe/state.json`; confirm you are in a `*.verify`
    state (else the caller transitions there first).
 2. **Verify.** Delegate to `superpowers:verification-before-completion`. Run the
    real tests/build. For a feature, tie each result back to a plan **unit ID**.

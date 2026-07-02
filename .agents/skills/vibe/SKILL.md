@@ -40,15 +40,15 @@ template, and `adapters.json`.
 
 Machine-extractable per-state orders. The `UserPromptSubmit` inject hook resolves
 the current `<flow>.<phase>`, follows its `skill` link (now always `vibe`), and emits
-the matching block verbatim via `.agents/flow/scripts/orders.sh`. `<feature>` is the
+the matching block verbatim via `.agents/skills/vibe/scripts/orders.sh`. `<feature>` is the
 only interpolation; keep each block byte-stable.
 
 <!-- vibe:orders:setup.detect -->
-skill=vibe · READ-ONLY audit of repo + harness · report what is missing/present (AGENTS.md health, adapter rows from adapters.json, .agents/flow scripts, vibe skill, bundled spec) · preflight required plugins · do NOT write yet · caveman=lite · next: setup.apply
+skill=vibe · READ-ONLY audit of repo + harness · report what is missing/present (AGENTS.md health, adapter rows from adapters.json, .agents/skills/vibe scripts, vibe skill, bundled spec) · preflight required plugins · do NOT write yet · caveman=lite · next: setup.apply
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:setup.apply -->
-skill=vibe · WRITE/MERGE bootstrap: merge-agents.sh AGENTS.md instructions block, .agents/flow scaffold, baseline .spec/**, optional adapter symlinks (user-driven) · NEVER clobber existing content (diff + ask on divergence) · regen-active-rules.sh after merge · caveman=lite · next: idle
+skill=vibe · WRITE/MERGE bootstrap: merge-agents.sh AGENTS.md instructions block, .agents/skills/vibe scaffold, baseline .spec/**, optional adapter symlinks (user-driven) · NEVER clobber existing content (diff + ask on divergence) · regen-active-rules.sh after merge · caveman=lite · next: idle
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:strategy.brainstorm -->

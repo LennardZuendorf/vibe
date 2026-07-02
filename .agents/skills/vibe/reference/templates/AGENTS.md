@@ -34,10 +34,10 @@ Know what exists before you read or create files.
 | `.spec/` | **Live** — primary source of truth; read every session |
 | `.agents/skills/spec/` | **Live** — spec skill + `validate.sh` |
 | `AGENTS.md` / `CLAUDE.md` | **Live** — this guide; `CLAUDE.md` → `AGENTS.md` |
-| `.agents/flow/state-machine.json` | **Present** — static flow definition (data to edit when building flow) |
-| `.agents/flow/scripts/` | **Present** — `set-state.sh`, `detect-context.sh`, etc. |
-| `.agents/flow/state.example.json` | **Present** — template for the cursor file |
-| `.agents/flow/state.json` | **Often absent** — gitignored runtime cursor; missing is normal |
+| `.agents/skills/vibe/state-machine.json` | **Present** — static flow definition (data to edit when building flow) |
+| `.agents/skills/vibe/scripts/` | **Present** — `set-state.sh`, `detect-context.sh`, etc. |
+| `.agents/skills/vibe/state.example.json` | **Present** — template for the cursor file |
+| `.agents/skills/vibe/state.json` | **Often absent** — gitignored runtime cursor; missing is normal |
 | `.agents/skills/vibe/` | **Present** — workflow skill (SKILL.md router + phase files) |
 | `.claude/` hooks, plugin, `install.sh` | **Present** — Claude Code adapter (plugin + three hooks + installer) |
 | **`flow.json`** | **Does not exist** — never expect, read, or create this file |
@@ -53,7 +53,7 @@ Sessions are ephemeral; `.spec/` is the memory.
 2. Identify the **feature** you are building (table in `plan.md`) and load its specs:
    `.spec/features/<name>/{product,tech,plan}.md`.
 3. Route by intent (table below). Do **not** block on flow state.
-4. **Optional** — if `.agents/flow/state.json` exists and you are explicitly continuing
+4. **Optional** — if `.agents/skills/vibe/state.json` exists and you are explicitly continuing
    a flow session, read `{flow, phase, feature}` and resume the linked `vibe` skill.
    If the file is missing, treat as `idle` and proceed with specs.
 
@@ -87,7 +87,7 @@ Route by **intent**, not by flow cursor.
 | Build a named feature | `.spec/features/<name>/` + root `plan.md` | per feature Scope |
 | Small bounded fix | relevant feature spec or `.spec/quick/<slug>.md` | minimal |
 | Spec / plan work | `.agents/skills/spec/SKILL.md` | `.spec/**` per write rules |
-| Build flow machinery | `.spec/features/vibe-flow/` | `.agents/flow/`, `vibe` skill |
+| Build flow machinery | `.spec/features/vibe-flow/` | `.agents/skills/vibe/`, `vibe` skill |
 | Build adapters / hooks | `.spec/features/platform-adapters/` | `.claude/`, `install.sh` |
 | Build AGENTS.md provisioning | `.spec/features/agent-instructions/` | templates, merge scripts |
 | Set up or repair harness | `.agents/skills/vibe/SKILL.md` | `.agents/**`, managed blocks |
@@ -100,14 +100,14 @@ the skill does not override `.spec/`.
 This is the **end-state** the repo is building. Reference when implementing
 [vibe-flow](.spec/features/vibe-flow/product.md) or [platform-adapters](.spec/features/platform-adapters/product.md) — not for ordinary feature work.
 
-- **Cursor:** `.agents/flow/state.json` — `{flow, phase, feature, updated}`; create from
+- **Cursor:** `.agents/skills/vibe/state.json` — `{flow, phase, feature, updated}`; create from
   `state.example.json` only when testing transitions.
-- **Machine:** `.agents/flow/state-machine.json` — static states, skills, legal `next`.
-- **Transitions:** only via `bash .agents/flow/scripts/set-state.sh <flow.phase> [feature]`;
+- **Machine:** `.agents/skills/vibe/state-machine.json` — static states, skills, legal `next`.
+- **Transitions:** only via `bash .agents/skills/vibe/scripts/set-state.sh <flow.phase> [feature]`;
   never edit `state.json` by hand.
 - **Routing:** per-turn orders live in the `vibe` skill (D12, `## Orders` in `SKILL.md`); the machine
   holds the `skill` link, not prose. `orders.sh` resolves the current state's orders.
-- **Adapters:** hooks read `.agents/flow`, not `.claude/state.json`.
+- **Adapters:** hooks read `.agents/skills/vibe`, not `.claude/state.json`.
 
 `.claude/` is a runtime adapter — not canonical.
 
@@ -117,12 +117,12 @@ Policy lives in `detect-context.sh decide` (defaults to `idle` when `state.json`
 
 1. `.spec/lessons.md` — writable only in `*.compound` (or when explicitly recording lessons with user approval).
 2. Root `.spec/{product,tech,design,plan}.md` — only in `strategy.spec`, `feature.compound`, or `setup.apply`.
-3. `.agents/flow/state.json` — only via `set-state.sh`.
+3. `.agents/skills/vibe/state.json` — only via `set-state.sh`.
 
 Everything else is allow/warn. Check before writing:
 
 ```bash
-bash .agents/flow/scripts/detect-context.sh decide <path>
+bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
 ```
 
 ## Repo layout
@@ -131,7 +131,7 @@ bash .agents/flow/scripts/detect-context.sh decide <path>
 .spec/                 # durable memory (product/tech/design/plan/lessons + features/)
 .agents/skills/spec/   # bundled spec framework
 .agents/skills/vibe/   # workflow skill (router + phase files)
-.agents/flow/          # state machine + scripts
+.agents/skills/vibe/          # state machine + scripts
 AGENTS.md              # this file (canonical)
 CLAUDE.md              # symlink → AGENTS.md
 ```
@@ -143,13 +143,13 @@ CLAUDE.md              # symlink → AGENTS.md
 bash .agents/skills/spec/scripts/validate.sh
 
 # Write policy (works without state.json)
-bash .agents/flow/scripts/detect-context.sh
-bash .agents/flow/scripts/detect-context.sh decide <path>
+bash .agents/skills/vibe/scripts/detect-context.sh
+bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
 
 # Flow tooling — only when explicitly testing or building flow
-cp .agents/flow/state.example.json .agents/flow/state.json   # seed cursor
-bash .agents/flow/scripts/set-state.sh <flow.phase> [feature]
-bash .agents/flow/scripts/validate-state.sh
+cp .agents/skills/vibe/state.example.json .agents/skills/vibe/state.json   # seed cursor
+bash .agents/skills/vibe/scripts/set-state.sh <flow.phase> [feature]
+bash .agents/skills/vibe/scripts/validate-state.sh
 ```
 
 ## Conventions

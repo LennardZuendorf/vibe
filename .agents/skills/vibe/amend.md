@@ -6,13 +6,13 @@ same state. Caveman **lite**.
 
 ## Procedure
 
-1. **Locate.** Read `.agents/flow/state.json` to learn the current state. Do
+1. **Locate.** Read `.agents/skills/vibe/state.json` to learn the current state. Do
    **not** call `set-state.sh amend` — it is not a stored state and the writer
    rejects it.
 2. **Carry the current state's write rules.** Amend edits only what the current
    state may write — it does **not** widen the write surface. Read the state's
-   `writes` from `.agents/flow/state-machine.json` (or
-   `bash .agents/flow/scripts/detect-context.sh`) and stay inside it:
+   `writes` from `.agents/skills/vibe/state-machine.json` (or
+   `bash .agents/skills/vibe/scripts/detect-context.sh`) and stay inside it:
    - in `feature.design` → amend `.spec/features/<f>/{product,tech}.md`
    - in `feature.plan` → amend `plan.md` (keep stable unit IDs)
    - in `strategy.spec` → amend root specs

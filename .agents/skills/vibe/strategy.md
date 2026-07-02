@@ -7,8 +7,8 @@ States: `strategy.brainstorm → strategy.spec → (strategy.compound | idle)`.
 
 ## Procedure
 
-1. **Locate.** Read `.agents/flow/state.json`. If not already in a `strategy.*`
-   state, transition in: `bash .agents/flow/scripts/set-state.sh strategy.brainstorm`.
+1. **Locate.** Read `.agents/skills/vibe/state.json`. If not already in a `strategy.*`
+   state, transition in: `bash .agents/skills/vibe/scripts/set-state.sh strategy.brainstorm`.
 2. **Read lessons first.** On entering `strategy.brainstorm`, read
    `.spec/lessons.md` so past mistakes shape direction (retrieval, not just
    recording).

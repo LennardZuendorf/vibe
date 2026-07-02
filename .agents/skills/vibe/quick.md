@@ -5,8 +5,8 @@ States: `quick.triage → quick.fix → quick.verify → idle`.
 
 ## Procedure
 
-1. **Locate.** Read `.agents/flow/state.json`. Enter with
-   `bash .agents/flow/scripts/set-state.sh quick.triage`.
+1. **Locate.** Read `.agents/skills/vibe/state.json`. Enter with
+   `bash .agents/skills/vibe/scripts/set-state.sh quick.triage`.
 2. **Triage** (caveman **full**, never ultra — triage is where a dropped edge
    case is expensive). Read `.spec/lessons.md` first. Delegate to
    `superpowers:systematic-debugging`. Diagnose; do **not** fix yet.
