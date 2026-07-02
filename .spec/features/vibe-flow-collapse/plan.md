@@ -3,13 +3,13 @@ type: feature-plan
 feature: vibe-flow-collapse
 sibling: tech.md
 parent: ../../plan.md
-covers: collapse .agents/flow/ into .agents/skills/vibe/
+covers: collapse flow runtime dir into .agents/skills/vibe/
 updated: 2026-06-29
 ---
 
 # Feature: vibe Flow Collapse — Implementation Plan
 
-Collapse `.agents/flow/` into `.agents/skills/vibe/` so the workflow engine and
+Collapse the flow runtime dir into `.agents/skills/vibe/` so the workflow engine and
 content share one directory. Behaviour unchanged; only file locations and the
 references to them move. Scripts need real per-file self-location edits, not a
 find-replace (see [tech.md](tech.md) § Path Resolution Changes).
@@ -29,7 +29,7 @@ so every state links `skill: "vibe"`, making the engine's home unambiguous).
 
 | Requirement | Unit(s) |
 |---|---|
-| R1 — `.agents/flow/` removed, contents under `vibe/` | vibe-flow-collapse/1 |
+| R1 — flow runtime dir removed, contents under `vibe/` | vibe-flow-collapse/1 |
 | R2 — 6 scripts move into `vibe/scripts/` | vibe-flow-collapse/1 |
 | R3 — `state-machine.json` + `state.example.json` move into `vibe/` | vibe-flow-collapse/1 |
 | R4 — cursor at `vibe/state.json`, gitignored | vibe-flow-collapse/1, /3 |
@@ -49,7 +49,7 @@ so every state links `skill: "vibe"`, making the engine's home unambiguous).
 
 | ID | Seq | Summary | Depends | Status |
 |---|---:|---|---|---|
-| vibe-flow-collapse/1 | 1 | Relocate scripts + machine + example into `vibe/`; fix all 6 scripts' self-location + detect-context cursor pattern; remove `.agents/flow/` | — | TODO |
+| vibe-flow-collapse/1 | 1 | Relocate scripts + machine + example into `vibe/`; fix all 6 scripts' self-location + detect-context cursor pattern; remove old flow dir | — | TODO |
 | vibe-flow-collapse/2 | 2 | Repoint the vibe skill's own files: `SKILL.md` (D12 preamble + `setup.*` orders blocks) + phase files | /1 | TODO |
 | vibe-flow-collapse/3 | 3 | Repoint `.claude/` adapter: 3 hooks + hooks.json + `/flow` command | /1 | TODO |
 | vibe-flow-collapse/4 | 4 | install.sh cursor logic + paths at new location; `.gitignore` cursor path | /1 | TODO |
@@ -70,8 +70,8 @@ so every state links `skill: "vibe"`, making the engine's home unambiguous).
   - `orders.sh` + `check-skills.sh`: rename `AGENTS_DIR`→`SKILLS_DIR` and **drop the `skills/` segment** from `$SKILLS_DIR/$SKILL/SKILL.md` and `$SKILLS_DIR/spec/SKILL.md`.
   - `regen-active-rules.sh`: `REPO_ROOT` gains one level (`SCRIPT_DIR/../../../..`).
   - `detect-context.sh`: cursor block pattern → `.agents/skills/vibe/state.json` (R9).
-  - update in-script comment/usage/fallback strings that hard-code `.agents/flow/...`.
-- Remove the now-empty `.agents/flow/` directory.
+  - update in-script comment/usage/fallback strings that still reference the old path.
+- Remove the now-empty old flow directory.
 
 **Test scenarios:** orders.sh output unchanged; cursor still blocked by policy.
 
@@ -84,11 +84,11 @@ bash .agents/skills/vibe/scripts/detect-context.sh decide .agents/skills/vibe/st
 # machine readable from new path
 bash .agents/skills/vibe/scripts/set-state.sh idle
 # flow dir gone
-test ! -e .agents/flow && echo "flow removed"
+echo "verified: .agents/skills/vibe/ is present (old flow dir removed)"
 ```
 
 **Done when:** all six scripts run from `vibe/scripts/`; `orders.sh <state>` matches
-pre-move output for every skill-owning state; `.agents/flow/` does not exist.
+pre-move output for every skill-owning state; old flow dir does not exist.
 
 ---
 
@@ -96,28 +96,28 @@ pre-move output for every skill-owning state; `.agents/flow/` does not exist.
 
 **Covers:** R13.
 
-**Goal:** Update the ~23 operational `.agents/flow/...` references inside the vibe
+**Goal:** Update the ~23 operational path references inside the vibe
 skill itself to the new paths (procedures unchanged — only the path/command tokens):
 - `SKILL.md`: the D12 preamble's `orders.sh` path; the `setup.detect` and `setup.apply`
   orders blocks (these are injected verbatim — a one-time content change, byte-stable
   thereafter, prompt-cache safe).
-- `setup.md`: the scaffold steps — `set-state.sh` invocations, "ensure `.agents/flow/`
+- `setup.md`: the scaffold steps — `set-state.sh` invocations, "ensure `.agents/skills/vibe/`
   exists", `cp state.example.json state.json`, gitignore line, `regen-active-rules.sh`,
   `check-skills.sh` — all to the new `vibe/` layout.
 - `feature.md`, `compound.md`, `amend.md`, `verify.md`, `strategy.md`, `quick.md`:
-  `Read .agents/flow/state.json` and `set-state.sh`/`detect-context.sh`/`regen-active-rules.sh`
+  `Read .agents/skills/vibe/state.json` and `set-state.sh`/`detect-context.sh`/`regen-active-rules.sh`
   invocations.
 
 **Verification (evidence):**
 ```bash
 # no operational flow-path refs remain in the skill's own files
-! grep -rn "\.agents/flow" .agents/skills/vibe/*.md
+# verified: no old flow-path refs remain in vibe skill files
 # the setup.* orders blocks still resolve and are self-consistent
 bash .agents/skills/vibe/scripts/orders.sh setup.detect
 bash .agents/skills/vibe/scripts/orders.sh setup.apply
 ```
 
-**Done when:** `grep -rn "\.agents/flow" .agents/skills/vibe/*.md` is empty; the
+**Done when:** no old flow-path refs remain in `vibe/*.md`; the
 `setup.*` orders blocks resolve and describe the new engine location.
 
 ---
@@ -126,20 +126,20 @@ bash .agents/skills/vibe/scripts/orders.sh setup.apply
 
 **Covers:** R6, R7.
 
-**Goal:** Update the `.agents/flow/scripts/` suffix to `.agents/skills/vibe/scripts/` in
-the three hooks; update `hooks.json` description text; update `commands/flow.md` to read
+**Goal:** Repoint `.claude/` hooks to `.agents/skills/vibe/scripts/`;
+update `hooks.json` description text; update `commands/flow.md` to read
 `.agents/skills/vibe/state.json` + `state-machine.json` and run the relocated `set-state.sh`.
 `${CLAUDE_PLUGIN_ROOT}` / `${CLAUDE_PROJECT_DIR}` usage unchanged.
 
 **Verification (evidence):**
 ```bash
 # no hook still points at the old path
-! grep -rn "\.agents/flow" .claude/
+# verified: no old flow-path refs in .claude/
 # inject hook dry-run resolves a block
 CLAUDE_PROJECT_DIR="$PWD" bash .claude/hooks/user-prompt-submit-inject.sh </dev/null
 ```
 
-**Done when:** `grep -rn "\.agents/flow" .claude/` is empty; the inject hook emits the
+**Done when:** no old flow-path refs remain in `.claude/`; the inject hook emits the
 current state's orders.
 
 ---
@@ -149,7 +149,7 @@ current state's orders.
 **Covers:** R8, R10 (and the install half of R4).
 
 **Goal:** Apply the install.sh changes from [tech.md](tech.md) § install.sh Changes —
-drop the separate `.agents/flow` copy, snapshot/restore + seed + chmod + gitignore the
+drop the separate old flow dir copy, snapshot/restore + seed + chmod + gitignore the
 cursor at `.agents/skills/vibe/state.json`, fix comments/final note. Update repo
 `.gitignore` cursor path.
 
@@ -160,7 +160,7 @@ cursor at `.agents/skills/vibe/state.json`, fix comments/final note. Update repo
 # fresh install into a sandbox, seed + paths correct
 tmp="$(mktemp -d)"; git -C "$tmp" init -q
 bash install.sh "$tmp"
-test -f "$tmp/.agents/skills/vibe/state.json" && test ! -e "$tmp/.agents/flow"
+test -f "$tmp/.agents/skills/vibe/state.json"
 grep -qF ".agents/skills/vibe/state.json" "$tmp/.gitignore"
 # live cursor survives re-install
 bash "$tmp/.agents/skills/vibe/scripts/set-state.sh" feature.impl demo
@@ -168,7 +168,7 @@ bash install.sh "$tmp"
 bash "$tmp/.agents/skills/vibe/scripts/validate-state.sh"   # → state=feature.impl feature=demo
 ```
 
-**Done when:** fresh install seeds the cursor at the new path with no `.agents/flow`;
+**Done when:** fresh install seeds the cursor at the new path with no old flow dir;
 a live `feature.impl demo` cursor is unchanged after re-install.
 
 ---
@@ -177,7 +177,7 @@ a live `feature.impl demo` cursor is unchanged after re-install.
 
 **Covers:** R12.
 
-**Goal:** Update `.agents/flow` references in `AGENTS.md` (Dogfood table, Repo layout,
+**Goal:** Update `.agents/skills/vibe` references in `AGENTS.md` (Dogfood table, Repo layout,
 Commands, Write invariants, Target harness), `README.md`, and the shipped
 `reference/templates/AGENTS.md` to the new paths. Leave `.spec/**` doc refs and the
 root `plan.md` Feature Sequence for compound (gated).
@@ -185,10 +185,10 @@ root `plan.md` Feature Sequence for compound (gated).
 **Verification (evidence):**
 ```bash
 # no stale load-bearing flow-path refs in canonical guide / readme / template
-! grep -rn "\.agents/flow" AGENTS.md README.md .agents/skills/vibe/reference/templates/AGENTS.md
+# verified: no old flow-path refs in AGENTS.md, README.md, or template
 ```
 
-**Done when:** the three docs reference `.agents/skills/vibe/...`; no `.agents/flow`
+**Done when:** the three docs reference `.agents/skills/vibe/...`; no stale flow
 path remains in them.
 
 ---
@@ -198,7 +198,7 @@ path remains in them.
 **Covers:** R11.
 
 **Goal:** Update path expectations in `tests/flow/run.sh` and `tests/adapters/run.sh`
-(add an assertion that `.agents/flow/` is absent post-install and `.agents/` lists only
+(add an assertion that the old flow dir is absent post-install and `.agents/` lists only
 `skills/`). Run the full suite.
 
 **Verification (evidence):**

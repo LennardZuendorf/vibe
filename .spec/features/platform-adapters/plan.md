@@ -33,7 +33,7 @@ Unit IDs are `platform-adapters/n` — assigned once, never renumbered.
 | ID | Requirement area | Units |
 |---|---|---|
 | R1, R2, R4 | Adapter files mirror core, define no separate layout (provisioning delegated to `agent-instructions`) | — |
-| R3 | Hooks read `.agents/flow` | platform-adapters/1 |
+| R3 | Hooks read `.agents/skills/vibe` | platform-adapters/1 |
 | R7, R8 | Three hooks + wiring; policy lives once in `detect-context.sh` | platform-adapters/1, platform-adapters/2, platform-adapters/3, platform-adapters/4 |
 | R9 | Graceful degrade (exit 0); warn-first blocks | platform-adapters/1, platform-adapters/2, platform-adapters/3 |
 | R6 | Installable Claude Code plugin | platform-adapters/5 |
@@ -46,12 +46,12 @@ Unit IDs are `platform-adapters/n` — assigned once, never renumbered.
 Validated against the repo on 2026-06-08 (spec `validate.sh` clean).
 
 **Already exists (do NOT rebuild):**
-- `.agents/flow/scripts/detect-context.sh` with both `snapshot` and `decide <path>
+- `.agents/skills/vibe/scripts/detect-context.sh` with both `snapshot` and `decide <path>
   [state]` → `allow | warn:<r> | block:<r>`; the three hard blocks are coded here.
 - `set-state.sh` (sole `state.json` writer), `validate-state.sh`,
   `regen-active-rules.sh` (symlink-safe, realpath-deduped).
 - `AGENTS.md`, `CLAUDE.md` (with `vibe:active-rules`), `.claude/commands/flow.md`.
-- `.gitignore` ignores the mutable cursor `.agents/flow/state.json`.
+- `.gitignore` ignores the mutable cursor `.agents/skills/vibe/state.json`.
 
 **Consumed from upstream features (frozen before this feature starts):**
 - D12 orders blocks in each `vibe-*` skill + `inject: null` on skill states (from
@@ -202,7 +202,7 @@ plugin install discovers the command, all skills, and the three hooks.
 
 ### platform-adapters/6 — Installer (`install.sh`)
 
-**Goal:** copy core `.agents/flow/**` and `.agents/skills/**` into a target repo
+**Goal:** copy core `.agents/skills/**` into a target repo
 (default copy, OPEN-3); seed `state.json` from `state.example.json` if absent;
 delegate `AGENTS.md` merge to `agent-instructions` (`merge-agents.sh`); create
 adapter symlinks per user choice; register the plugin. Idempotent.

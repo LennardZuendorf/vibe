@@ -21,7 +21,7 @@ feature plan, never here.
 | Feature | Owns | Plan |
 |---|---|---|
 | `spec` skill bundle | root `.spec/` + [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) | [`tests/spec/run.sh`](../tests/spec/run.sh) |
-| [vibe-flow](features/vibe-flow/product.md) | `.agents/flow` + `vibe-*` skills | [plan.md](features/vibe-flow/plan.md) |
+| [vibe-flow](features/vibe-flow/product.md) | `.agents/skills/vibe/` + `vibe` skill | [plan.md](features/vibe-flow/plan.md) |
 | [agent-instructions](features/agent-instructions/product.md) | `AGENTS.md` template + symlinks | [plan.md](features/agent-instructions/plan.md) |
 | [platform-adapters](features/platform-adapters/product.md) | plugin + hooks + installer | [plan.md](features/platform-adapters/plan.md) |
 
@@ -36,7 +36,7 @@ whole-feature gate (Feature Sequence), never a unit-to-unit edge.
 ┌─────────────────────────────────────────────────────────────┐
 │  spec skill bundle  .spec/ tree, spec skill, validate, tests │
 ├─────────────────────────────────────────────────────────────┤
-│  vibe-flow          .agents/flow, vibe-* skills, D9–D12      │
+│  vibe-flow          .agents/skills/vibe/, vibe skill, D9–D12      │
 ├─────────────────────────────────────────────────────────────┤
 │  agent-instructions AGENTS.md template, adapter symlinks     │
 ├─────────────────────────────────────────────────────────────┤
@@ -84,11 +84,11 @@ self-hosting. Still deferred: real-world earn-the-teeth promotions and
 - **Spec framework remains independent.** Usable without the vibe flow.
 - **Root spec model:** `product`, `tech`, `design`, `plan`, `lessons`.
 - **Feature spec model:** `product` + `tech` required; `design`, `plan`, `research` optional.
-- **Vibe workflow shims** live under `.agents/skills/vibe-*`.
-- **Canonical flow state** is platform-neutral (`.agents/flow`).
+- **Vibe workflow shims** live under `.agents/skills/vibe/`.
+- **Canonical flow state** is platform-neutral (`.agents/skills/vibe`).
 - **Agent instructions:** `AGENTS.md` is canonical; runtime adapters are symlinks.
 - **D8 split:** lesson format → `spec` skill bundle; read-on-entry + tag scan → vibe-flow.
-- **Adapters are thin.** Plugin/hooks read `.agents/flow`; they do not own state or spec layout.
+- **Adapters are thin.** Plugin/hooks read `.agents/skills/vibe`; they do not own state or spec layout.
 - **D12 owned by vibe-flow.** Orders live in `vibe-*` skills; `inject: null` on skill states; platform-adapters consumes the frozen skills.
 - **Binary feature gates.** Features couple as whole boxes; no cross-feature unit edges.
 
@@ -102,7 +102,7 @@ self-hosting. Still deferred: real-world earn-the-teeth promotions and
 - [x] **OPEN-4 / OPEN-7:** Hook strictness — shipped warn-first; only the three
   pre-existing `detect-context.sh` hard blocks deny; every `Stop` predicate is
   warn-only with a `TODO(earn-the-teeth)`. `platform-adapters/3`.
-- [x] **OPEN-6:** Skill degradation — `.agents/flow/scripts/check-skills.sh` warns on
+- [x] **OPEN-6:** Skill degradation — `.agents/skills/vibe/scripts/check-skills.sh` warns on
   unverifiable delegates + prints the caveman fallback; never hard-fails. `vibe-flow/3`.
 
 ---
@@ -137,7 +137,7 @@ Cleansed notes for shipped work — detail lives in live surfaces, not this plan
   adapter symlinks); `vibe-setup` detect/apply rewritten off the constitution path.
   Repo `AGENTS.md` wrapped in `vibe:instructions`; `CLAUDE.md` → `AGENTS.md`.
 - **platform-adapters — DONE.** Three hooks (inject/guard/gate) as thin shells over
-  `.agents/flow/scripts/`; `hooks.json`; `.claude-plugin/plugin.json`; `install.sh`.
+  `.agents/skills/vibe/scripts/`; `hooks.json`; `.claude-plugin/plugin.json`; `install.sh`.
   Warn-first; graceful-degrade (exit 0). `tests/adapters/run.sh` green.
 - **dogfood — DONE (scripted).** Hook block/warn/allow/graceful, merge scenarios, and a
   full `install.sh` into a sandbox are exercised in `tests/adapters/run.sh`; the build

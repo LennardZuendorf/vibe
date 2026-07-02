@@ -222,7 +222,7 @@ Root `.spec/plan.md` feature sequence:
 | Order | Feature | Deliverable | Test | Status | Starts when |
 |---:|---|---|---|---|---|
 | 1 | spec | `.spec/` + validate + tests | `tests/spec/run.sh` | DONE | — |
-| 2 | vibe-flow | `.agents/flow` + `vibe-*` skills | `tests/flow/run.sh` | ACTIVE | spec DONE |
+| 2 | vibe-flow | `.agents/skills/vibe/` + `vibe` skill | `tests/flow/run.sh` | ACTIVE | spec DONE |
 | 3 | agent-instructions | `AGENTS.md` template + merge | `tests/agent-instructions/run.sh` | BLOCKED | vibe-flow DONE |
 
 Feature `vibe-flow/plan.md` unit rows:

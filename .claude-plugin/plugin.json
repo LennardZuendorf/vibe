@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "description": "Strict personal coding workflow: a platform-neutral flow state machine, vibe-* skills, and Claude Code hooks that inject per-turn orders and guard the spec invariants.",
   "author": {
-    "name": "lennarddib"
+    "name": "LennardZuendorf"
   },
-  "homepage": "https://github.com/lennarddib/vibe",
+  "homepage": "https://github.com/LennardZuendorf/vibe",
   "keywords": ["workflow", "spec", "state-machine", "hooks", "code-review"],
   "commands": "./.claude/commands",
   "hooks": "./.claude/hooks/hooks.json"

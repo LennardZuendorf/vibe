@@ -115,8 +115,8 @@ trivial to add to the same manifest.
 
 ## Outputs
 
-- `.agents/skills/vibe-setup/reference/templates/AGENTS.md` (canonical template)
-- Updated `vibe-setup` skill (`setup.detect` / `setup.apply` steps)
+- `.agents/skills/vibe/reference/templates/AGENTS.md` (canonical template)
+- Updated `vibe` skill (`setup.detect` / `setup.apply` steps)
 - Optional `install-adapters.sh` or inline logic in `setup.apply`
 - Repo-root `AGENTS.md` (merged) and user-selected adapter symlinks
 

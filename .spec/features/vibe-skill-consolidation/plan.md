@@ -101,7 +101,7 @@ are consistent (no references to old `vibe-{name}` dirs that no longer exist).
   equivalent routing hint
 
 Verify:
-1. `bash .agents/flow/scripts/orders.sh` for each of the 14 states produces output
+1. `bash .agents/skills/vibe/scripts/orders.sh` for each of the 14 states produces output
 2. `bash tests/flow/run.sh` — all 26 tests green
 
 **Done when:** `orders.sh <state>` works for all states; `tests/flow/run.sh` exits 0.
@@ -116,7 +116,7 @@ user-visible name. See migration inventory in `tech.md`:
 - `install.sh` lines 79, 95: `vibe-setup/scripts/` → `vibe/scripts/`
 - `AGENTS.md`: prose refs to `vibe-*` skills → `vibe` where appropriate; routing
   table entry for "Set up or repair harness" → `vibe/SKILL.md`; file layout block
-- `.agents/flow/scripts/set-state.sh:54`: error message "vibe-amend" → updated text
+- `.agents/skills/vibe/scripts/set-state.sh:54`: error message "vibe-amend" → updated text
 - `.agents/skills/spec/feature.md:58`: "vibe-quick" → "vibe"
 - `.agents/skills/spec/README.md:68`: "vibe-quick" → "vibe"
 - `.spec/tech.md`: skill listing — replace `vibe-*/` with `vibe/`

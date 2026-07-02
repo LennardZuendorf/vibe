@@ -130,8 +130,7 @@ bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
 ```text
 .spec/                 # durable memory (product/tech/design/plan/lessons + features/)
 .agents/skills/spec/   # bundled spec framework
-.agents/skills/vibe/   # workflow skill (router + phase files)
-.agents/skills/vibe/          # state machine + scripts
+.agents/skills/vibe/   # workflow skill: router, phase files, state machine, scripts
 AGENTS.md              # this file (canonical)
 CLAUDE.md              # symlink → AGENTS.md
 ```

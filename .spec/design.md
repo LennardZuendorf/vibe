@@ -5,7 +5,7 @@ design_format: google-labs-code/design.md-inspired
 children:
   - features/vibe-flow/design.md
   - features/platform-adapters/design.md
-updated: 2026-06-06
+updated: 2026-07-03
 ---
 
 # vibe — Design
@@ -33,19 +33,19 @@ the product is an agent workflow rather than a visual interface.
 2. **The workflow should feel guided, not trapped.** Warnings and legal next
    states should make the right path easy while preserving escape hatches for
    recovery.
-3. **Delegation should be explicit.** When a `vibe-*` skill uses another skill,
+3. **Delegation should be explicit.** When a `vibe` skill uses another skill,
    it names the output path and expected artifact so the delegated skill cannot
    invent its own file layout.
 4. **Adapter copy should be boring.** Codex and Claude Code wording may differ,
-   but their rules should point back to the same `.agents/flow` and `.spec`
+   but their rules should point back to the same `.agents/skills/vibe` and `.spec`
    contracts.
 
 ---
 
 ## Interaction Conventions
 
-- Use `vibe-*` skill names for recurring workflows.
-- Use `.agents/flow` for runtime state and `.spec` for durable memory.
+- Use `vibe` skill for recurring workflows.
+- Use `.agents/skills/vibe` for runtime state and `.spec` for durable memory.
 - In agent-facing prompts, phrase constraints as positive targets first:
   "write only these paths" before "do not write elsewhere."
 - End each phase with a concise receipt: changed files, verification evidence,
@@ -58,9 +58,9 @@ the product is an agent workflow rather than a visual interface.
 | Surface | Primary Question It Answers |
 |---|---|
 | `AGENTS.md` / `CLAUDE.md` | How should this runtime behave in this repo? |
-| `.agents/skills/vibe-*` | What should the agent do for this workflow phase? |
-| `.agents/flow/state.json` | What phase are we currently in? |
-| `.agents/flow/state-machine.json` | What phases and transitions are legal? |
+| `.agents/skills/vibe/` | What should the agent do for this workflow phase? |
+| `.agents/skills/vibe/state.json` | What phase are we currently in? |
+| `.agents/skills/vibe/state-machine.json` | What phases and transitions are legal? |
 | `.spec/**` | What are we building, why, how, and what remains? |
 
 ---

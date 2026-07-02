@@ -8,7 +8,7 @@ updated: 2026-06-18
 
 # Feature: Vibe Flow — Architecture
 
-The vibe flow is a platform-neutral runtime layer under `.agents/flow` plus a
+The vibe flow is a platform-neutral runtime layer under `.agents/skills/vibe` plus a
 family of `vibe-*` agent skills. Its job is to carry the planning load: the user
 says "I need X" and the flow constrains the agent into the right phase, with the
 right skill, the right output path, and the right communication density already
@@ -27,14 +27,6 @@ chosen for it.
 
 ```text
 .agents/
-├── flow/
-│   ├── state-machine.json
-│   ├── state.example.json
-│   └── scripts/
-│       ├── detect-context.sh
-│       ├── set-state.sh
-│       ├── validate-state.sh
-│       └── regen-active-rules.sh
 └── skills/
     └── vibe/
         ├── SKILL.md            # lean router + all 14 orders blocks
@@ -45,7 +37,9 @@ chosen for it.
         ├── verify.md
         ├── compound.md
         ├── amend.md
-        ├── scripts/            # merge-agents.sh
+        ├── state-machine.json  # static flow definition
+        ├── state.example.json  # neutral cursor template
+        ├── scripts/            # set-state.sh, detect-context.sh, orders.sh, …
         └── reference/          # adapters.json, templates/
 ```
 
@@ -97,7 +91,7 @@ skill (see *Prompt Injection*), not from a hand-written `inject` string:
 
 ### States, skills, and artifacts
 
-Canonical reference — must match `.agents/flow/state-machine.json`. Root
+Canonical reference — must match `.agents/skills/vibe/state-machine.json`. Root
 [product.md](../../product.md) phase map mirrors this table.
 
 | State | Skill | Delegates | feature-dev | caveman | R/W surface | next |
@@ -156,7 +150,7 @@ Three deliberate calls:
 Per-turn orders live in each `vibe-*` skill as a `## Orders (D12)` section of
 `<!-- vibe:orders:<state> -->` … `<!-- /vibe:orders -->` blocks. Every
 skill-owning state carries `inject: null` in `state-machine.json`; only `idle`
-keeps an inline `inject` (skill-less fallback). `.agents/flow/scripts/orders.sh`
+keeps an inline `inject` (skill-less fallback). `.agents/skills/vibe/scripts/orders.sh`
 resolves the cursor `<flow>.<phase>` (default `idle`), follows the `skill` link,
 extracts that state's block, interpolates `<feature>` (the only substitution, so
 the inject stays prompt-cache stable), and prints it — degrading to the machine
@@ -179,7 +173,7 @@ a separate tracking system.
 
 Each `vibe-*` skill follows the same internal sequence:
 
-1. Read `.agents/flow/state.json` and the relevant root or feature specs.
+1. Read `.agents/skills/vibe/state.json` and the relevant root or feature specs.
 2. On entry to a `*.design` or `*.triage` state, read `.spec/lessons.md` first (D8);
    surface entries whose `**Tags:**` match the work in hand (keyword scan).
 3. Confirm or transition state through `set-state.sh`.

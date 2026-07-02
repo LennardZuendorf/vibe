@@ -114,10 +114,10 @@ All references to old skill names that must be updated:
 
 | File | Line(s) | Change |
 |---|---|---|
-| `.agents/flow/state-machine.json` | 14 `skill` fields + idle inject text | `vibe-*` → `"vibe"` |
+| `.agents/skills/vibe/state-machine.json` | 14 `skill` fields + idle inject text | `vibe-*` → `"vibe"` |
 | `install.sh` | 79, 95 | `vibe-setup/scripts/` → `vibe/scripts/` |
 | `AGENTS.md` | 41, 44, 57, 90, 93, 95, 108, 133, 211 | prose refs `vibe-*` → `vibe` where appropriate |
-| `.agents/flow/scripts/set-state.sh` | 54 | error msg "Run vibe-amend" → "Run /vibe amend" or similar |
+| `.agents/skills/vibe/scripts/set-state.sh` | 54 | error msg "Run vibe-amend" → "Run /vibe amend" or similar |
 | `.agents/skills/spec/feature.md` | 58 | "vibe-quick" → "vibe" |
 | `.agents/skills/spec/README.md` | 68 | "vibe-quick" → "vibe" |
 | Phase files (inter-skill cross-refs) | various | "vibe-verify", "vibe-compound" refs → `verify.md`, `compound.md` |
