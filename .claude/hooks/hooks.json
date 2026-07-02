@@ -1,5 +1,5 @@
 {
-  "description": "vibe flow hooks — inject (UserPromptSubmit), guard (PreToolUse), gate (Stop). Thin shells over .agents/flow/scripts/; the allow/warn/block policy lives once in detect-context.sh. Earned warn-first; exit 0 on any missing keystone (graceful degrade).",
+  "description": "vibe flow hooks — inject (UserPromptSubmit), guard (PreToolUse), gate (Stop). Thin shells over .agents/skills/vibe/scripts/; the allow/warn/block policy lives once in detect-context.sh. Earned warn-first; exit 0 on any missing keystone (graceful degrade).",
   "hooks": {
     "UserPromptSubmit": [
       {

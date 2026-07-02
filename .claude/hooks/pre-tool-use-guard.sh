@@ -4,7 +4,7 @@
 # Event: PreToolUse, matcher Edit|Write|NotebookEdit. Reads the target path from
 # stdin and asks the shared decision policy whether the write is allowed in the
 # current flow state. NO policy logic lives here (R8) — it all lives once in
-# .agents/flow/scripts/detect-context.sh decide.
+# .agents/skills/vibe/scripts/detect-context.sh decide.
 #
 # Verdict translation (Claude Code PreToolUse convention):
 #   block:<reason> -> reason to stderr, exit 2 (deny, fed back to Claude)
@@ -21,7 +21,7 @@
 set -euo pipefail
 
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-DETECT="$ROOT/.agents/flow/scripts/detect-context.sh"
+DETECT="$ROOT/.agents/skills/vibe/scripts/detect-context.sh"
 
 command -v jq >/dev/null 2>&1 || exit 0
 [[ -f "$DETECT" ]] || exit 0
