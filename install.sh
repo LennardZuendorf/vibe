@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install.sh — install the vibe workflow harness into a target repo.
 #
-#   ./install.sh <target-repo-root> [--only spec|flow] [--dry-run] [--adapters claude,warp]
+#   ./install.sh <target-repo-root> [--only spec|flow] [--dry-run] [--uninstall] [--yes] [--adapters claude,warp]
 #
 # What it does (OPEN-3 default = COPY the platform-neutral core; MERGE the
 # instruction file with markers; never blind-overwrite user content):
@@ -14,8 +14,11 @@
 #   7. Print how to register the Claude Code plugin so the hooks go live.
 #
 # Flags:
-#   --only spec|flow   install a single half (default: both).
+#   --only spec|flow   install (or uninstall) a single half (default: both).
 #   --dry-run          print the action plan and write nothing.
+#   --uninstall        remove managed artifacts; preserve .spec/, user AGENTS.md
+#                      prose, and the flow cursor (cursor removed only with --yes).
+#   --yes, -y          assume yes for the cursor-removal confirm on --uninstall.
 #
 # Re-runnable: refreshes the managed core (.agents/**, .claude/** adapter) from
 # source each run, preserves the target's live flow cursor (state.json) and any
@@ -32,9 +35,24 @@ note() { echo "install: $1"; }
 # never performed, so the plan reads the same whether or not it is applied.
 say() { if [[ "$DRY_RUN" -eq 1 ]]; then echo "install: [dry-run] would $1"; else echo "install: $1"; fi; }
 
+# remove_shipped SRC_DIR DST_DIR — delete from DST_DIR only the files that exist
+# in SRC_DIR (the precise inverse of a copy), then prune emptied subdirs. Never
+# touches co-located files the user added to a shared directory.
+remove_shipped() {
+  local src="$1" dst="$2" f rel
+  [[ -d "$src" && -d "$dst" ]] || return 0
+  while IFS= read -r f; do
+    rel="${f#"$src"/}"
+    rm -f "$dst/$rel"
+  done < <(find "$src" -type f)
+  find "$dst" -type d -empty -delete 2>/dev/null || true
+}
+
 DRY_RUN=0
 WANT_SPEC=1
 WANT_FLOW=1
+UNINSTALL=0
+ASSUME_YES=0
 TARGET=""
 ADAPTERS=""
 while [[ $# -gt 0 ]]; do
@@ -42,6 +60,8 @@ while [[ $# -gt 0 ]]; do
     --adapters) ADAPTERS="${2:-}"; shift 2 ;;
     --adapters=*) ADAPTERS="${1#*=}"; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --uninstall) UNINSTALL=1; shift ;;
+    --yes|-y) ASSUME_YES=1; shift ;;
     --only)
       case "${2:-}" in
         spec) WANT_FLOW=0 ;;
@@ -56,7 +76,7 @@ while [[ $# -gt 0 ]]; do
         *) err "ERROR: --only takes 'spec' or 'flow' (got '${1#*=}')"; exit 1 ;;
       esac
       shift ;;
-    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
     -*) err "ERROR: unknown option '$1'"; exit 1 ;;
     *) TARGET="$1"; shift ;;
   esac
@@ -84,6 +104,61 @@ fi
 if [[ "$TARGET" == "$SRC" ]]; then
   err "ERROR: target is the vibe source repo itself; nothing to install."
   exit 1
+fi
+
+# ── uninstall ────────────────────────────────────────────────────────────────
+# Remove managed artifacts while preserving user content: .spec/** is never
+# touched, user AGENTS.md prose outside the markers is preserved (block removed
+# via merge-agents.sh's marker-pairing guard), and the flow cursor survives
+# unless --yes. Composes with --only (remove one half) and --dry-run (preview).
+if [[ "$UNINSTALL" -eq 1 ]]; then
+  note "uninstalling vibe from $TARGET"
+  SRC_MERGE="$SRC/.agents/skills/vibe/scripts/merge-agents.sh"
+
+  if [[ "$WANT_SPEC" -eq 1 && -e "$TARGET/.agents/skills/spec" ]]; then
+    say "remove .agents/skills/spec"
+    [[ "$DRY_RUN" -eq 1 ]] || rm -rf "$TARGET/.agents/skills/spec"
+  fi
+
+  if [[ "$WANT_FLOW" -eq 1 ]]; then
+    if [[ -e "$TARGET/.agents/skills/vibe" ]]; then
+      if [[ -f "$TARGET/.agents/skills/vibe/state.json" && "$ASSUME_YES" -eq 0 ]]; then
+        say "remove .agents/skills/vibe (preserving the flow cursor; re-run with --yes to remove it)"
+        if [[ "$DRY_RUN" -eq 0 ]]; then
+          KEPT_CURSOR="$(mktemp)"; cp "$TARGET/.agents/skills/vibe/state.json" "$KEPT_CURSOR"
+          rm -rf "$TARGET/.agents/skills/vibe"
+          mkdir -p "$TARGET/.agents/skills/vibe"
+          mv -f "$KEPT_CURSOR" "$TARGET/.agents/skills/vibe/state.json"
+        fi
+      else
+        say "remove .agents/skills/vibe"
+        [[ "$DRY_RUN" -eq 1 ]] || rm -rf "$TARGET/.agents/skills/vibe"
+      fi
+    fi
+    say "remove the Claude adapter files vibe installed"
+    if [[ "$DRY_RUN" -eq 0 ]]; then
+      remove_shipped "$SRC/.claude/commands" "$TARGET/.claude/commands"
+      remove_shipped "$SRC/.claude/hooks" "$TARGET/.claude/hooks"
+      rm -f "$TARGET/.claude-plugin/plugin.json"
+      rmdir "$TARGET/.claude-plugin" "$TARGET/.claude" 2>/dev/null || true
+    fi
+    if [[ -f "$TARGET/AGENTS.md" ]]; then
+      say "remove the managed vibe:instructions block from AGENTS.md (user prose preserved)"
+      [[ "$DRY_RUN" -eq 1 ]] || bash "$SRC_MERGE" unmerge "$TARGET" \
+        || err "WARN: AGENTS.md block not removed (reversed markers?); left untouched."
+    fi
+  fi
+
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    rmdir "$TARGET/.agents/skills" "$TARGET/.agents" 2>/dev/null || true
+  fi
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "install: [dry-run] uninstall plan complete — nothing was written."
+  else
+    note "uninstall done. Preserved: .spec/ and user AGENTS.md prose."
+  fi
+  exit 0
 fi
 
 # 1. Core (platform-neutral). Copy the spec + vibe skill trees. The cursor is

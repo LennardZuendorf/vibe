@@ -222,5 +222,54 @@ assert_eq "install-tooling/2" "--only spec --dry-run writes nothing" "$before" "
 rm -rf "$SB"
 
 echo ""
+echo "=== install-tooling/3 — --uninstall ==="
+# Install, add user content, then uninstall: managed files gone, user content kept.
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+mkdir -p "$SB/.spec"; printf 'user spec\n' > "$SB/.spec/product.md"
+printf '## My Team\nkeep this prose\n\n%s\n' "$(cat "$SB/AGENTS.md")" > "$SB/AGENTS.md.new" && mv "$SB/AGENTS.md.new" "$SB/AGENTS.md"
+bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+ok=1
+[[ ! -e "$SB/.agents/skills/spec" ]] || { ok=0; echo "        spec skill survived uninstall"; }
+[[ ! -e "$SB/.agents/skills/vibe/SKILL.md" ]] || { ok=0; echo "        vibe SKILL.md survived uninstall"; }
+[[ ! -e "$SB/.claude/hooks/hooks.json" ]] || { ok=0; echo "        adapter hooks survived uninstall"; }
+[[ ! -e "$SB/.claude-plugin/plugin.json" ]] || { ok=0; echo "        plugin manifest survived uninstall"; }
+assert_eq "install-tooling/3" "--uninstall removes managed artifacts" "$ok" "1"
+grep -qF "keep this prose" "$SB/AGENTS.md" && pass "install-tooling/3" "user AGENTS.md prose preserved" || fail "install-tooling/3" "user prose preserved"
+grep -qF "vibe:instructions:start" "$SB/AGENTS.md" && fail "install-tooling/3" "managed AGENTS.md block removed" || pass "install-tooling/3" "managed AGENTS.md block removed"
+[[ -f "$SB/.spec/product.md" ]] && pass "install-tooling/3" ".spec/ preserved across uninstall" || fail "install-tooling/3" ".spec/ preserved"
+rm -rf "$SB"
+# Live cursor + no --yes -> cursor survives.
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+bash "$SB/.agents/skills/vibe/scripts/set-state.sh" feature.impl widget >/dev/null 2>&1
+bash "$INSTALL" "$SB" --uninstall >/dev/null 2>&1
+if [[ -f "$SB/.agents/skills/vibe/state.json" ]] && grep -qF widget "$SB/.agents/skills/vibe/state.json"; then
+  pass "install-tooling/3" "live cursor survives uninstall without --yes"
+else
+  fail "install-tooling/3" "live cursor survives uninstall without --yes"
+fi
+# ... and --yes removes it.
+bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+[[ ! -e "$SB/.agents/skills/vibe/state.json" ]] && pass "install-tooling/3" "--yes removes the cursor too" || fail "install-tooling/3" "--yes removes the cursor"
+rm -rf "$SB"
+# Reversed-marker AGENTS.md -> uninstall refuses to touch it (marker lesson regression).
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+printf '# R\n<!-- vibe:instructions:end -->\nmid\n<!-- vibe:instructions:start -->\ntail\n' > "$SB/AGENTS.md"
+rmbefore="$(cat "$SB/AGENTS.md")"
+bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+assert_eq "install-tooling/3" "reversed-marker AGENTS.md left byte-untouched by uninstall" "$(cat "$SB/AGENTS.md")" "$rmbefore"
+rm -rf "$SB"
+# --uninstall composes with --dry-run (writes nothing) and --only (one half).
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+before="$(tree_fp "$SB")"
+bash "$INSTALL" "$SB" --uninstall --dry-run >/dev/null 2>&1
+after="$(tree_fp "$SB")"
+assert_eq "install-tooling/3" "--uninstall --dry-run writes nothing" "$before" "$after"
+bash "$INSTALL" "$SB" --uninstall --only spec --yes >/dev/null 2>&1
+[[ ! -e "$SB/.agents/skills/spec" && -e "$SB/.agents/skills/vibe/SKILL.md" ]] \
+  && pass "install-tooling/3" "--uninstall --only spec removes just the spec half" \
+  || fail "install-tooling/3" "--uninstall --only spec removes just the spec half"
+rm -rf "$SB"
+
+echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

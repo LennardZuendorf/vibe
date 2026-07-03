@@ -171,7 +171,42 @@ merge() {
   note "appended vibe:instructions block to $target"
 }
 
+# ── unmerge mode (uninstall) ────────────────────────────────────────────────────
+# Remove the managed vibe:instructions region, preserving everything outside it.
+# Reuses the same marker-pairing guard as merge(): reversed/overlapping markers
+# are refused (never mangled), writes go via temp + atomic rename.
+unmerge() {
+  local root="${1:-.}"
+  local target="$root/AGENTS.md"
+  [[ -f "$target" ]] || { note "no AGENTS.md at $target — nothing to remove"; return 0; }
+
+  if ! { grep -qF "$I_START" "$target" && grep -qF "$I_END" "$target"; }; then
+    note "no vibe:instructions block in $target — left untouched"; return 0
+  fi
+
+  local s_line e_line
+  s_line="$(awk -v m="$I_START" '$0==m{print NR; exit}' "$target")"
+  e_line="$(awk -v m="$I_END"   '$0==m{print NR; exit}' "$target")"
+  if [[ -z "$s_line" || -z "$e_line" ]]; then
+    note "vibe:instructions markers are not exact lines in $target — left untouched"; return 0
+  fi
+  if (( s_line >= e_line )); then
+    die "$target has reversed vibe:instructions markers (start line $s_line, end line $e_line) — fix by hand"
+  fi
+
+  local tmp; tmp="$(mktemp "${target}.XXXXXX")"
+  trap 'rm -f "$tmp"' RETURN
+  awk -v s="$I_START" -v e="$I_END" '
+    $0 == s { skip = 1; next }
+    $0 == e && skip { skip = 0; next }
+    !skip { print }
+  ' "$target" > "$tmp"
+  mv -f "$tmp" "$target"
+  note "removed vibe:instructions block from $target (user content preserved)"
+}
+
 case "${1:-}" in
-  link) shift; link_adapter "${1:-}" "${2:-.}" ;;
-  *)    merge "${1:-.}" ;;
+  link)    shift; link_adapter "${1:-}" "${2:-.}" ;;
+  unmerge) shift; unmerge "${1:-.}" ;;
+  *)       merge "${1:-.}" ;;
 esac
