@@ -57,7 +57,9 @@ TARGET=""
 ADAPTERS=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --adapters) ADAPTERS="${2:-}"; shift 2 ;;
+    --adapters)
+      [[ $# -ge 2 ]] || { err "ERROR: --adapters needs a value (e.g. --adapters claude,warp)"; exit 1; }
+      ADAPTERS="$2"; shift 2 ;;
     --adapters=*) ADAPTERS="${1#*=}"; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
@@ -246,29 +248,44 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
   fi
 fi
 
-# 6. Opt-in adapter symlinks.
+# 6. Opt-in adapter symlinks. These point at AGENTS.md, which only the flow half
+# provisions — so they are meaningless (and merge-agents.sh is absent) under
+# --only spec.
 if [[ -n "$ADAPTERS" ]]; then
-  IFS=',' read -r -a chosen <<< "$ADAPTERS"
-  for a in "${chosen[@]}"; do
-    case "$a" in
-      claude) say "symlink CLAUDE.md -> AGENTS.md"
-              [[ "$DRY_RUN" -eq 1 ]] || bash "$MERGE" link "CLAUDE.md" "$TARGET" || err "WARN: CLAUDE.md not linked (real file?)." ;;
-      warp)   say "symlink WARP.md -> AGENTS.md"
-              [[ "$DRY_RUN" -eq 1 ]] || bash "$MERGE" link "WARP.md" "$TARGET" || err "WARN: WARP.md not linked (real file?)." ;;
-      *)      err "WARN: unknown adapter '$a' (known: claude, warp)." ;;
-    esac
-  done
+  if [[ "$WANT_FLOW" -eq 0 ]]; then
+    err "WARN: --adapters is skipped under --only spec (adapter symlinks need the flow half's AGENTS.md)."
+  else
+    IFS=',' read -r -a chosen <<< "$ADAPTERS"
+    for a in "${chosen[@]}"; do
+      case "$a" in
+        claude) say "symlink CLAUDE.md -> AGENTS.md"
+                [[ "$DRY_RUN" -eq 1 ]] || bash "$MERGE" link "CLAUDE.md" "$TARGET" || err "WARN: CLAUDE.md not linked (real file?)." ;;
+        warp)   say "symlink WARP.md -> AGENTS.md"
+                [[ "$DRY_RUN" -eq 1 ]] || bash "$MERGE" link "WARP.md" "$TARGET" || err "WARN: WARP.md not linked (real file?)." ;;
+        *)      err "WARN: unknown adapter '$a' (known: claude, warp)." ;;
+      esac
+    done
+  fi
 fi
 
-# 7. Plugin registration guidance (the hooks go live once the plugin is loaded).
+# 7. Completion guidance — tailored to what was actually installed.
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "install: [dry-run] plan complete — nothing was written."
   exit 0
 fi
-cat <<EOF
+if [[ "$WANT_FLOW" -eq 1 ]]; then
+  cat <<EOF
 install: done.
 install: to activate the Claude Code hooks + /flow command, register the plugin:
 install:   - local dev:  add "$TARGET" as a plugin (it has .claude-plugin/plugin.json)
 install:   - the inject/guard/gate hooks read .agents/skills/vibe via \${CLAUDE_PROJECT_DIR}.
 install: the spec + vibe skills are installed as project files under .agents/skills/.
 EOF
+else
+  cat <<EOF
+install: done (spec framework only).
+install: the spec skill is installed as a project file under .agents/skills/spec.
+install: no flow harness, Claude adapter, or plugin was installed (--only spec).
+install: run without --only to add the flow harness + Claude Code adapter.
+EOF
+fi

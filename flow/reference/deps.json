@@ -12,7 +12,7 @@
       "name": "feature-dev",
       "kind": "subagent-collection",
       "source": "Claude Code plugin: feature-dev (code-explorer, code-architect, code-reviewer)",
-      "required_by": ["feature.design", "feature.plan", "feature.verify", "quick.verify"],
+      "required_by": ["feature.*", "quick.*"],
       "degrade": "the orchestrator performs the explore / architect / review step inline"
     },
     {

@@ -226,6 +226,10 @@ echo "=== install-tooling/3 — --uninstall ==="
 # Install, add user content, then uninstall: managed files gone, user content kept.
 SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 mkdir -p "$SB/.spec"; printf 'user spec\n' > "$SB/.spec/product.md"
+# user-authored files co-located in the SHARED adapter dirs must survive (the
+# whole point of remove_shipped: surgical per-file removal, not rm -rf the dir).
+printf 'my command\n' > "$SB/.claude/commands/mine.md"
+printf 'my hook\n' > "$SB/.claude/hooks/custom.sh"
 printf '## My Team\nkeep this prose\n\n%s\n' "$(cat "$SB/AGENTS.md")" > "$SB/AGENTS.md.new" && mv "$SB/AGENTS.md.new" "$SB/AGENTS.md"
 bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
 ok=1
@@ -234,6 +238,10 @@ ok=1
 [[ ! -e "$SB/.claude/hooks/hooks.json" ]] || { ok=0; echo "        adapter hooks survived uninstall"; }
 [[ ! -e "$SB/.claude-plugin/plugin.json" ]] || { ok=0; echo "        plugin manifest survived uninstall"; }
 assert_eq "install-tooling/3" "--uninstall removes managed artifacts" "$ok" "1"
+# regression: co-located user files in shared adapter dirs are NOT deleted.
+{ [[ -f "$SB/.claude/commands/mine.md" ]] && [[ -f "$SB/.claude/hooks/custom.sh" ]]; } \
+  && pass "install-tooling/3" "co-located user files in shared adapter dirs survive uninstall" \
+  || fail "install-tooling/3" "co-located user files in shared adapter dirs survive uninstall"
 grep -qF "keep this prose" "$SB/AGENTS.md" && pass "install-tooling/3" "user AGENTS.md prose preserved" || fail "install-tooling/3" "user prose preserved"
 grep -qF "vibe:instructions:start" "$SB/AGENTS.md" && fail "install-tooling/3" "managed AGENTS.md block removed" || pass "install-tooling/3" "managed AGENTS.md block removed"
 [[ -f "$SB/.spec/product.md" ]] && pass "install-tooling/3" ".spec/ preserved across uninstall" || fail "install-tooling/3" ".spec/ preserved"

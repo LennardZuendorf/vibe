@@ -189,6 +189,14 @@ assert_eq "path-parity" "detect-context decide identical via both paths" "$a" "$
 a="$(bash "$REAL_SCRIPTS/validate-state.sh" 2>&1)"
 b="$(bash "$ALIAS_SCRIPTS/validate-state.sh" 2>&1)"
 assert_eq "path-parity" "validate-state identical via both paths" "$a" "$b"
+# doctor.sh self-locates the repo root by marker search — both spellings must agree,
+# with an explicit root and via find_root (no-arg).
+a="$(bash "$REAL_SCRIPTS/doctor.sh" "$REPO_ROOT" 2>&1)"
+b="$(bash "$ALIAS_SCRIPTS/doctor.sh" "$REPO_ROOT" 2>&1)"
+assert_eq "path-parity" "doctor identical via both paths (explicit root)" "$a" "$b"
+a="$(bash "$REAL_SCRIPTS/doctor.sh" 2>&1)"
+b="$(bash "$ALIAS_SCRIPTS/doctor.sh" 2>&1)"
+assert_eq "path-parity" "doctor identical via both paths (self-located root)" "$a" "$b"
 
 # regen-active-rules resolves the repo root by marker search, so a sandbox reached
 # via a real flow/ path and via a .agents/skills/vibe symlink yields the same
@@ -225,7 +233,9 @@ assert_contains "install-tooling/4" "doctor exits 0 on a healthy repo" "$out" "r
 assert_contains "install-tooling/4" "doctor reports core.vibe ok" "$out" "ok   core.vibe"
 assert_contains "install-tooling/4" "doctor reports machine ok" "$out" "ok   machine"
 assert_contains "install-tooling/4" "doctor reports adapter wiring ok" "$out" "ok   adapter.hooks"
-assert_contains "install-tooling/4" "doctor lists each manifest dep" "$out" "dep.superpowers"
+assert_contains "install-tooling/4" "doctor lists dep superpowers" "$out" "dep.superpowers"
+assert_contains "install-tooling/4" "doctor lists dep feature-dev" "$out" "dep.feature-dev"
+assert_contains "install-tooling/4" "doctor lists dep caveman" "$out" "dep.caveman"
 # Broken install (dead vibe symlink, no machine/adapter): warns, still exits 0.
 d="$(mktemp -d)"; mkdir -p "$d/.spec" "$d/.agents/skills"
 ln -s /nonexistent-vibe "$d/.agents/skills/vibe"
@@ -242,6 +252,14 @@ printf '{not valid json' > "$d/.agents/skills/vibe/state.json"
 out="$(bash "$DOCTOR" "$d" 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/4" "doctor warns on an invalid cursor" "$out" "warn cursor"
 assert_contains "install-tooling/4" "doctor still exits 0 on an invalid cursor" "$out" "rc=0"
+rm -rf "$d"
+# Valid cursor: doctor delegates to validate-state.sh and reports ok (happy path + delegation).
+d="$(mktemp -d)"; mkdir -p "$d/.spec" "$d/.agents/skills/vibe/scripts"
+cp "$SCRIPTS/validate-state.sh" "$d/.agents/skills/vibe/scripts/"; chmod +x "$d/.agents/skills/vibe/scripts/validate-state.sh"
+cp "$MACHINE" "$d/.agents/skills/vibe/"
+cp "$FLOW/state.example.json" "$d/.agents/skills/vibe/state.json"
+out="$(bash "$DOCTOR" "$d" 2>&1; echo "rc=$?")"
+assert_contains "install-tooling/4" "doctor reports a valid cursor as ok" "$out" "ok   cursor"
 rm -rf "$d"
 # Absent dep: reported as a warn with its degrade text, still exit 0.
 d="$(mktemp -d)"; mkdir -p "$d/.spec" "$d/.agents/skills/vibe/reference"
