@@ -68,13 +68,14 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 5 | dogfood | hook/merge/install behaviours + earn-the-teeth | scripted + lessons | DONE | platform-adapters DONE |
 | 6 | monorepo-split | `spec/`+`flow/` split + symlinks + truth sweep + orphan compound | suites + validate + grep evidence | DONE | — |
 | 7 | [install-tooling](features/install-tooling/plan.md) | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `tests/adapters/run.sh` + `tests/flow/run.sh` | DONE | monorepo-split DONE |
-| 8 | [release-docs](features/release-docs/plan.md) | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | NOT STARTED | install-tooling DONE |
+| 8 | [release-docs](features/release-docs/plan.md) | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | DONE | install-tooling DONE |
 
-**Active focus:** release-polish branch (2026-07-03 overnight) — monorepo-split
-and install-tooling landed and compounded; release-docs (row 8) is the last
-feature to finalize the repo for public shareability. Prior features remain DONE
-and self-hosting. Still deferred: real-world earn-the-teeth promotions and
-`vibe-flow/4` `feature.deepen`.
+**Active focus:** release-polish branch (2026-07-03 overnight) — all three
+finale features (monorepo-split, install-tooling, release-docs) landed and
+compounded; the repo is public-ready (READMEs, rails, CI, logo, examples,
+stranger-eval-gated). Branch pushed + PR opened. Prior features remain DONE and
+self-hosting. Still deferred: real-world earn-the-teeth promotions, `vibe-flow/4`
+`feature.deepen`, and the manual gh repo metadata + social-preview upload.
 
 ---
 
@@ -156,6 +157,15 @@ Cleansed notes for shipped work — detail lives in live surfaces, not this plan
   materializes real dirs (`cp -RL`); script self-location fixed to marker search with
   path-parity tests; truth sweep retired stale `.agents/flow` refs; three orphan
   features compounded. Suites 123/36/44 green, validate 0 errors.
+- **release-docs — DONE (2026-07-03).** Public-facing polish: umbrella README
+  rewrite (banner, spec/flow split, per-half install, dep table from deps.json,
+  platform-honesty table) + standalone `spec/README.md` / `flow/README.md`; trust
+  rails (MIT LICENSE, CHANGELOG 0.1.0, `tests/run.sh`, GitHub CI, issue templates);
+  four rainbow SVG logo candidates; a worked `examples/todo-api/.spec/` sample;
+  and a README-only stranger eval (`docs/evals/stranger-2026-07-03.md`) that
+  gated the docs. Eval found + fixed the orders.sh fresh-install bug and five doc
+  frictions. gh repo metadata deferred to a documented manual step (sandbox
+  boundary). Suites 248 green.
 - **install-tooling — DONE (2026-07-03).** `install.sh` refactored to per-half,
   dry-run-gated actions: `--dry-run` (byte-identical preview), `--only spec|flow`
   (partial install), `--uninstall` (surgical inverse — `remove_shipped` deletes

@@ -52,6 +52,12 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** install-tooling, uninstall, data-safety, shared-dirs, discriminating-tests
 **Date:** 2026-07-03
 
+### The dogfood repo is a privileged target — eval on a fresh, non-git install
+**Pattern:** `orders.sh` (the flow's headline per-turn feature) worked in every in-repo test and on the source repo, but a README-only stranger eval installing into a fresh `mktemp -d` found it silently returned `state=unknown` for every state. Root cause: it located the skills dir by searching upward for a `.spec`/`.git` marker, and a fresh install target has neither — while the source repo (and the dogfood repo the tests run in) always does. The bug was invisible precisely because every test environment was privileged.
+**Rule:** A tool that will be *installed elsewhere* must be tested from a representative fresh target (a bare `mktemp -d`, no `.git`, no `.spec`), not just the source/dogfood repo. Prefer self-location relative to the script's own path over repo-root markers the target may lack. Run a periodic "stranger" eval (fresh agent, docs-only, throwaway sandbox) as a release gate — it exercises the install-target reality the in-repo suites cannot.
+**Tags:** release-docs, stranger-eval, self-location, install-target, dogfood, orders
+**Date:** 2026-07-03
+
 <!-- Format for each lesson:
 ### [Short description]
 **Pattern:** What went wrong and why
