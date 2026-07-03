@@ -1,183 +1,130 @@
-# Spec Skill — Design Documentation System
+# The spec framework
 
-> **For humans:** This README explains how the spec skill works. Agents read [SKILL.md](SKILL.md) instead.
+> **For humans.** This README is the standalone guide to the spec half of vibe.
+> Agents read [SKILL.md](SKILL.md) instead — it is the router they route through.
 
-## What This Skill Does
+The **spec framework** is a durable planning layer for a codebase. It teaches an
+agent (or a human) to keep design docs in `.spec/` that are *current*, not a
+backlog: what you are building (product), how it is built (tech), the visual /
+interaction language (design), and the order of work (plan). It ships as one
+bundled skill, `spec`, plus a validator. It needs only `bash` — no runtime, no
+build step — and works with **any** agent, or none.
 
-The **spec** skill teaches agents to write and maintain design documentation in `.spec/`. It enforces separation between product (what & why), tech (how), design (UX language), and plans (when & in what order). Two layers: persistent root specs (current content, no backlog) and branch-scoped per-feature folders (deleted before merge).
+It is one of two halves. The other is [the vibe flow](../flow/README.md); the
+[root README](../README.md) explains the split. This half stands entirely alone.
 
-## Quick Start
-
-```bash
-# Initialize .spec/ in your project
-/spec setup
-
-# Navigate specs
-/spec strategy          # Root layer — global specs
-/spec feature <name>    # Feature layer — one named unit of work
-/spec product           # Load product requirements
-/spec tech              # Load technical docs
-/spec plan              # Load implementation plan
-/spec lessons           # Load lessons
-
-# Authoring shortcuts (delegate to superpowers with constraint context)
-/spec interview <name>  # WHAT interview → superpowers:brainstorming
-/spec promote <name>    # Compound promotion → promote.sh
-
-# Maintenance
-/spec validate          # Check structural consistency
-/spec audit             # validate + quality metrics + superpowers assessment
-/spec lessons-for <tag> # Extract lessons matching tag (for D8 injection)
-```
-
-## The Two-Layer Model
-
-```
-.spec/
-│
-├── product.md, tech.md, design.md, plan.md, lessons.md   # ROOT — persistent, high-level
-├── product-{topic}.md, tech-{topic}.md                     # ROOT — cross-cutting branches (rare)
-│
-├── features/<name>/                                        # FEATURE — branch-scoped, detailed
-│   ├── product.md          # required
-│   ├── tech.md             # required
-│   ├── plan.md             # recommended — stable `<name>/n` units
-│   ├── design.md           # optional — UI/UX when needed
-│   └── research.md         # optional
-│
-└── archive/<name>/         # transient post-wrapup safety net (deleted before merge)
-```
-
-**Root** answers project-level questions. **Feature** answers one closed, deliverable, testable box. Feature specs are written during design, consumed during implementation, merged when cross-cutting, archived transiently, then deleted before the branch merges (CODE IS TRUTH).
-
-Canonical rules: [SKILL.md](SKILL.md) § The Two-Layer Model.
-
-## Writing Order
-
-### Bootstrap (strategy)
-
-```
-product.md → tech.md → design.md → plan.md (feature map, Feature Sequence with binary gates)
-```
-
-Branch docs (`product-{topic}.md`, `tech-{topic}.md`) only when a concern spans **every** feature — not as a substitute for feature folders.
-
-### New feature (feature authoring flow)
-
-Follow [feature.md](feature.md):
-
-```
-1. Locate & name     — confirm name; read root product/tech + lessons.md
-2. Interview WHAT    — Scope, SHALL/MUST requirements, GWT scenarios → product.md
-3. Rigor gate        — lite vs full (need design.md?)
-4. Sketch HOW        — trace codebase → tech.md (+ design.md if full)
-5. Plan units        — stable IDs, verification → plan.md (human gate)
-6. Skip check        — atomic/no-decisions? → vibe quick instead
-```
-
-Add the feature to the root `plan.md` Feature Sequence. Run `/spec validate` when done.
-
-## Key Principles
-
-### Strict separation
-
-| Doc | Contains | Never contains |
-|---|---|---|
-| Product | User experience, requirements, rationale | Code, file paths, architecture |
-| Tech | Paths, contracts, implementation | UX opinions |
-| Plan | `feature/n` units, same-feature deps, verification | Code snippets, requirement prose, backlog |
-| Design | Tokens, interaction patterns, visual language | Implementation detail (except tokens) |
-
-### Progressive disclosure
-
-- Read entrypoints and lessons first
-- Load only what the task needs
-- Follow links — don't load the whole tree
-
-### Planning at two levels
-
-- **Root `plan.md`** — feature map, boundaries, Feature Sequence (binary gates), current focus
-- **`features/<name>/plan.md`** — unit tables (`<name>/n`), same-feature dependencies, verification per unit
-
-Do not duplicate feature unit tables in the root plan; cross-feature order lives only in the root Feature Sequence.
-
-## Superpowers interoperability
-
-The spec skill is a **format + constraints + validation** layer. It does not
-perform authoring itself — it provides the framework within which the right
-superpowers do the work. Each authoring step has a named executor and a
-constraint document the agent injects before delegating.
-
-| Step | Invoke as | Constraint document | Executor |
-|---|---|---|---|
-| WHAT interview | `/spec interview <name>` | `feature.md § Interview for WHAT` | `superpowers:brainstorming` |
-| HOW sketch | `/spec feature <name>` (step 4) | `reference/tech.md` + feature-tech template | `code-explorer`, `code-architect` |
-| Plan units | `/spec feature <name>` (step 5) | `reference/plan.md` + stable-ID rules | `superpowers:writing-plans` |
-| Validate | `/spec validate` or `/spec audit` | — (deterministic script) | `validate.sh` |
-| Quality assessment | `/spec audit` | `score.sh` JSON output as context | `superpowers:verification-before-completion` |
-| Compound promotion | `/spec promote <name>` | — (deterministic script) | `promote.sh` |
-| Compound wrap-up | [SKILL.md § Wrapped-up features](SKILL.md) — spec skill owns this sequence | spec skill (promote.sh + lesson format + validate) |
-
-**Why this separation matters:** the spec skill's constraint documents
-(templates, reference guides, format rules) improve independently of the
-superpowers. Better templates → better output from `superpowers:writing-plans`
-automatically, with no changes to the executor.
-
-## Workflow Examples
-
-### Starting a new project
+## Quickstart
 
 ```bash
-/spec setup
-# Write root product.md, tech.md, design.md, plan.md
-/spec validate
+/spec setup            # write .spec/ entrypoints from templates (+ .config.yaml)
+/spec strategy         # author the root layer: product / tech / design / plan
+/spec feature <name>   # scope and design one named feature
+/spec validate         # check structural consistency
 ```
 
-### Starting a new feature
+`/spec …` are Claude Code skill commands. Everywhere else, run the validator
+directly — it is a plain script:
 
 ```bash
-/spec feature my-feature    # loads feature.md + folder if it exists
-# Run the 6-step authoring flow in feature.md
-/spec validate
-```
-
-### Resolving a design question
-
-Discuss → decide → update the relevant spec → bump `updated:` → `/spec validate`.
-
-## Validation
-
-```bash
-bash .agents/skills/spec/scripts/validate.sh   # vendored
+bash .agents/skills/spec/scripts/validate.sh   # vendored in a project
 bash ~/.agents/skills/spec/scripts/validate.sh # global install
 ```
 
-Checks frontmatter, naming, internal links, orphaned children, and feature-folder consistency.
+## The two-layer model
 
-## References
+```
+.spec/
+├── product.md, tech.md, design.md, plan.md, lessons.md   ← ROOT (persistent, high-level)
+├── product-{topic}.md, tech-{topic}.md                    ← ROOT branch docs (cross-cutting, rare)
+├── features/<name>/
+│   ├── product.md   required     what this feature does (requirements + Scope)
+│   ├── tech.md      required     how it is built (paths, contracts, layout)
+│   ├── plan.md      recommended  stable <name>/n unit IDs; verification per unit
+│   ├── design.md    optional     UI/UX or interaction detail
+│   └── research.md  optional     discovery artifacts
+└── archive/<name>/  transient    post-wrapup safety net (deleted before merge)
+```
 
-- **Skill entrypoint:** [SKILL.md](SKILL.md)
-- **Root layer:** [strategy.md](strategy.md)
-- **Feature layer:** [feature.md](feature.md)
-- **Writing guides:** [reference/product.md](reference/product.md), [reference/tech.md](reference/tech.md), [reference/plan.md](reference/plan.md), [reference/design.md](reference/design.md)
-- **Templates:** [reference/templates/](reference/templates/)
-- **Scripts:** [scripts/](scripts/) — `setup.sh`, `validate.sh`, `list-specs.sh`
+- **Root** answers project-level questions and carries no backlog or archaeology.
+- **Features** are branch-scoped: written at design, consumed at impl, merged
+  (cross-cutting parts only) into root at compound, archived transiently, then
+  **deleted before the branch merges**. Code is truth; the archive is never read
+  for active work.
+- **Branch docs** cover only concerns that span *every* feature. Default to a
+  feature folder; extract a branch doc when the same concern keeps recurring.
 
-## FAQ
+## Day-to-day authoring
 
-**Q: Feature folder or branch doc?**
-One named buildable unit → `features/<name>/`. Something spanning every feature → branch doc. Default to feature.
+**Bootstrap (strategy).** Write the root layer in order:
+`product.md → tech.md → design.md → plan.md`. The root plan holds the feature map
+and a Feature Sequence with binary whole-feature gates — never unit-level detail.
 
-**Q: Can I have code in product specs?**
-No. Product specs describe **what** and **why**, never **how**.
+**A new feature** follows a six-step ladder (full steps in [feature.md](feature.md)):
 
-**Q: When do I need `design.md`?**
-UI layout, interaction flows, visual language, or human-readable API/contract specs. Skip for pure backend/script work.
+```
+1. Locate & name    confirm name; read root product/tech + lessons.md
+2. Interview WHAT    Scope, SHALL/MUST requirements, GWT scenarios → product.md
+3. Rigor gate        lite vs full — does it need design.md?
+4. Sketch HOW        trace the codebase → tech.md (+ design.md if full)
+5. Plan units        stable <name>/n IDs, verification per unit → plan.md
+6. Skip check        atomic, no decisions? → use the flow's quick arc instead
+```
 
-**Q: What order do I write specs in?**
-Root entrypoints first (strategy). Per feature: product → tech → (design?) → plan. See [feature.md](feature.md).
+Add the feature to the root `plan.md` Feature Sequence. Cite unit IDs in commits
+and tests during implementation. Bump each edited spec's `updated:` date, then run
+`/spec validate`.
 
-**Q: Where do unit IDs live?**
-In `features/<name>/plan.md` as `<name>/n` (e.g. `vibe-flow/1`). Add the feature to the root `plan.md` Feature Sequence. Cite IDs in commits and tests during implementation.
+**Strict separation** is the core discipline: product holds *what & why* (no code
+or paths), tech holds *how* (no UX opinions), plan holds *units & order* (no code
+or requirement prose), design holds tokens and interaction patterns. Read before
+you write; keep parent ↔ child links alive both ways.
 
----
+**Superpowers, offered not required.** Each authoring step names an executor the
+skill offers proactively — `superpowers:brainstorming` for the WHAT interview,
+`code-explorer` + `code-architect` for the HOW trace, `superpowers:writing-plans`
+for plan units. Decline any and the skill self-executes from its own constraint
+documents. They enhance; they never gate.
+
+## With or without the flow
+
+The spec skill is self-sufficient. Drive it directly with `/spec …` on any host,
+or let [the vibe flow](../flow/README.md) drive its authoring phases
+(`strategy.spec`, `feature.design`, `feature.plan`, the compound promotions). When
+the flow is present, `.spec/.config.yaml` can set `vibe-flow: true` so the caveman
+output level is managed by the flow cursor; absent that, the skill uses its own
+documented defaults. Either way the docs, templates, and validator are identical.
+
+## Degrade behavior
+
+- **Bare git / any editor:** the whole framework works — `.spec/` docs, the
+  templates in [reference/templates/](reference/templates/), and `validate.sh`
+  (pure `bash`, no `jq` required). You lose only the `/spec` command sugar.
+- **Other `AGENTS.md` readers:** agents follow the written authoring flow manually.
+- **Missing superpowers:** every step self-executes from its constraint document.
+
+Nothing here hard-fails on a missing dependency.
+
+## File map
+
+Everything below is the `spec` skill, addressed at runtime under
+`.agents/skills/spec/`.
+
+| Path | What it is |
+|---|---|
+| [SKILL.md](SKILL.md) | Skill router — routing table, two-layer rules, roles |
+| [strategy.md](strategy.md) | Root-layer authoring guide |
+| [feature.md](feature.md) | Feature-layer authoring flow (the six-step ladder) |
+| [reference/product.md](reference/product.md), [reference/tech.md](reference/tech.md), [reference/design.md](reference/design.md), [reference/plan.md](reference/plan.md) | Per-doc writing guides |
+| [reference/templates/](reference/templates/) | Copy-in templates for every root, feature, and branch doc |
+| [scripts/validate.sh](scripts/validate.sh) | Structural consistency check (frontmatter, links, folders) |
+| [scripts/setup.sh](scripts/setup.sh) | Create entrypoint templates in `.spec/` |
+| [scripts/list-specs.sh](scripts/list-specs.sh) | Current-state summary of the `.spec/` tree |
+| [scripts/promote.sh](scripts/promote.sh), [scripts/scan-merges.sh](scripts/scan-merges.sh) | Compound: merge feature blocks into root, preview pending merges |
+| [scripts/lessons-for.sh](scripts/lessons-for.sh) | Extract lessons matching a tag |
+| [agents/](agents/) | Optional subagents: `spec-tracer`, `spec-interviewer`, `spec-promoter`, `spec-health` |
+
+## More
+
+- [`../README.md`](../README.md) — the umbrella: the spec/flow split and install.
+- [`../flow/README.md`](../flow/README.md) — the other half: the state-machine flow.
+- [SKILL.md](SKILL.md) — the canonical rules agents follow.
