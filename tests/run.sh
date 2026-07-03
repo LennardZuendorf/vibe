@@ -12,7 +12,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-SUITES=(spec flow adapters)
+SUITES=(spec flow adapters cli)
 
 overall=0
 results=()
