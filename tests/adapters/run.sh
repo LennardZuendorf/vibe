@@ -164,7 +164,7 @@ echo ""
 echo "=== install-tooling/1 — action model + --dry-run ==="
 # A content+path fingerprint of a tree: cksum of every file, path-sorted. Empty
 # tree -> empty string. Detects any write (new/removed/changed file).
-tree_fp() { find "$1" -type f 2>/dev/null -exec cksum {} + | LC_ALL=C sort; }
+tree_fp() { find "$1" -type f -exec cksum {} + 2>/dev/null | LC_ALL=C sort; }
 # --dry-run against a fresh (empty) target: non-empty plan, zero writes.
 SB="$(mktmp)"
 before="$(tree_fp "$SB")"

@@ -8,6 +8,9 @@
 # These tests never depend on a live cursor: they pass explicit state args or
 # seed a throwaway state.json and restore the original.
 
+# The `cond && pass || fail` reporting idiom is intentional and safe here:
+# pass()/fail() always return 0, so fail never runs spuriously after pass.
+# shellcheck disable=SC2015
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
