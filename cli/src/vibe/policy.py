@@ -1,0 +1,153 @@
+"""Write-policy oracle: ``allow`` / ``warn:<reason>`` / ``block:<reason>``.
+
+This is the Python port of ``flow/scripts/detect-context.sh``'s ``decide`` mode —
+the single source of truth for "is this write allowed here". Both the ``vibe-hook``
+per-Edit ``guard`` (unit 7) and the human-facing ``vibe check`` (unit 15) call
+:func:`decide`, so the verdict cannot drift between them. The verdict strings are
+reproduced **byte-for-byte** from the bash origin; a state × path parity suite
+(``test_parity_policy.py``) pins them against ``detect-context.sh decide``.
+
+The three hard blocks (everything else is allow/warn), ported verbatim:
+
+1. ``.agents/skills/vibe/state.json`` — never by direct edit; cursor is
+   writer-only through :mod:`vibe.cursor` (``set-state.sh`` semantics).
+2. ``.spec/lessons.md`` — writable only during a ``*.compound`` state.
+3. Root ``.spec/{product,tech,design,plan}.md`` — only during ``strategy.spec``,
+   ``feature.compound``, or ``setup.apply``.
+
+Two soft warnings follow: the managed ``CLAUDE.md``/``AGENTS.md`` active-rules
+block is generated output, and ``src``/``tests`` edits outside an
+impl/fix/verify state are flagged (not blocked).
+
+Stdlib-only at import (``fnmatch``/``os``/``pathlib`` plus the stdlib-only
+:mod:`vibe.cursor`/:mod:`vibe.machine`): safe on the ``vibe-hook`` guard hot path —
+no ``typer``/``rich``/``pydantic``.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import os
+from pathlib import Path
+
+from vibe import cursor
+
+__all__ = ["decide", "resolve_state"]
+
+# Glob patterns lifted verbatim from the bash ``case`` arms. ``fnmatchcase`` is
+# used (never ``fnmatch``) so matching is case-sensitive and ``*`` spans ``/`` —
+# exactly the shell ``case`` semantics the bash origin relies on.
+_STATE_JSON = (
+    ".agents/skills/vibe/state.json",
+    "*/.agents/skills/vibe/state.json",
+)
+_LESSONS = (
+    ".spec/lessons.md",
+    "*/.spec/lessons.md",
+)
+_ROOT_SPECS = (
+    ".spec/product.md",
+    ".spec/tech.md",
+    ".spec/design.md",
+    ".spec/plan.md",
+    "*/.spec/product.md",
+    "*/.spec/tech.md",
+    "*/.spec/design.md",
+    "*/.spec/plan.md",
+)
+_AGENTS_DOCS = (
+    "CLAUDE.md",
+    "AGENTS.md",
+    "*/CLAUDE.md",
+    "*/AGENTS.md",
+)
+_SOURCE = (
+    "src/*",
+    "tests/*",
+    "*/src/*",
+    "*/tests/*",
+)
+
+#: States in which each guarded family is writable (``allow`` instead of the
+#: block/warn). Kept as literal sets mirroring the bash ``case`` alternatives.
+_LESSONS_ALLOWED = frozenset({"feature.compound", "strategy.compound"})
+_ROOT_SPEC_ALLOWED = frozenset({"strategy.spec", "feature.compound", "setup.apply"})
+_SOURCE_ALLOWED = frozenset(
+    {"feature.impl", "feature.verify", "quick.fix", "quick.verify", "setup.apply"}
+)
+
+
+def _matches(path: str, patterns: tuple[str, ...]) -> bool:
+    return any(fnmatch.fnmatchcase(path, pat) for pat in patterns)
+
+
+def resolve_state(project_root: str | os.PathLike[str] | None = None) -> str:
+    """Resolve the current compound state key via :mod:`vibe.cursor`.
+
+    Mirrors ``detect-context.sh``'s ``current_state`` fallback: a missing or
+    malformed cursor resolves to ``idle``. ``project_root`` locates the cursor
+    (``root`` + :data:`vibe.cursor.RELPATH`); when omitted, the project-relative
+    :data:`vibe.cursor.RELPATH` is read relative to the process CWD.
+    """
+    if project_root is None:
+        cursor_path: str | os.PathLike[str] | Path = cursor.RELPATH
+    else:
+        cursor_path = cursor.path_for(project_root)
+    return cursor.current_state(cursor_path)
+
+
+def decide(
+    path: str | os.PathLike[str],
+    state: str | None = None,
+    *,
+    project_root: str | os.PathLike[str] | None = None,
+) -> str:
+    """Return the write verdict for ``path`` in ``state``.
+
+    The verdict is one of ``allow``, ``warn:<reason>``, or ``block:<reason>`` —
+    byte-for-byte identical to ``detect-context.sh decide <path> [state]``. When
+    ``state`` is falsy (``None`` or empty, matching the bash ``${2:-…}`` default),
+    the current state is resolved from the cursor via :func:`resolve_state`.
+    """
+    if not state:
+        state = resolve_state(project_root)
+
+    text = os.fspath(path)
+    if text.startswith("./"):
+        text = text[2:]
+
+    if _matches(text, _STATE_JSON):
+        return "block:state.json is written only via set-state.sh, never by direct edit"
+
+    if _matches(text, _LESSONS):
+        if state in _LESSONS_ALLOWED:
+            return "allow"
+        return (
+            "block:.spec/lessons.md is writable only during a *.compound state "
+            f"(current: {state})"
+        )
+
+    if _matches(text, _ROOT_SPECS):
+        if state in _ROOT_SPEC_ALLOWED:
+            return "allow"
+        return (
+            "block:root .spec specs are writable only during strategy.spec or "
+            f"feature.compound (current: {state})"
+        )
+
+    if _matches(text, _AGENTS_DOCS):
+        return (
+            "warn:CLAUDE.md/AGENTS.md active-rules block is generated by "
+            "regen-active-rules.sh; edits inside the markers are overwritten "
+            "next compound"
+        )
+
+    if _matches(text, _SOURCE):
+        if state in _SOURCE_ALLOWED:
+            return "allow"
+        return (
+            "warn:source/test edits outside an impl/fix/verify state "
+            f"(current: {state})"
+        )
+
+    return "allow"

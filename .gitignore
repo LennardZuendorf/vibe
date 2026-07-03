@@ -8,3 +8,10 @@ flow/state.json
 .serena/
 # Overnight run artifact (local morning report, not merged)
 REPORT.md
+
+# vibe-cli Python package: venv, caches, build output (managed by uv/hatchling)
+cli/.venv/
+cli/**/__pycache__/
+cli/.pytest_cache/
+cli/dist/
+cli/*.egg-info/
