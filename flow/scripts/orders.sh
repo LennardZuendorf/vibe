@@ -4,7 +4,7 @@
 #   orders.sh                 # orders for the current cursor state (default idle)
 #   orders.sh <flow.phase>    # orders for an explicit state (testing)
 #
-# D12: the orders live in each vibe-* skill's `## Orders (D12)` section as a
+# D12: the orders live in the linked vibe skill (the state's phase file) as a
 #   <!-- vibe:orders:<state> -->
 #   skill=... · ... · next: ...
 #   <!-- /vibe:orders -->
@@ -40,7 +40,7 @@ SKILLS_DIR="$REPO_ROOT/.agents/skills"
 MACHINE="$SKILL_DIR/state-machine.json"
 STATE="$SKILL_DIR/state.json"
 
-GENERIC_FALLBACK="state=unknown · read .agents/skills/vibe/state-machine.json and pick a vibe-* skill · transition via set-state.sh"
+GENERIC_FALLBACK="state=unknown · read .agents/skills/vibe/state-machine.json and pick the matching vibe phase · transition via set-state.sh"
 
 have_jq() { command -v jq >/dev/null 2>&1; }
 
