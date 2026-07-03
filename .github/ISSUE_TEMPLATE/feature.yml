@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest an improvement or new capability for vibe
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the idea. Please describe the problem before the solution.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that vibe makes hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like vibe to do? Sketches and rough ideas are welcome.
+    validations:
+      required: true
+  - type: dropdown
+    id: half
+    attributes:
+      label: Which half
+      description: Which part of vibe would this affect?
+      options:
+        - spec (spec framework)
+        - flow (flow harness + adapter)
+        - both / not sure
+    validations:
+      required: true

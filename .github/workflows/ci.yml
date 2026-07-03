@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    name: shellcheck + suites + validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # shellcheck is preinstalled on ubuntu-latest runners; the fallback below
+      # installs it only if that ever changes.
+      - name: Ensure shellcheck
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y shellcheck
+          fi
+          shellcheck --version
+
+      - name: Shellcheck (all tracked *.sh)
+        run: git ls-files '*.sh' | xargs shellcheck
+
+      - name: Test suites
+        run: bash tests/run.sh
+
+      - name: Spec validation
+        run: bash .agents/skills/spec/scripts/validate.sh

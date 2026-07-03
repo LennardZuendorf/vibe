@@ -206,8 +206,8 @@ docs/evals/stranger-2026-07-03.md  (+ fixes in owning files)
 
 | Unit | Status |
 |---|---|
-| release-docs/1 | NOT STARTED |
-| release-docs/2 | NOT STARTED |
+| release-docs/1 | DONE |
+| release-docs/2 | DONE |
 | release-docs/3 | NOT STARTED |
 | release-docs/4 | NOT STARTED |
 | release-docs/5 | NOT STARTED |
