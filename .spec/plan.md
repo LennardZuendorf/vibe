@@ -69,13 +69,20 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 6 | monorepo-split | `spec/`+`flow/` split + symlinks + truth sweep + orphan compound | suites + validate + grep evidence | DONE | — |
 | 7 | [install-tooling](features/install-tooling/plan.md) | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `tests/adapters/run.sh` + `tests/flow/run.sh` | DONE | monorepo-split DONE |
 | 8 | [release-docs](features/release-docs/plan.md) | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | DONE | install-tooling DONE |
+| 9 | [vibe-cli](features/vibe-cli/product.md) | Python (typer+rich) CLI `vibe`/`vibe-hook` — ports the flow + install into one command | `cli/tests` 459 green + 3 parity gates | BUILT (verify ✓) | release-docs DONE |
 
 **Active focus:** release-polish branch (2026-07-03 overnight) — all three
 finale features (monorepo-split, install-tooling, release-docs) landed and
 compounded; the repo is public-ready (READMEs, rails, CI, logo, examples,
 stranger-eval-gated). Branch pushed + PR opened. Prior features remain DONE and
-self-hosting. Still deferred: real-world earn-the-teeth promotions, `vibe-flow/4`
-`feature.deepen`, and the manual gh repo metadata + social-preview upload.
+self-hosting. **vibe-cli** (feature 9, 2026-07-03) is BUILT + verified — a Python
+typer+rich CLI (`vibe` + stdlib-only `vibe-hook`) that ports the flow scripts +
+`install.sh` into one installable command (459 tests, 3 byte-parity gates green,
+adversarial review found no must-fix). Adoption tail (publish `vibe-flow` to PyPI,
+retire the deprecated bash scripts, archive the feature spec, commit) is deferred
+— the bash flow remains the live path until then. Still deferred from before:
+real-world earn-the-teeth promotions, `vibe-flow/4` `feature.deepen`, and the
+manual gh repo metadata + social-preview upload.
 
 ---
 

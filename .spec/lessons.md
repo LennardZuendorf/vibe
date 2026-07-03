@@ -58,6 +58,18 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** release-docs, stranger-eval, self-location, install-target, dogfood, orders
 **Date:** 2026-07-03
 
+### Parallel agent fan-out needs a fully-loaded skeleton unit first
+**Pattern:** Porting the bash flow into a Python CLI, the impl fanned out to ~16 concurrent agents, one per leaf module. An adversarial plan review found the naïve decomposition unbuildable: `commands/__init__.py` and `provision/__init__.py` were unowned (an editable install cannot import a non-package dir), the shared `markers.py` / `conftest` fixtures / bundled `_assets` had multiple would-be creators, and there was no `register(app)` contract to wire commands — so concurrent builders would collide, silently re-implement shared logic, or fail to import.
+**Rule:** Before fanning parallel builders out over one package, a single sequential foundation unit MUST create all shared surface: every package dir + empty `__init__.py`, the frozen `pyproject` (all deps + a recursive package-data glob), one shared util module, the complete `conftest` fixture set, and every vendored asset. Parallel builders then create only their own leaf file + test, run only their own test node, and never touch `pyproject`/`app`/`conftest`. Schedule the rest in dependency waves on corrected deps — never all-at-once.
+**Tags:** orchestration, parallel-agents, workflow, decomposition, packaging
+**Date:** 2026-07-03
+
+### Keep the per-invocation hot path stdlib-only via a second entry point
+**Pattern:** The vibe guard fires per-Edit (dozens per impl turn). Routing it through the full typer+rich+pydantic app measured ~66 ms/call vs ~10 ms for the bash it replaced — perceptible lag exactly during implementation; a stdlib-only path measured ~24 ms (near bash parity).
+**Rule:** For a CLI whose hook fires per-operation, ship a SECOND stdlib-only console_script for the hot path and keep its shared logic (policy/orders/cursor/state-machine) importable with stdlib only — load `state-machine.json` via plain `json`, reserve pydantic/rich for the human path. Pin purity with a FRESH-INTERPRETER (subprocess) `sys.modules` test; an in-process check false-positives the moment any sibling test imports the framework first.
+**Tags:** performance, cli, hot-path, dual-entry, testing, import-purity
+**Date:** 2026-07-03
+
 <!-- Format for each lesson:
 ### [Short description]
 **Pattern:** What went wrong and why
