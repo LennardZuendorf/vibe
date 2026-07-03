@@ -141,4 +141,4 @@ flow/scripts/doctor.sh  flow/reference/deps.json  tests/flow/run.sh
 | install-tooling/1 | DONE |
 | install-tooling/2 | DONE |
 | install-tooling/3 | DONE |
-| install-tooling/4 | NOT STARTED |
+| install-tooling/4 | DONE |
