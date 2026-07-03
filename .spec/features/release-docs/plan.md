@@ -211,5 +211,5 @@ docs/evals/stranger-2026-07-03.md  (+ fixes in owning files)
 | release-docs/3 | DONE |
 | release-docs/4 | DONE |
 | release-docs/5 | DONE |
-| release-docs/6 | NOT STARTED |
+| release-docs/6 | DONE |
 | release-docs/7 | NOT STARTED |

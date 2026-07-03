@@ -22,11 +22,13 @@ It is one of two halves. The other is [the vibe flow](../flow/README.md); the
 /spec validate         # check structural consistency
 ```
 
-`/spec …` are Claude Code skill commands. Everywhere else, run the validator
-directly — it is a plain script:
+`/spec …` are Claude Code skill commands. Everywhere else, run the scripts
+directly **from your project root** — they resolve `.spec/` relative to the
+current directory, so cwd must be the project you want to act on:
 
 ```bash
-bash .agents/skills/spec/scripts/validate.sh   # vendored in a project
+bash .agents/skills/spec/scripts/setup.sh      # create .spec/ entrypoints from templates
+bash .agents/skills/spec/scripts/validate.sh   # check consistency (run from project root)
 bash ~/.agents/skills/spec/scripts/validate.sh # global install
 ```
 

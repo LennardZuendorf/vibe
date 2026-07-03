@@ -278,7 +278,8 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
 install: done.
 install: to activate the Claude Code hooks + /flow command, register the plugin:
 install:   - local dev:  add "$TARGET" as a plugin (it has .claude-plugin/plugin.json)
-install:   - the inject/guard/gate hooks read .agents/skills/vibe via \${CLAUDE_PROJECT_DIR}.
+install:   - hook scripts load from the plugin via \${CLAUDE_PLUGIN_ROOT}; they read
+install:     this project's flow state under \${CLAUDE_PROJECT_DIR}/.agents/skills/vibe.
 install: the spec + vibe skills are installed as project files under .agents/skills/.
 EOF
 else

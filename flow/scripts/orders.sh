@@ -23,10 +23,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Address the name-aliased skills under .agents/skills. SKILL_DIR/.. lands there
-# only via the .agents/skills/vibe symlink alias; via the canonical flow/ path it
-# lands on the repo root — so walk up for a .spec/.git marker and derive the
-# skills dir from the root, so both invocation spellings agree.
+# Resolve the skills dir (where sibling skills like vibe + spec live) from the
+# script's own location — never from a repo-root marker, which a freshly-installed
+# target may not have yet (no .git, no .spec). In an installed target and via the
+# .agents/skills/vibe symlink alias, the skill's own parent IS the skills dir. Only
+# the source repo's canonical flow/ path is different (SKILL_DIR is flow/, whose
+# parent is the repo root) — detected because its parent does not contain vibe/ —
+# and there the .spec/.git marker is always present, so fall back to a marker walk.
 find_repo_root() {
   local d="$1"
   while [[ -n "$d" && "$d" != "/" ]]; do
@@ -35,8 +38,15 @@ find_repo_root() {
   done
   return 1
 }
-REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")" || REPO_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
-SKILLS_DIR="$REPO_ROOT/.agents/skills"
+SKILL_PARENT="$(cd "$SKILL_DIR/.." && pwd)"
+if [[ -f "$SKILL_PARENT/vibe/SKILL.md" ]]; then
+  SKILLS_DIR="$SKILL_PARENT"
+else
+  REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")" || REPO_ROOT="$SKILL_PARENT"
+  SKILLS_DIR="$REPO_ROOT/.agents/skills"
+fi
+MACHINE="$SKILL_DIR/state-machine.json"
+STATE="$SKILL_DIR/state.json"
 MACHINE="$SKILL_DIR/state-machine.json"
 STATE="$SKILL_DIR/state.json"
 

@@ -270,5 +270,25 @@ assert_contains "install-tooling/4" "doctor exits 0 with a missing dep" "$out" "
 rm -rf "$d"
 
 echo ""
+echo "=== orders.sh on a fresh non-git install (stranger-eval regression) ==="
+# A fresh full install creates neither .git nor .spec. orders.sh must still
+# resolve the linked skill's block by self-locating the skills dir from its own
+# path — not degrade to 'state=unknown' for want of a repo-root marker.
+SBI="$(mktemp -d)"
+bash "$REPO_ROOT/install.sh" "$SBI" >/dev/null 2>&1
+[[ ! -e "$SBI/.git" && ! -e "$SBI/.spec" ]] \
+  && pass "orders-fresh" "fresh install has no .git/.spec marker (precondition)" \
+  || fail "orders-fresh" "precondition: fresh install unexpectedly has a marker"
+bash "$SBI/.agents/skills/vibe/scripts/set-state.sh" quick.triage >/dev/null 2>&1
+out="$(bash "$SBI/.agents/skills/vibe/scripts/orders.sh" quick.triage 2>&1)"
+assert_not_contains "orders-fresh" "orders.sh does not degrade to state=unknown on a fresh non-git install" "$out" "state=unknown"
+[[ -n "$out" ]] && pass "orders-fresh" "orders.sh returns a non-empty block on a fresh install" || fail "orders-fresh" "orders.sh empty on fresh install"
+# and the block is byte-identical whether or not a marker is later added
+( cd "$SBI" && git init -q >/dev/null 2>&1 )
+out2="$(bash "$SBI/.agents/skills/vibe/scripts/orders.sh" quick.triage 2>&1)"
+assert_eq "orders-fresh" "orders.sh block identical with and without a repo-root marker" "$out" "$out2"
+rm -rf "$SBI"
+
+echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/LennardZuendorf/vibe/actions/workflows/ci.yml/badge.svg)](https://github.com/LennardZuendorf/vibe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![tests](https://img.shields.io/badge/tests-244%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-248%20passing-brightgreen)
 ![bash](https://img.shields.io/badge/built%20with-bash%20%2B%20markdown%20%2B%20json-informational)
 
 </div>
@@ -58,10 +58,11 @@ cd vibe
 ./install.sh /path/to/your/repo --adapters claude
 ```
 
-The installer **copies** the platform-neutral core into `<repo>/.agents/skills/`,
+A full install **copies** the platform-neutral core into `<repo>/.agents/skills/`,
 **merges** `AGENTS.md` inside managed markers (your prose is never touched),
 seeds and gitignores the flow cursor, and prints how to register the plugin.
-Re-running is idempotent and preserves a live flow cursor.
+Re-running is idempotent and preserves a live flow cursor. (`--only spec` copies
+just the spec skill — no `AGENTS.md` merge, cursor, or plugin.)
 
 **Activate the Claude Code hooks** (full / flow install): register the repo as a
 plugin in Claude Code with the `/plugin` command — it ships
@@ -198,7 +199,7 @@ directories in your target.
 ## Tests
 
 ```bash
-bash tests/run.sh      # spec (123) + flow (55) + adapters (66) — 244 assertions
+bash tests/run.sh      # spec (123) + flow (59) + adapters (66) — 248 assertions
 ```
 
 CI runs `shellcheck` on every tracked `*.sh`, the combined suite, and
