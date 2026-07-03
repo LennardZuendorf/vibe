@@ -189,5 +189,38 @@ assert_contains "install-tooling/1" "unknown option names itself" "$out" "unknow
 rm -rf "$SB"
 
 echo ""
+echo "=== install-tooling/2 — --only spec|flow ==="
+# --only spec: spec skill only, no flow/adapter/plugin trace.
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --only spec >/dev/null 2>&1
+ok=1
+[[ -d "$SB/.agents/skills/spec" ]] || { ok=0; echo "        missing spec skill"; }
+[[ ! -e "$SB/.agents/skills/vibe" ]] || { ok=0; echo "        vibe present under --only spec"; }
+[[ ! -e "$SB/.claude/hooks" ]] || { ok=0; echo "        .claude/hooks present under --only spec"; }
+[[ ! -e "$SB/.claude-plugin/plugin.json" ]] || { ok=0; echo "        plugin manifest present under --only spec"; }
+assert_eq "install-tooling/2" "--only spec installs the spec half alone" "$ok" "1"
+rm -rf "$SB"
+# --only flow: flow + adapter present, no spec skill.
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --only flow >/dev/null 2>&1
+ok=1
+[[ -d "$SB/.agents/skills/vibe" ]] || { ok=0; echo "        missing vibe skill"; }
+[[ -e "$SB/.claude/hooks/hooks.json" ]] || { ok=0; echo "        missing adapter hooks"; }
+[[ -e "$SB/.claude-plugin/plugin.json" ]] || { ok=0; echo "        missing plugin manifest"; }
+[[ ! -e "$SB/.agents/skills/spec" ]] || { ok=0; echo "        spec present under --only flow"; }
+assert_eq "install-tooling/2" "--only flow installs flow + adapter alone" "$ok" "1"
+rm -rf "$SB"
+# --only bogus: usage error, exit 1.
+SB="$(mktmp)"
+out="$(bash "$INSTALL" "$SB" --only bogus 2>&1; echo "rc=$?")"
+assert_contains "install-tooling/2" "--only bogus exits 1" "$out" "rc=1"
+assert_contains "install-tooling/2" "--only bogus names the valid values" "$out" "spec"
+rm -rf "$SB"
+# --only composes with --dry-run (still writes nothing).
+SB="$(mktmp)"; before="$(tree_fp "$SB")"
+bash "$INSTALL" "$SB" --only spec --dry-run >/dev/null 2>&1
+after="$(tree_fp "$SB")"
+assert_eq "install-tooling/2" "--only spec --dry-run writes nothing" "$before" "$after"
+rm -rf "$SB"
+
+echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

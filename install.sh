@@ -42,6 +42,20 @@ while [[ $# -gt 0 ]]; do
     --adapters) ADAPTERS="${2:-}"; shift 2 ;;
     --adapters=*) ADAPTERS="${1#*=}"; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --only)
+      case "${2:-}" in
+        spec) WANT_FLOW=0 ;;
+        flow) WANT_SPEC=0 ;;
+        *) err "ERROR: --only takes 'spec' or 'flow' (got '${2:-}')"; exit 1 ;;
+      esac
+      shift 2 ;;
+    --only=*)
+      case "${1#*=}" in
+        spec) WANT_FLOW=0 ;;
+        flow) WANT_SPEC=0 ;;
+        *) err "ERROR: --only takes 'spec' or 'flow' (got '${1#*=}')"; exit 1 ;;
+      esac
+      shift ;;
     -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     -*) err "ERROR: unknown option '$1'"; exit 1 ;;
     *) TARGET="$1"; shift ;;
@@ -143,10 +157,11 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
   fi
 fi
 
-# 5. Merge AGENTS.md via the copied merge script (agent-instructions). Both
-# halves ship instructions, so the merge runs whenever either is installed.
+# 5. Merge AGENTS.md via the copied merge script (agent-instructions). The merge
+# script and its instruction template live in the flow half, so the merge runs
+# only when the flow half is installed (--only spec stays a pure spec install).
 MERGE="$TARGET/.agents/skills/vibe/scripts/merge-agents.sh"
-if [[ "$WANT_SPEC" -eq 1 || "$WANT_FLOW" -eq 1 ]]; then
+if [[ "$WANT_FLOW" -eq 1 ]]; then
   if [[ "$DRY_RUN" -eq 1 ]]; then
     say "merge AGENTS.md via merge-agents.sh (managed markers only)"
   elif [[ -f "$MERGE" ]]; then
