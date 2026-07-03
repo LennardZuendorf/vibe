@@ -67,13 +67,14 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 4 | platform-adapters | plugin + three hooks + `install.sh` | `tests/adapters/run.sh` | DONE | agent-instructions DONE |
 | 5 | dogfood | hook/merge/install behaviours + earn-the-teeth | scripted + lessons | DONE | platform-adapters DONE |
 | 6 | monorepo-split | `spec/`+`flow/` split + symlinks + truth sweep + orphan compound | suites + validate + grep evidence | DONE | — |
-| 7 | [install-tooling](features/install-tooling/plan.md) | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `tests/adapters/run.sh` + `tests/flow/run.sh` | NOT STARTED | monorepo-split DONE |
+| 7 | [install-tooling](features/install-tooling/plan.md) | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `tests/adapters/run.sh` + `tests/flow/run.sh` | DONE | monorepo-split DONE |
 | 8 | [release-docs](features/release-docs/plan.md) | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | NOT STARTED | install-tooling DONE |
 
-**Active focus:** release-polish branch (2026-07-03 overnight) — features 7–8
-finalize the repo for public shareability; monorepo-split landed and compounded.
-Prior five features remain DONE and self-hosting. Still deferred: real-world
-earn-the-teeth promotions and `vibe-flow/4` `feature.deepen`.
+**Active focus:** release-polish branch (2026-07-03 overnight) — monorepo-split
+and install-tooling landed and compounded; release-docs (row 8) is the last
+feature to finalize the repo for public shareability. Prior features remain DONE
+and self-hosting. Still deferred: real-world earn-the-teeth promotions and
+`vibe-flow/4` `feature.deepen`.
 
 ---
 
@@ -155,6 +156,14 @@ Cleansed notes for shipped work — detail lives in live surfaces, not this plan
   materializes real dirs (`cp -RL`); script self-location fixed to marker search with
   path-parity tests; truth sweep retired stale `.agents/flow` refs; three orphan
   features compounded. Suites 123/36/44 green, validate 0 errors.
+- **install-tooling — DONE (2026-07-03).** `install.sh` refactored to per-half,
+  dry-run-gated actions: `--dry-run` (byte-identical preview), `--only spec|flow`
+  (partial install), `--uninstall` (surgical inverse — `remove_shipped` deletes
+  only shipped files from shared adapter dirs, preserves co-located user files,
+  `.spec/` and the cursor unless `--yes`, AGENTS.md block via merge-agents.sh
+  `unmerge`). Added `flow/scripts/doctor.sh` (warn-only health report, marker
+  self-location) and `flow/reference/deps.json` (single dep manifest). Adversarial
+  review pass applied (7 findings). Suites: adapters 66, flow 55, spec 123 green.
 - **dogfood — DONE (scripted).** Hook block/warn/allow/graceful, merge scenarios, and a
   full `install.sh` into a sandbox are exercised in `tests/adapters/run.sh`; the build
   itself was the end-to-end arc. Real-session earn-the-teeth promotions stay future work.

@@ -46,6 +46,12 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** monorepo-split, symlinks, self-location, path-parity, prompt-cache
 **Date:** 2026-07-03
 
+### Uninstall must surgically invert the install into shared dirs, and the test must discriminate
+**Pattern:** `install.sh` copies vibe files into *shared* dirs (`.claude/commands`, `.claude/hooks`) the user may also populate. A naïve `rm -rf "$dir"` uninstall would take the user's co-located files with it. The first cut removed the right files but the uninstall tests only asserted that *shipped* files were gone — a review found that swapping the surgical `remove_shipped` for `rm -rf` still passed every assertion (a false-negative on a data-loss path).
+**Rule:** An uninstaller must delete only the paths the installer created (per-file inverse of the copy), never blanket-remove a shared directory; pruning *emptied* dirs is fine. Pair every preservation guarantee with a **discriminating** test — one that fails if the safety code is replaced by the naïve destructive version (drop a user file into each shared dir, run uninstall, assert it survives *and* the shipped file is gone). Reuse the tested marker-pairing guard for the managed instruction block; never re-implement it.
+**Tags:** install-tooling, uninstall, data-safety, shared-dirs, discriminating-tests
+**Date:** 2026-07-03
+
 <!-- Format for each lesson:
 ### [Short description]
 **Pattern:** What went wrong and why
