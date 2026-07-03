@@ -1,0 +1,174 @@
+{
+  "$comment": "vibe flow state machine. Static source of truth for the flow. States are compound <flow>.<phase> keys. caveman is FROZEN per state (byte-stable across turns). Under D12 the per-turn orders are NOT stored here: skill-owning states carry inject:null and the orders live in the linked vibe-* skill's `## Orders (D12)` section (a <!-- vibe:orders:<state> --> block), resolved by .agents/skills/vibe/scripts/orders.sh. Only `idle` keeps an inline inject (skill-less fallback). The orders block is byte-stable; only <feature> interpolates, so the per-turn inject stays prompt-cache safe. set-state.sh is the only sanctioned writer of state.json.",
+  "version": "1",
+  "initial": "idle",
+  "flows": ["idle", "setup", "strategy", "feature", "quick"],
+  "phases": ["idle", "detect", "apply", "brainstorm", "spec", "design", "plan", "impl", "verify", "compound", "triage", "fix"],
+  "modifiers": ["amend"],
+  "caveman_levels": {
+    "lite": "No filler or hedging; full sentences. Use for strategy, setup, design, compound, amend.",
+    "full": "Drop articles; fragments OK; short synonyms. Working default. Use for impl, verify, quick.*.",
+    "ultra": "Abbreviate prose; X -> Y arrows; one word where one does. Compound receipts and subagent->orchestrator summaries only. NEVER triage."
+  },
+  "safety_carveouts": [
+    "Security warnings and irreversible-action confirmations stay in normal prose at every caveman level.",
+    "Caveman is output compression only; it never reduces reasoning depth. Code, paths, commands stay byte-exact."
+  ],
+  "states": {
+    "idle": {
+      "skill": null,
+      "delegates": ["superpowers:using-superpowers"],
+      "caveman": "lite",
+      "reads": [".spec/lessons.md", ".spec/plan.md"],
+      "writes": [],
+      "inject": "state=idle · no active flow · run vibe (setup|strategy|feature|quick) · next: setup.detect | strategy.brainstorm | feature.design | quick.triage",
+      "next": ["setup.detect", "strategy.brainstorm", "feature.design", "quick.triage"],
+      "exit": "user has named the work; agent has chosen a flow and called set-state.sh"
+    },
+
+    "setup.detect": {
+      "skill": "vibe",
+      "delegates": [],
+      "caveman": "lite",
+      "reads": ["repo tree", "CLAUDE.md", "AGENTS.md", ".agents/**", ".spec/**"],
+      "writes": [],
+      "inject": null,
+      "next": ["setup.apply", "idle"],
+      "exit": "audit complete: missing/present harness pieces listed, plugin preflight run"
+    },
+    "setup.apply": {
+      "skill": "vibe",
+      "delegates": ["spec", "superpowers:writing-skills"],
+      "caveman": "lite",
+      "reads": [".agents/skills/vibe/state-machine.json"],
+      "writes": [".agents/**", "CLAUDE.md#active-rules", "AGENTS.md#active-rules", ".spec/lessons.md", ".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md"],
+      "inject": null,
+      "next": ["idle"],
+      "exit": "instructions block present, .agents/skills/vibe scaffolded, lessons.md exists, never clobbered user content"
+    },
+
+    "strategy.brainstorm": {
+      "skill": "vibe",
+      "delegates": ["superpowers:brainstorming"],
+      "caveman": "lite",
+      "reads": [".spec/lessons.md"],
+      "writes": [],
+      "inject": null,
+      "next": ["strategy.spec"],
+      "exit": "direction is clear enough to write into root specs"
+    },
+    "strategy.spec": {
+      "skill": "vibe",
+      "delegates": ["spec"],
+      "caveman": "lite",
+      "reads": [".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md"],
+      "writes": [".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md"],
+      "inject": null,
+      "next": ["strategy.compound", "idle"],
+      "exit": "root specs updated and validated; skip to idle unless a durable lesson surfaced"
+    },
+    "strategy.compound": {
+      "skill": "vibe",
+      "delegates": ["spec"],
+      "caveman": "lite",
+      "reads": [".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md", ".spec/lessons.md"],
+      "writes": [".spec/lessons.md", "CLAUDE.md#active-rules", "AGENTS.md#active-rules"],
+      "inject": null,
+      "next": ["idle"],
+      "exit": "lesson recorded with Tags; active-rules digest regenerated"
+    },
+
+    "feature.design": {
+      "skill": "vibe",
+      "delegates": ["superpowers:brainstorming", "code-explorer", "code-architect"],
+      "caveman": "lite",
+      "reads": [".spec/lessons.md", ".spec/product.md", ".spec/tech.md"],
+      "writes": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/design.md"],
+      "inject": null,
+      "next": ["feature.plan"],
+      "exit": "feature product.md + tech.md written; design.md when full rigor; approach chosen"
+    },
+    "feature.plan": {
+      "skill": "vibe",
+      "delegates": ["superpowers:writing-plans", "code-architect"],
+      "caveman": "lite",
+      "reads": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md"],
+      "writes": [".spec/features/<feature>/plan.md"],
+      "inject": null,
+      "next": ["feature.impl"],
+      "exit": "plan.md has stable unit IDs; human approved moving to impl"
+    },
+    "feature.impl": {
+      "skill": "vibe",
+      "delegates": ["superpowers:executing-plans", "superpowers:test-driven-development"],
+      "caveman": "full",
+      "reads": [".spec/features/<feature>/plan.md"],
+      "writes": ["src/**", "tests/**"],
+      "inject": null,
+      "next": ["feature.verify"],
+      "exit": "plan units implemented with tests that cite their unit IDs and pass"
+    },
+    "feature.verify": {
+      "skill": "vibe",
+      "delegates": ["superpowers:verification-before-completion", "superpowers:requesting-code-review", "superpowers:systematic-debugging", "code-reviewer"],
+      "caveman": "full",
+      "reads": [".spec/features/<feature>/plan.md", "src/**", "tests/**"],
+      "writes": ["evidence: test/build output, review notes"],
+      "inject": null,
+      "next": ["feature.compound", "feature.impl", "feature.plan"],
+      "exit": "evidence shows plan units satisfied; review clean; human approved shipping"
+    },
+    "feature.compound": {
+      "skill": "vibe",
+      "delegates": ["superpowers:finishing-a-development-branch", "spec"],
+      "caveman": "lite",
+      "reads": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/plan.md", ".spec/lessons.md"],
+      "writes": [".spec/lessons.md", ".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md", "CLAUDE.md#active-rules", "AGENTS.md#active-rules", ".spec/archive/<feature>/**"],
+      "inject": null,
+      "next": ["idle"],
+      "exit": "lesson recorded; cross-cutting decisions promoted; feature archived; digest regenerated"
+    },
+
+    "quick.triage": {
+      "skill": "vibe",
+      "delegates": ["superpowers:systematic-debugging"],
+      "caveman": "full",
+      "reads": [".spec/lessons.md"],
+      "writes": [],
+      "inject": null,
+      "next": ["quick.fix", "feature.design"],
+      "exit": "root cause identified; fix is small and bounded (else escalate to feature)"
+    },
+    "quick.fix": {
+      "skill": "vibe",
+      "delegates": ["superpowers:test-driven-development"],
+      "caveman": "full",
+      "reads": [".spec/lessons.md"],
+      "writes": ["src/**", ".spec/quick/<slug>.md"],
+      "inject": null,
+      "next": ["quick.verify"],
+      "exit": "fix implemented with a test that reproduces and resolves the issue"
+    },
+    "quick.verify": {
+      "skill": "vibe",
+      "delegates": ["superpowers:verification-before-completion", "code-reviewer"],
+      "caveman": "full",
+      "reads": ["src/**", "tests/**"],
+      "writes": ["evidence: test/build output, review notes"],
+      "inject": null,
+      "next": ["idle"],
+      "exit": "evidence shows fix works and regressions clear"
+    },
+
+    "amend": {
+      "skill": "vibe",
+      "delegates": ["spec", "superpowers:receiving-code-review"],
+      "caveman": "lite",
+      "reads": ["the target state's reads"],
+      "writes": ["targeted .spec edits only (target state's write surface)"],
+      "inject": null,
+      "next": [],
+      "exit": "scope edit applied; returned to the originating state"
+    }
+  }
+}

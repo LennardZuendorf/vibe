@@ -1,0 +1,74 @@
+# setup — bootstrap & repair
+
+Brings a fresh (or drifted) repo under the harness. Two states:
+`setup.detect` (read-only audit) → `setup.apply` (write/merge) → `idle`.
+
+## 1. Detect (read-only, caveman lite)
+
+`bash .agents/skills/vibe/scripts/set-state.sh setup.detect`. Audit only — write nothing.
+Report present vs missing:
+
+- `.agents/skills/vibe/state-machine.json`, `state.example.json`, and the scripts
+  (`set-state.sh`, `validate-state.sh`, `detect-context.sh`, `regen-active-rules.sh`,
+  `orders.sh`, `check-skills.sh`).
+- the consolidated `vibe` skill and the bundled `spec` skill.
+- **`AGENTS.md` health** (per [agent-instructions](../../../.spec/features/agent-instructions/tech.md)):
+  - `AGENTS.md`: missing / present-no-markers / present-managed-ok / present-managed-stale (differs from template).
+  - `vibe:instructions` block: absent / current / stale.
+  - `vibe:constitution` block (legacy): absent / present-needs-migration.
+  - `vibe:active-rules` block: absent / empty / populated.
+- **Adapter rows** — one per entry in `reference/adapters.json`
+  (`CLAUDE.md`, `WARP.md`, …): absent / symlink-ok / symlink-wrong-target /
+  real-file / broken-link.
+- `.spec/lessons.md` and the root specs.
+
+**Plugin preflight** — `bash .agents/skills/vibe/scripts/check-skills.sh <state>` lists
+which delegated skills are verifiable vs assumed-installed. Warn + list any that
+can't be confirmed; never hard-fail. Covers `spec` (bundled), `superpowers:*`,
+feature-dev subagents (`code-explorer`, `code-architect`, `code-reviewer`), and
+`caveman` (optional → `check-skills.sh caveman <level>` prints the 1-line fallback
+when absent).
+
+## 2. Apply (write/merge, caveman lite)
+
+`bash .agents/skills/vibe/scripts/set-state.sh setup.apply`. Bootstrap without
+clobbering:
+
+1. **Instructions block.** Run `bash .agents/skills/vibe/scripts/merge-agents.sh`
+   to merge the canonical `AGENTS.md` template (in `reference/templates/AGENTS.md`)
+   into the repo-root `AGENTS.md` **inside the `vibe:instructions` markers only**.
+   Create it if missing; migrate a legacy `vibe:constitution` block; wrap an
+   unmarked equivalent guide; never touch content outside the markers. (Supersedes
+   the old constitution-block merge — see [agent-instructions](../../../.spec/features/agent-instructions/product.md).)
+2. **Adapter symlinks (user-driven).** Read `reference/adapters.json` and offer the
+   adapters the user wants (default: `CLAUDE.md`, `WARP.md`). For each chosen one,
+   `bash .agents/skills/vibe/scripts/merge-agents.sh link <adapter>`. It skips
+   a correct symlink, relinks a wrong target, and **refuses to replace a real file**
+   — show a diff and confirm before clobbering. Never create a symlink the user
+   didn't request.
+3. **Flow scaffold.** Ensure `.agents/skills/vibe/` files exist. Seed the cursor only if
+   missing: `cp .agents/skills/vibe/state.example.json .agents/skills/vibe/state.json`. Add
+   `.agents/skills/vibe/state.json` to `.gitignore`.
+4. **Spec scaffold.** If `.spec/` is bare, run `bash .agents/skills/spec/scripts/setup.sh`.
+   Ensure `.spec/lessons.md` exists with the `Tags:`/`Pinned-by:` format.
+5. **Active rules.** Run `bash .agents/skills/vibe/scripts/regen-active-rules.sh` to seed
+   the managed `vibe:active-rules` block (it is symlink-aware and dedupes targets by
+   resolved path, so the `CLAUDE.md` → `AGENTS.md` symlink survives).
+
+Finish at `idle`. Report what was created, merged, skipped, and any missing
+plugins.
+
+## Template & manifest
+
+The canonical instruction-file content lives in
+[`reference/templates/AGENTS.md`](reference/templates/AGENTS.md) (vibe-owned body
+wrapped in `vibe:instructions` markers, with an empty `vibe:active-rules` block
+below). The adapter catalogue lives in
+[`reference/adapters.json`](reference/adapters.json). Both are **data** — extend
+the manifest to add runtimes without editing this skill's prose.
+
+## Rules
+
+- Never overwrite user content; merge inside markers, diff + ask outside.
+- Missing plugin = warn and degrade, never hard-fail.
+- Caveman lite throughout.
