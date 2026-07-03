@@ -6,3 +6,5 @@
 # per-session cursor. state.example.json is the tracked template.
 flow/state.json
 .serena/
+# Overnight run artifact (local morning report, not merged)
+REPORT.md
