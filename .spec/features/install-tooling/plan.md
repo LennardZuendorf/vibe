@@ -138,7 +138,7 @@ flow/scripts/doctor.sh  flow/reference/deps.json  tests/flow/run.sh
 
 | Unit | Status |
 |---|---|
-| install-tooling/1 | NOT STARTED |
+| install-tooling/1 | DONE |
 | install-tooling/2 | NOT STARTED |
 | install-tooling/3 | NOT STARTED |
 | install-tooling/4 | NOT STARTED |

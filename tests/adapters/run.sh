@@ -161,5 +161,33 @@ if bash "$INSTALL" "$REPO_ROOT" >/dev/null 2>&1; then fail "platform-adapters/6"
 rm -rf "$SB"
 
 echo ""
+echo "=== install-tooling/1 — action model + --dry-run ==="
+# A content+path fingerprint of a tree: cksum of every file, path-sorted. Empty
+# tree -> empty string. Detects any write (new/removed/changed file).
+tree_fp() { find "$1" -type f 2>/dev/null -exec cksum {} + | LC_ALL=C sort; }
+# --dry-run against a fresh (empty) target: non-empty plan, zero writes.
+SB="$(mktmp)"
+before="$(tree_fp "$SB")"
+out="$(bash "$INSTALL" "$SB" --dry-run 2>&1; echo "rc=$?")"
+after="$(tree_fp "$SB")"
+assert_contains "install-tooling/1" "dry-run exits 0" "$out" "rc=0"
+assert_contains "install-tooling/1" "dry-run prints an action plan" "$out" "[dry-run] would"
+assert_eq "install-tooling/1" "dry-run on a fresh target writes nothing" "$before" "$after"
+[[ ! -e "$SB/.agents" && ! -e "$SB/AGENTS.md" && ! -e "$SB/.gitignore" ]] \
+  && pass "install-tooling/1" "dry-run creates no managed files" \
+  || fail "install-tooling/1" "dry-run creates no managed files"
+# --dry-run against an already-installed target is also byte-identical.
+bash "$INSTALL" "$SB" >/dev/null 2>&1
+before="$(tree_fp "$SB")"
+bash "$INSTALL" "$SB" --dry-run >/dev/null 2>&1
+after="$(tree_fp "$SB")"
+assert_eq "install-tooling/1" "dry-run on an installed target is byte-identical" "$before" "$after"
+# unknown option is rejected, not treated as the target.
+out="$(bash "$INSTALL" "$SB" --bogus 2>&1; echo "rc=$?")"
+assert_contains "install-tooling/1" "unknown option exits non-zero" "$out" "rc=1"
+assert_contains "install-tooling/1" "unknown option names itself" "$out" "unknown option"
+rm -rf "$SB"
+
+echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]
