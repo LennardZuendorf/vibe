@@ -40,6 +40,12 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** spec, superpowers, subagents, skill-design, interoperability
 **Date:** 2026-06-21
 
+### Script self-location: search for markers, don't count hops
+**Pattern:** `orders.sh` and `regen-active-rules.sh` resolved the repo root with a fixed number of `dirname` hops tuned to the old `.agents/skills` nesting; after the `flow/` move the same scripts silently hit generic fallbacks or overshot the root when invoked via their canonical path — the symlinked invocation still worked, masking the breakage.
+**Rule:** Scripts reachable through compat symlinks must locate the repo root by upward marker search (`.spec`/`.git`), never fixed hop counts; pin with path-parity tests asserting byte-identical output via both real and symlinked invocation.
+**Tags:** monorepo-split, symlinks, self-location, path-parity, prompt-cache
+**Date:** 2026-07-03
+
 <!-- Format for each lesson:
 ### [Short description]
 **Pattern:** What went wrong and why

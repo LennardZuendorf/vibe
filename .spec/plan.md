@@ -66,14 +66,14 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 3 | agent-instructions | `AGENTS.md` template + merge + symlinks | `tests/adapters/run.sh` | DONE | vibe-flow DONE |
 | 4 | platform-adapters | plugin + three hooks + `install.sh` | `tests/adapters/run.sh` | DONE | agent-instructions DONE |
 | 5 | dogfood | hook/merge/install behaviours + earn-the-teeth | scripted + lessons | DONE | platform-adapters DONE |
-| 6 | [monorepo-split](features/monorepo-split/plan.md) | `spec/`+`flow/` split + symlinks + truth sweep + orphan compound | suites + validate + grep evidence | NOT STARTED | — |
+| 6 | monorepo-split | `spec/`+`flow/` split + symlinks + truth sweep + orphan compound | suites + validate + grep evidence | DONE | — |
 | 7 | [install-tooling](features/install-tooling/plan.md) | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `tests/adapters/run.sh` + `tests/flow/run.sh` | NOT STARTED | monorepo-split DONE |
 | 8 | [release-docs](features/release-docs/plan.md) | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | NOT STARTED | install-tooling DONE |
 
-**Active focus:** release-polish branch (2026-07-03 overnight) — features 6–8
-finalize the repo for public shareability. Prior five features remain DONE and
-self-hosting. Still deferred: real-world earn-the-teeth promotions and
-`vibe-flow/4` `feature.deepen`.
+**Active focus:** release-polish branch (2026-07-03 overnight) — features 7–8
+finalize the repo for public shareability; monorepo-split landed and compounded.
+Prior five features remain DONE and self-hosting. Still deferred: real-world
+earn-the-teeth promotions and `vibe-flow/4` `feature.deepen`.
 
 ---
 
@@ -150,6 +150,11 @@ Cleansed notes for shipped work — detail lives in live surfaces, not this plan
 - **platform-adapters — DONE.** Three hooks (inject/guard/gate) as thin shells over
   `.agents/skills/vibe/scripts/`; `hooks.json`; `.claude-plugin/plugin.json`; `install.sh`.
   Warn-first; graceful-degrade (exit 0). `tests/adapters/run.sh` green.
+- **monorepo-split — DONE (2026-07-03).** Canonical halves moved to `spec/` + `flow/`;
+  `.agents/skills/{spec,vibe}` + `.claude/skills/spec` compat symlinks; installer
+  materializes real dirs (`cp -RL`); script self-location fixed to marker search with
+  path-parity tests; truth sweep retired stale `.agents/flow` refs; three orphan
+  features compounded. Suites 123/36/44 green, validate 0 errors.
 - **dogfood — DONE (scripted).** Hook block/warn/allow/graceful, merge scenarios, and a
   full `install.sh` into a sandbox are exercised in `tests/adapters/run.sh`; the build
   itself was the end-to-end arc. Real-session earn-the-teeth promotions stay future work.
