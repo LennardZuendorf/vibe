@@ -269,6 +269,10 @@ wiring is in [features/platform-adapters/tech.md](features/platform-adapters/tec
 
 ## Build Sequence
 
+Historical construction order. The seven `vibe-*` skills below were later
+consolidated into one `vibe` skill (router + per-phase files); the split at
+build time does not reflect the current layout.
+
 | Order | Component | Feature |
 |---|---|---|
 | 1 | Update `spec` skill for product/tech/design/plan model | `spec` skill bundle (M0 done) |
@@ -287,7 +291,7 @@ wiring is in [features/platform-adapters/tech.md](features/platform-adapters/tec
 | Risk | Mitigation |
 |---|---|
 | Dual state systems return | Remove `.spec/.phase` and `.claude/state.json` as canonical concepts; document `.agents/skills/vibe` only. |
-| `vibe-feature` becomes a mega-skill | Keep state data in JSON/scripts and split verify/compound/amend into separate skills. |
+| The `vibe` skill becomes a mega-skill | Keep state data in JSON/scripts; keep each flow in its own per-phase file under one skill (resolved by the seven-shim → one-skill consolidation). |
 | Delegated skills write to wrong paths | Every `vibe-*` skill injects explicit `.spec/` paths before delegating. |
 | Mutable state creates git noise | Version static definitions; gitignore target-project cursors/caches. |
 | Adapter leakage | Root specs name `.agents/skills/vibe` and `.agents/skills` as canonical; `.claude` is adapter-only. |
