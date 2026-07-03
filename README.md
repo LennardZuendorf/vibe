@@ -210,6 +210,8 @@ CI runs `shellcheck` on every tracked `*.sh`, the combined suite, and
 - [`flow/README.md`](flow/README.md) — the flow: states, orders, hooks, degrade.
 - [`.spec/product.md`](.spec/product.md) · [`.spec/tech.md`](.spec/tech.md) ·
   [`.spec/plan.md`](.spec/plan.md) — the harness's own specs.
+- [`examples/todo-api/`](examples/todo-api/.spec/) — a worked `.spec/` tree: what a
+  filled-in project looks like (root specs + one feature folder).
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes.
 
 ## License
