@@ -8,14 +8,15 @@ updated: 2026-07-04
 
 # Feature: spec-CLI migration — Product
 
-Fold the six spec-framework shell scripts (`validate`, `setup`, `list-specs`,
-`lessons-for`, `promote`, `scan-merges`) into native `vibe spec` subcommands, the
-same way [vibe-cli](../vibe-cli/product.md) folded the flow scripts into `vibe`.
-Today `spec_cmd.py` only *wraps* two of the six by shelling out; the other four
-have no CLI surface at all, and every one still lives as bash that the `spec`
-skill invokes by path. This feature makes the spec commands first-class,
-Python-native, and consistent with the rest of the CLI — **without dropping the
-bash path the skill context depends on**.
+Restructure the `vibe` CLI into a **3-app monorepo** and, as its core payload,
+migrate the six spec-framework shell scripts (`validate`, `setup`, `list-specs`,
+`lessons-for`, `promote`, `scan-merges`) into native Python. The split is by
+**consumer + import tier**: two stdlib-only agent tools (`vibe-flow` for the
+hooks + flow-management commands, `vibe-spec` for the former `.sh` scripts) and
+one rich human tool (`vibe`) for setup, management, and pretty flow/spec output —
+all sharing a zero-dependency `vibe-core` library. This finishes the flow port
+(vibe-cli feature) and the spec port in one coherent package structure, keeping
+each agent entry point dependency-free.
 
 **Parent:** [../../product.md](../../product.md)
 **Architecture:** [tech.md](tech.md)
@@ -27,146 +28,124 @@ bash path the skill context depends on**.
 
 | | |
 |---|---|
-| **Owns** | Native Python implementations of the six spec scripts behind `vibe spec {validate,setup,list,lessons-for,promote,scan-merges}`; the byte-parity suite that pins each against its bash origin; the shared `spec/` logic module(s) under `src/vibe/`; the decision record on whether/when the `.sh` originals retire |
-| **Does not own** | The `.spec/` document *format* and validation *rules* (owned by the `spec` skill — this feature reproduces behavior, it does not change it); `state-machine.json` / cursor; the flow commands already ported by vibe-cli; the `spec` skill's SKILL.md routing prose (touched only if/when the skill is repointed at the CLI — a gated decision, see R4) |
+| **Owns** | The workspace restructure into `vibe-core` / `vibe-flow` / `vibe-spec` / `vibe-cli` packages; the three console_scripts (`vibe-flow`, `vibe-spec`, `vibe`); native Python for all six spec commands; the byte-parity suites vs the bash originals; the assets/source-of-truth reconciliation (packages become canonical, root dirs + `.agents` symlinks repoint); the dependency-minimization (stdlib agent tools, `pydantic` dropped) |
+| **Does not own** | The `.spec/` document *format* and validation *rules* (owned by the `spec` skill — behavior is reproduced, not changed); `state-machine.json` / cursor *schema* (canonical data owned by vibe-flow; loaded, never hardcoded); the flow *behavior* already shipped by vibe-cli (this re-homes it into `vibe_flow`, no logic change) |
 
-**Supersedes (conditionally).** If R2's decision goes to "retire bash," this
-feature supersedes ownership of `spec/scripts/*.sh` from the `spec` skill bundle
-into the CLI, exactly as vibe-cli superseded the flow scripts. Until that
-decision is made, the bash scripts remain canonical and this feature adds a
-parallel Python path only.
+**Supersedes.** Re-homes the flow CLI shipped by [vibe-cli](../vibe-cli/product.md)
+into the `vibe_flow` package, and moves ownership of `spec/scripts/*.sh` into
+`vibe_spec` once R4 retirement fires. Until then the `.sh` scripts remain the
+skill-context fallback and the parity oracle.
 
 ---
 
 ## Requirements
 
-### Requirement: Native parity for all six spec commands (R1)
+### Requirement: Three apps, split by consumer and import tier (R1)
 
-The CLI SHALL expose every spec script as a native `vibe spec` subcommand whose
-output and exit code are byte-identical to the current bash script across a
-fixture matrix, reimplementing the logic in Python rather than shelling out.
+The CLI SHALL ship as three console_scripts: `vibe-flow` (agent + hooks) and
+`vibe-spec` (agent) MUST import stdlib only; `vibe` (human) MAY use `typer`/
+`rich`. Each agent tool installed alone MUST pull zero third-party dependencies.
 
-#### Scenario: Native validate matches the bash script byte-for-byte
+#### Scenario: Agent tool installs dependency-free
+
+- **Given** a fresh environment
+- **When** `vibe-spec` (or `vibe-flow`) is installed
+- **Then** only it and `vibe-core` are pulled — no `typer`, `rich`, or `pydantic`
+
+#### Scenario: Hot path stays stdlib
+
+- **Given** the per-Edit guard, now `vibe-flow hook guard`
+- **When** it fires during an implementation turn
+- **Then** its import cost matches today's stdlib `vibe-hook`, not the rich `vibe`
+
+### Requirement: Native parity for all six spec commands (R2)
+
+`vibe-spec {validate,setup,list,lessons-for,promote,scan-merges}` SHALL each
+produce output and exit codes byte-identical to the current bash script across a
+fixture matrix, reimplemented in Python rather than shelling out.
+
+#### Scenario: `vibe-spec validate` matches the script byte-for-byte
 
 - **Given** a `.spec/` tree with a known mix of errors and warnings
-- **When** `vibe spec validate` runs (native) and `bash spec/scripts/validate.sh` runs
-- **Then** their stdout, stderr, and exit codes are identical, and no `bash` process is spawned by the CLI path
+- **When** `vibe-spec validate` runs and `bash spec/scripts/validate.sh` runs
+- **Then** their stdout, stderr, and exit codes are identical, no `bash` spawned
 
-#### Scenario: The four unwrapped scripts gain CLI surface
+### Requirement: One behavior source, two renderers (R3)
 
-- **Given** the current CLI, which wraps only `validate` and `setup`
-- **When** the feature lands
-- **Then** `vibe spec list`, `vibe spec lessons-for <tag>`, `vibe spec promote <feature>`, and `vibe spec scan-merges` exist with the same flags (`--format`, `--dry-run`, `--target`) and outputs as their scripts
+Command *behavior* SHALL live once in the stdlib packages; the human `vibe`
+SHALL import that logic and apply a `rich` renderer, never fork the logic. The
+byte-parity target is the stdlib app's plain output; `vibe`'s pretty output is
+not parity-bound.
 
-### Requirement: Skill context stays runnable throughout (R2)
+#### Scenario: Rich and plain share one implementation
 
-The migration MUST NOT break any context in which the `spec` skill runs today.
-A skill context is not guaranteed to have Python or `vibe` on `PATH`; the spec
-half is designed as the standalone, any-agent, zero-runtime half (root
-[vibe-cli R5](../vibe-cli/product.md), decision D1). Every step SHALL leave a
-bash-runnable path in place until an explicit decision retires it.
+- **Given** `vibe-spec validate` (plain) and `vibe spec validate` (rich)
+- **When** both run on the same tree
+- **Then** they call the same `vibe_spec.validate` logic; only rendering differs, and the plain output is the one pinned against `validate.sh`
 
-#### Scenario: Spec skill works with no Python installed
+### Requirement: Skill context stays runnable; retirement is gated (R4)
 
-- **Given** a target with the `spec` skill vendored but no `vibe` on `PATH`
-- **When** an agent follows `spec/SKILL.md` (e.g. runs `validate.sh`, embeds `list-specs.sh`)
-- **Then** every referenced command still runs via bash, unchanged, and the skill behaves exactly as before
+The migration MUST NOT break any context where the spec skill runs today. Python
+is an accepted dependency; a `vibe doctor` Python/`PATH` preflight establishes
+the guarantee. The `.sh` originals SHALL remain until that preflight is wired and
+retirement is separately approved.
 
-#### Scenario: Asset-sync invariant preserved
+#### Scenario: Bash retained until preflight guarantee
 
-- **Given** `test_assets_sync.py`, which pins each bundled `_assets/skills/spec/scripts/*.sh` byte-identical to its `spec/` source
-- **When** the native port lands
-- **Then** the sync test still passes (the bash sources are unchanged, or the retirement decision updates the invariant deliberately, never silently)
-
-### Requirement: Parity suite is the merge gate (R3)
-
-Each ported command SHALL ship a byte-for-byte parity test against its bash
-origin, skipped-with-message when `bash` is absent, and the bash original SHALL
-NOT be retired until its parity test is green — mirroring the vibe-cli parity
-gates.
-
-#### Scenario: Divergence blocks the merge
-
-- **Given** a native command whose output differs from its bash origin on any fixture
-- **When** the parity suite runs in CI
-- **Then** the suite fails and the command is not considered migrated
-
-### Requirement: Retirement is a deliberate, separate decision (R4)
-
-Whether to repoint `spec/SKILL.md` at `vibe spec ...` and retire the `.sh`
-originals SHALL be an explicit decision with its own gate, not a side effect of
-adding the native path. The default end-state after this feature is a parallel
-Python path with bash retained; retirement happens only if the skill-context
-runtime guarantee (R2) can be met.
-
-#### Scenario: Bash retained by default
-
-- **Given** the native commands are landed and parity-green
-- **When** no explicit retirement decision has been approved
-- **Then** the `.sh` scripts and the skill's bash invocations remain in place and canonical
+- **Given** the native `vibe-spec` commands are landed and parity-green
+- **When** no preflight guarantee + retirement approval exists yet
+- **Then** `spec/scripts/*.sh` and the skill's bash invocations remain canonical
 
 ---
 
 ## Decisions
 
-- **D1 — Mirror the flow migration exactly.** Dual implementation: native
-  Python behind `vibe spec`, bash retained, byte-parity suite as the merge gate.
-  Chosen because it is the proven pattern in this repo (vibe-cli); bash stays as
-  the parity oracle and skill-context fallback until R4's preflight guarantee.
-- **D2 — `vibe spec` group; flow + management stay top-level.** `validate` and
-  `setup` move from subprocess wrappers to native; `list`, `lessons-for`,
-  `promote`, `scan-merges` are added under one `spec` Typer group via the
-  existing `register(app)` contract. Flow verbs (`status`/`next`/`go`/`check`/
-  `orders`) and management (`init`/`doctor`/`update`/`uninstall`/`plugins`) stay
-  top-level to avoid a breaking rename of the shipped CLI; the three-domain model
-  surfaces via `vibe --help` sectioning + the `spec`/`vibe` skill routers. A
-  strict `vibe flow …` group is a deferred, deliberately-breaking option.
-- **D3 — Spec *logic* is stdlib-only and importable; rich is the human layer.**
-  `vibe/spec/*.py` is written import-stdlib (no `typer`/`rich`/`pydantic`), so it
-  runs on the minimal install and is reusable by tests, the hook path, and a
-  future skill-repoint. Only the `vibe spec` command *rendering* uses `rich`.
-  Extends the standing hot-path rule to the spec half. No second entry point —
-  spec is not a per-Edit hot path.
-- **D4 — One package, layered by dependency (not split by domain).** vibe's dep
-  tree is tiny (pure-Python `typer`/`rich`, `pydantic` trimmed or made an
-  extra), so a GSD-style multi-package/multi-binary split is rejected — it adds
-  release/versioning/PATH overhead for negligible footprint gain. "Reduce
-  necessary install" is met by import-cost layering: minimal = `vibe-hook` +
-  stdlib logic (zero third-party deps); full = `vibe` with the rich extra. Two
-  console_scripts total, unchanged from today.
-- **D5 — Python-preflight replaces the bash-standalone guarantee.** Python is an
-  accepted dependency (`brew`/`uv` provide it). `vibe doctor` gains a
-  Python-and-`vibe`-on-`PATH` check; that preflight — not "bash forever" — is
-  what makes the skill context safe to call `vibe spec` and what unlocks R4
-  retirement.
+- **D1 — Monorepo, 4 packages, 3 apps (uv workspace).** `vibe-core` (stdlib
+  lib) ← `vibe-flow` (stdlib app) ← / `vibe-spec` (stdlib app) ← / `vibe`
+  (typer+rich app). Deps point only downward. Chosen over one package with
+  groups because it makes "install only what you need" structural, not
+  conventional, and keeps each agent tool provably dependency-free.
+- **D2 — `vibe-flow` subsumes `vibe-hook`.** The hooks become `vibe-flow hook
+  inject|guard|gate` alongside the agent flow verbs (`status`/`next`/`go`/
+  `check`/`orders`) in one stdlib argparse app. `vibe-hook` is retired/aliased.
+- **D3 — Stdlib apps use argparse; only `vibe` uses typer.** `typer` pulls
+  `click`; to keep `vibe-flow`/`vibe-spec` dependency-free they dispatch with
+  stdlib `argparse` (the current `hook.py` pattern). `rich` never imports on an
+  agent path.
+- **D4 — Logic + plain renderer in the stdlib packages; `vibe` re-renders (R3).**
+  One behavior source; two presentations. Parity pins the plain output.
+- **D5 — Minimal deps: drop `pydantic`.** `machine.py` already loads JSON with
+  stdlib; config/display models move to stdlib `dataclasses`. `vibe`'s only
+  third-party deps become `typer` + `rich`.
+- **D6 — Packages become the asset source of truth.** Each package vendors the
+  assets it owns (`vibe-flow`: `state-machine.json`; `vibe-spec`: templates);
+  root `spec/`/`flow/` + `.agents/skills/*` symlinks repoint into the packages;
+  the asset-sync test retargets. This is its own unit, not a side effect.
 
 ---
 
 ## Non-Goals
 
-- Changing any validation rule, output wording, or `.spec/` format — this is a
-  behavior-preserving port, not a redesign.
-- Rewriting `spec/SKILL.md` routing to call `vibe` (gated by R4).
+- Changing any validation rule, output wording, or `.spec/` format — behavior-
+  preserving port.
+- Rewriting `spec/SKILL.md` routing to call the CLI (gated by R4).
 - Deleting the `.sh` scripts in this feature (gated by R4).
-- Porting the spec skill's *subagents* (`spec-tracer`, etc.) — they are prompt
-  assets, not scripts.
+- Porting the spec skill's subagents (prompt assets, not scripts).
 
 ---
 
 ## Open Questions
 
-1. **~~Reversing vibe-cli R5 / D1.~~ RESOLVED (2026-07-04).** Python-as-a-
-   dependency is accepted (`brew`/`uv` provide it). Intent: add the native path
-   in parallel now (D1); make the skill context safe via a `vibe doctor` Python/
-   `PATH` preflight (D5); retire bash later under R4 once that preflight is
-   wired. Not a silent refactor — the reversal is a recorded decision.
-2. **~~Is `vibe` guaranteed in a skill context?~~ RESOLVED (2026-07-04).** Not
-   intrinsically, but the D5 preflight (`vibe doctor` / a `vibe check`-style
-   step) establishes the guarantee at setup time, which is what unlocks R4.
-3. **`validate.sh` fidelity (OPEN).** ~640 lines of `awk`/`grep`/`sed`
-   (SF3–SF16). Porting to Python is the largest, riskiest unit; byte-parity (not
-   "equivalent") is the bar. The optional SF4 network lint stays a bash shell-out.
-4. **Machine-output fast path (OPEN).** Whether to expose the agent/CI-consumed
-   outputs (`list`/`lessons-for`/`scan-merges --format json`, `validate`
-   exit-code) through the stdlib entry point for zero-`rich` startup, or keep
-   everything under the one rich `vibe` command. See tech.md § Packaging.
+1. **Assets source-of-truth cutover (OPEN).** Do the packages become canonical
+   with root `spec/`/`flow/` + `.agents` symlinks pointing in, or stay mirrored?
+   Recommendation: packages canonical (D6). This is the largest structural risk
+   — the current `test_assets_sync.py` invariant must retarget, not break.
+2. **Package/dist naming (OPEN).** Today's published dist is `vibe-flow`
+  (the umbrella). Repurposing that name for the flow *sub-package* needs a PyPI
+  plan; propose dist names `vibe-core`/`vibe-flow`/`vibe-spec`/`vibe`, with a
+  deprecation note on the old umbrella. Confirm.
+3. **Feature rename (OPEN, ask-first).** Scope has grown from "migrate spec
+   scripts" to "restructure the CLI." Consider renaming this feature to
+   `cli-restructure`; kept as `spec-cli-migration` for now to avoid churn.
+4. **`validate.sh` fidelity (OPEN).** ~640 lines of `awk`/`grep`/`sed`
+   (SF3–SF16); byte-parity is the bar; SF4 network lint stays a bash shell-out.

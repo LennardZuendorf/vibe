@@ -8,12 +8,12 @@ updated: 2026-07-04
 
 # Feature: spec-CLI migration — Architecture
 
-Reimplement the six `spec/scripts/*.sh` scripts as native Python behind the
-existing `vibe spec` Typer group, backed by importable logic modules, and pin
-each against its bash origin with a byte-parity suite. The bash scripts stay in
-place (canonical for the skill context) until a separate decision retires them.
-This mirrors the vibe-cli flow port: Python parallel implementation, bash
-retained, parity as the merge gate.
+Restructure `cli/` into a `uv` workspace of four packages — a zero-dep
+`vibe-core` library, two stdlib-only agent apps (`vibe-flow`, `vibe-spec`), and
+the rich human app (`vibe`) — with three console_scripts. Flow logic re-homes
+from the current flat package into `vibe_flow` unchanged; the six spec scripts
+port into `vibe_spec` behind a byte-parity gate. Deps point only downward, so
+each agent tool installs dependency-free.
 
 **Parent:** [../../tech.md](../../tech.md)
 **Requirements:** [product.md](product.md)
@@ -21,145 +21,137 @@ retained, parity as the merge gate.
 
 ---
 
-## What each script does (the port surface)
+## Package graph
 
-| Script | Behavior | Port difficulty |
-|---|---|---|
-| `setup.sh` | Scaffold `.spec/` from `reference/templates/`; skip existing; emit lessons.md stub; print writing-order guide | Low — file copies + fixed stdout |
-| `list-specs.sh` | List `.spec/*.md` + `features/*/` with `type`/`scope`/`area` parsed from frontmatter | Low — glob + line parse |
-| `lessons-for.sh` | Extract lessons whose `**Tags:**` match args; emit `markdown`/`inject`/`json` | Medium — block parsing + 3 formats |
-| `scan-merges.sh` | Report `<!-- merge -->` blocks across feature `tech.md`; `table`/`json`/`plain`; nonzero on unclosed | Medium — stateful scan + formats |
-| `promote.sh` | Extract `<!-- merge -->` blocks from a feature `tech.md`, append to a target; `--dry-run`/`--target` | Medium — extract + atomic append |
-| `validate.sh` | ~640 lines: frontmatter, links, naming, feature folders, design tokens (SF3), requirement/scenario blocks (SF10), plan structure/traceability (SF11–12), stale links (SF13), scope conflicts (SF14), root length (SF15), lessons tags (SF16) | **High** — heavy `awk`; the whole risk of the feature |
+```
+vibe-core   (stdlib)  ── markers, errors, paths, asset load
+   ▲   ▲   ▲
+   │   │   └───────────── vibe-spec (stdlib)  ── app: vibe-spec
+   │   └───────────────── vibe-flow (stdlib)  ── app: vibe-flow  (subsumes vibe-hook)
+   └── vibe-cli (typer+rich, deps: core+flow+spec) ── app: vibe
+```
 
-The two that already exist in `spec_cmd.py` (`validate`, `setup`) do so by
-`subprocess.run(["bash", script])` and streaming output verbatim
-([`spec_cmd.py`](../../../cli/src/vibe/commands/spec_cmd.py) `_run_spec_script`).
-Migration replaces that shell-out with a native implementation.
+| Dist | Import pkg | Third-party deps | console_script | Consumer |
+|---|---|---|---|---|
+| `vibe-core` | `vibe_core` | — | — (library) | shared |
+| `vibe-flow` | `vibe_flow` | — | `vibe-flow` | agent + hooks |
+| `vibe-spec` | `vibe_spec` | — | `vibe-spec` | agent |
+| `vibe` | `vibe_cli` | `typer`, `rich` | `vibe` | human |
+
+`vibe-flow`/`vibe-spec` installed alone pull only `vibe-core` (R1). `pydantic` is
+dropped everywhere (D5) — `machine.py` already parses JSON with stdlib; models
+become `dataclasses`.
 
 ---
 
-## Files
+## Workspace layout
 
 ```
-cli/src/vibe/spec/__init__.py           # new package: importable spec logic (rich-path OK)
-cli/src/vibe/spec/model.py              # SpecDoc/frontmatter parse, area/type/scope helpers
-cli/src/vibe/spec/validate.py           # port of validate.sh (SF checks) -> findings list
-cli/src/vibe/spec/setup.py              # scaffold logic (template copy, lessons stub)
-cli/src/vibe/spec/listing.py            # list-specs logic
-cli/src/vibe/spec/lessons.py            # lessons-for: block parse + markdown/inject/json
-cli/src/vibe/spec/merges.py            # scan-merges + promote (shared marker scan)
-cli/src/vibe/commands/spec_cmd.py       # EXTEND: native subcommands + keep --root; drop subprocess
-cli/tests/test_spec_validate_parity.py  # byte-parity vs spec/scripts/validate.sh
-cli/tests/test_spec_setup_parity.py     # byte-parity vs setup.sh
-cli/tests/test_spec_listing_parity.py   # byte-parity vs list-specs.sh
-cli/tests/test_spec_lessons_parity.py   # byte-parity vs lessons-for.sh (x3 formats)
-cli/tests/test_spec_merges_parity.py    # byte-parity vs scan-merges.sh + promote.sh
+cli/
+├── pyproject.toml                     # [tool.uv.workspace] members = ["packages/*"]
+├── uv.lock                            # single lock across the workspace
+├── conftest.py / tests/               # shared fixtures (bash_ref, home_sandbox, target_project)
+└── packages/
+    ├── vibe-core/
+    │   ├── pyproject.toml             # name=vibe-core; no deps
+    │   └── src/vibe_core/
+    │       ├── assets.py              # locate vendored data; load json (stdlib)
+    │       ├── markers.py             # strict marker pairing/reversal (shared by flow+spec)
+    │       ├── errors.py              # VibeError(Exception)
+    │       └── paths.py               # root-find (.spec/.git), atomic write
+    ├── vibe-flow/
+    │   ├── pyproject.toml             # name=vibe-flow; deps=[vibe-core]
+    │   │                              # [project.scripts] vibe-flow = "vibe_flow.app:main"
+    │   └── src/vibe_flow/
+    │       ├── machine.py cursor.py policy.py orders.py   # re-homed from current cli, unchanged
+    │       ├── hook.py                # inject|guard|gate  (was vibe.hook)
+    │       ├── render.py              # plain/ANSI renderer for the flow verbs
+    │       ├── app.py                 # argparse: vibe-flow {hook,status,next,go,check,orders}
+    │       └── _assets/               # state-machine.json, state.example.json
+    ├── vibe-spec/
+    │   ├── pyproject.toml             # name=vibe-spec; deps=[vibe-core]
+    │   │                              # [project.scripts] vibe-spec = "vibe_spec.app:main"
+    │   └── src/vibe_spec/
+    │       ├── model.py               # frontmatter/area/type parse
+    │       ├── validate.py setup.py listing.py lessons.py merges.py   # the six, ported
+    │       ├── render.py              # plain/ANSI renderer (byte-parity target)
+    │       ├── app.py                 # argparse: vibe-spec {validate,setup,list,lessons-for,promote,scan-merges}
+    │       └── _assets/               # reference/templates/**
+    └── vibe-cli/
+        ├── pyproject.toml             # name=vibe; deps=[vibe-core,vibe-flow,vibe-spec,typer,rich]
+        │                              # [project.scripts] vibe = "vibe_cli.app:main"
+        └── src/vibe_cli/
+            ├── app.py                 # typer; top-level init/doctor/update/uninstall/plugins/setup
+            │                          #   + rich-rendered status/next/go/check/orders + `spec` group
+            ├── provision/             # settings.py agents_md.py plugins.py  (init/uninstall/update)
+            ├── doctor.py rules.py     # + D5 python/PATH preflight check
+            └── ui/                    # console, theme, banner
 ```
-
-Unchanged and load-bearing: `spec/scripts/*.sh` (canonical for skill context),
-`cli/src/vibe/_assets/skills/spec/scripts/*.sh` (bundled copies), and
-[`test_assets_sync.py`](../../../cli/tests/test_assets_sync.py) which pins them
-byte-identical.
 
 ---
 
 ## Contract / API
 
-Each logic module exposes a pure function returning data + a render step, so
-tests assert on data and the parity tests assert on rendered stdout:
+Behavior is a pure function per command; a renderer turns it into text. The
+stdlib app calls the plain renderer, `vibe_cli` calls a rich one — R3.
 
 ```python
-# vibe/spec/validate.py
-def run(root: Path) -> ValidationReport: ...      # errors/warnings, exit_code
-def render(report: ValidationReport) -> str: ...  # byte-identical to validate.sh stdout
+# vibe_spec/validate.py
+def run(root: Path) -> ValidationReport: ...          # dataclass: errors, warnings, exit_code
+# vibe_spec/render.py
+def render_plain(report: ValidationReport) -> str: ...  # byte-identical to validate.sh
+# vibe_cli/app.py
+report = vibe_spec.validate.run(root); console.print(rich_view(report))
 
-# vibe/spec/lessons.py
-def extract(root: Path, tags: list[str]) -> list[Lesson]: ...
-def render(lessons: list[Lesson], fmt: Literal["markdown","inject","json"]) -> str: ...
-
-# vibe/spec/merges.py
-def scan(root: Path, feature: str | None) -> ScanResult: ...   # blocks + unclosed flag
-def promote(root: Path, feature: str, target: Path, dry_run: bool) -> PromoteResult: ...
+# vibe_flow/app.py  (argparse)
+#   vibe-flow hook {inject|guard|gate}   ← settings.json hooks target this
+#   vibe-flow status|next|go|check|orders
 ```
 
-`spec_cmd.register(app)` keeps its current signature; the new subcommands mount
-under the same `spec` group. `--root` stays the way to target a project.
+`settings.json` hook entries change from `vibe-hook <event>` to `vibe-flow hook
+<event>`; `provision/settings.py` writes the new command (idempotent, keyed).
 
 ---
 
 ## Implementation Detail
 
-- **Byte-parity is the bar, not "equivalent".** The current wrappers already
-  guarantee byte-identical stdout by streaming the script's output
-  ([`test_spec_cmd.py`](../../../cli/tests/test_spec_cmd.py) asserts
-  `result.stdout == direct.stdout`). The native port must preserve that,
-  including ANSI color codes (`\033[31m …`), the exact ` ERROR: `/` WARN: `/
-  ` OK: ` prefixes, the `Errors:`/`Warnings:` footer, and setup's writing-order
-  block. This constrains formatting precisely and is what the parity suite pins.
-- **`validate.sh` is the hard unit.** Its `awk` programs encode subtle rules
-  (empty design-token detection, requirement/scenario counting, R-ID
-  traceability, scope-conflict dedup on a temp file). Port check-by-check, each
-  with its own fixtures reused from `tests/spec/run.sh`, and diff against the
-  script continuously. Environment knobs (`VIBE_DESIGN_LINT`, `SPEC_DIR`,
-  `SPEC_ROOT_MAX_LINES`) must be honored identically. The optional `design.md`
-  network lint (SF4, `npx @google/design.md`) should shell out unchanged or stay
-  gated off by default — reproducing it in Python is out of scope and risky.
-- **Parity test harness already exists to copy.** The flow parity tests
-  (`test_parity_policy.py`, `test_parity_orders.py`) and the `bash_ref` conftest
-  fixture (locates repo `*.sh`, skips without `jq`/`bash`) are the template;
-  point new fixtures at `spec/scripts/*.sh` and the bundled copy resolved by
-  `spec_cmd._resolve_script`.
-- **No hot-path constraint.** Unlike `vibe-hook`, spec commands never run on the
-  per-Edit guard path, so `rich`/`pydantic` are fine here. Keep logic in
-  `vibe/spec/` importable (no Typer import) so parity tests call `render()`
-  directly and a future skill-repoint can reuse it.
+- **Flow re-home is a move, not a rewrite.** `machine`/`cursor`/`policy`/
+  `orders`/`hook` already exist and are stdlib-only in the current `cli/src/vibe`.
+  Unit work is relocating them into `vibe_flow` (+ `vibe_core` for the shared
+  bits) and adding the argparse `app.py` + plain flow-verb renderer. The existing
+  flow parity tests (`test_parity_policy`, `test_parity_orders`) move with them.
+- **Spec port is the real work.** `vibe_spec` reimplements the six scripts
+  stdlib-only. Byte-parity is the bar — ANSI codes, ` ERROR:`/` WARN:`/` OK:`
+  prefixes, the `Errors:`/`Warnings:` footer, setup's writing-order block, and
+  the `--format` json/plain/inject/table variants all pinned against the `.sh`.
+  Env knobs (`VIBE_DESIGN_LINT`, `SPEC_DIR`, `SPEC_ROOT_MAX_LINES`) honored
+  identically; SF4 network lint stays a bash shell-out.
+- **`validate.sh` is the hard unit** — ~640 lines of `awk`, ported check-by-check
+  against the `tests/spec/run.sh` fixtures, diffed continuously.
+- **Parity harness reuse.** The `bash_ref` conftest fixture (locates repo `*.sh`,
+  skips without `bash`/`jq`) moves to the workspace root `conftest.py`; each
+  `vibe-spec` command gets a parity test vs its origin, mirroring the flow parity
+  tests.
+- **Argparse, not typer, on agent paths (D3).** `vibe_flow.app`/`vibe_spec.app`
+  dispatch subcommands with `argparse`; an import-cost test (fresh interpreter,
+  `sys.modules` assertion — the standing lesson) pins that neither imports
+  `typer`/`rich`/`pydantic`.
 
 <!-- merge -->
-Migration pattern for a bash→CLI port in this repo: reimplement natively behind
-the Typer command, keep the `.sh` as the canonical fallback, and gate the swap
-on a byte-for-byte parity suite (skip-with-message without `bash`). Retire the
-bash only in a separate, explicitly-approved step once every context that
-invokes it is guaranteed to have the CLI on `PATH`. The spec half stayed bash by
-design (vibe-cli R5/D1); reversing that is a decision, not a refactor.
+CLI packaging pattern for this repo: a `uv` workspace with a zero-dep `vibe-core`
+library and per-consumer apps — stdlib-only `argparse` entry points for anything
+an agent or hook invokes, a single `typer`/`rich` app for humans. Split packages
+by *who calls it and what it may import*, never by domain tidiness; a new app
+earns its keep only when it's a distinct import tier. Behavior lives once in the
+stdlib packages; the rich app re-renders. Freeze all package `pyproject` deps and
+the workspace lock in the skeleton unit so downstream builders never touch them.
 <!-- /merge -->
-
-## Packaging & entry points
-
-Two orthogonal levers, kept distinct:
-
-- **Loaded code per invocation (latency)** — controlled by *entry points*. An
-  entry point only wins if its transitive imports are narrow: `vibe-hook` is
-  cheap because it imports stdlib-only `policy`/`orders`/`cursor`, never
-  `typer`/`rich`. Adding a domain binary that imports `rich` saves nothing.
-- **Install footprint** — controlled by *dependency layering* (D4). One wheel;
-  `typer`/`rich` power `vibe`; `pydantic` is trimmed or an extra; the stdlib
-  logic (incl. `vibe/spec/*`) needs no third-party deps.
-
-Entry points are tiered by import cost, **not** by domain:
-
-| console_script | import tier | fires |
-|---|---|---|
-| `vibe-hook` | stdlib only (~24 ms) | per-Edit / per-turn hooks (hot) |
-| `vibe` | typer + rich (~66 ms) | human/agent commands (occasional) |
-
-Spec commands are *occasional*, so ~66 ms `typer` startup is imperceptible for
-`vibe spec validate` — a dedicated `vibe-spec` binary buys **no latency win** and
-is rejected on those grounds. The one principled case for more surface: because
-spec logic is stdlib-only (D3), the **machine-readable** outputs
-(`list`/`lessons-for`/`scan-merges --format json`, `validate` exit-code) *could*
-be exposed through the stdlib `vibe-hook`-tier entry so agents/CI get them with
-zero `rich` import, while the pretty human forms stay under `vibe spec`. That is
-a deferred option (product.md OQ4), taken only if a spec path proves both
-frequently-invoked and machine-consumed — otherwise one rich `vibe` is simpler.
 
 ## Open Questions
 
-1. **`validate.sh` color/ordering fidelity.** The script interleaves per-file
-   `--- name ---` headers with colored findings in file-glob order, then runs
-   the SF13–16 global checks last. Byte-parity requires reproducing that exact
-   interleaving and glob order (`shopt -s nullglob`, `.spec/*.md` sorted by the
-   shell). Confirm the shell's glob order (locale-sensitive) is stable enough to
-   pin, or normalize both sides.
-2. **SF4 network lint.** Keep as a bash shell-out, or drop from the CLI path and
-   document the divergence? It is advisory and already graceful-degrades.
+1. **Asset cutover order (OPEN).** Sequence the D6 source-of-truth move so
+   `test_assets_sync.py` retargets in the same unit that repoints the symlinks —
+   never a window where bundled ≠ source silently.
+2. **`validate.sh` glob/color fidelity (OPEN).** Reproduce the exact per-file
+   header/finding interleaving and `.spec/*.md` glob order for byte-parity, or
+   normalize both sides.

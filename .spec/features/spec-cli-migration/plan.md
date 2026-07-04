@@ -8,11 +8,12 @@ updated: 2026-07-04
 
 # Feature: spec-CLI migration — Implementation Plan
 
-Port the six spec scripts to native Python behind `vibe spec`, easiest-first, so
-the parity harness and shared modules are proven on low-risk commands before
-`validate.sh` (the hard one). Bash stays canonical until R4's retirement gate.
-Parity suites are the merge gate — a command is "migrated" only when its
-byte-for-byte test against the `.sh` origin is green.
+Build the `uv` workspace skeleton first (all four package dirs, frozen
+`pyproject` deps + lock, `vibe-core`, shared `conftest`), then fill packages
+bottom-up: `vibe-core` → re-home `vibe-flow` → port `vibe-spec` (the real work,
+easy→hard) → assemble `vibe`. Byte-parity suites vs the bash originals are the
+merge gate; bash retires only under R4 after the preflight guarantee. The asset
+source-of-truth cutover is its own late, atomic unit.
 
 **Parent:** [../../plan.md](../../plan.md)
 **Requirements:** [product.md](product.md)
@@ -24,103 +25,122 @@ byte-for-byte test against the `.sh` origin is green.
 
 | ID | Requirement | Units |
 |---|---|---|
-| R1 | Native parity for all six spec commands | spec-cli-migration/1, /2, /3, /4, /5, /6 |
-| R2 | Skill context stays runnable throughout | spec-cli-migration/0, /7 |
-| R3 | Parity suite is the merge gate | spec-cli-migration/1, /2, /3, /4, /5, /6 |
-| R4 | Retirement is a deliberate, separate decision | spec-cli-migration/7 |
+| R1 | Three apps, split by consumer and import tier | spec-cli-migration/1, /2, /8 |
+| R2 | Native parity for all six spec commands | spec-cli-migration/3, /4, /5, /6, /7 |
+| R3 | One behavior source, two renderers | spec-cli-migration/2, /7, /8 |
+| R4 | Skill context stays runnable; retirement gated | spec-cli-migration/9 |
 
 ---
 
 ## Units
 
-### spec-cli-migration/0 — Scaffold + dep layering + preflight
+### spec-cli-migration/1 — Workspace skeleton
 
-**Goal:** Create the stdlib-only `vibe/spec/` package (no `typer`/`rich`/
-`pydantic` imports) + the parity fixture wiring (extend the `bash_ref` conftest
-pattern to `spec/scripts/*.sh`); apply D4 dependency layering (trim/extra
-`pydantic`, confirm `vibe-hook` still imports stdlib-only via the existing import-
-cost test); add the D5 Python/`PATH` preflight check to `vibe doctor`. No spec
-behavior yet. (R5-reversal decision is recorded — product.md OQ1/OQ2 resolved.)
-**Requirements:** R2, R4
+**Goal:** `uv` workspace with four package dirs, each `pyproject` frozen (deps +
+the three console_scripts), one `uv.lock`, shared root `conftest.py` (move
+`bash_ref`, `home_sandbox`, `target_project`). `vibe-flow`/`vibe-spec`/`vibe`
+`--help` all run; the import-cost test skeleton exists.
+**Requirements:** R1
 **Dependencies:** —
-**Verification:** empty `vibe/spec/` imports with zero third-party deps; import-
-cost test still green; `vibe doctor` reports the Python/`vibe`-on-`PATH` check; a
-skipped-without-bash parity fixture resolves both source and bundled script paths.
+**Verification:** `uv sync` builds the workspace; all three `--help` exit 0; the
+two agent apps import stdlib-only (fresh-interpreter `sys.modules` assertion).
 
-### spec-cli-migration/1 — Port `list-specs`
+### spec-cli-migration/2 — `vibe-core`
 
-**Goal:** Native `vibe spec list`; frontmatter/area parse in `spec/listing.py`.
+**Goal:** Port the shared stdlib primitives — `assets.py`, `markers.py` (the
+tested pairing/reversal guard), `errors.py`, `paths.py` (root-find + atomic
+write). No third-party imports.
 **Requirements:** R1, R3
-**Dependencies:** /0
-**Verification:** `test_spec_listing_parity.py` byte-matches `list-specs.sh` over
-root-only, features-present, and empty-`.spec` fixtures.
+**Dependencies:** /1
+**Verification:** `test_markers` (reused) green under `vibe_core`; `vibe-core`
+imports with zero third-party deps.
 
-### spec-cli-migration/2 — Port `setup`
+### spec-cli-migration/3 — Re-home `vibe-flow` (+ subsume `vibe-hook`)
 
-**Goal:** Native `vibe spec setup` (replace the subprocess wrapper); template
-copy + lessons stub + writing-order stdout.
+**Goal:** Move `machine`/`cursor`/`policy`/`orders`/`hook` into `vibe_flow`
+unchanged; add the argparse `app.py` (`vibe-flow {hook,status,next,go,check,
+orders}`) + plain flow-verb renderer; move the flow parity tests.
+**Requirements:** R1
+**Dependencies:** /2
+**Verification:** `test_parity_policy`/`test_parity_orders` green under
+`vibe_flow`; `vibe-flow hook guard` byte-matches the prior `vibe-hook guard`;
+import-cost test green (no typer/rich).
+
+### spec-cli-migration/4 — `vibe-spec`: list + setup
+
+**Goal:** `vibe_spec.model` (frontmatter parse) + `listing.py` + `setup.py` +
+plain renderer; argparse `vibe-spec list` / `vibe-spec setup`.
+**Requirements:** R2
+**Dependencies:** /2
+**Verification:** parity tests byte-match `list-specs.sh` (root/features/empty)
+and `setup.sh` (fresh/partial/full).
+
+### spec-cli-migration/5 — `vibe-spec`: lessons-for
+
+**Goal:** `lessons.py` block parse + markdown/inject/json; `vibe-spec lessons-for`.
+**Requirements:** R2
+**Dependencies:** /4 (reuses `model.py`)
+**Verification:** parity byte-matches all three formats, multi-tag, no-match.
+
+### spec-cli-migration/6 — `vibe-spec`: scan-merges + promote
+
+**Goal:** `merges.py` shared marker scan; `vibe-spec scan-merges` (table/json/
+plain, unclosed→nonzero) + `vibe-spec promote` (`--dry-run`/`--target`, atomic).
+**Requirements:** R2
+**Dependencies:** /4
+**Verification:** parity byte-matches all formats, dry-run vs write, unclosed error.
+
+### spec-cli-migration/7 — `vibe-spec`: validate (the hard unit)
+
+**Goal:** Port SF3–SF16 check-by-check into `validate.py`; honor env knobs; SF4
+stays a bash shell-out. `vibe-spec validate` plain output is the parity target.
+**Requirements:** R2, R3
+**Dependencies:** /4 (reuses `model.py`)
+**Verification:** parity byte-matches `validate.sh` (stdout+stderr+exit) over the
+full `tests/spec/run.sh` matrix + error/warn/clean trees.
+
+### spec-cli-migration/8 — Assemble `vibe` (human app)
+
+**Goal:** `vibe_cli` typer app: top-level `init/doctor/update/uninstall/plugins/
+setup` (provisioning re-homed) + rich-rendered `status/next/go/check/orders` and
+`spec` group importing `vibe_flow`/`vibe_spec` logic (R3); `settings.py` writes
+`vibe-flow hook <event>`; `doctor` gains the D5 python/PATH preflight.
 **Requirements:** R1, R3
-**Dependencies:** /0
-**Verification:** `test_spec_setup_parity.py` byte-matches `setup.sh` for
-fresh, partial, and fully-existing `.spec/`; existing `test_spec_cmd.py` setup
-test still passes.
+**Dependencies:** /3, /7
+**Verification:** `vibe --help` shows all groups; provisioning tests
+(init/uninstall discriminating, update-preserves-cursor) green; a provisioned
+target's hooks call `vibe-flow hook …`.
 
-### spec-cli-migration/3 — Port `lessons-for`
+### spec-cli-migration/9 — Asset cutover + bash retirement (gated)
 
-**Goal:** Native `vibe spec lessons-for <tag>`; block parse + markdown/inject/json.
-**Requirements:** R1, R3
-**Dependencies:** /0
-**Verification:** `test_spec_lessons_parity.py` byte-matches all three formats,
-multi-tag, and no-match (exit 0, empty) cases.
-
-### spec-cli-migration/4 — Port `scan-merges` + `promote`
-
-**Goal:** Native `vibe spec scan-merges` and `vibe spec promote`; shared marker
-scan in `spec/merges.py`; `--format`, `--dry-run`, `--target`, unclosed-block
-nonzero exit.
-**Requirements:** R1, R3
-**Dependencies:** /0
-**Verification:** `test_spec_merges_parity.py` byte-matches table/json/plain,
-dry-run vs write (atomic append), and the unclosed-block error path.
-
-### spec-cli-migration/5 — Port `validate` (the hard unit)
-
-**Goal:** Native `vibe spec validate` (replace the subprocess wrapper); port
-SF3–SF16 check-by-check into `spec/validate.py`, honoring `VIBE_DESIGN_LINT`,
-`SPEC_DIR`, `SPEC_ROOT_MAX_LINES`. SF4 network lint stays a bash shell-out or is
-documented as a divergence (tech.md OQ2).
-**Requirements:** R1, R3
-**Dependencies:** /0, and /1 (reuses `spec/model.py` frontmatter parsing)
-**Verification:** `test_spec_validate_parity.py` byte-matches `validate.sh`
-(stdout + stderr + exit) over the full `tests/spec/run.sh` fixture matrix plus
-error/warning/clean trees; `test_spec_cmd.py` validate parity test still passes.
-
-### spec-cli-migration/6 — Wire the group + assets-sync check
-
-**Goal:** All six subcommands mounted via `spec_cmd.register`; `--help` clean;
-confirm `test_assets_sync.py` still green (bash sources untouched).
-**Requirements:** R1, R3
-**Dependencies:** /1, /2, /3, /4, /5
-**Verification:** `vibe spec --help` lists six commands; full `cli/tests` green;
-asset-sync unchanged.
-
-### spec-cli-migration/7 — Retirement decision (deferred, gated)
-
-**Goal:** Only if R4's guarantee (vibe on PATH in every spec-skill context) is
-met: repoint `spec/SKILL.md` at `vibe spec ...`, retire the `.sh` originals, and
-update the asset-sync invariant deliberately. Default: **do not** — keep bash.
-**Requirements:** R2, R4
-**Dependencies:** /6 + explicit approval
-**Verification:** if executed, skill-context eval on a fresh non-Python target
-still passes or the divergence is accepted in writing; if not executed, bash
-remains and the feature ends at /6.
+**Goal:** D6 source-of-truth move — packages vendor owned assets; root `spec/`/
+`flow/` + `.agents/skills/*` symlinks repoint into packages; `test_assets_sync`
+retargets in the same commit. Then, only if R4's preflight guarantee is met and
+retirement approved: repoint `spec/SKILL.md` at `vibe-spec …` and retire the
+`.sh`. Default: keep bash.
+**Requirements:** R4
+**Dependencies:** /8 + explicit approval
+**Verification:** asset-sync green post-cutover with no bundled≠source window; if
+retired, a fresh non-bash target eval passes or the divergence is accepted in
+writing; else bash remains and the feature ends at /8.
 
 ---
 
 ## Order rationale
 
-Easiest-first (/1–/4) proves the shared `spec/model.py` parsing and the parity
-harness on low-risk commands, so `validate` (/5) — the ~640-line `awk` port that
-carries the whole risk — lands last against a trusted harness. /0 front-loads the
-R5-reversal decision because everything downstream assumes it; /7 is deferred and
-gated, never a side effect of adding the native path.
+Bottom-up on the dep graph: skeleton (/1) freezes all shared surface so builders
+never touch `pyproject`/lock; `vibe-core` (/2) unblocks both stdlib apps;
+`vibe-flow` (/3) is a low-risk re-home of shipped code that proves the argparse
++ shared-renderer pattern before the spec port; the spec units (/4–/7) go
+easy→hard so `validate` lands last against a trusted parity harness; `vibe` (/8)
+assembles once its imports exist; the asset cutover + retirement (/9) is last,
+atomic, and gated. Parity suites gate every port; bash never retires before green.
+
+## Waves
+
+- **Wave A:** /1
+- **Wave B:** /2
+- **Wave C (parallel, dep /2):** /3, /4
+- **Wave D (parallel, dep /4):** /5, /6, /7
+- **Wave E:** /8 (deps /3, /7)
+- **Wave F:** /9 (dep /8 + approval)
