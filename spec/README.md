@@ -22,9 +22,11 @@ It is one of two halves. The other is [the vibe flow](../flow/README.md); the
 /spec validate         # check structural consistency
 ```
 
-`/spec …` are Claude Code skill commands. Everywhere else, run the scripts
-directly **from your project root** — they resolve `.spec/` relative to the
-current directory, so cwd must be the project you want to act on:
+`/spec …` are Claude Code skill commands. With the [vibe CLI](../cli/README.md)
+installed, `vibe spec setup` / `vibe spec validate` wrap the same scripts (no
+flow runtime required). Everywhere else, run the scripts directly **from your
+project root** — they resolve `.spec/` relative to the current directory, so cwd
+must be the project you want to act on:
 
 ```bash
 bash .agents/skills/spec/scripts/setup.sh      # create .spec/ entrypoints from templates
@@ -129,5 +131,6 @@ Everything below is the `spec` skill, addressed at runtime under
 
 - [`../README.md`](../README.md) — the umbrella: the spec/flow split and install.
 - [`../flow/README.md`](../flow/README.md) — the other half: the state-machine flow.
+- [`../cli/README.md`](../cli/README.md) — the `vibe` CLI that wraps this framework.
 - [`../examples/todo-api/`](../examples/todo-api/.spec/) — a worked `.spec/` tree to copy from.
 - [SKILL.md](SKILL.md) — the canonical rules agents follow.

@@ -6,160 +6,128 @@
 
 [![CI](https://github.com/LennardZuendorf/vibe/actions/workflows/ci.yml/badge.svg)](https://github.com/LennardZuendorf/vibe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![tests](https://img.shields.io/badge/tests-248%20passing-brightgreen)
-![bash](https://img.shields.io/badge/built%20with-bash%20%2B%20markdown%20%2B%20json-informational)
+[![spec: bash · zero-runtime](https://img.shields.io/badge/spec-bash%20%C2%B7%20zero--runtime-brightgreen)](spec/README.md)
+[![flow: vibe CLI](https://img.shields.io/badge/flow-python%20%C2%B7%20typer%2Brich-8A2BE2)](flow/README.md)
 
 </div>
 
 ---
 
-vibe is two things that ship together but stand alone:
+**vibe is two halves that ship together but stand alone:**
 
-- **The spec framework** — a durable `.spec/` planning layer (product / tech /
-  design / plan / lessons) with templates and a validator. Works with **any**
-  agent, or none.
-- **The vibe flow** — a state-machine workflow for **Claude Code** that routes
-  each phase (strategy / feature / quick) to the right skills and subagents,
-  injects per-turn "orders", and guards its own write invariants with hooks.
+- 🧭 **Vibe Spec** — a durable `.spec/` planning layer (product · tech · design ·
+  plan · lessons) with templates and a validator. Pure `bash`, zero runtime.
+  Works with **any** agent, or none.
+- 🌀 **Vibe Flow** — a 15-state workflow for **Claude Code**, shipped as the
+  `vibe` CLI. It routes each phase to the right skills and subagents, injects
+  per-turn "orders", and guards its own write invariants with hooks.
 
-Everything is bash, Markdown, and JSON — no runtime, no build step. The repo
-builds itself with its own harness (it is self-hosting), so what you install is
-exactly what is dogfooded here.
+The repo builds itself with its own harness (it is **self-hosting**), so what you
+install is exactly what is dogfooded here.
+
+## Contents
+
+- [Which half do you want?](#which-half-do-you-want)
+- [Install](#install)
+- [Vibe Spec](#vibe-spec)
+- [Vibe Flow](#vibe-flow)
+- [Dependencies](#dependencies)
+- [Platform support](#platform-support)
+- [Health & updates](#health--updates)
+- [Layout](#layout)
+- [Documentation](#documentation)
 
 ## Which half do you want?
 
-| You want… | Install | Needs Claude Code? |
-|---|---|---|
-| **Durable, validated planning docs** for a project (any agent, or solo) | `./install.sh <repo> --only spec` | No |
-| **The full workflow harness** — flow state machine, per-turn routing, hooks | `./install.sh <repo>` (both halves) | Yes, for the hooks |
-| **Just the flow engine** without the spec skill | `./install.sh <repo> --only flow` | Yes |
+| You want… | Half | Install | Needs Claude Code? |
+|---|---|---|---|
+| **Durable, validated planning docs** for any project (any agent, or solo) | Spec | `vibe init --only spec` | No |
+| **The full workflow harness** — flow machine, per-turn routing, hooks | Spec + Flow | `vibe init` | Yes, for the hooks |
 
-New here? Read the first two screens and you will know which command to run.
+Read the first two screens and you will know which command to run.
 
 ## Install
 
-**Prerequisites:** `bash` and [`jq`](https://jqlang.github.io/jq/) (the scripts
-degrade gracefully without `jq`, but it is recommended). `git` for the target repo.
+The flow half ships as a Python CLI; install it once, globally, so its hooks
+resolve on `PATH`:
 
 ```bash
-git clone https://github.com/LennardZuendorf/vibe.git
-cd vibe
+uv tool install vibe-flow      # the `vibe` + `vibe-hook` commands (persistent)
 
-# Full install into your project (spec framework + flow + Claude adapter):
-./install.sh /path/to/your/repo
-
-# Preview first — prints the plan, writes nothing:
-./install.sh /path/to/your/repo --dry-run
-
-# Spec framework only (no flow, no hooks):
-./install.sh /path/to/your/repo --only spec
-
-# Also symlink CLAUDE.md -> AGENTS.md (opt-in, never clobbers a real file):
-./install.sh /path/to/your/repo --adapters claude
+vibe init                      # provision the current project (full: spec + flow)
+vibe init --only spec          # the spec framework alone — no flow, no hooks
+vibe init --dry-run            # print the plan, write nothing
 ```
 
-A full install **copies** the platform-neutral core into `<repo>/.agents/skills/`,
-**merges** `AGENTS.md` inside managed markers (your prose is never touched),
-seeds and gitignores the flow cursor, and writes the Claude hook wiring into
-`.claude/settings.json`. Re-running is idempotent and preserves a live flow cursor.
-(`--only spec` copies just the spec skill — no `AGENTS.md` merge or cursor.)
+`vibe init` copies the skills into `.agents/skills/`, registers the three hooks
+in `.claude/settings.json` (they fire next session — no `/plugin` step), merges
+your `AGENTS.md` inside managed markers (your prose is untouched), and seeds +
+gitignores the flow cursor.
 
-**Claude Code hooks** (full / flow install): `install.sh` writes `.claude/settings.json`
-with three auto-wired hooks (`UserPromptSubmit`, `PreToolUse`, `Stop`) and copies the
-hook scripts into `.claude/hooks/`. The spec + flow skills work as plain project files
-immediately; the flow hooks activate as soon as the settings.json wiring is in place.
-`/flow` is a native project command — no plugin registration required.
+> **Requires** [`uv`](https://docs.astral.sh/uv/) (or `pipx`). An ephemeral run
+> (`uvx vibe-flow init`) works for a trial, but the hooks call the bare
+> `vibe-hook` binary, so `init` warns when it will not resolve on `PATH`.
+>
+> The legacy `./install.sh` (pure bash, no Python) still works but is
+> **deprecated** — new installs should use `vibe init`.
 
-**Uninstall** removes only what vibe installed and keeps your content
-(`.spec/**`, your `AGENTS.md` prose, and the flow cursor unless `--yes`):
+## Vibe Spec
+
+A durable planning layer for a codebase: design docs in `.spec/` that stay
+*current*, not a backlog. Two layers — persistent **root** docs (product · tech ·
+design · plan · lessons) and branch-scoped **`features/<name>/`** folders that
+merge into root, then delete before the branch merges. **Code is truth.** It
+ships as one bundled skill (`spec`) plus a validator, needs only `bash`, and
+works with **any** agent — or none.
 
 ```bash
-./install.sh /path/to/your/repo --uninstall            # cursor kept; use --dry-run to preview
-./install.sh /path/to/your/repo --uninstall --yes       # also remove the flow cursor
-./install.sh /path/to/your/repo --uninstall --only spec  # remove just one half
+vibe spec setup        # initialise .spec/ from templates
+vibe spec validate     # check structural consistency
+# or drive it directly on any host: /spec setup · /spec strategy · /spec feature <name>
 ```
 
-## The spec framework
+**Deep dive → [`spec/README.md`](spec/README.md)** — the two-layer model,
+authoring ladder, and file map.
 
-Every project using vibe gets a `.spec/` tree — the single source of truth for
-what you are building, why, and how. It ships as a bundled skill (`spec`) that
-works standalone or drives the flow's authoring phases.
+## Vibe Flow
 
-```
-.spec/
-├── product.md, tech.md, design.md, plan.md, lessons.md   ← ROOT (persistent role, current content)
-└── features/<name>/
-    ├── product.md    required     what this feature does (requirements + Scope)
-    ├── tech.md       required     how it is built (paths, contracts, layout)
-    ├── plan.md       recommended  stable <name>/n unit IDs; verification per unit
-    └── design.md     optional     UI/UX or design-system fragment
-```
+A state-machine workflow for Claude Code. Everything starts at `idle`; the `vibe`
+CLI moves the cursor (`.agents/skills/vibe/state.json` = `{flow, phase, feature}`)
+through **legal transitions only** across three flows — **strategy** (brainstorm →
+spec → compound), **feature** (design → plan → impl → verify → compound), and
+**quick** (triage → fix → verify) — with human gates before impl and before ship.
+Each state names its skill, delegates, caveman level, and write surface in
+`state-machine.json`.
 
-Root files carry no backlog and no archaeology; feature folders are
-branch-scoped — written at design, consumed at impl, merged (cross-cutting parts)
-at compound, then deleted before the branch merges. **Code is truth.**
+Drive it with the CLI:
 
 ```bash
-/spec setup            # initialise .spec/ with templates
-/spec strategy         # write root product/tech/design/plan
-/spec feature <name>   # scope and design a named feature
-/spec validate         # check structural consistency
+vibe status            # where am I: flow / phase / feature + legal next states
+vibe go feature.design # transition (refused unless it is a legal next state)
+vibe orders            # print the current state's per-turn orders
+vibe doctor            # install health; --exit-code for CI
 ```
 
-Deep dive: [`spec/README.md`](spec/README.md).
+Each turn, three hooks — wired in `.claude/settings.json`, run by the stdlib-only
+`vibe-hook` fast entry — fire: **`inject`** prepends the current state's orders,
+**`guard`** hard-blocks the three write invariants, **`gate`** runs warn-first
+exit checks.
 
-## The vibe flow
-
-Everything starts at `idle`. The agent self-locates, then drives one flow. The
-cursor `.agents/skills/vibe/state.json` = `{flow, phase, feature}` points at one
-state in `state-machine.json` — the source of truth for each state's skill,
-delegates, caveman level, write surface, and legal `next`. Transition only via
-`set-state.sh <flow.phase>`.
-
-```mermaid
-flowchart LR
-    I((idle)) --> SB
-    subgraph strategy
-        SB[brainstorm] --> SS[spec] --> SC[compound]
-    end
-    subgraph feature
-        D[design] --> P[plan] -. human gate .-> IM[impl] --> V[verify]
-        V -. human gate .-> C[compound]
-        V -->|targeted fix| IM
-    end
-    subgraph quick
-        T[triage] --> F[fix] --> QV[verify]
-    end
-    I --> D
-    I --> T
-    SC --> I
-    C --> I
-    QV --> I
-```
-
-> Simplified view — see [`flow/README.md`](flow/README.md) for the setup states.
-
-The workflow is **one skill** (`vibe`) with a router plus per-phase files
-(`setup`, `strategy`, `feature`, `quick`, `verify`, `compound`, `amend`). Each
-turn, the `UserPromptSubmit` hook injects the current state's orders (resolved
-from the linked skill by `orders.sh` — D12); a `PreToolUse` hook guards the three
-write invariants; a `Stop` hook runs warn-first exit checks. `amend` is a
-modifier, not a flow: a scoped edit from any state that returns there.
-
-Deep dive: [`flow/README.md`](flow/README.md).
+**Deep dive → [`flow/README.md`](flow/README.md)** · full CLI reference →
+[`cli/README.md`](cli/README.md).
 
 ## Dependencies
 
 vibe bundles only the `spec` skill. The flow *delegates* to external skills and
 subagents, declared once in [`flow/reference/deps.json`](flow/reference/deps.json)
-and reported by `doctor.sh`. **Every dependency degrades gracefully — a missing
+and reported by `vibe doctor`. **Every dependency degrades gracefully — a missing
 one warns, never hard-fails.**
 
 | Dependency | Kind | Source | If absent |
 |---|---|---|---|
 | superpowers | skill-collection | [obra/superpowers](https://github.com/obra/superpowers) | flow phases self-execute from their constraint documents |
 | feature-dev | subagent-collection | Claude Code plugin: feature-dev | the orchestrator performs the explore / architect / review step inline |
-| caveman | skill-collection | [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) | `check-skills.sh` prints the level definition inline (output compression only) |
+| caveman | skill-collection | [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) | the caveman level is printed inline (output compression only) |
 
 ## Platform support
 
@@ -167,55 +135,43 @@ vibe is portable by design; capability scales with the host.
 
 | Host | What works | What is absent |
 |---|---|---|
-| **Claude Code** | Everything: spec skill, flow, `/flow` command, per-turn inject, guard + gate hooks | — |
+| **Claude Code** | Everything: spec skill, flow CLI, per-turn inject, guard + gate hooks | — |
 | **Other `AGENTS.md` readers** (Codex, etc.) | Spec framework + instructions; agents follow the written flow manually | Hooks (no per-turn inject / guard / gate) |
 | **Bare git / any editor** | Spec framework: `.spec/` docs, templates, `validate.sh` | Flow automation, hooks |
 
 ## Health & updates
 
 ```bash
-# One-command install health report (warn-only, always exits 0):
-bash /path/to/your/repo/.agents/skills/vibe/scripts/doctor.sh
-
-# Update: re-run the installer. It refreshes the managed core and preserves your
-# .spec/, AGENTS.md prose, and live flow cursor.
-./install.sh /path/to/your/repo
+vibe doctor            # warn-only health report (skills, hooks, cursor, AGENTS.md, deps)
+vibe update            # re-provision managed files; preserves the live cursor + your prose
+vibe uninstall         # remove only what vibe installed (.spec/**, prose, cursor kept)
 ```
 
 ## Layout
 
 ```text
-your-repo/                     # after install
+your-repo/                     # after `vibe init`
 ├── .agents/skills/
-│   ├── spec/                  # bundled spec framework (real dir)
-│   └── vibe/                  # flow: router, phase files, state machine, scripts
-├── .claude/                   # Claude adapter: /flow command + three hooks + settings.json (flow half)
+│   ├── spec/                  # bundled spec framework
+│   └── vibe/                  # flow: router, phase files, state machine
+├── .claude/settings.json      # three hooks → vibe-hook (flow half)
 ├── .spec/                     # your durable project memory
 └── AGENTS.md                  # merged instructions (CLAUDE.md may symlink here)
 ```
 
 In **this** repo the canonical halves live at [`spec/`](spec/) and
-[`flow/`](flow/); `.agents/skills/{spec,vibe}` are compatibility symlinks (the
-portable runtime interface). The installer dereferences them into real
-directories in your target.
-
-## Tests
-
-```bash
-bash tests/run.sh      # spec (123) + flow (59) + adapters (66) — 248 assertions
-```
-
-CI runs `shellcheck` on every tracked `*.sh`, the combined suite, and
-`spec/scripts/validate.sh` on every push and PR.
+[`flow/`](flow/), with the CLI in [`cli/`](cli/); `.agents/skills/{spec,vibe}`
+are compatibility symlinks the CLI dereferences into real directories in your
+target.
 
 ## Documentation
 
 - [`spec/README.md`](spec/README.md) — the spec framework, standalone.
 - [`flow/README.md`](flow/README.md) — the flow: states, orders, hooks, degrade.
+- [`cli/README.md`](cli/README.md) — the `vibe` CLI: commands, hooks, migration.
 - [`.spec/product.md`](.spec/product.md) · [`.spec/tech.md`](.spec/tech.md) ·
   [`.spec/plan.md`](.spec/plan.md) — the harness's own specs.
-- [`examples/todo-api/`](examples/todo-api/.spec/) — a worked `.spec/` tree: what a
-  filled-in project looks like (root specs + one feature folder).
+- [`examples/todo-api/`](examples/todo-api/.spec/) — a worked `.spec/` tree.
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes.
 
 ## License
