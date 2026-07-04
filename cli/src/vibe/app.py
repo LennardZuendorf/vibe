@@ -58,7 +58,19 @@ for _module in (
 
 
 def main() -> None:
-    """console_script entry point for ``vibe`` (see ``[project.scripts]``)."""
+    """console_script entry point for ``vibe`` (see ``[project.scripts]``).
+
+    Shows the rainbow wordmark above the top-level help (``vibe`` / ``vibe
+    --help``) only — never before a real subcommand — and paints it only on a
+    TTY, so piped/scripted output stays clean.
+    """
+    import sys
+
+    from vibe.ui.banner import print_banner, wants_top_banner
+    from vibe.ui.console import console, is_interactive
+
+    if wants_top_banner(sys.argv[1:]):
+        print_banner(console, color=is_interactive())
     app()
 
 

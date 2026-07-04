@@ -15,6 +15,18 @@ _WARNING_COLOR = "yellow"
 _SUCCESS_COLOR = "green"
 _DIM_COLOR = "#808080"  # neutral grey, stable across terminal themes
 
+# Six rainbow stops shared with the README wordmark (docs/img/logo.svg) so the
+# terminal banner and the SVG read as one brand. Interpolated across columns by
+# the banner; used verbatim here as the anchor palette.
+_RAINBOW_PALETTE = (
+    "#FF4D4D",  # red
+    "#FF9F45",  # orange
+    "#FFD93D",  # yellow
+    "#6BCB77",  # green
+    "#4D96FF",  # blue
+    "#9B5DE5",  # violet
+)
+
 # Text-hierarchy styles
 _ACCENT_STYLE = f"bold {_ACCENT_COLOR}"
 _TITLE_STYLE = f"bold underline {_ACCENT_COLOR}"
@@ -80,6 +92,11 @@ def get_error_style() -> str:
     return _ERROR_STYLE
 
 
+def get_rainbow_palette() -> list[str]:
+    """Six rainbow stops matching the README wordmark (docs/img/logo.svg)."""
+    return list(_RAINBOW_PALETTE)
+
+
 def get_card_border_style() -> str:
     """Border style for panels/cards (dim, matching Typer's help chrome)."""
     return "dim"
@@ -97,6 +114,7 @@ __all__ = [
     "get_label_style",
     "get_value_style",
     "get_dim_style",
+    "get_rainbow_palette",
     "get_info_style",
     "get_success_style",
     "get_warning_style",
