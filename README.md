@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/img/logo.svg" alt="vibe" width="360">
+<img src="docs/img/logo.png" alt="vibe" width="360">
 
 **A self-hosting spec + workflow harness for coding with agents.**
 
