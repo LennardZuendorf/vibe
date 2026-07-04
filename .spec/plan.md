@@ -3,7 +3,7 @@ type: entrypoint
 scope: implementation
 covers: feature sequence, binary gates, validation criteria, open decisions
 children: []
-updated: 2026-07-03
+updated: 2026-07-04
 ---
 
 # vibe — Implementation Plan
@@ -24,6 +24,7 @@ feature plan, never here.
 | [vibe-flow](features/vibe-flow/product.md) | `.agents/skills/vibe/` + `vibe` skill | [plan.md](features/vibe-flow/plan.md) |
 | [agent-instructions](features/agent-instructions/product.md) | `AGENTS.md` template + symlinks | [plan.md](features/agent-instructions/plan.md) |
 | [platform-adapters](features/platform-adapters/product.md) | plugin + hooks + installer | [plan.md](features/platform-adapters/plan.md) |
+| [cli-restructure](features/cli-restructure/product.md) | `cli/` 4-package uv workspace + 3 apps; supersedes flow/spec bash | [plan.md](features/cli-restructure/plan.md) |
 
 ---
 
@@ -70,6 +71,7 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 7 | [install-tooling](features/install-tooling/plan.md) | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `tests/adapters/run.sh` + `tests/flow/run.sh` | DONE | monorepo-split DONE |
 | 8 | [release-docs](features/release-docs/plan.md) | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | DONE | install-tooling DONE |
 | 9 | [vibe-cli](features/vibe-cli/product.md) | Python (typer+rich) CLI `vibe`/`vibe-hook` — ports the flow + install into one command | `cli/tests` 459 green + 3 parity gates | BUILT (verify ✓) | release-docs DONE |
+| 10 | [cli-restructure](features/cli-restructure/product.md) | 3-app monorepo (`vibe-core`/`vibe-flow`/`vibe-spec`/`vibe`) + spec-script port + hard cutoff off bash (flow + spec) | `cli/tests` parity + golden fixtures + stranger eval | PLANNED | vibe-cli BUILT |
 
 **Active focus:** release-polish branch (2026-07-03 overnight) — all three
 finale features (monorepo-split, install-tooling, release-docs) landed and
@@ -83,6 +85,14 @@ retire the deprecated bash scripts, archive the feature spec, commit) is deferre
 — the bash flow remains the live path until then. Still deferred from before:
 real-world earn-the-teeth promotions, `vibe-flow/4` `feature.deepen`, and the
 manual gh repo metadata + social-preview upload.
+
+**Next planned:** [cli-restructure](features/cli-restructure/product.md) (feature
+10, PLANNED) — reshape `cli/` into a 4-package uv workspace (`vibe-core` +
+stdlib `vibe-flow`/`vibe-spec` agent apps + rich `vibe`), port the six spec
+scripts to native Python behind byte-parity gates, then a hard cutoff removing
+flow *and* spec bash. Supersedes the vibe-cli flow CLI, install-tooling's
+`install.sh` (→ GitHub install script), and platform-adapters' plugin bash-shim
+hooks. Starts once vibe-cli's adoption tail is settled. Spec 4-agent-reviewed.
 
 ---
 
