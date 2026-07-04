@@ -14,9 +14,10 @@ migrate the six spec-framework shell scripts (`validate`, `setup`, `list-specs`,
 + import tier**: two stdlib-only agent tools — `vibe-flow` (the hooks + flow-
 management commands) and `vibe-spec` (the former `.sh` scripts) — and one rich
 human tool (`vibe`) for setup, management, and pretty flow/spec output, all
-sharing a zero-dependency `vibe-core` library. This finishes the flow port (from
+sharing a lean `vibe-core` library. This finishes the flow port (from
 [vibe-cli](../vibe-cli/product.md)) and the spec port in one structure, keeps
-each agent entry point dependency-free, and does a **hard cutoff** to Python:
+each agent entry point lean (few deps, stdlib hot path), and does a **hard
+cutoff** to Python:
 packages become the single source of truth and the bash scripts are removed.
 
 **Parent:** [../../product.md](../../product.md)
@@ -29,7 +30,7 @@ packages become the single source of truth and the bash scripts are removed.
 
 | | |
 |---|---|
-| **Owns** | The workspace restructure into `vibe-core` / `vibe-flow` / `vibe-spec` / `vibe-cli`; the three console_scripts; native Python for all six spec commands + the byte-parity suites; the **hard-cutoff** asset move (packages canonical, root `spec/`/`flow/` + `.agents/skills/*` repointed, bash scripts removed, `spec/SKILL.md` repointed at `vibe-spec`); dependency minimization (stdlib agent tools, `pydantic` dropped); the GitHub + install-script distribution |
+| **Owns** | The workspace restructure into `vibe-core` / `vibe-flow` / `vibe-spec` / `vibe-cli`; the three console_scripts; native Python for all six spec commands + the byte-parity suites; the **hard-cutoff** asset move (packages canonical, root `spec/`/`flow/` + `.agents/skills/*` repointed, bash scripts removed, `spec/SKILL.md` repointed at `vibe-spec`); dependency minimization (lean agent tools, stdlib hot path, `pydantic` dropped); the GitHub + install-script distribution |
 | **Does not own** | The `.spec/` document *format* and validation *rules* (behavior reproduced, not changed); `state-machine.json` / cursor *schema* (canonical data owned by vibe-flow; loaded, never hardcoded); the flow *behavior* already shipped by vibe-cli (re-homed into `vibe_flow`, no logic change) |
 
 **Supersedes.** Re-homes the flow CLI from [vibe-cli](../vibe-cli/product.md) into
@@ -40,23 +41,26 @@ packages become the single source of truth and the bash scripts are removed.
 
 ## Requirements
 
-### Requirement: Three apps, split by consumer and import tier (R1)
+### Requirement: Three apps, minimal deps, fast hot path (R1)
 
-The CLI SHALL ship as three console_scripts: `vibe-flow` (agent + hooks) and
-`vibe-spec` (agent) MUST import stdlib only; `vibe` (human) MAY use `typer`/
-`rich`. Each agent tool installed alone MUST pull zero third-party dependencies.
+The CLI SHALL ship as three console_scripts split by consumer, keeping
+dependencies as few as possible: `vibe` (human) uses `typer` + `rich`; the agent
+tools (`vibe-flow`, `vibe-spec`) default to stdlib `argparse` and add a third-
+party dependency only where it clearly earns its place. The per-Edit hot path
+(`vibe-flow hook`) MUST stay stdlib-only, so its import latency matches today's
+`vibe-hook` — a separate constraint from dep-count.
 
-#### Scenario: Agent tool installs dependency-free
+#### Scenario: Agent tool stays lean
 
 - **Given** a fresh environment
 - **When** `vibe-spec` (or `vibe-flow`) is installed
-- **Then** only it and `vibe-core` are pulled — no `typer`, `rich`, or `pydantic`
+- **Then** it pulls `vibe-core` plus at most a small, justified dependency — never `typer`/`rich`/`pydantic` transitively
 
-#### Scenario: Hot path stays stdlib
+#### Scenario: Hot path stays stdlib (latency, not dep-count)
 
 - **Given** the per-Edit guard, now `vibe-flow hook guard`
 - **When** it fires during an implementation turn
-- **Then** its import cost matches today's stdlib `vibe-hook`, not the rich `vibe`
+- **Then** it imports stdlib only, so its cost matches today's `vibe-hook`, not the rich `vibe`
 
 ### Requirement: Native parity for all six spec commands (R2)
 
@@ -112,11 +116,15 @@ install script placing the three entry points on `PATH`.
   only downward. Makes "install only what you need" structural, not conventional.
 - **D2 — `vibe-flow` subsumes `vibe-hook`.** Hooks become `vibe-flow hook
   inject|guard|gate` alongside the agent flow verbs; `vibe-hook` is retired.
-- **D3 — argparse on agent paths; typer only in `vibe`.** Keeps `vibe-flow`/
-  `vibe-spec` dependency-free; pinned by a fresh-interpreter import-cost test.
+- **D3 — argparse by default on agent paths; typer only in `vibe`.** `argparse`
+  is the default for `vibe-flow`/`vibe-spec` because it adds nothing to install;
+  a light dep is allowed if it earns its place. The binding rule is latency, not
+  dep-count: the `vibe-flow hook` path MUST stay stdlib-only, pinned by a fresh-
+  interpreter import-cost test (no `typer`/`rich`/`pydantic`).
 - **D4 — Logic + plain renderer in the stdlib packages; `vibe` re-renders (R3).**
-- **D5 — Minimal deps: drop `pydantic`.** stdlib `json` + `dataclasses`; `vibe`'s
-  only third-party deps become `typer` + `rich`.
+- **D5 — As few deps as possible.** Default to stdlib (`json` + `dataclasses`);
+  drop `pydantic`. `vibe`'s third-party deps are `typer` + `rich`; the agent
+  tools stay at zero-or-few. Add a dependency only when it clearly beats stdlib.
 - **D6 — Hard cutoff.** Packages become the asset source of truth and the `.sh`
   scripts are removed at cutover — no mirror window, no permanent bash fallback.
   Bash stays only as the *CI parity oracle* during the port.

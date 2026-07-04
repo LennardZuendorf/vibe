@@ -43,7 +43,8 @@ the three console_scripts), one `uv.lock`, shared root `conftest.py` (move
 **Requirements:** R1
 **Dependencies:** —
 **Verification:** `uv sync` builds the workspace; all three `--help` exit 0; the
-two agent apps import stdlib-only (fresh-interpreter `sys.modules` assertion).
+`vibe-flow hook` path imports stdlib-only (fresh-interpreter `sys.modules`
+assertion); agent apps stay lean (no `typer`/`rich`/`pydantic`).
 
 ### cli-restructure/2 — `vibe-core`
 
@@ -64,7 +65,7 @@ orders}`) + plain flow-verb renderer; move the flow parity tests.
 **Dependencies:** /2
 **Verification:** `test_parity_policy`/`test_parity_orders` green under
 `vibe_flow`; `vibe-flow hook guard` byte-matches the prior `vibe-hook guard`;
-import-cost test green (no typer/rich).
+hot-path import-cost test green (no typer/rich on `vibe-flow hook`).
 
 ### cli-restructure/4 — `vibe-spec`: list + setup
 

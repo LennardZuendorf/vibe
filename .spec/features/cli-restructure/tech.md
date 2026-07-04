@@ -13,8 +13,8 @@ Restructure `cli/` into a `uv` workspace of four packages — a zero-dep
 the rich human app (`vibe`) — with three console_scripts. Flow logic re-homes
 from the current flat package into `vibe_flow` unchanged; the six spec scripts
 port into `vibe_spec` behind a byte-parity gate; then a hard cutoff makes the
-packages canonical and removes the bash. Deps point only downward, so each agent
-tool installs dependency-free.
+packages canonical and removes the bash. Deps point only downward and are kept as
+few as possible, so each agent tool stays lean and the hot path stays stdlib-fast.
 
 **Parent:** [../../tech.md](../../tech.md)
 **Requirements:** [product.md](product.md)
@@ -35,12 +35,14 @@ vibe-core   (stdlib)  ── markers, errors, paths, asset load
 | Dist | Import pkg | Third-party deps | console_script | Consumer |
 |---|---|---|---|---|
 | `vibe-core` | `vibe_core` | — | — (library) | shared |
-| `vibe-flow` | `vibe_flow` | — | `vibe-flow` | agent + hooks |
-| `vibe-spec` | `vibe_spec` | — | `vibe-spec` | agent |
+| `vibe-flow` | `vibe_flow` | — (stdlib argparse) | `vibe-flow` | agent + hooks |
+| `vibe-spec` | `vibe_spec` | — (stdlib argparse) | `vibe-spec` | agent |
 | `vibe` | `vibe_cli` | `typer`, `rich` | `vibe` | human |
 
-`vibe-flow`/`vibe-spec` installed alone pull only `vibe-core` (R1). `pydantic` is
-dropped everywhere (D5) — `machine.py` already parses JSON with stdlib; models
+Deps are kept as few as possible (R1/D5), not dogmatically zero: `vibe-flow`/
+`vibe-spec` default to stdlib and take a light dep only where it clearly earns
+its place — but the `vibe-flow hook` hot path stays stdlib-only for latency.
+`pydantic` is dropped (D5) — `machine.py` already parses JSON with stdlib; models
 become `dataclasses`.
 
 ---
@@ -142,14 +144,18 @@ report = vibe_spec.validate.run(root); console.print(rich_view(report))
   `vibe-spec` command gets a parity test vs its origin. Bash is a **CI-only
   parity oracle** — after cutover the `.sh` are gone and the parity tests are
   retired with them.
-- **Argparse, not typer, on agent paths (D3).** `vibe_flow.app`/`vibe_spec.app`
-  dispatch with stdlib `argparse`; a fresh-interpreter `sys.modules` import-cost
-  test pins that neither imports `typer`/`rich`/`pydantic`.
+- **Argparse by default on agent paths (D3).** `vibe_flow.app`/`vibe_spec.app`
+  dispatch with stdlib `argparse` (adds nothing to install; a light dep is
+  allowed only if it earns its place). The hard, latency-driven guard is scoped
+  to the hot path: a fresh-interpreter `sys.modules` import-cost test pins the
+  `vibe-flow hook` path to stdlib-only (no `typer`/`rich`/`pydantic`); the other
+  agent commands stay lean but are not held to a strict zero-dep bar.
 
 <!-- merge -->
 CLI packaging pattern for this repo: a `uv` workspace with a zero-dep `vibe-core`
-library and per-consumer apps — stdlib-only `argparse` entry points for anything
-an agent or hook invokes, one `typer`/`rich` app for humans. Split packages by
+library and per-consumer apps — lean `argparse` entry points for anything an
+agent or hook invokes (deps kept minimal; the hook/hot path stays stdlib for
+latency), one `typer`/`rich` app for humans. Split packages by
 *who calls it and what it may import*, never by domain tidiness; a new app earns
 its keep only as a distinct import tier. Behavior lives once in the stdlib
 packages; the rich app re-renders. Distribute from GitHub via an install script
