@@ -111,16 +111,34 @@ runtime guarantee (R2) can be met.
 
 - **D1 — Mirror the flow migration exactly.** Dual implementation: native
   Python behind `vibe spec`, bash retained, byte-parity suite as the merge gate.
-  Chosen because it is the proven pattern in this repo (vibe-cli) and it makes
-  R2 unconditional — the skill context never loses its bash path.
-- **D2 — `vibe spec` groups all six.** `validate` and `setup` move from
-  subprocess wrappers to native; `list`, `lessons-for`, `promote`,
-  `scan-merges` are added. One `spec` Typer group, one `register(app)` contract.
-- **D3 — Shared logic is importable and rich-path only.** The spec commands are
-  human/agent-invoked, never on the per-Edit guard hot path, so they may use
-  `rich`/`pydantic`; but the shared logic stays in importable modules so tests
-  and future callers don't go through Typer. (No second entry point is needed —
-  this is not a hot path, unlike `vibe-hook`.)
+  Chosen because it is the proven pattern in this repo (vibe-cli); bash stays as
+  the parity oracle and skill-context fallback until R4's preflight guarantee.
+- **D2 — `vibe spec` group; flow + management stay top-level.** `validate` and
+  `setup` move from subprocess wrappers to native; `list`, `lessons-for`,
+  `promote`, `scan-merges` are added under one `spec` Typer group via the
+  existing `register(app)` contract. Flow verbs (`status`/`next`/`go`/`check`/
+  `orders`) and management (`init`/`doctor`/`update`/`uninstall`/`plugins`) stay
+  top-level to avoid a breaking rename of the shipped CLI; the three-domain model
+  surfaces via `vibe --help` sectioning + the `spec`/`vibe` skill routers. A
+  strict `vibe flow …` group is a deferred, deliberately-breaking option.
+- **D3 — Spec *logic* is stdlib-only and importable; rich is the human layer.**
+  `vibe/spec/*.py` is written import-stdlib (no `typer`/`rich`/`pydantic`), so it
+  runs on the minimal install and is reusable by tests, the hook path, and a
+  future skill-repoint. Only the `vibe spec` command *rendering* uses `rich`.
+  Extends the standing hot-path rule to the spec half. No second entry point —
+  spec is not a per-Edit hot path.
+- **D4 — One package, layered by dependency (not split by domain).** vibe's dep
+  tree is tiny (pure-Python `typer`/`rich`, `pydantic` trimmed or made an
+  extra), so a GSD-style multi-package/multi-binary split is rejected — it adds
+  release/versioning/PATH overhead for negligible footprint gain. "Reduce
+  necessary install" is met by import-cost layering: minimal = `vibe-hook` +
+  stdlib logic (zero third-party deps); full = `vibe` with the rich extra. Two
+  console_scripts total, unchanged from today.
+- **D5 — Python-preflight replaces the bash-standalone guarantee.** Python is an
+  accepted dependency (`brew`/`uv` provide it). `vibe doctor` gains a
+  Python-and-`vibe`-on-`PATH` check; that preflight — not "bash forever" — is
+  what makes the skill context safe to call `vibe spec` and what unlocks R4
+  retirement.
 
 ---
 
@@ -137,15 +155,18 @@ runtime guarantee (R2) can be met.
 
 ## Open Questions
 
-1. **Reversing vibe-cli R5 / D1.** Root [vibe-cli](../vibe-cli/product.md)
-   explicitly decided the spec half stays standalone bash and is *not*
-   rewritten. This feature proposes a native Python path. Confirm the intent is
-   to add a parallel path (safe, R2-preserving) and treat full retirement as a
-   later, separately-approved decision — **not** to make Python a hard
-   dependency of the spec skill now.
-2. **Is `vibe` ever guaranteed in a skill context?** If yes (e.g. a future
-   install invariant), retirement (R4) becomes viable. If no, bash must stay.
-   This is the single fact that decides the end-state.
-3. **`validate.sh` fidelity.** It is ~640 lines of `awk`/`grep`/`sed` with many
-   heuristic checks (SF3–SF16). Porting it to Python is the largest and riskiest
-   unit; confirm byte-parity (not just "equivalent") is the bar.
+1. **~~Reversing vibe-cli R5 / D1.~~ RESOLVED (2026-07-04).** Python-as-a-
+   dependency is accepted (`brew`/`uv` provide it). Intent: add the native path
+   in parallel now (D1); make the skill context safe via a `vibe doctor` Python/
+   `PATH` preflight (D5); retire bash later under R4 once that preflight is
+   wired. Not a silent refactor — the reversal is a recorded decision.
+2. **~~Is `vibe` guaranteed in a skill context?~~ RESOLVED (2026-07-04).** Not
+   intrinsically, but the D5 preflight (`vibe doctor` / a `vibe check`-style
+   step) establishes the guarantee at setup time, which is what unlocks R4.
+3. **`validate.sh` fidelity (OPEN).** ~640 lines of `awk`/`grep`/`sed`
+   (SF3–SF16). Porting to Python is the largest, riskiest unit; byte-parity (not
+   "equivalent") is the bar. The optional SF4 network lint stays a bash shell-out.
+4. **Machine-output fast path (OPEN).** Whether to expose the agent/CI-consumed
+   outputs (`list`/`lessons-for`/`scan-merges --format json`, `validate`
+   exit-code) through the stdlib entry point for zero-`rich` startup, or keep
+   everything under the one rich `vibe` command. See tech.md § Packaging.

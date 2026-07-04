@@ -124,6 +124,35 @@ invokes it is guaranteed to have the CLI on `PATH`. The spec half stayed bash by
 design (vibe-cli R5/D1); reversing that is a decision, not a refactor.
 <!-- /merge -->
 
+## Packaging & entry points
+
+Two orthogonal levers, kept distinct:
+
+- **Loaded code per invocation (latency)** — controlled by *entry points*. An
+  entry point only wins if its transitive imports are narrow: `vibe-hook` is
+  cheap because it imports stdlib-only `policy`/`orders`/`cursor`, never
+  `typer`/`rich`. Adding a domain binary that imports `rich` saves nothing.
+- **Install footprint** — controlled by *dependency layering* (D4). One wheel;
+  `typer`/`rich` power `vibe`; `pydantic` is trimmed or an extra; the stdlib
+  logic (incl. `vibe/spec/*`) needs no third-party deps.
+
+Entry points are tiered by import cost, **not** by domain:
+
+| console_script | import tier | fires |
+|---|---|---|
+| `vibe-hook` | stdlib only (~24 ms) | per-Edit / per-turn hooks (hot) |
+| `vibe` | typer + rich (~66 ms) | human/agent commands (occasional) |
+
+Spec commands are *occasional*, so ~66 ms `typer` startup is imperceptible for
+`vibe spec validate` — a dedicated `vibe-spec` binary buys **no latency win** and
+is rejected on those grounds. The one principled case for more surface: because
+spec logic is stdlib-only (D3), the **machine-readable** outputs
+(`list`/`lessons-for`/`scan-merges --format json`, `validate` exit-code) *could*
+be exposed through the stdlib `vibe-hook`-tier entry so agents/CI get them with
+zero `rich` import, while the pretty human forms stay under `vibe spec`. That is
+a deferred option (product.md OQ4), taken only if a spec path proves both
+frequently-invoked and machine-consumed — otherwise one rich `vibe` is simpler.
+
 ## Open Questions
 
 1. **`validate.sh` color/ordering fidelity.** The script interleaves per-file

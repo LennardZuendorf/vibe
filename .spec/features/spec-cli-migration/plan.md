@@ -33,14 +33,18 @@ byte-for-byte test against the `.sh` origin is green.
 
 ## Units
 
-### spec-cli-migration/0 — Decision gate + scaffold
+### spec-cli-migration/0 — Scaffold + dep layering + preflight
 
-**Goal:** Get the R5-reversal decision (product.md Open Question 1) approved, and
-create the `vibe/spec/` package + the parity fixture wiring (extend the `bash_ref`
-conftest pattern to `spec/scripts/*.sh`). No behavior yet.
-**Requirements:** R2
+**Goal:** Create the stdlib-only `vibe/spec/` package (no `typer`/`rich`/
+`pydantic` imports) + the parity fixture wiring (extend the `bash_ref` conftest
+pattern to `spec/scripts/*.sh`); apply D4 dependency layering (trim/extra
+`pydantic`, confirm `vibe-hook` still imports stdlib-only via the existing import-
+cost test); add the D5 Python/`PATH` preflight check to `vibe doctor`. No spec
+behavior yet. (R5-reversal decision is recorded — product.md OQ1/OQ2 resolved.)
+**Requirements:** R2, R4
 **Dependencies:** —
-**Verification:** approved decision recorded; empty `vibe/spec/` imports; a
+**Verification:** empty `vibe/spec/` imports with zero third-party deps; import-
+cost test still green; `vibe doctor` reports the Python/`vibe`-on-`PATH` check; a
 skipped-without-bash parity fixture resolves both source and bundled script paths.
 
 ### spec-cli-migration/1 — Port `list-specs`
