@@ -15,8 +15,8 @@ the merge gate; golden fixtures are frozen before the `.sh` are removed at the
 final cutover unit.
 
 **Feature gate:** starts when `vibe-cli` is `BUILT`/`DONE` (root Feature Sequence
-feature 9); this feature supersedes its flow-CLI + the flow/spec bash. Registering
-the root-plan row is a gated root-spec write — see product Open Q4.
+feature 9); this feature supersedes its flow-CLI + the flow/spec bash. Registered
+as feature 10 (PLANNED) in the root [`.spec/plan.md`](../../plan.md) Feature Sequence.
 
 **Parent:** [../../plan.md](../../plan.md)
 **Requirements:** [product.md](product.md)
@@ -164,9 +164,10 @@ provisions; upgrading a prior combined install removes the old binaries first.
 
 ### cli-restructure/10 — Hard cutoff (both halves)
 
-**Goal:** After all commands are parity-green and golden fixtures frozen (D6): make
-package `_assets/` canonical + repoint root `spec/`/`flow/` + `.agents/skills/*`
-(product Open Q2), retarget `test_assets_sync`; repoint `spec/SKILL.md` (incl. the
+**Goal:** After all commands are parity-green and golden fixtures frozen under
+`LC_ALL=C` (D6): make package `_assets/` canonical, **delete** root `spec/`/`flow/`
+and repoint every `.agents/skills/*` symlink + `install.sh` copy + doc reference
+through the installed package, retarget `test_assets_sync`; repoint `spec/SKILL.md` (incl. the
 `!` embed → preflight-guarded) + `flow/SKILL.md` + every skill/`README`/strategy/
 feature-file + the merged `templates/AGENTS.md` + `spec/agents/*/SKILL.md` at the
 binaries; rewrite `ci.yml` (validate step → `vibe-spec validate`; drop `.sh`
@@ -177,12 +178,12 @@ retire the plugin bash-shim hooks; **remove** flow *and* spec `.sh`; update
 **Dependencies:** /9 (all parity-green; golden frozen)
 **Files:** all listed references; tech.md § Asset ownership.
 **Test scenarios:** repo-wide grep finds no live `.sh` invocation across skills,
-hooks, `tests/`, `.github/`, `install.sh`, the `AGENTS.md` template; asset-sync green
-with no bundled≠source window; a missing-binary `!` embed degrades to a documented
-line; golden regression tests still pass with bash gone; a fresh install-script
-target runs `vibe-spec`/`vibe-flow`; stranger eval passes on a Python-present sandbox.
-**Gated follow-up (not in this feature's write scope):** add the `cli-restructure`
-row + gate to root `.spec/plan.md` during `feature.compound`/`strategy.spec`.
+hooks, `tests/`, `.github/`, `install.sh`, the `AGENTS.md` template; no root
+`spec/`/`flow/` tree remains and provisioning copies from the installed package;
+asset-sync green with no bundled≠source window; a missing-binary `!` embed degrades
+to a documented line; golden regression tests still pass with bash gone; a fresh
+install-script target runs `vibe-spec`/`vibe-flow`; stranger eval passes on a
+Python-present sandbox.
 
 ---
 

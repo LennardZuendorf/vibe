@@ -66,8 +66,9 @@ gets a package owner. Post-cutover these package `_assets/` are canonical:
 `vibe_cli.provision` locates the two sibling packages' `_assets/` via
 `importlib`/`__file__`, not a single local tree (today `skills.py` reads one
 package's `_assets` with `SKILL_NAMES=("spec","vibe")`; post-split those trees
-live in two installed packages). Unit /10's retargeted asset-sync test asserts
-package↔root-symlink integrity, not a byte mirror.
+live in two installed packages). The root `spec/`/`flow/` trees are **deleted** at
+cutover (no symlink chain); unit /10's retargeted asset-sync test asserts the
+package `_assets/` are canonical with no orphaned root tree, not a byte mirror.
 
 ---
 
@@ -172,9 +173,12 @@ skeleton unit. A bash→Python cutover must inventory EVERY live `.sh` consumer
 deleting the oracle.
 <!-- /merge -->
 
-## Open Questions
+## Resolved (2026-07-04)
 
-1. **Locale pin for parity.** Confirm the CI `LC_COLLATE` used to freeze golden
-   glob-order fixtures, so `validate`/`list`/`scan` row order is stable.
-2. **Symlink vs delete for root `spec/`/`flow/`** (product Open Q2) — resolve in
-   /10; either way the multi-hop `cp -RL` materialization gets a test.
+- **Locale pin.** Golden fixtures are captured under `LC_ALL=C`; Python reproduces
+  **byte-order** sort. Deterministic on any runner, no locale data needed.
+- **Root `spec/`/`flow/`: delete + repoint.** The trees are removed at cutover; the
+  package `_assets/` are the sole source. Provisioning + `install.sh` copy from the
+  installed package (via `importlib`/`__file__`), and every `.agents/skills/*`
+  symlink and doc reference is repointed — no symlink chain, no multi-hop `cp -RL`.
+  The retargeted asset-sync test asserts package-canonical + no orphaned root tree.

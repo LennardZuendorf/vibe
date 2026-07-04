@@ -32,7 +32,7 @@ are removed, guarded by an install-script preflight.
 | | |
 |---|---|
 | **Owns** | The workspace restructure into `vibe-core` / `vibe-flow` / `vibe-spec` / `vibe-cli`; the three console_scripts; native Python for all six spec commands + the byte-parity suites + frozen golden fixtures; the **hard cutoff** (packages canonical; remove flow *and* spec `.sh`; retire the plugin bash-shim hooks; repoint `spec/SKILL.md` + `flow/SKILL.md` + all skill/template/AGENTS.md prose at the binaries; rewrite `ci.yml`; port/retire `tests/spec/run.sh`); the in-place `vibe-hook`→`vibe-flow` migration; the GitHub install-script distribution; dependency minimization (`pydantic` dropped); doc/CHANGELOG updates for the new command + install |
-| **Does not own** | The `.spec/` document *format* and validation *rules* (behavior reproduced, not changed, save the documented divergences below); `state-machine.json` / cursor *schema* (canonical data owned by vibe-flow; loaded, never hardcoded); the flow *behavior* already shipped by vibe-cli (re-homed into `vibe_flow`, no logic change); the root `.spec/plan.md` Feature-Sequence row (a gated root-spec write — see Open Q4) |
+| **Does not own** | The `.spec/` document *format* and validation *rules* (behavior reproduced, not changed, save the documented divergences below); `state-machine.json` / cursor *schema* (canonical data owned by vibe-flow; loaded, never hardcoded); the flow *behavior* already shipped by vibe-cli (re-homed into `vibe_flow`, no logic change) |
 
 **Supersedes.** Re-homes the flow CLI + flow bash engine from
 [vibe-cli](../vibe-cli/product.md)/vibe-flow into `vibe_flow`; moves
@@ -199,18 +199,18 @@ CLI SHALL migrate it — stripping the stale `vibe-hook` hook entries before add
 
 ## Open Questions
 
-1. **`validate.sh` glob/collation fidelity (OPEN, decided-direction).** Reproduce
-   bash `LC_COLLATE` sort of `.spec/*.md` (drives per-file header interleaving and
-   list/scan row order). Direction: match bash collation in Python; confirm the CI
-   env locale is pinned so the golden fixtures are stable.
-2. **Root `spec/`/`flow/` post-cutover (OPEN).** Symlink into the package
-   `_assets/` (a 2-hop chain `.agents/skills/* → spec|flow → package/_assets`,
-   materialized by `install.sh`'s `cp -RL`) or delete and update every reference?
-   Symlink is lower-churn; either way the multi-hop `cp -RL` needs a test.
-3. **Versioning across 4 packages (OPEN, decided-direction).** Single lockstep
-   version (D7) so the frozen `pyproject`s in unit 1 can pin inter-package deps;
-   confirm.
-4. **Root-plan registration is a gated write (FLAG, not doable here).** Adding the
-   `cli-restructure` Feature-Sequence row/gate to `.spec/plan.md` is a root-spec
-   write allowed only in `strategy.spec`/`feature.compound`. It is out of scope for
-   this idle planning pass and must be done in the right flow state / with approval.
+All resolved (2026-07-04):
+
+1. **~~glob/collation fidelity~~ RESOLVED.** Capture golden fixtures under
+   `LC_ALL=C` and reproduce **byte-order** sort in Python — deterministic across
+   machines, no locale data required. Pinned in CI (tech OQ1).
+2. **~~Root `spec/`/`flow/` post-cutover~~ RESOLVED: delete + repoint.** Remove the
+   root `spec/`/`flow/` trees entirely; the package `_assets/` are the only source,
+   and every `.agents/skills/*` symlink + `install.sh` copy + doc reference is
+   repointed to resolve through the installed package (no symlink chain). Scoped in
+   /10.
+3. **~~Versioning~~ RESOLVED.** Single lockstep version across the four
+   `pyproject`s + `plugin.json` (D7); frozen in /1.
+4. **~~Root-plan registration~~ RESOLVED: registered (2026-07-04).** With owner
+   approval, `cli-restructure` is entered as feature 10 (PLANNED) in the root
+   `.spec/plan.md` Feature Sequence + Feature-plans table.
