@@ -45,6 +45,10 @@ snapshot() {
     printf '{"state":"%s","jq":false,"note":"jq missing; degraded"}\n' "$key"
     return 0
   fi
+  if [[ ! -f "$MACHINE" ]]; then
+    printf '{"state":"%s","jq":true,"note":"state-machine.json missing; degraded"}\n' "$key"
+    return 0
+  fi
   local feature="null"
   [[ -f "$STATE" ]] && feature=$(jq -r '.feature // "null"' "$STATE" 2>/dev/null || echo null)
   jq -n \
@@ -82,12 +86,13 @@ decide() {
       ;;
   esac
 
-  # Block 1: lessons.md only during a compound state.
+  # Block 1: lessons.md only during a compound state or setup.apply.
   case "$path" in
     .spec/lessons.md|*/.spec/lessons.md)
       case "$state" in
         feature.compound|strategy.compound) echo "allow" ;;
-        *) echo "block:.spec/lessons.md is writable only during a *.compound state (current: $state)" ;;
+        setup.apply) echo "allow" ;;
+        *) echo "block:.spec/lessons.md is writable only during a *.compound state or setup.apply (current: $state)" ;;
       esac
       return 0
       ;;

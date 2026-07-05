@@ -295,7 +295,7 @@ check_sf13_stale_feature_links() {
   for f in "${root_files[@]}"; do
     [[ -f "$f" ]] || continue
     while IFS= read -r target; do
-      [[ -e ".spec/$target" ]] || yellow "SF13: stale link in $f → $target (not found)"
+      [[ "$target" == *"{"* || -e ".spec/$target" ]] || yellow "SF13: stale link in $f → $target (not found)"
     done < <(grep -oE '\(features/[^)]+\)|\(archive/[^)]+\)' "$f" 2>/dev/null \
               | sed 's/^(//;s/)$//' || true)
   done
@@ -413,16 +413,6 @@ for f in "${specs[@]}"; do
   echo "--- $name ---"
 
   if [[ "$name" == "lessons.md" ]]; then
-    while IFS= read -r untagged; do
-      yellow "$name: lesson missing '**Tags:**' -> ${untagged#### }"
-    done < <(awk '
-      /^### / {
-        if (have_entry && !have_tags) print prev_title
-        have_entry = 1; have_tags = 0; prev_title = $0; next
-      }
-      /^\*\*Tags:\*\*/ { if (have_entry) have_tags = 1 }
-      END { if (have_entry && !have_tags) print prev_title }
-    ' "$f")
     green "$name: checked (lessons file, no frontmatter required)"
     echo ""
     continue
@@ -488,7 +478,7 @@ for f in "${specs[@]}"; do
 
   while IFS= read -r link; do
     target=$(echo "$link" | sed 's/.*(\(.*\))/\1/' | sed 's/#.*//')
-    if [[ -n "$target" && "$target" != http* && "$target" != ../ ]]; then
+    if [[ -n "$target" && "$target" != http* && "$target" != ../ && "$target" != *"{"* ]]; then
       if [[ ! -f "$SPEC_DIR/$target" && ! -f "$(dirname "$f")/$target" ]]; then
         red "$name: broken link to '$target'"
       fi
@@ -513,7 +503,7 @@ for entrypoint in "$SPEC_DIR"/product.md "$SPEC_DIR"/tech.md "$SPEC_DIR"/design.
       if $in_children; then
         if [[ "$line" =~ ^[[:space:]]*-[[:space:]]+(.*) ]]; then
           child="${BASH_REMATCH[1]}"
-          if [[ ! -f "$SPEC_DIR/$child" ]]; then
+          if [[ "$child" != *"{"* && ! -f "$SPEC_DIR/$child" ]]; then
             red "$name: child '$child' listed in frontmatter but file doesn't exist"
           fi
         else

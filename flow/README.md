@@ -16,21 +16,16 @@ explains the split. This half needs Claude Code for the hooks to fire.
 ## Quickstart
 
 ```bash
-# Install the flow half into your project, then register the plugin in Claude Code:
+# Install the flow half into your project:
 ./install.sh /path/to/your/repo --only flow
 ```
 
-Then, inside Claude Code, register the repo as a plugin so the hooks and the
-`/flow` command load:
-
-```
-/plugin        # register this repo; it ships .claude-plugin/plugin.json
-```
-
 The installer copies the flow core into `<repo>/.agents/skills/vibe/`, merges the
-`AGENTS.md` instructions block, and seeds + gitignores the flow cursor. Until the
-plugin is loaded the `vibe` skill still works as project files — you just lose the
-automatic per-turn inject, the guard, and the exit gate. Check health any time:
+`AGENTS.md` instructions block, seeds + gitignores the flow cursor, and writes
+`.claude/settings.json` with three auto-wired hooks (`UserPromptSubmit`,
+`PreToolUse`, `Stop`). The `vibe` skill works as plain project files immediately;
+the flow hooks activate as soon as the settings.json wiring is in place. `/flow`
+is a native project command — no plugin registration required. Check health any time:
 
 ```bash
 bash .agents/skills/vibe/scripts/doctor.sh   # warn-only, always exits 0
@@ -128,7 +123,7 @@ Thin shells over `scripts/`; the allow/warn/block policy lives once in
 | `pre-tool-use-guard.sh` | `PreToolUse` (Edit/Write/NotebookEdit) | hard-blocks the three write invariants |
 | `stop-gate.sh` | `Stop` | warn-first exit checks for the state |
 
-The plugin wires them through `.claude/hooks/hooks.json` via `${CLAUDE_PLUGIN_ROOT}`.
+Wired automatically by `install.sh` into `.claude/settings.json`; hook scripts resolve their data via `$CLAUDE_PROJECT_DIR`.
 
 ## Write invariants
 
@@ -154,7 +149,7 @@ All under `.agents/skills/vibe/scripts/` at runtime.
 
 | Script | Role |
 |---|---|
-| [set-state.sh](scripts/set-state.sh) | the only sanctioned cursor writer (validates the transition) |
+| [set-state.sh](scripts/set-state.sh) | the only sanctioned cursor writer (validates the target state name; `/flow` enforces the graph edge) |
 | [validate-state.sh](scripts/validate-state.sh) | check the cursor is a legal state in the machine |
 | [detect-context.sh](scripts/detect-context.sh) | write policy (allow/warn/block) + state snapshot |
 | [orders.sh](scripts/orders.sh) | resolve the D12 per-turn orders from the linked skill |

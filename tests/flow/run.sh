@@ -235,7 +235,11 @@ out="$(bash "$DOCTOR" 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/4" "doctor exits 0 on a healthy repo" "$out" "rc=0"
 assert_contains "install-tooling/4" "doctor reports core.vibe ok" "$out" "ok   core.vibe"
 assert_contains "install-tooling/4" "doctor reports machine ok" "$out" "ok   machine"
-assert_contains "install-tooling/4" "doctor reports adapter wiring ok" "$out" "ok   adapter.hooks"
+assert_contains "install-tooling/4" "doctor reports each adapter hook script present" "$out" "ok   adapter.script.stop-gate.sh"
+# The source repo dogfoods its own hooks: .claude/settings.json wires all three,
+# so doctor reports activation ok. (The unwired WARN scenario is covered below via
+# a fresh install with settings.json removed.)
+assert_contains "install-tooling/4" "doctor reports adapter.activation ok in the dogfood source repo" "$out" "ok   adapter.activation"
 assert_contains "install-tooling/4" "doctor lists dep superpowers" "$out" "dep.superpowers"
 assert_contains "install-tooling/4" "doctor lists dep feature-dev" "$out" "dep.feature-dev"
 assert_contains "install-tooling/4" "doctor lists dep caveman" "$out" "dep.caveman"
@@ -271,6 +275,32 @@ out="$(bash "$DOCTOR" "$d" 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/4" "doctor warns an absent dep with degrade text" "$out" "degrade: inline fallback"
 assert_contains "install-tooling/4" "doctor exits 0 with a missing dep" "$out" "rc=0"
 rm -rf "$d"
+
+echo ""
+echo "=== install-tooling/4 — doctor adapter.activation (settings.json wiring) ==="
+# A full install wires the three hooks into settings.json — doctor reports ok.
+SBA="$(mktemp -d)"
+bash "$REPO_ROOT/install.sh" "$SBA" >/dev/null 2>&1
+out="$(bash "$DOCTOR" "$SBA" 2>&1; echo "rc=$?")"
+assert_contains "install-tooling/4" "doctor reports adapter.activation ok when settings.json wires the hooks" "$out" "ok   adapter.activation"
+assert_contains "install-tooling/4" "doctor exits 0 on a wired install" "$out" "rc=0"
+# Remove only the wiring (scripts stay): doctor must WARN, name the gap, exit 0.
+rm -f "$SBA/.claude/settings.json"
+out="$(bash "$DOCTOR" "$SBA" 2>&1; echo "rc=$?")"
+assert_contains "install-tooling/4" "doctor still reports the hook scripts present" "$out" "ok   adapter.script.stop-gate.sh"
+assert_contains "install-tooling/4" "doctor warns adapter.activation when scripts exist but settings.json does not wire them" "$out" "warn adapter.activation"
+assert_contains "install-tooling/4" "doctor exits 0 when hooks are unwired" "$out" "rc=0"
+rm -rf "$SBA"
+
+echo ""
+echo "=== detect-context.sh — lessons.md write policy ==="
+DETECT="$SCRIPTS/detect-context.sh"
+out="$(bash "$DETECT" decide .spec/lessons.md setup.apply)"
+assert_eq "vibe-flow/core" "decide lessons.md returns allow under setup.apply" "$out" "allow"
+out="$(bash "$DETECT" decide .spec/lessons.md feature.compound)"
+assert_eq "vibe-flow/core" "decide lessons.md returns allow under feature.compound" "$out" "allow"
+out="$(bash "$DETECT" decide .spec/lessons.md idle)"
+assert_contains "vibe-flow/core" "decide lessons.md blocks under idle" "$out" "block:"
 
 echo ""
 echo "=== orders.sh on a fresh non-git install (stranger-eval regression) ==="

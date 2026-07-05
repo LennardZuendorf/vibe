@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tests/adapters/run.sh — behaviour tests for agent-instructions (merge-agents.sh,
-# template, manifest) and platform-adapters (three hooks, hooks.json, plugin.json,
+# template, manifest) and platform-adapters (three hooks, settings.json wiring,
 # install.sh). Pure bash; no bats. Each test cites its plan unit ID.
 #
 # Hook tests run against a throwaway install in a temp dir (its own state.json),
@@ -15,10 +15,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MERGE="$REPO_ROOT/.agents/skills/vibe/scripts/merge-agents.sh"
 TEMPLATE="$REPO_ROOT/.agents/skills/vibe/reference/templates/AGENTS.md"
 ADAPTERS_JSON="$REPO_ROOT/.agents/skills/vibe/reference/adapters.json"
-HOOKS="$REPO_ROOT/.claude/hooks"
-HOOKS_JSON="$HOOKS/hooks.json"
-PLUGIN="$REPO_ROOT/.claude-plugin/plugin.json"
 INSTALL="$REPO_ROOT/install.sh"
+# The vibe hook scripts are wired into a target's .claude/settings.json (issue
+# #12: settings.json is the single firing path; no plugin manifest is shipped).
+VIBE_HOOK_RE='\.claude/hooks/(user-prompt-submit-inject|pre-tool-use-guard|stop-gate)\.sh'
 
 PASS=0
 FAIL=0
@@ -72,31 +72,55 @@ printf 'real\n' > "$d/WARP.md"
 if bash "$MERGE" link WARP.md "$d" >/dev/null 2>&1; then fail "agent-instructions/5" "real file must not be clobbered"; else pass "agent-instructions/5" "real file blocked (R5)"; fi
 
 echo ""
-echo "=== platform-adapters/4,5 — wiring + manifest validity ==="
-jq -e . "$HOOKS_JSON" >/dev/null 2>&1 && pass "platform-adapters/4" "hooks.json is valid JSON" || fail "platform-adapters/4" "hooks.json JSON"
-for ev in UserPromptSubmit PreToolUse Stop; do
-  jq -e --arg e "$ev" '.hooks[$e]' "$HOOKS_JSON" >/dev/null 2>&1 && pass "platform-adapters/4" "hooks.json wires $ev" || fail "platform-adapters/4" "missing $ev"
+echo "=== platform-adapters/4,5 — settings.json hook wiring (auto-wired, no plugin) ==="
+# A fresh install wires the three hooks into the target's .claude/settings.json —
+# no plugin manifest, no hooks.json (issue #12: settings.json is the single path).
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SETTINGS="$SB/.claude/settings.json"
+jq -e . "$SETTINGS" >/dev/null 2>&1 && pass "platform-adapters/4" "install writes a valid settings.json" || fail "platform-adapters/4" "settings.json JSON"
+# each event is wired to its script, via a $CLAUDE_PROJECT_DIR-relative command.
+for pair in "UserPromptSubmit:user-prompt-submit-inject.sh" "PreToolUse:pre-tool-use-guard.sh" "Stop:stop-gate.sh"; do
+  ev="${pair%%:*}"; script="${pair#*:}"
+  cmd="$(jq -r --arg e "$ev" '.hooks[$e][]?.hooks[]?.command // empty' "$SETTINGS" 2>/dev/null)"
+  assert_contains "platform-adapters/4" "settings.json wires $ev -> $script" "$cmd" "$script"
+  # shellcheck disable=SC2016  # intentional: match the literal $CLAUDE_PROJECT_DIR token
+  assert_contains "platform-adapters/4" "$ev command is \$CLAUDE_PROJECT_DIR-relative" "$cmd" '$CLAUDE_PROJECT_DIR/.claude/hooks/'
 done
-matcher="$(jq -r '.hooks.PreToolUse[0].matcher' "$HOOKS_JSON")"
+matcher="$(jq -r '.hooks.PreToolUse[0].matcher' "$SETTINGS")"
 assert_eq "platform-adapters/4" "PreToolUse matcher is Edit|Write|NotebookEdit" "$matcher" "Edit|Write|NotebookEdit"
-# every referenced hook script exists and is executable; paths are plugin-root-relative
+# every wired command points at a hook script that exists and is executable.
 allok=1
-while IFS= read -r cmd; do
-  rel="$(sed -E 's#.*\$\{CLAUDE_PLUGIN_ROOT\}/([^"]+)".*#\1#' <<<"$cmd")"
-  [[ -x "$REPO_ROOT/$rel" ]] || { allok=0; echo "        not executable / missing: $rel"; }
-  # shellcheck disable=SC2016  # intentional: match the literal ${CLAUDE_PLUGIN_ROOT} token
-  [[ "$cmd" == *'${CLAUDE_PLUGIN_ROOT}'* ]] || { allok=0; echo "        not plugin-root-relative: $cmd"; }
-done < <(jq -r '.hooks[][].hooks[].command' "$HOOKS_JSON")
-assert_eq "platform-adapters/4" "all hook commands are plugin-root-relative + executable" "$allok" "1"
-jq -e . "$PLUGIN" >/dev/null 2>&1 && pass "platform-adapters/5" "plugin.json is valid JSON" || fail "platform-adapters/5" "plugin.json JSON"
-name="$(jq -r '.name' "$PLUGIN")"; assert_eq "platform-adapters/5" "plugin name is vibe" "$name" "vibe"
-# component paths must be relative with ./ and no ../
-bad=0
-while IFS= read -r p; do
-  [[ "$p" == ./* ]] || { bad=1; echo "        path missing ./: $p"; }
-  [[ "$p" == *..* ]] && { bad=1; echo "        path uses ..: $p"; }
-done < <(jq -r '[.commands, .hooks] | flatten | .[] | select(type=="string")' "$PLUGIN")
-assert_eq "platform-adapters/5" "plugin component paths are ./-relative, no .." "$bad" "0"
+while IFS= read -r script; do
+  [[ -z "$script" ]] && continue
+  [[ -x "$SB/.claude/hooks/$script" ]] || { allok=0; echo "        not executable / missing: $script"; }
+done < <(jq -r '.hooks[][]?.hooks[]?.command // empty' "$SETTINGS" | sed -E 's#.*/\.claude/hooks/([^"\\]+).*#\1#')
+assert_eq "platform-adapters/4" "all wired hook scripts exist + executable in the install" "$allok" "1"
+# auto-wired, not a plugin: neither legacy manifest is shipped.
+[[ ! -e "$SB/.claude-plugin/plugin.json" ]] && pass "platform-adapters/5" "install ships no plugin.json (auto-wired via settings.json)" || fail "platform-adapters/5" "plugin.json must not be shipped"
+[[ ! -e "$SB/.claude/hooks/hooks.json" ]] && pass "platform-adapters/5" "install ships no hooks.json manifest" || fail "platform-adapters/5" "hooks.json must not be shipped"
+# idempotent: a second install leaves exactly one vibe group per event.
+bash "$INSTALL" "$SB" >/dev/null 2>&1
+dupok=1
+for ev in UserPromptSubmit PreToolUse Stop; do
+  n="$(jq --arg e "$ev" --arg m "$VIBE_HOOK_RE" '[.hooks[$e][]? | select([.hooks[]?.command // empty] | any(test($m)))] | length' "$SETTINGS")"
+  [[ "$n" == "1" ]] || { dupok=0; echo "        $ev has $n vibe groups (want 1)"; }
+done
+assert_eq "platform-adapters/4" "re-install does not duplicate vibe hook groups" "$dupok" "1"
+rm -rf "$SB"
+# --uninstall strips vibe's hook entries but preserves unrelated user settings.
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SETTINGS="$SB/.claude/settings.json"
+jq '. + {permissions:{allow:["Bash(git status:*)"]}}' "$SETTINGS" > "$SETTINGS.tmp" && mv "$SETTINGS.tmp" "$SETTINGS"
+bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+if [[ -f "$SETTINGS" ]]; then
+  wired="$(jq -r --arg m "$VIBE_HOOK_RE" '[.. | .command? // empty] | map(select(test($m))) | length' "$SETTINGS")"
+  assert_eq "platform-adapters/5" "uninstall removes vibe hook entries from settings.json" "$wired" "0"
+  kept="$(jq -r '.permissions.allow[0]' "$SETTINGS")"
+  assert_eq "platform-adapters/5" "uninstall preserves unrelated user settings" "$kept" "Bash(git status:*)"
+else
+  fail "platform-adapters/5" "settings.json with a user key must survive uninstall"
+fi
+rm -rf "$SB"
 
 echo ""
 echo "=== platform-adapters/1,2,3 — hooks against a real install ==="
@@ -139,7 +163,7 @@ echo ""
 echo "=== platform-adapters/6 — installer ==="
 SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 ok=1
-for p in .agents/skills/vibe/scripts/orders.sh .agents/skills/vibe/SKILL.md .claude/hooks/hooks.json .claude-plugin/plugin.json AGENTS.md .agents/skills/vibe/state.json; do
+for p in .agents/skills/vibe/scripts/orders.sh .agents/skills/vibe/SKILL.md .claude/hooks/stop-gate.sh .claude/settings.json AGENTS.md .agents/skills/vibe/state.json; do
   [[ -e "$SB/$p" ]] || { ok=0; echo "        missing $p"; }
 done
 assert_eq "platform-adapters/6" "install lays down core + adapter + cursor" "$ok" "1"
@@ -196,15 +220,16 @@ ok=1
 [[ -d "$SB/.agents/skills/spec" ]] || { ok=0; echo "        missing spec skill"; }
 [[ ! -e "$SB/.agents/skills/vibe" ]] || { ok=0; echo "        vibe present under --only spec"; }
 [[ ! -e "$SB/.claude/hooks" ]] || { ok=0; echo "        .claude/hooks present under --only spec"; }
-[[ ! -e "$SB/.claude-plugin/plugin.json" ]] || { ok=0; echo "        plugin manifest present under --only spec"; }
+[[ ! -e "$SB/.claude/settings.json" ]] || { ok=0; echo "        settings.json present under --only spec"; }
 assert_eq "install-tooling/2" "--only spec installs the spec half alone" "$ok" "1"
 rm -rf "$SB"
 # --only flow: flow + adapter present, no spec skill.
 SB="$(mktmp)"; bash "$INSTALL" "$SB" --only flow >/dev/null 2>&1
 ok=1
 [[ -d "$SB/.agents/skills/vibe" ]] || { ok=0; echo "        missing vibe skill"; }
-[[ -e "$SB/.claude/hooks/hooks.json" ]] || { ok=0; echo "        missing adapter hooks"; }
-[[ -e "$SB/.claude-plugin/plugin.json" ]] || { ok=0; echo "        missing plugin manifest"; }
+[[ -e "$SB/.claude/hooks/stop-gate.sh" ]] || { ok=0; echo "        missing adapter hook scripts"; }
+[[ -e "$SB/.claude/settings.json" ]] || { ok=0; echo "        missing settings.json wiring"; }
+grep -qF 'stop-gate.sh' "$SB/.claude/settings.json" 2>/dev/null || { ok=0; echo "        settings.json not wired to hooks"; }
 [[ ! -e "$SB/.agents/skills/spec" ]] || { ok=0; echo "        spec present under --only flow"; }
 assert_eq "install-tooling/2" "--only flow installs flow + adapter alone" "$ok" "1"
 rm -rf "$SB"
@@ -235,8 +260,7 @@ bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
 ok=1
 [[ ! -e "$SB/.agents/skills/spec" ]] || { ok=0; echo "        spec skill survived uninstall"; }
 [[ ! -e "$SB/.agents/skills/vibe/SKILL.md" ]] || { ok=0; echo "        vibe SKILL.md survived uninstall"; }
-[[ ! -e "$SB/.claude/hooks/hooks.json" ]] || { ok=0; echo "        adapter hooks survived uninstall"; }
-[[ ! -e "$SB/.claude-plugin/plugin.json" ]] || { ok=0; echo "        plugin manifest survived uninstall"; }
+[[ ! -e "$SB/.claude/hooks/stop-gate.sh" ]] || { ok=0; echo "        adapter hook script survived uninstall"; }
 assert_eq "install-tooling/3" "--uninstall removes managed artifacts" "$ok" "1"
 # regression: co-located user files in shared adapter dirs are NOT deleted.
 { [[ -f "$SB/.claude/commands/mine.md" ]] && [[ -f "$SB/.claude/hooks/custom.sh" ]]; } \

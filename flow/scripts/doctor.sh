@@ -41,8 +41,8 @@ SPEC_SKILL="$ROOT/.agents/skills/spec"
 VIBE_SKILL="$ROOT/.agents/skills/vibe"
 MACHINE="$VIBE_SKILL/state-machine.json"
 STATE="$VIBE_SKILL/state.json"
-HOOKS="$ROOT/.claude/hooks/hooks.json"
-PLUGIN="$ROOT/.claude-plugin/plugin.json"
+CLAUDE_HOOKS_DIR="$ROOT/.claude/hooks"
+SETTINGS="$ROOT/.claude/settings.json"
 DEPS="$VIBE_SKILL/reference/deps.json"
 
 ok()   { printf 'ok   %s %s\n' "$1" "$2"; }
@@ -103,11 +103,39 @@ else
   ok cursor "no flow cursor (idle) — normal when not mid-flow"
 fi
 
-# Claude adapter wiring (absent under a spec-only install).
-if [[ -f "$HOOKS" ]]; then ok adapter.hooks "Claude hooks wired (.claude/hooks/hooks.json)"
-else warn adapter.hooks "no .claude/hooks/hooks.json — Claude hooks not wired (spec-only install?)"; fi
-if [[ -f "$PLUGIN" ]]; then ok adapter.plugin "plugin manifest present (.claude-plugin/plugin.json)"
-else warn adapter.plugin "no .claude-plugin/plugin.json — plugin not registerable (spec-only install?)"; fi
+# Claude adapter wiring: hook scripts present + activated in settings.json (issue #12).
+_hook_scripts=(
+  user-prompt-submit-inject.sh
+  pre-tool-use-guard.sh
+  stop-gate.sh
+)
+_all_scripts_present=1
+for _hs in "${_hook_scripts[@]}"; do
+  if [[ -f "$CLAUDE_HOOKS_DIR/$_hs" ]]; then
+    ok "adapter.script.$_hs" ".claude/hooks/$_hs present"
+  else
+    warn "adapter.script.$_hs" ".claude/hooks/$_hs missing — re-run install.sh"
+    _all_scripts_present=0
+  fi
+done
+
+if [[ -f "$SETTINGS" ]]; then
+  _unwired=()
+  for _hs in "${_hook_scripts[@]}"; do
+    grep -qF "$_hs" "$SETTINGS" || _unwired+=("$_hs")
+  done
+  if [[ ${#_unwired[@]} -eq 0 ]]; then
+    ok adapter.activation "all three hooks wired in .claude/settings.json"
+  else
+    warn adapter.activation "hooks present but NOT wired in .claude/settings.json (issue #12 gap: ${_unwired[*]}) — re-run install.sh"
+  fi
+else
+  if [[ "$_all_scripts_present" -eq 1 ]]; then
+    warn adapter.activation ".claude/settings.json absent — hooks not activated (issue #12 gap) — re-run install.sh"
+  else
+    warn adapter.activation ".claude/settings.json absent and hook scripts missing — re-run install.sh"
+  fi
+fi
 
 # external dependency manifest + per-dep presence.
 if [[ ! -f "$DEPS" ]]; then

@@ -51,7 +51,7 @@ cd vibe
 # Preview first — prints the plan, writes nothing:
 ./install.sh /path/to/your/repo --dry-run
 
-# Spec framework only (no flow, no hooks, no plugin):
+# Spec framework only (no flow, no hooks):
 ./install.sh /path/to/your/repo --only spec
 
 # Also symlink CLAUDE.md -> AGENTS.md (opt-in, never clobbers a real file):
@@ -60,20 +60,22 @@ cd vibe
 
 A full install **copies** the platform-neutral core into `<repo>/.agents/skills/`,
 **merges** `AGENTS.md` inside managed markers (your prose is never touched),
-seeds and gitignores the flow cursor, and prints how to register the plugin.
-Re-running is idempotent and preserves a live flow cursor. (`--only spec` copies
-just the spec skill — no `AGENTS.md` merge, cursor, or plugin.)
+seeds and gitignores the flow cursor, and writes the Claude hook wiring into
+`.claude/settings.json`. Re-running is idempotent and preserves a live flow cursor.
+(`--only spec` copies just the spec skill — no `AGENTS.md` merge or cursor.)
 
-**Activate the Claude Code hooks** (full / flow install): register the repo as a
-plugin in Claude Code with the `/plugin` command — it ships
-`.claude-plugin/plugin.json`, which wires the `/flow` command and the three hooks.
-Until the plugin is loaded, the spec + vibe skills still work as project files.
+**Claude Code hooks** (full / flow install): `install.sh` writes `.claude/settings.json`
+with three auto-wired hooks (`UserPromptSubmit`, `PreToolUse`, `Stop`) and copies the
+hook scripts into `.claude/hooks/`. The spec + flow skills work as plain project files
+immediately; the flow hooks activate as soon as the settings.json wiring is in place.
+`/flow` is a native project command — no plugin registration required.
 
 **Uninstall** removes only what vibe installed and keeps your content
 (`.spec/**`, your `AGENTS.md` prose, and the flow cursor unless `--yes`):
 
 ```bash
-./install.sh /path/to/your/repo --uninstall            # preview-safe, cursor kept
+./install.sh /path/to/your/repo --uninstall            # cursor kept; use --dry-run to preview
+./install.sh /path/to/your/repo --uninstall --yes       # also remove the flow cursor
 ./install.sh /path/to/your/repo --uninstall --only spec  # remove just one half
 ```
 
@@ -135,6 +137,8 @@ flowchart LR
     QV --> I
 ```
 
+> Simplified view — see [`flow/README.md`](flow/README.md) for the setup states.
+
 The workflow is **one skill** (`vibe`) with a router plus per-phase files
 (`setup`, `strategy`, `feature`, `quick`, `verify`, `compound`, `amend`). Each
 turn, the `UserPromptSubmit` hook injects the current state's orders (resolved
@@ -165,7 +169,7 @@ vibe is portable by design; capability scales with the host.
 |---|---|---|
 | **Claude Code** | Everything: spec skill, flow, `/flow` command, per-turn inject, guard + gate hooks | — |
 | **Other `AGENTS.md` readers** (Codex, etc.) | Spec framework + instructions; agents follow the written flow manually | Hooks (no per-turn inject / guard / gate) |
-| **Bare git / any editor** | Spec framework: `.spec/` docs, templates, `validate.sh` | Flow automation, hooks, plugin |
+| **Bare git / any editor** | Spec framework: `.spec/` docs, templates, `validate.sh` | Flow automation, hooks |
 
 ## Health & updates
 
@@ -185,8 +189,7 @@ your-repo/                     # after install
 ├── .agents/skills/
 │   ├── spec/                  # bundled spec framework (real dir)
 │   └── vibe/                  # flow: router, phase files, state machine, scripts
-├── .claude/                   # Claude adapter: /flow command + three hooks (flow half)
-├── .claude-plugin/            # plugin.json (flow half)
+├── .claude/                   # Claude adapter: /flow command + three hooks + settings.json (flow half)
 ├── .spec/                     # your durable project memory
 └── AGENTS.md                  # merged instructions (CLAUDE.md may symlink here)
 ```

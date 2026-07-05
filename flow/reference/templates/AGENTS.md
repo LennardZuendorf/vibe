@@ -39,7 +39,7 @@ Know what exists before you read or create files.
 | `.agents/skills/vibe/state.example.json` | **Present** — template for the cursor file |
 | `.agents/skills/vibe/state.json` | **Often absent** — gitignored runtime cursor; missing is normal |
 | `.agents/skills/vibe/` | **Present** — workflow skill (SKILL.md router + phase files) |
-| `.claude/` hooks, plugin, `install.sh` | **Present** — Claude Code adapter (plugin + three hooks + installer) |
+| `.claude/commands/`, `.claude/hooks/`, `.claude/settings.json` | **Present** — Claude Code adapter (`/flow` command + three hook scripts wired via `settings.json`) |
 | **`flow.json`** | **Does not exist** — never expect, read, or create this file |
 | Per-turn inject / D12 orders-in-skills | **Live** — orders sourced from linked `vibe` skill via `orders.sh` |
 

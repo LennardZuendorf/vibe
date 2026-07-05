@@ -47,8 +47,6 @@ else
 fi
 MACHINE="$SKILL_DIR/state-machine.json"
 STATE="$SKILL_DIR/state.json"
-MACHINE="$SKILL_DIR/state-machine.json"
-STATE="$SKILL_DIR/state.json"
 
 GENERIC_FALLBACK="state=unknown · read .agents/skills/vibe/state-machine.json and pick the matching vibe phase · transition via set-state.sh"
 

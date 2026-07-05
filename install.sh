@@ -6,12 +6,13 @@
 # What it does (OPEN-3 default = COPY the platform-neutral core; MERGE the
 # instruction file with markers; never blind-overwrite user content):
 #   1. Copy the core   .agents/skills/{spec,vibe} (skills + vibe flow engine).
-#   2. Copy the Claude adapter   .claude/commands, .claude/hooks, .claude-plugin/.
-#   3. Seed   .agents/skills/vibe/state.json from state.example.json if absent.
-#   4. Ignore the mutable cursor in the target .gitignore.
-#   5. Merge   AGENTS.md via the target's merge-agents.sh (agent-instructions).
-#   6. Symlink requested adapters (CLAUDE.md, WARP.md) — opt-in, never clobber.
-#   7. Print how to register the Claude Code plugin so the hooks go live.
+#   2. Copy the Claude adapter   .claude/commands + .claude/hooks/*.sh scripts.
+#   3. Wire the flow hooks into   .claude/settings.json (merge, never clobber).
+#   4. Seed   .agents/skills/vibe/state.json from state.example.json if absent.
+#   5. Ignore the mutable cursor in the target .gitignore.
+#   6. Merge   AGENTS.md via the target's merge-agents.sh (agent-instructions).
+#   7. Symlink requested adapters (CLAUDE.md, WARP.md) — opt-in, never clobber.
+#   8. Report that hooks are live and /flow is a native project command.
 #
 # Flags:
 #   --only spec|flow   install (or uninstall) a single half (default: both).
@@ -78,7 +79,7 @@ while [[ $# -gt 0 ]]; do
         *) err "ERROR: --only takes 'spec' or 'flow' (got '${1#*=}')"; exit 1 ;;
       esac
       shift ;;
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     -*) err "ERROR: unknown option '$1'"; exit 1 ;;
     *) TARGET="$1"; shift ;;
   esac
@@ -116,6 +117,7 @@ fi
 if [[ "$UNINSTALL" -eq 1 ]]; then
   note "uninstalling vibe from $TARGET"
   SRC_MERGE="$SRC/.agents/skills/vibe/scripts/merge-agents.sh"
+  SRC_MERGE_SETTINGS="$SRC/.agents/skills/vibe/scripts/merge-settings.sh"
 
   if [[ "$WANT_SPEC" -eq 1 && -e "$TARGET/.agents/skills/spec" ]]; then
     say "remove .agents/skills/spec"
@@ -137,11 +139,31 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
         [[ "$DRY_RUN" -eq 1 ]] || rm -rf "$TARGET/.agents/skills/vibe"
       fi
     fi
+    # --yes removes the cursor, so fully invert install: strip the cursor stanza
+    # install appended to .gitignore, leaving any other ignore rules intact.
+    if [[ "$ASSUME_YES" -eq 1 && -f "$TARGET/.gitignore" ]]; then
+      say "strip the vibe cursor stanza from .gitignore"
+      if [[ "$DRY_RUN" -eq 0 ]]; then
+        GI="$TARGET/.gitignore"; GI_TMP="$(mktemp)"
+        grep -vxF \
+          -e '# vibe mutable flow cursor (runtime; version state-machine.json, not this)' \
+          -e '.agents/skills/vibe/state.json' "$GI" 2>/dev/null \
+          | awk 'NF{last=NR} {line[NR]=$0} END{for(i=1;i<=last;i++) print line[i]}' >"$GI_TMP" || true
+        if [[ -s "$GI_TMP" ]]; then mv -f "$GI_TMP" "$GI"; else rm -f "$GI_TMP" "$GI"; fi
+      fi
+    fi
+    say "unwire the flow hooks from .claude/settings.json (user settings preserved)"
+    if [[ "$DRY_RUN" -eq 0 && -f "$SRC_MERGE_SETTINGS" ]]; then
+      bash "$SRC_MERGE_SETTINGS" unmerge "$TARGET" \
+        || err "WARN: settings.json not unwired; left untouched."
+    fi
     say "remove the Claude adapter files vibe installed"
     if [[ "$DRY_RUN" -eq 0 ]]; then
       remove_shipped "$SRC/.claude/commands" "$TARGET/.claude/commands"
       remove_shipped "$SRC/.claude/hooks" "$TARGET/.claude/hooks"
-      rm -f "$TARGET/.claude-plugin/plugin.json"
+      # Retire artifacts a prior (plugin-based) install left behind.
+      rm -f "$TARGET/.claude-plugin/plugin.json" "$TARGET/.claude/hooks/hooks.json"
+      find "$TARGET/.claude/hooks" -type d -empty -delete 2>/dev/null || true
       rmdir "$TARGET/.claude-plugin" "$TARGET/.claude" 2>/dev/null || true
     fi
     if [[ -f "$TARGET/AGENTS.md" ]]; then
@@ -199,23 +221,41 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
   fi
 fi
 
-# 2. Claude Code adapter (command + hooks + plugin manifest). Adapter belongs to
-# the flow half — it wires the hooks that drive the flow.
+# 2. Claude Code adapter (native /flow command + hook scripts). Adapter belongs
+# to the flow half — its hooks drive the flow. Hooks are wired via the target's
+# .claude/settings.json (step 3), not a plugin (issue #12: one firing path).
 if [[ "$WANT_FLOW" -eq 1 ]]; then
-  say "copy Claude adapter (.claude/commands, .claude/hooks, .claude-plugin/)"
+  say "copy Claude adapter (.claude/commands, .claude/hooks/*.sh)"
   if [[ "$DRY_RUN" -eq 0 ]]; then
     mkdir -p "$TARGET/.claude"
     cp -R "$SRC/.claude/commands" "$TARGET/.claude/"
     cp -R "$SRC/.claude/hooks" "$TARGET/.claude/"
-    mkdir -p "$TARGET/.claude-plugin"
-    cp "$SRC/.claude-plugin/plugin.json" "$TARGET/.claude-plugin/"
+    # Retire a plugin manifest left by a prior install: settings.json now owns
+    # hook wiring, and a live plugin beside it would double-fire the hooks.
+    rm -f "$TARGET/.claude-plugin/plugin.json" "$TARGET/.claude/hooks/hooks.json"
+    rmdir "$TARGET/.claude-plugin" 2>/dev/null || true
     chmod +x "$TARGET"/.claude/hooks/*.sh \
              "$TARGET"/.agents/skills/spec/scripts/*.sh \
              "$TARGET"/.agents/skills/vibe/scripts/*.sh 2>/dev/null || true
   fi
 fi
 
-# 3. Seed the cursor if absent (flow half only).
+# 3. Wire the flow hooks into .claude/settings.json — merge only vibe's three
+# entries, idempotently, never clobbering user settings. Graceful-degrade if the
+# helper is missing or jq is absent (it prints the snippet to paste). Flow half.
+MERGE_SETTINGS="$SRC/.agents/skills/vibe/scripts/merge-settings.sh"
+if [[ "$WANT_FLOW" -eq 1 ]]; then
+  say "wire flow hooks into .claude/settings.json"
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    if [[ -f "$MERGE_SETTINGS" ]]; then
+      bash "$MERGE_SETTINGS" merge "$TARGET" || err "WARN: settings.json not wired (see message above)."
+    else
+      err "WARN: merge-settings.sh not found; hooks not wired into settings.json."
+    fi
+  fi
+fi
+
+# 4. Seed the cursor if absent (flow half only).
 if [[ "$WANT_FLOW" -eq 1 && ! -f "$TARGET/.agents/skills/vibe/state.json" ]]; then
   say "seed .agents/skills/vibe/state.json from template"
   if [[ "$DRY_RUN" -eq 0 ]]; then
@@ -223,7 +263,7 @@ if [[ "$WANT_FLOW" -eq 1 && ! -f "$TARGET/.agents/skills/vibe/state.json" ]]; th
   fi
 fi
 
-# 4. Ignore the mutable cursor (flow half only).
+# 5. Ignore the mutable cursor (flow half only).
 if [[ "$WANT_FLOW" -eq 1 ]]; then
   GI="$TARGET/.gitignore"
   if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/vibe/state.json" "$GI"; }; then
@@ -234,7 +274,7 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
   fi
 fi
 
-# 5. Merge AGENTS.md via the copied merge script (agent-instructions). The merge
+# 6. Merge AGENTS.md via the copied merge script (agent-instructions). The merge
 # script and its instruction template live in the flow half, so the merge runs
 # only when the flow half is installed (--only spec stays a pure spec install).
 MERGE="$TARGET/.agents/skills/vibe/scripts/merge-agents.sh"
@@ -248,7 +288,7 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
   fi
 fi
 
-# 6. Opt-in adapter symlinks. These point at AGENTS.md, which only the flow half
+# 7. Opt-in adapter symlinks. These point at AGENTS.md, which only the flow half
 # provisions — so they are meaningless (and merge-agents.sh is absent) under
 # --only spec.
 if [[ -n "$ADAPTERS" ]]; then
@@ -268,25 +308,26 @@ if [[ -n "$ADAPTERS" ]]; then
   fi
 fi
 
-# 7. Completion guidance — tailored to what was actually installed.
+# 8. Completion guidance — tailored to what was actually installed.
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "install: [dry-run] plan complete — nothing was written."
   exit 0
 fi
 if [[ "$WANT_FLOW" -eq 1 ]]; then
   cat <<EOF
-install: done.
-install: to activate the Claude Code hooks + /flow command, register the plugin:
-install:   - local dev:  add "$TARGET" as a plugin (it has .claude-plugin/plugin.json)
-install:   - hook scripts load from the plugin via \${CLAUDE_PLUGIN_ROOT}; they read
-install:     this project's flow state under \${CLAUDE_PROJECT_DIR}/.agents/skills/vibe.
+install: done. The Claude Code hooks are wired automatically via
+install:   .claude/settings.json — no plugin to register. Reload the project (or
+install:   restart Claude Code) and the flow hooks fire on every turn; /flow works
+install:   as a native project command from .claude/commands.
+install:   Hook scripts self-resolve this project's flow state under
+install:   \${CLAUDE_PROJECT_DIR}/.agents/skills/vibe.
 install: the spec + vibe skills are installed as project files under .agents/skills/.
 EOF
 else
   cat <<EOF
 install: done (spec framework only).
 install: the spec skill is installed as a project file under .agents/skills/spec.
-install: no flow harness, Claude adapter, or plugin was installed (--only spec).
+install: no flow harness or Claude adapter was installed (--only spec).
 install: run without --only to add the flow harness + Claude Code adapter.
 EOF
 fi
