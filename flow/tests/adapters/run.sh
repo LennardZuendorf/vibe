@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/adapters/run.sh — behaviour tests for agent-instructions (merge-agents.sh,
+# flow/tests/adapters/run.sh — behaviour tests for agent-instructions (merge-agents.sh,
 # template, manifest) and platform-adapters (three hooks, settings.json wiring,
 # install.sh). Pure bash; no bats. Each test cites its plan unit ID.
 #
@@ -11,7 +11,17 @@
 # shellcheck disable=SC2015
 set -uo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Repo root by upward marker search (.spec / .git) — depth- and symlink-agnostic:
+# resolves the physical path so real and symlinked invocations converge.
+_find_repo_root() {
+  local d; d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+  while [[ "$d" != "/" ]]; do
+    [[ -d "$d/.spec" || -e "$d/.git" ]] && { printf '%s\n' "$d"; return 0; }
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+REPO_ROOT="$(_find_repo_root)" || { echo "cannot locate repo root (.spec/.git)" >&2; exit 1; }
 MERGE="$REPO_ROOT/.agents/skills/vibe/scripts/merge-agents.sh"
 TEMPLATE="$REPO_ROOT/.agents/skills/vibe/reference/templates/AGENTS.md"
 ADAPTERS_JSON="$REPO_ROOT/.agents/skills/vibe/reference/adapters.json"
@@ -177,6 +187,18 @@ assert_eq "platform-adapters/6" "re-install preserves a live cursor (feature.imp
 [[ ! -e "$SB/.agents/flow" ]] && pass "platform-adapters/6" ".agents/flow does not exist after install" || fail "platform-adapters/6" ".agents/flow must not exist after install"
 [[ -d "$SB/.agents/skills/vibe" && ! -L "$SB/.agents/skills/vibe" ]] && pass "platform-adapters/6" "skills/vibe is a real directory (not a symlink)" || fail "platform-adapters/6" "skills/vibe is a real directory (not a symlink)"
 [[ -d "$SB/.agents/skills/spec" && ! -L "$SB/.agents/skills/spec" ]] && pass "platform-adapters/6" "skills/spec is a real directory (not a symlink)" || fail "platform-adapters/6" "skills/spec is a real directory (not a symlink)"
+# Source-only artifacts must not ship — and the prune must not over-delete the
+# skill payload. Both halves: co-located tests/ and the contributor AGENTS.md are
+# stripped; SKILL.md (the real payload) still lands.
+[[ ! -e "$SB/.agents/skills/spec/tests" && ! -e "$SB/.agents/skills/vibe/tests" ]] \
+  && pass "platform-adapters/6" "install does not ship co-located tests/" \
+  || fail "platform-adapters/6" "co-located tests/ must not ship into a target"
+[[ ! -e "$SB/.agents/skills/spec/AGENTS.md" && ! -e "$SB/.agents/skills/vibe/AGENTS.md" ]] \
+  && pass "platform-adapters/6" "install does not ship the contributor AGENTS.md" \
+  || fail "platform-adapters/6" "per-half contributor AGENTS.md must not ship"
+[[ -f "$SB/.agents/skills/spec/SKILL.md" && -f "$SB/.agents/skills/vibe/SKILL.md" ]] \
+  && pass "platform-adapters/6" "prune keeps the skill payload (SKILL.md ships)" \
+  || fail "platform-adapters/6" "prune over-deleted the skill payload"
 symlinks="$(find "$SB/.agents" -type l)"
 [[ -z "$symlinks" ]] && pass "platform-adapters/6" "no symlinks anywhere in installed .agents tree" || fail "platform-adapters/6" "no symlinks anywhere in installed .agents tree"
 agents_entries="$(ls "$SB/.agents/")"

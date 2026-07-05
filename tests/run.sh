@@ -10,8 +10,25 @@
 
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Repo root by upward marker search (.spec / .git) — depth- and symlink-agnostic:
+# resolves the physical path so real and symlinked invocations converge.
+_find_repo_root() {
+  local d; d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+  while [[ "$d" != "/" ]]; do
+    [[ -d "$d/.spec" || -e "$d/.git" ]] && { printf '%s\n' "$d"; return 0; }
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+ROOT="$(_find_repo_root)" || { echo "cannot locate repo root (.spec/.git)" >&2; exit 1; }
 
+# Suites now live inside their monorepo half: spec/tests, flow/tests
+# (with adapters folded under flow/tests/adapters).
+declare -A SUITE_PATHS=(
+  [spec]="spec/tests/run.sh"
+  [flow]="flow/tests/run.sh"
+  [adapters]="flow/tests/adapters/run.sh"
+)
 SUITES=(spec flow adapters)
 
 overall=0
@@ -21,7 +38,7 @@ for suite in "${SUITES[@]}"; do
   echo "########################################"
   echo "### suite: $suite"
   echo "########################################"
-  if bash "$ROOT/tests/$suite/run.sh"; then
+  if bash "$ROOT/${SUITE_PATHS[$suite]}"; then
     rc=0
   else
     rc=$?

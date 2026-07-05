@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/flow/run.sh — behaviour tests for the vibe-flow core: the state machine,
+# flow/tests/run.sh — behaviour tests for the vibe-flow core: the state machine,
 # set-state.sh / validate-state.sh, D12 orders (orders.sh + per-skill blocks),
 # and graceful degradation (check-skills.sh). Pure bash; no bats.
 #
@@ -13,7 +13,17 @@
 # shellcheck disable=SC2015
 set -uo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Repo root by upward marker search (.spec / .git) — depth- and symlink-agnostic:
+# resolves the physical path so real and symlinked invocations converge.
+_find_repo_root() {
+  local d; d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+  while [[ "$d" != "/" ]]; do
+    [[ -d "$d/.spec" || -e "$d/.git" ]] && { printf '%s\n' "$d"; return 0; }
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+REPO_ROOT="$(_find_repo_root)" || { echo "cannot locate repo root (.spec/.git)" >&2; exit 1; }
 FLOW="$REPO_ROOT/.agents/skills/vibe"
 SCRIPTS="$FLOW/scripts"
 MACHINE="$FLOW/state-machine.json"

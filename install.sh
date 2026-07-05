@@ -201,6 +201,8 @@ if [[ "$WANT_SPEC" -eq 1 ]]; then
   say "copy spec skill -> $TARGET/.agents/skills/spec"
   if [[ "$DRY_RUN" -eq 0 ]]; then
     cp -RL "$SRC/.agents/skills/spec" "$TARGET/.agents/skills/"
+    # Source-only artifacts (co-located tests, contributor AGENTS.md) never ship.
+    rm -rf "$TARGET/.agents/skills/spec/tests" "$TARGET/.agents/skills/spec/AGENTS.md"
   fi
 fi
 if [[ "$WANT_FLOW" -eq 1 ]]; then
@@ -212,6 +214,8 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
       cp "$TARGET/.agents/skills/vibe/state.json" "$SAVED_CURSOR"
     fi
     cp -RL "$SRC/.agents/skills/vibe" "$TARGET/.agents/skills/"
+    # Source-only artifacts (co-located tests, contributor AGENTS.md) never ship.
+    rm -rf "$TARGET/.agents/skills/vibe/tests" "$TARGET/.agents/skills/vibe/AGENTS.md"
     if [[ -n "$SAVED_CURSOR" ]]; then
       mv -f "$SAVED_CURSOR" "$TARGET/.agents/skills/vibe/state.json"
       note "preserved existing flow cursor across re-install"

@@ -202,7 +202,7 @@ directories in your target.
 ## Tests
 
 ```bash
-bash tests/run.sh      # spec (123) + flow (59) + adapters (66) — 248 assertions
+bash tests/run.sh      # spec (123) + flow (68) + adapters (74) — 265 assertions
 ```
 
 CI runs `shellcheck` on every tracked `*.sh`, the combined suite, and
@@ -213,9 +213,8 @@ CI runs `shellcheck` on every tracked `*.sh`, the combined suite, and
 - [`spec/README.md`](spec/README.md) — the spec framework, standalone.
 - [`flow/README.md`](flow/README.md) — the flow: states, orders, hooks, degrade.
 - [`.spec/product.md`](.spec/product.md) · [`.spec/tech.md`](.spec/tech.md) ·
-  [`.spec/plan.md`](.spec/plan.md) — the harness's own specs.
-- [`examples/todo-api/`](examples/todo-api/.spec/) — a worked `.spec/` tree: what a
-  filled-in project looks like (root specs + one feature folder).
+  [`.spec/plan.md`](.spec/plan.md) — the harness's own specs (a living worked
+  example of a filled-in `.spec/` tree).
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes.
 
 ## License

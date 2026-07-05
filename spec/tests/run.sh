@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
-# tests/spec/run.sh — behaviour tests for the spec-framework SF0–SF4 units.
+# spec/tests/run.sh — behaviour tests for the spec-framework SF0–SF4 units.
 # Pure bash; no bats dependency. Each test cites its plan unit ID (SF0…SF3, D9).
 #
-# Usage: bash tests/spec/run.sh
+# Usage: bash spec/tests/run.sh
 # Exit 0 = all pass; non-zero = at least one failure.
 
 set -uo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Repo root by upward marker search (.spec / .git) — depth- and symlink-agnostic:
+# resolves the physical path so real and symlinked invocations converge.
+_find_repo_root() {
+  local d; d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+  while [[ "$d" != "/" ]]; do
+    [[ -d "$d/.spec" || -e "$d/.git" ]] && { printf '%s\n' "$d"; return 0; }
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+REPO_ROOT="$(_find_repo_root)" || { echo "cannot locate repo root (.spec/.git)" >&2; exit 1; }
 SPEC_SKILL="$REPO_ROOT/.agents/skills/spec"
 SETUP="$SPEC_SKILL/scripts/setup.sh"
 VALIDATE="$SPEC_SKILL/scripts/validate.sh"
