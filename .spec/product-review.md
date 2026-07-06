@@ -168,8 +168,9 @@ cd cli && uv run pytest        # or: pytest
 | validate | 0 errors, 2 warnings (doc-length only, benign) |
 | cli (pytest) | **464 passed, 2 FAILED** |
 
-The 2 CLI failures are real drift signal, pre-existing (not from the 2026-07-06
-spec edits):
+The 2 CLI failures are real drift signal, unrelated to today's spec edits (they
+test asset-sync + bash↔python policy parity — untouched by the `.spec`/`AGENTS.md`
+changes):
 
 - `tests/test_assets_sync.py::test_every_bundled_asset_matches_its_source` — the
   CLI's vendored `cli/src/vibe/_assets/skills/{spec,vibe}` no longer byte-matches
