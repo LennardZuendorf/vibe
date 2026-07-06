@@ -15,3 +15,6 @@ cli/**/__pycache__/
 cli/.pytest_cache/
 cli/dist/
 cli/*.egg-info/
+
+# tooling cache
+.tokensave/
