@@ -28,7 +28,7 @@ as feature 10 (PLANNED) in the root [`.spec/plan.md`](../../plan.md) Feature Seq
 
 | ID | Requirement | Units |
 |---|---|---|
-| R1 | Three apps, minimal deps, fast hot path | cli-restructure/1, /3 |
+| R1 | Three apps, minimal deps, fast hot path | cli-restructure/1, /2, /3 |
 | R2 | Native parity for all six spec commands | cli-restructure/4, /5, /6, /7 |
 | R3 | One behavior source, two renderers | cli-restructure/3, /7, /8 |
 | R4 | Hard cutoff to Python, guarded by preflight | cli-restructure/10 |
@@ -48,17 +48,48 @@ version freezes inter-package deps in /1 (D7).
 
 ## Units
 
-### cli-restructure/1 — Workspace skeleton
+### cli-restructure/1 — Fully-loaded workspace skeleton
 
-**Goal:** `uv` workspace, four package dirs, each `pyproject` frozen (deps + the
-three console_scripts + one lockstep version), one `uv.lock`, shared root
-`conftest.py` (`bash_ref`, `home_sandbox`, `target_project`, `golden`).
+**Goal:** The **single sequential foundation** that lets every later wave fan out
+parallel-safe: builders in /4–/7 then create only their own leaf module + own
+test and touch **nothing shared** (governing rule — see § Parallel-safety
+contract). /1 owns all shared surface:
+
+- **Workspace + freeze.** `uv` workspace, four package dirs, all `__init__.py`
+  (empty), each `pyproject` frozen (deps + the three console_scripts + one
+  lockstep version), one `uv.lock`. `pyproject` is never edited again except /9's
+  workspace step.
+- **Both `app.py` wired and FROZEN.** `vibe_spec/app.py` declares **all six**
+  subparsers (`list setup lessons-for scan-merges promote validate`), each
+  dispatching by **direct import** from its leaf module (`from vibe_spec.validate
+  import run_validate` — never an `__init__` re-export hub). Same for
+  `vibe_flow/app.py`. No later unit edits either `app.py`.
+- **Every leaf module stubbed** so the frozen `app.py` imports cleanly:
+  `vibe_spec/{listing,setup,lessons,merges,validate}.py` each a placeholder
+  handler raising `NotImplementedError`; each exposes its own `render_plain()`
+  (no shared `render.py` in `vibe_spec` — see /7 note). `vibe_flow` leaf stubs
+  as its verbs need.
+- **`vibe_spec/model.py` implemented here** (frontmatter parse) — the one shared
+  util the governing rule says the foundation must own; removes the /4→/5/6/7
+  cross-wave read edge.
+- **Generic, name-parametrized `conftest.py`** (`bash_ref` runs *any* named
+  script; `golden` loads *any* named fixture; `home_sandbox`, `target_project`)
+  + pre-created `tests/golden/<command>/` dirs — so no builder edits conftest.
+- **Vendor every `_assets/` tree**: `vibe-flow/_assets/` (state-machine.json,
+  state.example.json, skills/vibe/**, deps.json, adapters.json,
+  templates/AGENTS.md) and `vibe-spec/_assets/` (skills/spec/**,
+  reference/templates/**, validate fixtures) — recursive package-data glob in
+  each `pyproject`.
+
 **Requirements:** R1
 **Dependencies:** —
-**Files:** tech.md § Workspace layout.
+**Files:** tech.md § Workspace layout; § Parallel-safety contract below.
 **Test scenarios:** `uv sync` builds the workspace; `vibe`/`vibe-flow`/`vibe-spec`
-`--help` exit 0; fresh-interpreter `sys.modules` assertion — `vibe-flow hook` path
-imports stdlib-only; `vibe-spec` whole-app import stays lean (no typer/rich/pydantic).
+`--help` exit 0 (frozen `app.py` imports all stubs cleanly); every `vibe-spec
+<subcmd> --help` exits 0 while its body raises `NotImplementedError`;
+fresh-interpreter `sys.modules` assertion — `vibe-flow hook` path imports
+stdlib-only; `vibe-spec` whole-app import stays lean (no typer/rich/pydantic);
+`vibe_spec/model.py` parses a known frontmatter fixture.
 **Verification:** all of the above green.
 
 ### cli-restructure/2 — `vibe-core`
@@ -87,36 +118,43 @@ verb's logic function returns a result with no printing; hot-path import-cost te
 
 ### cli-restructure/4 — `vibe-spec`: list + setup
 
-**Goal:** `model.py` (frontmatter parse) + `listing.py` + `setup.py` + `render.py`;
-argparse `vibe-spec list` / `vibe-spec setup`. Honor `${SPEC_DIR:-.spec}` where the
-origin does (list/scan) and **not** where it doesn't (setup); rewrite setup's
-trailing path/hint lines for the new layout (excluded from parity, R2).
+**Goal:** Fill the `listing.py` + `setup.py` stubs (bodies + each module's own
+`render_plain`); `model.py` and the frozen `app.py` subparsers already exist from
+/1. Wire `vibe-spec list` / `vibe-spec setup` via the pre-declared dispatch. Honor
+`${SPEC_DIR:-.spec}` where the origin does (list/scan) and **not** where it
+doesn't (setup); rewrite setup's trailing path/hint lines for the new layout
+(excluded from parity, R2). **Touches only `listing.py` + `setup.py` + their
+tests** — never `app.py`, `model.py`, `conftest`, or `pyproject`.
 **Requirements:** R2
-**Dependencies:** /2
-**Files:** `vibe_spec/{model,listing,setup,render}.py`.
+**Dependencies:** /2 (vibe-core; transitively /1's `model.py` + frozen `app.py`)
+**Files:** `vibe_spec/{listing,setup}.py`, `tests/test_listing.py`, `tests/test_setup.py`.
 **Test scenarios:** parity byte-matches `list-specs.sh` (root/features/empty, `LC_COLLATE`
 order) and `setup.sh` (fresh/partial/full) minus the divergent hint lines; golden captured.
 
 ### cli-restructure/5 — `vibe-spec`: lessons-for
 
-**Goal:** `lessons.py` block parse + markdown/inject/json; `vibe-spec lessons-for`.
-Reproduce the **unescaped** hand-rolled JSON (`printf %s`) and case-insensitive
-regex tag match.
+**Goal:** Fill the `lessons.py` stub — block parse + markdown/inject/json +
+its own `render_plain`; `vibe-spec lessons-for` already wired in the frozen
+`app.py`. Reproduce the **unescaped** hand-rolled JSON (`printf %s`) and
+case-insensitive regex tag match. Reuses `model.py` from /1. **Touches only
+`lessons.py` + its test.**
 **Requirements:** R2
-**Dependencies:** /4 (reuses `model.py`)
-**Files:** `vibe_spec/lessons.py`.
+**Dependencies:** /2 (vibe-core; `model.py` from /1 — no /4 edge)
+**Files:** `vibe_spec/lessons.py`, `tests/test_lessons.py`.
 **Test scenarios:** parity byte-matches all three formats incl. a lesson body with a `"`
 (proves the unescaped-JSON reproduction), multi-tag, no-match; golden captured.
 
 ### cli-restructure/6 — `vibe-spec`: scan-merges + promote
 
-**Goal:** `merges.py` — a **net-new** multi-block/nesting scanner over bare
-`<!-- merge -->` (D8, not marker-guard reuse); `vibe-spec scan-merges` (table/
-json/plain, unclosed→nonzero) + `vibe-spec promote` (`--dry-run`/`--target`,
-`mktemp` in target dir, `printf '\n%s\n'` framing, strict marker equality).
+**Goal:** Fill `merges.py` — a **net-new** multi-block/nesting scanner over bare
+`<!-- merge -->` (D8, not marker-guard reuse) + its own `render_plain`;
+`vibe-spec scan-merges` (table/json/plain, unclosed→nonzero) + `vibe-spec
+promote` (`--dry-run`/`--target`, `mktemp` in target dir, `printf '\n%s\n'`
+framing, strict marker equality) already wired in the frozen `app.py`; promote's
+atomic write uses `vibe_core/paths.py`. **Touches only `merges.py` + its test.**
 **Requirements:** R2
-**Dependencies:** /4
-**Files:** `vibe_spec/merges.py`.
+**Dependencies:** /2 (vibe-core paths; no /4 edge)
+**Files:** `vibe_spec/merges.py`, `tests/test_merges.py`.
 **Test scenarios:** parity byte-matches all formats, dry-run vs write, target
 byte-unchanged on nested/reversed/unclosed → exit 1; golden captured.
 

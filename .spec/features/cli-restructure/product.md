@@ -14,8 +14,8 @@ migrate the six spec-framework shell scripts (`validate`, `setup`, `list-specs`,
 + import tier**: two lean agent tools — `vibe-flow` (the hooks + flow-management
 commands) and `vibe-spec` (the former `.sh` scripts) — and one rich human tool
 (`vibe`) for setup, management, and pretty flow/spec output, all sharing a lean
-`vibe-core` library. This finishes the flow port (from
-[vibe-cli](../vibe-cli/product.md)) and the spec port in one structure, keeps
+`vibe-core` library. This finishes the flow port (from the shipped `vibe-cli`,
+root plan feature 9 — [../../plan.md](../../plan.md)) and the spec port in one structure, keeps
 each agent entry point lean (few deps, stdlib hot path), and does a **hard
 cutoff to Python for BOTH halves**: the packages become the single source of
 truth, and every runtime `.sh` (flow *and* spec) plus the plugin bash-shim hooks
@@ -34,13 +34,14 @@ are removed, guarded by an install-script preflight.
 | **Owns** | The workspace restructure into `vibe-core` / `vibe-flow` / `vibe-spec` / `vibe-cli`; the three console_scripts; native Python for all six spec commands + the byte-parity suites + frozen golden fixtures; the **hard cutoff** (packages canonical; remove flow *and* spec `.sh`; retire the plugin bash-shim hooks; repoint `spec/SKILL.md` + `flow/SKILL.md` + all skill/template/AGENTS.md prose at the binaries; rewrite `ci.yml`; port/retire `tests/spec/run.sh`); the in-place `vibe-hook`→`vibe-flow` migration; the GitHub install-script distribution; dependency minimization (`pydantic` dropped); doc/CHANGELOG updates for the new command + install |
 | **Does not own** | The `.spec/` document *format* and validation *rules* (behavior reproduced, not changed, save the documented divergences below); `state-machine.json` / cursor *schema* (canonical data owned by vibe-flow; loaded, never hardcoded); the flow *behavior* already shipped by vibe-cli (re-homed into `vibe_flow`, no logic change) |
 
-**Supersedes.** Re-homes the flow CLI + flow bash engine from
-[vibe-cli](../vibe-cli/product.md)/vibe-flow into `vibe_flow`; moves
-`spec/scripts/*.sh` into `vibe_spec`; reworks
-[install-tooling](../install-tooling/product.md)'s `install.sh` into the GitHub
-bootstrap; and retires [platform-adapters](../platform-adapters/product.md)'s
-plugin bash-shim hooks in favour of settings.json → `vibe-flow hook`. All `.sh`
-are removed at cutover, not kept as a permanent fallback.
+**Supersedes.** Re-homes the flow CLI + flow bash engine from the shipped
+`vibe-cli`/vibe-flow (root plan feature 9) into `vibe_flow`; moves
+`spec/scripts/*.sh` into `vibe_spec`; reworks `install-tooling`'s `install.sh`
+(root plan feature 7) into the GitHub bootstrap; and retires `platform-adapters`'s
+(root plan feature 4) plugin bash-shim hooks in favour of settings.json →
+`vibe-flow hook`. Superseded features live as Delivered notes in
+[../../plan.md](../../plan.md); their spec folders were deleted at wrap-up (code
+is truth). All `.sh` are removed at cutover, not kept as a permanent fallback.
 
 ---
 
