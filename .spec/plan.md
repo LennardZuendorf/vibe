@@ -21,9 +21,9 @@ feature plan, never here.
 | Feature | Owns | Plan |
 |---|---|---|
 | `spec` skill bundle | root `.spec/` + [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) | [`tests/spec/run.sh`](../tests/spec/run.sh) |
-| [vibe-flow](features/vibe-flow/product.md) | `.agents/skills/vibe/` + `vibe` skill | [plan.md](features/vibe-flow/plan.md) |
-| [agent-instructions](features/agent-instructions/product.md) | `AGENTS.md` template + symlinks | [plan.md](features/agent-instructions/plan.md) |
-| [platform-adapters](features/platform-adapters/product.md) | plugin + hooks + installer | [plan.md](features/platform-adapters/plan.md) |
+| vibe-flow (done) | `.agents/skills/vibe/` + `vibe` skill | truth: `flow/` |
+| agent-instructions (done) | `AGENTS.md` template + symlinks | truth: `flow/scripts/merge-agents.sh` |
+| platform-adapters (done) | hooks + installer | truth: `.claude/` + `install.sh` |
 | [cli-restructure](features/cli-restructure/product.md) | `cli/` 4-package uv workspace + 3 apps; supersedes flow/spec bash | [plan.md](features/cli-restructure/plan.md) |
 
 ---
@@ -68,9 +68,9 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 4 | platform-adapters | plugin + three hooks + `install.sh` | `tests/adapters/run.sh` | DONE | agent-instructions DONE |
 | 5 | dogfood | hook/merge/install behaviours + earn-the-teeth | scripted + lessons | DONE | platform-adapters DONE |
 | 6 | monorepo-split | `spec/`+`flow/` split + symlinks + truth sweep + orphan compound | suites + validate + grep evidence | DONE | — |
-| 7 | [install-tooling](features/install-tooling/plan.md) | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `tests/adapters/run.sh` + `tests/flow/run.sh` | DONE | monorepo-split DONE |
-| 8 | [release-docs](features/release-docs/plan.md) | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | DONE | install-tooling DONE |
-| 9 | [vibe-cli](features/vibe-cli/product.md) | Python (typer+rich) CLI `vibe`/`vibe-hook` — ports the flow + install into one command | `cli/tests` 459 green + 3 parity gates | BUILT (verify ✓) | release-docs DONE |
+| 7 | install-tooling | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `tests/adapters/run.sh` + `tests/flow/run.sh` | DONE | monorepo-split DONE |
+| 8 | release-docs | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | DONE | install-tooling DONE |
+| 9 | vibe-cli | Python (typer+rich) CLI `vibe`/`vibe-hook` — ports the flow + install into one command | `cli/tests` 459 green + 3 parity gates | BUILT (verify ✓) | release-docs DONE |
 | 10 | [cli-restructure](features/cli-restructure/product.md) | 3-app monorepo (`vibe-core`/`vibe-flow`/`vibe-spec`/`vibe`) + spec-script port + hard cutoff off bash (flow + spec) | `cli/tests` parity + golden fixtures + stranger eval | PLANNED | vibe-cli BUILT |
 
 **Active focus:** release-polish branch (2026-07-03 overnight) — all three

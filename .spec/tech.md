@@ -2,12 +2,8 @@
 type: entrypoint
 scope: technical
 children:
-  - features/vibe-flow/tech.md
-  - features/platform-adapters/tech.md
-  - features/agent-instructions/tech.md
-  - features/install-tooling/tech.md
-  - features/release-docs/tech.md
-updated: 2026-07-03
+  - features/cli-restructure/tech.md
+updated: 2026-07-06
 ---
 
 # vibe — Technical Architecture
@@ -195,8 +191,8 @@ from that linked skill's phase block rather than a hand-written `inject` string.
 owner (the `UserPromptSubmit` hook) pulls the current state's orders from its
 linked skill and injects them once per turn (which also sets the caveman level),
 keeping the inject byte-stable and prompt-cache-safe. `set-state.sh` is the only
-sanctioned writer. Full per-state mapping lives in
-[features/vibe-flow/tech.md](features/vibe-flow/tech.md).
+sanctioned writer. Full per-state mapping lives in `flow/state-machine.json` +
+`flow/README.md`.
 
 ---
 
@@ -263,7 +259,7 @@ makes the flow fire every turn rather than only when the agent remembers:
 Each hook is a thin shell over `.agents/skills/vibe/scripts/`; the allow/warn/block
 policy lives once in `detect-context.sh` and is never duplicated. Hooks are
 earned warn-first and degrade gracefully (exit 0 on any missing keystone). Full
-wiring is in [features/platform-adapters/tech.md](features/platform-adapters/tech.md).
+wiring is in `.claude/settings.json` + `.claude/hooks/`.
 
 ---
 
@@ -303,8 +299,8 @@ build time does not reflect the current layout.
 | Feature | Covers |
 |---|---|
 | **spec framework (done)** | Spec skill, templates, validation, authoring flow. [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) |
-| **[features/vibe-flow/](features/vibe-flow/tech.md)** | `.agents/skills/vibe/` state machine, scripts, the one `vibe` skill's contracts. |
-| **[features/agent-instructions/](features/agent-instructions/tech.md)** | `AGENTS.md` template + `merge-agents.sh` marker merge + adapter symlinks. |
-| **[features/platform-adapters/](features/platform-adapters/tech.md)** | Claude plugin, three hooks, `install.sh` core provisioning. |
-| **[features/install-tooling/](features/install-tooling/tech.md)** | `install.sh` flags, `doctor.sh`, `deps.json`. |
-| **[features/release-docs/](features/release-docs/tech.md)** | READMEs, rails (LICENSE/CHANGELOG/CI/runner), logo, examples, stranger eval. |
+| **vibe-flow (done)** | `.agents/skills/vibe/` state machine, scripts, the one `vibe` skill's contracts. Truth: `flow/`. |
+| **agent-instructions (done)** | `AGENTS.md` template + `merge-agents.sh` marker merge + adapter symlinks. Truth: `flow/scripts/merge-agents.sh`. |
+| **platform-adapters (done)** | Three hooks (inject/guard/gate) via `.claude/settings.json`, `install.sh` core provisioning. Truth: `.claude/` + `install.sh`. |
+| **install-tooling (done)** | `install.sh` flags, `doctor.sh`, `deps.json`. Truth: `install.sh` + `flow/scripts/`. |
+| **release-docs (done)** | READMEs, rails (LICENSE/CHANGELOG/CI/runner), logo, examples, stranger eval. Truth: `README.md` + `spec/README.md` + `flow/README.md`. |

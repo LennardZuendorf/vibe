@@ -2,12 +2,8 @@
 type: entrypoint
 scope: product
 children:
-  - features/vibe-flow/product.md
-  - features/platform-adapters/product.md
-  - features/agent-instructions/product.md
-  - features/install-tooling/product.md
-  - features/release-docs/product.md
-updated: 2026-07-03
+  - features/cli-restructure/product.md
+updated: 2026-07-06
 ---
 
 # vibe — Product
@@ -110,8 +106,8 @@ style rather than a broad marketplace audience.
 | Piece | What It Owns | Feature Spec |
 |---|---|---|
 | `spec` framework | `.spec/` docs, templates, validation, wrap-up rules, feature authoring flow | Bundled [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) (done) |
-| `vibe` flow | `.agents/skills/vibe/` state, the one `vibe` skill (router + phase files), phase routing | [features/vibe-flow/](features/vibe-flow/product.md) |
-| Platform adapters | `AGENTS.md`, `CLAUDE.md`, and a **Claude Code plugin** that bundles the `/flow` command + the flow **hooks**; `install.sh` install lifecycle | [features/platform-adapters/](features/platform-adapters/product.md) + [features/install-tooling/](features/install-tooling/product.md) |
+| `vibe` flow | `.agents/skills/vibe/` state, the one `vibe` skill (router + phase files), phase routing | live: `flow/` + `tests/flow/` |
+| Platform adapters | `AGENTS.md`, `CLAUDE.md`, and the Claude Code hooks (`.claude/settings.json` wiring) + `install.sh` lifecycle | live: `.claude/` + `install.sh` |
 
 ---
 
@@ -161,7 +157,7 @@ reads/writes, and what the stage is for. This is the canonical workflow contract
 the full per-state record (skill link, `next` arrays, exit predicates — orders
 sourced from the linked skill per D12) lives in
 `.agents/skills/vibe/state-machine.json` and is detailed in
-[features/vibe-flow/tech.md](features/vibe-flow/tech.md).
+`flow/state-machine.json` + `flow/README.md`.
 
 | Phase | Phase file | External skills | Subagents | Caveman | Spec artifact (R/W) | What the stage does |
 |---|---|---|---|---|---|---|
@@ -207,7 +203,7 @@ missed edge case is expensive. Regardless of level, security warnings and
 irreversible-action confirmations stay in normal prose.
 
 State-machine entries name the expected level, and a single inject owner emits it
-so adapters and subagents stay consistent (see features/vibe-flow).
+so adapters and subagents stay consistent (see `flow/README.md`).
 
 ---
 
@@ -246,8 +242,8 @@ so adapters and subagents stay consistent (see features/vibe-flow).
 | Feature | Covers |
 |---|---|
 | **spec framework (done)** | Durable `.spec/` planning model: two-layer docs, strict templates, warn-first validation, Requirement+Scenario format. Live: [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md). |
-| **[features/vibe-flow/](features/vibe-flow/product.md)** | The one `vibe` skill (router + phase files), `.agents/skills/vibe/` state, state machine, phase routing, delegated skill output paths. |
-| **[features/agent-instructions/](features/agent-instructions/product.md)** | `AGENTS.md` template + marker merge + adapter symlinks (`CLAUDE.md`, `WARP.md`). |
-| **[features/platform-adapters/](features/platform-adapters/product.md)** | Claude Code plugin + three hooks + `install.sh` core provisioning. |
-| **[features/install-tooling/](features/install-tooling/product.md)** | Install lifecycle: `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json`. |
-| **[features/release-docs/](features/release-docs/product.md)** | Public release: READMEs, trust rails (LICENSE/CHANGELOG/CI), logo, examples, stranger eval. |
+| **vibe-flow (done)** | The one `vibe` skill (router + phase files), `.agents/skills/vibe/` state, state machine, phase routing, delegated skill output paths. Truth: `flow/`. |
+| **agent-instructions (done)** | `AGENTS.md` template + marker merge + adapter symlinks (`CLAUDE.md`, `WARP.md`). Truth: `flow/scripts/merge-agents.sh`. |
+| **platform-adapters (done)** | Claude Code hooks (inject/guard/gate) + `install.sh` core provisioning. Truth: `.claude/` + `install.sh`. |
+| **install-tooling (done)** | Install lifecycle: `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json`. Truth: `install.sh` + `flow/scripts/doctor.sh`. |
+| **release-docs (done)** | Public release: READMEs, trust rails (LICENSE/CHANGELOG/CI), logo, examples, stranger eval. Truth: `README.md` + `spec/README.md` + `flow/README.md`. |
