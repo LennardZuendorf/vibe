@@ -96,6 +96,12 @@ feature.compound`. Gates SHALL be encoded as machine data, not prose.
 the hybrid `plan.md`. SDD runtime artifacts stay in `.superpowers/**`
 (gitignored, runtime-not-memory); both modes exit to `feature.verify`.
 
+#### Scenario: full handover still audited
+- Given `feature.impl` in handover mode
+- When SDD completes all plan units
+- Then the flow transitions to `feature.verify` and the evidence check + human
+  gate still run.
+
 ### Requirement: R6 — Verify tooth (first promoted Stop predicate)
 
 In `*.verify` states the Stop hook SHALL block (exit 2) when no fresh evidence
@@ -115,16 +121,34 @@ The quick flow SHALL gain a lessons path: `quick.verify → quick.compound
 (optional) → idle`, where `quick.compound` may append a tagged lesson and
 regenerate the digest. Skippable — most quick fixes surface no durable lesson.
 
+#### Scenario: quick fix surfaces a lesson
+- Given `quick.verify` passing with a durable lesson identified
+- When the agent enters `quick.compound`
+- Then the lessons.md append is allowed by the write policy and the digest
+  regenerates.
+
 ### Requirement: R8 — Caveman demoted to vocabulary
 
 The `caveman` entry SHALL be removed from `deps.json` (and doctor's dep rows).
 The three levels remain vibe vocabulary, frozen per state, with an attribution
 note. No behavioral change to orders.
 
+#### Scenario: doctor after demotion
+- Given a repo with no caveman skill installed
+- When `doctor.sh` runs
+- Then no `dep.caveman` row appears and exit stays 0, while
+  `check-skills.sh caveman full` still prints the frozen level definition.
+
 ### Requirement: R9 — Single router at idle
 
 `idle` SHALL NOT delegate `superpowers:using-superpowers`. Skill discovery
 remains superpowers' own concern; vibe's orders are the router.
+
+#### Scenario: one router
+- Given a fresh session at `idle`
+- When the inject hook fires
+- Then the orders name only vibe's four flows and no competing meta-router
+  skill.
 
 ### Requirement: R10 — Tests protect the rework
 
@@ -132,6 +156,11 @@ The flow test suite SHALL be hermetic (no reads/writes of the live repo cursor)
 and SHALL assert: machine `delegates` ⊆ names mentioned in the linked phase
 file; gate data matches prose; evidence-gate blocks and passes; every orders
 block stays ≤ 400 bytes.
+
+#### Scenario: concurrent suites
+- Given two `flow/tests/run.sh` invocations running simultaneously
+- When both complete
+- Then both exit 0 and a pre-existing live cursor is byte-identical.
 
 ## Non-goals
 
