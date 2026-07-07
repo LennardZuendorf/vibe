@@ -152,6 +152,130 @@ What vibe claims but does not add today: forced skill usage, forced phase order,
 
 ---
 
+## Findings, part 2 — orchestration quality: how the flow combines superpowers, feature-dev, and caveman
+
+*(Follow-up analysis, same date. Method: the actual upstream contracts were fetched
+from obra/superpowers `skills/*/SKILL.md`, anthropics/claude-plugins-official
+`plugins/feature-dev/` (command + three agent definitions), and
+JuliusBrussee/caveman, then compared per state against vibe's phase files, orders,
+and spec templates.)*
+
+### Verdict
+
+**The skill selection is right; the integration is nominal.** Every state names
+the correct tool from the upstream libraries, and the three dependencies occupy
+complementary axes — superpowers supplies *process* (how to brainstorm, plan,
+TDD, debug, verify), feature-dev supplies *parallel analyst subagents* (text-only
+explorers/architects/reviewers), caveman supplies *output economy*. Combining
+them is coherent, not redundant. But vibe mostly integrates by *naming* the
+delegate, not by *contracting* with it: it says who to call and where outputs go,
+and stays silent about the parts of the upstream skill's own contract that
+conflict — their hardcoded artifact paths, self-commits, chain handoffs, and
+"don't pause" behaviors. The model is left to reconcile contradictions, and the
+upstream text is stronger-worded (superpowers is deliberately
+persuasion-hardened) than vibe's ~200-byte orders. In a conflict, the delegate's
+MUST-language wins — so vibe must avoid conflicts explicitly rather than assume
+routing authority it never declares.
+
+### Per-state fit
+
+| State | Delegates | Fit | Collision found |
+|---|---|---|---|
+| `idle` | using-superpowers | ⚠ risky | **Two-routers problem.** using-superpowers demands skill invocation "BEFORE any response… not negotiable" and gateways into superpowers' own chain (brainstorming → writing-plans → executing-plans → finishing). vibe's cursor claims the same first-move authority. No precedence is declared anywhere. |
+| `strategy.brainstorm` | brainstorming | ⚠ contradiction | vibe: "scratch only, no spec writes yet" (`writes: []`). Upstream brainstorming **ends by writing and committing** `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`, then invokes writing-plans. The state forbids what the delegate's terminal steps require, and the handoff skips `strategy.spec` entirely. |
+| `feature.design` | brainstorming, code-explorer, code-architect | ✓ good | brainstorming's design-doc write redirects legally into `.spec/features/<name>/` (path is stated upstream, not validated), but its **self-commit** and writing-plans handoff still fight the flow. feature-dev agents are fully redirect-safe (text-only, no file writes). Unused upside: `/feature-dev` dispatches **2–3 explorers/architects in parallel**, each architect committing to one approach — vibe delegates singles and loses the compare-approaches value. |
+| `feature.plan` | writing-plans, code-architect | ⚠ format collision | **The biggest one.** writing-plans is the *most* redirect-friendly skill (documented optional storage location → `.spec/features/<x>/plan.md` is contract-legal). But its mandatory format (header with `> For agentic workers…`, `## Global Constraints`, ~5 checkbox steps per 2–5-minute task, real code in steps) and the spec `feature-plan` template (`{name}/n` stable units, R-ID trace, per-unit Verification) are **two different grammars — and executing-plans parses the upstream one.** vibe says nothing about the mapping, so the plan that feature.impl consumes satisfies neither parser fully. |
+| `feature.impl` | executing-plans, TDD | ✓ / ⚠ | TDD: perfect, zero collision (both sides keep code/commands byte-exact). executing-plans: consumes any plan path, but (a) expects writing-plans' checkbox format, (b) assumes a **git worktree** exists (`using-git-worktrees` is a listed dependency — vibe never mentions branches/worktrees anywhere), (c) its terminal step invokes finishing-a-development-branch, **bypassing feature.verify**. |
+| `feature.verify`, `quick.verify` | verification-before-completion, requesting-code-review, code-reviewer, systematic-debugging | ✓ / ⚠ | verification-before-completion: perfect philosophical fit, no artifacts. **Review double-booking:** requesting-code-review dispatches its *own* reviewer subagent from its bundled template (severity tiers); feature-dev's code-reviewer is a *different* protocol (0–100 confidence, ≥80 threshold). Both are listed side by side with no arbitration. Also upstream says "fix Critical immediately" while vibe's verify states forbid src writes — findings must route to `feature.impl`, and no one says so. |
+| `feature.compound` | finishing-a-development-branch, spec | ⚠ inconsistency | `flow/compound.md` step 4 reads as if the skill performs the archive move; `spec/feature.md` gets the boundary right ("handles the narrow git-cleanup step after the spec work is done… Don't hand it the full compound procedure — it doesn't know the spec format"). The two halves disagree. Ordering is also tangled: the archive must be deleted *before merge*, but finishing (which merges) is delegated mid-procedure. |
+| `quick.triage` | systematic-debugging | ✓ excellent | "Diagnose, do not fix yet" maps exactly onto the upstream Phase 1–3 / Phase 4 boundary. Could cite it ("stop at end of Phase 3") for precision. |
+| `quick.fix` | TDD | ✓ excellent | One reproducing test per fix = RED discipline. |
+| `setup.apply` | spec, superpowers:writing-skills | ? unclear | writing-skills is a TDD-style *skill-authoring* skill ("no skill without a failing test"). Why setup.apply delegates it is stated nowhere — the orders block never mentions it. Vestigial or unexplained. |
+| `amend` | spec, receiving-code-review | ✓ fine | The no-sycophancy verify-before-acting protocol fits feedback-driven amends. |
+
+**caveman:** orthogonal by construction — a style layer with byte-exact carveouts
+for code/commands/paths (mirroring vibe's own `safety_carveouts`), so it cannot
+corrupt what vibe depends on. Two unstated edges: (1) if the actual skill is
+installed, its auto-activation and `/caveman [level]` selection could fight
+vibe's per-state *frozen* levels — precedence undeclared; (2) `/caveman-compress
+<file>` rewrites files in place — pointed at an unguarded `.spec/features/**`
+doc it would mangle template structure the validator needs.
+
+**Deliberate-looking but undocumented exclusion:** vibe delegates
+`executing-plans`, not `subagent-driven-development` — upstream's *recommended*
+executor. That is the right call (SDD is the one skill that actively fights
+redirection: git-root-anchored `.superpowers/sdd/progress.md` ledger,
+script-generated brief/report paths, per-session worktrees, and "do not pause
+between tasks" — the exact opposite of cursor discipline). But the exclusion is
+silent; nothing stops an agent following upstream's own recommendation into SDD.
+
+### The systemic issue: chain ownership
+
+superpowers is built as a **self-chaining pipeline** — each skill's terminal step
+names the next skill, and using-superpowers mandates entry. vibe wants the cursor
+to own sequencing. Every seam where an upstream terminal step points somewhere
+else (brainstorming → writing-plans, executing-plans → finishing-a-development-branch)
+is a place the agent gets pulled out of the state machine, and no text anywhere
+says who wins. The spec half already discovered the right pattern (constraint
+injection + offer-first + explicit boundary notes); the flow half never adopted
+it — its delegate call sites are bare names.
+
+### Improvements (ranked)
+
+1. **Declare precedence once, visibly.** In `flow/SKILL.md` (and the AGENTS.md
+   template block): *"The cursor owns sequencing and artifacts. Delegated skills
+   execute within the current state's scope: ignore their artifact-path
+   conventions, self-commit steps, and next-skill handoffs; all writes go to the
+   state's write surface; transitions only via set-state.sh."* One paragraph
+   retires the whole conflict class (two-routers, brainstorm self-commit,
+   executing-plans' exit, SDD pull).
+2. **Per-delegate contract blocks in the flow phase files**, adopting
+   `spec/feature.md`'s Superpower-tip pattern and extending it: inputs to inject
+   (template + constraints), outputs to redirect (exact `.spec` path), upstream
+   steps to *skip* (brainstorming's doc-write+commit in `strategy.brainstorm`;
+   executing-plans' finishing handoff), and the offer-first / self-suffice
+   fallback (closing the lessons.md gap from part 1).
+3. **Resolve the plan-format collision with a hybrid template**: keep the spec
+   `{name}/n` unit structure as canonical, embed writing-plans-style checkbox
+   steps *inside each unit* (unit = upstream task group; 2–5-minute tasks =
+   checkboxes), and keep the `## Global Constraints` header seam so
+   executing-plans can still parse it. This is the single fix that makes the
+   design→plan→impl chain contract-clean end to end.
+4. **Fix the brainstorm-state contradiction**: scope `strategy.brainstorm` to the
+   dialogue phases of upstream brainstorming; the design artifact lands in the
+   *next* state's write surface (`strategy.spec` root docs / `feature.design`
+   feature docs). Suppress the self-commit.
+5. **Unify review dispatch in `verify.md`**: one sentence — use
+   requesting-code-review's dispatch protocol with feature-dev's `code-reviewer`
+   as the reviewer (confidence ≥80); findings route to `feature.impl`/`quick.fix`,
+   never fixed in verify.
+6. **Align `flow/compound.md` with `spec/feature.md`'s boundary note** and
+   sequence finishing-a-development-branch *last* (after archive + delete
+   prompt), since it merges the branch.
+7. **Take a worktree stance at `feature.impl`**: either adopt
+   `superpowers:using-git-worktrees` on entry or state "current branch, no
+   worktree — tell executing-plans so."
+8. **Document the SDD exclusion** (one line in deps.json or feature.md) and
+   either justify or drop `writing-skills` from `setup.apply`'s delegates.
+9. **Add a delegate-consistency test**: the machine's `delegates` arrays, the
+   orders blocks, and the phase-file prose are three copies of the same fact
+   (e.g. setup.apply's writing-skills appears only in the machine). Assert
+   machine ⊆ phase file.
+10. **caveman precedence note**: vibe's frozen per-state levels are canonical
+    when the skill is installed; never run `/caveman-compress` against `.spec/**`.
+
+## Decision
+
+The review supports keeping the three-dependency composition (the axes are
+complementary and the per-state selections are correct) and **not** adopting
+`/feature-dev`-as-macro or SDD. The follow-up work it points to, in order:
+(1) the precedence declaration + per-delegate contract blocks (items 1–2 above —
+also closes part 1's offer-first gap), (2) the hybrid plan template (item 3),
+(3) the part-1 fix-first list (Stop-gate teeth, Bash-hole honesty, hermetic flow
+tests, `.spec` re-sweep, quick-compound path). Findings that should outlive this
+folder: the precedence rule and the "contract, don't just name, your delegates"
+pattern belong in a lesson at the next compound.
+
 ## Appendix: machinery inventory
 
 | Layer | LOC |
