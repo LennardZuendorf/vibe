@@ -76,15 +76,15 @@ skill=vibe · spec feature.md flow steps 1–4 (locate→interview WHAT→rigor 
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.plan -->
-skill=vibe · spec feature.md step 5 (plan units) · WRITE .spec/features/<feature>/plan.md · STABLE unit IDs (<feature>/n) cite R-IDs · verification per unit · no source · caveman=lite · HUMAN GATE before impl · next: feature.impl
+skill=vibe · spec feature.md step 5 (plan units) · WRITE .spec/features/<feature>/plan.md · STABLE unit IDs (<feature>/n) cite R-IDs · verification per unit · no source · caveman=lite · HUMAN GATE before impl · gate: plan-approval+mode · next: feature.impl
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.impl -->
-skill=vibe · delegate executing-plans + TDD · WRITE src/**, tests/** · do NOT edit .spec/** · cite plan unit IDs (<feature>/n) in tests/commits · caveman=full · next: feature.verify
+skill=vibe · delegate executing-plans (interactive, default) | subagent-driven-development (handover) + TDD · WRITE src/**, tests/** · do NOT edit .spec/** · cite plan unit IDs (<feature>/n) in tests/commits · caveman=full · next: feature.verify
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.verify -->
-skill=vibe · delegate verification-before-completion + requesting-code-review + code-reviewer (systematic-debugging on fail) · gather EVIDENCE per plan unit ID · no spec writes · caveman=full · HUMAN GATE before ship · next: feature.compound (pass) | feature.impl (targeted fix) | feature.plan (major drift)
+skill=vibe · delegate verification-before-completion + requesting-code-review + code-reviewer (systematic-debugging on fail) · gather EVIDENCE per plan unit ID · no spec writes · caveman=full · HUMAN GATE before ship · gate: ship-approval · next: feature.compound (pass) | feature.impl (targeted fix) | feature.plan (major drift)
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.compound -->

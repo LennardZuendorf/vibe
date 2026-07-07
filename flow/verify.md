@@ -40,11 +40,16 @@ Serves two states:
    > - redirect: the fix-plan routes to `feature.impl` / `quick.fix` — no writes here
    > - skip: applying the fix in verify — verify diagnoses and routes only
 
-5. **Report + route.** Summarize evidence (commands run, output, review verdict).
-   Then suggest the routing target. **Human gate** before shipping a feature.
+5. **Report + route.** Summarize evidence (commands run, output, review verdict),
+   then route. The fix loops (`feature.impl`/`feature.plan`, `quick.fix`) and
+   `quick.compound` are non-gated — advance immediately and continue. The one
+   gated edge is the ship gate (`feature.verify > feature.compound`): **Human
+   gate** before shipping a feature.
 
 ## Rules
 
 - Evidence is observed behaviour, not assertion. Show the command and its output.
+- At a non-gated edge, advance immediately: `set-state.sh <next>`, announce in
+  one line, continue. Stop and ask only at the ship gate (see state-machine.json).
 - No spec writes from verify.
 - Caveman full; security/irreversible actions in normal prose.

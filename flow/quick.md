@@ -43,6 +43,8 @@ States: `quick.triage → quick.fix → quick.verify → idle`.
 
 - Quick mode does not write feature specs or root specs.
 - One reproducing test per fix.
-- Transitions agent-suggested; confirm before `set-state.sh`.
+- At a non-gated edge, advance immediately: `set-state.sh <next>`, announce in
+  one line, continue. The only exception is the `feature.design` escalation
+  (step 2) — it announces AND confirms, because it renames the work.
 - Caveman compresses output, not reasoning. Security/irreversible actions in
   normal prose.

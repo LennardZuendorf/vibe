@@ -20,8 +20,8 @@ States: `strategy.brainstorm → strategy.spec → (strategy.compound | idle)`.
    > - redirect: nothing written here; the direction artifact lands in the NEXT state (`strategy.spec` root docs)
    > - skip: its terminal design-doc write (`docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`), its self-commit, its writing-plans handoff
 
-   Scratch only — no spec writes yet. When direction is clear, suggest:
-   "direction looks set — move to strategy.spec?" and transition on confirmation.
+   Scratch only — no spec writes yet. When direction is clear, advance to
+   `strategy.spec` and continue.
 4. **Spec.** In `strategy.spec`, delegate to the `spec` skill. Write **only** the
    root docs: `.spec/product.md`, `.spec/tech.md`, `.spec/design.md`,
    `.spec/plan.md`. Inject those exact paths. Do not touch `lessons.md` or source.
@@ -34,7 +34,8 @@ States: `strategy.brainstorm → strategy.spec → (strategy.compound | idle)`.
 ## Rules
 
 - Caveman **lite** throughout (full sentences, no filler).
-- Transitions are agent-*suggested*, not automatic: name the next state and
-  confirm before calling `set-state.sh`.
+- At a non-gated edge, advance immediately: `set-state.sh <next>`, announce in
+  one line, continue. Stop and ask only at a `gates` edge (see state-machine.json);
+  the strategy flow has none.
 - Keep receipts short: state, files written, validation result, next transition.
 - Security warnings and irreversible actions stay in normal prose.

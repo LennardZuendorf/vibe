@@ -251,6 +251,44 @@ else
 fi
 
 echo ""
+echo "=== flow-mvp/7 — auto-advance: gate markers <-> machine gates, orders byte budget ==="
+# Auto-advance is prose; the only stop-and-ask points are the two `gates` edges in
+# the machine. Their SOURCE states must carry a `gate:` marker in their orders block,
+# and no other state may. Extraction is the suite's own orders.sh; with the cursor
+# removed the <feature> placeholder stays literal, so the byte measurement is stable.
+rm -f "$STATE"
+gate_sources="$(jq -r '(.gates // {}) | keys[] | split(">")[0]' "$MACHINE" | sort -u)"
+
+# Each gates-edge source state carries `gate:` in its orders block.
+gate_marker_ok=1
+while IFS= read -r gs; do
+  [[ -z "$gs" ]] && continue
+  blk="$(bash "$SCRIPTS/orders.sh" "$gs")"
+  [[ "$blk" == *"gate:"* ]] || { gate_marker_ok=0; echo "        gate source $gs orders block lacks 'gate:'"; }
+done <<< "$gate_sources"
+assert_eq "flow-mvp/7" "every gates-edge source state carries 'gate:' in its orders" "$gate_marker_ok" "1"
+
+# No OTHER state's orders block carries `gate:`.
+extra_gate=""
+while IFS= read -r st; do
+  [[ -z "$st" ]] && continue
+  printf '%s\n' "$gate_sources" | grep -qxF "$st" && continue
+  blk="$(bash "$SCRIPTS/orders.sh" "$st")"
+  [[ "$blk" == *"gate:"* ]] && extra_gate="$extra_gate $st"
+done <<< "$(jq -r '.states | keys[]' "$MACHINE")"
+assert_eq "flow-mvp/7" "no non-gate state carries 'gate:' in its orders" "$extra_gate" ""
+
+# Every orders block resolves within the 400-byte budget.
+over_budget=""
+while IFS= read -r st; do
+  [[ -z "$st" ]] && continue
+  blk="$(bash "$SCRIPTS/orders.sh" "$st")"
+  n="$(printf '%s' "$blk" | wc -c | tr -d ' ')"
+  [[ "$n" -le 400 ]] || over_budget="$over_budget $st($n)"
+done <<< "$(jq -r '.states | keys[]' "$MACHINE")"
+assert_eq "flow-mvp/7" "every orders block is within the 400-byte budget" "$over_budget" ""
+
+echo ""
 echo "=== regen-active-rules.sh — digest from lessons ==="
 d="$(mktemp -d)"
 mkdir -p "$d/.spec" "$d/.agents/skills/vibe/scripts"

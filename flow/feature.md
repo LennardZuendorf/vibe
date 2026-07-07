@@ -31,7 +31,8 @@ Everything between is autonomous.
    > - skip: any self-commit or chain handoff. COPY these redirect/skip lines into each subagent (Task) prompt — subagents get no per-turn orders
 
    Write **only** `.spec/features/<name>/product.md`, `tech.md`, and `design.md`
-   when the rigor gate says full. Suggest `feature.plan` when HOW is sketched.
+   when the rigor gate says full. When HOW is sketched, advance to `feature.plan`
+   and continue.
 
 3. **Plan** (`feature.plan`, caveman lite). Follow [feature.md](.agents/skills/spec/feature.md)
    step 5 (plan units).
@@ -46,10 +47,29 @@ Everything between is autonomous.
    Write `.spec/features/<name>/plan.md` with **stable unit IDs**; IDs never change
    on reorder or split. **Human gate:** confirm the plan before impl.
 
-4. **Impl** (`feature.impl`, caveman full). Delegate to
-   `superpowers:executing-plans` + `superpowers:test-driven-development`. Write
-   `src/**` and `tests/**` only — do **not** edit `.spec/**`. Cite plan unit IDs
-   in tests/commits so state survives re-planning.
+4. **Impl** (`feature.impl`, caveman full). Mode is picked at the plan gate;
+   default **interactive**. Both modes consume the hybrid
+   `.spec/features/<name>/plan.md` (units in Seq order; per-unit **Steps** are the
+   task checklist) and run on the **current branch — no worktree**, so verify and
+   the receipt run against the same tree. `superpowers:test-driven-development`
+   applies within either mode (one reproducing test first, then the minimal code).
+   Write `src/**` and `tests/**` only — do **not** edit `.spec/**`.
+
+   **interactive** (default) — drive the plan turn by turn:
+
+   > **Delegate — superpowers:executing-plans**
+   > - announce: "delegating to `superpowers:executing-plans` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - inject: the hybrid `.spec/features/<name>/plan.md` as its plan input (units in Seq order; per-unit **Steps** are the task checklist); current-branch, no-worktree stance
+   > - redirect: write `src/**` and `tests/**` only; cite plan unit IDs (`<name>/n`) in commits
+   > - skip: its `finishing-a-development-branch` exit handoff — the flow advances to `feature.verify` instead
+
+   **handover** — dispatch the plan to subagents:
+
+   > **Delegate — superpowers:subagent-driven-development**
+   > - announce: "delegating to `superpowers:subagent-driven-development` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - inject: the hybrid `.spec/features/<name>/plan.md`; current-branch, no-worktree stance; runtime artifacts stay under `.superpowers/**` (gitignored runtime, not memory)
+   > - redirect: write `src/**` and `tests/**` only; cite plan unit IDs (`<name>/n`) in commits. COPY these redirect/skip lines into every subagent (Task) prompt — subagents get no per-turn orders
+   > - skip: its `finishing-a-development-branch` exit — stop after the final review; the flow advances to `feature.verify`, which audits regardless
 
 5. **Verify** (`feature.verify`, caveman full). Hand to `verify.md` /
    `superpowers:verification-before-completion` + `requesting-code-review` +
@@ -64,7 +84,9 @@ Everything between is autonomous.
 ## Rules
 
 - Inject exact output paths in every delegation.
-- Transitions are agent-*suggested* until proven: name the next state, confirm.
+- At a non-gated edge, advance immediately: `set-state.sh <next>`, announce in
+  one line, continue. Stop and ask only at a `gates` edge (see state-machine.json):
+  the two human gates are plan approval before impl and ship approval after verify.
 - If a `quick` task escalated here, start at `feature.design`.
 - Caveman compresses output, never reasoning. Security/irreversible actions stay
   in normal prose at every level.
