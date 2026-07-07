@@ -5,16 +5,19 @@
 #
 # Each test cites its plan unit ID (vibe-flow/n). Exit 0 = all pass.
 #
-# These tests never depend on a live cursor: they pass explicit state args or
-# seed a throwaway state.json and restore the original.
+# The suite is hermetic: it builds one throwaway sandbox (mktemp -d) that mirrors
+# the repo's flow/ and runs every cursor-touching script inside it. The live repo
+# cursor (flow/state.json) is never read or written, so concurrent runs never race
+# and a pre-existing cursor is left byte-identical.
 
 # The `cond && pass || fail` reporting idiom is intentional and safe here:
 # pass()/fail() always return 0, so fail never runs spuriously after pass.
 # shellcheck disable=SC2015
 set -uo pipefail
 
-# Repo root by upward marker search (.spec / .git) — depth- and symlink-agnostic:
-# resolves the physical path so real and symlinked invocations converge.
+# Locate the real repo (SRC_ROOT) by upward marker search — physical path so real
+# and symlinked invocations converge. SRC_ROOT is used read-only: to seed the
+# sandbox and to run install.sh / the dogfood health check against the real tree.
 _find_repo_root() {
   local d; d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
   while [[ "$d" != "/" ]]; do
@@ -23,7 +26,27 @@ _find_repo_root() {
   done
   return 1
 }
-REPO_ROOT="$(_find_repo_root)" || { echo "cannot locate repo root (.spec/.git)" >&2; exit 1; }
+SRC_ROOT="$(_find_repo_root)" || { echo "cannot locate repo root (.spec/.git)" >&2; exit 1; }
+
+# One hermetic sandbox for the whole suite. It mirrors the real flow/ so every
+# self-locating script resolves its state.json, machine, and orders INTO the
+# sandbox — the live cursor is never touched. The layout preserves the
+# real-vs-symlink path-parity subject the parity tests exercise: flow/ is a real
+# copy, .agents/skills/vibe is the recreated ../../flow symlink (NOT a cp -RL
+# deref), and .spec is a root marker so marker-search halts here instead of
+# walking up into the real repo. mktemp -d is unique per run, so two concurrent
+# suites never share state. The live flow/state.json is excluded from the copy
+# (never read); tests seed the sandbox cursor from state.example.json as needed.
+SANDBOX="$(mktemp -d)"
+cleanup() { rm -rf "$SANDBOX"; }
+trap cleanup EXIT
+mkdir -p "$SANDBOX/flow" "$SANDBOX/.agents/skills" "$SANDBOX/.spec"
+find "$SRC_ROOT/flow" -mindepth 1 -maxdepth 1 ! -name state.json \
+  -exec cp -R {} "$SANDBOX/flow/" \;
+ln -s ../../flow "$SANDBOX/.agents/skills/vibe"
+
+# All repo-relative test paths now resolve inside the sandbox.
+REPO_ROOT="$SANDBOX"
 FLOW="$REPO_ROOT/.agents/skills/vibe"
 SCRIPTS="$FLOW/scripts"
 MACHINE="$FLOW/state-machine.json"
@@ -37,14 +60,6 @@ fail() { echo "  FAIL [$1] $2"; FAIL=$((FAIL + 1)); }
 assert_contains()     { if [[ "$3" == *"$4"* ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        expected to contain: $4"; echo "        got: $3"; fi; }
 assert_not_contains() { if [[ "$3" != *"$4"* ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        expected NOT to contain: $4"; fi; }
 assert_eq()           { if [[ "$3" == "$4" ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        expected: $4"; echo "        got:      $3"; fi; }
-
-# Save/restore any real cursor so tests are side-effect free.
-BACKUP=""
-if [[ -f "$STATE" ]]; then BACKUP="$(mktemp)"; cp "$STATE" "$BACKUP"; fi
-restore_state() {
-  if [[ -n "$BACKUP" ]]; then cp "$BACKUP" "$STATE"; rm -f "$BACKUP"; else rm -f "$STATE"; fi
-}
-trap restore_state EXIT
 
 echo "=== vibe-flow/1 — D12 orders source ==="
 
@@ -240,8 +255,10 @@ DEPS="$FLOW/reference/deps.json"
 jq -e . "$DEPS" >/dev/null 2>&1 && pass "install-tooling/4" "deps.json is valid JSON" || fail "install-tooling/4" "deps.json JSON"
 missing_field="$(jq -r '[.deps[] | select((has("name") and has("kind") and has("source") and has("required_by") and has("degrade")) | not)] | length' "$DEPS")"
 assert_eq "install-tooling/4" "every deps.json entry has name/kind/source/required_by/degrade" "$missing_field" "0"
-# Healthy source repo: exit 0 and the core checks report ok.
-out="$(bash "$DOCTOR" 2>&1; echo "rc=$?")"
+# Healthy dogfood repo: the sandbox lacks .claude/spec, so this check runs the
+# (byte-identical) sandbox doctor against the real SRC_ROOT explicitly. doctor is
+# read-only — it never writes the repo or its cursor.
+out="$(bash "$DOCTOR" "$SRC_ROOT" 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/4" "doctor exits 0 on a healthy repo" "$out" "rc=0"
 assert_contains "install-tooling/4" "doctor reports core.vibe ok" "$out" "ok   core.vibe"
 assert_contains "install-tooling/4" "doctor reports machine ok" "$out" "ok   machine"
@@ -290,7 +307,7 @@ echo ""
 echo "=== install-tooling/4 — doctor adapter.activation (settings.json wiring) ==="
 # A full install wires the three hooks into settings.json — doctor reports ok.
 SBA="$(mktemp -d)"
-bash "$REPO_ROOT/install.sh" "$SBA" >/dev/null 2>&1
+bash "$SRC_ROOT/install.sh" "$SBA" >/dev/null 2>&1
 out="$(bash "$DOCTOR" "$SBA" 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/4" "doctor reports adapter.activation ok when settings.json wires the hooks" "$out" "ok   adapter.activation"
 assert_contains "install-tooling/4" "doctor exits 0 on a wired install" "$out" "rc=0"
@@ -318,7 +335,7 @@ echo "=== orders.sh on a fresh non-git install (stranger-eval regression) ==="
 # resolve the linked skill's block by self-locating the skills dir from its own
 # path — not degrade to 'state=unknown' for want of a repo-root marker.
 SBI="$(mktemp -d)"
-bash "$REPO_ROOT/install.sh" "$SBI" >/dev/null 2>&1
+bash "$SRC_ROOT/install.sh" "$SBI" >/dev/null 2>&1
 [[ ! -e "$SBI/.git" && ! -e "$SBI/.spec" ]] \
   && pass "orders-fresh" "fresh install has no .git/.spec marker (precondition)" \
   || fail "orders-fresh" "precondition: fresh install unexpectedly has a marker"
