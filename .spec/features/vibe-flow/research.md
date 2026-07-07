@@ -1,4 +1,23 @@
-# vibe — Full Product & Flow Review
+---
+type: feature-research
+feature: vibe-flow
+parent: product.md
+updated: 2026-07-07
+---
+
+# vibe-flow — Research: full product & flow review
+
+External review used as discovery input for flow improvements. If a finding
+should persist, extract it to a lesson (lessons.md) or a root/feature spec —
+this file is deleted with the folder at wrapup.
+
+## Question
+
+Does the vibe flow deliver its value proposition — and how well does it
+orchestrate superpowers, feature-dev, and caveman versus alternatives
+(compound-engineering, spec-kit, or superpowers alone)?
+
+## Findings
 
 - **Date:** 2026-07-07
 - **Reviewer:** external reviewing agent (Claude, multi-agent review: 2 deep-dive reviewers, 2 integration/adapter reviewers, 1 competitive-landscape researcher, adversarial synthesis by the orchestrator)
