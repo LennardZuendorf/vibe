@@ -201,6 +201,56 @@ setup_deleg="$(jq -c '.states."setup.apply".delegates' "$MACHINE")"
 assert_eq "flow-mvp/3" "setup.apply delegates is exactly [spec]" "$setup_deleg" '["spec"]'
 
 echo ""
+echo "=== flow-mvp/5,6 — machine delegates ⊆ phase-file prose ==="
+# Subagents receive no per-turn orders, so every delegate's contract must live in
+# the phase file that documents its state. For each state with a non-empty
+# delegates array, assert each delegate name appears verbatim in the mapped phase
+# file. Suffix rules (*.verify, *.compound) win over the flow prefix so verify.md
+# and compound.md own those states.
+phase_file_for() {
+  case "$1" in
+    *.verify)   echo "verify.md" ;;
+    *.compound) echo "compound.md" ;;
+    setup.*)    echo "setup.md" ;;
+    strategy.*) echo "strategy.md" ;;
+    feature.*)  echo "feature.md" ;;
+    quick.*)    echo "quick.md" ;;
+    amend)      echo "amend.md" ;;
+    *)          echo "" ;;
+  esac
+}
+deleg_ok=1
+while IFS= read -r st; do
+  [[ -z "$st" ]] && continue
+  pf="$(phase_file_for "$st")"
+  if [[ -z "$pf" || ! -f "$FLOW/$pf" ]]; then
+    deleg_ok=0; echo "        no phase file mapped for $st"; continue
+  fi
+  body="$(cat "$FLOW/$pf")"
+  while IFS= read -r dg; do
+    [[ -z "$dg" ]] && continue
+    [[ "$body" == *"$dg"* ]] || { deleg_ok=0; echo "        $st: delegate '$dg' missing from $pf"; }
+  done < <(jq -r --arg s "$st" '.states[$s].delegates[]?' "$MACHINE")
+done < <(jq -r '.states | to_entries[] | select((.value.delegates | length) > 0) | .key' "$MACHINE")
+assert_eq "flow-mvp/5" "every machine delegate appears verbatim in its phase file" "$deleg_ok" "1"
+
+# quick.md carries the optional quick.compound step (the quick-work compound
+# procedure lives in quick.md, not the shared compound.md).
+assert_contains "flow-mvp/6" "quick.md mentions quick.compound" "$(cat "$FLOW/quick.md")" "quick.compound"
+
+# compound.md no longer implies finishing-a-development-branch performs the archive
+# move: the finishing delegate block is sequenced AFTER the Archive step.
+comp="$FLOW/compound.md"
+arch_ln="$(grep -n '\*\*Archive' "$comp" | head -1 | cut -d: -f1)"
+fin_ln="$(grep -n 'finishing-a-development-branch' "$comp" | head -1 | cut -d: -f1)"
+if [[ -n "$arch_ln" && -n "$fin_ln" && "$fin_ln" -gt "$arch_ln" ]]; then
+  pass "flow-mvp/6" "compound.md sequences finishing after the archive step"
+else
+  fail "flow-mvp/6" "compound.md sequences finishing after the archive step"
+  echo "        archive line: ${arch_ln:-none}, finishing line: ${fin_ln:-none}"
+fi
+
+echo ""
 echo "=== regen-active-rules.sh — digest from lessons ==="
 d="$(mktemp -d)"
 mkdir -p "$d/.spec" "$d/.agents/skills/vibe/scripts"

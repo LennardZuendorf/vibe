@@ -12,8 +12,15 @@ States: `strategy.brainstorm → strategy.spec → (strategy.compound | idle)`.
 2. **Read lessons first.** On entering `strategy.brainstorm`, read
    `.spec/lessons.md` so past mistakes shape direction (retrieval, not just
    recording).
-3. **Brainstorm.** Delegate to `superpowers:brainstorming` for the human
-   dialogue. Scratch only — no spec writes yet. When direction is clear, suggest:
+3. **Brainstorm.**
+
+   > **Delegate — superpowers:brainstorming**
+   > - announce: "delegating to `superpowers:brainstorming` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - inject: this state's scope — its DIALOGUE phases only (direction-shaping questions); caveman lite
+   > - redirect: nothing written here; the direction artifact lands in the NEXT state (`strategy.spec` root docs)
+   > - skip: its terminal design-doc write (`docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`), its self-commit, its writing-plans handoff
+
+   Scratch only — no spec writes yet. When direction is clear, suggest:
    "direction looks set — move to strategy.spec?" and transition on confirmation.
 4. **Spec.** In `strategy.spec`, delegate to the `spec` skill. Write **only** the
    root docs: `.spec/product.md`, `.spec/tech.md`, `.spec/design.md`,

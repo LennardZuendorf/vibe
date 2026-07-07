@@ -13,12 +13,33 @@ Serves two states:
 
 1. **Locate.** Read `.agents/skills/vibe/state.json`; confirm you are in a `*.verify`
    state (else the caller transitions there first).
-2. **Verify.** Delegate to `superpowers:verification-before-completion`. Run the
-   real tests/build. For a feature, tie each result back to a plan **unit ID**.
-3. **Review.** Delegate to `superpowers:requesting-code-review` and the
-   `code-reviewer` subagent (confidence-filtered). Capture findings.
-4. **On failure.** Delegate to `superpowers:systematic-debugging`; produce a
-   fix-plan before any retry. Do not mark anything done on a failing check.
+
+2. **Verify.**
+
+   > **Delegate — superpowers:verification-before-completion**
+   > - announce: "delegating to `superpowers:verification-before-completion` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - inject: run the real tests/build; for a feature, tie each result to a plan **unit ID**; caveman full
+   > - redirect: evidence is observed output shown in-turn; no spec writes
+   > - skip: any "done"/commit claim on a failing check
+
+3. **Review — one protocol.** Not two separate reviews: use
+   `superpowers:requesting-code-review`'s dispatch pattern with feature-dev's
+   `code-reviewer` as the reviewer template.
+
+   > **Delegate — superpowers:requesting-code-review + code-reviewer**
+   > - announce: "delegating review to `superpowers:requesting-code-review` (dispatch) with `code-reviewer` (reviewer template) — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - inject: requesting-code-review's dispatch protocol; `code-reviewer`'s 0–100 confidence rubric; keep only findings at confidence ≥ 80
+   > - redirect: findings route to `feature.impl` (feature) / `quick.fix` (quick) — NEVER fixed here; verify writes no `src/**`
+   > - skip: the upstream "fix Critical immediately" step and any self-commit — routing owns the fix
+
+4. **On failure.**
+
+   > **Delegate — superpowers:systematic-debugging**
+   > - announce: "delegating to `superpowers:systematic-debugging` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - inject: produce a fix-plan before any retry; mark nothing done on a failing check
+   > - redirect: the fix-plan routes to `feature.impl` / `quick.fix` — no writes here
+   > - skip: applying the fix in verify — verify diagnoses and routes only
+
 5. **Report + route.** Summarize evidence (commands run, output, review verdict).
    Then suggest the routing target. **Human gate** before shipping a feature.
 

@@ -16,15 +16,35 @@ Everything between is autonomous.
 2. **Design** (`feature.design`, caveman lite). Follow the spec skill
    [feature.md authoring flow](.agents/skills/spec/feature.md) steps 1–4:
    locate & name → interview WHAT → rigor gate → sketch HOW. Read
-   `.spec/lessons.md` first. Delegate `superpowers:brainstorming` (dialogue),
-   `code-explorer` (trace), `code-architect` (sketch) — they compose. Write
-   **only** `.spec/features/<name>/product.md`, `tech.md`, and `design.md`
+   `.spec/lessons.md` first.
+
+   > **Delegate — superpowers:brainstorming**
+   > - announce: "delegating to `superpowers:brainstorming` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - inject: spec feature.md steps 1–4 as the dialogue format (RFC-2119 WHAT, GWT scenarios, Scope-table boundaries); caveman lite
+   > - redirect: design doc → `.spec/features/<name>/{product,tech,design}.md` (design.md only at full rigor)
+   > - skip: its terminal write under `docs/superpowers/specs/`, its self-commit, its writing-plans handoff
+
+   > **Delegate — code-explorer / code-architect**
+   > - announce: "dispatching `code-explorer` (trace) + `code-architect` (sketch) — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - inject: spec feature.md step 4 (which `tech.md` sections to populate, where merge markers go); text-only. Optionally dispatch 2–3 `code-architect` runs in PARALLEL (feature-dev's own pattern — each commits to ONE approach; compare, pick)
+   > - redirect: HOW → `.spec/features/<name>/tech.md` (+ `design.md` at full); the subagents write no files themselves
+   > - skip: any self-commit or chain handoff. COPY these redirect/skip lines into each subagent (Task) prompt — subagents get no per-turn orders
+
+   Write **only** `.spec/features/<name>/product.md`, `tech.md`, and `design.md`
    when the rigor gate says full. Suggest `feature.plan` when HOW is sketched.
 
 3. **Plan** (`feature.plan`, caveman lite). Follow [feature.md](.agents/skills/spec/feature.md)
-   step 5 (plan units). Delegate `superpowers:writing-plans` + `code-architect`.
-   Write `.spec/features/<name>/plan.md` with **stable unit IDs**; IDs never
-   change on reorder or split. **Human gate:** confirm the plan before impl.
+   step 5 (plan units).
+
+   > **Delegate — superpowers:writing-plans**
+   > - announce: "delegating to `superpowers:writing-plans` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - inject: the hybrid plan template (`spec/reference/templates/feature-plan.md`); stable-ID rules (`<name>/n`, never renumber on reorder/split, same-feature deps only); the feature's `product.md` requirements
+   > - redirect: plan → `.spec/features/<name>/plan.md` (writing-plans' documented optional storage-location seam)
+   > - skip: its own `docs/superpowers/plans/` path; its "offer execution" handoff — the plan gate owns advancing to impl
+
+   `code-architect` may sketch the unit decomposition (text-only, same redirect).
+   Write `.spec/features/<name>/plan.md` with **stable unit IDs**; IDs never change
+   on reorder or split. **Human gate:** confirm the plan before impl.
 
 4. **Impl** (`feature.impl`, caveman full). Delegate to
    `superpowers:executing-plans` + `superpowers:test-driven-development`. Write
