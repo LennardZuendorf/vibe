@@ -4,5 +4,7 @@
 
 # Mutable flow cursor (OPEN-1): version the static state-machine.json, not the
 # per-session cursor. state.example.json is the tracked template.
-.agents/skills/vibe/state.json
+flow/state.json
 .serena/
+# Overnight run artifact (local morning report, not merged)
+REPORT.md

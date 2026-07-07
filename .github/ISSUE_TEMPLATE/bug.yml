@@ -1,0 +1,57 @@
+name: Bug report
+description: Report something in vibe that is broken or behaves unexpectedly
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting. Please fill in the details below so it can be reproduced.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Describe the actual behaviour.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: Describe the behaviour you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands or actions that trigger the problem.
+      placeholder: |
+        1. bash install.sh ...
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: half
+    attributes:
+      label: Which half
+      description: Which part of vibe is affected?
+      options:
+        - spec (spec framework)
+        - flow (flow harness + adapter)
+        - both / not sure
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15 / Ubuntu 24.04 / ...
+    validations:
+      required: true
+  - type: input
+    id: claude-code-version
+    attributes:
+      label: Claude Code version
+      description: Output of `claude --version` (leave blank if not using Claude Code).
+    validations:
+      required: false

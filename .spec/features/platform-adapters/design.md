@@ -9,8 +9,7 @@ updated: 2026-06-06
 # Feature: Platform Adapters — Design
 
 Adapter docs should be calm, direct, and boring. They are not the product
-architecture; they are reminders that point the runtime back to `.agents/flow`
-and `.agents/skills/vibe-*`.
+architecture; they are reminders that point the runtime back to `.agents/skills/vibe`.
 
 **Parent:** [../../design.md](../../design.md)
 **Requirements:** [product.md](product.md)

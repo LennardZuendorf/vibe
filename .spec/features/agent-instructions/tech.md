@@ -23,7 +23,7 @@ optional platform adapter symlinks during `vibe-setup` `setup.apply`. Mirrors th
 ## Files
 
 ```text
-.agents/skills/vibe-setup/
+.agents/skills/vibe/
 ├── SKILL.md                              # detect/apply steps updated
 └── reference/
     ├── templates/
@@ -79,7 +79,7 @@ On merge, `setup.apply`:
 
 ```bash
 # Pseudocode — implement as merge-agents.sh or inline in setup flow
-TEMPLATE=".agents/skills/vibe-setup/reference/templates/AGENTS.md"
+TEMPLATE=".agents/skills/vibe/reference/templates/AGENTS.md"
 TARGET="AGENTS.md"
 
 if [[ ! -f "$TARGET" ]]; then
@@ -166,15 +166,14 @@ Report a row per item:
 | Hand-maintained duplicate adapter prose | `CLAUDE.md` → symlink; content lives once in `AGENTS.md` |
 | `vibe:constitution` markers | `vibe:instructions` markers (with one-time migration) |
 
-Update `.agents/skills/vibe-setup/SKILL.md` apply step 1 when this feature ships.
+Update `.agents/skills/vibe/SKILL.md` apply step 1 when this feature ships.
 Step 4 (`regen-active-rules`) stays; step 1 replaces the constitution template block.
 
 ---
 
 ## Open Questions
 
-1. **Script home** — `merge-agents.sh` under `.agents/flow/scripts/` (shared with
-   `install.sh`) vs `.agents/skills/vibe-setup/scripts/` (colocated with template)?
-   Recommend colocated under `vibe-setup/scripts/`; `install.sh` calls it.
+1. **Script home** — `merge-agents.sh` under `.agents/skills/vibe/scripts/` (colocated with template).
+   Resolved: colocated under `vibe/scripts/`; `install.sh` calls it.
 2. **Template versioning** — embed `<!-- vibe:template-version: 1 -->` inside
    instructions markers so `setup.detect` can report stale without a full diff?

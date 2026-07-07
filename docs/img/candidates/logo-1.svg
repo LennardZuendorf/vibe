@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" width="800" height="200">
+  <title>vibe — gradient wordmark</title>
+  <defs>
+    <linearGradient id="rainbow" x1="253" y1="0" x2="548" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#FF4D4D"/>
+      <stop offset="20%"  stop-color="#FF9F45"/>
+      <stop offset="40%"  stop-color="#FFD93D"/>
+      <stop offset="60%"  stop-color="#6BCB77"/>
+      <stop offset="80%"  stop-color="#4D96FF"/>
+      <stop offset="100%" stop-color="#9B5DE5"/>
+    </linearGradient>
+  </defs>
+  <!-- v -->
+  <path d="M 253,55 L 288,150 L 323,55"
+        fill="none" stroke="url(#rainbow)" stroke-width="24"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- i stem -->
+  <line x1="363" y1="85" x2="363" y2="150"
+        stroke="url(#rainbow)" stroke-width="24" stroke-linecap="round"/>
+  <!-- i dot -->
+  <circle cx="363" cy="55" r="13" fill="url(#rainbow)"/>
+  <!-- b stem -->
+  <line x1="413" y1="30" x2="413" y2="150"
+        stroke="url(#rainbow)" stroke-width="24" stroke-linecap="round"/>
+  <!-- b bowl -->
+  <path d="M 413,90 C 480,90 480,150 413,150"
+        fill="none" stroke="url(#rainbow)" stroke-width="24"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- e arc -->
+  <path d="M 548,118 A 35,35 0 1,0 531,148"
+        fill="none" stroke="url(#rainbow)" stroke-width="24" stroke-linecap="round"/>
+  <!-- e crossbar -->
+  <line x1="478" y1="118" x2="548" y2="118"
+        stroke="url(#rainbow)" stroke-width="24" stroke-linecap="round"/>
+</svg>

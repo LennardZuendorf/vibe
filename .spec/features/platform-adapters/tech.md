@@ -9,7 +9,7 @@ updated: 2026-06-06
 # Feature: Platform Adapters — Architecture
 
 Adapters are thin files that translate runtime-specific affordances into the
-platform-neutral `.agents/flow` and `.agents/skills/vibe-*` core. The Claude Code
+platform-neutral `.agents/skills/vibe` core. The Claude Code
 adapter goes one step further: it is packaged as an installable **Claude Code
 plugin** whose hooks make the flow automatic.
 
@@ -52,11 +52,11 @@ the skills, and the hooks against the platform-neutral core.
 - **Hook wiring:** `hooks/hooks.json` maps Claude Code events to the scripts
   below, referencing them via `${CLAUDE_PLUGIN_ROOT}` so the plugin is relocatable.
 - **No new state:** the plugin owns no cursor and no spec layout — every hook and
-  command reads `.agents/flow` and `.agents/skills/vibe-*`.
+  command reads `.agents/skills/vibe`.
 
 ### Hooks (the Stage 2 enforcement layer)
 
-Each hook is a thin shell over `.agents/flow/scripts/`; the invariant logic lives
+Each hook is a thin shell over `.agents/skills/vibe/scripts/`; the invariant logic lives
 once in `detect-context.sh`, never copied into a hook. The inject hook is likewise
 thin: it resolves the state's linked skill and injects that skill's orders (D12) —
 the orders are authored once, in the skill.
@@ -84,9 +84,9 @@ state exits 0 and never breaks the session.
 
 ## Adapter Rules
 
-- Read canonical state from `.agents/flow/state.json`.
-- Read canonical transitions from `.agents/flow/state-machine.json`.
-- Invoke `.agents/skills/vibe-*` skills for workflow behavior.
+- Read canonical state from `.agents/skills/vibe/state.json`.
+- Read canonical transitions from `.agents/skills/vibe/state-machine.json`.
+- Invoke the `.agents/skills/vibe` skill for workflow behavior.
 - Do not write a platform-specific state cursor.
 - Do not introduce platform-specific `.spec/` paths.
 - Hooks call the shared decision policy in `detect-context.sh`; they never

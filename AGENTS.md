@@ -39,7 +39,7 @@ Know what exists before you read or create files.
 | `.agents/skills/vibe/state.example.json` | **Present** — template for the cursor file |
 | `.agents/skills/vibe/state.json` | **Often absent** — gitignored runtime cursor; missing is normal |
 | `.agents/skills/vibe/` | **Present** — workflow skill (SKILL.md router + phase files) |
-| `.claude/` hooks, plugin, `install.sh` | **Present** — Claude Code adapter (plugin + three hooks + installer) |
+| `.claude/commands/`, `.claude/hooks/`, `.claude/settings.json` | **Present** — Claude Code adapter (`/flow` command + three hook scripts wired via `settings.json`) |
 | **`flow.json`** | **Does not exist** — never expect, read, or create this file |
 | Per-turn inject / D12 orders-in-skills | **Live** — orders sourced from linked `vibe` skill via `orders.sh` |
 
@@ -130,8 +130,7 @@ bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
 ```text
 .spec/                 # durable memory (product/tech/design/plan/lessons + features/)
 .agents/skills/spec/   # bundled spec framework
-.agents/skills/vibe/   # workflow skill (router + phase files)
-.agents/skills/vibe/          # state machine + scripts
+.agents/skills/vibe/   # workflow skill: router, phase files, state machine, scripts
 AGENTS.md              # this file (canonical)
 CLAUDE.md              # symlink → AGENTS.md
 ```
@@ -206,9 +205,9 @@ Features: `.spec/features/<feature>/{product,tech}.md` required; `design.md`,
 
 ### Active Rules
 
+- **Script self-location: search for markers, don't count hops** — Scripts reachable through compat symlinks must locate the repo root by upward marker search (`.spec`/`.git`), never fixed hop counts; pin with path-parity tests asserting byte-identical output via both real and symlinked invocation.
+- **The dogfood repo is a privileged target — eval on a fresh, non-git install** — A tool that will be *installed elsewhere* must be tested from a representative fresh target (a bare `mktemp -d`, no `.git`, no `.spec`), not just the source/dogfood repo. Prefer self-location relative to the script's own path over repo-root markers the target may lack. Run a periodic "stranger" eval (fresh agent, docs-only, throwaway sandbox) as a release gate — it exercises the install-target reality the in-repo suites cannot.
+- **Uninstall must surgically invert the install into shared dirs, and the test must discriminate** — An uninstaller must delete only the paths the installer created (per-file inverse of the copy), never blanket-remove a shared directory; pruning *emptied* dirs is fine. Pair every preservation guarantee with a **discriminating** test — one that fails if the safety code is replaced by the naïve destructive version (drop a user file into each shared dir, run uninstall, assert it survives *and* the shipped file is gone). Reuse the tested marker-pairing guard for the managed instruction block; never re-implement it.
+- **Skill design: promote superpowers proactively, remain self-sufficient** — Skills SHOULD proactively offer their optimal executor at each step — "I can use X for this, want me to?" — and MUST self-execute from their constraint documents if the user declines or the executor is unavailable. The order is always: offer first, self-suffice second. Never silently skip the offer; never block on the answer.
 - **An installer must preserve per-project runtime state across a re-copy** — A provisioner that refreshes managed files must snapshot per-project runtime state (the flow cursor) before the copy and restore it after, seeding only when genuinely absent. "Idempotent" has to hold for *user* state, not just managed files; pin it with a regression test that a live cursor (`feature.impl <feature>`) survives a re-install.
-- **Marker-bounded merge must validate marker pairing before rewriting** — Any tool that rewrites a region between managed markers must confirm the markers exist as exact lines AND that start precedes end before mutating — refuse (never mangle) on reversed/overlapping markers, and always write via temp + atomic rename. Pair it with a test that a reversed-marker file is left byte-untouched.
-- **A Claude Code plugin cannot bundle skills outside ./skills/** — Let the *plugin* carry only the Claude-specific runtime wiring it uniquely provides (`commands` + `hooks` via `${CLAUDE_PLUGIN_ROOT}`); deliver the platform-neutral core (the `spec`/`vibe-*` skills and `.agents/skills/vibe`) as project files through `install.sh`. "Single install" = run the installer. Keeps adapters thin and the core canonical.
-- **Single-source the per-turn orders; don't duplicate them in the machine** — Author the orders once, in the linked skill, as a machine-extractable `<!-- vibe:orders:<state> -->` block; carry `inject: null` in the machine for skill-owning states (only `idle` keeps an inline fallback); resolve via `orders.sh` (cursor → `skill` link → block → interpolate `<feature>` only, so the prompt cache stays byte-stable). Hooks are thin shells over that resolver.
-- **Spec strictness: warn-first, then migrate** — Ship structural validators warn-first; promote warn→error only after live specs are migrated during compound. Pair every validator with a behaviour test in `tests/spec/run.sh`.
 <!-- vibe:active-rules:end -->

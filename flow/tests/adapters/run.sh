@@ -1,0 +1,329 @@
+#!/usr/bin/env bash
+# flow/tests/adapters/run.sh — behaviour tests for agent-instructions (merge-agents.sh,
+# template, manifest) and platform-adapters (three hooks, settings.json wiring,
+# install.sh). Pure bash; no bats. Each test cites its plan unit ID.
+#
+# Hook tests run against a throwaway install in a temp dir (its own state.json),
+# so the source repo's cursor is never touched.
+
+# The `cond && pass || fail` reporting idiom is intentional and safe here:
+# pass()/fail() always return 0, so fail never runs spuriously after pass.
+# shellcheck disable=SC2015
+set -uo pipefail
+
+# Repo root by upward marker search (.spec / .git) — depth- and symlink-agnostic:
+# resolves the physical path so real and symlinked invocations converge.
+_find_repo_root() {
+  local d; d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+  while [[ "$d" != "/" ]]; do
+    [[ -d "$d/.spec" || -e "$d/.git" ]] && { printf '%s\n' "$d"; return 0; }
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+REPO_ROOT="$(_find_repo_root)" || { echo "cannot locate repo root (.spec/.git)" >&2; exit 1; }
+MERGE="$REPO_ROOT/.agents/skills/vibe/scripts/merge-agents.sh"
+TEMPLATE="$REPO_ROOT/.agents/skills/vibe/reference/templates/AGENTS.md"
+ADAPTERS_JSON="$REPO_ROOT/.agents/skills/vibe/reference/adapters.json"
+INSTALL="$REPO_ROOT/install.sh"
+# The vibe hook scripts are wired into a target's .claude/settings.json (issue
+# #12: settings.json is the single firing path; no plugin manifest is shipped).
+VIBE_HOOK_RE='\.claude/hooks/(user-prompt-submit-inject|pre-tool-use-guard|stop-gate)\.sh'
+
+PASS=0
+FAIL=0
+pass() { echo "  PASS [$1] $2"; PASS=$((PASS + 1)); }
+fail() { echo "  FAIL [$1] $2"; FAIL=$((FAIL + 1)); }
+assert_contains()     { if [[ "$3" == *"$4"* ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        want contains: $4"; echo "        got: $3"; fi; }
+assert_not_contains() { if [[ "$3" != *"$4"* ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        want NOT contains: $4"; fi; }
+assert_eq()           { if [[ "$3" == "$4" ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        want: $4"; echo "        got: $3"; fi; }
+mktmp() { mktemp -d "${TMPDIR:-/tmp}/vibe-adapt.XXXXXX"; }
+
+echo "=== agent-instructions/2 — template + manifest ==="
+grep -qF '<!-- vibe:instructions:start -->' "$TEMPLATE" && grep -qF '<!-- vibe:active-rules:start -->' "$TEMPLATE" \
+  && pass "agent-instructions/2" "template has instructions + active-rules markers" \
+  || fail "agent-instructions/2" "template markers"
+out="$(jq -r '.adapters[].file' "$ADAPTERS_JSON" 2>/dev/null | tr '\n' ' ')"
+assert_contains "agent-instructions/2" "adapters.json lists CLAUDE.md and WARP.md" "$out" "CLAUDE.md"
+assert_contains "agent-instructions/2" "adapters.json lists WARP.md" "$out" "WARP.md"
+
+echo ""
+echo "=== agent-instructions/3 — merge-agents.sh ==="
+# create
+d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
+grep -qF '<!-- vibe:instructions:start -->' "$d/AGENTS.md" && pass "agent-instructions/3" "missing -> create from template" || fail "agent-instructions/3" "create"
+# preserve preamble + replace inner + idempotent
+d="$(mktmp)"; { echo "## Our Team"; echo "keep me"; echo ""; cat "$TEMPLATE"; } > "$d/AGENTS.md"
+bash "$MERGE" "$d" >/dev/null
+grep -qF "keep me" "$d/AGENTS.md" && pass "agent-instructions/3" "user preamble preserved (R2)" || fail "agent-instructions/3" "preamble"
+out="$(bash "$MERGE" "$d")"; assert_contains "agent-instructions/3" "re-run is a no-op" "$out" "no-op"
+# constitution migration
+d="$(mktmp)"; printf '# R\n\n<!-- vibe:constitution:start -->\nold\n<!-- vibe:constitution:end -->\n' > "$d/AGENTS.md"
+bash "$MERGE" "$d" >/dev/null
+grep -qF '<!-- vibe:instructions:start -->' "$d/AGENTS.md" && ! grep -qF 'vibe:constitution' "$d/AGENTS.md" \
+  && pass "agent-instructions/3" "constitution -> instructions migration" || fail "agent-instructions/3" "migration"
+# divergent -> append + warn, preserve content
+d="$(mktmp)"; printf '# Different\n\nmine\n' > "$d/AGENTS.md"
+out="$(bash "$MERGE" "$d" 2>&1)"
+{ grep -qF "mine" "$d/AGENTS.md" && grep -qF '<!-- vibe:instructions:start -->' "$d/AGENTS.md"; } \
+  && assert_contains "agent-instructions/3" "divergent appends + warns" "$out" "append" \
+  || fail "agent-instructions/3" "divergent append"
+# reversed markers must be refused, not silently mangled (content-safety invariant)
+d="$(mktmp)"; printf '# R\n<!-- vibe:instructions:end -->\nmid\n<!-- vibe:instructions:start -->\ntail\n' > "$d/AGENTS.md"
+rmbefore="$(cat "$d/AGENTS.md")"
+if bash "$MERGE" "$d" >/dev/null 2>&1; then fail "agent-instructions/3" "reversed markers must be refused"; else pass "agent-instructions/3" "reversed markers refused (content safety)"; fi
+assert_eq "agent-instructions/3" "reversed-marker file left untouched" "$(cat "$d/AGENTS.md")" "$rmbefore"
+# link: skip correct, block real file
+d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
+bash "$MERGE" link CLAUDE.md "$d" >/dev/null
+out="$(bash "$MERGE" link CLAUDE.md "$d")"; assert_contains "agent-instructions/5" "symlink idempotent skip" "$out" "skip"
+[[ -L "$d/CLAUDE.md" && "$(readlink "$d/CLAUDE.md")" == "AGENTS.md" ]] && pass "agent-instructions/5" "relative symlink to AGENTS.md" || fail "agent-instructions/5" "symlink target"
+printf 'real\n' > "$d/WARP.md"
+if bash "$MERGE" link WARP.md "$d" >/dev/null 2>&1; then fail "agent-instructions/5" "real file must not be clobbered"; else pass "agent-instructions/5" "real file blocked (R5)"; fi
+
+echo ""
+echo "=== platform-adapters/4,5 — settings.json hook wiring (auto-wired, no plugin) ==="
+# A fresh install wires the three hooks into the target's .claude/settings.json —
+# no plugin manifest, no hooks.json (issue #12: settings.json is the single path).
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SETTINGS="$SB/.claude/settings.json"
+jq -e . "$SETTINGS" >/dev/null 2>&1 && pass "platform-adapters/4" "install writes a valid settings.json" || fail "platform-adapters/4" "settings.json JSON"
+# each event is wired to its script, via a $CLAUDE_PROJECT_DIR-relative command.
+for pair in "UserPromptSubmit:user-prompt-submit-inject.sh" "PreToolUse:pre-tool-use-guard.sh" "Stop:stop-gate.sh"; do
+  ev="${pair%%:*}"; script="${pair#*:}"
+  cmd="$(jq -r --arg e "$ev" '.hooks[$e][]?.hooks[]?.command // empty' "$SETTINGS" 2>/dev/null)"
+  assert_contains "platform-adapters/4" "settings.json wires $ev -> $script" "$cmd" "$script"
+  # shellcheck disable=SC2016  # intentional: match the literal $CLAUDE_PROJECT_DIR token
+  assert_contains "platform-adapters/4" "$ev command is \$CLAUDE_PROJECT_DIR-relative" "$cmd" '$CLAUDE_PROJECT_DIR/.claude/hooks/'
+done
+matcher="$(jq -r '.hooks.PreToolUse[0].matcher' "$SETTINGS")"
+assert_eq "platform-adapters/4" "PreToolUse matcher is Edit|Write|NotebookEdit" "$matcher" "Edit|Write|NotebookEdit"
+# every wired command points at a hook script that exists and is executable.
+allok=1
+while IFS= read -r script; do
+  [[ -z "$script" ]] && continue
+  [[ -x "$SB/.claude/hooks/$script" ]] || { allok=0; echo "        not executable / missing: $script"; }
+done < <(jq -r '.hooks[][]?.hooks[]?.command // empty' "$SETTINGS" | sed -E 's#.*/\.claude/hooks/([^"\\]+).*#\1#')
+assert_eq "platform-adapters/4" "all wired hook scripts exist + executable in the install" "$allok" "1"
+# auto-wired, not a plugin: neither legacy manifest is shipped.
+[[ ! -e "$SB/.claude-plugin/plugin.json" ]] && pass "platform-adapters/5" "install ships no plugin.json (auto-wired via settings.json)" || fail "platform-adapters/5" "plugin.json must not be shipped"
+[[ ! -e "$SB/.claude/hooks/hooks.json" ]] && pass "platform-adapters/5" "install ships no hooks.json manifest" || fail "platform-adapters/5" "hooks.json must not be shipped"
+# idempotent: a second install leaves exactly one vibe group per event.
+bash "$INSTALL" "$SB" >/dev/null 2>&1
+dupok=1
+for ev in UserPromptSubmit PreToolUse Stop; do
+  n="$(jq --arg e "$ev" --arg m "$VIBE_HOOK_RE" '[.hooks[$e][]? | select([.hooks[]?.command // empty] | any(test($m)))] | length' "$SETTINGS")"
+  [[ "$n" == "1" ]] || { dupok=0; echo "        $ev has $n vibe groups (want 1)"; }
+done
+assert_eq "platform-adapters/4" "re-install does not duplicate vibe hook groups" "$dupok" "1"
+rm -rf "$SB"
+# --uninstall strips vibe's hook entries but preserves unrelated user settings.
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SETTINGS="$SB/.claude/settings.json"
+jq '. + {permissions:{allow:["Bash(git status:*)"]}}' "$SETTINGS" > "$SETTINGS.tmp" && mv "$SETTINGS.tmp" "$SETTINGS"
+bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+if [[ -f "$SETTINGS" ]]; then
+  wired="$(jq -r --arg m "$VIBE_HOOK_RE" '[.. | .command? // empty] | map(select(test($m))) | length' "$SETTINGS")"
+  assert_eq "platform-adapters/5" "uninstall removes vibe hook entries from settings.json" "$wired" "0"
+  kept="$(jq -r '.permissions.allow[0]' "$SETTINGS")"
+  assert_eq "platform-adapters/5" "uninstall preserves unrelated user settings" "$kept" "Bash(git status:*)"
+else
+  fail "platform-adapters/5" "settings.json with a user key must survive uninstall"
+fi
+rm -rf "$SB"
+
+echo ""
+echo "=== platform-adapters/1,2,3 — hooks against a real install ==="
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+export CLAUDE_PROJECT_DIR="$SB"
+SS="$SB/.agents/skills/vibe/scripts/set-state.sh"
+# inject
+out="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh"; echo "rc=$?")"
+assert_contains "platform-adapters/1" "inject prints idle orders, exit 0" "$out" "state=idle"
+assert_contains "platform-adapters/1" "inject exit 0" "$out" "rc=0"
+# guard: block lessons.md outside compound
+out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".spec/lessons.md"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
+assert_contains "platform-adapters/2" "guard blocks lessons.md (exit 2)" "$out" "rc=2"
+assert_contains "platform-adapters/2" "guard gives a reason" "$out" "BLOCKED"
+# guard: state.json direct edit always blocked
+out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vibe/state.json"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
+assert_contains "platform-adapters/2" "guard blocks direct state.json edit" "$out" "rc=2"
+# guard: allow src in impl
+bash "$SS" feature.impl demo >/dev/null
+out="$(printf '{"tool_name":"Write","tool_input":{"file_path":"src/x.sh"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
+assert_contains "platform-adapters/2" "guard allows src/ in feature.impl (exit 0)" "$out" "rc=0"
+assert_not_contains "platform-adapters/2" "guard silent on allow" "$out" "BLOCKED"
+# guard: warn src in idle
+bash "$SS" idle >/dev/null
+out="$(printf '{"tool_name":"Write","tool_input":{"file_path":"src/x.sh"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
+assert_contains "platform-adapters/2" "guard warns src/ in idle but exits 0" "$out" "rc=0"
+assert_contains "platform-adapters/2" "guard warn carries reason" "$out" "warn"
+# guard: graceful on empty stdin
+out="$(printf '' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
+assert_contains "platform-adapters/2" "guard exits 0 on empty stdin" "$out" "rc=0"
+# gate: always exit 0
+bash "$SS" feature.verify demo >/dev/null
+out="$(printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+assert_contains "platform-adapters/3" "gate always exits 0" "$out" "rc=0"
+assert_contains "platform-adapters/3" "gate emits a warn-only smell" "$out" "vibe-gate"
+unset CLAUDE_PROJECT_DIR
+rm -rf "$SB"
+
+echo ""
+echo "=== platform-adapters/6 — installer ==="
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+ok=1
+for p in .agents/skills/vibe/scripts/orders.sh .agents/skills/vibe/SKILL.md .claude/hooks/stop-gate.sh .claude/settings.json AGENTS.md .agents/skills/vibe/state.json; do
+  [[ -e "$SB/$p" ]] || { ok=0; echo "        missing $p"; }
+done
+assert_eq "platform-adapters/6" "install lays down core + adapter + cursor" "$ok" "1"
+grep -qF '.agents/skills/vibe/state.json' "$SB/.gitignore" && pass "platform-adapters/6" "install gitignores the cursor" || fail "platform-adapters/6" "gitignore"
+before="$(cat "$SB/AGENTS.md")"; bash "$INSTALL" "$SB" >/dev/null 2>&1; after="$(cat "$SB/AGENTS.md")"
+assert_eq "platform-adapters/6" "re-install is idempotent (AGENTS.md unchanged)" "$before" "$after"
+# a live cursor must survive a re-install — idempotency may not clobber flow state
+bash "$SB/.agents/skills/vibe/scripts/set-state.sh" feature.impl widget >/dev/null
+before_cur="$(cat "$SB/.agents/skills/vibe/state.json")"; bash "$INSTALL" "$SB" >/dev/null 2>&1; after_cur="$(cat "$SB/.agents/skills/vibe/state.json")"
+assert_eq "platform-adapters/6" "re-install preserves a live cursor (feature.impl widget)" "$before_cur" "$after_cur"
+[[ ! -e "$SB/.agents/flow" ]] && pass "platform-adapters/6" ".agents/flow does not exist after install" || fail "platform-adapters/6" ".agents/flow must not exist after install"
+[[ -d "$SB/.agents/skills/vibe" && ! -L "$SB/.agents/skills/vibe" ]] && pass "platform-adapters/6" "skills/vibe is a real directory (not a symlink)" || fail "platform-adapters/6" "skills/vibe is a real directory (not a symlink)"
+[[ -d "$SB/.agents/skills/spec" && ! -L "$SB/.agents/skills/spec" ]] && pass "platform-adapters/6" "skills/spec is a real directory (not a symlink)" || fail "platform-adapters/6" "skills/spec is a real directory (not a symlink)"
+# Source-only artifacts must not ship — and the prune must not over-delete the
+# skill payload. Both halves: co-located tests/ and the contributor AGENTS.md are
+# stripped; SKILL.md (the real payload) still lands.
+[[ ! -e "$SB/.agents/skills/spec/tests" && ! -e "$SB/.agents/skills/vibe/tests" ]] \
+  && pass "platform-adapters/6" "install does not ship co-located tests/" \
+  || fail "platform-adapters/6" "co-located tests/ must not ship into a target"
+[[ ! -e "$SB/.agents/skills/spec/AGENTS.md" && ! -e "$SB/.agents/skills/vibe/AGENTS.md" ]] \
+  && pass "platform-adapters/6" "install does not ship the contributor AGENTS.md" \
+  || fail "platform-adapters/6" "per-half contributor AGENTS.md must not ship"
+[[ -f "$SB/.agents/skills/spec/SKILL.md" && -f "$SB/.agents/skills/vibe/SKILL.md" ]] \
+  && pass "platform-adapters/6" "prune keeps the skill payload (SKILL.md ships)" \
+  || fail "platform-adapters/6" "prune over-deleted the skill payload"
+symlinks="$(find "$SB/.agents" -type l)"
+[[ -z "$symlinks" ]] && pass "platform-adapters/6" "no symlinks anywhere in installed .agents tree" || fail "platform-adapters/6" "no symlinks anywhere in installed .agents tree"
+agents_entries="$(ls "$SB/.agents/")"
+assert_eq "platform-adapters/6" ".agents/ contains only skills/" "$agents_entries" "skills"
+if bash "$INSTALL" "$REPO_ROOT" >/dev/null 2>&1; then fail "platform-adapters/6" "must refuse self-install"; else pass "platform-adapters/6" "refuses self-install"; fi
+rm -rf "$SB"
+
+echo ""
+echo "=== install-tooling/1 — action model + --dry-run ==="
+# A content+path fingerprint of a tree: cksum of every file, path-sorted. Empty
+# tree -> empty string. Detects any write (new/removed/changed file).
+tree_fp() { find "$1" -type f -exec cksum {} + 2>/dev/null | LC_ALL=C sort; }
+# --dry-run against a fresh (empty) target: non-empty plan, zero writes.
+SB="$(mktmp)"
+before="$(tree_fp "$SB")"
+out="$(bash "$INSTALL" "$SB" --dry-run 2>&1; echo "rc=$?")"
+after="$(tree_fp "$SB")"
+assert_contains "install-tooling/1" "dry-run exits 0" "$out" "rc=0"
+assert_contains "install-tooling/1" "dry-run prints an action plan" "$out" "[dry-run] would"
+assert_eq "install-tooling/1" "dry-run on a fresh target writes nothing" "$before" "$after"
+[[ ! -e "$SB/.agents" && ! -e "$SB/AGENTS.md" && ! -e "$SB/.gitignore" ]] \
+  && pass "install-tooling/1" "dry-run creates no managed files" \
+  || fail "install-tooling/1" "dry-run creates no managed files"
+# --dry-run against an already-installed target is also byte-identical.
+bash "$INSTALL" "$SB" >/dev/null 2>&1
+before="$(tree_fp "$SB")"
+bash "$INSTALL" "$SB" --dry-run >/dev/null 2>&1
+after="$(tree_fp "$SB")"
+assert_eq "install-tooling/1" "dry-run on an installed target is byte-identical" "$before" "$after"
+# unknown option is rejected, not treated as the target.
+out="$(bash "$INSTALL" "$SB" --bogus 2>&1; echo "rc=$?")"
+assert_contains "install-tooling/1" "unknown option exits non-zero" "$out" "rc=1"
+assert_contains "install-tooling/1" "unknown option names itself" "$out" "unknown option"
+rm -rf "$SB"
+
+echo ""
+echo "=== install-tooling/2 — --only spec|flow ==="
+# --only spec: spec skill only, no flow/adapter/plugin trace.
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --only spec >/dev/null 2>&1
+ok=1
+[[ -d "$SB/.agents/skills/spec" ]] || { ok=0; echo "        missing spec skill"; }
+[[ ! -e "$SB/.agents/skills/vibe" ]] || { ok=0; echo "        vibe present under --only spec"; }
+[[ ! -e "$SB/.claude/hooks" ]] || { ok=0; echo "        .claude/hooks present under --only spec"; }
+[[ ! -e "$SB/.claude/settings.json" ]] || { ok=0; echo "        settings.json present under --only spec"; }
+assert_eq "install-tooling/2" "--only spec installs the spec half alone" "$ok" "1"
+rm -rf "$SB"
+# --only flow: flow + adapter present, no spec skill.
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --only flow >/dev/null 2>&1
+ok=1
+[[ -d "$SB/.agents/skills/vibe" ]] || { ok=0; echo "        missing vibe skill"; }
+[[ -e "$SB/.claude/hooks/stop-gate.sh" ]] || { ok=0; echo "        missing adapter hook scripts"; }
+[[ -e "$SB/.claude/settings.json" ]] || { ok=0; echo "        missing settings.json wiring"; }
+grep -qF 'stop-gate.sh' "$SB/.claude/settings.json" 2>/dev/null || { ok=0; echo "        settings.json not wired to hooks"; }
+[[ ! -e "$SB/.agents/skills/spec" ]] || { ok=0; echo "        spec present under --only flow"; }
+assert_eq "install-tooling/2" "--only flow installs flow + adapter alone" "$ok" "1"
+rm -rf "$SB"
+# --only bogus: usage error, exit 1.
+SB="$(mktmp)"
+out="$(bash "$INSTALL" "$SB" --only bogus 2>&1; echo "rc=$?")"
+assert_contains "install-tooling/2" "--only bogus exits 1" "$out" "rc=1"
+assert_contains "install-tooling/2" "--only bogus names the valid values" "$out" "spec"
+rm -rf "$SB"
+# --only composes with --dry-run (still writes nothing).
+SB="$(mktmp)"; before="$(tree_fp "$SB")"
+bash "$INSTALL" "$SB" --only spec --dry-run >/dev/null 2>&1
+after="$(tree_fp "$SB")"
+assert_eq "install-tooling/2" "--only spec --dry-run writes nothing" "$before" "$after"
+rm -rf "$SB"
+
+echo ""
+echo "=== install-tooling/3 — --uninstall ==="
+# Install, add user content, then uninstall: managed files gone, user content kept.
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+mkdir -p "$SB/.spec"; printf 'user spec\n' > "$SB/.spec/product.md"
+# user-authored files co-located in the SHARED adapter dirs must survive (the
+# whole point of remove_shipped: surgical per-file removal, not rm -rf the dir).
+printf 'my command\n' > "$SB/.claude/commands/mine.md"
+printf 'my hook\n' > "$SB/.claude/hooks/custom.sh"
+printf '## My Team\nkeep this prose\n\n%s\n' "$(cat "$SB/AGENTS.md")" > "$SB/AGENTS.md.new" && mv "$SB/AGENTS.md.new" "$SB/AGENTS.md"
+bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+ok=1
+[[ ! -e "$SB/.agents/skills/spec" ]] || { ok=0; echo "        spec skill survived uninstall"; }
+[[ ! -e "$SB/.agents/skills/vibe/SKILL.md" ]] || { ok=0; echo "        vibe SKILL.md survived uninstall"; }
+[[ ! -e "$SB/.claude/hooks/stop-gate.sh" ]] || { ok=0; echo "        adapter hook script survived uninstall"; }
+assert_eq "install-tooling/3" "--uninstall removes managed artifacts" "$ok" "1"
+# regression: co-located user files in shared adapter dirs are NOT deleted.
+{ [[ -f "$SB/.claude/commands/mine.md" ]] && [[ -f "$SB/.claude/hooks/custom.sh" ]]; } \
+  && pass "install-tooling/3" "co-located user files in shared adapter dirs survive uninstall" \
+  || fail "install-tooling/3" "co-located user files in shared adapter dirs survive uninstall"
+grep -qF "keep this prose" "$SB/AGENTS.md" && pass "install-tooling/3" "user AGENTS.md prose preserved" || fail "install-tooling/3" "user prose preserved"
+grep -qF "vibe:instructions:start" "$SB/AGENTS.md" && fail "install-tooling/3" "managed AGENTS.md block removed" || pass "install-tooling/3" "managed AGENTS.md block removed"
+[[ -f "$SB/.spec/product.md" ]] && pass "install-tooling/3" ".spec/ preserved across uninstall" || fail "install-tooling/3" ".spec/ preserved"
+rm -rf "$SB"
+# Live cursor + no --yes -> cursor survives.
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+bash "$SB/.agents/skills/vibe/scripts/set-state.sh" feature.impl widget >/dev/null 2>&1
+bash "$INSTALL" "$SB" --uninstall >/dev/null 2>&1
+if [[ -f "$SB/.agents/skills/vibe/state.json" ]] && grep -qF widget "$SB/.agents/skills/vibe/state.json"; then
+  pass "install-tooling/3" "live cursor survives uninstall without --yes"
+else
+  fail "install-tooling/3" "live cursor survives uninstall without --yes"
+fi
+# ... and --yes removes it.
+bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+[[ ! -e "$SB/.agents/skills/vibe/state.json" ]] && pass "install-tooling/3" "--yes removes the cursor too" || fail "install-tooling/3" "--yes removes the cursor"
+rm -rf "$SB"
+# Reversed-marker AGENTS.md -> uninstall refuses to touch it (marker lesson regression).
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+printf '# R\n<!-- vibe:instructions:end -->\nmid\n<!-- vibe:instructions:start -->\ntail\n' > "$SB/AGENTS.md"
+rmbefore="$(cat "$SB/AGENTS.md")"
+bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+assert_eq "install-tooling/3" "reversed-marker AGENTS.md left byte-untouched by uninstall" "$(cat "$SB/AGENTS.md")" "$rmbefore"
+rm -rf "$SB"
+# --uninstall composes with --dry-run (writes nothing) and --only (one half).
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+before="$(tree_fp "$SB")"
+bash "$INSTALL" "$SB" --uninstall --dry-run >/dev/null 2>&1
+after="$(tree_fp "$SB")"
+assert_eq "install-tooling/3" "--uninstall --dry-run writes nothing" "$before" "$after"
+bash "$INSTALL" "$SB" --uninstall --only spec --yes >/dev/null 2>&1
+[[ ! -e "$SB/.agents/skills/spec" && -e "$SB/.agents/skills/vibe/SKILL.md" ]] \
+  && pass "install-tooling/3" "--uninstall --only spec removes just the spec half" \
+  || fail "install-tooling/3" "--uninstall --only spec removes just the spec half"
+rm -rf "$SB"
+
+echo ""
+echo "=== results: $PASS passed, $FAIL failed ==="
+[[ $FAIL -eq 0 ]]

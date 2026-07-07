@@ -37,7 +37,7 @@ automatic and guard its invariants.
 
 Codex and Claude Code read different instruction files and support different
 integration points. The workflow should still behave the same because both
-adapters point at `.agents/flow` and `.agents/skills/vibe-*`.
+adapters point at `.agents/skills/vibe`.
 
 Claude Code, unlike a plain `AGENTS.md` reader, supports **hooks** and a
 **plugin** packaging format. That is a first-class part of building the flow, not
@@ -54,7 +54,7 @@ vibe ships a Claude Code plugin (`.claude-plugin/plugin.json` + bundled
 `commands/`, `skills/`, and `hooks/hooks.json`). Installing the plugin wires up:
 
 - the `/flow` command and the `vibe-*` skills,
-- the three **hooks** below, configured against `.agents/flow`.
+- the three **hooks** below, configured against `.agents/skills/vibe`.
 
 The hooks are the **Stage 2 enforcement layer** (Stage 1 is guidance-only). They
 are earned, not assumed: shipped warn-first, promoted to blocking only after
@@ -66,7 +66,7 @@ dogfooding (see [../../plan.md](../../plan.md) and the "earn the teeth" principl
 | **Guard** | `PreToolUse` (`Edit\|Write\|NotebookEdit`) | Call the shared allow/warn/block decision policy; hard-block the three invariants, warn elsewhere. | Deterministic |
 | **Gate** | `Stop` | End-of-turn exit-predicate smell checks (stuck phase, impl without tests, forgotten `set-state.sh`). | Warn first |
 
-All three are thin shells over `.agents/flow/scripts/` — the inject reads
+All three are thin shells over `.agents/skills/vibe/scripts/` — the inject reads
 `state-machine.json` to resolve the state's linked skill and injects that skill's
 orders (D12); the guard and gate call `detect-context.sh`. No invariant logic or
 order text is duplicated in the hooks.
@@ -79,12 +79,12 @@ order text is duplicated in the hooks.
 |---|---|
 | R1 | `AGENTS.md` mirrors the core workflow for Codex-style agents. Provisioning and merge during init live in [agent-instructions](../agent-instructions/product.md). |
 | R2 | `CLAUDE.md` mirrors the core workflow for Claude Code (typically a symlink to `AGENTS.md`; see agent-instructions). |
-| R3 | Claude slash commands and hooks read `.agents/flow`, not `.claude/state.json`. |
+| R3 | Claude slash commands and hooks read `.agents/skills/vibe`, not `.claude/state.json`. |
 | R4 | Adapter files do not define a separate spec layout or state model. |
 | R5 | Installation preserves existing project instructions and offers diffs when merging. |
 | R6 | vibe is installable as a Claude Code plugin (`.claude-plugin/plugin.json`) that bundles the `/flow` command, the `vibe-*` skills, and the hooks. |
-| R7 | The plugin includes three hooks — `UserPromptSubmit` inject, `PreToolUse` guard, `Stop` gate — wired to `.agents/flow`. |
-| R8 | Hooks are thin shells over `.agents/flow/scripts/`; the allow/warn/block policy lives once in `detect-context.sh`, never duplicated per hook. |
+| R7 | The plugin includes three hooks — `UserPromptSubmit` inject, `PreToolUse` guard, `Stop` gate — wired to `.agents/skills/vibe`. |
+| R8 | Hooks are thin shells over `.agents/skills/vibe/scripts/`; the allow/warn/block policy lives once in `detect-context.sh`, never duplicated per hook. |
 | R9 | Hooks degrade gracefully: a missing script or unreadable state exits 0 (never breaks the session); blocks are earned warn-first. |
 
 ---

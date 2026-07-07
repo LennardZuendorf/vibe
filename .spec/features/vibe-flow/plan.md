@@ -9,7 +9,7 @@ updated: 2026-06-18
 
 # Feature: Vibe Flow — Implementation Plan
 
-Platform-neutral workflow harness: `.agents/flow` state machine + seven `vibe-*`
+Platform-neutral workflow harness: `.agents/skills/vibe/` state machine + `vibe`
 skill shims. A closed, deliverable, testable box. Owns D12 (orders-in-skills);
 does not own adapter files or the `spec` document format.
 
@@ -39,7 +39,7 @@ Unit IDs are `vibe-flow/n` — assigned once, never renumbered.
 ## Validation Summary
 
 **Already exists (Stage 1 complete):**
-- `.agents/flow/state-machine.json` (15 states), `state.example.json`.
+- `.agents/skills/vibe/state-machine.json` (15 states), `state.example.json`.
 - Scripts: `set-state.sh`, `validate-state.sh`, `detect-context.sh`, `regen-active-rules.sh`.
 - Seven `vibe-*` skills: setup, strategy, feature, quick, verify, compound, amend.
 - Per-state `caveman`, `skill`, `reads`/`writes`, `next`, `exit` in machine.
@@ -48,9 +48,9 @@ Unit IDs are `vibe-flow/n` — assigned once, never renumbered.
 **Delivered (Stage 2, 2026-06-18):**
 - `vibe-flow/1` — D12 implemented. Every skill-owning state carries `inject: null`;
   orders live in each `vibe-*` skill's `## Orders (D12)` `<!-- vibe:orders:<state> -->`
-  block; `.agents/flow/scripts/orders.sh` resolves the cursor → skill → block and
+  block; `.agents/skills/vibe/scripts/orders.sh` resolves the cursor → skill → block and
   interpolates `<feature>`. Verified by `tests/flow/run.sh`.
-- `vibe-flow/3` — `.agents/flow/scripts/check-skills.sh` warns on unverifiable
+- `vibe-flow/3` — `.agents/skills/vibe/scripts/check-skills.sh` warns on unverifiable
   delegated skills and prints the caveman fallback; never hard-fails.
 
 **Decided:**
@@ -109,7 +109,7 @@ descriptions remain.
 
 ### vibe-flow/3 — Graceful degradation (OPEN-6)
 
-**Goal:** detect-and-warn skill-availability check in `.agents/flow/scripts/`,
+**Goal:** detect-and-warn skill-availability check in `.agents/skills/vibe/scripts/`,
 with a 1-line caveman fallback when the caveman plugin is absent.
 
 **Requirements:** R3
