@@ -5,6 +5,10 @@
   "flows": ["idle", "setup", "strategy", "feature", "quick"],
   "phases": ["idle", "detect", "apply", "brainstorm", "spec", "design", "plan", "impl", "verify", "compound", "triage", "fix"],
   "modifiers": ["amend"],
+  "gates": {
+    "feature.plan>feature.impl": "human approves plan units + picks impl mode",
+    "feature.verify>feature.compound": "human approves ship"
+  },
   "caveman_levels": {
     "lite": "No filler or hedging; full sentences. Use for strategy, setup, design, compound, amend.",
     "full": "Drop articles; fragments OK; short synonyms. Working default. Use for impl, verify, quick.*.",
@@ -17,7 +21,7 @@
   "states": {
     "idle": {
       "skill": null,
-      "delegates": ["superpowers:using-superpowers"],
+      "delegates": [],
       "caveman": "lite",
       "reads": [".spec/lessons.md", ".spec/plan.md"],
       "writes": [],
@@ -38,7 +42,7 @@
     },
     "setup.apply": {
       "skill": "vibe",
-      "delegates": ["spec", "superpowers:writing-skills"],
+      "delegates": ["spec"],
       "caveman": "lite",
       "reads": [".agents/skills/vibe/state-machine.json"],
       "writes": [".agents/**", "CLAUDE.md#active-rules", "AGENTS.md#active-rules", ".spec/lessons.md", ".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md"],
@@ -54,7 +58,7 @@
       "reads": [".spec/lessons.md"],
       "writes": [],
       "inject": null,
-      "next": ["strategy.spec"],
+      "next": ["strategy.spec", "idle"],
       "exit": "direction is clear enough to write into root specs"
     },
     "strategy.spec": {
@@ -85,7 +89,7 @@
       "reads": [".spec/lessons.md", ".spec/product.md", ".spec/tech.md"],
       "writes": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/design.md"],
       "inject": null,
-      "next": ["feature.plan"],
+      "next": ["feature.plan", "idle"],
       "exit": "feature product.md + tech.md written; design.md when full rigor; approach chosen"
     },
     "feature.plan": {
@@ -105,7 +109,7 @@
       "reads": [".spec/features/<feature>/plan.md"],
       "writes": ["src/**", "tests/**"],
       "inject": null,
-      "next": ["feature.verify"],
+      "next": ["feature.verify", "idle"],
       "exit": "plan units implemented with tests that cite their unit IDs and pass"
     },
     "feature.verify": {
@@ -115,7 +119,7 @@
       "reads": [".spec/features/<feature>/plan.md", "src/**", "tests/**"],
       "writes": ["evidence: test/build output, review notes"],
       "inject": null,
-      "next": ["feature.compound", "feature.impl", "feature.plan"],
+      "next": ["feature.compound", "feature.impl", "feature.plan", "idle"],
       "exit": "evidence shows plan units satisfied; review clean; human approved shipping"
     },
     "feature.compound": {
@@ -156,8 +160,18 @@
       "reads": ["src/**", "tests/**"],
       "writes": ["evidence: test/build output, review notes"],
       "inject": null,
-      "next": ["idle"],
+      "next": ["quick.compound", "quick.fix", "idle"],
       "exit": "evidence shows fix works and regressions clear"
+    },
+    "quick.compound": {
+      "skill": "vibe",
+      "delegates": ["spec"],
+      "caveman": "lite",
+      "reads": [".spec/lessons.md"],
+      "writes": [".spec/lessons.md", "CLAUDE.md#active-rules", "AGENTS.md#active-rules"],
+      "inject": null,
+      "next": ["idle"],
+      "exit": "lesson recorded with Tags (or skipped); digest regenerated"
     },
 
     "amend": {

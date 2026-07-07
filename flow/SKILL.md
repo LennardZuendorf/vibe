@@ -103,6 +103,10 @@ skill=vibe · delegate TDD · WRITE src/** (+ optional .spec/quick/<slug>.md not
 skill=vibe · delegate verification-before-completion + code-reviewer · gather EVIDENCE the fix works and breaks nothing · no spec writes · caveman=full · next: idle
 <!-- /vibe:orders -->
 
+<!-- vibe:orders:quick.compound -->
+skill=vibe · OPTIONAL lesson from quick fix: append tagged .spec/lessons.md entry, regen-active-rules.sh · skip freely (default: this state only when a durable lesson surfaced) · receipts caveman=ultra, body=lite · next: idle
+<!-- /vibe:orders -->
+
 <!-- vibe:orders:amend -->
 MODIFIER=amend · edit scope for the CURRENT state, then RETURN to it · carry the target state's write rules (do NOT widen them) · caveman=lite · next: <state you came from>
 <!-- /vibe:orders -->

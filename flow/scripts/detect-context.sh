@@ -90,7 +90,7 @@ decide() {
   case "$path" in
     .spec/lessons.md|*/.spec/lessons.md)
       case "$state" in
-        feature.compound|strategy.compound) echo "allow" ;;
+        feature.compound|strategy.compound|quick.compound) echo "allow" ;;
         setup.apply) echo "allow" ;;
         *) echo "block:.spec/lessons.md is writable only during a *.compound state or setup.apply (current: $state)" ;;
       esac

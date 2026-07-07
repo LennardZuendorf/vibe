@@ -163,6 +163,43 @@ while IFS= read -r sk; do
 done <<< "$(jq -r '.states[].skill | select(. != null)' "$MACHINE" | sort -u)"
 assert_eq "vibe-flow/core" "every linked skill has a SKILL.md" "$missing_skill" "0"
 
+# flow-mvp/3 — gates (edges), abort edges, quick.compound, router hygiene.
+# gates keys parse as <state>><state> with both states known and the target
+# present in the source state's `next` array.
+gate_count="$(jq -r '(.gates // {}) | keys | length' "$MACHINE")"
+assert_eq "flow-mvp/3" "gates field carries the two gated edges" "$gate_count" "2"
+bad_gates="$(jq -r '
+  .states as $s
+  | (.gates // {}) | keys[]
+  | . as $edge
+  | ($edge | split(">")) as $p
+  | select(
+      ($p | length) != 2
+      or (($s | has($p[0])) | not)
+      or (($s | has($p[1])) | not)
+      or (([$s[$p[0]].next[]?] | index($p[1])) == null)
+    )
+' "$MACHINE" | paste -sd, -)"
+assert_eq "flow-mvp/3" "every gates key is <known-state>><known-state> with target in source.next" "$bad_gates" ""
+
+# Abort edges: idle joins `next` of the four mid-arc states.
+abort_missing=""
+for st in feature.design feature.impl feature.verify strategy.brainstorm; do
+  has_idle="$(jq -r --arg s "$st" '[.states[$s].next[]?] | index("idle") != null' "$MACHINE")"
+  [[ "$has_idle" == "true" ]] || abort_missing="$abort_missing $st"
+done
+assert_eq "flow-mvp/3" "idle is an abort edge from the four mid-arc states" "$abort_missing" ""
+
+# quick.verify gains the compound + fix back-edges.
+qv_ok="$(jq -r '[.states."quick.verify".next[]] | (index("quick.compound") != null) and (index("quick.fix") != null)' "$MACHINE")"
+assert_eq "flow-mvp/3" "quick.verify.next includes quick.compound and quick.fix" "$qv_ok" "true"
+
+# Router hygiene: idle drops its router delegate; setup.apply keeps only spec.
+idle_deleg="$(jq -c '.states.idle.delegates' "$MACHINE")"
+assert_eq "flow-mvp/3" "idle delegates array is empty" "$idle_deleg" "[]"
+setup_deleg="$(jq -c '.states."setup.apply".delegates' "$MACHINE")"
+assert_eq "flow-mvp/3" "setup.apply delegates is exactly [spec]" "$setup_deleg" '["spec"]'
+
 echo ""
 echo "=== regen-active-rules.sh — digest from lessons ==="
 d="$(mktemp -d)"
@@ -326,6 +363,8 @@ out="$(bash "$DETECT" decide .spec/lessons.md setup.apply)"
 assert_eq "vibe-flow/core" "decide lessons.md returns allow under setup.apply" "$out" "allow"
 out="$(bash "$DETECT" decide .spec/lessons.md feature.compound)"
 assert_eq "vibe-flow/core" "decide lessons.md returns allow under feature.compound" "$out" "allow"
+out="$(bash "$DETECT" decide .spec/lessons.md quick.compound)"
+assert_eq "flow-mvp/3" "decide lessons.md returns allow under quick.compound" "$out" "allow"
 out="$(bash "$DETECT" decide .spec/lessons.md idle)"
 assert_contains "vibe-flow/core" "decide lessons.md blocks under idle" "$out" "block:"
 
