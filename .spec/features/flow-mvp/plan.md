@@ -73,8 +73,11 @@ Units are `flow-mvp/n`, assigned once, never renumbered. Cite in commits/tests
 
 ### flow-mvp/1 — Hermetic flow test suite
 
-**Goal:** `flow/tests/run.sh` runs entirely in a sandbox copy of `flow/`; the
-live cursor is never touched.
+**Goal:** `flow/tests/run.sh` runs entirely in a sandbox; the live cursor is
+never touched. Sandbox preserves the path-parity subject: `sandbox/flow/`
+(copied) + `sandbox/.agents/skills/vibe → ../../flow` (symlink recreated) +
+`sandbox/.spec` marker — no bare `cp -RL` deref (it would kill the
+real-vs-symlink duality the parity tests exercise).
 
 **Requirements:** R10
 
@@ -83,7 +86,7 @@ live cursor is never touched.
 **Files:**
 
 ```
-flow/tests/run.sh        # sandbox setup (cp -RL), path rewiring, drop live-cursor backup/restore
+flow/tests/run.sh        # sandbox layout per tech.md D8, path rewiring, drop live-cursor backup/restore
 ```
 
 **Test scenarios:**
@@ -95,23 +98,28 @@ exit 0; `cat flow/state.json` unchanged.
 
 ---
 
-### flow-mvp/2 — Precedence section
+### flow-mvp/2 — Precedence section + ambient alignment
 
-**Goal:** SKILL.md and the AGENTS.md template carry the when/where-vs-how rule.
+**Goal:** SKILL.md and the AGENTS.md template carry the when/where-vs-how rule
+(incl. abort legality); the ambient stack stops contradicting R4 — template
+"Ask first" transition rows become gated-edges-only, Prime-Directive CONFIRM
+points at the two gates, `/flow` command drops stop-per-transition.
 
-**Requirements:** R1
+**Requirements:** R1, R4
 
 **Dependencies:** —
 
 **Files:**
 
 ```
-flow/SKILL.md                        # ## Precedence (4 lines, above Orders)
-flow/reference/templates/AGENTS.md   # same lines in managed block
+flow/SKILL.md                        # ## Precedence (5 lines, above Orders)
+flow/reference/templates/AGENTS.md   # precedence lines; Ask-first rewrite; CONFIRM alignment
+.claude/commands/flow.md             # drop "do NOT start the new state's work" line
 ```
 
 **Test scenarios:**
 - Precedence section present in both; managed-block merge still idempotent.
+- Template no longer says "Ask first: State transitions" unqualified.
 
 **Verification:** `grep -c "cursor owns sequencing" flow/SKILL.md
 flow/reference/templates/AGENTS.md` → 1 each; adapters suite green.
@@ -120,8 +128,11 @@ flow/reference/templates/AGENTS.md` → 1 each; adapters suite green.
 
 ### flow-mvp/3 — Machine data: gates, quick.compound, router hygiene
 
-**Goal:** `"gates"` field; `quick.compound` state + `quick.verify` back-edge;
-idle and setup.apply delegate cleanup; policy allows lessons in quick.compound.
+**Goal:** `"gates"` field keyed by **edge** (`feature.plan>feature.impl`,
+`feature.verify>feature.compound`); abort edges (`idle` in `next` of
+feature.design/impl/verify + strategy.brainstorm); `quick.compound` state +
+`quick.verify` back-edge; idle and setup.apply delegate cleanup; policy allows
+lessons in quick.compound.
 
 **Requirements:** R4, R7, R9
 
@@ -130,14 +141,15 @@ idle and setup.apply delegate cleanup; policy allows lessons in quick.compound.
 **Files:**
 
 ```
-flow/state-machine.json          # gates, quick.compound, next edits, delegate removals
+flow/state-machine.json          # gates (edges), abort edges, quick.compound, delegate removals
 flow/scripts/detect-context.sh   # quick.compound in lessons allow list
 flow/tests/run.sh                # machine-consistency + policy assertions
 ```
 
 **Test scenarios:**
-- `gates` keys are known states; `quick.compound` reachable from `quick.verify`;
-  `quick.verify.next` includes `quick.fix`.
+- `gates` keys parse as `<known-state>><known-state>` edges present in `next`;
+  `quick.compound` reachable from `quick.verify`; `quick.verify.next` includes
+  `quick.fix`; `idle` ∈ `next` of the four mid-arc states.
 - `detect-context.sh decide .spec/lessons.md quick.compound` → allow;
   `… idle` → block.
 - Machine delegates no longer include using-superpowers (idle) or
@@ -176,7 +188,9 @@ spec/tests/run.sh                          # template structure assertions
 ### flow-mvp/5 — Contract blocks: strategy + feature shims
 
 **Goal:** rewrite delegation sites in `strategy.md` and `feature.md` to the
-contract-block shape (offer / inject / redirect / skip).
+contract-block shape (announce / inject / redirect / skip — non-blocking,
+`suggest-superpowers: false` = standing decline, redirect/skip copied into
+subagent prompts).
 
 **Requirements:** R2
 
@@ -205,7 +219,10 @@ against tech.md D3 shape.
 
 **Goal:** same rework for `quick.md`, `verify.md`, `compound.md`: unified review
 protocol, findings-route-to-impl rule, finishing-a-development-branch boundary
-fix + last-in-sequence, `quick.compound` procedure.
+fix + last-in-sequence, `quick.compound` procedure (conditional — default exit
+is `idle`), escalation announce-and-confirm in quick.triage, and fix
+`compound.md`'s "only state where lessons.md and root specs are writable"
+sentence (false once quick.compound exists).
 
 **Requirements:** R2, R7
 
@@ -233,7 +250,8 @@ under a quick.compound cursor prints the new block.
 ### flow-mvp/7 — Auto-advance rule
 
 **Goal:** replace confirm-every-transition prose with auto-advance at non-gated
-exits; orders for the two gated states carry `gate:` markers.
+edges; orders for the two gated states carry `gate:` markers (plan gate
+includes mode pick).
 
 **Requirements:** R4
 
@@ -242,13 +260,14 @@ exits; orders for the two gated states carry `gate:` markers.
 **Files:**
 
 ```
-flow/{strategy,feature,quick,verify}.md   # rule text swap
-flow/SKILL.md                             # gate: plan-approval / ship-approval in 2 blocks
-flow/tests/run.sh                         # gates ↔ orders consistency; byte budget
+flow/{strategy,feature,quick,verify}.md   # rule text swap (+ escalation confirm exception)
+flow/SKILL.md                             # gate: plan-approval+mode / ship-approval in 2 blocks
+flow/tests/run.sh                         # gate edges ↔ orders markers; byte budget
 ```
 
 **Test scenarios:**
-- Exactly the two `gates` states' orders contain `gate:`; no other block does.
+- Exactly the source states of the two `gates` edges carry `gate:` in orders;
+  no other block does; markers match the machine's edge keys.
 - All orders blocks ≤ 400 bytes.
 
 **Verification:** `bash flow/tests/run.sh` green.
@@ -257,9 +276,11 @@ flow/tests/run.sh                         # gates ↔ orders consistency; byte b
 
 ### flow-mvp/8 — Impl modes (interactive | handover)
 
-**Goal:** `feature.md` impl section offers executing-plans vs SDD; SDD contract
-block (runtime stays `.superpowers/**`, stop before finishing, exit to verify);
-machine delegates updated.
+**Goal:** `feature.md` impl section offers executing-plans vs SDD, chosen at
+the plan gate (default interactive); both contract blocks inject the
+**current-branch, no-worktree** stance so verify and the receipt run against
+the same tree; SDD block adds runtime-stays-`.superpowers/**` + stop before
+finishing + exit to verify; machine delegates updated.
 
 **Requirements:** R5
 
@@ -283,8 +304,12 @@ flow/SKILL.md              # feature.impl orders mention both modes (within budg
 
 ### flow-mvp/9 — Evidence receipt + verify tooth
 
-**Goal:** receipt convention + stop-gate blocks in `*.verify` on missing/stale
-receipt; gitignore stanza covers `evidence/`.
+**Goal:** receipt convention (fixed names `evidence/feature-<feature>.md`,
+`evidence/quick.md`) + stop-gate blocks in `*.verify` on missing/stale receipt;
+git-derived staleness (changed files per `git status --porcelain` newer than
+receipt; existence-only without git); `stop_hook_active` pass-through; block
+message names the abort hatch `set-state.sh idle`; gitignore covers evidence in
+installer **and** this repo's root `.gitignore` (`flow/evidence/`).
 
 **Requirements:** R6
 
@@ -293,16 +318,18 @@ receipt; gitignore stanza covers `evidence/`.
 **Files:**
 
 ```
-.claude/hooks/stop-gate.sh   # promoted predicate per tech.md D6
+.claude/hooks/stop-gate.sh   # promoted predicate per tech.md D6 (as amended)
 flow/verify.md               # step: write the receipt (path + shape)
 install.sh                   # gitignore line for .agents/skills/vibe/evidence/
-flow/tests/run.sh            # block-missing / pass-fresh / block-stale
+.gitignore                   # flow/evidence/ (dogfood physical path)
+flow/tests/run.sh            # block-missing / pass-fresh / block-stale / stop_hook_active
 flow/tests/adapters/run.sh   # hook-level: exit 2 vs 0 against a real install
 ```
 
 **Test scenarios:**
-- In `feature.verify` sandbox: no receipt → exit 2; fresh receipt → exit 0;
-  touch `src/x` after receipt → exit 2. In `idle`: always exit 0.
+- In `feature.verify` sandbox (git repo): no receipt → exit 2; fresh receipt →
+  exit 0; modify a tracked file after receipt → exit 2; `stop_hook_active` set
+  → exit 0 regardless. In `idle`: always exit 0. No-git sandbox: existence-only.
 
 **Verification:** `bash flow/tests/run.sh && bash flow/tests/adapters/run.sh`
 green; manual hook probe with a crafted cursor.
@@ -313,7 +340,8 @@ green; manual hook probe with a crafted cursor.
 
 **Goal:** caveman out of deps.json/doctor; attribution note; flow README rows
 (dependency table, script count, adapters default wording) synced with this
-feature's reality.
+feature's reality; OQ1 fix — `spec/feature.md` step 5 moves the root
+Feature-Sequence row to the compound promote step (write-policy-legal).
 
 **Requirements:** R8
 
@@ -326,6 +354,7 @@ flow/reference/deps.json   # remove caveman entry
 flow/state-machine.json    # $comment attribution line
 flow/README.md             # dep table, "nine scripts", defaults wording
 README.md                  # dependency table row
+spec/feature.md            # step 5: root plan row at compound, not at plan (OQ1)
 flow/tests/run.sh          # doctor output lacks dep.caveman; manifest valid
 ```
 
@@ -377,6 +406,7 @@ inspected.
 1. **Receipt shape** — minimal (commands + exit codes) vs per-unit verdict
    table? Recommendation: per-unit table for `feature.verify`, minimal for
    `quick.verify`; decide at flow-mvp/9.
-2. **`gates` granularity** — marker on source state (current design) vs on the
-   edge. State-level is simpler and both gated states have a single gated exit;
-   revisit only if a state ever needs mixed gated/ungated exits.
+
+*(Resolved: gates are keyed by edge — `feature.verify` has three exits and only
+the compound edge is gated; the state-level design's "single gated exit"
+premise was false. Adversarial review 2026-07-07.)*

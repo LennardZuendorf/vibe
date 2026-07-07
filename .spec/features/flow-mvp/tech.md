@@ -12,7 +12,7 @@ How the operating-layer MVP lands in the existing flow half. All changes are
 data + prose + one hook + tests; no new runtimes, no machine-shape rewrite.
 Contract evidence for every seam: [../vibe-flow/research.md](../vibe-flow/research.md) part 2.
 
-## D1 — Precedence section (R1)
+## D1 — Precedence + ambient alignment (R1, R4)
 
 `flow/SKILL.md` gains a short `## Precedence` section (above Orders):
 
@@ -20,19 +20,29 @@ Contract evidence for every seam: [../vibe-flow/research.md](../vibe-flow/resear
 > When a delegated skill's text names its own artifact path, commits its own
 > output, or hands off to another skill, the current state's orders win: write
 > to the state's surface, leave commits to the flow, transition only via
-> `set-state.sh`.
+> `set-state.sh`. `set-state.sh idle` is always legal — abort ends any flow.
 
-The same 4 lines go into `flow/reference/templates/AGENTS.md` inside the managed
+The same lines go into `flow/reference/templates/AGENTS.md` inside the managed
 instructions block (merge via existing `merge-agents.sh`; no new machinery).
 Orders blocks stay unchanged in size; precedence is ambient, not per-turn.
+
+**Ambient alignment** (the always-in-context stack must not contradict R4): the
+template's "Ask first" rows for transitions become "gated edges + quick→feature
+escalation only"; the Prime-Directive CONFIRM step points at the two gates;
+`.claude/commands/flow.md` drops its "do NOT start the new state's work this
+turn" stop-per-transition line.
 
 ## D2 — Machine data changes (R4, R5, R7, R8, R9)
 
 `flow/state-machine.json`:
 
-- New top-level `"gates"`: `{"feature.plan": "human approves plan units",
-  "feature.verify": "human approves ship"}` — a stop-for-approval marker on the
-  *source* state's exit. Everything else auto-advances.
+- New top-level `"gates"` keyed by **edge**: `{"feature.plan>feature.impl":
+  "human approves plan units + picks impl mode",
+  "feature.verify>feature.compound": "human approves ship"}`. Only these edges
+  stop; every other edge — including verify→impl fix loops — auto-advances.
+- Abort edges: `idle` joins `next` of `feature.design`, `feature.impl`,
+  `feature.verify`, and `strategy.brainstorm` (abort is graph-legal, not just
+  mechanically possible).
 - New state `quick.compound`: skill `vibe`, caveman lite (receipts ultra),
   reads lessons, writes `[".spec/lessons.md", "CLAUDE.md#active-rules",
   "AGENTS.md#active-rules"]`, next `["idle"]`. `quick.verify.next` becomes
@@ -54,8 +64,9 @@ One fixed shape per delegation site, replacing bare "Delegate to X":
 
 ```markdown
 > **Delegate — superpowers:writing-plans**
-> - offer: "I can hand decomposition to `superpowers:writing-plans` — ok?"
->   (self-execute from this file if declined/absent)
+> - announce: "delegating to `superpowers:writing-plans` — say *self* to keep
+>   it inline" — proceed without waiting; self-execute from this file if
+>   declined/absent; `suggest-superpowers: false` = standing decline
 > - inject: feature product.md requirements; hybrid plan template
 >   (`spec/reference/templates/feature-plan.md`); stable-ID rules
 > - redirect: plan → `.spec/features/<feature>/plan.md` (its documented
@@ -63,6 +74,10 @@ One fixed shape per delegation site, replacing bare "Delegate to X":
 > - skip: its own `docs/superpowers/plans/` path; its exec handoff — the flow
 >   advances via the gate instead
 ```
+
+When a delegate runs as a subagent (Task), the redirect/skip lines MUST be
+copied into the subagent prompt — subagents receive no per-turn orders; they see
+only their prompt, CLAUDE.md, and the PreToolUse guard.
 
 Sites and their `skip` payloads (from research part 2): `strategy.brainstorm`
 (skip design-doc write + self-commit + writing-plans handoff — dialogue only),
@@ -89,26 +104,34 @@ SDD — keep them real commands/code, no placeholders.
 ## D5 — Auto-advance prose (R4)
 
 Phase-file rule text changes from "transitions are agent-suggested … confirm"
-to: *"At a non-gated exit, advance immediately: `set-state.sh <next>`, announce
-in one line, continue. Stop only at a `gates` state exit and ask."* SKILL.md
-orders append `gate: plan-approval` / `gate: ship-approval` to the two gated
-states' blocks (stays within byte budget).
+to: *"At a non-gated edge, advance immediately: `set-state.sh <next>`, announce
+in one line, continue. Stop and ask only at a `gates` edge."* SKILL.md orders
+append `gate: plan-approval+mode` / `gate: ship-approval` to the two gated
+states' blocks (stays within byte budget; measured headroom 69–256 B).
+Exception (R4): the `quick.triage → feature.design` escalation is
+announce-and-confirm — it renames the work and names a feature; quick.triage's
+orders carry the confirm.
 
 ## D6 — Evidence receipt + verify tooth (R6)
 
-Convention: `.agents/skills/vibe/evidence/<flow>-<feature-or-slug>.md`, written
-during `*.verify` step 2 (commands run + observed output + per-unit verdicts).
-Directory is runtime-not-memory: gitignored next to the cursor (installer's
-existing gitignore stanza gains one line).
+Convention: fixed names under `.agents/skills/vibe/evidence/` —
+`feature-<feature>.md` and `quick.md` — written during `*.verify` step 2
+(commands run + observed output + per-unit verdicts). Directory is
+runtime-not-memory: the installer's gitignore stanza gains one line, **and this
+repo's root `.gitignore` gains `flow/evidence/`** (git matches physical paths;
+the `.agents/...` pattern cannot match through the dogfood symlink — same
+reason it already carries a literal `flow/state.json`).
 
 `stop-gate.sh` change (the only teeth promotion): in a `*.verify` state —
-- receipt missing → **block** (exit 2) with the write-the-receipt instruction;
-- receipt present but older than the newest file under `src/ tests/` → block
-  (staleness via `find src tests -type f -newer <receipt> | head -1`; portable,
-  no `stat -f/-c` divergence);
-- else pass. Outside `*.verify`, behavior unchanged (warn-only). jq-free and
-  missing-machine degrade paths keep the existing always-exit-0 fallbacks —
-  the tooth only bites when state is readable and clearly `*.verify`.
+- pass through immediately when stdin's `stop_hook_active` is set (no block
+  loops) or when the cursor/machine is unreadable (existing degrade paths);
+- receipt missing → **block** (exit 2); message names the expected path and the
+  abort hatch `set-state.sh idle` — never "write the receipt by hand";
+- receipt present → staleness is **git-derived**: any path from
+  `git status --porcelain` with mtime newer than the receipt → block as stale
+  (`find <paths> -newer <receipt>` on the listed files only; no fixed `src/`
+  assumption — vibe itself has none). Without git: existence-only;
+- else pass. Outside `*.verify`, behavior unchanged (warn-only).
 
 ## D7 — Caveman demotion (R8)
 
@@ -120,9 +143,12 @@ line; the "If absent" caveman row is deleted.
 
 ## D8 — Tests (R10)
 
-- **Hermeticity:** `flow/tests/run.sh` copies `flow/` (deref) into its sandbox
-  and points every script invocation there (same pattern the adapters suite
-  already uses); the live cursor is never read or written by tests.
+- **Hermeticity:** `flow/tests/run.sh` builds a sandbox that preserves the
+  path-parity subject: `sandbox/flow/` (copied), `sandbox/.agents/skills/vibe →
+  ../../flow` (symlink recreated), `sandbox/.spec` marker — a bare `cp -RL`
+  deref would destroy the real-vs-symlink duality the parity tests exercise.
+  Every script invocation points into the sandbox; the live cursor is never
+  read or written.
 - **New assertions:** every `state-machine.json` delegate appears in the linked
   phase file (machine ⊆ prose); `gates` keys are known states and match the two
   gated orders blocks; stop-gate blocks in `feature.verify` without a receipt,
@@ -139,10 +165,13 @@ flow/state-machine.json                # gates, quick.compound, delegate list ed
 flow/{strategy,feature,quick,verify,compound}.md   # contract blocks, auto-advance rule
 flow/scripts/detect-context.sh         # + quick.compound lessons allow
 flow/reference/deps.json               # - caveman
-flow/reference/templates/AGENTS.md     # + precedence lines
+flow/reference/templates/AGENTS.md     # + precedence lines; Ask-first rows → gated edges
+.claude/commands/flow.md               # drop stop-per-transition line
 .claude/hooks/stop-gate.sh             # verify tooth (D6)
 spec/reference/templates/feature-plan.md  # hybrid grammar (D4)
+spec/feature.md                        # step 5: root plan row moves to compound (OQ1)
 install.sh                             # + evidence/ gitignore line
+.gitignore                             # + flow/evidence/ (dogfood physical path)
 flow/tests/run.sh                      # hermetic sandbox + new assertions
 ```
 
@@ -150,7 +179,15 @@ flow/tests/run.sh                      # hermetic sandbox + new assertions
 
 | Risk | Mitigation |
 |---|---|
-| Verify tooth misfires (evidence exists but path/staleness heuristic wrong) | Block message names the exact expected path + `find` rule; escape hatch documented (write receipt manually); predicate covered by 3 tests before promotion |
+| Verify tooth misfires (evidence exists but staleness heuristic wrong) | Block message names the exact expected path + abort hatch (`set-state.sh idle`); `stop_hook_active` pass-through kills block loops; predicate covered by tests before promotion |
 | Contract blocks bloat phase files / orders | Blocks live in phase files only; orders keep ≤ 400 B budget under test |
 | Hybrid template confuses the spec-only (no-flow) audience | Steps section marked optional-when-no-executor in the template guardrail |
-| SDD ignores precedence and merges the branch | Handover-mode contract block injects "stop before finishing-a-development-branch"; residual risk accepted (personal tool, verify gate still audits after) |
+| SDD ignores precedence and merges the branch | Handover-mode contract block injects "stop before finishing-a-development-branch" + current-branch stance; residual risk accepted (personal tool, verify gate still audits after) |
+
+Accepted risks (recorded, not fixed): receipt fabrication is possible by design
+— the tooth is a speed bump that converts a silent done-claim into a forged
+artifact the ship gate reads; impl↔verify and fix↔verify loops are unbounded
+and ungated (termination rests on the model taking the gated forward edge);
+with superpowers installed its SessionStart mandate still competes — precedence
+prose is the counter (R9 only removes vibe's own pointer); upstream
+MUST-language recency in the main loop is re-countered each turn by orders.
