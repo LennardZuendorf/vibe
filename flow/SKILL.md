@@ -36,6 +36,14 @@ Read the phase file for your current (or target) state, then follow it.
 `scripts/` and `reference/` back the setup phase: `merge-agents.sh`, the `AGENTS.md`
 template, and `adapters.json`.
 
+## Precedence
+
+The cursor owns sequencing and artifact destinations; delegates own method.
+When a delegated skill's text names its own artifact path, commits its own
+output, or hands off to another skill, the current state's orders win: write
+to the state's surface, leave commits to the flow, transition only via
+`set-state.sh`. `set-state.sh idle` is always legal — abort ends any flow.
+
 ## Orders (D12)
 
 Machine-extractable per-state orders. The `UserPromptSubmit` inject hook resolves
