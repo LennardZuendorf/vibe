@@ -80,7 +80,7 @@ skill=vibe · spec feature.md step 5 (plan units) · WRITE .spec/features/<featu
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.impl -->
-skill=vibe · delegate executing-plans (interactive, default) | subagent-driven-development (handover) + TDD · WRITE src/**, tests/** · do NOT edit .spec/** · cite plan unit IDs (<feature>/n) in tests/commits · caveman=full · next: feature.verify
+skill=vibe · delegate executing-plans (interactive, default) | subagent-driven-development (handover) + TDD + receiving-code-review on verify-routed re-entry · WRITE src/**, tests/** · do NOT edit .spec/** · cite plan unit IDs (<feature>/n) in tests/commits · caveman=full · next: feature.verify
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.verify -->
@@ -96,7 +96,7 @@ skill=vibe · READ .spec/lessons.md first · delegate superpowers:systematic-deb
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.fix -->
-skill=vibe · delegate TDD · WRITE src/** (+ optional .spec/quick/<slug>.md note) · no root spec writes · caveman=full · next: quick.verify
+skill=vibe · delegate TDD + receiving-code-review on verify-routed re-entry · WRITE src/** (+ optional .spec/quick/<slug>.md note) · no root spec writes · caveman=full · next: quick.verify
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.verify -->

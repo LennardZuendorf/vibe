@@ -83,6 +83,13 @@ Units are `{name}/n` — the feature slug plus an integer assigned once and **ne
 {path/to/other.ext}       # {what changes}
 ```
 
+<!-- Interfaces is where a handover-mode subagent (which sees only its own unit) learns the names/types of neighboring units — keep Consumes/Produces exact. -->
+
+**Interfaces:**
+
+- Consumes: {names/types this unit uses from prior units — or —}
+- Produces: {names/types later units will use}
+
 **Steps:**
 
 - [ ] Write failing test: {test path + what it asserts}
@@ -113,6 +120,11 @@ Units are `{name}/n` — the feature slug plus an integer assigned once and **ne
 ```
 {path/to/file.ext}
 ```
+
+**Interfaces:**
+
+- Consumes: {names/types this unit uses from prior units — or —}
+- Produces: {names/types later units will use}
 
 **Steps:**
 

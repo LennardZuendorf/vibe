@@ -1039,6 +1039,7 @@ test_flow_mvp_4_template_hybrid_grammar() {
   assert_contains "flow-mvp/4" "template has ## Global Constraints" "$tpl" "## Global Constraints"
   assert_contains "flow-mvp/4" "template has a Steps checkbox block" "$tpl" "**Steps:**"
   assert_contains "flow-mvp/4" "template Steps block has checkboxes" "$tpl" "- [ ]"
+  assert_contains "flow-mvp/11" "template has per-unit **Interfaces:** block" "$tpl" "**Interfaces:**"
 }
 
 # ── Run new tests ────────────────────────────────────────────────────────────

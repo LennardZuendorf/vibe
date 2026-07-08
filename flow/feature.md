@@ -73,7 +73,7 @@ Everything between is autonomous.
 
    > **Delegate — superpowers:executing-plans**
    > - announce: "delegating to `superpowers:executing-plans` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
-   > - inject: the hybrid `.spec/features/<name>/plan.md` as its plan input (units in Seq order; per-unit **Steps** are the task checklist); current-branch, no-worktree stance
+   > - inject: the hybrid `.spec/features/<name>/plan.md` as its plan input (units in Seq order; per-unit **Steps** are the task checklist); work on the feature branch from the plan gate, no worktree
    > - redirect: write `src/**` and `tests/**` only; cite plan unit IDs (`<name>/n`) in commits
    > - skip: its `finishing-a-development-branch` exit handoff — the flow advances to `feature.verify` instead
 
@@ -81,7 +81,7 @@ Everything between is autonomous.
 
    > **Delegate — superpowers:subagent-driven-development**
    > - announce: "delegating to `superpowers:subagent-driven-development` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
-   > - inject: the hybrid `.spec/features/<name>/plan.md`; current-branch, no-worktree stance; runtime artifacts stay under `.superpowers/**` (gitignored runtime, not memory)
+   > - inject: the hybrid `.spec/features/<name>/plan.md`; work on the feature branch from the plan gate (worktree only if offered+accepted); runtime artifacts stay under `.superpowers/**` (gitignored runtime, not memory)
    > - redirect: write `src/**` and `tests/**` only; cite plan unit IDs (`<name>/n`) in commits. COPY these redirect/skip lines into every subagent (Task) prompt — subagents get no per-turn orders
    > - skip: its `finishing-a-development-branch` exit — stop after the final review; the flow advances to `feature.verify`, which audits regardless
 
