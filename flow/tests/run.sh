@@ -477,5 +477,108 @@ assert_eq "orders-fresh" "orders.sh block identical with and without a repo-root
 rm -rf "$SBI"
 
 echo ""
+echo "=== flow-mvp/9 — evidence receipt + verify tooth (stop-gate) ==="
+# The stop-gate is an adapter under .claude/, invoked directly with a crafted
+# CLAUDE_PROJECT_DIR sandbox. The hook reads only: detect-context.sh + machine +
+# cursor (for the state/feature) and the receipt file, plus `git status` in the
+# project root. Each scenario builds its own throwaway sandbox; the live cursor
+# and the shared hermetic sandbox are never touched.
+GATE="$SRC_ROOT/.claude/hooks/stop-gate.sh"
+
+# Build a fresh sandbox carrying just what the hook reads: a real detect-context.sh
+# + state-machine.json + a crafted cursor. $4=git seeds a git work tree (one
+# committed tracked file; cursor + evidence/ gitignored, mirroring the installer).
+mk_gate_sbx() {
+  local flow="$1" phase="$2" feature="$3" mode="$4"
+  local s; s="$(mktemp -d)"
+  mkdir -p "$s/.agents/skills/vibe/scripts"
+  cp "$SRC_ROOT/flow/scripts/detect-context.sh" "$s/.agents/skills/vibe/scripts/"
+  cp "$SRC_ROOT/flow/state-machine.json" "$s/.agents/skills/vibe/"
+  local feat_json="null"
+  [[ "$feature" != "null" ]] && feat_json="\"$feature\""
+  printf '{"flow":"%s","phase":"%s","feature":%s,"updated":"2026-07-08T00:00:00Z"}\n' \
+    "$flow" "$phase" "$feat_json" > "$s/.agents/skills/vibe/state.json"
+  if [[ "$mode" == "git" ]]; then
+    printf '.agents/skills/vibe/state.json\n.agents/skills/vibe/evidence/\n' > "$s/.gitignore"
+    printf 'seed\n' > "$s/tracked.txt"
+    git -C "$s" init -q
+    git -C "$s" config user.email t@t.test
+    git -C "$s" config user.name test
+    git -C "$s" add -A
+    git -C "$s" commit -q -m init
+  fi
+  printf '%s\n' "$s"
+}
+run_gate() { printf '%s' "$2" | CLAUDE_PROJECT_DIR="$1" bash "$GATE" 2>&1; echo "rc=$?"; }
+
+# 1) feature.verify, git repo, no receipt -> block (exit 2), names the exact path.
+s="$(mk_gate_sbx feature verify widget git)"
+out="$(run_gate "$s" '{}')"
+assert_contains "flow-mvp/9" "feature.verify with no receipt blocks (exit 2)" "$out" "rc=2"
+assert_contains "flow-mvp/9" "missing-receipt block names the exact path" "$out" "evidence/feature-widget.md"
+assert_contains "flow-mvp/9" "missing-receipt block names the abort hatch" "$out" "set-state.sh idle"
+rm -rf "$s"
+
+# 2) write the receipt, commit so the tree is clean -> pass (exit 0).
+s="$(mk_gate_sbx feature verify widget git)"
+mkdir -p "$s/.agents/skills/vibe/evidence"
+printf 'ran: bash tests; observed: 12 passed\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+out="$(run_gate "$s" '{}')"
+assert_contains "flow-mvp/9" "feature.verify with a fresh receipt + clean tree passes (exit 0)" "$out" "rc=0"
+rm -rf "$s"
+
+# 3) modify a tracked file after the receipt -> block as stale (exit 2). The
+# receipt mtime is pinned into the past so the post-receipt edit is deterministically
+# newer (no sleep, no 1s mtime-granularity flake).
+s="$(mk_gate_sbx feature verify widget git)"
+mkdir -p "$s/.agents/skills/vibe/evidence"
+printf 'ran: bash tests\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+printf 'edited after the receipt\n' >> "$s/tracked.txt"
+touch -t 200001010000 "$s/.agents/skills/vibe/evidence/feature-widget.md"
+out="$(run_gate "$s" '{}')"
+assert_contains "flow-mvp/9" "feature.verify with a stale receipt blocks (exit 2)" "$out" "rc=2"
+assert_contains "flow-mvp/9" "stale block names the abort hatch" "$out" "set-state.sh idle"
+rm -rf "$s"
+
+# 4) stop_hook_active passes through even with no receipt (no block loops).
+s="$(mk_gate_sbx feature verify widget git)"
+out="$(run_gate "$s" '{"stop_hook_active": true}')"
+assert_contains "flow-mvp/9" "stop_hook_active short-circuits to exit 0" "$out" "rc=0"
+rm -rf "$s"
+
+# 5) idle cursor never blocks, regardless of receipts.
+s="$(mk_gate_sbx idle idle null git)"
+out="$(run_gate "$s" '{}')"
+assert_contains "flow-mvp/9" "idle cursor never blocks (exit 0)" "$out" "rc=0"
+rm -rf "$s"
+
+# 6) quick.verify: no receipt -> block naming evidence/quick.md; with a receipt and
+# a clean tree -> pass.
+s="$(mk_gate_sbx quick verify null git)"
+out="$(run_gate "$s" '{}')"
+assert_contains "flow-mvp/9" "quick.verify with no receipt blocks (exit 2)" "$out" "rc=2"
+assert_contains "flow-mvp/9" "quick block names evidence/quick.md" "$out" "evidence/quick.md"
+mkdir -p "$s/.agents/skills/vibe/evidence"
+printf 'ran: repro; observed: fixed\n' > "$s/.agents/skills/vibe/evidence/quick.md"
+out="$(run_gate "$s" '{}')"
+assert_contains "flow-mvp/9" "quick.verify with a receipt + clean tree passes (exit 0)" "$out" "rc=0"
+rm -rf "$s"
+
+# 7) non-git sandbox, receipt present -> existence-only pass (exit 0).
+s="$(mk_gate_sbx feature verify widget nogit)"
+mkdir -p "$s/.agents/skills/vibe/evidence"
+printf 'ran: bash tests\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+out="$(run_gate "$s" '{}')"
+assert_contains "flow-mvp/9" "non-git sandbox is existence-only, passes with a receipt (exit 0)" "$out" "rc=0"
+rm -rf "$s"
+
+# 8) feature.verify with NO feature in the cursor -> ambiguous receipt path, so the
+# gate degrades to warn-only (exit 0) rather than blocking.
+s="$(mk_gate_sbx feature verify null git)"
+out="$(run_gate "$s" '{}')"
+assert_contains "flow-mvp/9" "feature.verify without a feature degrades to warn-only (exit 0)" "$out" "rc=0"
+rm -rf "$s"
+
+echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

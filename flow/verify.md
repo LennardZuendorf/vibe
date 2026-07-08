@@ -22,7 +22,14 @@ Serves two states:
    > - redirect: evidence is observed output shown in-turn; no spec writes
    > - skip: any "done"/commit claim on a failing check
 
-3. **Review — one protocol.** Not two separate reviews: use
+3. **Receipt.** Write the evidence receipt —
+   `.agents/skills/vibe/evidence/feature-<feature>.md` (or `evidence/quick.md`
+   for `quick.verify`): the commands run + their observed output, plus a per-unit
+   verdict for a feature. Runtime, not memory — the `evidence/` dir is gitignored.
+   The Stop gate blocks any "done" in a `*.verify` state without a fresh receipt.
+   Not verifying? Abort: `set-state.sh idle`.
+
+4. **Review — one protocol.** Not two separate reviews: use
    `superpowers:requesting-code-review`'s dispatch pattern with feature-dev's
    `code-reviewer` as the reviewer template.
 
@@ -32,7 +39,7 @@ Serves two states:
    > - redirect: findings route to `feature.impl` (feature) / `quick.fix` (quick) — NEVER fixed here; verify writes no `src/**`
    > - skip: the upstream "fix Critical immediately" step and any self-commit — routing owns the fix
 
-4. **On failure.**
+5. **On failure.**
 
    > **Delegate — superpowers:systematic-debugging**
    > - announce: "delegating to `superpowers:systematic-debugging` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
@@ -40,7 +47,7 @@ Serves two states:
    > - redirect: the fix-plan routes to `feature.impl` / `quick.fix` — no writes here
    > - skip: applying the fix in verify — verify diagnoses and routes only
 
-5. **Report + route.** Summarize evidence (commands run, output, review verdict),
+6. **Report + route.** Summarize evidence (commands run, output, review verdict),
    then route. The fix loops (`feature.impl`/`feature.plan`, `quick.fix`) and
    `quick.compound` are non-gated — advance immediately and continue. The one
    gated edge is the ship gate (`feature.verify > feature.compound`): **Human

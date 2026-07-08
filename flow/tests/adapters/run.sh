@@ -161,11 +161,21 @@ assert_contains "platform-adapters/2" "guard warn carries reason" "$out" "warn"
 # guard: graceful on empty stdin
 out="$(printf '' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
 assert_contains "platform-adapters/2" "guard exits 0 on empty stdin" "$out" "rc=0"
-# gate: always exit 0
+# gate: warn-only in a non-verify state, always exit 0
+bash "$SS" feature.impl demo >/dev/null
+out="$(printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+assert_contains "platform-adapters/3" "gate exits 0 in a non-verify state" "$out" "rc=0"
+assert_contains "platform-adapters/3" "gate emits a warn-only smell" "$out" "vibe-gate"
+# flow-mvp/9 — the one promoted tooth: a *.verify state requires a fresh evidence
+# receipt. Against a real install (not a git repo -> existence-only staleness).
 bash "$SS" feature.verify demo >/dev/null
 out="$(printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
-assert_contains "platform-adapters/3" "gate always exits 0" "$out" "rc=0"
-assert_contains "platform-adapters/3" "gate emits a warn-only smell" "$out" "vibe-gate"
+assert_contains "flow-mvp/9" "gate blocks feature.verify with no receipt (exit 2)" "$out" "rc=2"
+assert_contains "flow-mvp/9" "block names the evidence receipt path" "$out" "evidence/feature-demo.md"
+mkdir -p "$SB/.agents/skills/vibe/evidence"
+printf 'commands + observed output per unit\n' > "$SB/.agents/skills/vibe/evidence/feature-demo.md"
+out="$(printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+assert_contains "flow-mvp/9" "gate passes feature.verify with a fresh receipt (exit 0)" "$out" "rc=0"
 unset CLAUDE_PROJECT_DIR
 rm -rf "$SB"
 

@@ -5,6 +5,9 @@
 # Mutable flow cursor (OPEN-1): version the static state-machine.json, not the
 # per-session cursor. state.example.json is the tracked template.
 flow/state.json
+# Evidence receipts (runtime verification output, not memory). Physical path
+# through the .agents/skills/vibe -> flow symlink, same reason as the cursor above.
+flow/evidence/
 .serena/
 # Overnight run artifact (local morning report, not merged)
 REPORT.md

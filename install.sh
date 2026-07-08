@@ -267,13 +267,21 @@ if [[ "$WANT_FLOW" -eq 1 && ! -f "$TARGET/.agents/skills/vibe/state.json" ]]; th
   fi
 fi
 
-# 5. Ignore the mutable cursor (flow half only).
+# 5. Ignore the mutable runtime state (flow half only): the flow cursor and the
+# evidence receipts. Each line is guarded independently so re-runs never
+# duplicate and an upgrade adds only the missing line.
 if [[ "$WANT_FLOW" -eq 1 ]]; then
   GI="$TARGET/.gitignore"
   if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/vibe/state.json" "$GI"; }; then
     say "add .agents/skills/vibe/state.json to .gitignore"
     if [[ "$DRY_RUN" -eq 0 ]]; then
       printf '\n# vibe mutable flow cursor (runtime; version state-machine.json, not this)\n.agents/skills/vibe/state.json\n' >> "$GI"
+    fi
+  fi
+  if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/vibe/evidence/" "$GI"; }; then
+    say "add .agents/skills/vibe/evidence/ to .gitignore"
+    if [[ "$DRY_RUN" -eq 0 ]]; then
+      printf '\n# vibe evidence receipts (runtime verification output, not memory)\n.agents/skills/vibe/evidence/\n' >> "$GI"
     fi
   fi
 fi
