@@ -14,7 +14,7 @@
 
 1. **ASK** — clarify requirements; no assumptions.
 2. **PLAN** — break down, read `.spec/`, present approach.
-3. **CONFIRM** — get explicit approval before implementation.
+3. **CONFIRM** — approval happens at the two human gates (plan→impl, verify→ship), not before every action.
 4. **EXECUTE** — implement step-by-step; verify before claiming done.
 
 - MUST read `.spec/` before writing code.
@@ -73,6 +73,14 @@ ASK → read .spec/ → PLAN (cite unit IDs) → CONFIRM → IMPL → verify →
 | Done | Run `bash .agents/skills/spec/scripts/validate.sh`; show evidence |
 
 **Human gates:** approve plan units before large impl; approve verify evidence before "done".
+
+### Precedence
+
+The cursor owns sequencing and artifact destinations; delegates own method.
+When a delegated skill's text names its own artifact path, commits its own
+output, or hands off to another skill, the current state's orders win: write
+to the state's surface, leave commits to the flow, transition only via
+`set-state.sh`. `set-state.sh idle` is always legal — abort ends any flow.
 
 Root [.spec/plan.md](.spec/plan.md) owns milestones and cross-feature order.
 Feature `plan.md` owns unit tables — do not duplicate units in chat or commits prose.
@@ -171,7 +179,7 @@ bash .agents/skills/vibe/scripts/validate-state.sh
 **Ask first**
 - Root spec edits outside strategy / compound / setup.
 - Scope escalation (small fix → named feature).
-- State transitions and feature naming (when using flow tooling).
+- Gated edges (plan→impl, verify→ship) and quick→feature escalation; other transitions auto-advance.
 - Adding dependencies or deleting files.
 
 **Never**

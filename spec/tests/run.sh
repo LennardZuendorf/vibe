@@ -1032,6 +1032,16 @@ test_config_defaults_documented() {
   assert_contains "spec-skill-improvements/19" "SKILL.md Config documents suggest-superpowers key" "$skill" "suggest-superpowers"
 }
 
+# ── flow-mvp/4: hybrid plan template gains agentic-workers grammar ──────────
+test_flow_mvp_4_template_hybrid_grammar() {
+  local tpl; tpl="$(cat "$SPEC_SKILL/reference/templates/feature-plan.md")"
+  assert_contains "flow-mvp/4" "template has 'For agentic workers' line" "$tpl" "For agentic workers"
+  assert_contains "flow-mvp/4" "template has ## Global Constraints" "$tpl" "## Global Constraints"
+  assert_contains "flow-mvp/4" "template has a Steps checkbox block" "$tpl" "**Steps:**"
+  assert_contains "flow-mvp/4" "template Steps block has checkboxes" "$tpl" "- [ ]"
+  assert_contains "flow-mvp/11" "template has per-unit **Interfaces:** block" "$tpl" "**Interfaces:**"
+}
+
 # ── Run new tests ────────────────────────────────────────────────────────────
 echo ""
 echo "=== spec-skill-improvements v2.0 tests ==="
@@ -1065,6 +1075,7 @@ test_subagents_folder_wiring
 test_setup_section_has_interview_flow
 test_config_section_present
 test_config_defaults_documented
+test_flow_mvp_4_template_hybrid_grammar
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

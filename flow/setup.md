@@ -41,7 +41,8 @@ clobbering:
    unmarked equivalent guide; never touch content outside the markers. (Supersedes
    the old constitution-block merge — see [agent-instructions](../../../.spec/features/agent-instructions/product.md).)
 2. **Adapter symlinks (user-driven).** Read `reference/adapters.json` and offer the
-   adapters the user wants (default: `CLAUDE.md`, `WARP.md`). For each chosen one,
+   adapters the user wants (all opt-in — none by default, per `adapters.json`).
+   For each chosen one,
    `bash .agents/skills/vibe/scripts/merge-agents.sh link <adapter>`. It skips
    a correct symlink, relinks a wrong target, and **refuses to replace a real file**
    — show a diff and confirm before clobbering. Never create a symlink the user

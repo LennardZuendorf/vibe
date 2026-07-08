@@ -161,11 +161,21 @@ assert_contains "platform-adapters/2" "guard warn carries reason" "$out" "warn"
 # guard: graceful on empty stdin
 out="$(printf '' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
 assert_contains "platform-adapters/2" "guard exits 0 on empty stdin" "$out" "rc=0"
-# gate: always exit 0
+# gate: warn-only in a non-verify state, always exit 0
+bash "$SS" feature.impl demo >/dev/null
+out="$(printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+assert_contains "platform-adapters/3" "gate exits 0 in a non-verify state" "$out" "rc=0"
+assert_contains "platform-adapters/3" "gate emits a warn-only smell" "$out" "vibe-gate"
+# flow-mvp/9 — the one promoted tooth: a *.verify state requires a fresh evidence
+# receipt. Against a real install (not a git repo -> existence-only staleness).
 bash "$SS" feature.verify demo >/dev/null
 out="$(printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
-assert_contains "platform-adapters/3" "gate always exits 0" "$out" "rc=0"
-assert_contains "platform-adapters/3" "gate emits a warn-only smell" "$out" "vibe-gate"
+assert_contains "flow-mvp/9" "gate blocks feature.verify with no receipt (exit 2)" "$out" "rc=2"
+assert_contains "flow-mvp/9" "block names the evidence receipt path" "$out" "evidence/feature-demo.md"
+mkdir -p "$SB/.agents/skills/vibe/evidence"
+printf 'commands + observed output per unit\n' > "$SB/.agents/skills/vibe/evidence/feature-demo.md"
+out="$(printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+assert_contains "flow-mvp/9" "gate passes feature.verify with a fresh receipt (exit 0)" "$out" "rc=0"
 unset CLAUDE_PROJECT_DIR
 rm -rf "$SB"
 
@@ -292,18 +302,31 @@ grep -qF "keep this prose" "$SB/AGENTS.md" && pass "install-tooling/3" "user AGE
 grep -qF "vibe:instructions:start" "$SB/AGENTS.md" && fail "install-tooling/3" "managed AGENTS.md block removed" || pass "install-tooling/3" "managed AGENTS.md block removed"
 [[ -f "$SB/.spec/product.md" ]] && pass "install-tooling/3" ".spec/ preserved across uninstall" || fail "install-tooling/3" ".spec/ preserved"
 rm -rf "$SB"
-# Live cursor + no --yes -> cursor survives.
+# Live cursor + evidence receipt + no --yes -> both survive (flow-mvp verify fixes:
+# discriminating test — fails if preservation is swapped for naive rm -rf).
 SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 bash "$SB/.agents/skills/vibe/scripts/set-state.sh" feature.impl widget >/dev/null 2>&1
+mkdir -p "$SB/.agents/skills/vibe/evidence"
+printf 'receipt: tests run\n' > "$SB/.agents/skills/vibe/evidence/feature-widget.md"
 bash "$INSTALL" "$SB" --uninstall >/dev/null 2>&1
 if [[ -f "$SB/.agents/skills/vibe/state.json" ]] && grep -qF widget "$SB/.agents/skills/vibe/state.json"; then
   pass "install-tooling/3" "live cursor survives uninstall without --yes"
 else
   fail "install-tooling/3" "live cursor survives uninstall without --yes"
 fi
-# ... and --yes removes it.
+if [[ -f "$SB/.agents/skills/vibe/evidence/feature-widget.md" ]]; then
+  pass "flow-mvp/9" "evidence receipt survives uninstall without --yes"
+else
+  fail "flow-mvp/9" "evidence receipt survives uninstall without --yes"
+fi
+# ... and --yes removes both and fully inverts the gitignore stanzas.
 bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
 [[ ! -e "$SB/.agents/skills/vibe/state.json" ]] && pass "install-tooling/3" "--yes removes the cursor too" || fail "install-tooling/3" "--yes removes the cursor"
+if [[ -f "$SB/.gitignore" ]] && grep -qF "evidence" "$SB/.gitignore"; then
+  fail "flow-mvp/9" "--yes strips the evidence gitignore stanza"
+else
+  pass "flow-mvp/9" "--yes strips the evidence gitignore stanza"
+fi
 rm -rf "$SB"
 # Reversed-marker AGENTS.md -> uninstall refuses to touch it (marker lesson regression).
 SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1

@@ -11,11 +11,15 @@ updated: {YYYY-MM-DD}
   Job: HOW to build this feature (units, files, verification). Link up to product.md for WHAT.
   Do NOT: re-litigate product requirements, UX prose, architecture essays, root milestones.
   Omit optional sections entirely when empty — placeholder prose is worse than absence.
+  Steps are consumed by superpowers:executing-plans / SDD — real commands and paths, no
+  placeholders like "add error handling"; omit Steps only when no executor will run the plan.
 -->
 
 # Feature: {Name} — Implementation Plan
 
 {One-paragraph summary: what this feature delivers and in what order. This feature is a closed, deliverable, testable box.}
+
+> For agentic workers: execute units in Seq order via superpowers:executing-plans or superpowers:subagent-driven-development; each unit's Steps are your task checklist.
 
 **Parent:** [../../plan.md](../../plan.md)
 **Requirements:** [product.md](product.md)
@@ -50,6 +54,14 @@ Every unit below MUST cite the R-IDs it satisfies. Add rows as requirements grow
 
 ---
 
+## Global Constraints
+
+<!-- Executors: read this section before starting any unit. -->
+
+- {Constraint that applies to every unit — test command, style rule, forbidden surface}
+
+---
+
 ## Unit IDs
 
 Units are `{name}/n` — the feature slug plus an integer assigned once and **never renumbered** on reorder (add a new `{name}/n` for new work). An optional **Seq** holds rewriteable execution order. Cite IDs in commits and tests during impl (`feat({name}): {name}/1 ...`).
@@ -70,6 +82,21 @@ Units are `{name}/n` — the feature slug plus an integer assigned once and **ne
 {path/to/file.ext}        # {what changes}
 {path/to/other.ext}       # {what changes}
 ```
+
+<!-- Interfaces is where a handover-mode subagent (which sees only its own unit) learns the names/types of neighboring units — keep Consumes/Produces exact. -->
+
+**Interfaces:**
+
+- Consumes: {names/types this unit uses from prior units — or —}
+- Produces: {names/types later units will use}
+
+**Steps:**
+
+- [ ] Write failing test: {test path + what it asserts}
+- [ ] Run it; confirm it fails for the right reason
+- [ ] Implement: {file + change}
+- [ ] Run test suite; confirm pass
+- [ ] Commit citing {name}/1
 
 **Test scenarios:**
 
@@ -93,6 +120,19 @@ Units are `{name}/n` — the feature slug plus an integer assigned once and **ne
 ```
 {path/to/file.ext}
 ```
+
+**Interfaces:**
+
+- Consumes: {names/types this unit uses from prior units — or —}
+- Produces: {names/types later units will use}
+
+**Steps:**
+
+- [ ] Write failing test: {test path + what it asserts}
+- [ ] Run it; confirm it fails for the right reason
+- [ ] Implement: {file + change}
+- [ ] Run test suite; confirm pass
+- [ ] Commit citing {name}/2
 
 **Test scenarios:**
 

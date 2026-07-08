@@ -6,8 +6,10 @@ for receipts. Serves `feature.compound` and `strategy.compound`; both end at
 
 ## Procedure
 
-1. **Locate.** Read `.agents/skills/vibe/state.json`. Confirm a `*.compound` state — this
-   is the only state where `lessons.md` and root specs are writable.
+1. **Locate.** Read `.agents/skills/vibe/state.json`. Confirm a `*.compound` state.
+   Root `.spec/{product,tech,design,plan}.md` are writable only here
+   (`feature.compound` / `strategy.compound`); `.spec/lessons.md` is also writable
+   in `quick.compound`.
 2. **Lessons.** Append a tagged entry to `.spec/lessons.md` using the canonical
    format (`### title`, `**Pattern:**`, `**Rule:**`, `**Tags:**`, `**Date:**`,
    optional `**Pinned-by:**`). Only record durable lessons — pinning is
@@ -15,11 +17,10 @@ for receipts. Serves `feature.compound` and `strategy.compound`; both end at
 3. **Promote (feature.compound only).** Merge cross-cutting decisions into root
    `.spec/{product,tech,design,plan}.md` via the `spec` skill. Feature-specific
    detail stays in the archive, not in root specs.
-4. **Archive (feature.compound only).** Delegate to
-   `superpowers:finishing-a-development-branch`. Move
-   `.spec/features/<feature>/` → `.spec/archive/<feature>/`. Archive is a
-   **transient safety net** (e.g. CI fails right after wrapup) — never a store for
-   active work. CODE IS TRUTH.
+4. **Archive (feature.compound only).** The flow performs this move itself — it is
+   **not** the delegate's job: relocate `.spec/features/<feature>/` →
+   `.spec/archive/<feature>/`. Archive is a **transient safety net** (e.g. CI fails
+   right after wrapup) — never a store for active work. CODE IS TRUTH.
 5. **Regenerate digest.** Run `bash .agents/skills/vibe/scripts/regen-active-rules.sh` to
    refresh the managed active-rules block in `CLAUDE.md`/`AGENTS.md` from the
    updated lessons (capped top-5, pinned first). Graceful degrade: if the script
@@ -28,9 +29,19 @@ for receipts. Serves `feature.compound` and `strategy.compound`; both end at
    prompt the user to delete `.spec/archive/<feature>/`. The folder should be gone
    **before the branch merges**; keeping it is the justified exception (standalone
    decision archaeology), not the default.
-7. **Receipt (ultra).** Emit a compact receipt: `lesson +1 → <tag>`, promoted
-   files, archived path, `delete prompted`, `digest refreshed`. Then
-   `set-state.sh idle`.
+7. **Finish the branch (feature.compound only — LAST).** All spec work above
+   (lessons, promote, archive move, digest, delete-prompt) is the flow's own and is
+   now done; only the branch close-out remains. Sequenced last because it merges.
+
+   > **Delegate — superpowers:finishing-a-development-branch**
+   > - announce: "delegating branch close-out to `superpowers:finishing-a-development-branch` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - inject: the narrow git-cleanup only — merge/branch lifecycle; the spec work is already complete
+   > - redirect: nothing to `.spec` — it touches only git; the archive move was the flow's own work above, not this skill's
+   > - skip: the full compound procedure — it does not know the spec format (see [spec feature.md](.agents/skills/spec/feature.md) § Compound note)
+
+8. **Receipt (ultra).** Emit a compact receipt: `lesson +1 → <tag>`, promoted
+   files, archived path, `delete prompted`, `branch finished`, `digest refreshed`.
+   Then `set-state.sh idle`.
 
 ## Rules
 

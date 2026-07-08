@@ -13,4 +13,4 @@ Do exactly this, in order:
 4. If `$ARGUMENTS` IS in `next`, transition by running `.agents/skills/vibe/scripts/set-state.sh $ARGUMENTS` — do not write `state.json` directly. `feature` is preserved unless the user asked to change it. There is no `notes` field.
 5. Print a one-line confirmation: `→ <new_state>`.
 
-Do NOT start doing the new state's work in this turn. The user will prompt next; the inject hook will tell you what to do then.
+Continue directly into the new state's work now — do not wait for the next user prompt.

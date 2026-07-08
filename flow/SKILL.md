@@ -30,11 +30,19 @@ Read the phase file for your current (or target) state, then follow it.
 | `feature` | [feature.md](feature.md) | `feature.design`, `feature.plan`, `feature.impl` |
 | `quick` | [quick.md](quick.md) | `quick.triage`, `quick.fix` |
 | `verify` | [verify.md](verify.md) | `feature.verify`, `quick.verify` |
-| `compound` | [compound.md](compound.md) | `strategy.compound`, `feature.compound` |
+| `compound` | [compound.md](compound.md) | `strategy.compound`, `feature.compound`, `quick.compound` |
 | `amend` | [amend.md](amend.md) | `amend` (modifier) |
 
 `scripts/` and `reference/` back the setup phase: `merge-agents.sh`, the `AGENTS.md`
 template, and `adapters.json`.
+
+## Precedence
+
+The cursor owns sequencing and artifact destinations; delegates own method.
+When a delegated skill's text names its own artifact path, commits its own
+output, or hands off to another skill, the current state's orders win: write
+to the state's surface, leave commits to the flow, transition only via
+`set-state.sh`. `set-state.sh idle` is always legal — abort ends any flow.
 
 ## Orders (D12)
 
@@ -68,31 +76,35 @@ skill=vibe · spec feature.md flow steps 1–4 (locate→interview WHAT→rigor 
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.plan -->
-skill=vibe · spec feature.md step 5 (plan units) · WRITE .spec/features/<feature>/plan.md · STABLE unit IDs (<feature>/n) cite R-IDs · verification per unit · no source · caveman=lite · HUMAN GATE before impl · next: feature.impl
+skill=vibe · spec feature.md step 5 (plan units) · WRITE .spec/features/<feature>/plan.md · STABLE unit IDs (<feature>/n) cite R-IDs · verification per unit · no source · caveman=lite · HUMAN GATE before impl · gate: plan-approval+mode · next: feature.impl
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.impl -->
-skill=vibe · delegate executing-plans + TDD · WRITE src/**, tests/** · do NOT edit .spec/** · cite plan unit IDs (<feature>/n) in tests/commits · caveman=full · next: feature.verify
+skill=vibe · delegate executing-plans (interactive, default) | subagent-driven-development (handover) + TDD + receiving-code-review on verify-routed re-entry · WRITE src/**, tests/** · do NOT edit .spec/** · cite plan unit IDs (<feature>/n) in tests/commits · caveman=full · next: feature.verify
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.verify -->
-skill=vibe · delegate verification-before-completion + requesting-code-review + code-reviewer (systematic-debugging on fail) · gather EVIDENCE per plan unit ID · no spec writes · caveman=full · HUMAN GATE before ship · next: feature.compound (pass) | feature.impl (targeted fix) | feature.plan (major drift)
+skill=vibe · delegate verification-before-completion + requesting-code-review + code-reviewer (systematic-debugging on fail) · gather EVIDENCE per plan unit ID · no spec writes · caveman=full · HUMAN GATE before ship · gate: ship-approval · next: feature.compound (pass) | feature.impl (targeted fix) | feature.plan (major drift)
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.compound -->
-skill=vibe · delegate finishing-a-development-branch · WRITE tagged .spec/lessons.md, promote cross-cutting decisions to root specs, archive .spec/features/<feature> -> .spec/archive/<feature> · regen-active-rules.sh refreshes digest · prompt to delete archive after validation · receipts caveman=ultra, body=lite · next: idle
+skill=vibe · WRITE tagged .spec/lessons.md, promote cross-cutting decisions to root specs, archive .spec/features/<feature> -> .spec/archive/<feature> · regen-active-rules.sh refreshes digest · prompt to delete archive after validation · delegate finishing-a-development-branch LAST (it merges) · receipts caveman=ultra, body=lite · next: idle
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.triage -->
-skill=vibe · READ .spec/lessons.md first · delegate superpowers:systematic-debugging · diagnose, do NOT fix yet · caveman=full (NOT ultra: triage must keep edge cases) · if scope balloons, escalate to feature.design · next: quick.fix
+skill=vibe · READ .spec/lessons.md first · defect: delegate superpowers:systematic-debugging (diagnose only, no fix) | non-defect: self-scope, no delegate · escalation to feature.design: announce AND confirm · caveman=full (NOT ultra) · next: quick.fix
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.fix -->
-skill=vibe · delegate TDD · WRITE src/** (+ optional .spec/quick/<slug>.md note) · no root spec writes · caveman=full · next: quick.verify
+skill=vibe · delegate TDD + receiving-code-review on verify-routed re-entry · WRITE src/** (+ optional .spec/quick/<slug>.md note) · no root spec writes · caveman=full · next: quick.verify
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.verify -->
-skill=vibe · delegate verification-before-completion + code-reviewer · gather EVIDENCE the fix works and breaks nothing · no spec writes · caveman=full · next: idle
+skill=vibe · delegate verification-before-completion + code-reviewer · gather EVIDENCE the fix works and breaks nothing · no spec writes · caveman=full · next: quick.fix (findings) | quick.compound (lesson) | idle
+<!-- /vibe:orders -->
+
+<!-- vibe:orders:quick.compound -->
+skill=vibe · OPTIONAL lesson from quick fix: append tagged .spec/lessons.md entry, regen-active-rules.sh · skip freely (default: this state only when a durable lesson surfaced) · receipts caveman=ultra, body=lite · next: idle
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:amend -->
