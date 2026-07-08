@@ -21,6 +21,7 @@ Everything between is autonomous.
    > **Delegate — superpowers:brainstorming**
    > - announce: "delegating to `superpowers:brainstorming` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
    > - inject: spec feature.md steps 1–4 as the dialogue format (RFC-2119 WHAT, GWT scenarios, Scope-table boundaries); caveman lite
+   > - inject: batch clarifying questions into ONE organized list per round (feature-dev Phase 3 pattern); take a SINGLE design approval at the end — no one-question-per-message, no per-section approvals; the flow's only gates are plan and ship
    > - redirect: design doc → `.spec/features/<name>/{product,tech,design}.md` (design.md only at full rigor)
    > - skip: its terminal write under `docs/superpowers/specs/`, its self-commit, its writing-plans handoff
 
@@ -47,13 +48,26 @@ Everything between is autonomous.
    Write `.spec/features/<name>/plan.md` with **stable unit IDs**; IDs never change
    on reorder or split. **Human gate:** confirm the plan before impl.
 
+   At the plan gate, also **establish the working branch**: `git checkout -b
+   feature/<name>` (or confirm an existing non-default branch). Both impl modes and
+   the `feature.compound` branch close-out assume it; never implement on the default
+   branch without explicit consent (both executors carry their own main-branch
+   guard). In **handover** mode ONLY, additionally OFFER an isolated worktree
+   (`superpowers:using-git-worktrees`' consent-first pattern — offer, honor a
+   standing decline, never impose); the default stays the current branch, and verify
+   runs against the same tree either way.
+
 4. **Impl** (`feature.impl`, caveman full). Mode is picked at the plan gate;
    default **interactive**. Both modes consume the hybrid
    `.spec/features/<name>/plan.md` (units in Seq order; per-unit **Steps** are the
-   task checklist) and run on the **current branch — no worktree**, so verify and
-   the receipt run against the same tree. `superpowers:test-driven-development`
+   task checklist) and run on the **feature branch established at the plan gate**
+   (worktree only if offered+accepted in handover mode), so verify and the receipt
+   run against the same tree. `superpowers:test-driven-development`
    applies within either mode (one reproducing test first, then the minimal code).
-   Write `src/**` and `tests/**` only — do **not** edit `.spec/**`.
+   Write `src/**` and `tests/**` only — do **not** edit `.spec/**`. When re-entering
+   impl from verify-routed findings, apply `superpowers:receiving-code-review` —
+   verify each finding against the codebase before implementing; push back with
+   technical reasoning if a finding is wrong.
 
    **interactive** (default) — drive the plan turn by turn:
 

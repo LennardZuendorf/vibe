@@ -104,7 +104,7 @@
     },
     "feature.impl": {
       "skill": "vibe",
-      "delegates": ["superpowers:executing-plans", "superpowers:subagent-driven-development", "superpowers:test-driven-development"],
+      "delegates": ["superpowers:executing-plans", "superpowers:subagent-driven-development", "superpowers:test-driven-development", "superpowers:receiving-code-review"],
       "caveman": "full",
       "reads": [".spec/features/<feature>/plan.md"],
       "writes": ["src/**", "tests/**"],
@@ -145,7 +145,7 @@
     },
     "quick.fix": {
       "skill": "vibe",
-      "delegates": ["superpowers:test-driven-development"],
+      "delegates": ["superpowers:test-driven-development", "superpowers:receiving-code-review"],
       "caveman": "full",
       "reads": [".spec/lessons.md"],
       "writes": ["src/**", ".spec/quick/<slug>.md"],
