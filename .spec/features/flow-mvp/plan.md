@@ -401,11 +401,56 @@ inspected.
 
 ---
 
+### flow-mvp/11 — Methodology corrections (added via amend, 2026-07-08)
+
+**Goal:** fold in the methodology review's corrections to this feature's own
+output: (a) establish `feature/<name>` branch at the plan gate (the flow
+assumed a branch no state creates — finishing-a-development-branch, both
+executors' main-branch guards, and the spec lifecycle presuppose it; offer a
+worktree only in handover mode); (b) branch quick.triage by work type —
+systematic-debugging Phases 1–3 for defects, self-executed scoping for
+non-defect quick work — and scope the one-reproducing-test rule to bug-shaped
+changes (TDD's own exceptions list); (c) inject batched clarifying questions +
+single design approval into feature.design's brainstorming block (feature-dev
+Phase 3 pattern — protects the two-gate promise); (d) add
+`superpowers:receiving-code-review` to feature.impl and quick.fix delegates for
+verify-routed findings; (e) add the writing-plans Interfaces (Consumes/Produces)
+block per unit to the hybrid template (load-bearing in handover mode).
+
+**Requirements:** R2, R4, R5 (corrections); methodology review 2026-07-08
+
+**Dependencies:** flow-mvp/5, flow-mvp/8
+
+**Files:**
+
+```
+flow/feature.md            # branch step at plan gate; batched-questions inject; receiving block
+flow/quick.md              # triage work-type branch; TDD rule scoped to defects; receiving block
+flow/state-machine.json    # feature.impl + quick.fix delegates += receiving-code-review
+flow/SKILL.md              # orders tweaks if needed (byte budget holds)
+spec/reference/templates/feature-plan.md   # per-unit Interfaces block
+```
+
+**Test scenarios:**
+- machine⊆prose test still green with receiving-code-review added.
+- Template test extended: Interfaces block present.
+
+**Verification:** `bash flow/tests/run.sh && bash spec/tests/run.sh` green.
+
+---
+
 ## Open Questions
 
 1. **Receipt shape** — minimal (commands + exit codes) vs per-unit verdict
    table? Recommendation: per-unit table for `feature.verify`, minimal for
    `quick.verify`; decide at flow-mvp/9.
+2. **Deferred methodology follow-ups (ship-gate decision):** multi-lens review
+   at feature.verify (2–3 parallel code-reviewer dispatches with distinct
+   focuses); wire `/spec research` into strategy.brainstorm / feature.design as
+   an optional evidence step; adopt ce-compound-refresh's
+   Keep/Update/Consolidate/Replace/Delete staleness pass over lessons.md from
+   strategy.compound. Plus one-liners: fresh-target exercise as first-class
+   verify evidence; offer writing-skills when a diff is skill prose.
 
 *(Resolved: gates are keyed by edge — `feature.verify` has three exits and only
 the compound edge is gated; the state-level design's "single gated exit"
