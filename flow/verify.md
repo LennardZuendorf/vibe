@@ -7,7 +7,7 @@ Serves two states:
 
 - `feature.verify` → `feature.compound` (pass) | `feature.impl` (targeted fix) |
   `feature.plan` (major drift)
-- `quick.verify` → `idle`
+- `quick.verify` → `quick.fix` (findings) | `quick.compound` (lesson) | `idle`
 
 ## Procedure
 
@@ -36,7 +36,7 @@ Serves two states:
    > **Delegate — superpowers:requesting-code-review + code-reviewer**
    > - announce: "delegating review to `superpowers:requesting-code-review` (dispatch) with `code-reviewer` (reviewer template) — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
    > - inject: requesting-code-review's dispatch protocol; `code-reviewer`'s 0–100 confidence rubric; keep only findings at confidence ≥ 80
-   > - redirect: findings route to `feature.impl` (feature) / `quick.fix` (quick) — NEVER fixed here; verify writes no `src/**`
+   > - redirect: findings route to `feature.impl` (feature) / `quick.fix` (quick) — NEVER fixed here; verify writes no `src/**`. COPY these redirect/skip lines into the reviewer (Task) prompt — subagents get no per-turn orders
    > - skip: the upstream "fix Critical immediately" step and any self-commit — routing owns the fix
 
 5. **On failure.**

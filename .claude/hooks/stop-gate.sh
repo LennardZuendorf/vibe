@@ -93,6 +93,10 @@ if [[ "$STATE" == "feature.verify" || "$STATE" == "quick.verify" ]]; then
     # receipt no longer reflects the tree. No git or a clean tree -> existence-only
     # (pass). The evidence dir is excluded (a receipt is always newer than the
     # tree it describes).
+    # Known fail-OPEN cases (never false-block, per the speed-bump posture):
+    # porcelain paths are repo-root-relative, so when $ROOT is a subdirectory of
+    # an enclosing git repo the -e probe misses and staleness no-ops; C-quoted
+    # non-ASCII paths (core.quotePath) are likewise skipped.
     CH="$(git_changed || true)"
     if [[ -n "$CH" ]]; then
       stale=""

@@ -30,7 +30,7 @@ Read the phase file for your current (or target) state, then follow it.
 | `feature` | [feature.md](feature.md) | `feature.design`, `feature.plan`, `feature.impl` |
 | `quick` | [quick.md](quick.md) | `quick.triage`, `quick.fix` |
 | `verify` | [verify.md](verify.md) | `feature.verify`, `quick.verify` |
-| `compound` | [compound.md](compound.md) | `strategy.compound`, `feature.compound` |
+| `compound` | [compound.md](compound.md) | `strategy.compound`, `feature.compound`, `quick.compound` |
 | `amend` | [amend.md](amend.md) | `amend` (modifier) |
 
 `scripts/` and `reference/` back the setup phase: `merge-agents.sh`, the `AGENTS.md`
@@ -88,11 +88,11 @@ skill=vibe · delegate verification-before-completion + requesting-code-review +
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.compound -->
-skill=vibe · delegate finishing-a-development-branch · WRITE tagged .spec/lessons.md, promote cross-cutting decisions to root specs, archive .spec/features/<feature> -> .spec/archive/<feature> · regen-active-rules.sh refreshes digest · prompt to delete archive after validation · receipts caveman=ultra, body=lite · next: idle
+skill=vibe · WRITE tagged .spec/lessons.md, promote cross-cutting decisions to root specs, archive .spec/features/<feature> -> .spec/archive/<feature> · regen-active-rules.sh refreshes digest · prompt to delete archive after validation · delegate finishing-a-development-branch LAST (it merges) · receipts caveman=ultra, body=lite · next: idle
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.triage -->
-skill=vibe · READ .spec/lessons.md first · delegate superpowers:systematic-debugging · diagnose, do NOT fix yet · caveman=full (NOT ultra: triage must keep edge cases) · if scope balloons, escalate to feature.design · next: quick.fix
+skill=vibe · READ .spec/lessons.md first · defect: delegate superpowers:systematic-debugging (diagnose only, no fix) | non-defect: self-scope, no delegate · escalation to feature.design: announce AND confirm · caveman=full (NOT ultra) · next: quick.fix
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.fix -->
@@ -100,7 +100,7 @@ skill=vibe · delegate TDD + receiving-code-review on verify-routed re-entry · 
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.verify -->
-skill=vibe · delegate verification-before-completion + code-reviewer · gather EVIDENCE the fix works and breaks nothing · no spec writes · caveman=full · next: idle
+skill=vibe · delegate verification-before-completion + code-reviewer · gather EVIDENCE the fix works and breaks nothing · no spec writes · caveman=full · next: quick.fix (findings) | quick.compound (lesson) | idle
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.compound -->

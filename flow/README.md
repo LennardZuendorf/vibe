@@ -53,7 +53,7 @@ The cursor `.agents/skills/vibe/state.json` = `{flow, phase, feature, updated}`
 points at exactly one state in
 [state-machine.json](state-machine.json) — the static source of truth for each
 state's `skill`, `delegates`, frozen `caveman` level, write surface, and legal
-`next`. The machine has **15 state entries**: three flows, plus `setup`, `idle`,
+`next`. The machine has **16 state entries**: three flows, plus `setup`, `idle`,
 and the `amend` modifier.
 
 ```mermaid
@@ -71,7 +71,8 @@ flowchart LR
         V -->|targeted fix| IM
     end
     subgraph quick
-        T[triage] --> F[fix] --> QV[verify]
+        T[triage] --> F[fix] --> QV[verify] --> QC[compound]
+        QV -->|findings| F
     end
     I --> SD --> I
     I --> SB

@@ -1,7 +1,7 @@
 # quick — small fixes
 
 The low-ceremony path. Its existence keeps heavy process off vibe-sized work.
-States: `quick.triage → quick.fix → quick.verify → idle`.
+States: `quick.triage → quick.fix → quick.verify → (quick.compound | quick.fix | idle)`.
 
 ## Procedure
 

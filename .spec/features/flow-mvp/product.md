@@ -108,9 +108,10 @@ stop-per-transition line are rewritten to gated-edges-only.
 **handover** (`superpowers:subagent-driven-development`) modes, both consuming
 the hybrid `plan.md`. SDD runtime artifacts stay in `.superpowers/**`
 (gitignored, runtime-not-memory); both modes exit to `feature.verify`. Both
-modes run on the **current branch — no worktree** (the contract blocks inject
-this stance), so verify and the receipt run against the same tree. Mode is
-chosen at the plan gate; default interactive.
+modes run on the **feature branch established at the plan gate** (per
+flow-mvp/11a; a worktree is offered only in handover mode, consent-first), so
+verify and the receipt run against the same tree. Mode is chosen at the plan
+gate; default interactive.
 
 #### Scenario: full handover still audited
 - Given `feature.impl` in handover mode

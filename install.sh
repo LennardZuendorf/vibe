@@ -127,27 +127,38 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   if [[ "$WANT_FLOW" -eq 1 ]]; then
     if [[ -e "$TARGET/.agents/skills/vibe" ]]; then
       if [[ -f "$TARGET/.agents/skills/vibe/state.json" && "$ASSUME_YES" -eq 0 ]]; then
-        say "remove .agents/skills/vibe (preserving the flow cursor; re-run with --yes to remove it)"
+        say "remove .agents/skills/vibe (preserving the flow cursor and evidence receipts; re-run with --yes to remove them)"
         if [[ "$DRY_RUN" -eq 0 ]]; then
           KEPT_CURSOR="$(mktemp)"; cp "$TARGET/.agents/skills/vibe/state.json" "$KEPT_CURSOR"
+          KEPT_EVID=""
+          if [[ -d "$TARGET/.agents/skills/vibe/evidence" ]]; then
+            KEPT_EVID="$(mktemp -d)"; cp -R "$TARGET/.agents/skills/vibe/evidence/." "$KEPT_EVID/"
+          fi
           rm -rf "$TARGET/.agents/skills/vibe"
           mkdir -p "$TARGET/.agents/skills/vibe"
           mv -f "$KEPT_CURSOR" "$TARGET/.agents/skills/vibe/state.json"
+          if [[ -n "$KEPT_EVID" ]]; then
+            mkdir -p "$TARGET/.agents/skills/vibe/evidence"
+            cp -R "$KEPT_EVID/." "$TARGET/.agents/skills/vibe/evidence/"
+            rm -rf "$KEPT_EVID"
+          fi
         fi
       else
         say "remove .agents/skills/vibe"
         [[ "$DRY_RUN" -eq 1 ]] || rm -rf "$TARGET/.agents/skills/vibe"
       fi
     fi
-    # --yes removes the cursor, so fully invert install: strip the cursor stanza
-    # install appended to .gitignore, leaving any other ignore rules intact.
+    # --yes removes the cursor + receipts, so fully invert install: strip both
+    # stanzas install appended to .gitignore, leaving other ignore rules intact.
     if [[ "$ASSUME_YES" -eq 1 && -f "$TARGET/.gitignore" ]]; then
-      say "strip the vibe cursor stanza from .gitignore"
+      say "strip the vibe cursor and evidence stanzas from .gitignore"
       if [[ "$DRY_RUN" -eq 0 ]]; then
         GI="$TARGET/.gitignore"; GI_TMP="$(mktemp)"
         grep -vxF \
           -e '# vibe mutable flow cursor (runtime; version state-machine.json, not this)' \
-          -e '.agents/skills/vibe/state.json' "$GI" 2>/dev/null \
+          -e '.agents/skills/vibe/state.json' \
+          -e '# vibe evidence receipts (runtime verification output, not memory)' \
+          -e '.agents/skills/vibe/evidence/' "$GI" 2>/dev/null \
           | awk 'NF{last=NR} {line[NR]=$0} END{for(i=1;i<=last;i++) print line[i]}' >"$GI_TMP" || true
         if [[ -s "$GI_TMP" ]]; then mv -f "$GI_TMP" "$GI"; else rm -f "$GI_TMP" "$GI"; fi
       fi
