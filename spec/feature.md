@@ -53,7 +53,10 @@ Write `plan.md` with stable `feature/n` unit IDs (`### <name>/1`, `### <name>/2`
 - Each unit cites requirement IDs from `product.md`
 - Each unit names test scenarios and verification evidence (command, test path, behaviour check)
 - Same-feature dependencies only — cross-feature order is a whole-feature gate in root `.spec/plan.md` Feature Sequence
-- Add the feature to the root `.spec/plan.md` Feature Sequence
+- The root Feature Sequence row is added at **COMPOUND** (the promote step), not
+  here: root `.spec/plan.md` is write-blocked during `feature.plan` under the
+  flow's write invariants. Track it as a compound-step obligation (see § Merged
+  during COMPOUND below).
 
 > **Superpower tip:** Delegate plan decomposition to `superpowers:writing-plans`. Before delegating, inject [reference/plan.md](reference/plan.md) plus the stable-ID rules (`<name>/n`, never renumber, same-feature deps only) as constraint context, along with the feature's `product.md` requirements. Tell the user: *"I can hand this to `superpowers:writing-plans` — it's purpose-built for decomposing requirements into implementable units. Want me to do that?"*
 
@@ -144,7 +147,7 @@ Created  →  Consumed  →  Merged  →  Archived  →  Deleted (before merge)
 4. **Verified against plan.** Evidence checked per unit verification table — not agent assertions alone.
 5. **Merged during COMPOUND.** Cross-cutting blocks from `features/<name>/tech.md` promote into root `tech.md` (or branch docs). Feature-only detail does not promote.
 
-   > **Compound note:** The compound sequence is spec-skill-owned — follow [SKILL.md § Wrapped-up features](SKILL.md): promote `<!-- merge -->` blocks → record a tagged lesson ([strategy.md § Lessons](strategy.md) format) → update plan DONE row → archive folder → run `validate.sh` → prompt to delete. `superpowers:finishing-a-development-branch` handles the narrow git-cleanup step after the spec work is done (archive move + final commit). Don't hand it the full compound procedure — it doesn't know the spec format.
+   > **Compound note:** The compound sequence is spec-skill-owned — follow [SKILL.md § Wrapped-up features](SKILL.md): promote `<!-- merge -->` blocks → add the root `.spec/plan.md` Feature Sequence row (if not already present) and mark it DONE → record a tagged lesson ([strategy.md § Lessons](strategy.md) format) → archive folder → run `validate.sh` → prompt to delete. The archive move is the flow's own work; `superpowers:finishing-a-development-branch` handles only the git close-out (branch merge/lifecycle) after the spec work is done. Don't hand it the full compound procedure — it doesn't know the spec format.
 
 6. **Archived then deleted.** Move `.spec/features/<name>/` to `archive/<name>/` at wrapup as a transient safety net. After validation passes, the agent prompts the user to delete the archive — the folder is gone **before the branch merges**. CODE IS TRUTH; archive is never read for active work. See § Archive and delete.
 

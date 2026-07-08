@@ -121,7 +121,7 @@ Thin shells over `scripts/`; the allow/warn/block policy lives once in
 |---|---|---|
 | `user-prompt-submit-inject.sh` | `UserPromptSubmit` | injects the current state's orders every turn |
 | `pre-tool-use-guard.sh` | `PreToolUse` (Edit/Write/NotebookEdit) | hard-blocks the three write invariants |
-| `stop-gate.sh` | `Stop` | warn-first exit checks for the state |
+| `stop-gate.sh` | `Stop` | warn-first exit checks; blocks in `*.verify` without a fresh evidence receipt |
 
 Wired automatically by `install.sh` into `.claude/settings.json`; hook scripts resolve their data via `$CLAUDE_PROJECT_DIR`.
 
@@ -157,6 +157,7 @@ All under `.agents/skills/vibe/scripts/` at runtime.
 | [regen-active-rules.sh](scripts/regen-active-rules.sh) | render `lessons.md` → the `AGENTS.md` active-rules digest |
 | [doctor.sh](scripts/doctor.sh) | warn-only install health report (always exits 0) |
 | [merge-agents.sh](scripts/merge-agents.sh) | `AGENTS.md` marker merge / unmerge + adapter symlinks |
+| [merge-settings.sh](scripts/merge-settings.sh) | wires the three hooks into `.claude/settings.json` |
 
 ## Dependencies & degrade
 
@@ -168,7 +169,10 @@ dependency degrades gracefully — a missing one warns, never hard-fails.**
 |---|---|---|
 | [superpowers](https://github.com/obra/superpowers) | skill-collection | phases self-execute from their constraint documents |
 | feature-dev | subagent-collection | the orchestrator does the explore / architect / review step inline |
-| [caveman](https://github.com/JuliusBrussee/caveman) | skill-collection | `check-skills.sh` prints the caveman level inline (output compression only) |
+
+> Caveman levels (`lite`/`full`/`ultra`) are vibe's own frozen output-compression
+> vocabulary, not a dependency — the naming credits
+> [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) as origin.
 
 ## File map
 
@@ -181,7 +185,7 @@ The flow half. Addressed at runtime under `.agents/skills/vibe/`.
 | [state-machine.json](state-machine.json) | static machine — states, skills, caveman, `next` (data, not prose) |
 | [state.example.json](state.example.json) | cursor template; copy to `state.json` to test transitions |
 | `state.json` | runtime cursor — gitignored; created by the installer / `set-state.sh` |
-| [scripts/](scripts/) | the eight scripts above |
+| [scripts/](scripts/) | the nine scripts above |
 | [reference/deps.json](reference/deps.json) | dependency manifest (the table above) |
 | [reference/adapters.json](reference/adapters.json) | adapter definitions consumed by setup / merge |
 | [reference/templates/AGENTS.md](reference/templates/AGENTS.md) | the merged instructions block template |

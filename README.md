@@ -143,8 +143,9 @@ The workflow is **one skill** (`vibe`) with a router plus per-phase files
 (`setup`, `strategy`, `feature`, `quick`, `verify`, `compound`, `amend`). Each
 turn, the `UserPromptSubmit` hook injects the current state's orders (resolved
 from the linked skill by `orders.sh` — D12); a `PreToolUse` hook guards the three
-write invariants; a `Stop` hook runs warn-first exit checks. `amend` is a
-modifier, not a flow: a scoped edit from any state that returns there.
+write invariants; a `Stop` hook runs warn-first exit checks and blocks in
+`*.verify` without a fresh evidence receipt. `amend` is a modifier, not a flow:
+a scoped edit from any state that returns there.
 
 Deep dive: [`flow/README.md`](flow/README.md).
 
@@ -159,7 +160,10 @@ one warns, never hard-fails.**
 |---|---|---|---|
 | superpowers | skill-collection | [obra/superpowers](https://github.com/obra/superpowers) | flow phases self-execute from their constraint documents |
 | feature-dev | subagent-collection | Claude Code plugin: feature-dev | the orchestrator performs the explore / architect / review step inline |
-| caveman | skill-collection | [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) | `check-skills.sh` prints the level definition inline (output compression only) |
+
+> Caveman levels (`lite`/`full`/`ultra`) are vibe's own frozen output-compression
+> vocabulary, not a dependency — the naming credits
+> [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) as origin.
 
 ## Platform support
 

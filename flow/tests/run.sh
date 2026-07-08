@@ -118,6 +118,11 @@ assert_contains "vibe-flow/3" "check-skills warns on assumed-installed superpowe
 assert_contains "vibe-flow/3" "check-skills never hard-fails (exit 0)" "$out" "rc=0"
 out="$(bash "$SCRIPTS/check-skills.sh" caveman ultra)"
 assert_contains "vibe-flow/3" "caveman fallback prints level definition" "$out" "caveman[ultra]"
+# flow-mvp/10 — caveman is demoted out of deps.json (vibe vocabulary, not a
+# dependency); check-skills.sh still prints the frozen level definition.
+out="$(bash "$SCRIPTS/check-skills.sh" caveman full 2>&1; echo "rc=$?")"
+assert_contains "flow-mvp/10" "check-skills.sh caveman full still prints the frozen level definition" "$out" "caveman[full]"
+assert_contains "flow-mvp/10" "check-skills.sh caveman full exits 0" "$out" "rc=0"
 out="$(bash "$SCRIPTS/check-skills.sh" setup.detect)"
 assert_contains "vibe-flow/3" "check-skills confirms bundled spec when delegated" "$(bash "$SCRIPTS/check-skills.sh" strategy.spec 2>&1)" "spec"
 
@@ -380,6 +385,12 @@ DEPS="$FLOW/reference/deps.json"
 jq -e . "$DEPS" >/dev/null 2>&1 && pass "install-tooling/4" "deps.json is valid JSON" || fail "install-tooling/4" "deps.json JSON"
 missing_field="$(jq -r '[.deps[] | select((has("name") and has("kind") and has("source") and has("required_by") and has("degrade")) | not)] | length' "$DEPS")"
 assert_eq "install-tooling/4" "every deps.json entry has name/kind/source/required_by/degrade" "$missing_field" "0"
+# flow-mvp/10 — caveman is demoted out of deps.json entirely (vibe vocabulary,
+# not an external dependency); superpowers + feature-dev remain.
+dep_names="$(jq -r '[.deps[].name] | join(",")' "$DEPS")"
+assert_not_contains "flow-mvp/10" "deps.json has no caveman entry" "$dep_names" "caveman"
+assert_contains "flow-mvp/10" "deps.json still declares superpowers" "$dep_names" "superpowers"
+assert_contains "flow-mvp/10" "deps.json still declares feature-dev" "$dep_names" "feature-dev"
 # Healthy dogfood repo: the sandbox lacks .claude/spec, so this check runs the
 # (byte-identical) sandbox doctor against the real SRC_ROOT explicitly. doctor is
 # read-only — it never writes the repo or its cursor.
@@ -394,7 +405,7 @@ assert_contains "install-tooling/4" "doctor reports each adapter hook script pre
 assert_contains "install-tooling/4" "doctor reports adapter.activation ok in the dogfood source repo" "$out" "ok   adapter.activation"
 assert_contains "install-tooling/4" "doctor lists dep superpowers" "$out" "dep.superpowers"
 assert_contains "install-tooling/4" "doctor lists dep feature-dev" "$out" "dep.feature-dev"
-assert_contains "install-tooling/4" "doctor lists dep caveman" "$out" "dep.caveman"
+assert_not_contains "flow-mvp/10" "doctor no longer lists dep.caveman" "$out" "dep.caveman"
 # Broken install (dead vibe symlink, no machine/adapter): warns, still exits 0.
 d="$(mktemp -d)"; mkdir -p "$d/.spec" "$d/.agents/skills"
 ln -s /nonexistent-vibe "$d/.agents/skills/vibe"

@@ -14,13 +14,6 @@
       "source": "Claude Code plugin: feature-dev (code-explorer, code-architect, code-reviewer)",
       "required_by": ["feature.*", "quick.*"],
       "degrade": "the orchestrator performs the explore / architect / review step inline"
-    },
-    {
-      "name": "caveman",
-      "kind": "skill-collection",
-      "source": "https://github.com/JuliusBrussee/caveman",
-      "required_by": ["*"],
-      "degrade": "check-skills.sh prints the caveman level definition inline (output compression only)"
     }
   ]
 }
