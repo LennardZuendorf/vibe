@@ -38,6 +38,18 @@ assert_contains()     { if [[ "$3" == *"$4"* ]]; then pass "$1" "$2"; else fail 
 assert_not_contains() { if [[ "$3" != *"$4"* ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        want NOT contains: $4"; fi; }
 assert_eq()           { if [[ "$3" == "$4" ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        want: $4"; echo "        got: $3"; fi; }
 mktmp() { mktemp -d "${TMPDIR:-/tmp}/vibe-adapt.XXXXXX"; }
+# mkshim TOOL... — a PATH dir symlinking a broad toolset MINUS the named tools, to
+# exercise graceful-degrade when an optional executor (jq / awk) is unavailable on
+# a target. Prints the dir path.
+mkshim() {
+  local dir; dir="$(mktmp)"
+  local excl=" $* " t p
+  for t in bash sh mkdir dirname basename date mktemp mv cp rm rmdir sed grep head tail cat env awk find readlink ln chmod cmp diff sort cksum jq; do
+    [[ "$excl" == *" $t "* ]] && continue
+    p="$(command -v "$t" 2>/dev/null)" && ln -s "$p" "$dir/$t"
+  done
+  printf '%s\n' "$dir"
+}
 
 echo "=== agent-instructions/2 — template + manifest ==="
 grep -qF '<!-- vibe:instructions:start -->' "$TEMPLATE" && grep -qF '<!-- vibe:active-rules:start -->' "$TEMPLATE" \
@@ -80,6 +92,34 @@ out="$(bash "$MERGE" link CLAUDE.md "$d")"; assert_contains "agent-instructions/
 [[ -L "$d/CLAUDE.md" && "$(readlink "$d/CLAUDE.md")" == "AGENTS.md" ]] && pass "agent-instructions/5" "relative symlink to AGENTS.md" || fail "agent-instructions/5" "symlink target"
 printf 'real\n' > "$d/WARP.md"
 if bash "$MERGE" link WARP.md "$d" >/dev/null 2>&1; then fail "agent-instructions/5" "real file must not be clobbered"; else pass "agent-instructions/5" "real file blocked (R5)"; fi
+# awk-less unmerge (marker lookup is grep -n + sed, not awk): with awk absent the
+# unmerge path still strips BOTH managed blocks. Discriminating — the old awk
+# marker lookup exits 127 under set -e and leaves the block intact.
+NOAWK="$(mkshim awk)"
+d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
+printf '\n## My Team\nkeep this prose\n' >> "$d/AGENTS.md"   # user prose => not a pure stub
+PATH="$NOAWK" "$NOAWK/bash" "$MERGE" unmerge "$d" >/dev/null 2>&1
+{ ! grep -qF 'vibe:instructions:start' "$d/AGENTS.md" && ! grep -qF 'vibe:active-rules:start' "$d/AGENTS.md" && grep -qF 'keep this prose' "$d/AGENTS.md"; } \
+  && pass "agent-instructions/3" "awk-less unmerge strips both blocks, keeps user prose" \
+  || fail "agent-instructions/3" "awk-less unmerge strips both blocks, keeps user prose"
+# branded-title cleanup, scenario 1 (user prose outside markers): after stripping
+# the blocks, the stranded '# AGENTS.md — vibe Engineering Guide' title vibe wrote
+# is removed too, leaving only the user's prose.
+grep -qF 'vibe Engineering Guide' "$d/AGENTS.md" \
+  && fail "agent-instructions/3" "unmerge removes the stranded vibe-branded title (user-prose case)" \
+  || pass "agent-instructions/3" "unmerge removes the stranded vibe-branded title (user-prose case)"
+rm -rf "$NOAWK" "$d"
+# branded-title cleanup, scenario 2 (active-rules regenerated post-install): the
+# regenerated block makes the file diverge from the pristine stub, so the stub
+# short-circuit does not fire; stripping the blocks strands the title. Removing it
+# leaves only whitespace, so the vibe-created file is deleted (no orphan title).
+d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
+sed 's/_No lessons recorded yet\._/- do the thing/' "$d/AGENTS.md" > "$d/AGENTS.md.n" && mv "$d/AGENTS.md.n" "$d/AGENTS.md"
+bash "$MERGE" unmerge "$d" >/dev/null 2>&1
+[[ ! -e "$d/AGENTS.md" ]] \
+  && pass "agent-instructions/3" "unmerge deletes the file when only the branded title would remain (regen case)" \
+  || fail "agent-instructions/3" "unmerge deletes the file when only the branded title would remain (regen case)"
+rm -rf "$d"
 
 echo ""
 echo "=== platform-adapters/4,5 — settings.json hook wiring (auto-wired, no plugin) ==="
@@ -131,6 +171,21 @@ else
   fail "platform-adapters/5" "settings.json with a user key must survive uninstall"
 fi
 rm -rf "$SB"
+# no-jq uninstall ordering: unwiring settings.json needs jq. If jq is absent the
+# unwire cannot complete, so the hook scripts it references must be LEFT in place
+# (deleting them would strand dead references). Discriminating — fails if uninstall
+# deletes the hooks before/regardless of the failed unwire.
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+NOJQ="$(mkshim jq)"
+PATH="$NOJQ" "$NOJQ/bash" "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+stillwired=0; grep -qF 'stop-gate.sh' "$SB/.claude/settings.json" 2>/dev/null && stillwired=1
+hooksok=1
+for h in user-prompt-submit-inject pre-tool-use-guard stop-gate; do
+  [[ -f "$SB/.claude/hooks/$h.sh" ]] || { hooksok=0; echo "        deleted hook: $h.sh"; }
+done
+assert_eq "platform-adapters/5" "no-jq uninstall leaves settings.json wired" "$stillwired" "1"
+assert_eq "platform-adapters/5" "no-jq uninstall keeps the three hook scripts (no dead refs)" "$hooksok" "1"
+rm -rf "$SB" "$NOJQ"
 
 echo ""
 echo "=== platform-adapters/1,2,3 — hooks against a real install ==="
@@ -255,6 +310,19 @@ assert_eq "flow-mvp" "no-jq set-state carries the feature across phases" "$kept"
 rc=0
 PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$SS" bogus.state >/dev/null 2>&1 || rc=$?
 assert_eq "flow-mvp" "no-jq set-state rejects an unknown state" "$rc" "1"
+# no-jq rejects a MACHINE META KEY masquerading as a state (discriminating: the
+# old grep matched any '"key":' so top-level meta keys "style" / "version" passed
+# validation as states). The tightened 4-space-indent + object-brace match rejects
+# both; a real state (idle) still validates without jq.
+rc=0
+PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$SS" style >/dev/null 2>&1 || rc=$?
+assert_eq "review-fix" "no-jq set-state rejects the meta key 'style' (not a state)" "$rc" "1"
+rc=0
+PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$SS" version >/dev/null 2>&1 || rc=$?
+assert_eq "review-fix" "no-jq set-state rejects the meta key 'version' (not a state)" "$rc" "1"
+rc=0
+PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$SS" idle >/dev/null 2>&1 || rc=$?
+assert_eq "review-fix" "no-jq set-state still accepts a real state (idle)" "$rc" "0"
 rm -rf "$NOJQ_BIN" "$SB"
 
 echo ""
@@ -399,10 +467,17 @@ mkdir -p "$SB/.spec"; printf 'user spec\n' > "$SB/.spec/product.md"
 # whole point of remove_shipped: surgical per-file removal, not rm -rf the dir).
 printf 'my command\n' > "$SB/.claude/commands/mine.md"
 printf 'my hook\n' > "$SB/.claude/hooks/custom.sh"
+# ...and co-located in the SHARED SKILLS dirs too: uninstall must invert the copy
+# per-file, never blanket rm -rf the skill dir (which would take these with it).
+printf 'user note\n' > "$SB/.agents/skills/spec/mynote.md"
+mkdir -p "$SB/.agents/skills/spec/sub"; printf 'nested\n' > "$SB/.agents/skills/spec/sub/deep.txt"
+printf 'user flow note\n' > "$SB/.agents/skills/vibe/mynote.md"
 printf '## My Team\nkeep this prose\n\n%s\n' "$(cat "$SB/AGENTS.md")" > "$SB/AGENTS.md.new" && mv "$SB/AGENTS.md.new" "$SB/AGENTS.md"
 bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
 ok=1
-[[ ! -e "$SB/.agents/skills/spec" ]] || { ok=0; echo "        spec skill survived uninstall"; }
+# Check the shipped payload is gone (the dirs themselves survive here because the
+# test seeds user files into them — that survival is asserted separately below).
+[[ ! -e "$SB/.agents/skills/spec/SKILL.md" ]] || { ok=0; echo "        spec skill survived uninstall"; }
 [[ ! -e "$SB/.agents/skills/vibe/SKILL.md" ]] || { ok=0; echo "        vibe SKILL.md survived uninstall"; }
 [[ ! -e "$SB/.claude/hooks/stop-gate.sh" ]] || { ok=0; echo "        adapter hook script survived uninstall"; }
 assert_eq "install-tooling/3" "--uninstall removes managed artifacts" "$ok" "1"
@@ -410,6 +485,18 @@ assert_eq "install-tooling/3" "--uninstall removes managed artifacts" "$ok" "1"
 { [[ -f "$SB/.claude/commands/mine.md" ]] && [[ -f "$SB/.claude/hooks/custom.sh" ]]; } \
   && pass "install-tooling/3" "co-located user files in shared adapter dirs survive uninstall" \
   || fail "install-tooling/3" "co-located user files in shared adapter dirs survive uninstall"
+# DISCRIMINATING (per-file uninstall inverse): user files dropped into BOTH shared
+# skills dirs survive, while the shipped payload is gone and emptied dirs pruned.
+# Fails against the old blanket `rm -rf .agents/skills/{spec,vibe}` (which took the
+# user files with it).
+{ [[ -f "$SB/.agents/skills/spec/mynote.md" ]] && [[ -f "$SB/.agents/skills/spec/sub/deep.txt" ]] \
+  && [[ -f "$SB/.agents/skills/vibe/mynote.md" ]]; } \
+  && pass "install-tooling/3" "user files in shared skills dirs survive uninstall" \
+  || fail "install-tooling/3" "user files in shared skills dirs survive uninstall"
+{ [[ ! -e "$SB/.agents/skills/spec/SKILL.md" ]] && [[ ! -e "$SB/.agents/skills/vibe/SKILL.md" ]] \
+  && [[ ! -e "$SB/.agents/skills/vibe/scripts" ]]; } \
+  && pass "install-tooling/3" "shipped skill payload removed and emptied dirs pruned" \
+  || fail "install-tooling/3" "shipped skill payload removed and emptied dirs pruned"
 grep -qF "keep this prose" "$SB/AGENTS.md" && pass "install-tooling/3" "user AGENTS.md prose preserved" || fail "install-tooling/3" "user prose preserved"
 grep -qF "vibe:instructions:start" "$SB/AGENTS.md" && fail "install-tooling/3" "managed AGENTS.md block removed" || pass "install-tooling/3" "managed AGENTS.md block removed"
 # discriminating: the vibe:active-rules block must ALSO be stripped (unmerge used

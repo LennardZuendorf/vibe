@@ -100,8 +100,8 @@ do_unmerge() {
   local target="$1" settings="$1/.claude/settings.json" tmp
   [[ -f "$settings" ]] || return 0
   if ! command -v jq >/dev/null 2>&1; then
-    warn "jq not found — remove the vibe hooks from $settings manually."
-    return 0
+    warn "jq not found — cannot unwire the vibe hooks from $settings; remove them by hand."
+    return 1
   fi
   tmp="$(mktemp)"
   if ! jq --arg m "$VIBE_MATCH" '

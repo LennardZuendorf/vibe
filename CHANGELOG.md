@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 A hardening wave after a full audit of the harness: verified bug fixes, mechanical
-compound enforcement, a warnings relay, and an honest-docs truth sweep.
+compound enforcement, a warnings relay, an honest-docs truth sweep, and a
+fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk targets.
 
 ### Added
 
@@ -50,6 +51,26 @@ compound enforcement, a warnings relay, and an honest-docs truth sweep.
 
 - Verified bugs across the flow engine, installer, and spec skill (see the branch
   review).
+- **Stranger-eval hardening (fresh no-git / no-jq / no-awk targets)** — a wave of
+  fixes reproduced by installing into a bare `mktemp -d` and running a docs-only
+  agent against it:
+  - `orders.sh` falls back to a jq-free cursor reader, so per-turn orders still
+    route to the current state on a target without jq;
+  - `doctor.sh` reports the flow cursor honestly in that same no-jq case;
+  - `set-state.sh`'s jq-free state validation rejects machine meta-keys (`style`,
+    `version`) instead of accepting them as states;
+  - the SF12 frontmatter check drops a GNU-awk-ism for portable awk;
+  - `install.sh --uninstall` inverts the copy **per file** for the shared
+    `.agents/skills/{spec,vibe}` dirs — user files dropped inside survive, the
+    shipped payload is removed, and emptied dirs are pruned — instead of a blanket
+    `rm -rf` of the shared dir;
+  - uninstall unwires `.claude/settings.json` **before** deleting the hook scripts
+    it references; on a no-jq target it leaves the scripts in place (no dead refs)
+    and prints the manual step;
+  - `merge-agents.sh` locates markers with `grep -n` + `sed` instead of awk, so
+    unmerge strips both managed blocks on an awk-less target;
+  - unmerge also removes the stranded vibe-branded title line, so a vibe-created
+    `AGENTS.md` leaves no orphan behind.
 - **Doc truth sweep** — retired the plugin-era claims (`.claude-plugin/plugin.json`
   + `hooks.json`); the live Claude wiring is `.claude/settings.json`. Corrected
   stale `tests/{spec,flow,adapters}/run.sh` paths to the split layout

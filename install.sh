@@ -36,16 +36,25 @@ note() { echo "install: $1"; }
 # never performed, so the plan reads the same whether or not it is applied.
 say() { if [[ "$DRY_RUN" -eq 1 ]]; then echo "install: [dry-run] would $1"; else echo "install: $1"; fi; }
 
-# remove_shipped SRC_DIR DST_DIR — delete from DST_DIR only the files that exist
-# in SRC_DIR (the precise inverse of a copy), then prune emptied subdirs. Never
-# touches co-located files the user added to a shared directory.
+# remove_shipped SRC_DIR DST_DIR [EXCLUDE_REL...] — delete from DST_DIR only the
+# files that exist in SRC_DIR (the precise inverse of a copy), skipping any whose
+# relative path equals or sits under an EXCLUDE_REL prefix (the artifacts install
+# scrubs before shipping, or the per-project runtime state it must preserve), then
+# prune emptied subdirs. Never touches co-located files the user added to a shared
+# directory.
 remove_shipped() {
-  local src="$1" dst="$2" f rel
+  local src="$1" dst="$2"; shift 2
+  local excludes=("$@") f rel ex skip
   [[ -d "$src" && -d "$dst" ]] || return 0
   while IFS= read -r f; do
     rel="${f#"$src"/}"
+    skip=0
+    for ex in "${excludes[@]}"; do
+      if [[ "$rel" == "$ex" || "$rel" == "$ex"/* ]]; then skip=1; break; fi
+    done
+    [[ "$skip" -eq 1 ]] && continue
     rm -f "$dst/$rel"
-  done < <(find "$src" -type f)
+  done < <(find -L "$src" -type f)
   find "$dst" -type d -empty -delete 2>/dev/null || true
 }
 
@@ -131,33 +140,36 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   SRC_MERGE="$SRC/.agents/skills/vibe/scripts/merge-agents.sh"
   SRC_MERGE_SETTINGS="$SRC/.agents/skills/vibe/scripts/merge-settings.sh"
 
+  # Per-file inverse of the install copy (uninstall lesson): remove exactly the
+  # relative paths the source bundle ships — minus the artifacts install scrubs
+  # before shipping (tests/, contributor AGENTS.md) — and prune emptied dirs.
+  # A user file dropped into either shared skills dir is never touched.
   if [[ "$WANT_SPEC" -eq 1 && -e "$TARGET/.agents/skills/spec" ]]; then
-    say "remove .agents/skills/spec"
-    [[ "$DRY_RUN" -eq 1 ]] || rm -rf "$TARGET/.agents/skills/spec"
+    say "remove the shipped files under .agents/skills/spec (user files preserved)"
+    [[ "$DRY_RUN" -eq 1 ]] || remove_shipped \
+      "$SRC/.agents/skills/spec" "$TARGET/.agents/skills/spec" tests AGENTS.md
   fi
 
   if [[ "$WANT_FLOW" -eq 1 ]]; then
     if [[ -e "$TARGET/.agents/skills/vibe" ]]; then
-      if [[ -f "$TARGET/.agents/skills/vibe/state.json" && "$ASSUME_YES" -eq 0 ]]; then
-        say "remove .agents/skills/vibe (preserving the flow cursor and evidence receipts; re-run with --yes to remove them)"
-        if [[ "$DRY_RUN" -eq 0 ]]; then
-          KEPT_CURSOR="$(mktemp)"; cp "$TARGET/.agents/skills/vibe/state.json" "$KEPT_CURSOR"
-          KEPT_EVID=""
-          if [[ -d "$TARGET/.agents/skills/vibe/evidence" ]]; then
-            KEPT_EVID="$(mktemp -d)"; cp -R "$TARGET/.agents/skills/vibe/evidence/." "$KEPT_EVID/"
-          fi
-          rm -rf "$TARGET/.agents/skills/vibe"
-          mkdir -p "$TARGET/.agents/skills/vibe"
-          mv -f "$KEPT_CURSOR" "$TARGET/.agents/skills/vibe/state.json"
-          if [[ -n "$KEPT_EVID" ]]; then
-            mkdir -p "$TARGET/.agents/skills/vibe/evidence"
-            cp -R "$KEPT_EVID/." "$TARGET/.agents/skills/vibe/evidence/"
-            rm -rf "$KEPT_EVID"
-          fi
-        fi
+      # Exclude the same artifacts install scrubs (tests/, AGENTS.md, evidence/)
+      # plus the per-project runtime state install never ships (state.json,
+      # warnings.log): remove_shipped therefore leaves the cursor + receipts
+      # intact by construction. --yes then removes those runtime files too.
+      if [[ "$ASSUME_YES" -eq 0 ]]; then
+        say "remove the shipped files under .agents/skills/vibe (preserving the flow cursor and evidence receipts; re-run with --yes to remove them)"
       else
-        say "remove .agents/skills/vibe"
-        [[ "$DRY_RUN" -eq 1 ]] || rm -rf "$TARGET/.agents/skills/vibe"
+        say "remove .agents/skills/vibe including the flow cursor and evidence receipts"
+      fi
+      if [[ "$DRY_RUN" -eq 0 ]]; then
+        remove_shipped "$SRC/.agents/skills/vibe" "$TARGET/.agents/skills/vibe" \
+          tests AGENTS.md evidence state.json warnings.log
+        if [[ "$ASSUME_YES" -eq 1 ]]; then
+          rm -f "$TARGET/.agents/skills/vibe/state.json" \
+                "$TARGET/.agents/skills/vibe/warnings.log"
+          rm -rf "$TARGET/.agents/skills/vibe/evidence"
+          find "$TARGET/.agents/skills/vibe" -type d -empty -delete 2>/dev/null || true
+        fi
       fi
     fi
     # --yes removes the cursor + receipts, so fully invert install: strip every
@@ -177,19 +189,27 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
         if [[ -s "$GI_TMP" ]]; then mv -f "$GI_TMP" "$GI"; else rm -f "$GI_TMP" "$GI"; fi
       fi
     fi
+    # Unwire the settings.json entries FIRST — before deleting the hook scripts
+    # they reference. If the unwire cannot complete (jq absent), the still-wired
+    # settings.json would point at deleted scripts, so LEAVE the hook scripts in
+    # place, warn once with the manual step, and continue the rest of uninstall.
+    UNWIRE_OK=1
     say "unwire the flow hooks from .claude/settings.json (user settings preserved)"
     if [[ "$DRY_RUN" -eq 0 && -f "$SRC_MERGE_SETTINGS" ]]; then
-      bash "$SRC_MERGE_SETTINGS" unmerge "$TARGET" \
-        || err "WARN: settings.json not unwired; left untouched."
+      bash "$SRC_MERGE_SETTINGS" unmerge "$TARGET" || UNWIRE_OK=0
     fi
     say "remove the Claude adapter files vibe installed"
     if [[ "$DRY_RUN" -eq 0 ]]; then
-      remove_shipped "$SRC/.claude/commands" "$TARGET/.claude/commands"
-      remove_shipped "$SRC/.claude/hooks" "$TARGET/.claude/hooks"
-      # Retire artifacts a prior (plugin-based) install left behind.
-      rm -f "$TARGET/.claude-plugin/plugin.json" "$TARGET/.claude/hooks/hooks.json"
-      find "$TARGET/.claude/hooks" -type d -empty -delete 2>/dev/null || true
-      rmdir "$TARGET/.claude-plugin" "$TARGET/.claude" 2>/dev/null || true
+      if [[ "$UNWIRE_OK" -eq 1 ]]; then
+        remove_shipped "$SRC/.claude/commands" "$TARGET/.claude/commands"
+        remove_shipped "$SRC/.claude/hooks" "$TARGET/.claude/hooks"
+        # Retire artifacts a prior (plugin-based) install left behind.
+        rm -f "$TARGET/.claude-plugin/plugin.json" "$TARGET/.claude/hooks/hooks.json"
+        find "$TARGET/.claude/hooks" -type d -empty -delete 2>/dev/null || true
+        rmdir "$TARGET/.claude-plugin" "$TARGET/.claude" 2>/dev/null || true
+      else
+        err "WARN: settings.json still wires the flow hooks (jq unavailable) — leaving .claude/hooks/*.sh and .claude/commands in place so the wiring keeps pointing at real files. Remove the vibe hook entries from .claude/settings.json by hand, then delete .claude/hooks and .claude/commands."
+      fi
     fi
     # Remove the opt-in adapter symlinks vibe created — but ONLY when they are
     # symlinks that point at AGENTS.md. A user's real file of the same name (or a

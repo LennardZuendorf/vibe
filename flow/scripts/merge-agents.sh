@@ -35,10 +35,24 @@ C_START="<!-- vibe:constitution:start -->"
 C_END="<!-- vibe:constitution:end -->"
 AR_START="<!-- vibe:active-rules:start -->"
 AR_END="<!-- vibe:active-rules:end -->"
+# The template's branded title line, above the managed markers. vibe writes it
+# when it creates the file; unmerge removes it when nothing else vibe-owned keeps
+# the file alive. Exact-match only — a user's own heading is never touched.
+TITLE_LINE="# AGENTS.md — vibe Engineering Guide"
 
 warn() { echo "merge-agents: WARN — $1" >&2; }
 note() { echo "merge-agents: $1"; }
 die()  { echo "merge-agents: ERROR — $1" >&2; exit 1; }
+
+# marker_line FILE MARKER — line number of the first line that equals MARKER
+# exactly, empty if none. grep -n + head, awk-free so the unmerge path runs on an
+# awk-less target. Returns 0 even when nothing matches (no set -e trip).
+marker_line() {
+  local file="$1" marker="$2" hit
+  hit="$(grep -nxF -- "$marker" "$file" 2>/dev/null | head -n1 || true)"
+  [[ -n "$hit" ]] && printf '%s\n' "${hit%%:*}"
+  return 0
+}
 
 # assert_not_reversed FILE START END — the one content-safety guard, shared by
 # merge and unmerge for every managed block. If the pair is present as exact lines
@@ -48,8 +62,8 @@ die()  { echo "merge-agents: ERROR — $1" >&2; exit 1; }
 assert_not_reversed() {
   local file="$1" start="$2" end="$3" s_line e_line
   grep -qF "$start" "$file" && grep -qF "$end" "$file" || return 0
-  s_line="$(awk -v m="$start" '$0==m{print NR; exit}' "$file")"
-  e_line="$(awk -v m="$end"   '$0==m{print NR; exit}' "$file")"
+  s_line="$(marker_line "$file" "$start")"
+  e_line="$(marker_line "$file" "$end")"
   [[ -n "$s_line" && -n "$e_line" ]] || return 0
   if (( s_line >= e_line )); then
     die "$file has reversed markers ($start line $s_line, $end line $e_line) — fix by hand"
@@ -57,21 +71,18 @@ assert_not_reversed() {
 }
 
 # strip_managed_block FILE START END — remove the inclusive START..END region in
-# place. Assumes assert_not_reversed already validated the pair; no-ops when the
-# block is absent or the markers are not exact lines.
+# place via grep -n + sed range delete (awk-free, so unmerge runs on an awk-less
+# target). Assumes assert_not_reversed already validated the pair; no-ops when the
+# block is absent or the markers are not exact lines. Writes via temp + rename.
 strip_managed_block() {
   local file="$1" start="$2" end="$3"
   grep -qF "$start" "$file" && grep -qF "$end" "$file" || return 0
   local s_line e_line
-  s_line="$(awk -v m="$start" '$0==m{print NR; exit}' "$file")"
-  e_line="$(awk -v m="$end"   '$0==m{print NR; exit}' "$file")"
+  s_line="$(marker_line "$file" "$start")"
+  e_line="$(marker_line "$file" "$end")"
   [[ -n "$s_line" && -n "$e_line" ]] || return 0
   local tmp; tmp="$(mktemp "${file}.XXXXXX")"
-  awk -v s="$start" -v e="$end" '
-    $0 == s { skip = 1; next }
-    $0 == e && skip { skip = 0; next }
-    !skip { print }
-  ' "$file" > "$tmp"
+  sed "${s_line},${e_line}d" "$file" > "$tmp"
   mv -f "$tmp" "$file"
 }
 
@@ -100,22 +111,14 @@ replace_region() {
   ' "$file" > "$out"
 }
 
-# Normalize for the wrap comparison: strip CR and trailing spaces, drop leading/
-# trailing blank lines, squeeze internal blank runs to one.
+# Normalize for the wrap/stub comparison: strip CR and trailing spaces, squeeze
+# internal blank runs to one, drop leading/trailing blank lines. awk-free (sed +
+# cat -s) so the unmerge stub check runs on an awk-less target.
 normalize() {
-  sed 's/\r$//; s/[[:space:]]*$//' "$1" | awk '
-    { lines[NR] = $0 }
-    END {
-      start = 1; end = NR
-      while (start <= end && lines[start] == "") start++
-      while (end >= start && lines[end] == "") end--
-      blank = 0
-      for (i = start; i <= end; i++) {
-        if (lines[i] == "") { if (blank) continue; blank = 1 } else blank = 0
-        print lines[i]
-      }
-    }
-  '
+  sed 's/\r$//; s/[[:space:]]*$//' "$1" \
+    | cat -s \
+    | sed '/./,$!d' \
+    | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
 }
 
 # ── adapter symlink mode ───────────────────────────────────────────────────────
@@ -238,6 +241,17 @@ unmerge() {
 
   strip_managed_block "$target" "$I_START"  "$I_END"
   strip_managed_block "$target" "$AR_START" "$AR_END"
+
+  # Stripping the blocks can strand the vibe-branded title line vibe wrote above
+  # them (user added prose outside the markers, or the active-rules block was
+  # regenerated, so the file no longer matches the pristine stub). Remove an
+  # exact-match leading title line and the blank lines it leaves; a user's own
+  # heading (any other text) is left in place.
+  if [[ "$(head -n1 "$target")" == "$TITLE_LINE" ]]; then
+    local tmp; tmp="$(mktemp "${target}.XXXXXX")"
+    sed '1d' "$target" | sed '/./,$!d' > "$tmp"
+    mv -f "$tmp" "$target"
+  fi
 
   # A file now holding only whitespace was created entirely by vibe — remove it.
   if ! grep -q '[^[:space:]]' "$target"; then
