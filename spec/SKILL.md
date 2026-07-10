@@ -81,15 +81,15 @@ delegates:
   - role: spec-interviewer
     when: feature product.md WHAT phase (steps 1-2)
     superpowers: [superpowers:brainstorming]
-  - role: spec-architect
-    when: feature tech.md HOW phase (steps 3-4)
+  - role: spec-tracer
+    when: feature tech.md HOW phase (step 4 codebase trace)
     superpowers: [code-explorer, code-architect]
-  - role: spec-auditor
-    when: validate / audit
-    superpowers: []
-  - role: spec-compactor
-    when: compound (wrap-up, promote, record)
+  - role: spec-promoter
+    when: compound (promote cross-cutting blocks to root)
     superpowers: [superpowers:finishing-a-development-branch]
+  - role: spec-health
+    when: audit / structural assessment (/spec health)
+    superpowers: []
 
 phases:
   - setup.apply
@@ -239,17 +239,20 @@ When a feature arc completes (COMPOUND / wrap-up), follow this sequence:
 
 ## Roles
 
-Four composable delegation contexts. Invoke via `/spec <role>` or by phase-routing below.
-Each role names an executor and the constraint document to inject — roles are **not** custom tools;
-they are wiring between spec constraints and the appropriate superpowers executor.
+Four subagents live under [agents/](agents/) with their own `SKILL.md`. Invoke via `/spec <role>`
+or by phase-routing below. Each names an executor and the constraint document to inject — the
+subagent is thin wiring between spec constraints and the appropriate superpowers executor.
 
 | Role | Executor | Phase | Constraint document |
 |---|---|---|---|
 | spec-interviewer | `superpowers:brainstorming` | feature.design steps 1–2 (WHAT) | `feature.md § Interview for WHAT` |
-| spec-architect | `code-explorer` + `code-architect` | feature.design steps 3–4 (HOW) | `reference/tech.md` + feature-tech template |
-| spec-planner | `superpowers:writing-plans` | feature.plan step 5 (units) | `reference/plan.md` + stable-ID rules |
-| spec-auditor | `validate.sh` (no superpower substitute) | any (`/spec audit`) | validate.sh output |
-| spec-compactor | `promote.sh` + `superpowers:finishing-a-development-branch` | feature.compound | `strategy.md § Lessons` format |
+| spec-tracer | `code-explorer` + `code-architect` | feature.design step 4 (HOW codebase trace) | `reference/tech.md` + feature-tech template |
+| spec-promoter | `promote.sh` + `superpowers:finishing-a-development-branch` | feature.compound (promote) | `reference/tech.md` merge markers |
+| spec-health | `validate.sh` (structural assessment) | any (`/spec health`, `/spec audit`) | validate.sh output |
+
+Two steps delegate **inline**, with no subagent file: plan-unit writing routes to
+`superpowers:writing-plans` with [reference/plan.md](reference/plan.md) + stable-ID rules, and
+`/spec audit` runs [scripts/validate.sh](scripts/validate.sh) directly.
 
 **Promote-first rule:** at each step, offer the executor before running anything. Example: *"I can use
 `superpowers:writing-plans` here — want me to?"* If declined or unavailable, self-execute using the
@@ -266,7 +269,7 @@ constraint document as guidance. Never silently skip the offer; never block on t
 | `feature <name>` | Load [feature.md](feature.md) + `.spec/features/<name>/` |
 | `interview [<name>]` | Load spec-interviewer role; run steps 1–2 for `<name>` |
 | `promote <name>` | Run `scripts/promote.sh <name>` via spec-promoter subagent |
-| `audit` | Load spec-auditor role; run `validate.sh` |
+| `audit` | Run [scripts/validate.sh](scripts/validate.sh) — structural audit (see spec-health for deeper assessment) |
 | `diff <name>` | Run `scripts/scan-merges.sh <name>` — show pending merge blocks |
 | `health` | Invoke spec-health subagent — structural assessment of `.spec/` tree |
 | `research <name>` | Open `.spec/features/<name>/research.md`; suggest spec-tracer for discovery |
@@ -397,7 +400,7 @@ Paths are under [reference/templates/](reference/templates/) (copy into your pro
 | [reference/templates/feature-plan.md](reference/templates/feature-plan.md) | `features/<name>/plan.md` |
 | [reference/templates/feature-design.md](reference/templates/feature-design.md) | Optional `features/<name>/design.md` |
 
-**Branch docs** (`product-{topic}.md`, `tech-{topic}.md`, `plan-{topic}.md`): use the dedicated templates below. Set `type: branch` and parent/scope/covers per [reference/product.md](reference/product.md) and [reference/tech.md](reference/tech.md).
+**Branch docs** (`product-{topic}.md`, `tech-{topic}.md`, `plan-{topic}.md`): use the dedicated templates below. Set `type: product-topic` / `tech-topic` / `plan-topic` and parent/scope/covers per [reference/product.md](reference/product.md) and [reference/tech.md](reference/tech.md).
 
 | Template | Use for |
 |---|---|

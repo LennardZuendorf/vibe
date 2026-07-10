@@ -129,5 +129,4 @@ Everything below is the `spec` skill, addressed at runtime under
 
 - [`../README.md`](../README.md) — the umbrella: the spec/flow split and install.
 - [`../flow/README.md`](../flow/README.md) — the other half: the state-machine flow.
-- [`../examples/todo-api/`](../examples/todo-api/.spec/) — a worked `.spec/` tree to copy from.
 - [SKILL.md](SKILL.md) — the canonical rules agents follow.

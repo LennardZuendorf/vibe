@@ -1,6 +1,6 @@
 ---
 name: spec-tracer
-description: Read-only codebase tracer for spec HOW phase — finds existing files, interfaces, and contracts relevant to a feature; feeds output to spec-architect for the HOW sketch.
+description: Read-only codebase tracer for spec HOW phase — finds existing files, interfaces, and contracts relevant to a feature; feeds output into the HOW sketch (feature.design step 4).
 user-invocable: false
 allowed-tools:
   - Read
@@ -22,7 +22,7 @@ Given a feature name and its `product.md` requirements, trace:
 3. **Root tech.md cross-references** — read root `tech.md` sections that apply to this feature
 4. **Gaps** — requirements with no existing code path (list as "no prior art found")
 
-Output a structured trace document. Do not write spec files — produce output for injection into spec-architect context.
+Output a structured trace document. Do not write spec files — produce output for injection into the HOW-sketch context.
 
 ## Output format
 

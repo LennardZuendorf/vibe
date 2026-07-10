@@ -184,6 +184,7 @@ updated: YYYY-MM-DD
 ---
 type: feature-plan
 feature: <name>
+sibling: tech.md
 parent: ../../plan.md
 updated: YYYY-MM-DD
 ---

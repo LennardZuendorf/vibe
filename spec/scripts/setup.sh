@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Initialize a .spec/ directory in the current project
 # Copies templates as starting points for product, tech, design, and plan entrypoints
 
-set -e
+set -euo pipefail
 
 SPEC_DIR=".spec"
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -80,6 +80,28 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 -->
 LESSONS_EOF
   green "Created $SPEC_DIR/lessons.md"
+  copied=$((copied + 1))
+fi
+
+# Write commented default config (keys per SKILL.md § Config) — never overwrite an existing one.
+if [[ -f "$SPEC_DIR/.config.yaml" ]]; then
+  yellow "SKIP: .config.yaml already exists"
+else
+  cat > "$SPEC_DIR/.config.yaml" << 'CONFIG_EOF'
+# .spec/.config.yaml — spec skill configuration.
+# All keys are commented: absent keys fall back to the documented defaults below
+# without error. Uncomment and edit a key to override. See SKILL.md § Config.
+
+# vibe-flow: false           # true → caveman level auto-managed by the flow cursor
+# caveman: full              # lite | full | auto — default spec output profile
+# suggest-superpowers: true  # false → suppress superpower offers; self-execute every step
+# superpowers:               # per-executor availability; false → route silently to self-exec
+#   brainstorming: true
+#   writing-plans: true
+#   code-explorer: true
+#   code-architect: true
+CONFIG_EOF
+  green "Created $SPEC_DIR/.config.yaml (commented defaults)"
   copied=$((copied + 1))
 fi
 

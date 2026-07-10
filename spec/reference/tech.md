@@ -63,7 +63,7 @@ Create when:
 Frontmatter:
 ```yaml
 ---
-type: branch
+type: tech-topic
 parent: tech.md
 scope: <topic>
 covers: <comma-separated list>
@@ -143,4 +143,4 @@ Always link to your product counterpart:
 
 - **Root entrypoint:** [templates/tech.md](templates/tech.md)
 - **Feature spec:** [templates/feature-tech.md](templates/feature-tech.md)
-- **Cross-cutting branch:** [templates/tech-xxx.md](templates/tech-xxx.md)
+- **Cross-cutting branch:** [templates/tech-topic.md](templates/tech-topic.md)

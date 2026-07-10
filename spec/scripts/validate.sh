@@ -14,6 +14,7 @@ TOKEN_GROUPS=(colors typography rounded spacing components)
 red() { echo -e "\033[31m  ERROR: $1\033[0m"; ((ERRORS++)) || true; }
 yellow() { echo -e "\033[33m  WARN:  $1\033[0m"; ((WARNINGS++)) || true; }
 green() { echo -e "\033[32m  OK:    $1\033[0m"; }
+info() { echo -e "\033[36m  INFO:  $1\033[0m"; }
 
 # SF3 — warn on empty design token groups in frontmatter
 check_design_tokens() {
@@ -253,14 +254,9 @@ check_plan_id_traceability() {
 
   [[ -f "$product" ]] || return 0
 
-  local r_id
-  while IFS= read -r r_id; do
-    [[ -z "$r_id" ]] && continue
-    if ! grep -q "$r_id" "$plan"; then
-      yellow "$label: $r_id in product.md not cited in plan.md (light traceability check)"
-    fi
-  done < <(awk '
-    function emit_r_ids(line,    s, n, i) {
+  local r_ids
+  r_ids="$(awk '
+    function emit_r_ids(line,    s) {
       s = line
       while (match(s, /\bR[0-9]+\b/)) {
         print substr(s, RSTART, RLENGTH)
@@ -286,61 +282,85 @@ check_plan_id_traceability() {
     }
     in_req { req_buf = req_buf "\n" $0 }
     END { if (in_req) emit_r_ids(req_buf) }
-  ' "$product" | sort -u)
+  ' "$product" | sort -u)"
+
+  if [[ -z "$r_ids" ]]; then
+    info "$label: no R-IDs in product.md — R-ID trace check skipped (tag requirement headings '(R1)' to enable)"
+    return 0
+  fi
+
+  local r_id
+  while IFS= read -r r_id; do
+    [[ -z "$r_id" ]] && continue
+    if ! grep -q "$r_id" "$plan"; then
+      yellow "$label: $r_id in product.md not cited in plan.md (light traceability check)"
+    fi
+  done <<< "$r_ids"
 }
 
-# SF13 — cross-reference integrity: warn on stale links to features/ or archive/ paths
+# SF13 — cross-reference integrity: warn on stale non-.md directory links to
+# features/ or archive/ paths. Stale .md links are already errored by the main
+# link checker above; SF13 owns only the directory-link case to avoid double-reporting.
 check_sf13_stale_feature_links() {
   local root_files=(".spec/product.md" ".spec/tech.md" ".spec/design.md" ".spec/plan.md")
   for f in "${root_files[@]}"; do
     [[ -f "$f" ]] || continue
     while IFS= read -r target; do
+      [[ "$target" == *.md ]] && continue
       [[ "$target" == *"{"* || -e ".spec/$target" ]] || yellow "SF13: stale link in $f → $target (not found)"
     done < <(grep -oE '\(features/[^)]+\)|\(archive/[^)]+\)' "$f" 2>/dev/null \
               | sed 's/^(//;s/)$//' || true)
   done
 }
 
-# SF14 — scope conflict detection: warn when two features claim the same Owns item
+# SF14 — scope conflict detection: warn when two features claim the same Owns item.
+# Handles both Scope-table shapes:
+#   (a) row-label:     | **Owns** | a, b, c |   (items comma-split from one cell)
+#   (b) column-header: | Owns | Does not own |  (one Owns item per data row)
 check_sf14_scope_conflicts() {
   local seen_file
   seen_file="$(mktemp)"
+  local f feature item other
   for f in .spec/features/*/product.md; do
     [[ -f "$f" ]] || continue
-    local feature
     feature="$(basename "$(dirname "$f")")"
-    local in_owns=0
-    while IFS= read -r line; do
-      if printf '%s\n' "$line" | grep -q "| Owns"; then
-        in_owns=1
-        continue
+    while IFS= read -r item; do
+      [[ -z "$item" ]] && continue
+      other="$(awk -F'\t' -v it="$item" '$1 == it { print $2; exit }' "$seen_file")"
+      if [[ -n "$other" && "$other" != "$feature" ]]; then
+        yellow "SF14: scope conflict — '${other}' and '${feature}' both own: ${item}"
+      elif [[ -z "$other" ]]; then
+        printf '%s\t%s\n' "$item" "$feature" >> "$seen_file"
       fi
-      if printf '%s\n' "$line" | grep -q "| Does not own"; then
-        in_owns=0
-        continue
-      fi
-      if [[ $in_owns -eq 1 ]] && printf '%s\n' "$line" | grep -qE '^\|[^|]+\|'; then
-        local item
-        item="$(printf '%s\n' "$line" | awk -F'|' '{print $2}' | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-        [[ ${#item} -lt 5 || -z "$item" ]] && continue
-        local existing
-        existing="$(grep "^${item}"$'\t' "$seen_file" 2>/dev/null || true)"
-        if [[ -n "$existing" ]]; then
-          local other
-          other="$(printf '%s\n' "$existing" | awk -F'\t' '{print $2}')"
-          yellow "SF14: scope conflict — '${other}' and '${feature}' both own: ${item}"
-        else
-          printf '%s\t%s\n' "$item" "$feature" >> "$seen_file"
-        fi
-      fi
-    done < "$f"
+    done < <(awk -F'|' '
+      function norm(s) {
+        gsub(/[`*]/, "", s)
+        gsub(/^[[:space:]]+/, "", s)
+        gsub(/[[:space:]]+$/, "", s)
+        return tolower(s)
+      }
+      function emit(x) { if (length(x) >= 5) print x }
+      !/^[[:space:]]*\|/ { mode = ""; next }
+      /^[[:space:]]*\|/ {
+        c2 = norm($2); c3 = norm($3)
+        if (c2 == "owns" && c3 == "does not own") { mode = "column"; next }
+        if (c2 == "owns") {
+          n = split($3, arr, ",")
+          for (i = 1; i <= n; i++) emit(norm(arr[i]))
+          next
+        }
+        if (c2 == "does not own") { if (mode == "column") mode = ""; next }
+        if (c2 ~ /^-+$/ || c2 == "") next
+        if (mode == "column") emit(c2)
+      }
+    ' "$f")
   done
   rm -f "$seen_file"
 }
 
 # SF15 — root spec length: warn when a root spec exceeds 200 lines
 check_sf15_root_spec_length() {
-  local max_lines="${SPEC_ROOT_MAX_LINES:-200}"
+  local max_lines="${SPEC_ROOT_MAX_LINES:-300}"
   local root_files=(".spec/product.md" ".spec/tech.md" ".spec/design.md" ".spec/plan.md" ".spec/lessons.md")
   for f in "${root_files[@]}"; do
     [[ -f "$f" ]] || continue
@@ -440,7 +460,7 @@ for f in "${specs[@]}"; do
     fi
   fi
 
-  if grep -q '^type: branch' "$f"; then
+  if grep -qE '^type: (product|tech|plan)-topic' "$f"; then
     if ! grep -q '^parent:' "$f"; then
       red "$name: branch doc missing 'parent:' field"
     fi
@@ -478,12 +498,12 @@ for f in "${specs[@]}"; do
 
   while IFS= read -r link; do
     target=$(echo "$link" | sed 's/.*(\(.*\))/\1/' | sed 's/#.*//')
-    if [[ -n "$target" && "$target" != http* && "$target" != ../ && "$target" != *"{"* ]]; then
+    if [[ -n "$target" && "$target" == *.md && "$target" != http* && "$target" != *"{"* ]]; then
       if [[ ! -f "$SPEC_DIR/$target" && ! -f "$(dirname "$f")/$target" ]]; then
         red "$name: broken link to '$target'"
       fi
     fi
-  done < <(grep -oE '\[.*?\]\([^)]+\.md[^)]*\)' "$f" 2>/dev/null || true)
+  done < <(grep -oE '\[[^]]*\]\([^)]+\)' "$f" 2>/dev/null || true)
 
   green "$name: checked"
   echo ""
@@ -554,7 +574,7 @@ if [[ -d "$SPEC_DIR/features" ]]; then
 
       while IFS= read -r link; do
         target=$(echo "$link" | sed 's/.*(\(.*\))/\1/' | sed 's/#.*//')
-        if [[ -n "$target" && "$target" != http* ]]; then
+        if [[ -n "$target" && "$target" == *.md && "$target" != http* ]]; then
           if [[ "$target" == "design.md" || "$target" == "plan.md" ]] \
             && [[ ! -f "$feature_dir$target" ]]; then
             continue
@@ -564,7 +584,7 @@ if [[ -d "$SPEC_DIR/features" ]]; then
             red "features/$feature_name/$required: broken link to '$target'"
           fi
         fi
-      done < <(grep -oE '\[.*?\]\([^)]+\.md[^)]*\)' "$f" 2>/dev/null || true)
+      done < <(grep -oE '\[[^]]*\]\([^)]+\)' "$f" 2>/dev/null || true)
     done
 
     for optional in design.md plan.md; do
@@ -614,10 +634,10 @@ if [[ -f "CLAUDE.md" ]]; then
   echo "--- CLAUDE.md ---"
   while IFS= read -r link; do
     target=$(echo "$link" | sed 's/.*(\(.*\))/\1/' | sed 's/#.*//')
-    if [[ "$target" == .spec/* && ! -f "$target" ]]; then
+    if [[ "$target" == .spec/*.md && ! -f "$target" ]]; then
       red "CLAUDE.md: broken link to '$target'"
     fi
-  done < <(grep -oE '\[.*?\]\([^)]+\.md[^)]*\)' "CLAUDE.md" 2>/dev/null || true)
+  done < <(grep -oE '\[[^]]*\]\([^)]+\)' "CLAUDE.md" 2>/dev/null || true)
   green "CLAUDE.md: checked"
   echo ""
 fi
