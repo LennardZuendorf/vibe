@@ -8,29 +8,50 @@
 #
 # Verdict translation (Claude Code PreToolUse convention):
 #   block:<reason> -> reason to stderr, exit 2 (deny, fed back to Claude)
-#   warn:<reason>  -> reason to stderr, exit 0 (non-blocking guidance)
+#   warn:<reason>  -> reason to stderr (exit 0) AND queued to the warnings relay
 #   allow          -> exit 0
+#
+# Warnings relay: a warn on stderr with exit 0 is invisible to the model (Claude
+# Code surfaces stderr only on a block/exit 2). So each warn is also appended to
+# .agents/skills/vibe/warnings.log; the UserPromptSubmit inject hook drains that
+# log to stdout (which IS injected) next turn, then truncates it.
 #
 # The three hard blocks (lessons.md outside compound; root specs outside
 # strategy.spec/feature.compound; direct state.json edits) are coded in
 # detect-context.sh, shipped warn-first elsewhere ("earn the teeth").
 #
-# Graceful degrade (R9): missing jq / detect-context.sh / empty or unparseable
-# stdin -> exit 0. Never end a session.
+# Graceful degrade (R9): missing detect-context.sh / empty or unparseable stdin ->
+# exit 0. jq is preferred for reading the path; without it a best-effort sed
+# extraction runs, and the three hard blocks still fire (detect-context.sh's
+# decision policy is pure bash). An unwritable relay log never fails the hook.
 
 set -euo pipefail
 
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
 DETECT="$ROOT/.agents/skills/vibe/scripts/detect-context.sh"
+WARN_LOG="$ROOT/.agents/skills/vibe/warnings.log"
 
-command -v jq >/dev/null 2>&1 || exit 0
 [[ -f "$DETECT" ]] || exit 0
 
 INPUT="$(cat 2>/dev/null || true)"
 [[ -n "$INPUT" ]] || exit 0
 
+# Append a one-line warning to the relay log for the inject hook to surface.
+# Graceful: no vibe dir or an unwritable log is a silent no-op (never fail).
+log_warn() {
+  local dir="$ROOT/.agents/skills/vibe"
+  [[ -d "$dir" ]] || return 0
+  printf 'guard: %s\n' "$1" >> "$WARN_LOG" 2>/dev/null || true
+}
+
 # Edit/Write carry tool_input.file_path; NotebookEdit carries notebook_path.
-PATH_IN="$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null || true)"
+# With jq, read them exactly; without it, a best-effort sed on the flat JSON.
+if command -v jq >/dev/null 2>&1; then
+  PATH_IN="$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null || true)"
+else
+  PATH_IN="$(printf '%s' "$INPUT" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1 || true)"
+  [[ -n "$PATH_IN" ]] || PATH_IN="$(printf '%s' "$INPUT" | sed -n 's/.*"notebook_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1 || true)"
+fi
 [[ -n "$PATH_IN" ]] || exit 0
 
 # Make repo-relative when possible so the policy's leading-anchored patterns match
@@ -49,6 +70,7 @@ case "$VERDICT" in
     ;;
   warn:*)
     echo "vibe-guard: warn — ${VERDICT#warn:}" >&2
+    log_warn "${VERDICT#warn:}"
     exit 0
     ;;
   *)

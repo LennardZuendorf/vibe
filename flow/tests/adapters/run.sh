@@ -137,10 +137,17 @@ echo "=== platform-adapters/1,2,3 — hooks against a real install ==="
 SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 export CLAUDE_PROJECT_DIR="$SB"
 SS="$SB/.agents/skills/vibe/scripts/set-state.sh"
-# inject
-out="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh"; echo "rc=$?")"
-assert_contains "platform-adapters/1" "inject prints idle orders, exit 0" "$out" "state=idle"
-assert_contains "platform-adapters/1" "inject exit 0" "$out" "rc=0"
+WLOG="$SB/.agents/skills/vibe/warnings.log"
+# inject — behavioral: it emits the CURRENT cursor state's orders to stdout (the
+# model-visible stream), not a fixed string. Asserting rc=0 from a hook that
+# always exits 0 proves nothing, so pin the actual routed content instead.
+bash "$SS" idle >/dev/null
+out="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>/dev/null)"
+assert_contains "platform-adapters/1" "inject emits idle orders for an idle cursor" "$out" "state=idle"
+bash "$SS" feature.impl demo >/dev/null
+out="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>/dev/null)"
+assert_contains "platform-adapters/1" "inject emits the cursor state's orders (feature.impl)" "$out" "executing-plans"
+assert_not_contains "platform-adapters/1" "inject does not emit a foreign state's orders" "$out" "state=idle"
 # guard: block lessons.md outside compound
 out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".spec/lessons.md"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
 assert_contains "platform-adapters/2" "guard blocks lessons.md (exit 2)" "$out" "rc=2"
@@ -153,19 +160,57 @@ bash "$SS" feature.impl demo >/dev/null
 out="$(printf '{"tool_name":"Write","tool_input":{"file_path":"src/x.sh"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
 assert_contains "platform-adapters/2" "guard allows src/ in feature.impl (exit 0)" "$out" "rc=0"
 assert_not_contains "platform-adapters/2" "guard silent on allow" "$out" "BLOCKED"
-# guard: warn src in idle
+# guard: warn src in idle -> exit 0, and the warn is routed to the MODEL-VISIBLE
+# relay log (a warn on stderr with exit 0 is dropped by Claude Code). Assert on
+# the log + rc, NOT on the guard's own 2>&1 (which would conflate the invisible
+# stderr with the visible channel).
 bash "$SS" idle >/dev/null
-out="$(printf '{"tool_name":"Write","tool_input":{"file_path":"src/x.sh"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
-assert_contains "platform-adapters/2" "guard warns src/ in idle but exits 0" "$out" "rc=0"
-assert_contains "platform-adapters/2" "guard warn carries reason" "$out" "warn"
+: > "$WLOG" 2>/dev/null || true
+rc=0
+printf '{"tool_name":"Write","tool_input":{"file_path":"src/x.sh"}}' \
+  | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
+assert_eq "platform-adapters/2" "guard warns src/ in idle but exits 0" "$rc" "0"
+grep -qF "outside" "$WLOG" 2>/dev/null \
+  && pass "platform-adapters/2" "guard queues the warn to the warnings relay log" \
+  || fail "platform-adapters/2" "guard queues the warn to the warnings relay log"
+# warnings relay (fix): inject drains the queued warns to STDOUT (the injected,
+# model-visible stream) exactly once, prefixed vibe-warn:, then truncates the log
+# so a warn never repeats. Assert on stdout, not stderr.
+relay="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>/dev/null)"
+n="$(printf '%s\n' "$relay" | grep -c '^vibe-warn:' || true)"
+assert_eq "platform-adapters/1" "inject relays the queued warn to stdout once" "$n" "1"
+relay2="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>/dev/null)"
+n2="$(printf '%s\n' "$relay2" | grep -c '^vibe-warn:' || true)"
+assert_eq "platform-adapters/1" "relay truncated after draining (warn not repeated)" "$n2" "0"
 # guard: graceful on empty stdin
-out="$(printf '' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
-assert_contains "platform-adapters/2" "guard exits 0 on empty stdin" "$out" "rc=0"
-# gate: warn-only in a non-verify state, always exit 0
+rc=0
+printf '' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
+assert_eq "platform-adapters/2" "guard exits 0 on empty stdin" "$rc" "0"
+# guard no-jq degrade: the three hard blocks still fire without jq (detect-context
+# is pure bash; the path is extracted via sed). Assert exit 2 on a state.json edit.
+NOJQ_BIN="$(mktmp)"
+for _t in dirname date mktemp mv rm sed grep head cat bash env awk find; do
+  _p="$(command -v "$_t" 2>/dev/null)" && ln -s "$_p" "$NOJQ_BIN/$_t"
+done
+rc=0
+printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vibe/state.json"}}' \
+  | PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
+assert_eq "platform-adapters/2" "guard blocks state.json without jq (sed path, exit 2)" "$rc" "2"
+rc=0
+printf '{"tool_name":"NotebookEdit","tool_input":{"notebook_path":"nb.ipynb"}}' \
+  | PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
+assert_eq "platform-adapters/2" "guard allows a normal notebook_path without jq (exit 0)" "$rc" "0"
+rm -rf "$NOJQ_BIN"
+# gate: warn-only in a non-verify state -> exit 0, warn queued to the relay (not
+# lost to stderr). No git changes in the temp install, so predicate 3 fires.
 bash "$SS" feature.impl demo >/dev/null
-out="$(printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
-assert_contains "platform-adapters/3" "gate exits 0 in a non-verify state" "$out" "rc=0"
-assert_contains "platform-adapters/3" "gate emits a warn-only smell" "$out" "vibe-gate"
+: > "$WLOG" 2>/dev/null || true
+rc=0
+printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" >/dev/null 2>&1 || rc=$?
+assert_eq "platform-adapters/3" "gate exits 0 in a non-verify state" "$rc" "0"
+grep -q '^gate:' "$WLOG" 2>/dev/null \
+  && pass "platform-adapters/3" "gate queues a warn-only smell to the relay log" \
+  || fail "platform-adapters/3" "gate queues a warn-only smell to the relay log"
 # flow-mvp/9 — the one promoted tooth: a *.verify state requires a fresh evidence
 # receipt. Against a real install (not a git repo -> existence-only staleness).
 bash "$SS" feature.verify demo >/dev/null
@@ -178,6 +223,39 @@ out="$(printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
 assert_contains "flow-mvp/9" "gate passes feature.verify with a fresh receipt (exit 0)" "$out" "rc=0"
 unset CLAUDE_PROJECT_DIR
 rm -rf "$SB"
+
+echo ""
+echo "=== flow-mvp — set-state.sh jq-optional parity ==="
+# jq is recommended, not required: without it set-state.sh still writes the cursor
+# (via printf) and the output must be byte-identical to the jq path on the same
+# transition. Run both against a fresh install with a jq-free PATH; normalize only
+# the turn-varying `updated` timestamp before comparing.
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SS="$SB/.agents/skills/vibe/scripts/set-state.sh"
+CUR="$SB/.agents/skills/vibe/state.json"
+NOJQ_BIN="$(mktmp)"
+for _t in dirname date mktemp mv rm sed grep head cat bash env awk find; do
+  _p="$(command -v "$_t" 2>/dev/null)" && ln -s "$_p" "$NOJQ_BIN/$_t"
+done
+norm_ts() { sed 's/"updated": "[^"]*"/"updated": "TS"/'; }
+# string feature
+bash "$SS" feature.design demo >/dev/null 2>&1; withjq="$(norm_ts < "$CUR")"
+PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$SS" feature.design demo >/dev/null 2>&1; nojq="$(norm_ts < "$CUR")"
+assert_eq "flow-mvp" "cursor byte-identical with/without jq (string feature)" "$nojq" "$withjq"
+# null feature (idle clears it)
+bash "$SS" idle >/dev/null 2>&1; withjq="$(norm_ts < "$CUR")"
+PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$SS" idle >/dev/null 2>&1; nojq="$(norm_ts < "$CUR")"
+assert_eq "flow-mvp" "cursor byte-identical with/without jq (null feature)" "$nojq" "$withjq"
+# no-jq preserves the carried feature across a phase change
+PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$SS" feature.impl widget >/dev/null 2>&1
+PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$SS" feature.verify >/dev/null 2>&1
+kept="$(sed -n 's/^[[:space:]]*"feature"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' "$CUR" | head -n1)"
+assert_eq "flow-mvp" "no-jq set-state carries the feature across phases" "$kept" "widget"
+# no-jq still rejects an unknown state
+rc=0
+PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$SS" bogus.state >/dev/null 2>&1 || rc=$?
+assert_eq "flow-mvp" "no-jq set-state rejects an unknown state" "$rc" "1"
+rm -rf "$NOJQ_BIN" "$SB"
 
 echo ""
 echo "=== platform-adapters/6 — installer ==="
@@ -214,6 +292,40 @@ symlinks="$(find "$SB/.agents" -type l)"
 agents_entries="$(ls "$SB/.agents/")"
 assert_eq "platform-adapters/6" ".agents/ contains only skills/" "$agents_entries" "skills"
 if bash "$INSTALL" "$REPO_ROOT" >/dev/null 2>&1; then fail "platform-adapters/6" "must refuse self-install"; else pass "platform-adapters/6" "refuses self-install"; fi
+rm -rf "$SB"
+# EVIDENCE LEAK (discriminating): a source-side evidence receipt must NOT ship to
+# the target — otherwise a dirty source's receipts silently satisfy the stop gate.
+# Build a fake source tree, seed a receipt in it, install, assert it is absent.
+FS="$(mktmp)"
+cp "$INSTALL" "$FS/install.sh"
+mkdir -p "$FS/.agents/skills" "$FS/.claude"
+cp -RL "$REPO_ROOT/.agents/skills/spec" "$FS/.agents/skills/spec"
+cp -RL "$REPO_ROOT/.agents/skills/vibe" "$FS/.agents/skills/vibe"
+cp -RL "$REPO_ROOT/.claude/commands" "$FS/.claude/commands"
+cp -RL "$REPO_ROOT/.claude/hooks" "$FS/.claude/hooks"
+mkdir -p "$FS/.agents/skills/vibe/evidence"
+printf 'LEAKED source receipt\n' > "$FS/.agents/skills/vibe/evidence/feature-demo.md"
+SB="$(mktmp)"; bash "$FS/install.sh" "$SB" >/dev/null 2>&1
+[[ ! -e "$SB/.agents/skills/vibe/evidence/feature-demo.md" ]] \
+  && pass "platform-adapters/6" "source-side evidence receipt does not ship to the target" \
+  || fail "platform-adapters/6" "source-side evidence receipt leaked into the target (gate bypass)"
+# ...but the target's OWN receipts survive a re-install (runtime-state lesson).
+mkdir -p "$SB/.agents/skills/vibe/evidence"
+printf 'TARGET own receipt\n' > "$SB/.agents/skills/vibe/evidence/feature-widget.md"
+bash "$FS/install.sh" "$SB" >/dev/null 2>&1
+{ [[ -f "$SB/.agents/skills/vibe/evidence/feature-widget.md" ]] \
+  && [[ ! -e "$SB/.agents/skills/vibe/evidence/feature-demo.md" ]]; } \
+  && pass "platform-adapters/6" "target evidence survives re-install; source evidence still excluded" \
+  || fail "platform-adapters/6" "re-install must preserve target evidence and exclude source evidence"
+rm -rf "$SB" "$FS"
+# gitignore nitpick: a freshly created .gitignore must NOT start with a blank line.
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+[[ -n "$(head -n1 "$SB/.gitignore")" ]] \
+  && pass "platform-adapters/6" "fresh .gitignore has no leading blank line" \
+  || fail "platform-adapters/6" "fresh .gitignore starts with a blank line"
+grep -qF '.agents/skills/vibe/warnings.log' "$SB/.gitignore" \
+  && pass "platform-adapters/6" "install gitignores the warnings relay log" \
+  || fail "platform-adapters/6" "install gitignores the warnings relay log"
 rm -rf "$SB"
 
 echo ""
@@ -300,7 +412,34 @@ assert_eq "install-tooling/3" "--uninstall removes managed artifacts" "$ok" "1"
   || fail "install-tooling/3" "co-located user files in shared adapter dirs survive uninstall"
 grep -qF "keep this prose" "$SB/AGENTS.md" && pass "install-tooling/3" "user AGENTS.md prose preserved" || fail "install-tooling/3" "user prose preserved"
 grep -qF "vibe:instructions:start" "$SB/AGENTS.md" && fail "install-tooling/3" "managed AGENTS.md block removed" || pass "install-tooling/3" "managed AGENTS.md block removed"
+# discriminating: the vibe:active-rules block must ALSO be stripped (unmerge used
+# to leave it orphaned). Fails if only vibe:instructions is removed.
+grep -qF "vibe:active-rules:start" "$SB/AGENTS.md" && fail "install-tooling/3" "managed active-rules block removed" || pass "install-tooling/3" "managed active-rules block removed"
 [[ -f "$SB/.spec/product.md" ]] && pass "install-tooling/3" ".spec/ preserved across uninstall" || fail "install-tooling/3" ".spec/ preserved"
+rm -rf "$SB"
+# uninstall inverse (fix): adapter symlinks + vibe-created stub AGENTS.md.
+# Fresh install with --adapters, nothing customized -> uninstall removes the
+# CLAUDE.md/WARP.md symlinks AND the untouched-stub AGENTS.md (target had none).
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --adapters claude,warp >/dev/null 2>&1
+[[ -L "$SB/CLAUDE.md" && -L "$SB/WARP.md" ]] || fail "install-tooling/3" "precondition: adapters symlinked"
+bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+# -L not -e: the stub AGENTS.md is also deleted, so an un-removed symlink would
+# merely DANGLE (-e false, -L true). Checking -L discriminates the real removal.
+{ [[ ! -L "$SB/CLAUDE.md" && ! -e "$SB/CLAUDE.md" ]] && [[ ! -L "$SB/WARP.md" && ! -e "$SB/WARP.md" ]]; } \
+  && pass "install-tooling/3" "uninstall removes adapter symlinks pointing at AGENTS.md" \
+  || fail "install-tooling/3" "uninstall orphans adapter symlinks"
+[[ ! -e "$SB/AGENTS.md" ]] \
+  && pass "install-tooling/3" "uninstall deletes the vibe-created stub AGENTS.md (target had none)" \
+  || fail "install-tooling/3" "uninstall orphans a vibe-created stub AGENTS.md"
+rm -rf "$SB"
+# discriminating: a user's REAL CLAUDE.md file (not a vibe symlink) must SURVIVE —
+# uninstall may only remove a symlink that points at AGENTS.md.
+SB="$(mktmp)"; printf 'my real claude guide\n' > "$SB/CLAUDE.md"
+bash "$INSTALL" "$SB" >/dev/null 2>&1
+bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+{ [[ -f "$SB/CLAUDE.md" && ! -L "$SB/CLAUDE.md" ]] && grep -qF "my real claude guide" "$SB/CLAUDE.md"; } \
+  && pass "install-tooling/3" "a user's real CLAUDE.md file survives uninstall" \
+  || fail "install-tooling/3" "uninstall clobbered a user's real CLAUDE.md file"
 rm -rf "$SB"
 # Live cursor + evidence receipt + no --yes -> both survive (flow-mvp verify fixes:
 # discriminating test — fails if preservation is swapped for naive rm -rf).

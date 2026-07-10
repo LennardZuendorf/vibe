@@ -33,10 +33,47 @@ I_START="<!-- vibe:instructions:start -->"
 I_END="<!-- vibe:instructions:end -->"
 C_START="<!-- vibe:constitution:start -->"
 C_END="<!-- vibe:constitution:end -->"
+AR_START="<!-- vibe:active-rules:start -->"
+AR_END="<!-- vibe:active-rules:end -->"
 
 warn() { echo "merge-agents: WARN — $1" >&2; }
 note() { echo "merge-agents: $1"; }
 die()  { echo "merge-agents: ERROR — $1" >&2; exit 1; }
+
+# assert_not_reversed FILE START END — the one content-safety guard, shared by
+# merge and unmerge for every managed block. If the pair is present as exact lines
+# but reversed (end before start), replace/strip would silently drop trailing
+# content — refuse rather than mangle. Absent or substring-only markers pass (the
+# caller no-ops). Never re-implement this check elsewhere.
+assert_not_reversed() {
+  local file="$1" start="$2" end="$3" s_line e_line
+  grep -qF "$start" "$file" && grep -qF "$end" "$file" || return 0
+  s_line="$(awk -v m="$start" '$0==m{print NR; exit}' "$file")"
+  e_line="$(awk -v m="$end"   '$0==m{print NR; exit}' "$file")"
+  [[ -n "$s_line" && -n "$e_line" ]] || return 0
+  if (( s_line >= e_line )); then
+    die "$file has reversed markers ($start line $s_line, $end line $e_line) — fix by hand"
+  fi
+}
+
+# strip_managed_block FILE START END — remove the inclusive START..END region in
+# place. Assumes assert_not_reversed already validated the pair; no-ops when the
+# block is absent or the markers are not exact lines.
+strip_managed_block() {
+  local file="$1" start="$2" end="$3"
+  grep -qF "$start" "$file" && grep -qF "$end" "$file" || return 0
+  local s_line e_line
+  s_line="$(awk -v m="$start" '$0==m{print NR; exit}' "$file")"
+  e_line="$(awk -v m="$end"   '$0==m{print NR; exit}' "$file")"
+  [[ -n "$s_line" && -n "$e_line" ]] || return 0
+  local tmp; tmp="$(mktemp "${file}.XXXXXX")"
+  awk -v s="$start" -v e="$end" '
+    $0 == s { skip = 1; next }
+    $0 == e && skip { skip = 0; next }
+    !skip { print }
+  ' "$file" > "$tmp"
+  mv -f "$tmp" "$file"
+}
 
 # Print the inclusive region between START and END markers in FILE.
 extract_region() {
@@ -123,16 +160,10 @@ merge() {
   [[ -s "$block" ]] || die "template is missing its vibe:instructions markers"
 
   if grep -qF "$I_START" "$target" && grep -qF "$I_END" "$target"; then
-    # Guard the cardinal invariant: markers present but reversed (end line before
-    # start line) would make replace_region silently drop trailing content. Refuse
-    # rather than mangle. Empty -> markers are substrings, not exact lines; let
-    # replace_region no-op below.
-    local s_line e_line
-    s_line="$(awk -v m="$I_START" '$0==m{print NR; exit}' "$target")"
-    e_line="$(awk -v m="$I_END"   '$0==m{print NR; exit}' "$target")"
-    if [[ -n "$s_line" && -n "$e_line" ]] && (( s_line >= e_line )); then
-      die "$target has reversed vibe:instructions markers (start line $s_line, end line $e_line) — fix by hand"
-    fi
+    # Guard the cardinal invariant: reversed markers (end before start) would make
+    # replace_region silently drop trailing content — refuse rather than mangle.
+    # (Same shared guard the unmerge path uses.)
+    assert_not_reversed "$target" "$I_START" "$I_END"
     replace_region "$target" "$I_START" "$I_END" "$block" "$tmp"
     if cmp -s "$tmp" "$target"; then
       note "no-op: $target instructions already up to date"
@@ -172,37 +203,50 @@ merge() {
 }
 
 # ── unmerge mode (uninstall) ────────────────────────────────────────────────────
-# Remove the managed vibe:instructions region, preserving everything outside it.
-# Reuses the same marker-pairing guard as merge(): reversed/overlapping markers
-# are refused (never mangled), writes go via temp + atomic rename.
+# Remove BOTH managed regions (vibe:instructions and vibe:active-rules),
+# preserving everything outside them. Reuses the shared marker-pairing guard:
+# reversed markers in EITHER block are refused before any write, so a refusal
+# leaves the file byte-identical. If nothing but whitespace remains, the file was
+# a vibe-created stub (target had no AGENTS.md) — delete it so uninstall leaves no
+# trace. Writes go via temp + atomic rename.
 unmerge() {
   local root="${1:-.}"
   local target="$root/AGENTS.md"
   [[ -f "$target" ]] || { note "no AGENTS.md at $target — nothing to remove"; return 0; }
 
-  if ! { grep -qF "$I_START" "$target" && grep -qF "$I_END" "$target"; }; then
-    note "no vibe:instructions block in $target — left untouched"; return 0
+  local had_i=0 had_ar=0
+  grep -qF "$I_START"  "$target" && grep -qF "$I_END"  "$target" && had_i=1
+  grep -qF "$AR_START" "$target" && grep -qF "$AR_END" "$target" && had_ar=1
+  if [[ "$had_i" -eq 0 && "$had_ar" -eq 0 ]]; then
+    note "no vibe managed blocks in $target — left untouched"; return 0
   fi
 
-  local s_line e_line
-  s_line="$(awk -v m="$I_START" '$0==m{print NR; exit}' "$target")"
-  e_line="$(awk -v m="$I_END"   '$0==m{print NR; exit}' "$target")"
-  if [[ -z "$s_line" || -z "$e_line" ]]; then
-    note "vibe:instructions markers are not exact lines in $target — left untouched"; return 0
-  fi
-  if (( s_line >= e_line )); then
-    die "$target has reversed vibe:instructions markers (start line $s_line, end line $e_line) — fix by hand"
+  # Pre-flight both blocks BEFORE mutating, so a reversed-marker refusal (die)
+  # leaves the file untouched rather than half-stripped.
+  assert_not_reversed "$target" "$I_START"  "$I_END"
+  assert_not_reversed "$target" "$AR_START" "$AR_END"
+
+  # Pure stub: the file is (normalized) the template vibe would create, with no
+  # user content added around the managed blocks — including the template's own
+  # title line, which sits above the markers. This is the "target had none" case:
+  # remove it wholesale, the clean inverse of the fresh install that created it.
+  if [[ -f "$TEMPLATE" ]] && diff -q <(normalize "$target") <(normalize "$TEMPLATE") >/dev/null 2>&1; then
+    rm -f "$target"
+    note "removed vibe-created AGENTS.md stub at $target (untouched template — target had none)"
+    return 0
   fi
 
-  local tmp; tmp="$(mktemp "${target}.XXXXXX")"
-  trap 'rm -f "$tmp"' RETURN
-  awk -v s="$I_START" -v e="$I_END" '
-    $0 == s { skip = 1; next }
-    $0 == e && skip { skip = 0; next }
-    !skip { print }
-  ' "$target" > "$tmp"
-  mv -f "$tmp" "$target"
-  note "removed vibe:instructions block from $target (user content preserved)"
+  strip_managed_block "$target" "$I_START"  "$I_END"
+  strip_managed_block "$target" "$AR_START" "$AR_END"
+
+  # A file now holding only whitespace was created entirely by vibe — remove it.
+  if ! grep -q '[^[:space:]]' "$target"; then
+    rm -f "$target"
+    note "removed vibe-created AGENTS.md stub at $target (no user content remained)"
+    return 0
+  fi
+
+  note "removed vibe managed blocks from $target (user content preserved)"
 }
 
 case "${1:-}" in

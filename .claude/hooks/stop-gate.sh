@@ -10,9 +10,16 @@
 # Thin shell: state comes from .agents/skills/vibe/scripts/detect-context.sh snapshot;
 # no flow policy is duplicated here.
 #
+# Warnings relay: warn-only smells print to stderr (exit 0), which Claude Code
+# never surfaces to the model. So each warn is also appended to
+# .agents/skills/vibe/warnings.log; the UserPromptSubmit inject hook drains that
+# log to stdout (injected into context) next turn, then truncates it. The one
+# blocking tooth (missing/stale receipt) still uses exit 2, which IS model-visible.
+#
 # Graceful degrade (R9): missing jq / detect-context.sh / unreadable cursor -> the
 # affected check is skipped and the hook exits 0. stop_hook_active passes through
-# (no block loops). Outside *.verify the hook is warn-only, exactly as before.
+# (no block loops). Outside *.verify the hook is warn-only, exactly as before. An
+# unwritable relay log never fails the hook.
 
 set -euo pipefail
 
@@ -21,6 +28,7 @@ STDIN="$(cat 2>/dev/null || true)"   # capture stdin (stop_hook_active lives her
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
 DETECT="$ROOT/.agents/skills/vibe/scripts/detect-context.sh"
 EVID_REL=".agents/skills/vibe/evidence"
+WARN_LOG="$ROOT/.agents/skills/vibe/warnings.log"
 
 command -v jq >/dev/null 2>&1 || exit 0
 
@@ -37,7 +45,15 @@ STATE="$(printf '%s' "$SNAP" | jq -r '.state // "idle"' 2>/dev/null || echo idle
 NEXT="$(printf '%s' "$SNAP" | jq -r '(.next // []) | join(", ")' 2>/dev/null || echo "")"
 FEATURE="$(printf '%s' "$SNAP" | jq -r '.feature // empty' 2>/dev/null || echo "")"
 
-warn() { echo "vibe-gate: $1" >&2; }
+# warn — print a warn-only smell to stderr AND queue it to the warnings relay so
+# the inject hook can surface it to the model next turn. An unwritable log or a
+# missing vibe dir is a silent no-op (never fail the hook).
+warn() {
+  echo "vibe-gate: $1" >&2
+  local dir="$ROOT/.agents/skills/vibe"
+  [[ -d "$dir" ]] || return 0
+  printf 'gate: %s\n' "$1" >> "$WARN_LOG" 2>/dev/null || true
+}
 
 git_changed() {
   command -v git >/dev/null 2>&1 || return 1

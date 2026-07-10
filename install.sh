@@ -49,6 +49,18 @@ remove_shipped() {
   find "$dst" -type d -empty -delete 2>/dev/null || true
 }
 
+# gi_append FILE LINE... — append the given lines to a .gitignore, separating them
+# from prior content with exactly one blank line — but only when FILE already
+# exists with content whose last line is non-blank. A freshly created (or
+# blank-terminated) file gains no leading blank line.
+gi_append() {
+  local file="$1"; shift
+  if [[ -s "$file" && -n "$(tail -n 1 "$file")" ]]; then
+    printf '\n' >> "$file"
+  fi
+  printf '%s\n' "$@" >> "$file"
+}
+
 DRY_RUN=0
 WANT_SPEC=1
 WANT_FLOW=1
@@ -148,17 +160,19 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
         [[ "$DRY_RUN" -eq 1 ]] || rm -rf "$TARGET/.agents/skills/vibe"
       fi
     fi
-    # --yes removes the cursor + receipts, so fully invert install: strip both
-    # stanzas install appended to .gitignore, leaving other ignore rules intact.
+    # --yes removes the cursor + receipts, so fully invert install: strip every
+    # stanza install appended to .gitignore, leaving other ignore rules intact.
     if [[ "$ASSUME_YES" -eq 1 && -f "$TARGET/.gitignore" ]]; then
-      say "strip the vibe cursor and evidence stanzas from .gitignore"
+      say "strip the vibe cursor, evidence, and warnings stanzas from .gitignore"
       if [[ "$DRY_RUN" -eq 0 ]]; then
         GI="$TARGET/.gitignore"; GI_TMP="$(mktemp)"
         grep -vxF \
           -e '# vibe mutable flow cursor (runtime; version state-machine.json, not this)' \
           -e '.agents/skills/vibe/state.json' \
           -e '# vibe evidence receipts (runtime verification output, not memory)' \
-          -e '.agents/skills/vibe/evidence/' "$GI" 2>/dev/null \
+          -e '.agents/skills/vibe/evidence/' \
+          -e '# vibe warnings relay (runtime warn-first channel; surfaced then truncated)' \
+          -e '.agents/skills/vibe/warnings.log' "$GI" 2>/dev/null \
           | awk 'NF{last=NR} {line[NR]=$0} END{for(i=1;i<=last;i++) print line[i]}' >"$GI_TMP" || true
         if [[ -s "$GI_TMP" ]]; then mv -f "$GI_TMP" "$GI"; else rm -f "$GI_TMP" "$GI"; fi
       fi
@@ -177,10 +191,20 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
       find "$TARGET/.claude/hooks" -type d -empty -delete 2>/dev/null || true
       rmdir "$TARGET/.claude-plugin" "$TARGET/.claude" 2>/dev/null || true
     fi
+    # Remove the opt-in adapter symlinks vibe created — but ONLY when they are
+    # symlinks that point at AGENTS.md. A user's real file of the same name (or a
+    # symlink they aimed elsewhere) is left untouched.
+    for adapter in CLAUDE.md WARP.md; do
+      link="$TARGET/$adapter"
+      if [[ -L "$link" && "$(readlink "$link")" == "AGENTS.md" ]]; then
+        say "remove adapter symlink $adapter -> AGENTS.md"
+        [[ "$DRY_RUN" -eq 1 ]] || rm -f "$link"
+      fi
+    done
     if [[ -f "$TARGET/AGENTS.md" ]]; then
-      say "remove the managed vibe:instructions block from AGENTS.md (user prose preserved)"
+      say "remove the managed vibe blocks from AGENTS.md (user prose preserved; a vibe-only stub is deleted)"
       [[ "$DRY_RUN" -eq 1 ]] || bash "$SRC_MERGE" unmerge "$TARGET" \
-        || err "WARN: AGENTS.md block not removed (reversed markers?); left untouched."
+        || err "WARN: AGENTS.md blocks not removed (reversed markers?); left untouched."
     fi
   fi
 
@@ -224,14 +248,32 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
       SAVED_CURSOR="$(mktemp)"
       cp "$TARGET/.agents/skills/vibe/state.json" "$SAVED_CURSOR"
     fi
+    # Evidence receipts are per-project runtime state: preserve the target's
+    # across a re-copy, but NEVER inherit the source's. A dirty source repo's
+    # receipts would land in the target and silently satisfy stop-gate.sh's
+    # receipt-existence check — a gate bypass.
+    SAVED_EVID=""
+    if [[ -d "$TARGET/.agents/skills/vibe/evidence" ]]; then
+      SAVED_EVID="$(mktemp -d)"
+      cp -R "$TARGET/.agents/skills/vibe/evidence/." "$SAVED_EVID/" 2>/dev/null || true
+    fi
     cp -RL "$SRC/.agents/skills/vibe" "$TARGET/.agents/skills/"
-    # Source-only artifacts (co-located tests, contributor AGENTS.md) never ship.
-    rm -rf "$TARGET/.agents/skills/vibe/tests" "$TARGET/.agents/skills/vibe/AGENTS.md"
+    # Source-only artifacts (co-located tests, contributor AGENTS.md) and any
+    # source-side evidence receipts never ship.
+    rm -rf "$TARGET/.agents/skills/vibe/tests" \
+           "$TARGET/.agents/skills/vibe/AGENTS.md" \
+           "$TARGET/.agents/skills/vibe/evidence"
     if [[ -n "$SAVED_CURSOR" ]]; then
       mv -f "$SAVED_CURSOR" "$TARGET/.agents/skills/vibe/state.json"
       note "preserved existing flow cursor across re-install"
     else
       rm -f "$TARGET/.agents/skills/vibe/state.json"
+    fi
+    if [[ -n "$SAVED_EVID" ]]; then
+      mkdir -p "$TARGET/.agents/skills/vibe/evidence"
+      cp -R "$SAVED_EVID/." "$TARGET/.agents/skills/vibe/evidence/" 2>/dev/null || true
+      rm -rf "$SAVED_EVID"
+      note "preserved existing evidence receipts across re-install"
     fi
   fi
 fi
@@ -278,22 +320,29 @@ if [[ "$WANT_FLOW" -eq 1 && ! -f "$TARGET/.agents/skills/vibe/state.json" ]]; th
   fi
 fi
 
-# 5. Ignore the mutable runtime state (flow half only): the flow cursor and the
-# evidence receipts. Each line is guarded independently so re-runs never
-# duplicate and an upgrade adds only the missing line.
+# 5. Ignore the mutable runtime state (flow half only): the flow cursor, the
+# evidence receipts, and the warnings relay log. Each line is guarded
+# independently so re-runs never duplicate and an upgrade adds only the missing
+# line. gi_append keeps a freshly created .gitignore free of a leading blank line.
 if [[ "$WANT_FLOW" -eq 1 ]]; then
   GI="$TARGET/.gitignore"
   if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/vibe/state.json" "$GI"; }; then
     say "add .agents/skills/vibe/state.json to .gitignore"
-    if [[ "$DRY_RUN" -eq 0 ]]; then
-      printf '\n# vibe mutable flow cursor (runtime; version state-machine.json, not this)\n.agents/skills/vibe/state.json\n' >> "$GI"
-    fi
+    [[ "$DRY_RUN" -eq 1 ]] || gi_append "$GI" \
+      "# vibe mutable flow cursor (runtime; version state-machine.json, not this)" \
+      ".agents/skills/vibe/state.json"
   fi
   if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/vibe/evidence/" "$GI"; }; then
     say "add .agents/skills/vibe/evidence/ to .gitignore"
-    if [[ "$DRY_RUN" -eq 0 ]]; then
-      printf '\n# vibe evidence receipts (runtime verification output, not memory)\n.agents/skills/vibe/evidence/\n' >> "$GI"
-    fi
+    [[ "$DRY_RUN" -eq 1 ]] || gi_append "$GI" \
+      "# vibe evidence receipts (runtime verification output, not memory)" \
+      ".agents/skills/vibe/evidence/"
+  fi
+  if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/vibe/warnings.log" "$GI"; }; then
+    say "add .agents/skills/vibe/warnings.log to .gitignore"
+    [[ "$DRY_RUN" -eq 1 ]] || gi_append "$GI" \
+      "# vibe warnings relay (runtime warn-first channel; surfaced then truncated)" \
+      ".agents/skills/vibe/warnings.log"
   fi
 fi
 
@@ -303,7 +352,7 @@ fi
 MERGE="$TARGET/.agents/skills/vibe/scripts/merge-agents.sh"
 if [[ "$WANT_FLOW" -eq 1 ]]; then
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    say "merge AGENTS.md via merge-agents.sh (managed markers only)"
+    say "create or merge AGENTS.md via merge-agents.sh (managed markers only)"
   elif [[ -f "$MERGE" ]]; then
     bash "$MERGE" "$TARGET"
   else

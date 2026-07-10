@@ -73,9 +73,12 @@ dep_present() {
 
 note_header
 
-# jq — several checks degrade without it.
+# jq — recommended, not required. Without it the flow still runs: set-state.sh
+# writes the cursor via printf, the guard extracts paths via sed, and cursor-state
+# reads (orders/detect-context) degrade to idle. These doctor checks that query
+# JSON (cursor + manifest) degrade to unverified.
 if have_jq; then ok tool.jq "jq present ($(jq --version 2>/dev/null))"
-else warn tool.jq "jq not installed — cursor + manifest checks degrade to unverified"; fi
+else warn tool.jq "jq not installed (recommended, not required) — set-state writes the cursor via printf, the guard extracts paths via sed, state reads degrade to idle; cursor + manifest checks unverified"; fi
 
 # core skills present + integrity.
 check_link_or_dir core.spec "$SPEC_SKILL"
