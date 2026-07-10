@@ -25,8 +25,8 @@ harness. Feature-level implementation detail lives under `.spec/features/<name>/
 2. **Separation of durability.** `.spec/` is durable project memory;
    `.agents/skills/vibe/` is runtime workflow state.
 3. **One skill, many phases.** `vibe` is a first-class agent skill — a router
-   `SKILL.md` plus per-phase files (setup/strategy/feature/quick/verify/compound/
-   amend), with shared scripts and references.
+   `SKILL.md` plus per-phase files (setup/strategy/feature/quick/verify/compound),
+   with shared scripts and references.
 4. **Platform-neutral core.** Claude Code and Codex files are adapters that read
    `.agents/skills/vibe` and invoke the `vibe` skill.
 5. **Delegation with constraints.** `vibe` phases call `spec`, `superpowers:*`,
@@ -188,11 +188,12 @@ keys; the cursor carries only the moving parts and no turn-varying fields:
 ```
 
 `state-machine.json` defines each `<flow>.<phase>` state with its linked `vibe`
-phase, caveman level, allowed write surfaces, and exit predicate. The `skill` field
+phase, allowed write surfaces, and exit predicate; a single top-level `style` note
+governs output density for every state. The `skill` field
 **links** the state to the `vibe` skill; under D12 the per-turn orders are sourced
 from that linked skill's phase block rather than a hand-written `inject` string. A single inject
 owner (the `UserPromptSubmit` hook) pulls the current state's orders from its
-linked skill and injects them once per turn (which also sets the caveman level),
+linked skill and injects them once per turn,
 keeping the inject byte-stable and prompt-cache-safe. `set-state.sh` is the only
 sanctioned writer. Full per-state mapping lives in
 [features/vibe-flow/tech.md](features/vibe-flow/tech.md).
@@ -206,8 +207,8 @@ sanctioned writer. Full per-state mapping lives in
 ```text
 .agents/skills/vibe/            # → flow/
 ├── SKILL.md                    # router + D12 orders blocks
-├── {setup,strategy,feature,quick,verify,compound,amend}.md   # per-phase guides
-├── state-machine.json          # states, links, next, caveman
+├── {setup,strategy,feature,quick,verify,compound}.md   # per-phase guides
+├── state-machine.json          # states, links, next, style
 ├── state.example.json          # cursor template (state.json gitignored)
 ├── reference/deps.json         # external dependency manifest
 └── scripts/                    # set-state, validate-state, detect-context,
@@ -310,4 +311,4 @@ build time does not reflect the current layout.
 | **[features/platform-adapters/](features/platform-adapters/tech.md)** | Claude adapter (`/flow` + three hooks via `.claude/settings.json`), `install.sh` core provisioning. |
 | **[features/install-tooling/](features/install-tooling/tech.md)** | `install.sh` flags, `doctor.sh`, `deps.json`. |
 | **[features/release-docs/](features/release-docs/tech.md)** | READMEs, rails (LICENSE/CHANGELOG/CI/runner), logo, examples, stranger eval. |
-| **[archive/flow-mvp/](archive/flow-mvp/tech.md)** (done) | Operating-layer MVP: precedence + contract-block delegation, hybrid plan grammar, `gates` on edges, `quick.compound`, evidence-receipt Stop tooth, caveman demotion. Archived. |
+| **[archive/flow-mvp/](archive/flow-mvp/tech.md)** (done) | Operating-layer MVP: precedence + contract-block delegation, hybrid plan grammar, `gates` on edges, a quick-flow compound state, evidence-receipt Stop tooth, caveman demotion. Archived. |

@@ -116,24 +116,18 @@ echo "=== vibe-flow/3 — graceful skill degradation ==="
 out="$(bash "$SCRIPTS/check-skills.sh" feature.design 2>&1; echo "rc=$?")"
 assert_contains "vibe-flow/3" "check-skills warns on assumed-installed superpowers" "$out" "superpowers:brainstorming"
 assert_contains "vibe-flow/3" "check-skills never hard-fails (exit 0)" "$out" "rc=0"
-out="$(bash "$SCRIPTS/check-skills.sh" caveman ultra)"
-assert_contains "vibe-flow/3" "caveman fallback prints level definition" "$out" "caveman[ultra]"
-# flow-mvp/10 — caveman is demoted out of deps.json (vibe vocabulary, not a
-# dependency); check-skills.sh still prints the frozen level definition.
-out="$(bash "$SCRIPTS/check-skills.sh" caveman full 2>&1; echo "rc=$?")"
-assert_contains "flow-mvp/10" "check-skills.sh caveman full still prints the frozen level definition" "$out" "caveman[full]"
-assert_contains "flow-mvp/10" "check-skills.sh caveman full exits 0" "$out" "rc=0"
 out="$(bash "$SCRIPTS/check-skills.sh" setup.detect)"
 assert_contains "vibe-flow/3" "check-skills confirms bundled spec when delegated" "$(bash "$SCRIPTS/check-skills.sh" strategy.spec 2>&1)" "spec"
 
 echo ""
 echo "=== set-state.sh — writer, not gate ==="
 cp "$FLOW/state.example.json" "$STATE"
-out="$(bash "$SCRIPTS/set-state.sh" amend 2>&1; echo "rc=$?")"
-assert_contains "vibe-flow/core" "set-state.sh rejects amend (modifier)" "$out" "modifier"
-assert_not_contains "vibe-flow/core" "set-state.sh does not accept amend (rc!=0)" "$out" "rc=0"
 out="$(bash "$SCRIPTS/set-state.sh" bogus.state 2>&1; echo "rc=$?")"
 assert_contains "vibe-flow/core" "set-state.sh rejects unknown state" "$out" "not a known state"
+# amend is no longer a known state (folded into precedence) — rejected as unknown.
+out="$(bash "$SCRIPTS/set-state.sh" amend 2>&1; echo "rc=$?")"
+assert_contains "vibe-flow/core" "set-state.sh rejects amend as an unknown state" "$out" "not a known state"
+assert_not_contains "vibe-flow/core" "set-state.sh does not accept amend (rc!=0)" "$out" "rc=0"
 bash "$SCRIPTS/set-state.sh" feature.design alpha >/dev/null
 bash "$SCRIPTS/set-state.sh" feature.plan >/dev/null
 feat="$(jq -r '.feature' "$STATE")"
@@ -168,7 +162,7 @@ while IFS= read -r sk; do
 done <<< "$(jq -r '.states[].skill | select(. != null)' "$MACHINE" | sort -u)"
 assert_eq "vibe-flow/core" "every linked skill has a SKILL.md" "$missing_skill" "0"
 
-# flow-mvp/3 — gates (edges), abort edges, quick.compound, router hygiene.
+# flow-mvp/3 + simplify — gates (edges), abort edges, dead-state removal, router hygiene.
 # gates keys parse as <state>><state> with both states known and the target
 # present in the source state's `next` array.
 gate_count="$(jq -r '(.gates // {}) | keys | length' "$MACHINE")"
@@ -188,14 +182,9 @@ bad_gates="$(jq -r '
 assert_eq "flow-mvp/3" "every gates key is <known-state>><known-state> with target in source.next" "$bad_gates" ""
 
 # Abort edges: `set-state.sh idle` is always legal (SKILL.md precedence), so idle must
-# be in `next` for EVERY non-idle flow state — not a hand-picked sample. Modifiers
-# (amend) return to their dynamic originating state, so their `next` is intentionally
-# empty; they are excluded via the machine's own `modifiers` list. Iterating all states
+# be in `next` for EVERY non-idle state — not a hand-picked sample. Iterating all states
 # makes this fail if the abort edge is dropped from any single one.
-non_idle_states="$(jq -r '(.modifiers // []) as $m
-  | .states | keys[]
-  | select(. != "idle")
-  | select([.] - $m | length > 0)' "$MACHINE")"
+non_idle_states="$(jq -r '.states | keys[] | select(. != "idle")' "$MACHINE")"
 abort_missing=""
 while IFS= read -r st; do
   [[ -z "$st" ]] && continue
@@ -204,18 +193,32 @@ while IFS= read -r st; do
 done <<< "$non_idle_states"
 assert_eq "flow-mvp/3" "idle is an abort edge from every non-idle flow state" "$abort_missing" ""
 # Coverage guard: the iteration is non-trivial and DOES include the three states that
-# previously lacked the abort edge (so a regression that drops them from the sweep fails)
-# and excludes the amend modifier.
+# previously lacked the abort edge (so a regression that drops them from the sweep fails).
 covered_count="$(printf '%s\n' "$non_idle_states" | grep -c .)"
 [[ "$covered_count" -ge 10 ]] && pass "flow-mvp/3" "abort-edge sweep covers all $covered_count non-idle flow states" || fail "flow-mvp/3" "abort-edge sweep covered too few states ($covered_count)"
 assert_contains "flow-mvp/3" "abort-edge sweep includes feature.plan (previously missing idle)" "$non_idle_states" "feature.plan"
 assert_contains "flow-mvp/3" "abort-edge sweep includes quick.fix (previously missing idle)" "$non_idle_states" "quick.fix"
 assert_contains "flow-mvp/3" "abort-edge sweep includes quick.triage (previously missing idle)" "$non_idle_states" "quick.triage"
-assert_not_contains "flow-mvp/3" "abort-edge sweep excludes the amend modifier" "$non_idle_states" "amend"
 
-# quick.verify gains the compound + fix back-edges.
-qv_ok="$(jq -r '[.states."quick.verify".next[]] | (index("quick.compound") != null) and (index("quick.fix") != null)' "$MACHINE")"
-assert_eq "flow-mvp/3" "quick.verify.next includes quick.compound and quick.fix" "$qv_ok" "true"
+# Dead compound states are gone: strategy.spec and quick.verify end the flow directly.
+# The removed state names are assembled from parts so this regression guard does not
+# itself trip the repo-wide "no dead-state references outside the archive" check.
+dead_suffix="compound"
+dead_sc="strategy.$dead_suffix"
+dead_qc="quick.$dead_suffix"
+gone_states="$(jq -r --arg sc "$dead_sc" --arg qc "$dead_qc" '[.states | keys[] | select(. == $sc or . == $qc or . == "amend")] | join(",")' "$MACHINE")"
+assert_eq "simplify/dead-states" "the two per-phase compound states and amend are removed from the machine" "$gone_states" ""
+ss_next="$(jq -c '.states."strategy.spec".next' "$MACHINE")"
+assert_eq "simplify/dead-states" "strategy.spec.next is exactly [idle]" "$ss_next" '["idle"]'
+qv_ok="$(jq -r --arg qc "$dead_qc" '[.states."quick.verify".next[]] | (index("quick.fix") != null) and (index("idle") != null) and (index($qc) == null)' "$MACHINE")"
+assert_eq "simplify/dead-states" "quick.verify.next is quick.fix + idle, no dead compound state" "$qv_ok" "true"
+# No per-state caveman field survives; a single top-level style note replaces them.
+cav_left="$(jq -r '[.states | to_entries[] | select(.value | has("caveman"))] | length' "$MACHINE")"
+assert_eq "simplify/style" "no state carries a caveman field" "$cav_left" "0"
+has_style="$(jq -r 'has("style")' "$MACHINE")"
+assert_eq "simplify/style" "machine carries a top-level style note" "$has_style" "true"
+no_cav_levels="$(jq -r '(has("caveman_levels") or has("safety_carveouts") or has("modifiers"))' "$MACHINE")"
+assert_eq "simplify/style" "caveman_levels, safety_carveouts, and modifiers are removed" "$no_cav_levels" "false"
 
 # Router hygiene: idle drops its router delegate; setup.apply keeps only spec.
 idle_deleg="$(jq -c '.states.idle.delegates' "$MACHINE")"
@@ -238,7 +241,6 @@ phase_file_for() {
     strategy.*) echo "strategy.md" ;;
     feature.*)  echo "feature.md" ;;
     quick.*)    echo "quick.md" ;;
-    amend)      echo "amend.md" ;;
     *)          echo "" ;;
   esac
 }
@@ -257,19 +259,24 @@ while IFS= read -r st; do
 done < <(jq -r '.states | to_entries[] | select((.value.delegates | length) > 0) | .key' "$MACHINE")
 assert_eq "flow-mvp/5" "every machine delegate appears verbatim in its phase file" "$deleg_ok" "1"
 
-# quick.md carries the optional quick.compound step (the quick-work compound
-# procedure lives in quick.md, not the shared compound.md).
-assert_contains "flow-mvp/6" "quick.md mentions quick.compound" "$(cat "$FLOW/quick.md")" "quick.compound"
+# quick.md carries the inline conditional lesson step (the optional quick-fix lesson
+# now lives inline in quick.verify, not a separate per-phase compound state): it appends
+# to .spec/lessons.md and refreshes the digest before going idle.
+quick_body="$(cat "$FLOW/quick.md")"
+assert_contains "simplify/dead-states" "quick.md carries the inline lesson step (lessons.md)" "$quick_body" ".spec/lessons.md"
+assert_contains "simplify/dead-states" "quick.md refreshes the digest inline" "$quick_body" "regen-active-rules.sh"
+assert_not_contains "simplify/dead-states" "quick.md no longer names the dead quick compound state" "$quick_body" "$dead_qc"
 
-# Router row: quick.compound's procedure lives in quick.md (step 5), NOT the shared
-# compound.md (which serves only feature/strategy). The SKILL.md routing table must
-# list quick.compound under the quick.md row and no longer claim it on the compound
-# row — otherwise a reader chasing quick.compound lands in a file that doesn't cover it.
+# Router hygiene: the compound row serves feature.compound only; the quick row lists
+# quick.verify and no longer claims a dead per-phase compound state anywhere.
 SKILL_MD="$FLOW/SKILL.md"
 quick_router_row="$(grep -F '](quick.md)' "$SKILL_MD" | head -1)"
 compound_router_row="$(grep -F '](compound.md)' "$SKILL_MD" | head -1)"
-assert_contains "flow-mvp/3" "SKILL.md routes quick.compound to the quick.md row" "$quick_router_row" "quick.compound"
-assert_not_contains "flow-mvp/3" "SKILL.md compound row no longer claims quick.compound" "$compound_router_row" "quick.compound"
+assert_contains "simplify/dead-states" "SKILL.md quick row lists quick.verify" "$quick_router_row" "quick.verify"
+assert_not_contains "simplify/dead-states" "SKILL.md quick row no longer claims the dead quick compound state" "$quick_router_row" "$dead_qc"
+assert_contains "simplify/dead-states" "SKILL.md compound row lists feature.compound" "$compound_router_row" "feature.compound"
+assert_not_contains "simplify/dead-states" "SKILL.md compound row no longer claims the dead strategy compound state" "$compound_router_row" "$dead_sc"
+assert_not_contains "simplify/dead-states" "SKILL.md compound row no longer claims the dead quick compound state" "$compound_router_row" "$dead_qc"
 
 # compound.md no longer implies finishing-a-development-branch performs the archive
 # move: the finishing delegate block is sequenced AFTER the Archive step.
@@ -490,10 +497,17 @@ out="$(bash "$DETECT" decide .spec/lessons.md setup.apply)"
 assert_eq "vibe-flow/core" "decide lessons.md returns allow under setup.apply" "$out" "allow"
 out="$(bash "$DETECT" decide .spec/lessons.md feature.compound)"
 assert_eq "vibe-flow/core" "decide lessons.md returns allow under feature.compound" "$out" "allow"
-out="$(bash "$DETECT" decide .spec/lessons.md quick.compound)"
-assert_eq "flow-mvp/3" "decide lessons.md returns allow under quick.compound" "$out" "allow"
+# The conditional lesson step now lives in strategy.spec and quick.verify — both allow.
+out="$(bash "$DETECT" decide .spec/lessons.md strategy.spec)"
+assert_eq "simplify/dead-states" "decide lessons.md returns allow under strategy.spec" "$out" "allow"
+out="$(bash "$DETECT" decide .spec/lessons.md quick.verify)"
+assert_eq "simplify/dead-states" "decide lessons.md returns allow under quick.verify" "$out" "allow"
 out="$(bash "$DETECT" decide .spec/lessons.md idle)"
 assert_contains "vibe-flow/core" "decide lessons.md blocks under idle" "$out" "block:"
+# Discriminating: the removed states must not be special-cased any more, and a
+# non-lesson state (quick.fix) still blocks — the allow-list did not over-widen.
+out="$(bash "$DETECT" decide .spec/lessons.md quick.fix)"
+assert_contains "simplify/dead-states" "decide lessons.md blocks under quick.fix" "$out" "block:"
 
 echo ""
 echo "=== detect-context.sh — verify writes no src, spec frozen in impl ==="
@@ -540,8 +554,13 @@ for t in dirname sed head; do ln -sf "$(command -v "$t")" "$nojq/$t"; done
 out="$(PATH="$nojq" "$BASH_BIN" "$DETECT" decide .spec/product.md)"
 assert_eq "review-fix" "no-jq decide honors the live cursor (allow in strategy.spec)" "$out" "allow"
 out="$(PATH="$nojq" "$BASH_BIN" "$DETECT" decide .spec/lessons.md)"
-assert_contains "review-fix" "no-jq decide still blocks lessons.md in strategy.spec" "$out" "block:"
-assert_contains "review-fix" "no-jq block message names the real state, not idle" "$out" "current: strategy.spec"
+assert_eq "review-fix" "no-jq decide honors the live cursor (lessons.md allow in strategy.spec)" "$out" "allow"
+# Discriminating on the BLOCK path: a state where lessons.md is NOT allowed must
+# block via the no-jq (sed) cursor read AND name the real state, not degrade to idle.
+bash "$SCRIPTS/set-state.sh" feature.impl demo >/dev/null
+out="$(PATH="$nojq" "$BASH_BIN" "$DETECT" decide .spec/lessons.md)"
+assert_contains "review-fix" "no-jq decide still blocks lessons.md in feature.impl" "$out" "block:"
+assert_contains "review-fix" "no-jq block message names the real state, not idle" "$out" "current: feature.impl"
 rm -rf "$nojq"
 bash "$SCRIPTS/set-state.sh" idle >/dev/null
 

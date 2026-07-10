@@ -133,21 +133,20 @@ drive each flow:
 | `quick` | Small fixes and bounded maintenance | Workspace edits, optional `.spec/quick/<slug>.md` |
 | `verify` | Evidence before completion | Test/build/review findings |
 | `compound` | End-of-work consolidation | Lessons, root spec updates, archive moves |
-| `amend` | Revising active scope | Updated feature or strategy specs |
 
 These are phase files of one skill, not hidden prompts. Adapters may expose
 shortcuts, but the canonical workflow lives in `.agents/skills/vibe/`.
 
 ### Flow at a glance
 
-Everything starts at `idle`; the agent self-locates, then drives one flow.
-`amend` is a modifier that edits scope from any state and returns there.
+Everything starts at `idle`; the agent self-locates, then drives one flow. A
+scope edit is not a state: the agent edits within the current state's write
+surface and stays put.
 
 ```mermaid
 flowchart LR
     I((idle)) --> SD[setup.detect] --> SA[setup.apply] --> I
     I --> SB[strategy.brainstorm] --> SS[strategy.spec]
-    SS -->|durable lesson| SCo[strategy.compound] --> I
     SS --> I
     I --> FD[feature.design] --> FP[feature.plan]
     FP -. human gate .-> FI[feature.impl] --> FV[feature.verify]
@@ -155,7 +154,6 @@ flowchart LR
     FV -->|fix| FI
     FV -->|drift| FP
     I --> QT[quick.triage] --> QF[quick.fix] --> QV[quick.verify] --> I
-    QV -->|lesson| QC[quick.compound] --> I
     QV -->|findings| QF
     QT -->|scope balloons| FD
 ```
@@ -174,53 +172,40 @@ keyed by **edge** in the machine's `gates` object
 so `feature.verify`'s fix/drift back-edges to `feature.impl`/`feature.plan` stay
 ungated while its ship edge stops for approval.
 
-| Phase | Phase file | External skills | Subagents | Caveman | Spec artifact (R/W) | What the stage does |
-|---|---|---|---|---|---|---|
-| `idle` | — | — | — | lite | R `lessons.md`, `plan.md` | Resting hub between flows. Read lessons/plan, then pick the flow that matches the request. |
-| `setup.detect` | `setup` | — | — | lite | R repo, adapters, `.agents`, `.spec` | Read-only audit of repo + harness; report present vs missing and preflight required plugins. |
-| `setup.apply` | `setup` | `spec`, `writing-skills` | — | lite | W `.agents/**`, baseline `.spec/**`, adapter blocks | Write/merge the bootstrap without clobbering: constitution block, flow scaffold, baseline specs. |
-| `strategy.brainstorm` | `strategy` | `brainstorming` | — | lite | R `lessons.md` | Shape project direction in dialogue; scratch only, no writes yet. |
-| `strategy.spec` | `strategy` | `spec` | — | lite | W root `product/tech/design/plan` | Commit the agreed direction into the root specs and validate. |
-| `strategy.compound` | `compound` | `spec` | — | lite | W `lessons.md`, adapter blocks | Record a durable strategy lesson and refresh the active-rules digest. |
-| `feature.design` | `feature` | `brainstorming` | `code-explorer`, `code-architect` | lite | R `lessons.md`, root `product/tech`; W `features/<f>/{product,tech}` | Trace the codebase and sketch approaches, then write the feature's product + tech specs. |
-| `feature.plan` | `feature` | `writing-plans` | `code-architect` | lite | W `features/<f>/plan` | Turn the design into a plan with stable unit IDs (`U1`, `U2`…). Human gate before impl. |
-| `feature.impl` | `feature` | `executing-plans`, `test-driven-development` | — | full | R `plan`; W `src/**`, `tests/**` | Build the plan units test-first, citing unit IDs; no spec edits. |
-| `feature.verify` | `verify` | `verification-before-completion`, `requesting-code-review`, `systematic-debugging` | `code-reviewer` | full | R `plan`, `src`, `tests` | Gather real evidence per unit ID and review. Human gate before ship; routes pass→compound, fail→impl/plan. |
-| `feature.compound` | `compound` | `finishing-a-development-branch`, `spec` | — | lite (receipts ultra) | W `lessons.md`, root specs, archive, adapter blocks | Record the lesson, promote cross-cutting decisions to root, archive the feature, refresh digest. |
-| `quick.triage` | `quick` | `systematic-debugging` | — | full | R `lessons.md` | Diagnose the small issue; don't fix yet. Escalate to `feature.design` if scope balloons. |
-| `quick.fix` | `quick` | `test-driven-development` | — | full | W `src/**`, opt `.spec/quick/<slug>.md` | Implement the bounded fix test-first; no root spec writes. |
-| `quick.verify` | `verify` | `verification-before-completion` | `code-reviewer` | full | R `src`, `tests` | Prove the fix works and breaks nothing. |
-| `quick.compound` | `compound` | `spec` | — | lite (receipts ultra) | W `lessons.md`, adapter digest | Optional lessons path for a quick fix: append a tagged lesson and regenerate the active-rules digest, then return to `idle`. Skippable. |
-| `amend` _(modifier)_ | `amend` | `spec`, `receiving-code-review` | — | lite | target state's surface only | Targeted scope edit within the current state's write rules, then return. |
+| Phase | Phase file | External skills | Subagents | Spec artifact (R/W) | What the stage does |
+|---|---|---|---|---|---|
+| `idle` | — | — | — | R `lessons.md`, `plan.md` | Resting hub between flows. Read lessons/plan, then pick the flow that matches the request. |
+| `setup.detect` | `setup` | — | — | R repo, adapters, `.agents`, `.spec` | Read-only audit of repo + harness; report present vs missing and preflight required plugins. |
+| `setup.apply` | `setup` | `spec`, `writing-skills` | — | W `.agents/**`, baseline `.spec/**`, adapter blocks | Write/merge the bootstrap without clobbering: constitution block, flow scaffold, baseline specs. |
+| `strategy.brainstorm` | `strategy` | `brainstorming` | — | R `lessons.md` | Shape project direction in dialogue; scratch only, no writes yet. |
+| `strategy.spec` | `strategy` | `spec` | — | W root `product/tech/design/plan`, opt `lessons.md` | Commit the agreed direction into the root specs and validate; record an optional durable lesson inline before `idle`. |
+| `feature.design` | `feature` | `brainstorming` | `code-explorer`, `code-architect` | R `lessons.md`, root `product/tech`; W `features/<f>/{product,tech}` | Trace the codebase and sketch approaches, then write the feature's product + tech specs. |
+| `feature.plan` | `feature` | `writing-plans` | `code-architect` | W `features/<f>/plan` | Turn the design into a plan with stable unit IDs (`U1`, `U2`…). Human gate before impl. |
+| `feature.impl` | `feature` | `executing-plans`, `test-driven-development` | — | R `plan`; W `src/**`, `tests/**` | Build the plan units test-first, citing unit IDs; no spec edits. |
+| `feature.verify` | `verify` | `verification-before-completion`, `requesting-code-review`, `systematic-debugging` | `code-reviewer` | R `plan`, `src`, `tests` | Gather real evidence per unit ID and review. Human gate before ship; routes pass→compound, fail→impl/plan. |
+| `feature.compound` | `compound` | `finishing-a-development-branch`, `spec` | — | W `lessons.md`, root specs, archive, adapter blocks | Record the lesson, promote cross-cutting decisions to root, archive the feature, refresh digest. |
+| `quick.triage` | `quick` | `systematic-debugging` | — | R `lessons.md` | Diagnose the small issue; don't fix yet. Escalate to `feature.design` if scope balloons. |
+| `quick.fix` | `quick` | `test-driven-development` | — | W `src/**`, opt `.spec/quick/<slug>.md` | Implement the bounded fix test-first; no root spec writes. |
+| `quick.verify` | `verify` | `verification-before-completion` | `code-reviewer` | R `src`, `tests`; W opt `lessons.md` | Prove the fix works and breaks nothing; record an optional durable lesson inline before `idle`. |
 
 External skills are `superpowers:*` unless noted (`spec` is bundled). Subagents
 are Anthropic's feature-dev agents, cherry-picked per phase. Each phase also emits
-one per-turn **inject** — the "current orders" (skill, write surface, caveman
-level, next state). Under D12 these orders are sourced from the one `vibe` skill's
+one per-turn **inject** — the "current orders" (skill, write surface, next
+state). Under D12 these orders are sourced from the one `vibe` skill's
 `SKILL.md` § Orders (D12) — the `<!-- vibe:orders:<state> -->` block for the
 linked state (the single source of truth); skill-less `idle` keeps a minimal
 inline string in `.agents/skills/vibe/state-machine.json`.
 
-## Communication Levels
+## Style
 
-The `vibe` flow requests a "caveman" communication-density level per state. The
-level names (`lite`/`full`/`ultra`) follow the upstream `JuliusBrussee/caveman`
-skill; the mapping of *level to workflow phase* is vibe's own policy.
-Caveman is **output compression only** — it never reduces reasoning depth, and
-code, paths, and commands stay byte-exact.
-
-| Level | Behaviour | Use When |
-|---|---|---|
-| `lite` | No filler or hedging; keep full sentences. | Strategy, setup, design, compound, amend — where nuance matters. |
-| `full` | Drop articles; fragments OK; short synonyms. The working default. | Implementation, verification, and quick fixes/triage. |
-| `ultra` | Abbreviate prose; `X → Y` arrows; one word where one word does. | Compound receipts and high-volume subagent→orchestrator summaries. |
-
-`ultra` is *not* used for triage: it can drop edge cases, and triage is where a
-missed edge case is expensive. Regardless of level, security warnings and
-irreversible-action confirmations stay in normal prose.
-
-State-machine entries name the expected level, and a single inject owner emits it
-so adapters and subagents stay consistent (see features/vibe-flow).
+Output density is governed by one machine-level `style` note (in
+`.agents/skills/vibe/state-machine.json`), not a per-state level: no filler or
+hedging, compress receipts and subagent→orchestrator summaries. Compression is
+**output only** — it never reduces reasoning depth, and code, paths, and
+commands stay byte-exact. Regardless of density, security warnings and
+irreversible-action confirmations stay in full prose. A single inject owner
+emits the same note each turn so adapters and subagents stay consistent (see
+features/vibe-flow).
 
 ---
 
@@ -243,8 +228,8 @@ so adapters and subagents stay consistent (see features/vibe-flow).
 1. **Git tracking for the cursor.** Resolved — version the static state machine;
    gitignore the mutable `state.json` cursor (installer seeds + ignores it).
 2. **Skill count.** Resolved — consolidated the seven `vibe-*` shims into one
-   `vibe` skill (router `SKILL.md` + seven phase files), distinct write surfaces
-   and caveman levels preserved per phase.
+   `vibe` skill (router `SKILL.md` + per-phase files), distinct write surfaces
+   preserved per phase.
 3. **Adapter installation.** Resolved — `install.sh` **copies** the core and
    Claude adapter, merges `AGENTS.md` via markers, symlinks adapters opt-in
    (`--adapters`); partial (`--only`), preview (`--dry-run`), and removal
@@ -264,4 +249,4 @@ so adapters and subagents stay consistent (see features/vibe-flow).
 | **[features/platform-adapters/](features/platform-adapters/product.md)** | Claude Code adapter (`/flow` + three hooks via `.claude/settings.json`) + `install.sh` core provisioning. |
 | **[features/install-tooling/](features/install-tooling/product.md)** | Install lifecycle: `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json`. |
 | **[features/release-docs/](features/release-docs/product.md)** | Public release: READMEs, trust rails (LICENSE/CHANGELOG/CI), logo, examples, stranger eval. |
-| **[archive/flow-mvp/](archive/flow-mvp/product.md)** (done) | Personal operating layer: precedence + delegation contract blocks, hybrid plan grammar, auto-advance with two edge-keyed gates, `quick.compound`, evidence-receipt verify tooth, caveman demotion. Merged PR #14; archived. |
+| **[archive/flow-mvp/](archive/flow-mvp/product.md)** (done) | Personal operating layer: precedence + delegation contract blocks, hybrid plan grammar, auto-advance with two edge-keyed gates, a quick-flow compound state, evidence-receipt verify tooth, caveman demotion. Merged PR #14; archived. |

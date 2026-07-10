@@ -12,7 +12,7 @@ dereferenced copy of this dir); the Claude adapter in `../.claude/` drives it.
 | Path | Role |
 |---|---|
 | `SKILL.md` | Router + `## Orders` (D12 per-turn orders) |
-| `setup.md`, `strategy.md`, `feature.md`, `quick.md`, `verify.md`, `compound.md`, `amend.md` | Phase guides |
+| `setup.md`, `strategy.md`, `feature.md`, `quick.md`, `verify.md`, `compound.md` | Phase guides |
 | `state-machine.json` | **Data** — states, skills, legal `next`. Edit this, not prose |
 | `state.example.json` | Template for the runtime cursor |
 | `state.json` | Gitignored runtime cursor — seed only when testing transitions |

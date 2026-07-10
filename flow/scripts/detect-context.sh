@@ -12,7 +12,9 @@
 # canonical reference the skills consult.
 #
 # The three hard blocks (everything else is allow/warn):
-#   1. .spec/lessons.md            — only during a *.compound state or setup.apply
+#   1. .spec/lessons.md            — only during feature.compound, setup.apply,
+#                                    strategy.spec, or quick.verify (the flow-end
+#                                    states where the conditional lesson step lives)
 #   2. root .spec/{product,tech,design,plan}.md
 #                                  — only during strategy.spec, feature.compound, or setup.apply
 #   3. .agents/skills/vibe/state.json — never by direct edit; only via set-state.sh
@@ -64,7 +66,6 @@ snapshot() {
     '{
        state: $state,
        feature: (if $feature == "null" then null else $feature end),
-       caveman: ($entry.caveman // null),
        skill: ($entry.skill // null),
        delegates: ($entry.delegates // []),
        reads: ($entry.reads // []),
@@ -92,13 +93,12 @@ decide() {
       ;;
   esac
 
-  # Block 1: lessons.md only during a compound state or setup.apply.
+  # Block 1: lessons.md only during the flow-end states that carry the lesson step.
   case "$path" in
     .spec/lessons.md|*/.spec/lessons.md)
       case "$state" in
-        feature.compound|strategy.compound|quick.compound) echo "allow" ;;
-        setup.apply) echo "allow" ;;
-        *) echo "block:.spec/lessons.md is writable only during a *.compound state or setup.apply (current: $state)" ;;
+        feature.compound|setup.apply|strategy.spec|quick.verify) echo "allow" ;;
+        *) echo "block:.spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: $state)" ;;
       esac
       return 0
       ;;
@@ -122,7 +122,7 @@ decide() {
   case "$path" in
     .spec/features/*|*/.spec/features/*)
       case "$state" in
-        feature.impl|quick.fix) echo "warn:.spec/features edits are frozen during impl/fix — amend or route back to feature.design/plan (current: $state)" ;;
+        feature.impl|quick.fix) echo "warn:.spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: $state)" ;;
         *) echo "allow" ;;
       esac
       return 0

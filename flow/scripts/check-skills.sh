@@ -6,8 +6,6 @@
 #
 #   check-skills.sh                 # check delegates of the current cursor state
 #   check-skills.sh <flow.phase>    # check delegates of an explicit state
-#   check-skills.sh caveman <level> # print the 1-line caveman fallback definition
-#                                   #   (used when the upstream caveman skill is absent)
 #
 # A bash script cannot introspect Claude Code's installed-skill registry, so this
 # verifies what is checkable on disk (the bundled `spec` skill, the consolidated
@@ -35,32 +33,6 @@ current_state() {
   else
     echo "idle"
   fi
-}
-
-# ── caveman fallback ─────────────────────────────────────────────────────────
-# When the upstream caveman skill is not installed, the flow still names a level;
-# emit its 1-line definition straight from the machine so the agent can apply it.
-caveman_fallback() {
-  local level="${1:-}"
-  if [[ -z "$level" ]]; then
-    echo "usage: check-skills.sh caveman <lite|full|ultra>" >&2
-    return 0
-  fi
-  if have_jq && [[ -f "$MACHINE" ]]; then
-    local def
-    def=$(jq -r --arg l "$level" '.caveman_levels[$l] // empty' "$MACHINE" 2>/dev/null)
-    if [[ -n "$def" ]]; then
-      echo "caveman[$level]: $def"
-      return 0
-    fi
-  fi
-  # Hard-coded floor if the machine is unreadable.
-  case "$level" in
-    lite)  echo "caveman[lite]: No filler or hedging; full sentences." ;;
-    full)  echo "caveman[full]: Drop articles; fragments OK; short synonyms." ;;
-    ultra) echo "caveman[ultra]: Arrows (X -> Y); one word where one does." ;;
-    *)     echo "caveman[$level]: output compression only; never reasoning depth." ;;
-  esac
 }
 
 # ── skill availability for a state ─────────────────────────────────────────────
@@ -114,9 +86,6 @@ check_state() {
   fi
 }
 
-case "${1:-}" in
-  caveman) caveman_fallback "${2:-}" ;;
-  *)       check_state "${1:-}" ;;
-esac
+check_state "${1:-}"
 
 exit 0

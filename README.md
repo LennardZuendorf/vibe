@@ -112,14 +112,14 @@ Deep dive: [`spec/README.md`](spec/README.md).
 Everything starts at `idle`. The agent self-locates, then drives one flow. The
 cursor `.agents/skills/vibe/state.json` = `{flow, phase, feature}` points at one
 state in `state-machine.json` — the source of truth for each state's skill,
-delegates, caveman level, write surface, and legal `next`. Transition only via
+delegates, write surface, and legal `next`. Transition only via
 `set-state.sh <flow.phase>`.
 
 ```mermaid
 flowchart LR
     I((idle)) --> SB
     subgraph strategy
-        SB[brainstorm] --> SS[spec] --> SC[compound]
+        SB[brainstorm] --> SS[spec]
     end
     subgraph feature
         D[design] --> P[plan] -. human gate .-> IM[impl] --> V[verify]
@@ -129,25 +129,24 @@ flowchart LR
     end
     subgraph quick
         T[triage] --> F[fix] --> QV[verify]
-        QV -->|lesson| QC[compound]
     end
     I --> D
     I --> T
-    SC --> I
+    SS --> I
     C --> I
     QV --> I
-    QC --> I
 ```
 
 > Simplified view — see [`flow/README.md`](flow/README.md) for the setup states.
 
 The workflow is **one skill** (`vibe`) with a router plus per-phase files
-(`setup`, `strategy`, `feature`, `quick`, `verify`, `compound`, `amend`). Each
+(`setup`, `strategy`, `feature`, `quick`, `verify`, `compound`). Each
 turn, the `UserPromptSubmit` hook injects the current state's orders (resolved
 from the linked skill by `orders.sh` — D12); a `PreToolUse` hook guards the three
 write invariants; a `Stop` hook runs warn-first exit checks and blocks in
-`*.verify` without a fresh evidence receipt. `amend` is a modifier, not a flow:
-a scoped edit from any state that returns there.
+`*.verify` without a fresh evidence receipt. A scope edit is not a state: edit
+within the current state's write surface and stay put — `set-state.sh idle`
+always aborts.
 
 ### Driving the flow with `/flow`
 
@@ -177,7 +176,7 @@ not block on.
 
 | Mechanism | Strength | What it does |
 |---|---|---|
-| `PreToolUse` guard — 3 write invariants | **Hard block** (exit 2) | `state.json` only via `set-state.sh`; `.spec/lessons.md` only in a `*.compound` state or `setup.apply`; root `.spec/{product,tech,design,plan}.md` only in `strategy.spec`, `feature.compound`, or `setup.apply` |
+| `PreToolUse` guard — 3 write invariants | **Hard block** (exit 2) | `state.json` only via `set-state.sh`; `.spec/lessons.md` only in `feature.compound`, `setup.apply`, `strategy.spec`, or `quick.verify`; root `.spec/{product,tech,design,plan}.md` only in `strategy.spec`, `feature.compound`, or `setup.apply` |
 | `Stop` gate — evidence receipt | **Hard block** (exit 2) | in a `*.verify` state, refuses to stop until a fresh `evidence/…` receipt exists (staleness is git-derived) |
 | everything else | **Warning** | auto-advance nudges, stuck-phase / impl-without-tests smells, per-turn orders — advisory only. Warnings are relayed back and appear at your **next prompt**, not mid-turn |
 
@@ -197,10 +196,6 @@ one warns, never hard-fails.**
 |---|---|---|---|
 | superpowers | skill-collection | [obra/superpowers](https://github.com/obra/superpowers) | flow phases self-execute from their constraint documents |
 | feature-dev | subagent-collection | Claude Code plugin: feature-dev | the orchestrator performs the explore / architect / review step inline |
-
-> Caveman levels (`lite`/`full`/`ultra`) are vibe's own frozen output-compression
-> vocabulary, not a dependency — the naming credits
-> [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) as origin.
 
 ## Platform support
 

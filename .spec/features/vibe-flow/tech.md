@@ -96,10 +96,10 @@ skill (see *Prompt Injection*), not from a hand-written `inject` string:
 [product.md](../../product.md) phase map is the human-readable mirror. A full
 per-state table used to live here, but it was **retired 2026-07-09** — a
 hand-maintained copy of the machine drifts, and this one had gone stale
-(pre-consolidation `vibe-setup`/`vibe-strategy` skill names, no `quick.compound`
-state, no edge-keyed `gates`). Read the machine for the authoritative per-state
-skill link, delegates, caveman level, write surface, and legal `next`; the flow
-now also carries `quick.compound` and a top-level `gates` object keyed by edge
+(pre-consolidation `vibe-setup`/`vibe-strategy` skill names, no per-phase
+compound states, no edge-keyed `gates`). Read the machine for the authoritative
+per-state skill link, delegates, caveman level, write surface, and legal `next`;
+the flow carries a top-level `gates` object keyed by edge
 (`feature.plan>feature.impl`, `feature.verify>feature.compound`).
 
 Three deliberate calls, still true of the machine:

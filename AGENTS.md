@@ -81,7 +81,9 @@ The cursor owns sequencing and artifact destinations; delegates own method.
 When a delegated skill's text names its own artifact path, commits its own
 output, or hands off to another skill, the current state's orders win: write
 to the state's surface, leave commits to the flow, transition only via
-`set-state.sh`. `set-state.sh idle` is always legal — abort ends any flow.
+`set-state.sh`. Scope edits are not a state: edit within the current state's
+write surface and stay put. `set-state.sh idle` is always legal — abort ends
+any flow.
 
 Root [.spec/plan.md](.spec/plan.md) owns milestones and cross-feature order.
 Feature `plan.md` owns unit tables — do not duplicate units in chat or commits prose.
@@ -124,7 +126,7 @@ This is the **end-state** the repo is building. Reference when implementing
 
 Policy lives in `detect-context.sh decide` (defaults to `idle` when `state.json` is absent):
 
-1. `.spec/lessons.md` — writable only in `*.compound` or `setup.apply` (or when explicitly recording lessons with user approval).
+1. `.spec/lessons.md` — writable only in `feature.compound`, `setup.apply`, `strategy.spec`, or `quick.verify` (the flow-end states that carry the conditional lesson step; or when explicitly recording lessons with user approval).
 2. Root `.spec/{product,tech,design,plan}.md` — only in `strategy.spec`, `feature.compound`, or `setup.apply`.
 3. `.agents/skills/vibe/state.json` — only via `set-state.sh`.
 

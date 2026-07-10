@@ -1,15 +1,16 @@
 # compound — consolidate & learn
 
-Turns finished work into durable memory. Caveman **lite** for the body, **ultra**
-for receipts. Serves `feature.compound` and `strategy.compound`; both end at
-`idle`.
+Turns finished work into durable memory. Serves `feature.compound` only — the
+full end-of-feature consolidation (promote, archive, branch close-out); it ends
+at `idle`. Strategy and quick runs record their optional lesson inline in
+`strategy.spec` / `quick.verify` (see [strategy.md](strategy.md), [quick.md](quick.md)),
+not here.
 
 ## Procedure
 
-1. **Locate.** Read `.agents/skills/vibe/state.json`. Confirm a `*.compound` state.
-   Root `.spec/{product,tech,design,plan}.md` are writable only here
-   (`feature.compound` / `strategy.compound`); `.spec/lessons.md` is also writable
-   in `quick.compound`.
+1. **Locate.** Read `.agents/skills/vibe/state.json`. Confirm `feature.compound`.
+   Root `.spec/{product,tech,design,plan}.md` and `.spec/lessons.md` are writable
+   here.
 2. **Lessons.** Append a tagged entry to `.spec/lessons.md` using the canonical
    format (`### title`, `**Pattern:**`, `**Rule:**`, `**Tags:**`, `**Date:**`,
    optional `**Pinned-by:**`). Only record durable lessons — pinning is
@@ -39,8 +40,8 @@ for receipts. Serves `feature.compound` and `strategy.compound`; both end at
    > - redirect: nothing to `.spec` — it touches only git; the archive move was the flow's own work above, not this skill's
    > - skip: the full compound procedure — it does not know the spec format (see [spec feature.md](.agents/skills/spec/feature.md) § Compound note)
 
-8. **Receipt (ultra).** Emit a compact receipt: `lesson +1 → <tag>`, promoted
-   files, archived path, `delete prompted`, `branch finished`, `digest refreshed`.
+8. **Receipt.** Emit a compact receipt: `lesson +1 → <tag>`, promoted files,
+   archived path, `delete prompted`, `branch finished`, `digest refreshed`.
    Then `set-state.sh idle`.
 
 ## Rules
@@ -48,4 +49,6 @@ for receipts. Serves `feature.compound` and `strategy.compound`; both end at
 - `regen-active-rules.sh` is the only writer of the active-rules block; never
   hand-edit inside its markers.
 - Archive is cold and transient; never read it for active work. CODE IS TRUTH.
-- Caveman lite body, ultra receipts. Security/irreversible actions normal prose.
+- Output density follows the machine's `style` note (see [SKILL.md](SKILL.md)
+  § Style): compress receipts and summaries. Security/irreversible actions stay
+  in normal prose.

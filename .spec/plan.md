@@ -69,7 +69,7 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 6 | monorepo-split | `spec/`+`flow/` split + symlinks + truth sweep + orphan compound | suites + validate + grep evidence | DONE | — |
 | 7 | [install-tooling](features/install-tooling/plan.md) | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `flow/tests/adapters/run.sh` + `flow/tests/run.sh` | DONE | monorepo-split DONE |
 | 8 | [release-docs](features/release-docs/plan.md) | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | DONE | install-tooling DONE |
-| 9 | [flow-mvp](archive/flow-mvp/plan.md) | precedence + contract blocks, hybrid plan grammar, auto-advance + two gates, quick.compound, evidence-receipt verify tooth, caveman demotion | `flow/tests/run.sh` (hermetic sandbox, machine⊆prose, gate↔orders, evidence-gate block/pass) | DONE | — |
+| 9 | [flow-mvp](archive/flow-mvp/plan.md) | precedence + contract blocks, hybrid plan grammar, auto-advance + two gates, a quick-flow compound state, evidence-receipt verify tooth, caveman demotion | `flow/tests/run.sh` (hermetic sandbox, machine⊆prose, gate↔orders, evidence-gate block/pass) | DONE | — |
 
 **Active focus:** hardening pass on `claude/vibe-repo-review-oszwb4`
 (2026-07-09) — a full audit found verified bugs and doc drift; fixes in flight
@@ -77,7 +77,7 @@ across the flow engine, installer, spec skill, and docs, plus a compound of the
 flow-mvp feature whose `.spec/` memory this pass reconciles. flow-mvp itself
 landed 2026-07-08 (merged as PR #14): it reworked the flow half into the
 personal operating layer (precedence contract, delegation contract blocks,
-auto-advance with two edge-keyed gates, `quick.compound`, and the first promoted
+auto-advance with two edge-keyed gates, a quick-flow compound state, and the first promoted
 Stop predicate — the evidence-receipt verify tooth). Prior features remain DONE
 and self-hosting. Still deferred: real-world earn-the-teeth promotions beyond the
 verify tooth, `vibe-flow/4` `feature.deepen`, the deferred flow-mvp methodology
@@ -202,7 +202,7 @@ Cleansed notes for shipped work — detail lives in live surfaces, not this plan
   (`flow/SKILL.md` + AGENTS.md template), delegation contract blocks at every seam,
   the hybrid plan template (`## Global Constraints` + per-unit `**Steps:**`),
   auto-advance with two edge-keyed `gates` (`feature.plan>feature.impl`,
-  `feature.verify>feature.compound`), the new `quick.compound` state + lessons path,
+  `feature.verify>feature.compound`), the then-new quick-flow compound state + lessons path,
   two impl modes (interactive / handover), caveman demoted from a dependency to
   frozen vocabulary, and the first promoted Stop predicate — the evidence-receipt
   verify tooth (`evidence/feature-<feature>.md`, `evidence/quick.md`, git-derived

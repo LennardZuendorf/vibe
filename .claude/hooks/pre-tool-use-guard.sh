@@ -65,7 +65,7 @@ VERDICT="$(bash "$DETECT" decide "$PATH_IN" 2>/dev/null || echo allow)"
 case "$VERDICT" in
   block:*)
     echo "vibe-guard: BLOCKED — ${VERDICT#block:}" >&2
-    echo "vibe-guard: transition with set-state.sh, or amend within the current state's write rules." >&2
+    echo "vibe-guard: transition with set-state.sh, or edit within the current state's write rules." >&2
     exit 2
     ;;
   warn:*)

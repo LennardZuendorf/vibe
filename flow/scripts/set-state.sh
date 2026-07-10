@@ -50,17 +50,10 @@ if [[ -z "$TARGET" ]]; then
   exit 1
 fi
 
-# amend is a modifier, not a stored cursor state — it edits scope and returns.
-if [[ "$TARGET" == "amend" ]]; then
-  err "amend is a modifier, not a cursor state. Run vibe amend (amend.md) for a targeted"
-  err "scope edit, then continue in your current state. The cursor is unchanged."
-  exit 1
-fi
-
 # Validate target exists in the machine.
 if [[ "$HAVE_JQ" -eq 1 ]]; then
   if ! jq -e --arg s "$TARGET" '.states[$s]' "$MACHINE" >/dev/null 2>&1; then
-    LEGAL=$(jq -r '.states | keys | map(select(. != "amend")) | join(", ")' "$MACHINE")
+    LEGAL=$(jq -r '.states | keys | join(", ")' "$MACHINE")
     err "ERROR: '$TARGET' is not a known state."
     err "Known states: $LEGAL"
     exit 1

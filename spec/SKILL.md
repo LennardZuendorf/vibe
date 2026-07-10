@@ -97,7 +97,6 @@ phases:
   - feature.design
   - feature.plan
   - feature.compound
-  - strategy.compound
 
 caveman:
   lite: design+plan phases; Scope table + req titles; file paths; unit IDs only

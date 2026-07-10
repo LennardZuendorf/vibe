@@ -1099,6 +1099,11 @@ test_flow_mvp_4_template_hybrid_grammar() {
   assert_contains "flow-mvp/4" "template has a Steps checkbox block" "$tpl" "**Steps:**"
   assert_contains "flow-mvp/4" "template Steps block has checkboxes" "$tpl" "- [ ]"
   assert_contains "flow-mvp/11" "template has per-unit **Interfaces:** block" "$tpl" "**Interfaces:**"
+  # simplify: Interfaces + Steps are handover-mode-only; interactive impl may omit them,
+  # but the core blocks (Goal/Requirements/Files/Test scenarios/Verification) always stay.
+  assert_contains "simplify/plan-grammar" "template marks Interfaces/Steps as handover-mode-only" "$tpl" "HANDOVER-MODE ONLY"
+  assert_contains "simplify/plan-grammar" "template keeps Test scenarios as a core block" "$tpl" "**Test scenarios:**"
+  assert_contains "simplify/plan-grammar" "template keeps Verification as a core block" "$tpl" "**Verification:**"
 }
 
 # ── fix-1: SF14 detects conflicts in the row-label Scope shape (template shape) ─

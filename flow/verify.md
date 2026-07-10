@@ -1,13 +1,13 @@
 # verify — evidence before completion
 
 Verification is first-class here (the cheapest high-value steal from GSD: real
-evidence, dedicated review, fix-plans before "done"). Caveman **full**.
+evidence, dedicated review, fix-plans before "done").
 
 Serves two states:
 
 - `feature.verify` → `feature.compound` (pass) | `feature.impl` (targeted fix) |
   `feature.plan` (major drift)
-- `quick.verify` → `quick.fix` (findings) | `quick.compound` (lesson) | `idle`
+- `quick.verify` → `quick.fix` (findings) | `idle`
 
 ## Procedure
 
@@ -18,7 +18,7 @@ Serves two states:
 
    > **Delegate — superpowers:verification-before-completion**
    > - announce: "delegating to `superpowers:verification-before-completion` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
-   > - inject: run the real tests/build; for a feature, tie each result to a plan **unit ID**; caveman full
+   > - inject: run the real tests/build; for a feature, tie each result to a plan **unit ID**
    > - redirect: evidence is observed output shown in-turn; no spec writes
    > - skip: any "done"/commit claim on a failing check
 
@@ -48,15 +48,17 @@ Serves two states:
    > - skip: applying the fix in verify — verify diagnoses and routes only
 
 6. **Report + route.** Summarize evidence (commands run, output, review verdict),
-   then route. The fix loops (`feature.impl`/`feature.plan`, `quick.fix`) and
-   `quick.compound` are non-gated — advance immediately and continue. The one
-   gated edge is the ship gate (`feature.verify > feature.compound`): **Human
-   gate** before shipping a feature.
+   then route. The fix loops (`feature.impl`/`feature.plan`, `quick.fix`) are
+   non-gated — advance immediately and continue. In `quick.verify`, if a durable
+   lesson surfaced record it inline before going `idle` (see [quick.md](quick.md)
+   step 5). The one gated edge is the ship gate
+   (`feature.verify > feature.compound`): **Human gate** before shipping a feature.
 
 ## Rules
 
 - Evidence is observed behaviour, not assertion. Show the command and its output.
 - At a non-gated edge, advance immediately: `set-state.sh <next>`, announce in
   one line, continue. Stop and ask only at the ship gate (see state-machine.json).
-- No spec writes from verify.
-- Caveman full; security/irreversible actions in normal prose.
+- No spec writes from verify beyond the optional `quick.verify` lesson entry.
+- Output density follows the machine's `style` note (see [SKILL.md](SKILL.md)
+  § Style); security/irreversible actions in normal prose.

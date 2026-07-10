@@ -24,6 +24,28 @@ compound enforcement, a warnings relay, and an honest-docs truth sweep.
 - **Warnings relay** — flow warnings (auto-advance nudges, exit-predicate smells)
   are surfaced back at the next prompt instead of being lost mid-turn.
 
+### Simplified
+
+- **Caveman levels → one style note** — the per-state `caveman` levels
+  (`lite`/`full`/`ultra`), the `caveman_levels`/`safety_carveouts` machine blocks,
+  and the `check-skills.sh caveman` fallback are gone. A single top-level `style`
+  note in `state-machine.json` now governs output density for every state:
+  compress receipts and summaries, but security warnings and irreversible-action
+  confirmations stay in full prose and reasoning depth is never reduced.
+- **`amend` folded into precedence** — the `amend` modifier state, the `modifiers`
+  array, and `amend.md` are removed. A scope edit is not a state: edit within the
+  current state's write surface and stay put; `set-state.sh idle` still aborts.
+- **`strategy.compound` / `quick.compound` → conditional steps** — the two dead
+  compound states are removed. The optional durable-lesson step now runs inline at
+  the end of `strategy.spec` and `quick.verify` (append to `.spec/lessons.md` +
+  `regen-active-rules.sh` before going idle). `feature.compound` is unchanged.
+  The lessons.md write guard now allows those two flow-end states. The machine
+  drops from 16 to 13 state entries (12 non-idle states).
+- **Plan-template grammar relaxed** — the per-unit **Interfaces** and **Steps**
+  blocks in `feature-plan.md` are marked handover-mode-only; interactive impl may
+  omit them and drive units from the core blocks (Goal / Requirements / Files /
+  Test scenarios / Verification).
+
 ### Fixed
 
 - Verified bugs across the flow engine, installer, and spec skill (see the branch
