@@ -122,8 +122,8 @@ Thin shells over `scripts/`; the allow/warn/block policy lives once in
 | Hook | Event | Does |
 |---|---|---|
 | `user-prompt-submit-inject.sh` | `UserPromptSubmit` | injects the current state's orders every turn |
-| `pre-tool-use-guard.sh` | `PreToolUse` (Edit/Write/NotebookEdit) | hard-blocks the three write invariants |
-| `stop-gate.sh` | `Stop` | warn-first exit checks; blocks in `*.verify` without a fresh evidence receipt |
+| `pre-tool-use-guard.sh` | `PreToolUse` (Edit/Write/NotebookEdit/Bash) | hard-blocks the three write invariants on **file-tool** calls; on `Bash` it only **warns** when a command looks like it writes a guarded path (see caveats below) |
+| `stop-gate.sh` | `Stop` | warn-first exit checks; blocks in `*.verify` without a fresh evidence receipt — with or without `jq` |
 
 Wired automatically by `install.sh` into `.claude/settings.json`; hook scripts resolve their data via `$CLAUDE_PROJECT_DIR`.
 
@@ -146,6 +146,24 @@ Check any path before writing:
 ```bash
 bash .agents/skills/vibe/scripts/detect-context.sh decide .spec/product.md
 ```
+
+**What the teeth actually reach — three honest caveats:**
+
+1. **File tools only, plus a Bash warn.** The three hard blocks intercept
+   `Edit` / `Write` / `NotebookEdit`. A raw shell write (`echo >> .spec/lessons.md`,
+   `sed -i`, `tee`, `mv`/`cp`/`rm`) does **not** hit that path, so the guard also
+   runs a warn-only Bash **sniffer**: it text-scans the command for a write-shaped
+   op aimed at a guarded path and nudges. It never blocks (false positives are
+   certain), a pure read like `grep .spec/lessons.md` never warns, and a command
+   driving `set-state.sh` is never warned about `state.json`.
+2. **`set-state.sh` is a writer, not a gate.** It validates the target state
+   *name* and writes the cursor; it does not enforce which edges are legal. Edge
+   legality (and which edges need a confirm token) is `/flow` convention — prose,
+   not a hook.
+3. **The receipt tooth is `jq`-optional.** In a `*.verify` state the `Stop` gate
+   blocks on a missing / stale evidence receipt **with or without `jq`** — jq-less,
+   it reads the flat cursor via sed and the block is byte-identical. Absent `jq`
+   only costs the machine-derived warn nudges, never the block.
 
 ## Scripts
 

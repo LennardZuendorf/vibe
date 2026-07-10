@@ -177,11 +177,15 @@ not block on.
 | Mechanism | Strength | What it does |
 |---|---|---|
 | `PreToolUse` guard — 3 write invariants | **Hard block** (exit 2) | `state.json` only via `set-state.sh`; `.spec/lessons.md` only in `feature.compound`, `setup.apply`, `strategy.spec`, or `quick.verify`; root `.spec/{product,tech,design,plan}.md` only in `strategy.spec`, `feature.compound`, or `setup.apply` |
-| `Stop` gate — evidence receipt | **Hard block** (exit 2) | in a `*.verify` state, refuses to stop until a fresh `evidence/…` receipt exists (staleness is git-derived) |
+| `PreToolUse` guard — Bash sniffer | **Warning** | the hard blocks intercept **file-tool** calls (Edit / Write / NotebookEdit) only; a raw `echo >> .spec/lessons.md` is caught by a text-scan sniffer that **warns**, never blocks (false positives are certain, so it can only nudge) |
+| `Stop` gate — evidence receipt | **Hard block** (exit 2) | in a `*.verify` state, refuses to stop until a fresh `evidence/…` receipt exists (staleness is git-derived). This tooth fires **with or without `jq`** — jq-less, the cursor is read via sed and the block is byte-identical |
+| `set-state.sh` — the cursor writer | **Not a gate** | it validates the target state *name* and writes the cursor; it does **not** enforce edge legality. Which edges are legal (and which need a confirm) is `/flow` convention, not a hook |
 | everything else | **Warning** | auto-advance nudges, stuck-phase / impl-without-tests smells, per-turn orders — advisory only. Warnings are relayed back and appear at your **next prompt**, not mid-turn |
 
-Everything degrades gracefully: a missing script, absent `jq`, or an unreadable
-cursor exits 0 and never ends the session.
+Everything degrades gracefully: a missing script or an unreadable cursor exits 0
+and never ends the session. Absent `jq` only costs the machine-derived warn nudges —
+the write invariants and the evidence-receipt block still fire (they read the flat
+cursor via sed).
 
 Deep dive: [`flow/README.md`](flow/README.md).
 

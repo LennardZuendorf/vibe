@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 # pre-tool-use-guard.sh — vibe flow guard hook (platform-adapters/2).
 #
-# Event: PreToolUse, matcher Edit|Write|NotebookEdit. Reads the target path from
-# stdin and asks the shared decision policy whether the write is allowed in the
-# current flow state. NO policy logic lives here (R8) — it all lives once in
-# .agents/skills/vibe/scripts/detect-context.sh decide.
+# Event: PreToolUse, matcher Edit|Write|NotebookEdit|Bash. For the file tools it
+# reads the target path from stdin and asks the shared decision policy whether the
+# write is allowed in the current flow state. NO path policy lives here (R8) — it
+# all lives once in .agents/skills/vibe/scripts/detect-context.sh decide.
+#
+# Bash is a WARN-ONLY sniffer, never a block: the three hard blocks intercept
+# file-tool calls only, so a raw `echo >> .spec/lessons.md` would otherwise slip
+# past them undocumented. When tool_name is Bash the command is scanned for a
+# write-shaped operation (>, >>, tee, sed -i, truncate, mv/cp/rm) aimed at one of
+# the three guarded path classes; a hit emits a WARN through the relay and exits 0.
+# False positives are certain (it is a text scan), so it can only warn — a command
+# merely reading a guarded path (grep, cat) has no write op and does NOT warn, and
+# a command driving set-state.sh is never warned about state.json.
 #
 # Verdict translation (Claude Code PreToolUse convention):
 #   block:<reason> -> reason to stderr, exit 2 (deny, fed back to Claude)
@@ -35,6 +44,8 @@ ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
 DETECT="$ROOT/.agents/skills/vibe/scripts/detect-context.sh"
 WARN_LOG="$ROOT/.agents/skills/vibe/warnings.log"
 
+have_jq() { command -v jq >/dev/null 2>&1; }
+
 [[ -f "$DETECT" ]] || exit 0
 
 INPUT="$(cat 2>/dev/null || true)"
@@ -47,6 +58,52 @@ log_warn() {
   [[ -d "$dir" ]] || return 0
   printf 'guard: %s\n' "$1" >> "$WARN_LOG" 2>/dev/null || true
 }
+
+# warn_bash — relay a warn-only Bash-write smell (stderr + the relay log). Never blocks.
+warn_bash() {
+  echo "vibe-guard: warn — a bash command looks like it writes $1 (a guarded path); prefer the flow's write surface over a raw shell redirect. (warn-only)" >&2
+  log_warn "bash command appears to write $1 (bypasses the file-tool guard) (warn-only)"
+}
+
+# sniff_bash — text-scan a Bash command for a write-shaped op aimed at a guarded
+# path class, and warn (never block) on the first hit. A command with no write op
+# (a pure read like grep/cat) never warns; set-state.sh is the sanctioned state.json
+# writer, so it is never warned about state.json.
+sniff_bash() {
+  local cmd="$1"
+  # A write-shaped operator anywhere in the command (redirect, tee, in-place sed,
+  # truncate, or a destructive mv/cp/rm). No write op -> nothing to warn about.
+  grep -Eq '(>>?|(^|[[:space:]])(tee|truncate|mv|cp|rm)([[:space:]]|$)|(^|[[:space:]])sed([[:space:]]|$).*-i)' <<<"$cmd" || return 0
+
+  if grep -Eq '(^|[^[:alnum:]_])\.spec/lessons\.md' <<<"$cmd"; then
+    warn_bash ".spec/lessons.md"; return 0
+  fi
+  if grep -Eq '(^|[^[:alnum:]_])\.spec/(product|tech|design|plan)\.md' <<<"$cmd"; then
+    warn_bash "a root .spec/{product,tech,design,plan}.md doc"; return 0
+  fi
+  if grep -Eq '(\.agents/skills/vibe/state\.json|(^|[^[:alnum:]_])flow/state\.json)' <<<"$cmd"; then
+    grep -q 'set-state\.sh' <<<"$cmd" && return 0   # sanctioned writer: never warn
+    warn_bash ".agents/skills/vibe/state.json (use set-state.sh)"; return 0
+  fi
+}
+
+# tool_name routes the handler: Bash -> warn-only sniffer; file tools -> path policy.
+if have_jq; then
+  TOOL="$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || true)"
+else
+  TOOL="$(printf '%s' "$INPUT" | sed -n 's/.*"tool_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1 || true)"
+fi
+
+if [[ "$TOOL" == "Bash" ]]; then
+  if have_jq; then
+    CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)"
+  else
+    CMD="$(printf '%s' "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1 || true)"
+  fi
+  [[ -n "$CMD" ]] || exit 0
+  sniff_bash "$CMD"
+  exit 0
+fi
 
 # Edit/Write carry tool_input.file_path; NotebookEdit carries notebook_path.
 # With jq, read them exactly; without it, a best-effort sed on the flat JSON.

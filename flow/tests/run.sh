@@ -754,5 +754,147 @@ assert_contains "flow-mvp/9" "feature.verify without a feature degrades to warn-
 rm -rf "$s"
 
 echo ""
+echo "=== review-fix — stop-gate is jq-optional (no-jq PATH shim) ==="
+# The blocking tooth (missing/stale receipt) is documented as a HARD block, so it
+# must fire with or WITHOUT jq — pre-fix the hook exited 0 the instant jq was absent,
+# silently disarming the only Stop-side block. Build a jq-free PATH carrying only the
+# coreutils the jq-less hook path uses, then re-run the same scenarios; each outcome
+# must match the jq path above. Discriminating: restore `command -v jq || exit 0` and
+# every block case below flips to rc=0.
+gnojq="$(mktemp -d)"
+for _t in dirname sed head cat grep git; do
+  _p="$(command -v "$_t" 2>/dev/null)" && ln -sf "$_p" "$gnojq/$_t"
+done
+run_gate_nojq() { printf '%s' "$2" | PATH="$gnojq" CLAUDE_PROJECT_DIR="$1" "$BASH_BIN" "$GATE" 2>&1; echo "rc=$?"; }
+
+# block-missing-receipt (git repo)
+s="$(mk_gate_sbx feature verify widget git)"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "review-fix" "no-jq: feature.verify with no receipt still blocks (exit 2)" "$out" "rc=2"
+assert_contains "review-fix" "no-jq: missing-receipt block still names the exact path" "$out" "evidence/feature-widget.md"
+rm -rf "$s"
+
+# pass-fresh (receipt + clean tree)
+s="$(mk_gate_sbx feature verify widget git)"
+mkdir -p "$s/.agents/skills/vibe/evidence"
+printf 'ran: bash tests; observed: pass\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "review-fix" "no-jq: fresh receipt + clean tree passes (exit 0)" "$out" "rc=0"
+rm -rf "$s"
+
+# block-stale (git repo) — receipt mtime pinned into the past, post-receipt edit newer
+s="$(mk_gate_sbx feature verify widget git)"
+mkdir -p "$s/.agents/skills/vibe/evidence"
+printf 'ran: bash tests\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+printf 'edited after the receipt\n' >> "$s/tracked.txt"
+touch -t 200001010000 "$s/.agents/skills/vibe/evidence/feature-widget.md"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "review-fix" "no-jq: stale receipt still blocks (exit 2)" "$out" "rc=2"
+rm -rf "$s"
+
+# existence-only (no git) -> pass on presence
+s="$(mk_gate_sbx feature verify widget nogit)"
+mkdir -p "$s/.agents/skills/vibe/evidence"
+printf 'ran: bash tests\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "review-fix" "no-jq: non-git existence-only passes with a receipt (exit 0)" "$out" "rc=0"
+rm -rf "$s"
+
+# stop_hook_active pass-through (read from stdin via sed, not jq)
+s="$(mk_gate_sbx feature verify widget git)"
+out="$(run_gate_nojq "$s" '{"stop_hook_active": true}')"
+assert_contains "review-fix" "no-jq: stop_hook_active short-circuits to exit 0" "$out" "rc=0"
+rm -rf "$s"
+
+# non-verify state (idle) exits 0
+s="$(mk_gate_sbx idle idle null git)"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "review-fix" "no-jq: idle cursor never blocks (exit 0)" "$out" "rc=0"
+rm -rf "$s"
+
+# quick.verify no receipt -> block naming evidence/quick.md (the second verify state)
+s="$(mk_gate_sbx quick verify null git)"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "review-fix" "no-jq: quick.verify with no receipt blocks (exit 2)" "$out" "rc=2"
+assert_contains "review-fix" "no-jq: quick block still names evidence/quick.md" "$out" "evidence/quick.md"
+rm -rf "$s"
+rm -rf "$gnojq"
+
+echo ""
+echo "=== review-fix — PreToolUse Bash write sniffer (warn-only) ==="
+# The three hard blocks intercept file tools only; a raw `echo >> .spec/lessons.md`
+# would slip past undocumented. The guard now warn-sniffs Bash commands. Discriminating:
+# with the sniffer removed the Bash payload carries no file_path, so the hook exits 0
+# with NO warn — the lessons-write assertion below flips.
+GUARD="$SRC_ROOT/.claude/hooks/pre-tool-use-guard.sh"
+gsbx="$(mktemp -d)"
+mkdir -p "$gsbx/.agents/skills/vibe/scripts"
+cp "$SRC_ROOT/flow/scripts/detect-context.sh" "$gsbx/.agents/skills/vibe/scripts/"
+cp "$SRC_ROOT/flow/state-machine.json" "$gsbx/.agents/skills/vibe/"
+run_guard() { printf '%s' "$2" | CLAUDE_PROJECT_DIR="$1" bash "$GUARD" 2>&1; echo "rc=$?"; }
+
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"echo x >> .spec/lessons.md"}}')"
+assert_contains "review-fix" "bash 'echo >> .spec/lessons.md' warns" "$out" "warn"
+assert_contains "review-fix" "bash lessons-write warn names lessons.md" "$out" ".spec/lessons.md"
+assert_contains "review-fix" "bash write sniffer never blocks (exit 0)" "$out" "rc=0"
+
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"grep foo .spec/lessons.md"}}')"
+assert_not_contains "review-fix" "bash 'grep .spec/lessons.md' (a read) does NOT warn" "$out" "warn"
+assert_contains "review-fix" "bash read exits 0" "$out" "rc=0"
+
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"bash flow/scripts/set-state.sh idle"}}')"
+assert_not_contains "review-fix" "bash set-state.sh idle does NOT warn for state.json" "$out" "warn"
+assert_contains "review-fix" "bash set-state.sh exits 0" "$out" "rc=0"
+
+# state.json class + set-state carve-out: a raw redirect INTO state.json (no
+# set-state.sh) warns; the same target alongside set-state.sh does not.
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"echo x | tee .agents/skills/vibe/state.json"}}')"
+assert_contains "review-fix" "bash 'tee state.json' (no set-state) warns" "$out" "warn"
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"set-state.sh feature.impl > flow/state.json"}}')"
+assert_not_contains "review-fix" "bash redirect to state.json via set-state.sh does NOT warn" "$out" "warn"
+
+# a root-spec in-place edit warns; sed -i is a write op.
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"sed -i s/a/b/ .spec/product.md"}}')"
+assert_contains "review-fix" "bash 'sed -i .spec/product.md' warns (root spec)" "$out" "warn"
+
+# Edit-tool behavior is unchanged: lessons.md under idle still HARD blocks (exit 2).
+out="$(run_guard "$gsbx" '{"tool_name":"Edit","tool_input":{"file_path":".spec/lessons.md"}}')"
+assert_contains "review-fix" "Edit-tool lessons.md under idle still hard-blocks (exit 2)" "$out" "rc=2"
+assert_contains "review-fix" "Edit-tool behavior unchanged (BLOCKED message)" "$out" "BLOCKED"
+
+# graceful degrade: empty stdin exits 0 with no warn.
+out="$(printf '' | CLAUDE_PROJECT_DIR="$gsbx" bash "$GUARD" 2>&1; echo "rc=$?")"
+assert_contains "review-fix" "empty stdin exits 0 (graceful)" "$out" "rc=0"
+assert_not_contains "review-fix" "empty stdin does not warn" "$out" "warn"
+rm -rf "$gsbx"
+
+echo ""
+echo "=== review-fix — merge-settings.sh Bash matcher + idempotency ==="
+MS="$SRC_ROOT/flow/scripts/merge-settings.sh"
+guard_group='[.hooks.PreToolUse[] | select([.hooks[]?.command // empty] | any(test("pre-tool-use-guard")))]'
+# The shipped adapter wires Bash into the PreToolUse matcher (file tools kept).
+shipped_m="$(jq -r '.hooks.PreToolUse[0].matcher' "$SRC_ROOT/.claude/settings.json")"
+assert_contains "review-fix" "shipped .claude/settings.json PreToolUse matcher includes Bash" "$shipped_m" "Bash"
+assert_contains "review-fix" "shipped matcher keeps the file tools" "$shipped_m" "Edit|Write|NotebookEdit"
+
+mt="$(mktemp -d)"
+bash "$MS" merge "$mt" >/dev/null 2>&1
+pm="$(jq -r '.hooks.PreToolUse[0].matcher' "$mt/.claude/settings.json")"
+assert_contains "review-fix" "merge writes a PreToolUse matcher including Bash" "$pm" "Bash"
+# idempotency: re-merge must not duplicate the vibe PreToolUse group.
+bash "$MS" merge "$mt" >/dev/null 2>&1
+n="$(jq -r "$guard_group | length" "$mt/.claude/settings.json")"
+assert_eq "review-fix" "re-merge does not duplicate the vibe PreToolUse group" "$n" "1"
+# an OLD-matcher vibe entry is REPLACED (strip-by-command-path), not appended.
+jq '.hooks.PreToolUse = [{"matcher":"Edit|Write|NotebookEdit","hooks":[{"type":"command","command":"bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-tool-use-guard.sh\"","timeout":10}]}]' \
+   "$mt/.claude/settings.json" > "$mt/s.tmp" && mv "$mt/s.tmp" "$mt/.claude/settings.json"
+bash "$MS" merge "$mt" >/dev/null 2>&1
+n2="$(jq -r "$guard_group | length" "$mt/.claude/settings.json")"
+pm2="$(jq -r "$guard_group"' | .[0].matcher' "$mt/.claude/settings.json")"
+assert_eq "review-fix" "re-merge over an old-matcher entry leaves exactly one vibe group" "$n2" "1"
+assert_contains "review-fix" "re-merge upgrades the old matcher to include Bash" "$pm2" "Bash"
+rm -rf "$mt"
+
+echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

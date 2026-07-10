@@ -9,7 +9,7 @@
 #   .claude/settings.json gains a "hooks" object with three vibe entries, each a
 #   command of the form  bash "$CLAUDE_PROJECT_DIR/.claude/hooks/<script>.sh":
 #     UserPromptSubmit -> user-prompt-submit-inject.sh   (no matcher, timeout 10)
-#     PreToolUse       -> pre-tool-use-guard.sh           (matcher Edit|Write|NotebookEdit)
+#     PreToolUse       -> pre-tool-use-guard.sh           (matcher Edit|Write|NotebookEdit|Bash)
 #     Stop             -> stop-gate.sh                     (no matcher, timeout 10)
 #
 # Merge is idempotent: vibe's own groups (detected by the .claude/hooks/<script>.sh
@@ -34,7 +34,7 @@ VIBE_HOOKS='{
     ]
   },
   "PreToolUse": {
-    "matcher": "Edit|Write|NotebookEdit",
+    "matcher": "Edit|Write|NotebookEdit|Bash",
     "hooks": [
       { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-tool-use-guard.sh\"", "timeout": 10 }
     ]
@@ -63,7 +63,7 @@ jq_free_snippet() {
   cat <<'EOF'
 {
     "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit-inject.sh\"", "timeout": 10 } ] } ],
-    "PreToolUse": [ { "matcher": "Edit|Write|NotebookEdit", "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-tool-use-guard.sh\"", "timeout": 10 } ] } ],
+    "PreToolUse": [ { "matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-tool-use-guard.sh\"", "timeout": 10 } ] } ],
     "Stop": [ { "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-gate.sh\"", "timeout": 10 } ] } ]
 }
 EOF
