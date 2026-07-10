@@ -8,7 +8,7 @@ children:
   - features/install-tooling/tech.md
   - features/release-docs/tech.md
   - archive/flow-mvp/tech.md
-updated: 2026-07-09
+updated: 2026-07-10
 ---
 
 # vibe — Technical Architecture
@@ -295,7 +295,7 @@ build time does not reflect the current layout.
 |---|---|
 | Dual state systems return | Remove `.spec/.phase` and `.claude/state.json` as canonical concepts; document `.agents/skills/vibe` only. |
 | The `vibe` skill becomes a mega-skill | Keep state data in JSON/scripts; keep each flow in its own per-phase file under one skill (resolved by the seven-shim → one-skill consolidation). |
-| Delegated skills write to wrong paths | Every `vibe-*` skill injects explicit `.spec/` paths before delegating. |
+| Delegated skills write to wrong paths | Every `vibe` phase injects explicit `.spec/` paths before delegating. |
 | Mutable state creates git noise | Version static definitions; gitignore target-project cursors/caches. |
 | Adapter leakage | Root specs name `.agents/skills/vibe` and `.agents/skills` as canonical; `.claude` is adapter-only. |
 
@@ -311,4 +311,4 @@ build time does not reflect the current layout.
 | **[features/platform-adapters/](features/platform-adapters/tech.md)** | Claude adapter (`/flow` + three hooks via `.claude/settings.json`), `install.sh` core provisioning. |
 | **[features/install-tooling/](features/install-tooling/tech.md)** | `install.sh` flags, `doctor.sh`, `deps.json`. |
 | **[features/release-docs/](features/release-docs/tech.md)** | READMEs, rails (LICENSE/CHANGELOG/CI/runner), logo, examples, stranger eval. |
-| **[archive/flow-mvp/](archive/flow-mvp/tech.md)** (done) | Operating-layer MVP: precedence + contract-block delegation, hybrid plan grammar, `gates` on edges, a quick-flow compound state, evidence-receipt Stop tooth, caveman demotion. Archived. |
+| **[archive/flow-mvp/](archive/flow-mvp/tech.md)** (done) | Operating-layer MVP: precedence + contract-block delegation, hybrid plan grammar, `gates` on edges, a quick-flow compound state, evidence-receipt Stop tooth, output-density demoted to frozen vocabulary. Archived. |

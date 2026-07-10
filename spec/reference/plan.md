@@ -73,7 +73,7 @@ Feature specs are branch-scoped and the repo holds only what is live.
 |---|---|
 | Strategy / roadmap | Root `plan.md` — value-prop + architecture links, feature sequence |
 | Feature design complete | Feature `plan.md` — units with stable `feature/n` IDs |
-| Scope changes mid-flight | Amend the relevant plan; add units, never renumber |
+| Scope changes mid-flight | Revise the relevant plan; add units, never renumber |
 | Compound | Promote cross-cutting sequencing into root `plan.md`; cleanse delivered detail to notes; archive then prompt to delete the feature folder |
 
 Human gate: the root feature sequence and feature unit tables should be approved before `impl`.
@@ -230,7 +230,7 @@ Feature `vibe-flow/plan.md` unit rows:
 
 | ID | Seq | Summary | Depends | Verification |
 |---|---:|---|---|---|
-| vibe-flow/1 | 1 | Per-turn orders in vibe-* skills; strip frozen injects | — | `tests/flow/run.sh` |
+| vibe-flow/1 | 1 | Per-turn orders in the vibe skill; strip frozen injects | — | `tests/flow/run.sh` |
 | vibe-flow/2 | 2 | Skill-count decision | vibe-flow/1 | review note |
 
 This pattern scales: add features, promote sub-features to siblings, extend the sequence — without cross-feature unit locks and without rewriting history.

@@ -655,7 +655,7 @@ test_skill_v2_frontmatter_fields() {
   assert_contains "spec-skill-improvements/1" "SKILL.md has agents:" "$skill" "agents:"
   assert_contains "spec-skill-improvements/1" "SKILL.md has superpowers:" "$skill" "superpowers:"
   assert_contains "spec-skill-improvements/1" "SKILL.md has delegates:" "$skill" "delegates:"
-  assert_contains "spec-skill-improvements/1" "SKILL.md has caveman:" "$skill" "caveman:"
+  assert_not_contains "spec-skill-improvements/1" "SKILL.md frontmatter dropped retired caveman machinery" "$skill" "caveman"
 }
 
 # ── spec-skill-improvements: Unit 2 — ## Roles section reconciled to real subagents ─
@@ -700,12 +700,12 @@ test_skill_routing_new_routes() {
   assert_contains "spec-skill-improvements/3" "SKILL.md routing has research" "$skill" "research"
 }
 
-# ── spec-skill-improvements: Unit 4 — feature.md output profiles ─────────────
+# ── spec-skill-improvements: Unit 4 — feature.md output density (style note) ──
 test_feature_output_profiles() {
   local fm; fm="$(cat "$SPEC_SKILL/feature.md")"
-  assert_contains "spec-skill-improvements/4" "feature.md has ## Output profiles" "$fm" "## Output profiles"
-  assert_contains "spec-skill-improvements/4" "feature.md has Lite profile" "$fm" "### Lite"
-  assert_contains "spec-skill-improvements/4" "feature.md has Ultra profile" "$fm" "### Ultra"
+  assert_contains "spec-skill-improvements/4" "feature.md has ## Output density" "$fm" "## Output density"
+  assert_contains "spec-skill-improvements/4" "feature.md output density cites the flow style note" "$fm" "§ Style"
+  assert_not_contains "spec-skill-improvements/4" "feature.md dropped retired caveman levels" "$fm" "caveman"
 }
 
 # ── spec-skill-improvements: Unit 5 — promote.sh dry-run no mutation ─────────
@@ -1138,7 +1138,7 @@ test_setup_section_has_interview_flow() {
   assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q1" "$skill" "Q1"
   assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q2" "$skill" "Q2"
   assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q3" "$skill" "Q3"
-  assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q4" "$skill" "Q4"
+  assert_not_contains "spec-skill-improvements/18" "SKILL.md Setup dropped the caveman-level question (now 3 questions)" "$skill" "Q4"
   assert_contains "spec-skill-improvements/18" "SKILL.md Setup references .config.yaml" "$skill" ".config.yaml"
 }
 
@@ -1153,7 +1153,7 @@ test_config_section_present() {
 test_config_defaults_documented() {
   local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
   assert_contains "spec-skill-improvements/19" "SKILL.md Config documents vibe-flow key" "$skill" "vibe-flow"
-  assert_contains "spec-skill-improvements/19" "SKILL.md Config documents caveman key" "$skill" "caveman"
+  assert_not_contains "spec-skill-improvements/19" "SKILL.md Config dropped the retired caveman key" "$skill" "caveman"
   assert_contains "spec-skill-improvements/19" "SKILL.md Config documents suggest-superpowers key" "$skill" "suggest-superpowers"
 }
 
@@ -1366,7 +1366,7 @@ test_setup_writes_config() {
   fi
   local body; body="$(cat "$d/.spec/.config.yaml" 2>/dev/null || true)"
   assert_contains "fix-6" ".config.yaml documents vibe-flow key" "$body" "vibe-flow"
-  assert_contains "fix-6" ".config.yaml documents caveman key" "$body" "caveman"
+  assert_not_contains "fix-6" ".config.yaml dropped the retired caveman key" "$body" "caveman"
   assert_contains "fix-6" ".config.yaml documents suggest-superpowers key" "$body" "suggest-superpowers"
   rm -rf "$d"
 }
@@ -1374,10 +1374,10 @@ test_setup_writes_config() {
 # ── fix-6: setup.sh never overwrites an existing .config.yaml ────────────────────
 test_setup_config_preserved() {
   local d; d="$(mktmp)"; mkdir -p "$d/.spec"
-  printf 'caveman: lite\n' > "$d/.spec/.config.yaml"
+  printf '# sentinel: preserved\n' > "$d/.spec/.config.yaml"
   ( cd "$d" && bash "$SETUP" >/dev/null 2>&1 )
   local body; body="$(cat "$d/.spec/.config.yaml")"
-  assert_contains "fix-6" "existing .config.yaml preserved across setup" "$body" "caveman: lite"
+  assert_contains "fix-6" "existing .config.yaml preserved across setup" "$body" "# sentinel: preserved"
   rm -rf "$d"
 }
 

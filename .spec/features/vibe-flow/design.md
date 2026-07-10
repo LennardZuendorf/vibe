@@ -40,7 +40,7 @@ not as a large second toolchain.
 
 The per-turn inject is the flow's main lever. One inject owner emits one static
 set of orders per state, naming the mandatory skill, the write surface, the output
-path, the caveman level, and the next state. The orders are **sourced from the
+path, and the next state. The orders are **sourced from the
 state's linked skill** (D12), not a separately authored string. Principles:
 
 - **Constrain, then resource.** Say what is in scope first, then which skill and
@@ -50,17 +50,19 @@ state's linked skill** (D12), not a separately authored string. Principles:
   edited in one place; the inject hook just delivers them (D12).
 - **Static per phase.** The same state always injects the same orders, so prompt
   caching holds (see tech.md *Prompt Cache Discipline*).
-- **One owner.** Do not run competing injectors; vibe's inject also sets
-  the caveman level rather than delegating that to a separate hook.
+- **One owner.** Do not run competing injectors; output density is fixed by the
+  machine's one top-level `style` note, not a separate hook.
 - **Safety overrides density.** Security warnings and irreversible-action
-  confirmations are always normal prose, at any caveman level.
+  confirmations are always normal prose, regardless of the `style` note.
 
 ---
 
-## Caveman Behaviour
+## Output Density
 
-Caveman is communication density, not reasoning depth. The level a state requests
-shapes how the agent *writes back*, never how hard it thinks. Level meanings are
-canonical in the root [product.md](../../product.md) Communication Levels; the
-inject names the level and trusts the agent (and, when installed, the upstream
-caveman skill) to apply it.
+Density is communication style, not reasoning depth. It shapes how the agent
+*writes back*, never how hard it thinks. Density is governed by one top-level
+`style` note in `state-machine.json` — no filler; compress receipts and subagent
+summaries; keep security warnings and irreversible-action confirmations in full
+prose; never trade reasoning depth for brevity. The per-state caveman levels
+(`lite`/`full`/`ultra`) this section once described were **retired 2026-07-09** in
+favour of that single note.

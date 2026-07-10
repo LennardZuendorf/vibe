@@ -15,8 +15,9 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 - **Compound-enforcement gate** — `spec/scripts/check-drift.sh` (CI-wired after
   `validate.sh`) fails when a merged feature has no row in the root `.spec/plan.md`
-  or leaves `NOT STARTED` units in a live feature plan, and errors on hand-written
-  test-assertion counts (counts must come from the runner, never be typed by hand).
+  and errors on hand-written test-assertion counts (counts must come from the
+  runner, never be typed by hand); lingering `NOT STARTED` units in live feature
+  plans are flagged as warnings (they are legitimate mid-flight).
 - **flow-mvp feature (the personal operating layer)** — precedence + delegation
   contract blocks, the hybrid plan grammar, auto-advance with two edge-keyed gates,
   the `quick.compound` lessons path, two impl modes, caveman demoted to vocabulary,
@@ -24,6 +25,25 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   in PR #14; its overdue compound was completed in this wave.
 - **Warnings relay** — flow warnings (auto-advance nudges, exit-predicate smells)
   are surfaced back at the next prompt instead of being lost mid-turn.
+- **Target-neutral instruction payload** — the `AGENTS.md` managed block that
+  installs into targets now carries only the harness contract (session start,
+  driving the flow, write invariants, precedence, commands, degrade notes) with
+  no vibe repo identity; the dogfood guide lives outside the markers as this
+  repo's own prose. A parity test pins the repo's managed block byte-identical
+  to the shipped template so the two can never drift apart again.
+- **Skill registration on install** — `install.sh` now symlinks
+  `.claude/skills/{spec,vibe}` in targets (per half; never clobbering user
+  entries) so `/spec` and the `vibe` skill actually exist where the docs say;
+  uninstall removes exactly those links and prunes an emptied dir.
+- **Bash write sniffer (warn-only)** — the PreToolUse guard now also watches
+  Bash commands for write-shaped operations against the three guarded path
+  classes and surfaces a warning through the relay; file-tool blocks are
+  unchanged and the sniffer never blocks (heuristic, false positives possible).
+- **No-jq stop tooth** — the evidence-receipt `Stop` gate now works identically
+  with or without jq (sed cursor fallback), closing the silent-disarm gap; the
+  README enforcement table states the remaining honesty caveats explicitly
+  (hard blocks intercept file-tool calls only; `set-state.sh` is a writer, not
+  a gate).
 
 ### Simplified
 
@@ -71,6 +91,9 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
     unmerge strips both managed blocks on an awk-less target;
   - unmerge also removes the stranded vibe-branded title line, so a vibe-created
     `AGENTS.md` leaves no orphan behind.
+- **Spec-skill style unification** — the spec skill's own leftover `caveman`
+  config key and output-profile plumbing are removed; output density is governed
+  by the flow's single style note everywhere.
 - **Doc truth sweep** — retired the plugin-era claims (`.claude-plugin/plugin.json`
   + `hooks.json`); the live Claude wiring is `.claude/settings.json`. Corrected
   stale `tests/{spec,flow,adapters}/run.sh` paths to the split layout

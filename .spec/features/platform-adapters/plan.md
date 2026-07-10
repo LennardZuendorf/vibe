@@ -138,7 +138,7 @@ For `idle` only, print the machine's inline fallback. Interpolate `<feature>` on
 **Dependencies:** — (consumes `vibe-flow` D12, frozen before this feature starts)
 
 **Done when:** for a cursor in `feature.impl` the hook prints that state's orders
-(sourced from `vibe-feature`) byte-for-byte; `idle` prints the inline fallback; no
+(sourced from the `vibe` skill) byte-for-byte; `idle` prints the inline fallback; no
 state file prints the idle fallback; never non-zero (missing `jq`/state/skill → 1-line
 fallback, exit 0).
 

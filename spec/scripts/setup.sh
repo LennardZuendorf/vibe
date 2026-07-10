@@ -92,8 +92,7 @@ else
 # All keys are commented: absent keys fall back to the documented defaults below
 # without error. Uncomment and edit a key to override. See SKILL.md § Config.
 
-# vibe-flow: false           # true → caveman level auto-managed by the flow cursor
-# caveman: full              # lite | full | auto — default spec output profile
+# vibe-flow: false           # true → the vibe flow drives phase routing + output density (its style note)
 # suggest-superpowers: true  # false → suppress superpower offers; self-execute every step
 # superpowers:               # per-executor availability; false → route silently to self-exec
 #   brainstorming: true

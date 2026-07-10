@@ -41,8 +41,11 @@ Unit IDs are `vibe-flow/n` — assigned once, never renumbered.
 **Already exists (Stage 1 complete):**
 - `.agents/skills/vibe/state-machine.json` (15 states), `state.example.json`.
 - Scripts: `set-state.sh`, `validate-state.sh`, `detect-context.sh`, `regen-active-rules.sh`.
-- Seven `vibe-*` skills: setup, strategy, feature, quick, verify, compound, amend.
-- Per-state `caveman`, `skill`, `reads`/`writes`, `next`, `exit` in machine.
+- One consolidated `vibe` skill: router `SKILL.md` + phase files (setup, strategy,
+  feature, quick, verify, compound) — originally seven `vibe-*` shims (incl. `amend`),
+  merged 2026-06-29; `amend` later folded into precedence.
+- Per-state `skill`, `reads`/`writes`, `next`, `exit` in machine; output density is
+  one top-level `style` note (per-state `caveman` retired 2026-07-09).
 - D8 lessons retrieval, D9 stable plan IDs, D10/D12 inject model documented.
 
 **Delivered (Stage 2, 2026-06-18):**
@@ -51,14 +54,14 @@ Unit IDs are `vibe-flow/n` — assigned once, never renumbered.
   block; `.agents/skills/vibe/scripts/orders.sh` resolves the cursor → skill → block and
   interpolates `<feature>`. Verified by `flow/tests/run.sh`.
 - `vibe-flow/3` — `.agents/skills/vibe/scripts/check-skills.sh` warns on unverifiable
-  delegated skills and prints the caveman fallback; never hard-fails.
+  delegated skills and degrades to inline orders; never hard-fails.
 
 **Decided:**
-- `vibe-flow/2` — OPEN-2 skill count: **keep all seven** `vibe-*` shims. `vibe-verify`
-  and `vibe-compound` stay separate (distinct write surfaces and caveman levels:
-  verify writes no specs at `full`; compound writes lessons/root specs at `lite`/`ultra`
-  receipts). `vibe-setup` owns flow/skill bootstrap; adapter-file provisioning is
-  delegated to `agent-instructions`. No merge.
+- `vibe-flow/2` — OPEN-2 skill count: **consolidated 2026-06-29** into one `vibe`
+  skill (router `SKILL.md` + per-phase files), superseding the earlier "keep all
+  seven shims" call. Write surfaces stay distinct per phase (verify writes no specs;
+  compound writes lessons/root specs); the `setup` phase owns flow/skill bootstrap,
+  while adapter-file provisioning is delegated to `agent-instructions`.
 
 **Deferred:**
 - `vibe-flow/4` — D7 `feature.deepen` (spec-only until dogfood proves the need).
@@ -110,7 +113,7 @@ descriptions remain.
 ### vibe-flow/3 — Graceful degradation (OPEN-6)
 
 **Goal:** detect-and-warn skill-availability check in `.agents/skills/vibe/scripts/`,
-with a 1-line caveman fallback when the caveman plugin is absent.
+degrading to inline orders when a delegated skill is absent.
 
 **Requirements:** R3
 

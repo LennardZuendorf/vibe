@@ -249,4 +249,4 @@ features/vibe-flow).
 | **[features/platform-adapters/](features/platform-adapters/product.md)** | Claude Code adapter (`/flow` + three hooks via `.claude/settings.json`) + `install.sh` core provisioning. |
 | **[features/install-tooling/](features/install-tooling/product.md)** | Install lifecycle: `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json`. |
 | **[features/release-docs/](features/release-docs/product.md)** | Public release: READMEs, trust rails (LICENSE/CHANGELOG/CI), logo, examples, stranger eval. |
-| **[archive/flow-mvp/](archive/flow-mvp/product.md)** (done) | Personal operating layer: precedence + delegation contract blocks, hybrid plan grammar, auto-advance with two edge-keyed gates, a quick-flow compound state, evidence-receipt verify tooth, caveman demotion. Merged PR #14; archived. |
+| **[archive/flow-mvp/](archive/flow-mvp/product.md)** (done) | Personal operating layer: precedence + delegation contract blocks, hybrid plan grammar, auto-advance with two edge-keyed gates, a quick-flow compound state, evidence-receipt verify tooth, output-density demoted to frozen vocabulary. Merged PR #14; archived. |

@@ -92,9 +92,9 @@ documents. They enhance; they never gate.
 The spec skill is self-sufficient. Drive it directly with `/spec …` on any host,
 or let [the vibe flow](../flow/README.md) drive its authoring phases
 (`strategy.spec`, `feature.design`, `feature.plan`, the compound promotions). When
-the flow is present, `.spec/.config.yaml` can set `vibe-flow: true` so the caveman
-output level is managed by the flow cursor; absent that, the skill uses its own
-documented defaults. Either way the docs, templates, and validator are identical.
+the flow is present, `.spec/.config.yaml` can set `vibe-flow: true` so output
+density follows the flow's single `style` note; absent that, the skill uses its own
+documented style. Either way the docs, templates, and validator are identical.
 
 ## Degrade behavior
 

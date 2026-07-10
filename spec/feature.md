@@ -74,36 +74,30 @@ If any condition fails, stay in the feature flow.
 
 ---
 
-## Output profiles
+## Output density
 
-Match caveman level to phase — compress at the source, not the sink.
+Output density follows the vibe flow's single `style` note (see the flow's `SKILL.md § Style`):
+concise, no filler; compress receipts and summaries but never reasoning; security and
+irreversible-action warnings stay in full prose; code, paths, and commands stay byte-exact. There
+are no per-phase output levels to select — write precise, minimal spec sections at every phase.
 
-### Lite (feature.design, feature.plan)
+Keep the mandatory shape and drop the padding:
 
-Produce precise, minimal spec sections — not truncated prose but no padding.
+- **product.md** — frontmatter, problem paragraph, Scope table, requirement titles + strength, GWT
+  scenarios. Cut rationale essays and worked examples.
+- **tech.md** — frontmatter, file paths, interface signatures, risks as one-line bullets. Cut
+  implementation narrative and decision history.
+- **plan.md** — frontmatter, unit IDs with requirement IDs, verification (command + evidence). Cut
+  restated prose.
 
-| File | Mandatory | Compressed | Omit |
-|---|---|---|---|
-| product.md | Frontmatter, problem paragraph, Scope table, req titles + strength | Scenarios → one-line Given/When/Then | Rationale paragraphs, examples |
-| tech.md | Frontmatter, file paths, interface signatures | Risks → one-line bullets | Implementation narrative, decision history |
-| plan.md | Frontmatter, unit ID list with R-IDs | Verification table → command only | Full evidence prose |
-
-### Full (feature.plan reference, feature.impl, feature.verify)
-
-All sections per template; standard Requirement+Scenario blocks; full prose. No compression. This is the default for inter-phase reading.
-
-### Ultra (feature.compound receipts)
-
-All sections plus:
-- Unit traceability matrix (unit ID → test path → pass/fail)
-- Validation evidence summary (validate.sh run output)
-- Draft lesson entry (pattern, rule, tags — human edits before promoting)
+Compound receipts add the traceability matrix (unit ID → test path → pass/fail), the `validate.sh`
+evidence summary, and a draft lesson entry (pattern, rule, tags) for the human to edit before promoting.
 
 ---
 
 ## Examples in this repo
 
-- [.spec/features/vibe-flow/](../../../.spec/features/vibe-flow) — flow state machine, `vibe-*` skills (units `vibe-flow/n`)
+- [.spec/features/vibe-flow/](../../../.spec/features/vibe-flow) — flow state machine + one `vibe` skill (units `vibe-flow/n`)
 - [`.agents/skills/spec/`](../../) — spec framework (units `spec/n`, delivered — wrapped up; no feature folder)
 - [.spec/features/agent-instructions/](../../../.spec/features/agent-instructions) — `AGENTS.md` template and adapter symlinks (units `agent-instructions/n`)
 - [.spec/features/platform-adapters/](../../../.spec/features/platform-adapters) — Codex / Claude Code adapters (units `platform-adapters/n`)
@@ -143,7 +137,7 @@ Created  →  Consumed  →  Merged  →  Archived  →  Deleted (before merge)
 
 1. **Created during DESIGN.** Steps 1–4 of the authoring flow → `product.md`, `tech.md`, optional `design.md`.
 2. **Planned before IMPL.** Step 5 → `plan.md` with stable IDs; human gate on units.
-3. **Consumed during IMPL.** Read feature specs; cite unit IDs in commits and tests; amend with targeted fixes if reality diverges.
+3. **Consumed during IMPL.** Read feature specs; cite unit IDs in commits and tests; revise with targeted fixes if reality diverges.
 4. **Verified against plan.** Evidence checked per unit verification table — not agent assertions alone.
 5. **Merged during COMPOUND.** Cross-cutting blocks from `features/<name>/tech.md` promote into root `tech.md` (or branch docs). Feature-only detail does not promote.
 
@@ -160,7 +154,7 @@ Wrap **cross-cutting** sections so COMPOUND tooling (e.g. `bin/merge-feature.sh`
 ```markdown
 <!-- merge -->
 ## Single routing contract
-All `vibe-*` workflow skills and adapters call the same flow reader — one JSON shape everywhere.
+All workflow phases and adapters call the same flow reader — one JSON shape everywhere.
 <!-- /merge -->
 ```
 

@@ -69,7 +69,7 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 6 | monorepo-split | `spec/`+`flow/` split + symlinks + truth sweep + orphan compound | suites + validate + grep evidence | DONE | — |
 | 7 | [install-tooling](features/install-tooling/plan.md) | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `flow/tests/adapters/run.sh` + `flow/tests/run.sh` | DONE | monorepo-split DONE |
 | 8 | [release-docs](features/release-docs/plan.md) | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | DONE | install-tooling DONE |
-| 9 | [flow-mvp](archive/flow-mvp/plan.md) | precedence + contract blocks, hybrid plan grammar, auto-advance + two gates, a quick-flow compound state, evidence-receipt verify tooth, caveman demotion | `flow/tests/run.sh` (hermetic sandbox, machine⊆prose, gate↔orders, evidence-gate block/pass) | DONE | — |
+| 9 | [flow-mvp](archive/flow-mvp/plan.md) | precedence + contract blocks, hybrid plan grammar, auto-advance + two gates, a quick-flow compound state, evidence-receipt verify tooth, output-density demoted to frozen vocabulary | `flow/tests/run.sh` (hermetic sandbox, machine⊆prose, gate↔orders, evidence-gate block/pass) | DONE | — |
 
 **Active focus:** hardening pass on `claude/vibe-repo-review-oszwb4`
 (2026-07-09) — a full audit found verified bugs and doc drift; fixes in flight
@@ -114,7 +114,7 @@ metadata + social-preview upload.
   pre-existing `detect-context.sh` hard blocks deny; every `Stop` predicate is
   warn-only with a `TODO(earn-the-teeth)`. `platform-adapters/3`.
 - [x] **OPEN-6:** Skill degradation — `.agents/skills/vibe/scripts/check-skills.sh` warns on
-  unverifiable delegates + prints the caveman fallback; never hard-fails. `vibe-flow/3`.
+  unverifiable delegates and degrades to inline orders; never hard-fails. `vibe-flow/3`.
 
 ---
 

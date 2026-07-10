@@ -34,20 +34,16 @@ agents:
   - name: spec-tracer
     path: agents/spec-tracer/SKILL.md
     trigger: feature.design step 4 (HOW codebase trace)
-    caveman: lite
     parallel-safe: true
   - name: spec-promoter
     path: agents/spec-promoter/SKILL.md
     trigger: feature.compound promote step
-    caveman: full
   - name: spec-interviewer
     path: agents/spec-interviewer/SKILL.md
     trigger: feature.design steps 1-2 (WHAT interview)
-    caveman: lite
   - name: spec-health
     path: agents/spec-health/SKILL.md
     trigger: /spec health
-    caveman: full
     user-invocable: true
 
 superpowers:
@@ -97,11 +93,6 @@ phases:
   - feature.design
   - feature.plan
   - feature.compound
-
-caveman:
-  lite: design+plan phases; Scope table + req titles; file paths; unit IDs only
-  full: impl reference + verify; all sections per template
-  ultra: compound receipts; all sections + evidence + traceability matrix
 ---
 
 # Spec System
@@ -228,7 +219,7 @@ When a feature arc completes (COMPOUND / wrap-up), follow this sequence:
 
 **Why delete and not hoard:** the repo holds value-prop + architecture + current plan only. Decision archaeology that has standalone value can be kept in archive deliberately; otherwise delete — live artifacts (skill bundle, root specs, tests) are the truth.
 
-**This repo:** `spec-framework` was **deleted, not archived** — truth lives in this skill bundle, root `.spec/` entrypoints, and `tests/spec/run.sh`.
+**This repo:** `spec-framework` was **deleted, not archived** — truth lives in this skill bundle, root `.spec/` entrypoints, and `spec/tests/run.sh`.
 
 **Agent rules after wrap-up:**
 
@@ -334,10 +325,13 @@ missing keys fall back to documented defaults without error.
 
 | Key | Default | Behavior when set |
 |---|---|---|
-| `vibe-flow` | `false` | `true` → caveman level auto-managed by flow cursor; skip static default |
-| `caveman` | `full` | `lite`/`auto` → apply that output profile by default; notify user |
+| `vibe-flow` | `false` | `true` → the vibe flow drives phase routing and output density; defer to the flow cursor and its single `style` note rather than standalone defaults |
 | `suggest-superpowers` | `true` | `false` → suppress all "Superpower tip" callouts; self-execute every step |
 | `superpowers.<key>` | `true` | `false` → don't offer that executor; route silently to self-execution |
+
+**Output density is not a config key.** It follows the vibe flow's single `style` note — concise, no
+filler; security and irreversible-action warnings stay in full prose (see the flow's `SKILL.md § Style`).
+Standalone, the spec skill writes to that same style. There are no per-phase output levels to configure.
 
 Config read MUST happen before any offer or execution so `suggest-superpowers` suppression takes
 effect from the first step. See setup interview below for how the file is written.
@@ -353,24 +347,19 @@ When the user runs `/spec setup`:
      the named setting; re-confirm; write; done.
    - If absent: run the full interview below.
 
-2. **Interview (4 questions — conversational, not a form):**
+2. **Interview (3 questions — conversational, not a form):**
 
    **Q1 — Workflow orchestration:**
-   "Are you using vibe-flow's feature dev skills (`vibe-feature`, `vibe-compound`, etc.) to manage
-   your workflow, or will you run `/spec` commands directly? With vibe-flow, caveman level and phase
-   routing are handled by the flow cursor."
-   → Answer: yes (vibe-flow) | no (manual)
+   "Are you driving spec work through the vibe flow — the single `vibe` skill via `/flow` — or
+   running `/spec` commands directly? Under the flow, phase routing and output density are handled by
+   the flow cursor and its `style` note."
+   → Answer: yes (flow) | no (manual)
 
-   **Q2 — Caveman level** (skip if Q1 = vibe-flow):
-   "What level of spec detail do you want by default? `lite` (scope + req titles + unit IDs only),
-   `full` (all sections per template — recommended), or `auto` (match to phase when detectable)."
-   → Answer: lite | full | auto
-
-   **Q3 — Available superpowers:**
+   **Q2 — Available superpowers:**
    "Which AI skills/superpowers are available? `all`, `none`, or `custom` (I'll list each)."
    → Answer: all | none | {per-superpower booleans}
 
-   **Q4 — Proactive suggestions:**
+   **Q3 — Proactive suggestions:**
    "Should I suggest superpowers at each authoring step, or stay quiet and self-execute? Default: yes."
    → Answer: yes | no
 
