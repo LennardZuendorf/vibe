@@ -69,6 +69,7 @@ flowchart LR
         D[design] --> P[plan] -. human gate .-> IM[impl] --> V[verify]
         V -. human gate .-> C[compound]
         V -->|targeted fix| IM
+        V -->|major drift| P
     end
     subgraph quick
         T[triage] --> F[fix] --> QV[verify] --> QC[compound]
@@ -132,7 +133,8 @@ Three hard blocks enforced by
 [scripts/detect-context.sh](scripts/detect-context.sh) `decide`; everything else
 is allow or warn:
 
-1. **`.spec/lessons.md`** — writable only during a `*.compound` state.
+1. **`.spec/lessons.md`** — writable only during a `*.compound` state
+   (`feature.compound`, `strategy.compound`, `quick.compound`) or `setup.apply`.
 2. **Root `.spec/{product,tech,design,plan}.md`** — writable only during
    `strategy.spec`, `feature.compound`, or `setup.apply`.
 3. **`.agents/skills/vibe/state.json`** — never by direct edit; only via

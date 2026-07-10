@@ -53,7 +53,7 @@ Unit IDs are `agent-instructions/n` — assigned once, never renumbered.
   symlinks (skip-correct, relink-wrong, refuse-real-file). Idempotent.
 - `vibe-setup` skill `setup.detect` audit surface + `setup.apply` flow rewritten
   off the constitution path onto `merge-agents.sh` + adapter symlinks + regen.
-- Five merge/symlink scenarios covered by `tests/adapters/run.sh`.
+- Five merge/symlink scenarios covered by `flow/tests/adapters/run.sh`.
 
 ---
 

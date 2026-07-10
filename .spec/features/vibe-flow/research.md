@@ -21,8 +21,8 @@ orchestrate superpowers, feature-dev, and caveman versus alternatives
 
 - **Date:** 2026-07-07
 - **Reviewer:** external reviewing agent (Claude, multi-agent review: 2 deep-dive reviewers, 2 integration/adapter reviewers, 1 competitive-landscape researcher, adversarial synthesis by the orchestrator)
-- **Target:** `main` @ `d56db8b` (post-PR #13 release line), reviewed against the brief in `.spec/product-review.md`
-- **Baseline reproduced:** `spec 123 + flow 68 + adapters 74 = 265 passed, 0 failed` (serial run); `validate.sh` 0 errors / 7 warnings; `doctor.sh` green with all three external deps absent (graceful-degrade path exercised live)
+- **Target:** `main` @ `d56db8b` (post-PR #13 release line), reviewed against the brief in `.spec/archive/product-review-2026-07-06.md`
+- **Baseline reproduced:** all three suites clean via `bash tests/run.sh` (serial run); `validate.sh` no errors (warnings only); `doctor.sh` reports healthy with all three external deps absent (graceful-degrade path exercised live)
 
 ---
 

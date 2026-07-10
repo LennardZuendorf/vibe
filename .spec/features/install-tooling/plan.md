@@ -50,7 +50,7 @@ views over the same data), then flags, then doctor + manifest on top.
 **Files:**
 
 ```
-install.sh  tests/adapters/run.sh
+install.sh  flow/tests/adapters/run.sh
 ```
 
 **Test scenarios:**
@@ -58,7 +58,7 @@ install.sh  tests/adapters/run.sh
 - Existing 41 adapter assertions stay green (behavior unchanged)
 - `--dry-run` on fresh + installed target: non-empty plan, target tree hash unchanged
 
-**Verification:** `bash tests/adapters/run.sh` green with new assertions.
+**Verification:** `bash flow/tests/adapters/run.sh` green with new assertions.
 
 ---
 
@@ -73,7 +73,7 @@ install.sh  tests/adapters/run.sh
 **Files:**
 
 ```
-install.sh  tests/adapters/run.sh
+install.sh  flow/tests/adapters/run.sh
 ```
 
 **Test scenarios:**
@@ -97,7 +97,7 @@ install.sh  tests/adapters/run.sh
 **Files:**
 
 ```
-install.sh  flow/scripts/merge-agents.sh (reuse only)  tests/adapters/run.sh
+install.sh  flow/scripts/merge-agents.sh (reuse only)  flow/tests/adapters/run.sh
 ```
 
 **Test scenarios:**
@@ -121,7 +121,7 @@ install.sh  flow/scripts/merge-agents.sh (reuse only)  tests/adapters/run.sh
 **Files:**
 
 ```
-flow/scripts/doctor.sh  flow/reference/deps.json  tests/flow/run.sh
+flow/scripts/doctor.sh  flow/reference/deps.json  flow/tests/run.sh
 ```
 
 **Test scenarios:**
@@ -130,7 +130,7 @@ flow/scripts/doctor.sh  flow/reference/deps.json  tests/flow/run.sh
 - Broken symlink / missing dep / illegal state: matching `warn` lines, still exit 0
 - deps.json parses; every entry has name/kind/source/required_by/degrade
 
-**Verification:** `bash tests/flow/run.sh` green with doctor assertions.
+**Verification:** `bash flow/tests/run.sh` green with doctor assertions.
 
 ---
 

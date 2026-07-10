@@ -7,7 +7,8 @@ children:
   - features/agent-instructions/tech.md
   - features/install-tooling/tech.md
   - features/release-docs/tech.md
-updated: 2026-07-03
+  - archive/flow-mvp/tech.md
+updated: 2026-07-09
 ---
 
 # vibe — Technical Architecture
@@ -63,7 +64,7 @@ flowchart TD
 | Vibe flow core | `.agents/skills/vibe/**` (→ `flow/`) | Platform-neutral flow state, state machine, transition + health scripts. |
 | Vibe skill | `.agents/skills/vibe/` | One agent skill — router `SKILL.md` + per-phase files — that delegates to real skills. |
 | Install tooling | `install.sh`, `flow/scripts/doctor.sh`, `flow/reference/deps.json` | Copy/merge provisioning, partial/dry-run/uninstall, health report, dep manifest. |
-| Platform adapters | `AGENTS.md`, `CLAUDE.md`, `.claude/**`, `.claude-plugin/` | Runtime-specific integration over the same core, incl. the Claude Code plugin + hooks. |
+| Platform adapters | `AGENTS.md`, `CLAUDE.md`, `.claude/**` (`commands/`, `hooks/`, `settings.json`) | Runtime-specific integration over the same core, incl. the Claude Code `/flow` command + hooks wired via `settings.json`. |
 
 ---
 
@@ -81,12 +82,10 @@ vibe/
 │   └── skills/
 │       ├── spec/                       # spec skill (symlink target)
 │       └── vibe/                       # workflow skill (SKILL.md + phase files + state machine + scripts)
-├── .claude-plugin/
-│   └── plugin.json                     # Claude Code plugin manifest (bundles cmd+skills+hooks)
 ├── .claude/
+│   ├── settings.json                   # event → hook-script wiring (installer-written)
 │   ├── commands/flow.md                # Claude adapter, reads .agents/skills/vibe
 │   └── hooks/
-│       ├── hooks.json                  # event → script wiring
 │       ├── user-prompt-submit-inject.sh  # inject linked skill's orders each turn
 │       ├── pre-tool-use-guard.sh         # allow/warn/block via detect-context.sh
 │       └── stop-gate.sh                  # end-of-turn exit-predicate checks
@@ -148,8 +147,8 @@ under `.spec/`.
     ├── product.md, tech.md, plan.md, design.md
     └── templates/          # hard-floor root + feature templates (SF5–SF7)
 
-tests/spec/run.sh           # repo-root behaviour tests (123 cases, SF0–SF19)
-tests/run.sh                # combined runner: spec (123) + flow (59) + adapters (66) = 248
+spec/tests/run.sh           # repo-root behaviour tests (SF0–SF19)
+tests/run.sh                # combined runner: spec + flow + adapters (run bash tests/run.sh)
 ```
 
 `setup.sh` resolves templates relative to its script directory (vendored or
@@ -242,17 +241,20 @@ the `vibe` skill.
 | Adapter | Owns | Does Not Own |
 |---|---|---|
 | Codex | `AGENTS.md` instructions, optional desktop/thread affordances | Flow state, spec layout |
-| Claude Code | `CLAUDE.md`, `.claude-plugin/plugin.json`, `.claude/commands/*`, `.claude/hooks/*` | Canonical skills, state machine, the allow/warn/block policy (that lives in `detect-context.sh`) |
-| Installer | Copy core `.agents` files + Claude adapter, merge `AGENTS.md`, seed+gitignore the cursor; `--only`/`--dry-run`/`--uninstall`; `doctor.sh` health; register the plugin | Project-specific product decisions |
+| Claude Code | `CLAUDE.md`, `.claude/settings.json`, `.claude/commands/*`, `.claude/hooks/*` | Canonical skills, state machine, the allow/warn/block policy (that lives in `detect-context.sh`) |
+| Installer | Copy core `.agents` files + Claude adapter, merge `AGENTS.md`, seed+gitignore the cursor; `--only`/`--dry-run`/`--uninstall`; `doctor.sh` health; write `.claude/settings.json` hook wiring | Project-specific product decisions |
 
-### Claude Code plugin & hooks
+### Claude Code adapter & hooks
 
-The Claude Code adapter is packaged as an installable **plugin**
-(`.claude-plugin/plugin.json`) that bundles the `/flow` command and the flow
-**hooks** via `${CLAUDE_PLUGIN_ROOT}`. A plugin cannot carry skills outside its
-own `skills/` dir, so the `spec` + `vibe` skills ship as project files through
-`install.sh`, not the plugin. The hooks are the Stage 2 enforcement layer — what
-makes the flow fire every turn rather than only when the agent remembers:
+The Claude Code adapter wires the `/flow` command and the flow **hooks** through
+`.claude/settings.json` (installer-written); the hook scripts resolve their data
+via `$CLAUDE_PROJECT_DIR`. The earlier plugin packaging
+(`.claude-plugin/plugin.json` + `hooks.json`) was **retired**: a plugin cannot
+carry skills outside its own `skills/` dir (see the "plugin cannot bundle skills"
+lesson), so the `spec` + `vibe` skills always had to ship as project files
+through `install.sh` — the `settings.json` wiring drops the plugin without losing
+anything. The hooks are the Stage 2 enforcement layer — what makes the flow fire
+every turn rather than only when the agent remembers:
 
 | Hook | Event | Role |
 |---|---|---|
@@ -281,8 +283,8 @@ build time does not reflect the current layout.
 | 4 | Create `vibe-verify`, `vibe-compound`, `vibe-amend` skills | vibe-flow |
 | 5 | Update `AGENTS.md` and `CLAUDE.md` as thin adapters | platform-adapters |
 | 6 | Add the `/flow` command adapter that reads `.agents/skills/vibe` | platform-adapters |
-| 7 | Build the Claude Code plugin: `.claude-plugin/plugin.json` + `hooks/hooks.json` with the three hooks (inject / guard / gate), each a thin shell over `.agents/skills/vibe/scripts/` | platform-adapters |
-| 8 | Add installer/setup flow for target projects (incl. plugin install) | platform-adapters |
+| 7 | Wire the three hooks (inject / guard / gate), each a thin shell over `.agents/skills/vibe/scripts/`, into Claude Code — originally via a `.claude-plugin/plugin.json` + `hooks/hooks.json`, **later retired** for direct `.claude/settings.json` wiring | platform-adapters |
+| 8 | Add installer/setup flow for target projects (writes `.claude/settings.json`) | platform-adapters |
 
 ---
 
@@ -305,6 +307,7 @@ build time does not reflect the current layout.
 | **spec framework (done)** | Spec skill, templates, validation, authoring flow. [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) |
 | **[features/vibe-flow/](features/vibe-flow/tech.md)** | `.agents/skills/vibe/` state machine, scripts, the one `vibe` skill's contracts. |
 | **[features/agent-instructions/](features/agent-instructions/tech.md)** | `AGENTS.md` template + `merge-agents.sh` marker merge + adapter symlinks. |
-| **[features/platform-adapters/](features/platform-adapters/tech.md)** | Claude plugin, three hooks, `install.sh` core provisioning. |
+| **[features/platform-adapters/](features/platform-adapters/tech.md)** | Claude adapter (`/flow` + three hooks via `.claude/settings.json`), `install.sh` core provisioning. |
 | **[features/install-tooling/](features/install-tooling/tech.md)** | `install.sh` flags, `doctor.sh`, `deps.json`. |
 | **[features/release-docs/](features/release-docs/tech.md)** | READMEs, rails (LICENSE/CHANGELOG/CI/runner), logo, examples, stranger eval. |
+| **[archive/flow-mvp/](archive/flow-mvp/tech.md)** (done) | Operating-layer MVP: precedence + contract-block delegation, hybrid plan grammar, `gates` on edges, `quick.compound`, evidence-receipt Stop tooth, caveman demotion. Archived. |

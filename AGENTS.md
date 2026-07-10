@@ -38,6 +38,7 @@ Know what exists before you read or create files.
 | `.agents/skills/vibe/scripts/` | **Present** — `set-state.sh`, `detect-context.sh`, etc. |
 | `.agents/skills/vibe/state.example.json` | **Present** — template for the cursor file |
 | `.agents/skills/vibe/state.json` | **Often absent** — gitignored runtime cursor; missing is normal |
+| `.agents/skills/vibe/evidence/` (`flow/evidence/`) | **Often absent** — gitignored `*.verify` receipts (`feature-<feature>.md`, `quick.md`); written during verify, missing is normal |
 | `.agents/skills/vibe/` | **Present** — workflow skill (SKILL.md router + phase files) |
 | `.claude/commands/`, `.claude/hooks/`, `.claude/settings.json` | **Present** — Claude Code adapter (`/flow` command + three hook scripts wired via `settings.json`) |
 | **`flow.json`** | **Does not exist** — never expect, read, or create this file |
@@ -123,7 +124,7 @@ This is the **end-state** the repo is building. Reference when implementing
 
 Policy lives in `detect-context.sh decide` (defaults to `idle` when `state.json` is absent):
 
-1. `.spec/lessons.md` — writable only in `*.compound` (or when explicitly recording lessons with user approval).
+1. `.spec/lessons.md` — writable only in `*.compound` or `setup.apply` (or when explicitly recording lessons with user approval).
 2. Root `.spec/{product,tech,design,plan}.md` — only in `strategy.spec`, `feature.compound`, or `setup.apply`.
 3. `.agents/skills/vibe/state.json` — only via `set-state.sh`.
 
@@ -213,9 +214,9 @@ Features: `.spec/features/<feature>/{product,tech}.md` required; `design.md`,
 
 ### Active Rules
 
+- **Compound is where drift is born — enforce it mechanically** — Compound must be mechanically enforced, not trusted to discipline. A drift check (`spec/scripts/check-drift.sh`, CI-wired after `validate.sh`) fails when a directory under `.spec/features/` has no row in the root `.spec/plan.md`, and flags any `NOT STARTED` unit left in a feature `plan.md`. Hand-written assertion counts are errored the same way — they rot silently. A green suite is not a compounded feature; make the missing-compound state impossible to merge past.
 - **Script self-location: search for markers, don't count hops** — Scripts reachable through compat symlinks must locate the repo root by upward marker search (`.spec`/`.git`), never fixed hop counts; pin with path-parity tests asserting byte-identical output via both real and symlinked invocation.
 - **The dogfood repo is a privileged target — eval on a fresh, non-git install** — A tool that will be *installed elsewhere* must be tested from a representative fresh target (a bare `mktemp -d`, no `.git`, no `.spec`), not just the source/dogfood repo. Prefer self-location relative to the script's own path over repo-root markers the target may lack. Run a periodic "stranger" eval (fresh agent, docs-only, throwaway sandbox) as a release gate — it exercises the install-target reality the in-repo suites cannot.
 - **Uninstall must surgically invert the install into shared dirs, and the test must discriminate** — An uninstaller must delete only the paths the installer created (per-file inverse of the copy), never blanket-remove a shared directory; pruning *emptied* dirs is fine. Pair every preservation guarantee with a **discriminating** test — one that fails if the safety code is replaced by the naïve destructive version (drop a user file into each shared dir, run uninstall, assert it survives *and* the shipped file is gone). Reuse the tested marker-pairing guard for the managed instruction block; never re-implement it.
 - **Skill design: promote superpowers proactively, remain self-sufficient** — Skills SHOULD proactively offer their optimal executor at each step — "I can use X for this, want me to?" — and MUST self-execute from their constraint documents if the user declines or the executor is unavailable. The order is always: offer first, self-suffice second. Never silently skip the offer; never block on the answer.
-- **An installer must preserve per-project runtime state across a re-copy** — A provisioner that refreshes managed files must snapshot per-project runtime state (the flow cursor) before the copy and restore it after, seeding only when genuinely absent. "Idempotent" has to hold for *user* state, not just managed files; pin it with a regression test that a live cursor (`feature.impl <feature>`) survives a re-install.
 <!-- vibe:active-rules:end -->

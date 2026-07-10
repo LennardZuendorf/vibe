@@ -91,37 +91,18 @@ skill (see *Prompt Injection*), not from a hand-written `inject` string:
 
 ### States, skills, and artifacts
 
-Canonical reference — must match `.agents/skills/vibe/state-machine.json`. Root
-[product.md](../../product.md) phase map mirrors this table.
+**Canonical: [`flow/state-machine.json`](../../../flow/state-machine.json)**
+(runtime path `.agents/skills/vibe/state-machine.json`); the root
+[product.md](../../product.md) phase map is the human-readable mirror. A full
+per-state table used to live here, but it was **retired 2026-07-09** — a
+hand-maintained copy of the machine drifts, and this one had gone stale
+(pre-consolidation `vibe-setup`/`vibe-strategy` skill names, no `quick.compound`
+state, no edge-keyed `gates`). Read the machine for the authoritative per-state
+skill link, delegates, caveman level, write surface, and legal `next`; the flow
+now also carries `quick.compound` and a top-level `gates` object keyed by edge
+(`feature.plan>feature.impl`, `feature.verify>feature.compound`).
 
-| State | Skill | Delegates | feature-dev | caveman | R/W surface | next |
-|---|---|---|---|---|---|---|
-| `idle` | — | `using-superpowers` | — | lite | R `lessons.md`, `plan.md` | setup.detect, strategy.brainstorm, feature.design, quick.triage |
-| `setup.detect` | `vibe-setup` | — | — | lite | R repo, adapters, `.agents/**`, `.spec/**` | setup.apply, idle |
-| `setup.apply` | `vibe-setup` | `spec`, `writing-skills` | — | lite | W `.agents/**`, baseline `.spec/**`¹ | idle |
-| `strategy.brainstorm` | `vibe-strategy` | `brainstorming` | — | lite | R `lessons.md`; scratch | strategy.spec |
-| `strategy.spec` | `vibe-strategy` | `spec` | — | lite | W root `.spec/{product,tech,design,plan}.md` | strategy.compound, idle |
-| `strategy.compound` | `vibe-compound` | `spec` | — | lite | W `lessons.md`, active-rules digest² | idle |
-| `feature.design` | `vibe-feature` | `brainstorming` | `code-explorer`, `code-architect` | lite | R `lessons.md`, root specs; W `features/<f>/{product,tech}.md` | feature.plan |
-| `feature.plan` | `vibe-feature` | `writing-plans` | `code-architect` | lite | W `features/<f>/plan.md` (U1…) | feature.impl |
-| `feature.impl` | `vibe-feature` | `executing-plans`, `test-driven-development` | — | full | W `src/**`, `tests/**` | feature.verify |
-| `feature.verify` | `vibe-verify` | `verification-before-completion`, `requesting-code-review`, `systematic-debugging` | `code-reviewer` | full | evidence only | feature.compound, feature.impl, feature.plan |
-| `feature.compound` | `vibe-compound` | `finishing-a-development-branch`, `spec` | — | lite³ | W `lessons.md`, root specs, archive, active-rules² | idle |
-| `quick.triage` | `vibe-quick` | `systematic-debugging` | — | full | R `lessons.md` | quick.fix, feature.design |
-| `quick.fix` | `vibe-quick` | `test-driven-development` | — | full | W `src/**`; opt `.spec/quick/<slug>.md` | quick.verify |
-| `quick.verify` | `vibe-verify` | `verification-before-completion` | `code-reviewer` | full | evidence only | idle |
-| `amend`⁴ | `vibe-amend` | `spec`, `receiving-code-review` | — | lite | W target state's write surface only | (returns to prior state) |
-
-¹ `setup.apply` still lists adapter active-rules in the machine **until**
-[agent-instructions AI4](../agent-instructions/plan.md) narrows adapter provisioning.
-² Active-rules digest via `regen-active-rules.sh`; requires symlink-aware dedupe before
-compound when `CLAUDE.md` symlinks `AGENTS.md`.
-³ Receipts `ultra`; body `lite`.
-⁴ Modifier — never a cursor state (`set-state.sh` rejects `amend`). Invoked via
-`vibe-amend` while cursor stays on the originating state; inject hook uses the
-**stored cursor state**, not `amend`.
-
-Three deliberate calls:
+Three deliberate calls, still true of the machine:
 
 - **`quick.triage` is `full`, not `ultra`.** `ultra` compresses hardest and can drop
   edge cases; triage is exactly where a missed edge case is expensive. `ultra` is
@@ -155,7 +136,7 @@ resolves the cursor `<flow>.<phase>` (default `idle`), follows the `skill` link,
 extracts that state's block, interpolates `<feature>` (the only substitution, so
 the inject stays prompt-cache stable), and prints it — degrading to the machine
 inject then a generic one-liner, always exit 0. The `UserPromptSubmit` inject
-hook is a thin shell over `orders.sh`. Verified by `tests/flow/run.sh`
+hook is a thin shell over `orders.sh`. Verified by `flow/tests/run.sh`
 (`vibe-flow/1`).
 
 ### Stable plan unit IDs (D9)

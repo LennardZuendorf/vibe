@@ -6,7 +6,6 @@
 
 [![CI](https://github.com/LennardZuendorf/vibe/actions/workflows/ci.yml/badge.svg)](https://github.com/LennardZuendorf/vibe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![tests](https://img.shields.io/badge/tests-248%20passing-brightgreen)
 ![bash](https://img.shields.io/badge/built%20with-bash%20%2B%20markdown%20%2B%20json-informational)
 
 </div>
@@ -126,15 +125,18 @@ flowchart LR
         D[design] --> P[plan] -. human gate .-> IM[impl] --> V[verify]
         V -. human gate .-> C[compound]
         V -->|targeted fix| IM
+        V -->|major drift| P
     end
     subgraph quick
         T[triage] --> F[fix] --> QV[verify]
+        QV -->|lesson| QC[compound]
     end
     I --> D
     I --> T
     SC --> I
     C --> I
     QV --> I
+    QC --> I
 ```
 
 > Simplified view — see [`flow/README.md`](flow/README.md) for the setup states.
@@ -146,6 +148,41 @@ from the linked skill by `orders.sh` — D12); a `PreToolUse` hook guards the th
 write invariants; a `Stop` hook runs warn-first exit checks and blocks in
 `*.verify` without a fresh evidence receipt. `amend` is a modifier, not a flow:
 a scoped edit from any state that returns there.
+
+### Driving the flow with `/flow`
+
+`/flow` is the transition command. Pass the target state — plus a feature name
+when entering a feature flow:
+
+```text
+/flow feature.design my-feature   # start a feature; names the feature
+/flow feature.plan                # advance to planning
+/flow idle                        # abort — always legal
+```
+
+It reads the current cursor, refuses a target that is not in the state's `next`,
+and otherwise calls `set-state.sh` for you — you never hand-edit the cursor. Most
+edges **auto-advance**: the agent transitions and keeps working without asking.
+The flow stops only at a **gated edge**, and a gated edge needs an explicit
+confirm token before `/flow` will cross it. The two gates are
+`feature.plan → feature.impl` (approve the plan units + pick the impl mode) and
+`feature.verify → feature.compound` (approve shipping); the
+`quick.triage → feature.design` escalation also confirms, because it renames the
+work.
+
+### What actually enforces what
+
+Only a few things are *hard*; the rest is convention the flow surfaces but does
+not block on.
+
+| Mechanism | Strength | What it does |
+|---|---|---|
+| `PreToolUse` guard — 3 write invariants | **Hard block** (exit 2) | `state.json` only via `set-state.sh`; `.spec/lessons.md` only in a `*.compound` state or `setup.apply`; root `.spec/{product,tech,design,plan}.md` only in `strategy.spec`, `feature.compound`, or `setup.apply` |
+| `Stop` gate — evidence receipt | **Hard block** (exit 2) | in a `*.verify` state, refuses to stop until a fresh `evidence/…` receipt exists (staleness is git-derived) |
+| everything else | **Warning** | auto-advance nudges, stuck-phase / impl-without-tests smells, per-turn orders — advisory only. Warnings are relayed back and appear at your **next prompt**, not mid-turn |
+
+Everything degrades gracefully: a missing script, absent `jq`, or an unreadable
+cursor exits 0 and never ends the session.
 
 Deep dive: [`flow/README.md`](flow/README.md).
 
@@ -206,11 +243,12 @@ directories in your target.
 ## Tests
 
 ```bash
-bash tests/run.sh      # spec (123) + flow (68) + adapters (74) — 265 assertions
+bash tests/run.sh      # spec + flow + adapters suites; CI runs the full matrix
 ```
 
-CI runs `shellcheck` on every tracked `*.sh`, the combined suite, and
-`spec/scripts/validate.sh` on every push and PR.
+CI runs `shellcheck` on every tracked `*.sh`, the combined suite,
+`spec/scripts/validate.sh`, and `spec/scripts/check-drift.sh` (compound / doc-drift
+gate) on every push and PR.
 
 ## Documentation
 

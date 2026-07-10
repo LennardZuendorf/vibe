@@ -49,7 +49,7 @@ Unit IDs are `vibe-flow/n` — assigned once, never renumbered.
 - `vibe-flow/1` — D12 implemented. Every skill-owning state carries `inject: null`;
   orders live in each `vibe-*` skill's `## Orders (D12)` `<!-- vibe:orders:<state> -->`
   block; `.agents/skills/vibe/scripts/orders.sh` resolves the cursor → skill → block and
-  interpolates `<feature>`. Verified by `tests/flow/run.sh`.
+  interpolates `<feature>`. Verified by `flow/tests/run.sh`.
 - `vibe-flow/3` — `.agents/skills/vibe/scripts/check-skills.sh` warns on unverifiable
   delegated skills and prints the caveman fallback; never hard-fails.
 

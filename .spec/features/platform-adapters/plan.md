@@ -9,6 +9,13 @@ updated: 2026-06-18
 
 # Feature: Platform Adapters — Implementation Plan
 
+> **Superseded (2026-07-09):** the `.claude-plugin/plugin.json` manifest and
+> `hooks.json` wiring built by the units below were later retired for direct
+> `.claude/settings.json` wiring (still `install.sh`-written); `/flow` ships as a
+> native project command. Unit statuses stand as the historical delivery record;
+> read "plugin"/"hooks.json" as "settings.json wiring". See the "plugin cannot
+> bundle skills" lesson.
+
 The Claude Code **plugin**, the three flow **hooks**, and the **installer**. A
 closed, deliverable, testable box that wires runtime platforms to a frozen core —
 it consumes the orders-in-skills artifact (D12, owned by `vibe-flow`) and the
@@ -68,7 +75,7 @@ Validated against the repo on 2026-06-08 (spec `validate.sh` clean).
 - `install.sh` — copy core, seed+gitignore cursor, delegate `AGENTS.md` merge,
   opt-in adapter symlinks, print plugin-registration guidance; idempotent (unit 6).
 - Hook behaviour (block/warn/allow/graceful) + installer + merge dogfooded in
-  `tests/adapters/run.sh` (unit 7); all `Stop` predicates shipped warn-first.
+  `flow/tests/adapters/run.sh` (unit 7); all `Stop` predicates shipped warn-first.
 
 **Timeline:** 1–2 sessions. Risk: Medium (hook exit-code semantics, PreToolUse stdin).
 
@@ -98,7 +105,7 @@ Validated against the repo on 2026-06-08 (spec `validate.sh` clean).
 - [x] **PreToolUse stdin contract.** Guard reads `tool_input.file_path` (falls back to
   `tool_input.notebook_path` for `NotebookEdit`); `block:` → stderr + **exit 2**;
   `warn:`/`allow` → exit 0. Confirmed against the hook-development reference and
-  exercised in `tests/adapters/run.sh`.
+  exercised in `flow/tests/adapters/run.sh`.
 - [x] **Closes root OPEN-4 / OPEN-7** (hook strictness): shipped warn-first with only
   the three pre-existing `detect-context.sh` hard blocks active; every `Stop` predicate
   is warn-only and carries a `TODO(earn-the-teeth)` promotion note. No new blocks.

@@ -7,7 +7,8 @@ children:
   - features/agent-instructions/product.md
   - features/install-tooling/product.md
   - features/release-docs/product.md
-updated: 2026-07-03
+  - archive/flow-mvp/product.md
+updated: 2026-07-09
 ---
 
 # vibe — Product
@@ -65,14 +66,18 @@ At a project level, vibe must:
    `.spec/` paths to write.
 7. **Degrade gracefully.** Missing skills, missing adapters, or corrupt flow
    state produce warnings and recovery paths, not session-ending failures.
-8. **Ship a Claude Code plugin with hooks.** A Claude Code plugin
-   (`.claude-plugin/plugin.json`) bundles the `/flow` command and the three flow
-   hooks (`UserPromptSubmit` inject, `PreToolUse` guard, `Stop` gate) via
-   `${CLAUDE_PLUGIN_ROOT}`. The plugin **cannot** carry skills outside its own
-   `skills/` dir, so the `spec` + `vibe` skills ship as project files through
-   `install.sh` instead. The hooks make the flow automatic and guard its
-   invariants; they are thin shells over `.agents/skills/vibe/scripts/`, added
-   warn-first, earning blocking strength through dogfooding.
+8. **Wire the Claude Code hooks automatically.** `install.sh` writes
+   `.claude/settings.json` with the three flow hooks (`UserPromptSubmit` inject,
+   `PreToolUse` guard, `Stop` gate) and copies the hook scripts into
+   `.claude/hooks/`; `/flow` ships as a native project command. The plugin
+   approach (`.claude-plugin/plugin.json` + `hooks.json`) was **retired** — a
+   plugin cannot carry skills outside its own `skills/` dir (see the
+   "plugin cannot bundle skills" lesson), so the `spec` + `vibe` skills already
+   had to ship as project files through `install.sh`; wiring the hooks through
+   `settings.json` removes the plugin without losing anything. The hooks make the
+   flow automatic and guard its invariants; they are thin shells over
+   `.agents/skills/vibe/scripts/`, added warn-first, earning blocking strength
+   through dogfooding.
 9. **Provide a safe install lifecycle.** `install.sh` offers partial install
    (`--only spec|flow`), preview (`--dry-run`), and clean removal
    (`--uninstall`), plus `doctor.sh` health checks and a `deps.json` dependency
@@ -111,7 +116,7 @@ style rather than a broad marketplace audience.
 |---|---|---|
 | `spec` framework | `.spec/` docs, templates, validation, wrap-up rules, feature authoring flow | Bundled [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) (done) |
 | `vibe` flow | `.agents/skills/vibe/` state, the one `vibe` skill (router + phase files), phase routing | [features/vibe-flow/](features/vibe-flow/product.md) |
-| Platform adapters | `AGENTS.md`, `CLAUDE.md`, and a **Claude Code plugin** that bundles the `/flow` command + the flow **hooks**; `install.sh` install lifecycle | [features/platform-adapters/](features/platform-adapters/product.md) + [features/install-tooling/](features/install-tooling/product.md) |
+| Platform adapters | `AGENTS.md`, `CLAUDE.md`, and the **Claude Code adapter** — the `/flow` command + the flow **hooks** wired via `.claude/settings.json`; `install.sh` install lifecycle | [features/platform-adapters/](features/platform-adapters/product.md) + [features/install-tooling/](features/install-tooling/product.md) |
 
 ---
 
@@ -150,6 +155,8 @@ flowchart LR
     FV -->|fix| FI
     FV -->|drift| FP
     I --> QT[quick.triage] --> QF[quick.fix] --> QV[quick.verify] --> I
+    QV -->|lesson| QC[quick.compound] --> I
+    QV -->|findings| QF
     QT -->|scope balloons| FD
 ```
 
@@ -161,11 +168,15 @@ reads/writes, and what the stage is for. This is the canonical workflow contract
 the full per-state record (skill link, `next` arrays, exit predicates — orders
 sourced from the linked skill per D12) lives in
 `.agents/skills/vibe/state-machine.json` and is detailed in
-[features/vibe-flow/tech.md](features/vibe-flow/tech.md).
+[features/vibe-flow/tech.md](features/vibe-flow/tech.md). The two human gates are
+keyed by **edge** in the machine's `gates` object
+(`feature.plan>feature.impl`, `feature.verify>feature.compound`), not by state —
+so `feature.verify`'s fix/drift back-edges to `feature.impl`/`feature.plan` stay
+ungated while its ship edge stops for approval.
 
 | Phase | Phase file | External skills | Subagents | Caveman | Spec artifact (R/W) | What the stage does |
 |---|---|---|---|---|---|---|
-| `idle` | — | `using-superpowers` | — | lite | R `lessons.md`, `plan.md` | Resting hub between flows. Read lessons/plan, then pick the flow that matches the request. |
+| `idle` | — | — | — | lite | R `lessons.md`, `plan.md` | Resting hub between flows. Read lessons/plan, then pick the flow that matches the request. |
 | `setup.detect` | `setup` | — | — | lite | R repo, adapters, `.agents`, `.spec` | Read-only audit of repo + harness; report present vs missing and preflight required plugins. |
 | `setup.apply` | `setup` | `spec`, `writing-skills` | — | lite | W `.agents/**`, baseline `.spec/**`, adapter blocks | Write/merge the bootstrap without clobbering: constitution block, flow scaffold, baseline specs. |
 | `strategy.brainstorm` | `strategy` | `brainstorming` | — | lite | R `lessons.md` | Shape project direction in dialogue; scratch only, no writes yet. |
@@ -179,14 +190,16 @@ sourced from the linked skill per D12) lives in
 | `quick.triage` | `quick` | `systematic-debugging` | — | full | R `lessons.md` | Diagnose the small issue; don't fix yet. Escalate to `feature.design` if scope balloons. |
 | `quick.fix` | `quick` | `test-driven-development` | — | full | W `src/**`, opt `.spec/quick/<slug>.md` | Implement the bounded fix test-first; no root spec writes. |
 | `quick.verify` | `verify` | `verification-before-completion` | `code-reviewer` | full | R `src`, `tests` | Prove the fix works and breaks nothing. |
+| `quick.compound` | `compound` | `spec` | — | lite (receipts ultra) | W `lessons.md`, adapter digest | Optional lessons path for a quick fix: append a tagged lesson and regenerate the active-rules digest, then return to `idle`. Skippable. |
 | `amend` _(modifier)_ | `amend` | `spec`, `receiving-code-review` | — | lite | target state's surface only | Targeted scope edit within the current state's write rules, then return. |
 
 External skills are `superpowers:*` unless noted (`spec` is bundled). Subagents
 are Anthropic's feature-dev agents, cherry-picked per phase. Each phase also emits
 one per-turn **inject** — the "current orders" (skill, write surface, caveman
-level, next state). Under D12 these orders are sourced from the phase's linked
-`vibe-*` skill shim (the single source of truth); skill-less states (`idle`,
-`amend`) keep a minimal inline string in `.agents/skills/vibe/state-machine.json`.
+level, next state). Under D12 these orders are sourced from the one `vibe` skill's
+`SKILL.md` § Orders (D12) — the `<!-- vibe:orders:<state> -->` block for the
+linked state (the single source of truth); skill-less `idle` keeps a minimal
+inline string in `.agents/skills/vibe/state-machine.json`.
 
 ## Communication Levels
 
@@ -248,6 +261,7 @@ so adapters and subagents stay consistent (see features/vibe-flow).
 | **spec framework (done)** | Durable `.spec/` planning model: two-layer docs, strict templates, warn-first validation, Requirement+Scenario format. Live: [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md). |
 | **[features/vibe-flow/](features/vibe-flow/product.md)** | The one `vibe` skill (router + phase files), `.agents/skills/vibe/` state, state machine, phase routing, delegated skill output paths. |
 | **[features/agent-instructions/](features/agent-instructions/product.md)** | `AGENTS.md` template + marker merge + adapter symlinks (`CLAUDE.md`, `WARP.md`). |
-| **[features/platform-adapters/](features/platform-adapters/product.md)** | Claude Code plugin + three hooks + `install.sh` core provisioning. |
+| **[features/platform-adapters/](features/platform-adapters/product.md)** | Claude Code adapter (`/flow` + three hooks via `.claude/settings.json`) + `install.sh` core provisioning. |
 | **[features/install-tooling/](features/install-tooling/product.md)** | Install lifecycle: `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json`. |
 | **[features/release-docs/](features/release-docs/product.md)** | Public release: READMEs, trust rails (LICENSE/CHANGELOG/CI), logo, examples, stranger eval. |
+| **[archive/flow-mvp/](archive/flow-mvp/product.md)** (done) | Personal operating layer: precedence + delegation contract blocks, hybrid plan grammar, auto-advance with two edge-keyed gates, `quick.compound`, evidence-receipt verify tooth, caveman demotion. Merged PR #14; archived. |

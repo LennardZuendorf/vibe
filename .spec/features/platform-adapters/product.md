@@ -8,6 +8,15 @@ updated: 2026-06-06
 
 # Feature: Platform Adapters — Product
 
+> **Superseded (2026-07-09):** the Claude Code **plugin** packaging
+> (`.claude-plugin/plugin.json` + `hooks.json`) described throughout this feature
+> was retired. The live wiring is `.claude/settings.json` (written by `install.sh`)
+> plus `/flow` as a native project command; there is no `.claude-plugin/` dir. A
+> plugin cannot bundle skills outside its own `skills/` dir, so the `spec`/`vibe`
+> core always shipped as project files anyway — see the "plugin cannot bundle
+> skills" lesson. This doc is kept as historical design record; read every
+> "plugin" reference below as "settings.json wiring".
+
 Platform adapters expose the same `vibe` flow to Codex, Claude Code, and future
 agent runtimes without making any one platform canonical. For Claude Code
 specifically, the adapter ships as an **installable Claude Code plugin** that
