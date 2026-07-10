@@ -3,7 +3,7 @@
 Brings a fresh (or drifted) repo under the harness. Two states:
 `setup.detect` (read-only audit) → `setup.apply` (write/merge) → `idle`.
 
-## 1. Detect (read-only, caveman lite)
+## 1. Detect (read-only)
 
 `bash .agents/skills/vibe/scripts/set-state.sh setup.detect`. Audit only — write nothing.
 Report present vs missing:
@@ -25,11 +25,9 @@ Report present vs missing:
 **Plugin preflight** — `bash .agents/skills/vibe/scripts/check-skills.sh <state>` lists
 which delegated skills are verifiable vs assumed-installed. Warn + list any that
 can't be confirmed; never hard-fail. Covers `spec` (bundled), `superpowers:*`,
-feature-dev subagents (`code-explorer`, `code-architect`, `code-reviewer`), and
-`caveman` (optional → `check-skills.sh caveman <level>` prints the 1-line fallback
-when absent).
+and feature-dev subagents (`code-explorer`, `code-architect`, `code-reviewer`).
 
-## 2. Apply (write/merge, caveman lite)
+## 2. Apply (write/merge)
 
 `bash .agents/skills/vibe/scripts/set-state.sh setup.apply`. Bootstrap without
 clobbering:
@@ -72,4 +70,4 @@ the manifest to add runtimes without editing this skill's prose.
 
 - Never overwrite user content; merge inside markers, diff + ask outside.
 - Missing plugin = warn and degrade, never hard-fail.
-- Caveman lite throughout.
+- Output density follows the machine's `style` note (see [SKILL.md](SKILL.md) § Style).

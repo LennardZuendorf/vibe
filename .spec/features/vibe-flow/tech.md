@@ -3,16 +3,16 @@ type: feature-tech
 feature: vibe-flow
 sibling: product.md
 parent: ../../tech.md
-updated: 2026-06-18
+updated: 2026-07-10
 ---
 
 # Feature: Vibe Flow — Architecture
 
-The vibe flow is a platform-neutral runtime layer under `.agents/skills/vibe` plus a
-family of `vibe-*` agent skills. Its job is to carry the planning load: the user
-says "I need X" and the flow constrains the agent into the right phase, with the
-right skill, the right output path, and the right communication density already
-chosen for it.
+The vibe flow is a platform-neutral runtime layer under `.agents/skills/vibe`: one
+`vibe` agent skill — a router `SKILL.md` plus per-phase files — driven by a static
+state machine. Its job is to carry the planning load: the user says "I need X" and
+the flow constrains the agent into the right phase, with the right delegates, the
+right output path, and one machine-level output `style` already chosen for it.
 
 **Parent:** [../../tech.md](../../tech.md)
 **Requirements:** [product.md](product.md)
@@ -29,14 +29,13 @@ chosen for it.
 .agents/
 └── skills/
     └── vibe/
-        ├── SKILL.md            # lean router + all 14 orders blocks
+        ├── SKILL.md            # lean router + the 12 skill-owning states' orders blocks
         ├── setup.md            # phase files: one per flow group
         ├── strategy.md
         ├── feature.md
         ├── quick.md
         ├── verify.md
         ├── compound.md
-        ├── amend.md
         ├── state-machine.json  # static flow definition
         ├── state.example.json  # neutral cursor template
         ├── scripts/            # set-state.sh, detect-context.sh, orders.sh, …
@@ -66,22 +65,23 @@ There is **no `notes` field**. Anything that varies turn-to-turn stays out of th
 cursor so the per-turn inject can be cache-stable (see *Prompt Injection*). The
 `updated` timestamp lives in the cursor only, never in injected text.
 
-`state-machine.json` defines each state as a static entry. `caveman` is static per
-state and the `skill` field **links** the state to its owning shim — never stored
-in the mutable cursor. Under D12 the per-turn orders are sourced from that linked
-skill (see *Prompt Injection*), not from a hand-written `inject` string:
+`state-machine.json` defines each state as a static entry; the `skill` field
+**links** the state to the `vibe` skill — never stored in the mutable cursor.
+Under D12 the per-turn orders are sourced from that linked skill (see *Prompt
+Injection*), not from a hand-written `inject` string. There is no per-state
+`caveman` field: output density is one top-level `style` note for the whole
+machine (see *States, skills, and artifacts*):
 
 ```json
 {
   "feature.impl": {
-    "skill": "vibe-feature",
-    "delegates": ["superpowers:executing-plans", "superpowers:test-driven-development"],
-    "caveman": "full",
+    "skill": "vibe",
+    "delegates": ["superpowers:executing-plans", "superpowers:subagent-driven-development", "superpowers:test-driven-development", "superpowers:receiving-code-review"],
     "reads": [".spec/features/<feature>/plan.md"],
     "writes": ["src/**", "tests/**"],
     "inject": null,
-    "next": ["feature.verify"],
-    "exit": "tests reference plan unit IDs and pass"
+    "next": ["feature.verify", "idle"],
+    "exit": "plan units implemented with tests that cite their unit IDs and pass"
   }
 }
 ```
@@ -91,47 +91,32 @@ skill (see *Prompt Injection*), not from a hand-written `inject` string:
 
 ### States, skills, and artifacts
 
-Canonical reference — must match `.agents/skills/vibe/state-machine.json`. Root
-[product.md](../../product.md) phase map mirrors this table.
+**Canonical: [`flow/state-machine.json`](../../../flow/state-machine.json)**
+(runtime path `.agents/skills/vibe/state-machine.json`); the root
+[product.md](../../product.md) phase map is the human-readable mirror. A full
+per-state table used to live here, but it was **retired 2026-07-09** — a
+hand-maintained copy of the machine drifts, and this one had gone stale
+(pre-consolidation `vibe-setup`/`vibe-strategy` skill names, no per-phase
+compound states, no edge-keyed `gates`). Read the machine for the authoritative
+per-state skill link, delegates, write surface, and legal `next`; output density
+is one top-level `style` note (not a per-state level), and the flow carries a
+top-level `gates` object keyed by edge
+(`feature.plan>feature.impl`, `feature.verify>feature.compound`).
 
-| State | Skill | Delegates | feature-dev | caveman | R/W surface | next |
-|---|---|---|---|---|---|---|
-| `idle` | — | `using-superpowers` | — | lite | R `lessons.md`, `plan.md` | setup.detect, strategy.brainstorm, feature.design, quick.triage |
-| `setup.detect` | `vibe-setup` | — | — | lite | R repo, adapters, `.agents/**`, `.spec/**` | setup.apply, idle |
-| `setup.apply` | `vibe-setup` | `spec`, `writing-skills` | — | lite | W `.agents/**`, baseline `.spec/**`¹ | idle |
-| `strategy.brainstorm` | `vibe-strategy` | `brainstorming` | — | lite | R `lessons.md`; scratch | strategy.spec |
-| `strategy.spec` | `vibe-strategy` | `spec` | — | lite | W root `.spec/{product,tech,design,plan}.md` | strategy.compound, idle |
-| `strategy.compound` | `vibe-compound` | `spec` | — | lite | W `lessons.md`, active-rules digest² | idle |
-| `feature.design` | `vibe-feature` | `brainstorming` | `code-explorer`, `code-architect` | lite | R `lessons.md`, root specs; W `features/<f>/{product,tech}.md` | feature.plan |
-| `feature.plan` | `vibe-feature` | `writing-plans` | `code-architect` | lite | W `features/<f>/plan.md` (U1…) | feature.impl |
-| `feature.impl` | `vibe-feature` | `executing-plans`, `test-driven-development` | — | full | W `src/**`, `tests/**` | feature.verify |
-| `feature.verify` | `vibe-verify` | `verification-before-completion`, `requesting-code-review`, `systematic-debugging` | `code-reviewer` | full | evidence only | feature.compound, feature.impl, feature.plan |
-| `feature.compound` | `vibe-compound` | `finishing-a-development-branch`, `spec` | — | lite³ | W `lessons.md`, root specs, archive, active-rules² | idle |
-| `quick.triage` | `vibe-quick` | `systematic-debugging` | — | full | R `lessons.md` | quick.fix, feature.design |
-| `quick.fix` | `vibe-quick` | `test-driven-development` | — | full | W `src/**`; opt `.spec/quick/<slug>.md` | quick.verify |
-| `quick.verify` | `vibe-verify` | `verification-before-completion` | `code-reviewer` | full | evidence only | idle |
-| `amend`⁴ | `vibe-amend` | `spec`, `receiving-code-review` | — | lite | W target state's write surface only | (returns to prior state) |
+The machine now carries **13 state entries** (`idle` plus 12 non-idle states), one
+top-level `style` note, and no per-state modifiers. Three deliberate calls in it
+are worth spelling out — but `flow/state-machine.json` is the per-state truth:
 
-¹ `setup.apply` still lists adapter active-rules in the machine **until**
-[agent-instructions AI4](../agent-instructions/plan.md) narrows adapter provisioning.
-² Active-rules digest via `regen-active-rules.sh`; requires symlink-aware dedupe before
-compound when `CLAUDE.md` symlinks `AGENTS.md`.
-³ Receipts `ultra`; body `lite`.
-⁴ Modifier — never a cursor state (`set-state.sh` rejects `amend`). Invoked via
-`vibe-amend` while cursor stays on the originating state; inject hook uses the
-**stored cursor state**, not `amend`.
-
-Three deliberate calls:
-
-- **`quick.triage` is `full`, not `ultra`.** `ultra` compresses hardest and can drop
-  edge cases; triage is exactly where a missed edge case is expensive. `ultra` is
-  reserved for `feature.compound` receipts and subagent→orchestrator summaries.
-- **`amend` is a modifier, not a flow.** The cursor never becomes `amend`
-  (`set-state.sh` refuses it). `vibe-amend` applies a targeted scope edit using the
-  **current cursor state's** write rules, then returns there. The inject hook always
-  resolves orders from the stored cursor — not from the `amend` machine entry.
-  The `amend` entry in `state-machine.json` is reference-only for `vibe-amend` skill
-  prose; under D12 it does **not** receive per-turn inject.
+- **Output density is one machine-level `style` note, not a per-state level.** The
+  per-state caveman levels (`lite`/`full`/`ultra`) and the `caveman_levels` /
+  `safety_carveouts` machine blocks were retired 2026-07-09; a single top-level
+  `style` now governs every state — compress receipts and subagent→orchestrator
+  summaries, but keep security warnings and irreversible-action confirmations in
+  full prose, and never trade reasoning depth for brevity.
+- **A scope edit is not a state.** There is no `amend` flow or modifier — the cursor
+  never becomes `amend`, and the `modifiers` array is gone (removed with `amend.md`).
+  A targeted scope edit happens within the current cursor state's write surface and
+  the cursor stays put; `set-state.sh idle` still aborts any flow.
 - **Failure routes back.** `feature.verify` can return to `feature.plan` or
   `feature.impl`, which resolves the failed-verification routing the plan left open.
 
@@ -147,21 +132,22 @@ Three deliberate calls:
 
 ### D12 implementation status (delivered)
 
-Per-turn orders live in each `vibe-*` skill as a `## Orders (D12)` section of
-`<!-- vibe:orders:<state> -->` … `<!-- /vibe:orders -->` blocks. Every
+Per-turn orders live in the `vibe` skill's `SKILL.md` as a `## Orders (D12)` section of
+`<!-- vibe:orders:<state> -->` … `<!-- /vibe:orders -->` blocks — one block per
+skill-owning state (12 today). Every
 skill-owning state carries `inject: null` in `state-machine.json`; only `idle`
 keeps an inline `inject` (skill-less fallback). `.agents/skills/vibe/scripts/orders.sh`
 resolves the cursor `<flow>.<phase>` (default `idle`), follows the `skill` link,
 extracts that state's block, interpolates `<feature>` (the only substitution, so
 the inject stays prompt-cache stable), and prints it — degrading to the machine
 inject then a generic one-liner, always exit 0. The `UserPromptSubmit` inject
-hook is a thin shell over `orders.sh`. Verified by `tests/flow/run.sh`
+hook is a thin shell over `orders.sh`. Verified by `flow/tests/run.sh`
 (`vibe-flow/1`).
 
 ### Stable plan unit IDs (D9)
 
-`feature.plan` gives every implementation unit a permanent ID (`U1`, `U2`, …) in
-`features/<f>/plan.md`. IDs never change on reorder or split. `feature.impl` and
+`feature.plan` gives every implementation unit a permanent ID (`<feature>/1`,
+`<feature>/2`, …) in `features/<f>/plan.md`. IDs never change on reorder or split. `feature.impl` and
 `feature.verify` reference units by ID, so the cursor and evidence survive
 re-planning and the state machine stays resumable. This is the one CE mechanism
 worth borrowing wholesale; we keep it lightweight (IDs in the plan markdown), not
@@ -169,9 +155,11 @@ a separate tracking system.
 
 ---
 
-## Skill Shim Pattern
+## Phase file pattern
 
-Each `vibe-*` skill follows the same internal sequence:
+The `vibe` skill's `SKILL.md` router hands each state to its phase file
+(`setup.md`, `strategy.md`, `feature.md`, `quick.md`, `verify.md`, `compound.md`).
+Every phase follows the same internal sequence:
 
 1. Read `.agents/skills/vibe/state.json` and the relevant root or feature specs.
 2. On entry to a `*.design` or `*.triage` state, read `.spec/lessons.md` first (D8);
@@ -183,45 +171,38 @@ Each `vibe-*` skill follows the same internal sequence:
 
 ---
 
-## Prompt Injection & Caveman (D10 → D12)
+## Prompt Injection (D10 → D12)
 
 There is **one inject owner**: the adapter's `UserPromptSubmit` hook. It reads the
 current `<flow>.<phase>` entry, follows that entry's `skill` link, and injects that
-**skill shim's per-state orders**. The skill is the single source of the per-turn
-orders, not a separate hand-written string (**D12 — supersedes the
-frozen-`inject`-string mechanism of D10; D10's single-owner and cache-stable
-invariants are retained**). That single inject *also* sets the caveman level —
-vibe does not run a separate caveman tracker hook in parallel, because two
-injectors collide and the agent follows the last one.
+state's **orders block** from the `vibe` skill's `SKILL.md`. The skill is the single
+source of the per-turn orders, not a separate hand-written string (**D12 —
+supersedes the frozen-`inject`-string mechanism of D10; D10's single-owner and
+cache-stable invariants are retained**).
 
-Why the skill is the source: the orders (mandatory skill, allowed write surface,
-output path, caveman level, next legal state) were previously duplicated in both
-the state machine's `inject` string and the skill body, and two copies drift apart.
-Making the skill canonical removes the duplication — behaviour is edited in one
-place.
+Why the skill is the source: the orders (mandatory delegates, allowed write surface,
+output path, next legal state) were previously duplicated in both the state machine's
+`inject` string and the skill body, and two copies drift apart. Making the skill
+canonical removes the duplication — behaviour is edited in one place.
 
 Mechanics:
 
 - `state-machine.json` keeps the `skill` field as the **link**; the hand-written
   `inject` string is dropped (`null`) for states that own a skill.
-- Each `vibe-*` skill exposes a small, **machine-extractable per-`<flow>.<phase>`
+- The `vibe` skill exposes a small, **machine-extractable per-`<flow>.<phase>`
   orders block** — the content the old inject carried. The hook extracts the block
   for the current state, so the inject stays small (~30–60 tokens) and cache-stable
-  rather than dumping the whole shim body. (Whole-shim vs orders-block injection is
-  an implementation choice flagged in the platform-adapters plan.)
+  rather than dumping the whole phase body.
 - **Skill-less `idle` keeps an inline fallback.** Only `idle` retains a minimal
-  inline string in `state-machine.json` after U8. `amend` is not inject-resolved
-  (modifier; see States table). Skill-owning states drop `inject` to `null`.
+  inline string in `state-machine.json`; every skill-owning state drops `inject` to
+  `null`. (There is no `amend` state — a scope edit stays within the current state.)
 
-Two carve-outs ride in **every** inject, regardless of caveman level — taken from
-the upstream caveman skill's own rules:
-
-1. Use normal prose for security warnings and irreversible-action confirmations;
-   never compress those.
-2. Caveman is **output compression only**; it never reduces reasoning depth.
-
-Caveman level definitions are canonical in [../../product.md](../../product.md)
-(Communication Levels). The inject names a level; it does not re-explain it.
+Output density is **not** carried per-state. A single top-level `style` note in
+`state-machine.json` governs every state: no filler; compress receipts and subagent
+summaries; keep security warnings and irreversible-action confirmations in full
+prose; never trade reasoning depth for brevity. The per-state `caveman` levels
+(`lite`/`full`/`ultra`) this section once described were **retired 2026-07-09** in
+favour of that one note.
 
 ---
 
@@ -239,7 +220,7 @@ The injection pattern is cache-safe only if the cache boundary is respected:
   rebuilds every turn.
 - `<feature>` interpolated into the injected orders is acceptable: it sits
   post-breakpoint and is stable within a feature session.
-- Caveman compression has no cache impact — it changes output tokens, not the
+- `style`-note compression has no cache impact — it changes output tokens, not the
   cached input prefix.
 - The hook injects only the current state's **orders block**, not the whole skill
   body. Full SKILL.md bodies still load lazily on `Skill`-tool invoke; do not
@@ -267,15 +248,25 @@ owned by the `spec` skill and superpowers `writing-plans`.
 
 ## External Skill Matrix
 
-| Code Skill | Primary External Skills | feature-dev agents | Caveman |
-|---|---|---|---|
-| `vibe-setup` | `spec`, `superpowers:writing-skills` | — | lite |
-| `vibe-strategy` | `superpowers:brainstorming`, `spec` | — | lite |
-| `vibe-feature` | `superpowers:brainstorming`, `superpowers:writing-plans`, `spec`, `superpowers:executing-plans`, `superpowers:test-driven-development` | `code-explorer`, `code-architect`, `code-reviewer` | lite (design/plan), full (impl/verify) |
-| `vibe-quick` | `superpowers:systematic-debugging`, `superpowers:test-driven-development`, `superpowers:verification-before-completion` | `code-reviewer` | full |
-| `vibe-verify` | `superpowers:verification-before-completion`, `superpowers:requesting-code-review`, `superpowers:systematic-debugging` | `code-reviewer` | full |
-| `vibe-compound` | `spec`, `superpowers:finishing-a-development-branch` | — | lite (receipts ultra) |
-| `vibe-amend` | `spec`, `superpowers:receiving-code-review` | — | lite |
+Delegates are keyed per state, not per skill — the one `vibe` skill routes each
+`<flow>.<phase>` to the executors below. **`state-machine.json` `delegates` is the
+authoritative list;** this table mirrors it for reading. There is no per-state
+output level — density is the single top-level `style` note.
+
+| State | Primary external skills | feature-dev subagents |
+|---|---|---|
+| `setup.detect` | — | — |
+| `setup.apply` | `spec` | — |
+| `strategy.brainstorm` | `superpowers:brainstorming` | — |
+| `strategy.spec` | `spec` | — |
+| `feature.design` | `superpowers:brainstorming` | `code-explorer`, `code-architect` |
+| `feature.plan` | `superpowers:writing-plans` | `code-architect` |
+| `feature.impl` | `superpowers:executing-plans`, `superpowers:subagent-driven-development`, `superpowers:test-driven-development`, `superpowers:receiving-code-review` | — |
+| `feature.verify` | `superpowers:verification-before-completion`, `superpowers:requesting-code-review`, `superpowers:systematic-debugging` | `code-reviewer` |
+| `feature.compound` | `superpowers:finishing-a-development-branch`, `spec` | — |
+| `quick.triage` | `superpowers:systematic-debugging` | — |
+| `quick.fix` | `superpowers:test-driven-development`, `superpowers:receiving-code-review` | — |
+| `quick.verify` | `superpowers:verification-before-completion` | `code-reviewer` |
 
 These external skills are assumed installed, not bundled (only `spec` ships). A
 missing delegated skill is a graceful-degradation concern tracked in the plan, not

@@ -8,6 +8,9 @@ flow/state.json
 # Evidence receipts (runtime verification output, not memory). Physical path
 # through the .agents/skills/vibe -> flow symlink, same reason as the cursor above.
 flow/evidence/
+# Warnings relay log (runtime warn-first channel; surfaced by the inject hook then
+# truncated). Physical path through the .agents/skills/vibe -> flow symlink.
+flow/warnings.log
 .serena/
 # Overnight run artifact (local morning report, not merged)
 REPORT.md

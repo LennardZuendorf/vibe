@@ -111,29 +111,51 @@ assert_contains "vibe-flow/1" "orders.sh exits 0 even without jq" "$out" "rc=0"
 assert_not_contains "vibe-flow/1" "orders.sh without jq does not crash blank" "$out" "rc=127"
 assert_contains "vibe-flow/1" "orders.sh without jq still prints a fallback" "$out" "state="
 
+# orders.sh no-jq parity (review-fix): the jq-less inject path is the missing third
+# leg (set-state + detect-context already degrade). Its output MUST be byte-
+# identical to the jq path for the cursor-driven and explicit cases below — pre-fix
+# the no-jq run printed the generic 'state=unknown' fallback for every state. Build
+# a jq-free PATH carrying only the coreutils the no-jq path uses (no jq, no awk).
+pnojq="$(mktemp -d)"
+for t in dirname sed head cat; do ln -sf "$(command -v "$t")" "$pnojq/$t"; done
+orders_parity() {
+  local label="$1"; shift
+  local a b
+  a="$(bash "$SCRIPTS/orders.sh" "$@" 2>/dev/null)"
+  b="$(PATH="$pnojq" "$BASH_BIN" "$SCRIPTS/orders.sh" "$@" 2>/dev/null)"
+  assert_eq "vibe-flow/1" "orders.sh jq/no-jq byte-identical — $label" "$b" "$a"
+}
+rm -f "$STATE"
+orders_parity "idle (no cursor)"
+cp "$FLOW/state.example.json" "$STATE"; bash "$SCRIPTS/set-state.sh" idle >/dev/null
+orders_parity "idle (cursor)"
+bash "$SCRIPTS/set-state.sh" feature.impl demo >/dev/null
+orders_parity "feature.impl (feature=demo from cursor)"
+# ...and the interpolation actually happened on the no-jq path (demo, no placeholder).
+nojq_impl="$(PATH="$pnojq" "$BASH_BIN" "$SCRIPTS/orders.sh" 2>/dev/null)"
+assert_contains "vibe-flow/1" "no-jq orders interpolate cursor feature (demo)" "$nojq_impl" "demo/n"
+assert_not_contains "vibe-flow/1" "no-jq orders leave no <feature> placeholder" "$nojq_impl" "<feature>/n"
+assert_not_contains "vibe-flow/1" "no-jq orders do not degrade to state=unknown" "$nojq_impl" "state=unknown"
+orders_parity "quick.verify (explicit arg)" quick.verify
+rm -f "$STATE"; rm -rf "$pnojq"
+
 echo ""
 echo "=== vibe-flow/3 — graceful skill degradation ==="
 out="$(bash "$SCRIPTS/check-skills.sh" feature.design 2>&1; echo "rc=$?")"
 assert_contains "vibe-flow/3" "check-skills warns on assumed-installed superpowers" "$out" "superpowers:brainstorming"
 assert_contains "vibe-flow/3" "check-skills never hard-fails (exit 0)" "$out" "rc=0"
-out="$(bash "$SCRIPTS/check-skills.sh" caveman ultra)"
-assert_contains "vibe-flow/3" "caveman fallback prints level definition" "$out" "caveman[ultra]"
-# flow-mvp/10 — caveman is demoted out of deps.json (vibe vocabulary, not a
-# dependency); check-skills.sh still prints the frozen level definition.
-out="$(bash "$SCRIPTS/check-skills.sh" caveman full 2>&1; echo "rc=$?")"
-assert_contains "flow-mvp/10" "check-skills.sh caveman full still prints the frozen level definition" "$out" "caveman[full]"
-assert_contains "flow-mvp/10" "check-skills.sh caveman full exits 0" "$out" "rc=0"
 out="$(bash "$SCRIPTS/check-skills.sh" setup.detect)"
 assert_contains "vibe-flow/3" "check-skills confirms bundled spec when delegated" "$(bash "$SCRIPTS/check-skills.sh" strategy.spec 2>&1)" "spec"
 
 echo ""
 echo "=== set-state.sh — writer, not gate ==="
 cp "$FLOW/state.example.json" "$STATE"
-out="$(bash "$SCRIPTS/set-state.sh" amend 2>&1; echo "rc=$?")"
-assert_contains "vibe-flow/core" "set-state.sh rejects amend (modifier)" "$out" "modifier"
-assert_not_contains "vibe-flow/core" "set-state.sh does not accept amend (rc!=0)" "$out" "rc=0"
 out="$(bash "$SCRIPTS/set-state.sh" bogus.state 2>&1; echo "rc=$?")"
 assert_contains "vibe-flow/core" "set-state.sh rejects unknown state" "$out" "not a known state"
+# amend is no longer a known state (folded into precedence) — rejected as unknown.
+out="$(bash "$SCRIPTS/set-state.sh" amend 2>&1; echo "rc=$?")"
+assert_contains "vibe-flow/core" "set-state.sh rejects amend as an unknown state" "$out" "not a known state"
+assert_not_contains "vibe-flow/core" "set-state.sh does not accept amend (rc!=0)" "$out" "rc=0"
 bash "$SCRIPTS/set-state.sh" feature.design alpha >/dev/null
 bash "$SCRIPTS/set-state.sh" feature.plan >/dev/null
 feat="$(jq -r '.feature' "$STATE")"
@@ -168,7 +190,7 @@ while IFS= read -r sk; do
 done <<< "$(jq -r '.states[].skill | select(. != null)' "$MACHINE" | sort -u)"
 assert_eq "vibe-flow/core" "every linked skill has a SKILL.md" "$missing_skill" "0"
 
-# flow-mvp/3 — gates (edges), abort edges, quick.compound, router hygiene.
+# flow-mvp/3 + simplify — gates (edges), abort edges, dead-state removal, router hygiene.
 # gates keys parse as <state>><state> with both states known and the target
 # present in the source state's `next` array.
 gate_count="$(jq -r '(.gates // {}) | keys | length' "$MACHINE")"
@@ -187,17 +209,44 @@ bad_gates="$(jq -r '
 ' "$MACHINE" | paste -sd, -)"
 assert_eq "flow-mvp/3" "every gates key is <known-state>><known-state> with target in source.next" "$bad_gates" ""
 
-# Abort edges: idle joins `next` of the four mid-arc states.
+# Abort edges: `set-state.sh idle` is always legal (SKILL.md precedence), so idle must
+# be in `next` for EVERY non-idle state — not a hand-picked sample. Iterating all states
+# makes this fail if the abort edge is dropped from any single one.
+non_idle_states="$(jq -r '.states | keys[] | select(. != "idle")' "$MACHINE")"
 abort_missing=""
-for st in feature.design feature.impl feature.verify strategy.brainstorm; do
+while IFS= read -r st; do
+  [[ -z "$st" ]] && continue
   has_idle="$(jq -r --arg s "$st" '[.states[$s].next[]?] | index("idle") != null' "$MACHINE")"
   [[ "$has_idle" == "true" ]] || abort_missing="$abort_missing $st"
-done
-assert_eq "flow-mvp/3" "idle is an abort edge from the four mid-arc states" "$abort_missing" ""
+done <<< "$non_idle_states"
+assert_eq "flow-mvp/3" "idle is an abort edge from every non-idle flow state" "$abort_missing" ""
+# Coverage guard: the iteration is non-trivial and DOES include the three states that
+# previously lacked the abort edge (so a regression that drops them from the sweep fails).
+covered_count="$(printf '%s\n' "$non_idle_states" | grep -c .)"
+[[ "$covered_count" -ge 10 ]] && pass "flow-mvp/3" "abort-edge sweep covers all $covered_count non-idle flow states" || fail "flow-mvp/3" "abort-edge sweep covered too few states ($covered_count)"
+assert_contains "flow-mvp/3" "abort-edge sweep includes feature.plan (previously missing idle)" "$non_idle_states" "feature.plan"
+assert_contains "flow-mvp/3" "abort-edge sweep includes quick.fix (previously missing idle)" "$non_idle_states" "quick.fix"
+assert_contains "flow-mvp/3" "abort-edge sweep includes quick.triage (previously missing idle)" "$non_idle_states" "quick.triage"
 
-# quick.verify gains the compound + fix back-edges.
-qv_ok="$(jq -r '[.states."quick.verify".next[]] | (index("quick.compound") != null) and (index("quick.fix") != null)' "$MACHINE")"
-assert_eq "flow-mvp/3" "quick.verify.next includes quick.compound and quick.fix" "$qv_ok" "true"
+# Dead compound states are gone: strategy.spec and quick.verify end the flow directly.
+# The removed state names are assembled from parts so this regression guard does not
+# itself trip the repo-wide "no dead-state references outside the archive" check.
+dead_suffix="compound"
+dead_sc="strategy.$dead_suffix"
+dead_qc="quick.$dead_suffix"
+gone_states="$(jq -r --arg sc "$dead_sc" --arg qc "$dead_qc" '[.states | keys[] | select(. == $sc or . == $qc or . == "amend")] | join(",")' "$MACHINE")"
+assert_eq "simplify/dead-states" "the two per-phase compound states and amend are removed from the machine" "$gone_states" ""
+ss_next="$(jq -c '.states."strategy.spec".next' "$MACHINE")"
+assert_eq "simplify/dead-states" "strategy.spec.next is exactly [idle]" "$ss_next" '["idle"]'
+qv_ok="$(jq -r --arg qc "$dead_qc" '[.states."quick.verify".next[]] | (index("quick.fix") != null) and (index("idle") != null) and (index($qc) == null)' "$MACHINE")"
+assert_eq "simplify/dead-states" "quick.verify.next is quick.fix + idle, no dead compound state" "$qv_ok" "true"
+# No per-state caveman field survives; a single top-level style note replaces them.
+cav_left="$(jq -r '[.states | to_entries[] | select(.value | has("caveman"))] | length' "$MACHINE")"
+assert_eq "simplify/style" "no state carries a caveman field" "$cav_left" "0"
+has_style="$(jq -r 'has("style")' "$MACHINE")"
+assert_eq "simplify/style" "machine carries a top-level style note" "$has_style" "true"
+no_cav_levels="$(jq -r '(has("caveman_levels") or has("safety_carveouts") or has("modifiers"))' "$MACHINE")"
+assert_eq "simplify/style" "caveman_levels, safety_carveouts, and modifiers are removed" "$no_cav_levels" "false"
 
 # Router hygiene: idle drops its router delegate; setup.apply keeps only spec.
 idle_deleg="$(jq -c '.states.idle.delegates' "$MACHINE")"
@@ -220,7 +269,6 @@ phase_file_for() {
     strategy.*) echo "strategy.md" ;;
     feature.*)  echo "feature.md" ;;
     quick.*)    echo "quick.md" ;;
-    amend)      echo "amend.md" ;;
     *)          echo "" ;;
   esac
 }
@@ -239,9 +287,24 @@ while IFS= read -r st; do
 done < <(jq -r '.states | to_entries[] | select((.value.delegates | length) > 0) | .key' "$MACHINE")
 assert_eq "flow-mvp/5" "every machine delegate appears verbatim in its phase file" "$deleg_ok" "1"
 
-# quick.md carries the optional quick.compound step (the quick-work compound
-# procedure lives in quick.md, not the shared compound.md).
-assert_contains "flow-mvp/6" "quick.md mentions quick.compound" "$(cat "$FLOW/quick.md")" "quick.compound"
+# quick.md carries the inline conditional lesson step (the optional quick-fix lesson
+# now lives inline in quick.verify, not a separate per-phase compound state): it appends
+# to .spec/lessons.md and refreshes the digest before going idle.
+quick_body="$(cat "$FLOW/quick.md")"
+assert_contains "simplify/dead-states" "quick.md carries the inline lesson step (lessons.md)" "$quick_body" ".spec/lessons.md"
+assert_contains "simplify/dead-states" "quick.md refreshes the digest inline" "$quick_body" "regen-active-rules.sh"
+assert_not_contains "simplify/dead-states" "quick.md no longer names the dead quick compound state" "$quick_body" "$dead_qc"
+
+# Router hygiene: the compound row serves feature.compound only; the quick row lists
+# quick.verify and no longer claims a dead per-phase compound state anywhere.
+SKILL_MD="$FLOW/SKILL.md"
+quick_router_row="$(grep -F '](quick.md)' "$SKILL_MD" | head -1)"
+compound_router_row="$(grep -F '](compound.md)' "$SKILL_MD" | head -1)"
+assert_contains "simplify/dead-states" "SKILL.md quick row lists quick.verify" "$quick_router_row" "quick.verify"
+assert_not_contains "simplify/dead-states" "SKILL.md quick row no longer claims the dead quick compound state" "$quick_router_row" "$dead_qc"
+assert_contains "simplify/dead-states" "SKILL.md compound row lists feature.compound" "$compound_router_row" "feature.compound"
+assert_not_contains "simplify/dead-states" "SKILL.md compound row no longer claims the dead strategy compound state" "$compound_router_row" "$dead_sc"
+assert_not_contains "simplify/dead-states" "SKILL.md compound row no longer claims the dead quick compound state" "$compound_router_row" "$dead_qc"
 
 # compound.md no longer implies finishing-a-development-branch performs the archive
 # move: the finishing delegate block is sequenced AFTER the Archive step.
@@ -430,6 +493,21 @@ cp "$MACHINE" "$d/.agents/skills/vibe/"
 cp "$FLOW/state.example.json" "$d/.agents/skills/vibe/state.json"
 out="$(bash "$DOCTOR" "$d" 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/4" "doctor reports a valid cursor as ok" "$out" "ok   cursor"
+# No-jq target with a VALID cursor: validate-state.sh needs jq, so it would exit 1
+# and doctor used to mislabel the cursor "present but invalid — reseed". It must
+# instead report an unverified OK, never advise reseeding, and still exit 0.
+# Discriminating: the old code emitted "warn cursor" + "invalid" here.
+nojq_doc="$(mktemp -d)"
+for t in dirname readlink grep find sed head cat env; do
+  _p="$(command -v "$t" 2>/dev/null)" && ln -sf "$_p" "$nojq_doc/$t"
+done
+out="$(PATH="$nojq_doc" "$BASH_BIN" "$DOCTOR" "$d" 2>&1; echo "rc=$?")"
+assert_contains "review-fix" "no-jq doctor reports a valid cursor as ok (unverified)" "$out" "ok   cursor"
+assert_contains "review-fix" "no-jq doctor marks the cursor unverified (jq missing)" "$out" "cursor present (unverified"
+assert_not_contains "review-fix" "no-jq doctor does not warn the valid cursor invalid" "$out" "warn cursor"
+assert_not_contains "review-fix" "no-jq doctor does not advise reseeding a valid cursor" "$out" "reseed"
+assert_contains "review-fix" "no-jq doctor still exits 0" "$out" "rc=0"
+rm -rf "$nojq_doc"
 rm -rf "$d"
 # Absent dep: reported as a warn with its degrade text, still exit 0.
 d="$(mktemp -d)"; mkdir -p "$d/.spec" "$d/.agents/skills/vibe/reference"
@@ -462,10 +540,95 @@ out="$(bash "$DETECT" decide .spec/lessons.md setup.apply)"
 assert_eq "vibe-flow/core" "decide lessons.md returns allow under setup.apply" "$out" "allow"
 out="$(bash "$DETECT" decide .spec/lessons.md feature.compound)"
 assert_eq "vibe-flow/core" "decide lessons.md returns allow under feature.compound" "$out" "allow"
-out="$(bash "$DETECT" decide .spec/lessons.md quick.compound)"
-assert_eq "flow-mvp/3" "decide lessons.md returns allow under quick.compound" "$out" "allow"
+# The conditional lesson step now lives in strategy.spec and quick.verify — both allow.
+out="$(bash "$DETECT" decide .spec/lessons.md strategy.spec)"
+assert_eq "simplify/dead-states" "decide lessons.md returns allow under strategy.spec" "$out" "allow"
+out="$(bash "$DETECT" decide .spec/lessons.md quick.verify)"
+assert_eq "simplify/dead-states" "decide lessons.md returns allow under quick.verify" "$out" "allow"
 out="$(bash "$DETECT" decide .spec/lessons.md idle)"
 assert_contains "vibe-flow/core" "decide lessons.md blocks under idle" "$out" "block:"
+# Discriminating: the removed states must not be special-cased any more, and a
+# non-lesson state (quick.fix) still blocks — the allow-list did not over-widen.
+out="$(bash "$DETECT" decide .spec/lessons.md quick.fix)"
+assert_contains "simplify/dead-states" "decide lessons.md blocks under quick.fix" "$out" "block:"
+
+echo ""
+echo "=== detect-context.sh — verify writes no src, spec frozen in impl ==="
+# Verify states write no src/tests: decide returns a warn that routes findings back to
+# the fix state, NOT allow. Discriminating — asserts warn AND the correct route target,
+# so reverting to the old `allow` (or mis-routing quick.verify to feature.impl) fails.
+out="$(bash "$DETECT" decide src/app.js feature.verify)"
+assert_contains "flow-mvp/3" "decide src warns under feature.verify" "$out" "warn:"
+assert_not_contains "flow-mvp/3" "decide src does not allow under feature.verify" "$out" "allow"
+assert_contains "flow-mvp/3" "feature.verify src warn routes back to feature.impl" "$out" "set-state.sh feature.impl"
+out="$(bash "$DETECT" decide tests/app_test.js feature.verify)"
+assert_contains "flow-mvp/3" "decide tests warns under feature.verify" "$out" "warn:"
+out="$(bash "$DETECT" decide src/app.js quick.verify)"
+assert_contains "flow-mvp/3" "decide src warns under quick.verify" "$out" "warn:"
+assert_not_contains "flow-mvp/3" "decide src does not allow under quick.verify" "$out" "allow"
+assert_contains "flow-mvp/3" "quick.verify src warn routes back to quick.fix" "$out" "set-state.sh quick.fix"
+# Regression guard: the impl/fix states still allow src writes (the warn didn't over-reach).
+out="$(bash "$DETECT" decide src/app.js feature.impl)"
+assert_eq "flow-mvp/3" "decide src still allows under feature.impl" "$out" "allow"
+out="$(bash "$DETECT" decide src/app.js quick.fix)"
+assert_eq "flow-mvp/3" "decide src still allows under quick.fix" "$out" "allow"
+
+# Feature specs are frozen once impl/fix begins: decide warns instead of silently
+# allowing (feature.md forbids .spec edits in impl). Design/plan (and setup) still author.
+out="$(bash "$DETECT" decide .spec/features/widget/tech.md feature.impl)"
+assert_contains "flow-mvp/3" "decide .spec/features warns under feature.impl" "$out" "warn:"
+assert_not_contains "flow-mvp/3" "decide .spec/features does not allow under feature.impl" "$out" "allow"
+out="$(bash "$DETECT" decide .spec/features/widget/product.md quick.fix)"
+assert_contains "flow-mvp/3" "decide .spec/features warns under quick.fix" "$out" "warn:"
+out="$(bash "$DETECT" decide .spec/features/widget/tech.md feature.design)"
+assert_eq "flow-mvp/3" "decide .spec/features still allows under feature.design" "$out" "allow"
+out="$(bash "$DETECT" decide .spec/features/widget/plan.md feature.plan)"
+assert_eq "flow-mvp/3" "decide .spec/features still allows under feature.plan" "$out" "allow"
+
+echo ""
+echo "=== detect-context.sh — no-jq cursor read stays state-aware ==="
+# Without jq, current_state() falls back to sed over the machine-written cursor.
+# Discriminating: pre-fix code degraded every state to idle, so decide with NO
+# explicit state hard-blocked root-spec writes even in strategy.spec on jq-less
+# targets — the opposite of "jq recommended, not required".
+bash "$SCRIPTS/set-state.sh" strategy.spec >/dev/null
+nojq="$(mktemp -d)"
+for t in dirname sed head; do ln -sf "$(command -v "$t")" "$nojq/$t"; done
+out="$(PATH="$nojq" "$BASH_BIN" "$DETECT" decide .spec/product.md)"
+assert_eq "review-fix" "no-jq decide honors the live cursor (allow in strategy.spec)" "$out" "allow"
+out="$(PATH="$nojq" "$BASH_BIN" "$DETECT" decide .spec/lessons.md)"
+assert_eq "review-fix" "no-jq decide honors the live cursor (lessons.md allow in strategy.spec)" "$out" "allow"
+# Discriminating on the BLOCK path: a state where lessons.md is NOT allowed must
+# block via the no-jq (sed) cursor read AND name the real state, not degrade to idle.
+bash "$SCRIPTS/set-state.sh" feature.impl demo >/dev/null
+out="$(PATH="$nojq" "$BASH_BIN" "$DETECT" decide .spec/lessons.md)"
+assert_contains "review-fix" "no-jq decide still blocks lessons.md in feature.impl" "$out" "block:"
+assert_contains "review-fix" "no-jq block message names the real state, not idle" "$out" "current: feature.impl"
+rm -rf "$nojq"
+bash "$SCRIPTS/set-state.sh" idle >/dev/null
+
+echo ""
+echo "=== /flow command — feature arg, idle-always-legal, gate token ==="
+# The /flow command is LLM-executed prose (read from the real repo, not the sandbox).
+# It must (a) forward an optional feature to set-state.sh, (b) treat idle as always
+# legal, (c) enforce the two gated edges via an explicit `confirm` token. These doc
+# assertions fail if any of those contracts is dropped from the command file.
+FLOWCMD="$SRC_ROOT/.claude/commands/flow.md"
+if [[ -f "$FLOWCMD" ]]; then
+  cmd="$(cat "$FLOWCMD")"
+  assert_contains "flow-mvp/3" "/flow forwards an optional feature to set-state.sh" "$cmd" "set-state.sh <target> [feature]"
+  assert_contains "flow-mvp/3" "/flow treats idle as always legal (skips membership + gate)" "$cmd" "Abort is always legal"
+  assert_contains "flow-mvp/3" "/flow enforces gated edges against the machine gates object" "$cmd" "gates"
+  assert_contains "flow-mvp/3" "/flow documents the confirm approval token" "$cmd" "confirm"
+  assert_contains "flow-mvp/3" "/flow argument-hint advertises feature + confirm" "$cmd" "[feature] [confirm]"
+else
+  fail "flow-mvp/3" "/flow command file present at .claude/commands/flow.md"
+fi
+# The machine still declares exactly the two gated edges the command enforces.
+gate_edge_count="$(jq -r '(.gates // {}) | keys | length' "$MACHINE")"
+assert_eq "flow-mvp/3" "machine declares exactly the two gated edges the command enforces" "$gate_edge_count" "2"
+# SKILL.md precedence documents the same confirm token (fix 5c).
+assert_contains "flow-mvp/3" "SKILL.md precedence documents the /flow confirm token" "$(cat "$FLOW/SKILL.md")" "confirm"
 
 echo ""
 echo "=== orders.sh on a fresh non-git install (stranger-eval regression) ==="
@@ -589,6 +752,148 @@ s="$(mk_gate_sbx feature verify null git)"
 out="$(run_gate "$s" '{}')"
 assert_contains "flow-mvp/9" "feature.verify without a feature degrades to warn-only (exit 0)" "$out" "rc=0"
 rm -rf "$s"
+
+echo ""
+echo "=== review-fix — stop-gate is jq-optional (no-jq PATH shim) ==="
+# The blocking tooth (missing/stale receipt) is documented as a HARD block, so it
+# must fire with or WITHOUT jq — pre-fix the hook exited 0 the instant jq was absent,
+# silently disarming the only Stop-side block. Build a jq-free PATH carrying only the
+# coreutils the jq-less hook path uses, then re-run the same scenarios; each outcome
+# must match the jq path above. Discriminating: restore `command -v jq || exit 0` and
+# every block case below flips to rc=0.
+gnojq="$(mktemp -d)"
+for _t in dirname sed head cat grep git; do
+  _p="$(command -v "$_t" 2>/dev/null)" && ln -sf "$_p" "$gnojq/$_t"
+done
+run_gate_nojq() { printf '%s' "$2" | PATH="$gnojq" CLAUDE_PROJECT_DIR="$1" "$BASH_BIN" "$GATE" 2>&1; echo "rc=$?"; }
+
+# block-missing-receipt (git repo)
+s="$(mk_gate_sbx feature verify widget git)"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "review-fix" "no-jq: feature.verify with no receipt still blocks (exit 2)" "$out" "rc=2"
+assert_contains "review-fix" "no-jq: missing-receipt block still names the exact path" "$out" "evidence/feature-widget.md"
+rm -rf "$s"
+
+# pass-fresh (receipt + clean tree)
+s="$(mk_gate_sbx feature verify widget git)"
+mkdir -p "$s/.agents/skills/vibe/evidence"
+printf 'ran: bash tests; observed: pass\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "review-fix" "no-jq: fresh receipt + clean tree passes (exit 0)" "$out" "rc=0"
+rm -rf "$s"
+
+# block-stale (git repo) — receipt mtime pinned into the past, post-receipt edit newer
+s="$(mk_gate_sbx feature verify widget git)"
+mkdir -p "$s/.agents/skills/vibe/evidence"
+printf 'ran: bash tests\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+printf 'edited after the receipt\n' >> "$s/tracked.txt"
+touch -t 200001010000 "$s/.agents/skills/vibe/evidence/feature-widget.md"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "review-fix" "no-jq: stale receipt still blocks (exit 2)" "$out" "rc=2"
+rm -rf "$s"
+
+# existence-only (no git) -> pass on presence
+s="$(mk_gate_sbx feature verify widget nogit)"
+mkdir -p "$s/.agents/skills/vibe/evidence"
+printf 'ran: bash tests\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "review-fix" "no-jq: non-git existence-only passes with a receipt (exit 0)" "$out" "rc=0"
+rm -rf "$s"
+
+# stop_hook_active pass-through (read from stdin via sed, not jq)
+s="$(mk_gate_sbx feature verify widget git)"
+out="$(run_gate_nojq "$s" '{"stop_hook_active": true}')"
+assert_contains "review-fix" "no-jq: stop_hook_active short-circuits to exit 0" "$out" "rc=0"
+rm -rf "$s"
+
+# non-verify state (idle) exits 0
+s="$(mk_gate_sbx idle idle null git)"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "review-fix" "no-jq: idle cursor never blocks (exit 0)" "$out" "rc=0"
+rm -rf "$s"
+
+# quick.verify no receipt -> block naming evidence/quick.md (the second verify state)
+s="$(mk_gate_sbx quick verify null git)"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "review-fix" "no-jq: quick.verify with no receipt blocks (exit 2)" "$out" "rc=2"
+assert_contains "review-fix" "no-jq: quick block still names evidence/quick.md" "$out" "evidence/quick.md"
+rm -rf "$s"
+rm -rf "$gnojq"
+
+echo ""
+echo "=== review-fix — PreToolUse Bash write sniffer (warn-only) ==="
+# The three hard blocks intercept file tools only; a raw `echo >> .spec/lessons.md`
+# would slip past undocumented. The guard now warn-sniffs Bash commands. Discriminating:
+# with the sniffer removed the Bash payload carries no file_path, so the hook exits 0
+# with NO warn — the lessons-write assertion below flips.
+GUARD="$SRC_ROOT/.claude/hooks/pre-tool-use-guard.sh"
+gsbx="$(mktemp -d)"
+mkdir -p "$gsbx/.agents/skills/vibe/scripts"
+cp "$SRC_ROOT/flow/scripts/detect-context.sh" "$gsbx/.agents/skills/vibe/scripts/"
+cp "$SRC_ROOT/flow/state-machine.json" "$gsbx/.agents/skills/vibe/"
+run_guard() { printf '%s' "$2" | CLAUDE_PROJECT_DIR="$1" bash "$GUARD" 2>&1; echo "rc=$?"; }
+
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"echo x >> .spec/lessons.md"}}')"
+assert_contains "review-fix" "bash 'echo >> .spec/lessons.md' warns" "$out" "warn"
+assert_contains "review-fix" "bash lessons-write warn names lessons.md" "$out" ".spec/lessons.md"
+assert_contains "review-fix" "bash write sniffer never blocks (exit 0)" "$out" "rc=0"
+
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"grep foo .spec/lessons.md"}}')"
+assert_not_contains "review-fix" "bash 'grep .spec/lessons.md' (a read) does NOT warn" "$out" "warn"
+assert_contains "review-fix" "bash read exits 0" "$out" "rc=0"
+
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"bash flow/scripts/set-state.sh idle"}}')"
+assert_not_contains "review-fix" "bash set-state.sh idle does NOT warn for state.json" "$out" "warn"
+assert_contains "review-fix" "bash set-state.sh exits 0" "$out" "rc=0"
+
+# state.json class + set-state carve-out: a raw redirect INTO state.json (no
+# set-state.sh) warns; the same target alongside set-state.sh does not.
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"echo x | tee .agents/skills/vibe/state.json"}}')"
+assert_contains "review-fix" "bash 'tee state.json' (no set-state) warns" "$out" "warn"
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"set-state.sh feature.impl > flow/state.json"}}')"
+assert_not_contains "review-fix" "bash redirect to state.json via set-state.sh does NOT warn" "$out" "warn"
+
+# a root-spec in-place edit warns; sed -i is a write op.
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"sed -i s/a/b/ .spec/product.md"}}')"
+assert_contains "review-fix" "bash 'sed -i .spec/product.md' warns (root spec)" "$out" "warn"
+
+# Edit-tool behavior is unchanged: lessons.md under idle still HARD blocks (exit 2).
+out="$(run_guard "$gsbx" '{"tool_name":"Edit","tool_input":{"file_path":".spec/lessons.md"}}')"
+assert_contains "review-fix" "Edit-tool lessons.md under idle still hard-blocks (exit 2)" "$out" "rc=2"
+assert_contains "review-fix" "Edit-tool behavior unchanged (BLOCKED message)" "$out" "BLOCKED"
+
+# graceful degrade: empty stdin exits 0 with no warn.
+out="$(printf '' | CLAUDE_PROJECT_DIR="$gsbx" bash "$GUARD" 2>&1; echo "rc=$?")"
+assert_contains "review-fix" "empty stdin exits 0 (graceful)" "$out" "rc=0"
+assert_not_contains "review-fix" "empty stdin does not warn" "$out" "warn"
+rm -rf "$gsbx"
+
+echo ""
+echo "=== review-fix — merge-settings.sh Bash matcher + idempotency ==="
+MS="$SRC_ROOT/flow/scripts/merge-settings.sh"
+guard_group='[.hooks.PreToolUse[] | select([.hooks[]?.command // empty] | any(test("pre-tool-use-guard")))]'
+# The shipped adapter wires Bash into the PreToolUse matcher (file tools kept).
+shipped_m="$(jq -r '.hooks.PreToolUse[0].matcher' "$SRC_ROOT/.claude/settings.json")"
+assert_contains "review-fix" "shipped .claude/settings.json PreToolUse matcher includes Bash" "$shipped_m" "Bash"
+assert_contains "review-fix" "shipped matcher keeps the file tools" "$shipped_m" "Edit|Write|NotebookEdit"
+
+mt="$(mktemp -d)"
+bash "$MS" merge "$mt" >/dev/null 2>&1
+pm="$(jq -r '.hooks.PreToolUse[0].matcher' "$mt/.claude/settings.json")"
+assert_contains "review-fix" "merge writes a PreToolUse matcher including Bash" "$pm" "Bash"
+# idempotency: re-merge must not duplicate the vibe PreToolUse group.
+bash "$MS" merge "$mt" >/dev/null 2>&1
+n="$(jq -r "$guard_group | length" "$mt/.claude/settings.json")"
+assert_eq "review-fix" "re-merge does not duplicate the vibe PreToolUse group" "$n" "1"
+# an OLD-matcher vibe entry is REPLACED (strip-by-command-path), not appended.
+jq '.hooks.PreToolUse = [{"matcher":"Edit|Write|NotebookEdit","hooks":[{"type":"command","command":"bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-tool-use-guard.sh\"","timeout":10}]}]' \
+   "$mt/.claude/settings.json" > "$mt/s.tmp" && mv "$mt/s.tmp" "$mt/.claude/settings.json"
+bash "$MS" merge "$mt" >/dev/null 2>&1
+n2="$(jq -r "$guard_group | length" "$mt/.claude/settings.json")"
+pm2="$(jq -r "$guard_group"' | .[0].matcher' "$mt/.claude/settings.json")"
+assert_eq "review-fix" "re-merge over an old-matcher entry leaves exactly one vibe group" "$n2" "1"
+assert_contains "review-fix" "re-merge upgrades the old matcher to include Bash" "$pm2" "Bash"
+rm -rf "$mt"
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

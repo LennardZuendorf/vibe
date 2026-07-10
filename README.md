@@ -6,7 +6,6 @@
 
 [![CI](https://github.com/LennardZuendorf/vibe/actions/workflows/ci.yml/badge.svg)](https://github.com/LennardZuendorf/vibe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![tests](https://img.shields.io/badge/tests-248%20passing-brightgreen)
 ![bash](https://img.shields.io/badge/built%20with-bash%20%2B%20markdown%20%2B%20json-informational)
 
 </div>
@@ -113,26 +112,27 @@ Deep dive: [`spec/README.md`](spec/README.md).
 Everything starts at `idle`. The agent self-locates, then drives one flow. The
 cursor `.agents/skills/vibe/state.json` = `{flow, phase, feature}` points at one
 state in `state-machine.json` — the source of truth for each state's skill,
-delegates, caveman level, write surface, and legal `next`. Transition only via
+delegates, write surface, and legal `next`. Transition only via
 `set-state.sh <flow.phase>`.
 
 ```mermaid
 flowchart LR
     I((idle)) --> SB
     subgraph strategy
-        SB[brainstorm] --> SS[spec] --> SC[compound]
+        SB[brainstorm] --> SS[spec]
     end
     subgraph feature
         D[design] --> P[plan] -. human gate .-> IM[impl] --> V[verify]
         V -. human gate .-> C[compound]
         V -->|targeted fix| IM
+        V -->|major drift| P
     end
     subgraph quick
         T[triage] --> F[fix] --> QV[verify]
     end
     I --> D
     I --> T
-    SC --> I
+    SS --> I
     C --> I
     QV --> I
 ```
@@ -140,12 +140,52 @@ flowchart LR
 > Simplified view — see [`flow/README.md`](flow/README.md) for the setup states.
 
 The workflow is **one skill** (`vibe`) with a router plus per-phase files
-(`setup`, `strategy`, `feature`, `quick`, `verify`, `compound`, `amend`). Each
+(`setup`, `strategy`, `feature`, `quick`, `verify`, `compound`). Each
 turn, the `UserPromptSubmit` hook injects the current state's orders (resolved
 from the linked skill by `orders.sh` — D12); a `PreToolUse` hook guards the three
 write invariants; a `Stop` hook runs warn-first exit checks and blocks in
-`*.verify` without a fresh evidence receipt. `amend` is a modifier, not a flow:
-a scoped edit from any state that returns there.
+`*.verify` without a fresh evidence receipt. A scope edit is not a state: edit
+within the current state's write surface and stay put — `set-state.sh idle`
+always aborts.
+
+### Driving the flow with `/flow`
+
+`/flow` is the transition command. Pass the target state — plus a feature name
+when entering a feature flow:
+
+```text
+/flow feature.design my-feature   # start a feature; names the feature
+/flow feature.plan                # advance to planning
+/flow idle                        # abort — always legal
+```
+
+It reads the current cursor, refuses a target that is not in the state's `next`,
+and otherwise calls `set-state.sh` for you — you never hand-edit the cursor. Most
+edges **auto-advance**: the agent transitions and keeps working without asking.
+The flow stops only at a **gated edge**, and a gated edge needs an explicit
+confirm token before `/flow` will cross it. The two gates are
+`feature.plan → feature.impl` (approve the plan units + pick the impl mode) and
+`feature.verify → feature.compound` (approve shipping); the
+`quick.triage → feature.design` escalation also confirms, because it renames the
+work.
+
+### What actually enforces what
+
+Only a few things are *hard*; the rest is convention the flow surfaces but does
+not block on.
+
+| Mechanism | Strength | What it does |
+|---|---|---|
+| `PreToolUse` guard — 3 write invariants | **Hard block** (exit 2) | `state.json` only via `set-state.sh`; `.spec/lessons.md` only in `feature.compound`, `setup.apply`, `strategy.spec`, or `quick.verify`; root `.spec/{product,tech,design,plan}.md` only in `strategy.spec`, `feature.compound`, or `setup.apply` |
+| `PreToolUse` guard — Bash sniffer | **Warning** | the hard blocks intercept **file-tool** calls (Edit / Write / NotebookEdit) only; a raw `echo >> .spec/lessons.md` is caught by a text-scan sniffer that **warns**, never blocks (false positives are certain, so it can only nudge) |
+| `Stop` gate — evidence receipt | **Hard block** (exit 2) | in a `*.verify` state, refuses to stop until a fresh `evidence/…` receipt exists (staleness is git-derived). This tooth fires **with or without `jq`** — jq-less, the cursor is read via sed and the block is byte-identical |
+| `set-state.sh` — the cursor writer | **Not a gate** | it validates the target state *name* and writes the cursor; it does **not** enforce edge legality. Which edges are legal (and which need a confirm) is `/flow` convention, not a hook |
+| everything else | **Warning** | auto-advance nudges, stuck-phase / impl-without-tests smells, per-turn orders — advisory only. Warnings are relayed back and appear at your **next prompt**, not mid-turn |
+
+Everything degrades gracefully: a missing script or an unreadable cursor exits 0
+and never ends the session. Absent `jq` only costs the machine-derived warn nudges —
+the write invariants and the evidence-receipt block still fire (they read the flat
+cursor via sed).
 
 Deep dive: [`flow/README.md`](flow/README.md).
 
@@ -160,10 +200,6 @@ one warns, never hard-fails.**
 |---|---|---|---|
 | superpowers | skill-collection | [obra/superpowers](https://github.com/obra/superpowers) | flow phases self-execute from their constraint documents |
 | feature-dev | subagent-collection | Claude Code plugin: feature-dev | the orchestrator performs the explore / architect / review step inline |
-
-> Caveman levels (`lite`/`full`/`ultra`) are vibe's own frozen output-compression
-> vocabulary, not a dependency — the naming credits
-> [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) as origin.
 
 ## Platform support
 
@@ -206,11 +242,12 @@ directories in your target.
 ## Tests
 
 ```bash
-bash tests/run.sh      # spec (123) + flow (68) + adapters (74) — 265 assertions
+bash tests/run.sh      # spec + flow + adapters suites; CI runs the full matrix
 ```
 
-CI runs `shellcheck` on every tracked `*.sh`, the combined suite, and
-`spec/scripts/validate.sh` on every push and PR.
+CI runs `shellcheck` on every tracked `*.sh`, the combined suite,
+`spec/scripts/validate.sh`, and `spec/scripts/check-drift.sh` (compound / doc-drift
+gate) on every push and PR.
 
 ## Documentation
 

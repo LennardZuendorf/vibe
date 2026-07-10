@@ -22,7 +22,7 @@ area_from_name() {
     plan.md|plan-*)
       echo "plan"
       ;;
-    design.md|design-*)
+    design.md)
       echo "design"
       ;;
     lessons.md)

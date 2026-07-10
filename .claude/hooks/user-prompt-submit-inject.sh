@@ -10,8 +10,13 @@
 # is added to the prompt context. Static-content discipline: orders.sh emits a
 # byte-stable block (only <feature> interpolates) so the prompt cache holds.
 #
+# Warnings relay (the model-visible end): the guard and gate hooks queue warn-only
+# smells into .agents/skills/vibe/warnings.log (their stderr never reaches the
+# model). After the orders, this hook drains that log to stdout — prefixing each
+# line "vibe-warn:" — and truncates it, so every queued warn surfaces exactly once.
+#
 # Graceful degrade (R9): missing project dir / script -> exit 0, inject nothing,
-# never break the session.
+# never break the session. An unreadable/unwritable relay log is a silent no-op.
 
 set -euo pipefail
 
@@ -19,9 +24,21 @@ cat >/dev/null 2>&1 || true   # consume stdin; we don't need it
 
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
 ORDERS="$ROOT/.agents/skills/vibe/scripts/orders.sh"
+WARN_LOG="$ROOT/.agents/skills/vibe/warnings.log"
 
 [[ -f "$ORDERS" ]] || exit 0
 
 # orders.sh always exits 0 and self-degrades; guard anyway.
 bash "$ORDERS" 2>/dev/null || true
+
+# Drain the warnings relay to stdout (the injected stream), then truncate so each
+# warn shows once. Non-empty lines only; failures never end the session.
+if [[ -f "$WARN_LOG" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -n "$line" ]] || continue
+    printf 'vibe-warn: %s\n' "$line"
+  done < "$WARN_LOG"
+  : > "$WARN_LOG" 2>/dev/null || rm -f "$WARN_LOG" 2>/dev/null || true
+fi
+
 exit 0

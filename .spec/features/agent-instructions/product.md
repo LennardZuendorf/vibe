@@ -8,6 +8,13 @@ updated: 2026-06-06
 
 # Feature: Agent Instructions — Product
 
+> **Consolidated (2026-06-29):** the standalone `vibe-setup` skill (and the
+> sibling `vibe-*` phase skills) named throughout were folded into the single
+> `vibe` skill — see root [plan.md](../../plan.md) `vibe-skill-consolidation`.
+> The deliverables described here (the `AGENTS.md` template, `merge-agents.sh`,
+> adapter symlinks, `setup.detect` / `setup.apply`) ship unchanged under `vibe`;
+> read `vibe-setup` / `vibe-*` throughout as the `vibe` skill and its phases.
+
 Bootstrap and repair the repo's **agent instruction file** during vibe init:
 ship a canonical `AGENTS.md` template from the `vibe-setup` skill, merge it into
 the target repo without clobbering user content, and optionally create

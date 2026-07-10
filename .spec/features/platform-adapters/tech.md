@@ -8,6 +8,14 @@ updated: 2026-06-06
 
 # Feature: Platform Adapters — Architecture
 
+> **Superseded (2026-07-09):** the Claude Code **plugin** packaging
+> (`.claude-plugin/plugin.json` + `hooks/hooks.json` + `${CLAUDE_PLUGIN_ROOT}`)
+> in this doc was retired. The live wiring is `.claude/settings.json` (written by
+> `install.sh`) whose hook scripts resolve via `$CLAUDE_PROJECT_DIR`; `/flow` is a
+> native project command; no `.claude-plugin/` dir ships. See the "plugin cannot
+> bundle skills" lesson. Kept as historical design record — read "plugin" as
+> "settings.json wiring".
+
 Adapters are thin files that translate runtime-specific affordances into the
 platform-neutral `.agents/skills/vibe` core. The Claude Code
 adapter goes one step further: it is packaged as an installable **Claude Code

@@ -11,8 +11,12 @@ updated: {YYYY-MM-DD}
   Job: HOW to build this feature (units, files, verification). Link up to product.md for WHAT.
   Do NOT: re-litigate product requirements, UX prose, architecture essays, root milestones.
   Omit optional sections entirely when empty — placeholder prose is worse than absence.
-  Steps are consumed by superpowers:executing-plans / SDD — real commands and paths, no
-  placeholders like "add error handling"; omit Steps only when no executor will run the plan.
+  CORE per unit (always): Goal, Requirements, Files, Test scenarios, Verification.
+  HANDOVER-MODE ONLY: the per-unit **Interfaces** and **Steps** blocks are for
+  handover impl (superpowers:subagent-driven-development), where a subagent sees
+  only its own unit. In interactive mode (the default, superpowers:executing-plans
+  driven turn by turn) you MAY omit both — keep the core blocks. When you do keep
+  Steps, write real commands and paths, no placeholders like "add error handling".
 -->
 
 # Feature: {Name} — Implementation Plan
@@ -89,6 +93,8 @@ Units are `{name}/n` — the feature slug plus an integer assigned once and **ne
 
 - Consumes: {names/types this unit uses from prior units — or —}
 - Produces: {names/types later units will use}
+
+<!-- Steps is a handover-mode task checklist (superpowers:subagent-driven-development). Interactive impl may omit it and drive the unit from Goal/Files/Test scenarios/Verification instead. -->
 
 **Steps:**
 

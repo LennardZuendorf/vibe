@@ -8,6 +8,13 @@ updated: 2026-06-06
 
 # Feature: Agent Instructions — Architecture
 
+> **Consolidated (2026-06-29):** the standalone `vibe-setup` skill (and the
+> sibling `vibe-*` phase skills) named throughout were folded into the single
+> `vibe` skill — see root [plan.md](../../plan.md) `vibe-skill-consolidation`.
+> The deliverables described here (the `AGENTS.md` template, `merge-agents.sh`,
+> adapter symlinks, `setup.detect` / `setup.apply`) ship unchanged under `vibe`;
+> read `vibe-setup` / `vibe-*` throughout as the `vibe` skill and its phases.
+
 Template-driven provisioning of the canonical `AGENTS.md` engineering guide and
 optional platform adapter symlinks during `vibe-setup` `setup.apply`. Mirrors the
 `spec` skill's `reference/templates/` + `setup.sh` pattern.

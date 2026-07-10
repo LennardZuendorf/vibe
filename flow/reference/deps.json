@@ -5,7 +5,7 @@
       "name": "superpowers",
       "kind": "skill-collection",
       "source": "https://github.com/obra/superpowers",
-      "required_by": ["idle", "setup.apply", "strategy.*", "feature.*", "quick.*", "amend"],
+      "required_by": ["idle", "setup.apply", "strategy.*", "feature.*", "quick.*"],
       "degrade": "flow phases self-execute from their constraint documents; never a hard failure"
     },
     {

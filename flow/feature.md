@@ -13,14 +13,14 @@ Everything between is autonomous.
    and set it: `bash .agents/skills/vibe/scripts/set-state.sh feature.design <name>`.
    The name is carried in the cursor across all feature states.
 
-2. **Design** (`feature.design`, caveman lite). Follow the spec skill
+2. **Design** (`feature.design`). Follow the spec skill
    [feature.md authoring flow](.agents/skills/spec/feature.md) steps 1–4:
    locate & name → interview WHAT → rigor gate → sketch HOW. Read
    `.spec/lessons.md` first.
 
    > **Delegate — superpowers:brainstorming**
    > - announce: "delegating to `superpowers:brainstorming` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
-   > - inject: spec feature.md steps 1–4 as the dialogue format (RFC-2119 WHAT, GWT scenarios, Scope-table boundaries); caveman lite
+   > - inject: spec feature.md steps 1–4 as the dialogue format (RFC-2119 WHAT, GWT scenarios, Scope-table boundaries)
    > - inject: batch clarifying questions into ONE organized list per round (feature-dev Phase 3 pattern); take a SINGLE design approval at the end — no one-question-per-message, no per-section approvals; the flow's only gates are plan and ship
    > - redirect: design doc → `.spec/features/<name>/{product,tech,design}.md` (design.md only at full rigor)
    > - skip: its terminal write under `docs/superpowers/specs/`, its self-commit, its writing-plans handoff
@@ -35,7 +35,7 @@ Everything between is autonomous.
    when the rigor gate says full. When HOW is sketched, advance to `feature.plan`
    and continue.
 
-3. **Plan** (`feature.plan`, caveman lite). Follow [feature.md](.agents/skills/spec/feature.md)
+3. **Plan** (`feature.plan`). Follow [feature.md](.agents/skills/spec/feature.md)
    step 5 (plan units).
 
    > **Delegate — superpowers:writing-plans**
@@ -57,7 +57,7 @@ Everything between is autonomous.
    standing decline, never impose); the default stays the current branch, and verify
    runs against the same tree either way.
 
-4. **Impl** (`feature.impl`, caveman full). Mode is picked at the plan gate;
+4. **Impl** (`feature.impl`). Mode is picked at the plan gate;
    default **interactive**. Both modes consume the hybrid
    `.spec/features/<name>/plan.md` (units in Seq order; per-unit **Steps** are the
    task checklist) and run on the **feature branch established at the plan gate**
@@ -85,13 +85,13 @@ Everything between is autonomous.
    > - redirect: write `src/**` and `tests/**` only; cite plan unit IDs (`<name>/n`) in commits. COPY these redirect/skip lines into every subagent (Task) prompt — subagents get no per-turn orders
    > - skip: its `finishing-a-development-branch` exit — stop after the final review; the flow advances to `feature.verify`, which audits regardless
 
-5. **Verify** (`feature.verify`, caveman full). Hand to `verify.md` /
+5. **Verify** (`feature.verify`). Hand to `verify.md` /
    `superpowers:verification-before-completion` + `requesting-code-review` +
    `code-reviewer`. Gather evidence per unit ID. **Human gate** before ship.
    Route: pass → `feature.compound`; targeted fix → `feature.impl`; major drift →
    `feature.plan`.
 
-6. **Compound** (`feature.compound`, caveman lite; receipts ultra). Hand to
+6. **Compound** (`feature.compound`). Hand to
    `compound.md`: record a tagged lesson, promote cross-cutting decisions to
    root specs, archive the feature folder, regenerate the active-rules digest.
 
@@ -102,5 +102,6 @@ Everything between is autonomous.
   one line, continue. Stop and ask only at a `gates` edge (see state-machine.json):
   the two human gates are plan approval before impl and ship approval after verify.
 - If a `quick` task escalated here, start at `feature.design`.
-- Caveman compresses output, never reasoning. Security/irreversible actions stay
-  in normal prose at every level.
+- Output density follows the machine's `style` note (see [SKILL.md](SKILL.md)
+  § Style): it compresses output, never reasoning. Security/irreversible actions
+  stay in normal prose.

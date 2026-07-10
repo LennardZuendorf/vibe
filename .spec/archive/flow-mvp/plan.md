@@ -3,7 +3,7 @@ type: feature-plan
 feature: flow-mvp
 sibling: tech.md
 parent: ../../plan.md
-updated: 2026-07-07
+updated: 2026-07-09
 ---
 
 # Feature: flow-mvp — Implementation Plan
@@ -388,16 +388,17 @@ inspected.
 
 | Unit | Status |
 |---|---|
-| flow-mvp/1 | NOT STARTED |
-| flow-mvp/2 | NOT STARTED |
-| flow-mvp/3 | NOT STARTED |
-| flow-mvp/4 | NOT STARTED |
-| flow-mvp/5 | NOT STARTED |
-| flow-mvp/6 | NOT STARTED |
-| flow-mvp/7 | NOT STARTED |
-| flow-mvp/8 | NOT STARTED |
-| flow-mvp/9 | NOT STARTED |
-| flow-mvp/10 | NOT STARTED |
+| flow-mvp/1 | DONE |
+| flow-mvp/2 | DONE |
+| flow-mvp/3 | DONE |
+| flow-mvp/4 | DONE |
+| flow-mvp/5 | DONE |
+| flow-mvp/6 | DONE |
+| flow-mvp/7 | DONE |
+| flow-mvp/8 | DONE |
+| flow-mvp/9 | DONE |
+| flow-mvp/10 | DONE |
+| flow-mvp/11 | DONE |
 
 ---
 

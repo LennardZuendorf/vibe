@@ -1,7 +1,8 @@
 ---
 type: product-topic
-topic: <topic>
 parent: product.md
+scope: <topic>
+covers: <comma-separated list>
 updated: 2026-06-29
 ---
 

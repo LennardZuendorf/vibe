@@ -25,8 +25,8 @@ manifest. Everything bash, shellcheck-clean, graceful-degrade.
 install.sh                      # arg parser, action plan model, DRY_RUN guard on every write
 flow/scripts/doctor.sh          # new — health checks, warn-only, exit 0
 flow/reference/deps.json        # new — external dep manifest
-tests/adapters/run.sh           # flag + uninstall + dry-run assertions
-tests/flow/run.sh               # doctor assertions
+flow/tests/adapters/run.sh      # flag + uninstall + dry-run assertions
+flow/tests/run.sh               # doctor assertions
 ```
 
 ---
@@ -64,9 +64,10 @@ delete runtime state (lessons.md installer rule applies).
 
 **Doctor checks (initial set):** core dirs present; symlinks resolve (source
 repo) / real dirs (target); `state.json` parses + state legal
-(delegates `validate-state.sh`); hooks.json + plugin manifest present when
-flow installed; each `deps.json` entry present in `~/.claude/skills` or
-plugin cache — warn with degrade text when absent; `jq` availability.
+(delegates `validate-state.sh`); `.claude/settings.json` hook wiring present when
+flow installed (the plugin manifest approach was retired); each `deps.json` entry
+present in `~/.claude/skills` or plugin cache — warn with degrade text when
+absent; `jq` availability.
 
 ## Open Questions
 

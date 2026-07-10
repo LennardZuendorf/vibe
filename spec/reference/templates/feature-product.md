@@ -34,7 +34,7 @@ updated: {YYYY-MM-DD}
 
 ## Requirements
 
-### Requirement: {Short name}
+### Requirement: {Short name} (R1)
 
 The system SHALL {concrete, testable obligation using RFC 2119 MUST/SHALL language}.
 
@@ -44,7 +44,7 @@ The system SHALL {concrete, testable obligation using RFC 2119 MUST/SHALL langua
 - **When** {action or trigger}
 - **Then** {observable outcome}
 
-### Requirement: {Short name}
+### Requirement: {Short name} (R2)
 
 The system MUST {another obligation}.
 
@@ -54,7 +54,9 @@ The system MUST {another obligation}.
 - **When** {action or trigger}
 - **Then** {observable outcome}
 
-Reference requirements as R1, R2, … in the feature plan's Requirements Trace.
+Requirement headings MAY carry an inline id — `### Requirement: {Short name} (R1)` — so
+`validate.sh` (SF12) checks each R-id is cited in the feature plan's Requirements Trace.
+Reference the same R1, R2, … in [plan.md](plan.md)'s Requirements Trace.
 
 <!-- include-when-material: User Experience — omit when requirements fully capture UX -->
 

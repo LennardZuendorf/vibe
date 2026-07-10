@@ -1,7 +1,8 @@
 ---
 type: plan-topic
-topic: <topic>
 parent: plan.md
+scope: <topic>
+covers: <comma-separated list>
 updated: 2026-06-29
 ---
 

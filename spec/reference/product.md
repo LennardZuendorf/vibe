@@ -65,7 +65,7 @@ Create when:
 Frontmatter:
 ```yaml
 ---
-type: branch
+type: product-topic
 parent: product.md
 scope: <topic>
 covers: <comma-separated list>
@@ -147,7 +147,7 @@ This bridges WHAT to HOW so the reader can navigate.
 
 - **Root entrypoint:** [templates/product.md](templates/product.md)
 - **Feature spec:** [templates/feature-product.md](templates/feature-product.md)
-- **Cross-cutting branch:** [templates/product-xxx.md](templates/product-xxx.md)
+- **Cross-cutting branch:** [templates/product-topic.md](templates/product-topic.md)
 
 ---
 

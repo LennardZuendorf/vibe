@@ -17,6 +17,12 @@
 #
 # Read-only. Always exits 0: missing jq / skill / block degrade to the machine
 # inject, then to a one-line generic fallback — never a session-ending failure.
+#
+# jq is recommended, not required (the third leg after set-state.sh + detect-
+# context.sh). Without jq the cursor is read via the same sed extraction
+# detect-context.sh uses, `idle`'s inline inject is sed-extracted from the machine,
+# and skill-owning states resolve their orders block via sed (see machine_skill's
+# uniform-"vibe" assumption). The output is byte-identical to the jq path.
 
 set -euo pipefail
 
@@ -53,20 +59,31 @@ GENERIC_FALLBACK="state=unknown · read .agents/skills/vibe/state-machine.json a
 have_jq() { command -v jq >/dev/null 2>&1; }
 
 # Resolve the compound state key from the cursor (matches detect-context.sh).
+# Without jq, fall back to sed over the machine-written flat cursor — the same
+# extraction detect-context.sh uses — so a jq-less target stays cursor-aware
+# instead of collapsing every state onto idle.
 current_state() {
+  local flow="" phase=""
   if have_jq && [[ -f "$STATE" ]] && jq -e . "$STATE" >/dev/null 2>&1; then
-    local flow phase
     flow=$(jq -r '.flow // "idle"' "$STATE")
     phase=$(jq -r '.phase // "idle"' "$STATE")
-    if [[ "$flow" == "$phase" ]]; then echo "$flow"; else echo "$flow.$phase"; fi
-  else
-    echo "idle"
+  elif ! have_jq && [[ -f "$STATE" ]]; then
+    flow=$(sed -n 's/.*"flow"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$STATE" | head -n1)
+    phase=$(sed -n 's/.*"phase"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$STATE" | head -n1)
   fi
+  [[ -n "$flow" && "$flow" != "null" ]] || flow="idle"
+  [[ -n "$phase" && "$phase" != "null" ]] || phase="idle"
+  if [[ "$flow" == "$phase" ]]; then echo "$flow"; else echo "$flow.$phase"; fi
 }
 
 current_feature() {
-  if have_jq && [[ -f "$STATE" ]]; then
+  [[ -f "$STATE" ]] || return 0
+  if have_jq; then
     jq -r '.feature // empty' "$STATE" 2>/dev/null || true
+  else
+    # Flat cursor: read the feature string; a null (unquoted) value yields empty —
+    # identical to jq's `// empty`. Mirrors set-state.sh's own no-jq read.
+    sed -n 's/^[[:space:]]*"feature"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$STATE" | head -n1 || true
   fi
 }
 
@@ -82,29 +99,48 @@ interpolate() {
 }
 
 # Extract the orders block for <state> from a skill's SKILL.md (between the
-# `<!-- vibe:orders:<state> -->` and `<!-- /vibe:orders -->` markers).
+# `<!-- vibe:orders:<state> -->` and `<!-- /vibe:orders -->` markers). Pure sed
+# (not awk) so the no-jq degrade path depends on neither jq nor awk; the output is
+# byte-identical to the previous awk extraction (marker lines excluded).
 extract_block() {
-  local file="$1" state="$2"
+  local file="$1" state="$2" esc
   [[ -f "$file" ]] || return 1
-  awk -v want="<!-- vibe:orders:${state} -->" '
-    $0 == want { grab = 1; next }
-    grab && $0 == "<!-- /vibe:orders -->" { exit }
-    grab { print }
-  ' "$file"
+  # Escape regex-significant chars in the state for the sed address — states carry
+  # a literal '.', which would otherwise match any character.
+  esc="$(printf '%s' "$state" | sed 's/[.[\*^$/]/\\&/g')"
+  sed -n "\|^<!-- vibe:orders:${esc} -->\$|,\|^<!-- /vibe:orders -->\$|p" "$file" \
+    | sed '1d;$d'
 }
 
+# The idle inline inject from the machine. With jq, read the field; without it,
+# only `idle` carries a (quoted) inject — every skill-owning state is inject:null —
+# so sed-extract the single quoted inject string. The machine is pretty-printed one
+# key per line, so the value sits on its own line with no embedded double-quotes.
 machine_inject() {
   local state="$1"
-  have_jq || return 1
   [[ -f "$MACHINE" ]] || return 1
-  jq -r --arg s "$state" '.states[$s].inject // empty' "$MACHINE" 2>/dev/null
+  if have_jq; then
+    jq -r --arg s "$state" '.states[$s].inject // empty' "$MACHINE" 2>/dev/null
+  else
+    [[ "$state" == "idle" ]] || return 1
+    sed -n 's/^[[:space:]]*"inject"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' "$MACHINE" | head -n1
+  fi
 }
 
+# The skill linked to <state>. With jq, read the field; without it, assume "vibe":
+# the machine's skill link is uniformly "vibe" for every skill-owning state (only
+# idle is skill:null, which this returns empty for so the inline-inject fallback
+# fires). If a state turns out skill-less, extract_block finds no block and the
+# caller falls through to the machine inject — same as the jq path.
 machine_skill() {
   local state="$1"
-  have_jq || return 1
   [[ -f "$MACHINE" ]] || return 1
-  jq -r --arg s "$state" '.states[$s].skill // empty' "$MACHINE" 2>/dev/null
+  if have_jq; then
+    jq -r --arg s "$state" '.states[$s].skill // empty' "$MACHINE" 2>/dev/null
+  else
+    [[ "$state" == "idle" ]] && return 1
+    printf 'vibe\n'
+  fi
 }
 
 STATE_KEY="${1:-$(current_state)}"

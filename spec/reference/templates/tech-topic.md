@@ -1,7 +1,8 @@
 ---
 type: tech-topic
-topic: <topic>
 parent: tech.md
+scope: <topic>
+covers: <comma-separated list>
 updated: 2026-06-29
 ---
 

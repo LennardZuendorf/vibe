@@ -3,11 +3,18 @@ type: feature-plan
 feature: agent-instructions
 sibling: tech.md
 parent: ../../plan.md
-covers: vibe-setup AGENTS.md template merge + optional adapter symlinks
+covers: vibe skill AGENTS.md template merge + optional adapter symlinks
 updated: 2026-06-18
 ---
 
 # Feature: Agent Instructions — Implementation Plan
+
+> **Consolidated (2026-06-29):** the standalone `vibe-setup` skill (and the
+> sibling `vibe-*` phase skills) named throughout were folded into the single
+> `vibe` skill — see root [plan.md](../../plan.md) `vibe-skill-consolidation`.
+> The deliverables below (the `AGENTS.md` template, `merge-agents.sh`, adapter
+> symlinks, `setup.detect` / `setup.apply`) ship unchanged under `vibe`; read
+> `vibe-setup` / `vibe-*` throughout as the `vibe` skill and its phases.
 
 Template-driven `AGENTS.md` provisioning and optional adapter symlinks as part of
 `vibe-setup` `setup.apply`. A closed, deliverable, testable box. Supersedes the
@@ -53,7 +60,7 @@ Unit IDs are `agent-instructions/n` — assigned once, never renumbered.
   symlinks (skip-correct, relink-wrong, refuse-real-file). Idempotent.
 - `vibe-setup` skill `setup.detect` audit surface + `setup.apply` flow rewritten
   off the constitution path onto `merge-agents.sh` + adapter symlinks + regen.
-- Five merge/symlink scenarios covered by `tests/adapters/run.sh`.
+- Five merge/symlink scenarios covered by `flow/tests/adapters/run.sh`.
 
 ---
 

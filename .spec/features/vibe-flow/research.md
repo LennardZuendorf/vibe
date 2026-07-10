@@ -21,8 +21,8 @@ orchestrate superpowers, feature-dev, and caveman versus alternatives
 
 - **Date:** 2026-07-07
 - **Reviewer:** external reviewing agent (Claude, multi-agent review: 2 deep-dive reviewers, 2 integration/adapter reviewers, 1 competitive-landscape researcher, adversarial synthesis by the orchestrator)
-- **Target:** `main` @ `d56db8b` (post-PR #13 release line), reviewed against the brief in `.spec/product-review.md`
-- **Baseline reproduced:** `spec 123 + flow 68 + adapters 74 = 265 passed, 0 failed` (serial run); `validate.sh` 0 errors / 7 warnings; `doctor.sh` green with all three external deps absent (graceful-degrade path exercised live)
+- **Target:** `main` @ `d56db8b` (post-PR #13 release line), reviewed against the brief in `.spec/archive/product-review-2026-07-06.md`
+- **Baseline reproduced:** all three suites clean via `bash tests/run.sh` (serial run); `validate.sh` no errors (warnings only); `doctor.sh` reports healthy with all three external deps absent (graceful-degrade path exercised live)
 
 ---
 
@@ -89,7 +89,7 @@ Bottom line: **the flow steers an obedient agent very well and constrains a diso
 
 ### Structural gaps in the graph
 
-- **`quick` is a second-class flow.** No `quick.compound`, and `lessons.md` is only writable in `*.compound`/`setup.apply` — so a lesson learned during a quick fix (the most common kind of work, and the most common source of lessons) **has no legal place to land**. The compounding loop silently doesn't run for the majority case.
+- **`quick` is a second-class flow.** No dedicated quick-flow compound state, and `lessons.md` is only writable in `*.compound`/`setup.apply` — so a lesson learned during a quick fix (the most common kind of work, and the most common source of lessons) **has no legal place to land**. The compounding loop silently doesn't run for the majority case.
 - **No `quick.verify → quick.fix` back-edge.** `feature.verify` loops back on failure; a failed quick verify can only exit to `idle` and re-enter.
 - **No mid-arc bail-out.** Once in `strategy.brainstorm` or `feature.design`, there is no legal edge back to `idle` — only forward.
 
@@ -143,7 +143,7 @@ What vibe claims but does not add today: forced skill usage, forced phase order,
 2. **Close or acknowledge the Bash hole.** Either extend the PreToolUse matcher to inspect `Bash` writes against the same three invariants, or stop calling them "hard blocks" in the docs. (This review watched a Bash write drive the cursor straight past the guard.)
 3. **Make `flow/tests/run.sh` hermetic** — point it at a temp cursor, not the live one. Proven failure mode: flaky under concurrency, leaks fixture state (`widget`) into the real repo, mutation invisible to git.
 4. **Re-sweep `.spec/` to reality.** Plugin→settings.json migration (product/tech/plan, platform-adapters, CHANGELOG, lessons), the 248-vs-265 badge, vibe-flow's stale "keep all seven shims" OPEN-2 record, and `plan.md`'s now-false "no open drift" line. For this product specifically, stale specs are a credibility wound, not a nit.
-5. **Give `quick` a compounding path** (a `quick.compound`, or a legal lessons-write from `quick.verify`) and a `quick.verify → quick.fix` back-edge.
+5. **Give `quick` a compounding path** (a dedicated quick-flow compound state, or a legal lessons-write from `quick.verify`) and a `quick.verify → quick.fix` back-edge.
 6. **Apply the offer-first lesson to `flow/` phase files** — offer the superpowers executor, self-suffice on decline, mirroring `spec/SKILL.md`'s implemented pattern.
 7. **Guard the documented write surfaces you don't guard:** `.spec/features/**`, `.spec/quick/**`, and disallow `src/**` writes in verify states (the machine and `verify.md` already say so; `detect-context.sh` doesn't).
 8. **Unify skill detection:** source `check-skills.sh` families from `deps.json`, reconcile with `doctor.sh`'s `dep_present`, add a success-path test (fake `~/.claude/skills/superpowers`), and probe feature-dev's actual subagents.

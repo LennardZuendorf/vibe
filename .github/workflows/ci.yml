@@ -29,3 +29,6 @@ jobs:
 
       - name: Spec validation
         run: bash .agents/skills/spec/scripts/validate.sh
+
+      - name: Drift gate (compound + doc drift)
+        run: bash spec/scripts/check-drift.sh

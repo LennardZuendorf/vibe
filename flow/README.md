@@ -39,11 +39,12 @@ A typical session:
 2. Name the work; the agent picks a flow and transitions
    (`/flow strategy.brainstorm` | `feature.design` | `quick.triage` | `setup.detect`).
 3. **Each turn**, the inject hook prepends the current state's orders: the one
-   job, what to delegate, what you may write, the caveman level, and the legal
-   `next`. You do that job — nothing wider.
+   job, what to delegate, what you may write, and the legal `next`. You do that
+   job — nothing wider.
 4. At a **human gate** (before impl, before ship) you approve, then transition
    with `/flow <flow.phase>` to the next state.
-5. The flow ends back at **`idle`** after `*.compound` (or `quick.verify`).
+5. The flow ends back at **`idle`** after `feature.compound` (or after
+   `strategy.spec` / `quick.verify`, which record an optional lesson inline).
 
 You never hand-edit the cursor — `/flow` calls the one sanctioned writer for you.
 
@@ -52,9 +53,9 @@ You never hand-edit the cursor — `/flow` calls the one sanctioned writer for y
 The cursor `.agents/skills/vibe/state.json` = `{flow, phase, feature, updated}`
 points at exactly one state in
 [state-machine.json](state-machine.json) — the static source of truth for each
-state's `skill`, `delegates`, frozen `caveman` level, write surface, and legal
-`next`. The machine has **16 state entries**: three flows, plus `setup`, `idle`,
-and the `amend` modifier.
+state's `skill`, `delegates`, write surface, and legal `next`. The machine has
+**13 state entries**: three flows, plus `setup` and `idle`. Output density is
+governed by one machine-level `style` note, not a per-state level.
 
 ```mermaid
 flowchart LR
@@ -63,29 +64,29 @@ flowchart LR
         SD[detect] --> SA[apply]
     end
     subgraph strategy
-        SB[brainstorm] --> SS[spec] --> SC[compound]
+        SB[brainstorm] --> SS[spec]
     end
     subgraph feature
         D[design] --> P[plan] -. human gate .-> IM[impl] --> V[verify]
         V -. human gate .-> C[compound]
         V -->|targeted fix| IM
+        V -->|major drift| P
     end
     subgraph quick
-        T[triage] --> F[fix] --> QV[verify] --> QC[compound]
+        T[triage] --> F[fix] --> QV[verify]
         QV -->|findings| F
     end
     I --> SD --> I
     I --> SB
     I --> D
     I --> T
-    SC --> I
+    SS --> I
     C --> I
     QV --> I
 ```
 
-`amend` is **not** in the diagram on purpose: it is a modifier, not a flow — a
-scoped edit invoked from any state that carries that state's write rules and
-returns there. `set-state.sh` refuses `amend` as a cursor value.
+A scope edit is **not** a state: edit within the current state's write surface
+and stay put. `set-state.sh idle` is always legal — abort ends any flow.
 
 **Transition only** via the one sanctioned writer — never edit `state.json` by
 hand:
@@ -121,8 +122,8 @@ Thin shells over `scripts/`; the allow/warn/block policy lives once in
 | Hook | Event | Does |
 |---|---|---|
 | `user-prompt-submit-inject.sh` | `UserPromptSubmit` | injects the current state's orders every turn |
-| `pre-tool-use-guard.sh` | `PreToolUse` (Edit/Write/NotebookEdit) | hard-blocks the three write invariants |
-| `stop-gate.sh` | `Stop` | warn-first exit checks; blocks in `*.verify` without a fresh evidence receipt |
+| `pre-tool-use-guard.sh` | `PreToolUse` (Edit/Write/NotebookEdit/Bash) | hard-blocks the three write invariants on **file-tool** calls; on `Bash` it only **warns** when a command looks like it writes a guarded path (see caveats below) |
+| `stop-gate.sh` | `Stop` | warn-first exit checks; blocks in `*.verify` without a fresh evidence receipt — with or without `jq` |
 
 Wired automatically by `install.sh` into `.claude/settings.json`; hook scripts resolve their data via `$CLAUDE_PROJECT_DIR`.
 
@@ -132,7 +133,9 @@ Three hard blocks enforced by
 [scripts/detect-context.sh](scripts/detect-context.sh) `decide`; everything else
 is allow or warn:
 
-1. **`.spec/lessons.md`** — writable only during a `*.compound` state.
+1. **`.spec/lessons.md`** — writable only during `feature.compound`,
+   `setup.apply`, `strategy.spec`, or `quick.verify` (the flow-end states that
+   carry the conditional lesson step).
 2. **Root `.spec/{product,tech,design,plan}.md`** — writable only during
    `strategy.spec`, `feature.compound`, or `setup.apply`.
 3. **`.agents/skills/vibe/state.json`** — never by direct edit; only via
@@ -144,6 +147,24 @@ Check any path before writing:
 bash .agents/skills/vibe/scripts/detect-context.sh decide .spec/product.md
 ```
 
+**What the teeth actually reach — three honest caveats:**
+
+1. **File tools only, plus a Bash warn.** The three hard blocks intercept
+   `Edit` / `Write` / `NotebookEdit`. A raw shell write (`echo >> .spec/lessons.md`,
+   `sed -i`, `tee`, `mv`/`cp`/`rm`) does **not** hit that path, so the guard also
+   runs a warn-only Bash **sniffer**: it text-scans the command for a write-shaped
+   op aimed at a guarded path and nudges. It never blocks (false positives are
+   certain), a pure read like `grep .spec/lessons.md` never warns, and a command
+   driving `set-state.sh` is never warned about `state.json`.
+2. **`set-state.sh` is a writer, not a gate.** It validates the target state
+   *name* and writes the cursor; it does not enforce which edges are legal. Edge
+   legality (and which edges need a confirm token) is `/flow` convention — prose,
+   not a hook.
+3. **The receipt tooth is `jq`-optional.** In a `*.verify` state the `Stop` gate
+   blocks on a missing / stale evidence receipt **with or without `jq`** — jq-less,
+   it reads the flat cursor via sed and the block is byte-identical. Absent `jq`
+   only costs the machine-derived warn nudges, never the block.
+
 ## Scripts
 
 All under `.agents/skills/vibe/scripts/` at runtime.
@@ -154,7 +175,7 @@ All under `.agents/skills/vibe/scripts/` at runtime.
 | [validate-state.sh](scripts/validate-state.sh) | check the cursor is a legal state in the machine |
 | [detect-context.sh](scripts/detect-context.sh) | write policy (allow/warn/block) + state snapshot |
 | [orders.sh](scripts/orders.sh) | resolve the D12 per-turn orders from the linked skill |
-| [check-skills.sh](scripts/check-skills.sh) | dependency presence + degrade / caveman fallback |
+| [check-skills.sh](scripts/check-skills.sh) | delegate presence + degrade report per state |
 | [regen-active-rules.sh](scripts/regen-active-rules.sh) | render `lessons.md` → the `AGENTS.md` active-rules digest |
 | [doctor.sh](scripts/doctor.sh) | warn-only install health report (always exits 0) |
 | [merge-agents.sh](scripts/merge-agents.sh) | `AGENTS.md` marker merge / unmerge + adapter symlinks |
@@ -171,10 +192,6 @@ dependency degrades gracefully — a missing one warns, never hard-fails.**
 | [superpowers](https://github.com/obra/superpowers) | skill-collection | phases self-execute from their constraint documents |
 | feature-dev | subagent-collection | the orchestrator does the explore / architect / review step inline |
 
-> Caveman levels (`lite`/`full`/`ultra`) are vibe's own frozen output-compression
-> vocabulary, not a dependency — the naming credits
-> [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) as origin.
-
 ## File map
 
 The flow half. Addressed at runtime under `.agents/skills/vibe/`.
@@ -182,8 +199,8 @@ The flow half. Addressed at runtime under `.agents/skills/vibe/`.
 | Path | What it is |
 |---|---|
 | [SKILL.md](SKILL.md) | `vibe` router — routing table + the D12 orders blocks |
-| [setup.md](setup.md), [strategy.md](strategy.md), [feature.md](feature.md), [quick.md](quick.md), [verify.md](verify.md), [compound.md](compound.md), [amend.md](amend.md) | per-phase procedure files |
-| [state-machine.json](state-machine.json) | static machine — states, skills, caveman, `next` (data, not prose) |
+| [setup.md](setup.md), [strategy.md](strategy.md), [feature.md](feature.md), [quick.md](quick.md), [verify.md](verify.md), [compound.md](compound.md) | per-phase procedure files |
+| [state-machine.json](state-machine.json) | static machine — states, skills, `style`, `next` (data, not prose) |
 | [state.example.json](state.example.json) | cursor template; copy to `state.json` to test transitions |
 | `state.json` | runtime cursor — gitignored; created by the installer / `set-state.sh` |
 | [scripts/](scripts/) | the nine scripts above |

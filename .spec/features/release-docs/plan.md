@@ -136,6 +136,11 @@ spec/README.md  flow/README.md
 
 ### release-docs/5 — Examples
 
+**Status: DEFERRED** — the `examples/todo-api/.spec/` tree was never shipped (no
+`examples/` dir exists); reconciled to DEFERRED to match root
+[plan.md](../../plan.md). The READMEs point at this repo's own `.spec/` as the
+worked example instead.
+
 **Goal:** `examples/todo-api/.spec/` worked sample (root specs + one feature folder), referenced from READMEs.
 
 **Requirements:** R5
@@ -181,6 +186,11 @@ docs/evals/stranger-2026-07-03.md  (+ fixes in owning files)
 
 ### release-docs/7 — GitHub metadata + PR
 
+**Status: DEFERRED** — the branch push + PR shipped, but the gh repo
+description/topics and the `REPORT.md` were left as documented manual steps
+(sandbox boundary); root [plan.md](../../plan.md) records this as deferred, so
+this unit is reconciled to DEFERRED to match.
+
 **Goal:** repo description + topics via gh; social-preview manual note; branch pushed; PR with night summary; `REPORT.md` morning report at repo root (gitignored or PR-comment — decide at impl).
 
 **Requirements:** R6
@@ -210,6 +220,6 @@ docs/evals/stranger-2026-07-03.md  (+ fixes in owning files)
 | release-docs/2 | DONE |
 | release-docs/3 | DONE |
 | release-docs/4 | DONE |
-| release-docs/5 | DONE |
+| release-docs/5 | DEFERRED |
 | release-docs/6 | DONE |
-| release-docs/7 | DONE |
+| release-docs/7 | DEFERRED |

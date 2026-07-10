@@ -10,9 +10,24 @@
 # Thin shell: state comes from .agents/skills/vibe/scripts/detect-context.sh snapshot;
 # no flow policy is duplicated here.
 #
-# Graceful degrade (R9): missing jq / detect-context.sh / unreadable cursor -> the
+# Warnings relay: warn-only smells print to stderr (exit 0), which Claude Code
+# never surfaces to the model. So each warn is also appended to
+# .agents/skills/vibe/warnings.log; the UserPromptSubmit inject hook drains that
+# log to stdout (injected into context) next turn, then truncates it. The one
+# blocking tooth (missing/stale receipt) still uses exit 2, which IS model-visible.
+#
+# jq-optional (review-fix): the one blocking tooth must fire with or WITHOUT jq —
+# docs call it a hard block, so it cannot silently vanish on a jq-less target.
+# Without jq the state/feature come from the flat machine-written cursor via the
+# same sed fallback detect-context.sh uses, and stop_hook_active is read from
+# stdin with sed. The receipt existence/staleness logic is already file + git
+# based (no jq), so the block is byte-for-byte identical either way. Only the
+# warn-only nudge that needs the machine's `next` array is skipped without jq.
+#
+# Graceful degrade (R9): missing detect-context.sh / unreadable cursor -> the
 # affected check is skipped and the hook exits 0. stop_hook_active passes through
-# (no block loops). Outside *.verify the hook is warn-only, exactly as before.
+# (no block loops). Outside *.verify the hook is warn-only, exactly as before. An
+# unwritable relay log never fails the hook.
 
 set -euo pipefail
 
@@ -20,24 +35,55 @@ STDIN="$(cat 2>/dev/null || true)"   # capture stdin (stop_hook_active lives her
 
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
 DETECT="$ROOT/.agents/skills/vibe/scripts/detect-context.sh"
+STATE_FILE="$ROOT/.agents/skills/vibe/state.json"
 EVID_REL=".agents/skills/vibe/evidence"
+WARN_LOG="$ROOT/.agents/skills/vibe/warnings.log"
 
-command -v jq >/dev/null 2>&1 || exit 0
+have_jq() { command -v jq >/dev/null 2>&1; }
 
 # Re-entry guard: a Stop hook that already fired must not block again (Claude sets
-# stop_hook_active on the re-invocation), or the block would loop forever.
-if [[ "$(printf '%s' "$STDIN" | jq -r '.stop_hook_active // false' 2>/dev/null || echo false)" == "true" ]]; then
-  exit 0
+# stop_hook_active on the re-invocation), or the block would loop forever. Read it
+# jq-first, else sed over the flat stdin JSON.
+if have_jq; then
+  STOP_ACTIVE="$(printf '%s' "$STDIN" | jq -r '.stop_hook_active // false' 2>/dev/null || echo false)"
+else
+  STOP_ACTIVE="$(printf '%s' "$STDIN" | sed -n 's/.*"stop_hook_active"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' | head -n1)"
+  [[ -n "$STOP_ACTIVE" ]] || STOP_ACTIVE=false
 fi
+[[ "$STOP_ACTIVE" == "true" ]] && exit 0
 
 [[ -f "$DETECT" ]] || exit 0
 
-SNAP="$(bash "$DETECT" snapshot 2>/dev/null || echo '{}')"
-STATE="$(printf '%s' "$SNAP" | jq -r '.state // "idle"' 2>/dev/null || echo idle)"
-NEXT="$(printf '%s' "$SNAP" | jq -r '(.next // []) | join(", ")' 2>/dev/null || echo "")"
-FEATURE="$(printf '%s' "$SNAP" | jq -r '.feature // empty' 2>/dev/null || echo "")"
+# State + feature resolution, jq-optional. With jq, take the detect-context.sh
+# snapshot (also carries the machine `next` for the warn-only nudge). Without jq,
+# read the flat cursor directly with the shared sed fallback — the blocking tooth
+# needs STATE + FEATURE only, so NEXT is left empty (its predicate is warn-only).
+if have_jq; then
+  SNAP="$(bash "$DETECT" snapshot 2>/dev/null || echo '{}')"
+  STATE="$(printf '%s' "$SNAP" | jq -r '.state // "idle"' 2>/dev/null || echo idle)"
+  NEXT="$(printf '%s' "$SNAP" | jq -r '(.next // []) | join(", ")' 2>/dev/null || echo "")"
+  FEATURE="$(printf '%s' "$SNAP" | jq -r '.feature // empty' 2>/dev/null || echo "")"
+else
+  STATE=idle; NEXT=""; FEATURE=""
+  if [[ -f "$STATE_FILE" ]]; then
+    _flow="$(sed -n 's/.*"flow"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$STATE_FILE" | head -n1)"
+    _phase="$(sed -n 's/.*"phase"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$STATE_FILE" | head -n1)"
+    FEATURE="$(sed -n 's/.*"feature"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$STATE_FILE" | head -n1)"
+    [[ -n "$_flow" && "$_flow" != "null" ]] || _flow=idle
+    [[ -n "$_phase" && "$_phase" != "null" ]] || _phase=idle
+    if [[ "$_flow" == "$_phase" ]]; then STATE="$_flow"; else STATE="$_flow.$_phase"; fi
+  fi
+fi
 
-warn() { echo "vibe-gate: $1" >&2; }
+# warn — print a warn-only smell to stderr AND queue it to the warnings relay so
+# the inject hook can surface it to the model next turn. An unwritable log or a
+# missing vibe dir is a silent no-op (never fail the hook).
+warn() {
+  echo "vibe-gate: $1" >&2
+  local dir="$ROOT/.agents/skills/vibe"
+  [[ -d "$dir" ]] || return 0
+  printf 'gate: %s\n' "$1" >> "$WARN_LOG" 2>/dev/null || true
+}
 
 git_changed() {
   command -v git >/dev/null 2>&1 || return 1

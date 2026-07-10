@@ -36,17 +36,72 @@ note() { echo "install: $1"; }
 # never performed, so the plan reads the same whether or not it is applied.
 say() { if [[ "$DRY_RUN" -eq 1 ]]; then echo "install: [dry-run] would $1"; else echo "install: $1"; fi; }
 
-# remove_shipped SRC_DIR DST_DIR — delete from DST_DIR only the files that exist
-# in SRC_DIR (the precise inverse of a copy), then prune emptied subdirs. Never
-# touches co-located files the user added to a shared directory.
+# remove_shipped SRC_DIR DST_DIR [EXCLUDE_REL...] — delete from DST_DIR only the
+# files that exist in SRC_DIR (the precise inverse of a copy), skipping any whose
+# relative path equals or sits under an EXCLUDE_REL prefix (the artifacts install
+# scrubs before shipping, or the per-project runtime state it must preserve), then
+# prune emptied subdirs. Never touches co-located files the user added to a shared
+# directory.
 remove_shipped() {
-  local src="$1" dst="$2" f rel
+  local src="$1" dst="$2"; shift 2
+  local excludes=("$@") f rel ex skip
   [[ -d "$src" && -d "$dst" ]] || return 0
   while IFS= read -r f; do
     rel="${f#"$src"/}"
+    skip=0
+    for ex in "${excludes[@]}"; do
+      if [[ "$rel" == "$ex" || "$rel" == "$ex"/* ]]; then skip=1; break; fi
+    done
+    [[ "$skip" -eq 1 ]] && continue
     rm -f "$dst/$rel"
-  done < <(find "$src" -type f)
+  done < <(find -L "$src" -type f)
   find "$dst" -type d -empty -delete 2>/dev/null || true
+}
+
+# gi_append FILE LINE... — append the given lines to a .gitignore, separating them
+# from prior content with exactly one blank line — but only when FILE already
+# exists with content whose last line is non-blank. A freshly created (or
+# blank-terminated) file gains no leading blank line.
+gi_append() {
+  local file="$1"; shift
+  if [[ -s "$file" && -n "$(tail -n 1 "$file")" ]]; then
+    printf '\n' >> "$file"
+  fi
+  printf '%s\n' "$@" >> "$file"
+}
+
+# register_skill NAME — link TARGET/.claude/skills/NAME -> ../../.agents/skills/NAME
+# so the skill resolves where the docs say. Relative, so the tree stays portable.
+# Idempotent (our own symlink is left as-is); never clobbers a user's real entry or
+# a symlink they aimed elsewhere — that slot is theirs, warn once and skip.
+register_skill() {
+  local name="$1"
+  local dir="$TARGET/.claude/skills"
+  local link="$dir/$name"
+  local rel="../../.agents/skills/$name"
+  if [[ -L "$link" ]]; then
+    [[ "$(readlink "$link")" == "$rel" ]] && return 0
+    err "WARN: $link is a symlink to $(readlink "$link"), not $rel — leaving it untouched."
+    return 0
+  fi
+  if [[ -e "$link" ]]; then
+    err "WARN: $link already exists (not a vibe symlink) — leaving it untouched."
+    return 0
+  fi
+  mkdir -p "$dir"
+  ln -s "$rel" "$link"
+}
+
+# unregister_skill NAME — remove TARGET/.claude/skills/NAME only when it is exactly
+# the symlink register_skill created (a symlink whose target is ../../.agents/skills/NAME).
+# A user's real dir/file, or a symlink they aimed elsewhere, is never touched.
+unregister_skill() {
+  local name="$1"
+  local link="$TARGET/.claude/skills/$name"
+  local rel="../../.agents/skills/$name"
+  if [[ -L "$link" && "$(readlink "$link")" == "$rel" ]]; then
+    rm -f "$link"
+  fi
 }
 
 DRY_RUN=0
@@ -119,72 +174,104 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   SRC_MERGE="$SRC/.agents/skills/vibe/scripts/merge-agents.sh"
   SRC_MERGE_SETTINGS="$SRC/.agents/skills/vibe/scripts/merge-settings.sh"
 
+  # Per-file inverse of the install copy (uninstall lesson): remove exactly the
+  # relative paths the source bundle ships — minus the artifacts install scrubs
+  # before shipping (tests/, contributor AGENTS.md) — and prune emptied dirs.
+  # A user file dropped into either shared skills dir is never touched.
   if [[ "$WANT_SPEC" -eq 1 && -e "$TARGET/.agents/skills/spec" ]]; then
-    say "remove .agents/skills/spec"
-    [[ "$DRY_RUN" -eq 1 ]] || rm -rf "$TARGET/.agents/skills/spec"
+    say "remove the shipped files under .agents/skills/spec (user files preserved)"
+    [[ "$DRY_RUN" -eq 1 ]] || remove_shipped \
+      "$SRC/.agents/skills/spec" "$TARGET/.agents/skills/spec" tests AGENTS.md
+  fi
+  # Undo the spec skill registration — only our own .claude/skills/spec symlink.
+  if [[ "$WANT_SPEC" -eq 1 ]]; then
+    say "unregister .claude/skills/spec (only the vibe symlink; a user entry is kept)"
+    [[ "$DRY_RUN" -eq 1 ]] || unregister_skill spec
   fi
 
   if [[ "$WANT_FLOW" -eq 1 ]]; then
+    # Undo the vibe skill registration — only our own .claude/skills/vibe symlink.
+    say "unregister .claude/skills/vibe (only the vibe symlink; a user entry is kept)"
+    [[ "$DRY_RUN" -eq 1 ]] || unregister_skill vibe
     if [[ -e "$TARGET/.agents/skills/vibe" ]]; then
-      if [[ -f "$TARGET/.agents/skills/vibe/state.json" && "$ASSUME_YES" -eq 0 ]]; then
-        say "remove .agents/skills/vibe (preserving the flow cursor and evidence receipts; re-run with --yes to remove them)"
-        if [[ "$DRY_RUN" -eq 0 ]]; then
-          KEPT_CURSOR="$(mktemp)"; cp "$TARGET/.agents/skills/vibe/state.json" "$KEPT_CURSOR"
-          KEPT_EVID=""
-          if [[ -d "$TARGET/.agents/skills/vibe/evidence" ]]; then
-            KEPT_EVID="$(mktemp -d)"; cp -R "$TARGET/.agents/skills/vibe/evidence/." "$KEPT_EVID/"
-          fi
-          rm -rf "$TARGET/.agents/skills/vibe"
-          mkdir -p "$TARGET/.agents/skills/vibe"
-          mv -f "$KEPT_CURSOR" "$TARGET/.agents/skills/vibe/state.json"
-          if [[ -n "$KEPT_EVID" ]]; then
-            mkdir -p "$TARGET/.agents/skills/vibe/evidence"
-            cp -R "$KEPT_EVID/." "$TARGET/.agents/skills/vibe/evidence/"
-            rm -rf "$KEPT_EVID"
-          fi
-        fi
+      # Exclude the same artifacts install scrubs (tests/, AGENTS.md, evidence/)
+      # plus the per-project runtime state install never ships (state.json,
+      # warnings.log): remove_shipped therefore leaves the cursor + receipts
+      # intact by construction. --yes then removes those runtime files too.
+      if [[ "$ASSUME_YES" -eq 0 ]]; then
+        say "remove the shipped files under .agents/skills/vibe (preserving the flow cursor and evidence receipts; re-run with --yes to remove them)"
       else
-        say "remove .agents/skills/vibe"
-        [[ "$DRY_RUN" -eq 1 ]] || rm -rf "$TARGET/.agents/skills/vibe"
+        say "remove .agents/skills/vibe including the flow cursor and evidence receipts"
+      fi
+      if [[ "$DRY_RUN" -eq 0 ]]; then
+        remove_shipped "$SRC/.agents/skills/vibe" "$TARGET/.agents/skills/vibe" \
+          tests AGENTS.md evidence state.json warnings.log
+        if [[ "$ASSUME_YES" -eq 1 ]]; then
+          rm -f "$TARGET/.agents/skills/vibe/state.json" \
+                "$TARGET/.agents/skills/vibe/warnings.log"
+          rm -rf "$TARGET/.agents/skills/vibe/evidence"
+          find "$TARGET/.agents/skills/vibe" -type d -empty -delete 2>/dev/null || true
+        fi
       fi
     fi
-    # --yes removes the cursor + receipts, so fully invert install: strip both
-    # stanzas install appended to .gitignore, leaving other ignore rules intact.
+    # --yes removes the cursor + receipts, so fully invert install: strip every
+    # stanza install appended to .gitignore, leaving other ignore rules intact.
     if [[ "$ASSUME_YES" -eq 1 && -f "$TARGET/.gitignore" ]]; then
-      say "strip the vibe cursor and evidence stanzas from .gitignore"
+      say "strip the vibe cursor, evidence, and warnings stanzas from .gitignore"
       if [[ "$DRY_RUN" -eq 0 ]]; then
         GI="$TARGET/.gitignore"; GI_TMP="$(mktemp)"
         grep -vxF \
           -e '# vibe mutable flow cursor (runtime; version state-machine.json, not this)' \
           -e '.agents/skills/vibe/state.json' \
           -e '# vibe evidence receipts (runtime verification output, not memory)' \
-          -e '.agents/skills/vibe/evidence/' "$GI" 2>/dev/null \
+          -e '.agents/skills/vibe/evidence/' \
+          -e '# vibe warnings relay (runtime warn-first channel; surfaced then truncated)' \
+          -e '.agents/skills/vibe/warnings.log' "$GI" 2>/dev/null \
           | awk 'NF{last=NR} {line[NR]=$0} END{for(i=1;i<=last;i++) print line[i]}' >"$GI_TMP" || true
         if [[ -s "$GI_TMP" ]]; then mv -f "$GI_TMP" "$GI"; else rm -f "$GI_TMP" "$GI"; fi
       fi
     fi
+    # Unwire the settings.json entries FIRST — before deleting the hook scripts
+    # they reference. If the unwire cannot complete (jq absent), the still-wired
+    # settings.json would point at deleted scripts, so LEAVE the hook scripts in
+    # place, warn once with the manual step, and continue the rest of uninstall.
+    UNWIRE_OK=1
     say "unwire the flow hooks from .claude/settings.json (user settings preserved)"
     if [[ "$DRY_RUN" -eq 0 && -f "$SRC_MERGE_SETTINGS" ]]; then
-      bash "$SRC_MERGE_SETTINGS" unmerge "$TARGET" \
-        || err "WARN: settings.json not unwired; left untouched."
+      bash "$SRC_MERGE_SETTINGS" unmerge "$TARGET" || UNWIRE_OK=0
     fi
     say "remove the Claude adapter files vibe installed"
     if [[ "$DRY_RUN" -eq 0 ]]; then
-      remove_shipped "$SRC/.claude/commands" "$TARGET/.claude/commands"
-      remove_shipped "$SRC/.claude/hooks" "$TARGET/.claude/hooks"
-      # Retire artifacts a prior (plugin-based) install left behind.
-      rm -f "$TARGET/.claude-plugin/plugin.json" "$TARGET/.claude/hooks/hooks.json"
-      find "$TARGET/.claude/hooks" -type d -empty -delete 2>/dev/null || true
-      rmdir "$TARGET/.claude-plugin" "$TARGET/.claude" 2>/dev/null || true
+      if [[ "$UNWIRE_OK" -eq 1 ]]; then
+        remove_shipped "$SRC/.claude/commands" "$TARGET/.claude/commands"
+        remove_shipped "$SRC/.claude/hooks" "$TARGET/.claude/hooks"
+        # Retire artifacts a prior (plugin-based) install left behind.
+        rm -f "$TARGET/.claude-plugin/plugin.json" "$TARGET/.claude/hooks/hooks.json"
+        find "$TARGET/.claude/hooks" -type d -empty -delete 2>/dev/null || true
+        rmdir "$TARGET/.claude/skills" "$TARGET/.claude-plugin" "$TARGET/.claude" 2>/dev/null || true
+      else
+        err "WARN: settings.json still wires the flow hooks (jq unavailable) — leaving .claude/hooks/*.sh and .claude/commands in place so the wiring keeps pointing at real files. Remove the vibe hook entries from .claude/settings.json by hand, then delete .claude/hooks and .claude/commands."
+      fi
     fi
+    # Remove the opt-in adapter symlinks vibe created — but ONLY when they are
+    # symlinks that point at AGENTS.md. A user's real file of the same name (or a
+    # symlink they aimed elsewhere) is left untouched.
+    for adapter in CLAUDE.md WARP.md; do
+      link="$TARGET/$adapter"
+      if [[ -L "$link" && "$(readlink "$link")" == "AGENTS.md" ]]; then
+        say "remove adapter symlink $adapter -> AGENTS.md"
+        [[ "$DRY_RUN" -eq 1 ]] || rm -f "$link"
+      fi
+    done
     if [[ -f "$TARGET/AGENTS.md" ]]; then
-      say "remove the managed vibe:instructions block from AGENTS.md (user prose preserved)"
+      say "remove the managed vibe blocks from AGENTS.md (user prose preserved; a vibe-only stub is deleted)"
       [[ "$DRY_RUN" -eq 1 ]] || bash "$SRC_MERGE" unmerge "$TARGET" \
-        || err "WARN: AGENTS.md block not removed (reversed markers?); left untouched."
+        || err "WARN: AGENTS.md blocks not removed (reversed markers?); left untouched."
     fi
   fi
 
   if [[ "$DRY_RUN" -eq 0 ]]; then
+    rmdir "$TARGET/.claude/skills" "$TARGET/.claude" 2>/dev/null || true
     rmdir "$TARGET/.agents/skills" "$TARGET/.agents" 2>/dev/null || true
   fi
 
@@ -224,16 +311,47 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
       SAVED_CURSOR="$(mktemp)"
       cp "$TARGET/.agents/skills/vibe/state.json" "$SAVED_CURSOR"
     fi
+    # Evidence receipts are per-project runtime state: preserve the target's
+    # across a re-copy, but NEVER inherit the source's. A dirty source repo's
+    # receipts would land in the target and silently satisfy stop-gate.sh's
+    # receipt-existence check — a gate bypass.
+    SAVED_EVID=""
+    if [[ -d "$TARGET/.agents/skills/vibe/evidence" ]]; then
+      SAVED_EVID="$(mktemp -d)"
+      cp -R "$TARGET/.agents/skills/vibe/evidence/." "$SAVED_EVID/" 2>/dev/null || true
+    fi
     cp -RL "$SRC/.agents/skills/vibe" "$TARGET/.agents/skills/"
-    # Source-only artifacts (co-located tests, contributor AGENTS.md) never ship.
-    rm -rf "$TARGET/.agents/skills/vibe/tests" "$TARGET/.agents/skills/vibe/AGENTS.md"
+    # Source-only artifacts (co-located tests, contributor AGENTS.md) and any
+    # source-side evidence receipts never ship.
+    rm -rf "$TARGET/.agents/skills/vibe/tests" \
+           "$TARGET/.agents/skills/vibe/AGENTS.md" \
+           "$TARGET/.agents/skills/vibe/evidence"
     if [[ -n "$SAVED_CURSOR" ]]; then
       mv -f "$SAVED_CURSOR" "$TARGET/.agents/skills/vibe/state.json"
       note "preserved existing flow cursor across re-install"
     else
       rm -f "$TARGET/.agents/skills/vibe/state.json"
     fi
+    if [[ -n "$SAVED_EVID" ]]; then
+      mkdir -p "$TARGET/.agents/skills/vibe/evidence"
+      cp -R "$SAVED_EVID/." "$TARGET/.agents/skills/vibe/evidence/" 2>/dev/null || true
+      rm -rf "$SAVED_EVID"
+      note "preserved existing evidence receipts across re-install"
+    fi
   fi
+fi
+
+# 1b. Register the copied skills under .claude/skills so /spec and the vibe skill
+# resolve where the docs say. Each is a relative symlink into the core copied in
+# step 1; a user entry already occupying the slot is preserved (register_skill
+# warns + skips). Registration follows the half that was installed.
+if [[ "$WANT_SPEC" -eq 1 ]]; then
+  say "register spec skill at .claude/skills/spec -> ../../.agents/skills/spec"
+  [[ "$DRY_RUN" -eq 1 ]] || register_skill spec
+fi
+if [[ "$WANT_FLOW" -eq 1 ]]; then
+  say "register vibe skill at .claude/skills/vibe -> ../../.agents/skills/vibe"
+  [[ "$DRY_RUN" -eq 1 ]] || register_skill vibe
 fi
 
 # 2. Claude Code adapter (native /flow command + hook scripts). Adapter belongs
@@ -278,22 +396,29 @@ if [[ "$WANT_FLOW" -eq 1 && ! -f "$TARGET/.agents/skills/vibe/state.json" ]]; th
   fi
 fi
 
-# 5. Ignore the mutable runtime state (flow half only): the flow cursor and the
-# evidence receipts. Each line is guarded independently so re-runs never
-# duplicate and an upgrade adds only the missing line.
+# 5. Ignore the mutable runtime state (flow half only): the flow cursor, the
+# evidence receipts, and the warnings relay log. Each line is guarded
+# independently so re-runs never duplicate and an upgrade adds only the missing
+# line. gi_append keeps a freshly created .gitignore free of a leading blank line.
 if [[ "$WANT_FLOW" -eq 1 ]]; then
   GI="$TARGET/.gitignore"
   if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/vibe/state.json" "$GI"; }; then
     say "add .agents/skills/vibe/state.json to .gitignore"
-    if [[ "$DRY_RUN" -eq 0 ]]; then
-      printf '\n# vibe mutable flow cursor (runtime; version state-machine.json, not this)\n.agents/skills/vibe/state.json\n' >> "$GI"
-    fi
+    [[ "$DRY_RUN" -eq 1 ]] || gi_append "$GI" \
+      "# vibe mutable flow cursor (runtime; version state-machine.json, not this)" \
+      ".agents/skills/vibe/state.json"
   fi
   if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/vibe/evidence/" "$GI"; }; then
     say "add .agents/skills/vibe/evidence/ to .gitignore"
-    if [[ "$DRY_RUN" -eq 0 ]]; then
-      printf '\n# vibe evidence receipts (runtime verification output, not memory)\n.agents/skills/vibe/evidence/\n' >> "$GI"
-    fi
+    [[ "$DRY_RUN" -eq 1 ]] || gi_append "$GI" \
+      "# vibe evidence receipts (runtime verification output, not memory)" \
+      ".agents/skills/vibe/evidence/"
+  fi
+  if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/vibe/warnings.log" "$GI"; }; then
+    say "add .agents/skills/vibe/warnings.log to .gitignore"
+    [[ "$DRY_RUN" -eq 1 ]] || gi_append "$GI" \
+      "# vibe warnings relay (runtime warn-first channel; surfaced then truncated)" \
+      ".agents/skills/vibe/warnings.log"
   fi
 fi
 
@@ -303,7 +428,7 @@ fi
 MERGE="$TARGET/.agents/skills/vibe/scripts/merge-agents.sh"
 if [[ "$WANT_FLOW" -eq 1 ]]; then
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    say "merge AGENTS.md via merge-agents.sh (managed markers only)"
+    say "create or merge AGENTS.md via merge-agents.sh (managed markers only)"
   elif [[ -f "$MERGE" ]]; then
     bash "$MERGE" "$TARGET"
   else

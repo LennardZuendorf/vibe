@@ -3,7 +3,9 @@
 # the managed active-rules block of CLAUDE.md and AGENTS.md.
 #
 # This is generated output (like a committed lockfile), NOT a second source of
-# truth. lessons.md stays canonical. Run during a *.compound state.
+# truth. lessons.md stays canonical. Run wherever a lesson is recorded:
+# feature.compound, setup.apply, or the inline lesson step of strategy.spec /
+# quick.verify.
 #
 # Markers (everything outside them is user-owned and never touched):
 #   <!-- vibe:active-rules:start -->

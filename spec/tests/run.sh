@@ -319,6 +319,71 @@ EOF
   rm -rf "$d"
 }
 
+# ── SF12: R-ID traceability fires under any awk (mawk \b regression) ──────────
+# The old emit_r_ids used \b inside awk match(), which mawk (Debian default awk)
+# does not support, so under mawk the R-ID trace check silently never fired. A
+# product.md R-id NOT cited in plan.md must warn regardless of which awk the host
+# ships. Discriminating: reverting to the \b pattern makes this pass under gawk
+# but fail under mawk — here it must warn on whatever awk runs the suite.
+test_sf12_r_id_trace_fires() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/myfeature"
+  cat > "$d/.spec/product.md" <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-06-06
+---
+# P
+EOF
+  cat > "$d/.spec/features/myfeature/product.md" <<'EOF'
+---
+type: feature-product
+feature: myfeature
+updated: 2026-06-06
+---
+# Feature
+
+### Requirement: Thing SHALL happen (R7)
+
+#### Scenario: Happy path
+
+- **Given** x
+- **When** y
+- **Then** z
+EOF
+  cat > "$d/.spec/features/myfeature/tech.md" <<'EOF'
+---
+type: feature-tech
+feature: myfeature
+updated: 2026-06-06
+---
+# Tech
+EOF
+  cat > "$d/.spec/features/myfeature/plan.md" <<'EOF'
+---
+type: feature-plan
+feature: myfeature
+parent: ../../plan.md
+updated: 2026-06-06
+---
+# Plan
+
+## Requirements Trace
+
+| ID | Requirement | Units |
+|---|---|---|
+| — | thing | myfeature/1 |
+
+### myfeature/1 — first slice
+
+**Dependencies:** —
+EOF
+  local out; out="$( cd "$d" && bash "$VALIDATE" 2>&1 )"
+  assert_contains SF12 "untraced R-id warns under any awk (mawk \\b regression)" "$out" "R7 in product.md not cited in plan.md"
+  rm -rf "$d"
+}
+
 # ── SF11: feature plan with feature/n headings is accepted ───────────────────
 test_sf11_feature_plan_new_shape_ok() {
   local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/myfeature"
@@ -564,6 +629,7 @@ test_sf10_rfc_in_body_ok
 test_sf10_rfc_missing_warn
 test_sf11_milestones_heading_ok
 test_sf11_m0_embed_warn
+test_sf12_r_id_trace_fires
 test_sf11_feature_plan_new_shape_ok
 
 echo ""
@@ -589,17 +655,37 @@ test_skill_v2_frontmatter_fields() {
   assert_contains "spec-skill-improvements/1" "SKILL.md has agents:" "$skill" "agents:"
   assert_contains "spec-skill-improvements/1" "SKILL.md has superpowers:" "$skill" "superpowers:"
   assert_contains "spec-skill-improvements/1" "SKILL.md has delegates:" "$skill" "delegates:"
-  assert_contains "spec-skill-improvements/1" "SKILL.md has caveman:" "$skill" "caveman:"
+  assert_not_contains "spec-skill-improvements/1" "SKILL.md frontmatter dropped retired caveman machinery" "$skill" "caveman"
 }
 
-# ── spec-skill-improvements: Unit 2 — ## Roles section ──────────────────────
+# ── spec-skill-improvements: Unit 2 — ## Roles section reconciled to real subagents ─
+# Roles, delegates:, and agents/ dirs must name the SAME four subagents. Phantom
+# names (spec-architect/planner/auditor/compactor) must not reappear anywhere in SKILL.md.
 test_skill_roles_section() {
   local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
   assert_contains "spec-skill-improvements/2" "SKILL.md has ## Roles" "$skill" "## Roles"
-  assert_contains "spec-skill-improvements/2" "SKILL.md has spec-interviewer role" "$skill" "spec-interviewer"
-  assert_contains "spec-skill-improvements/2" "SKILL.md has spec-planner role" "$skill" "spec-planner"
-  assert_contains "spec-skill-improvements/2" "SKILL.md has spec-auditor role" "$skill" "spec-auditor"
-  assert_contains "spec-skill-improvements/2" "SKILL.md has spec-compactor role" "$skill" "spec-compactor"
+  assert_contains "spec-skill-improvements/2" "Roles name spec-interviewer" "$skill" "spec-interviewer"
+  assert_contains "spec-skill-improvements/2" "Roles name spec-tracer" "$skill" "spec-tracer"
+  assert_contains "spec-skill-improvements/2" "Roles name spec-promoter" "$skill" "spec-promoter"
+  assert_contains "spec-skill-improvements/2" "Roles name spec-health" "$skill" "spec-health"
+  assert_not_contains "spec-skill-improvements/2" "no phantom spec-architect" "$skill" "spec-architect"
+  assert_not_contains "spec-skill-improvements/2" "no phantom spec-planner" "$skill" "spec-planner"
+  assert_not_contains "spec-skill-improvements/2" "no phantom spec-auditor" "$skill" "spec-auditor"
+  assert_not_contains "spec-skill-improvements/2" "no phantom spec-compactor" "$skill" "spec-compactor"
+}
+
+# ── fix-7: every Roles/delegates name has a real agents/<name>/SKILL.md file ──
+test_skill_roles_have_agent_dirs() {
+  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
+  local agent
+  for agent in spec-tracer spec-promoter spec-interviewer spec-health; do
+    assert_contains "fix-7" "SKILL.md names real subagent $agent" "$skill" "$agent"
+    if [[ -f "$SPEC_SKILL/agents/$agent/SKILL.md" ]]; then
+      pass "fix-7" "agents/$agent/SKILL.md exists"
+    else
+      fail "fix-7" "agents/$agent/SKILL.md exists"
+    fi
+  done
 }
 
 # ── spec-skill-improvements: Unit 3 — Routing expansion ──────────────────────
@@ -614,12 +700,12 @@ test_skill_routing_new_routes() {
   assert_contains "spec-skill-improvements/3" "SKILL.md routing has research" "$skill" "research"
 }
 
-# ── spec-skill-improvements: Unit 4 — feature.md output profiles ─────────────
+# ── spec-skill-improvements: Unit 4 — feature.md output density (style note) ──
 test_feature_output_profiles() {
   local fm; fm="$(cat "$SPEC_SKILL/feature.md")"
-  assert_contains "spec-skill-improvements/4" "feature.md has ## Output profiles" "$fm" "## Output profiles"
-  assert_contains "spec-skill-improvements/4" "feature.md has Lite profile" "$fm" "### Lite"
-  assert_contains "spec-skill-improvements/4" "feature.md has Ultra profile" "$fm" "### Ultra"
+  assert_contains "spec-skill-improvements/4" "feature.md has ## Output density" "$fm" "## Output density"
+  assert_contains "spec-skill-improvements/4" "feature.md output density cites the flow style note" "$fm" "§ Style"
+  assert_not_contains "spec-skill-improvements/4" "feature.md dropped retired caveman levels" "$fm" "caveman"
 }
 
 # ── spec-skill-improvements: Unit 5 — promote.sh dry-run no mutation ─────────
@@ -687,7 +773,8 @@ test_lessons_for_inject_format() {
   rm -rf "$d"
 }
 
-# ── spec-skill-improvements: Unit 7 — SF13 stale link checker ───────────────
+# ── spec-skill-improvements: Unit 7 — SF13 stale directory-link checker ──────
+# SF13 owns only non-.md directory links; stale .md links are the main checker's job.
 test_sf13_stale_link_warns() {
   local d; d="$(mktmp)"; mkdir -p "$d/.spec"
   cat > "$d/.spec/product.md" <<'EOF'
@@ -697,10 +784,10 @@ scope: product
 children: []
 updated: 2026-01-01
 ---
-[old](features/deleted/product.md)
+[old](features/deleted/)
 EOF
   local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
-  assert_contains "spec-skill-improvements/7" "SF13 warns on stale feature link" "$out" "SF13"
+  assert_contains "spec-skill-improvements/7" "SF13 warns on stale feature directory link" "$out" "SF13"
   rm -rf "$d"
 }
 
@@ -713,11 +800,29 @@ scope: product
 children: []
 updated: 2026-01-01
 ---
-[here](features/existing/product.md)
+[here](features/existing/)
 EOF
-  touch "$d/.spec/features/existing/product.md"
   local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
-  assert_not_contains "spec-skill-improvements/7" "SF13 silent on valid links" "$out" "SF13"
+  assert_not_contains "spec-skill-improvements/7" "SF13 silent on valid directory link" "$out" "SF13"
+  rm -rf "$d"
+}
+
+# ── fix-9d: a stale .md link is reported once (broken-link error), never as SF13 ─
+# Discriminates against the old code, which double-reported .md links as both.
+test_sf13_md_link_no_double_report() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec"
+  cat > "$d/.spec/product.md" <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-01-01
+---
+[old](features/deleted/product.md)
+EOF
+  local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
+  assert_contains "fix-9d" "stale .md link errors as broken link" "$out" "broken link to 'features/deleted/product.md'"
+  assert_not_contains "fix-9d" "stale .md link not double-reported by SF13" "$out" "SF13"
   rm -rf "$d"
 }
 
@@ -780,9 +885,9 @@ updated: 2026-01-01
 # Tech
 EOF
   local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
-  assert_contains "spec-skill-improvements/8" "SF14 warns on conflicting Owns terms" "$out" "SF14"
-  assert_contains "spec-skill-improvements/8" "SF14 message names first feature" "$out" "alpha"
-  assert_contains "spec-skill-improvements/8" "SF14 message names second feature" "$out" "beta"
+  # Assert the full conflict message: naming both features in one SF14 line is
+  # discriminating (feature names alone also appear in section headers).
+  assert_contains "spec-skill-improvements/8" "SF14 warns naming both conflicting features" "$out" "SF14: scope conflict — 'alpha' and 'beta' both own: state machine"
   rm -rf "$d"
 }
 
@@ -942,10 +1047,30 @@ children: []
 updated: 2026-01-01
 ---
 EOF
-    python3 -c "[print(f'## Section {i}\nLine.') for i in range(110)]"
+    python3 -c "[print(f'## Section {i}\nLine.') for i in range(170)]"
   } > "$d/.spec/product.md"
   local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
-  assert_contains "spec-skill-improvements/16" "SF15 warns on long root spec" "$out" "SF15"
+  assert_contains "spec-skill-improvements/16" "SF15 warns on >300-line root spec" "$out" "SF15"
+  rm -rf "$d"
+}
+
+# ── fix-8: SF15 threshold is 300 — a ~250-line root spec must NOT warn ───────
+# Discriminates against the old 200-line threshold, which would flag this file.
+test_sf15_under_threshold_silent() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec"
+  {
+    cat <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-01-01
+---
+EOF
+    python3 -c "[print(f'## Section {i}\nLine.') for i in range(120)]"
+  } > "$d/.spec/product.md"
+  local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
+  assert_not_contains "fix-8" "SF15 silent on ~245-line root spec (threshold 300)" "$out" "SF15"
   rm -rf "$d"
 }
 
@@ -1013,7 +1138,7 @@ test_setup_section_has_interview_flow() {
   assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q1" "$skill" "Q1"
   assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q2" "$skill" "Q2"
   assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q3" "$skill" "Q3"
-  assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q4" "$skill" "Q4"
+  assert_not_contains "spec-skill-improvements/18" "SKILL.md Setup dropped the caveman-level question (now 3 questions)" "$skill" "Q4"
   assert_contains "spec-skill-improvements/18" "SKILL.md Setup references .config.yaml" "$skill" ".config.yaml"
 }
 
@@ -1028,7 +1153,7 @@ test_config_section_present() {
 test_config_defaults_documented() {
   local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
   assert_contains "spec-skill-improvements/19" "SKILL.md Config documents vibe-flow key" "$skill" "vibe-flow"
-  assert_contains "spec-skill-improvements/19" "SKILL.md Config documents caveman key" "$skill" "caveman"
+  assert_not_contains "spec-skill-improvements/19" "SKILL.md Config dropped the retired caveman key" "$skill" "caveman"
   assert_contains "spec-skill-improvements/19" "SKILL.md Config documents suggest-superpowers key" "$skill" "suggest-superpowers"
 }
 
@@ -1040,6 +1165,220 @@ test_flow_mvp_4_template_hybrid_grammar() {
   assert_contains "flow-mvp/4" "template has a Steps checkbox block" "$tpl" "**Steps:**"
   assert_contains "flow-mvp/4" "template Steps block has checkboxes" "$tpl" "- [ ]"
   assert_contains "flow-mvp/11" "template has per-unit **Interfaces:** block" "$tpl" "**Interfaces:**"
+  # simplify: Interfaces + Steps are handover-mode-only; interactive impl may omit them,
+  # but the core blocks (Goal/Requirements/Files/Test scenarios/Verification) always stay.
+  assert_contains "simplify/plan-grammar" "template marks Interfaces/Steps as handover-mode-only" "$tpl" "HANDOVER-MODE ONLY"
+  assert_contains "simplify/plan-grammar" "template keeps Test scenarios as a core block" "$tpl" "**Test scenarios:**"
+  assert_contains "simplify/plan-grammar" "template keeps Verification as a core block" "$tpl" "**Verification:**"
+}
+
+# ── fix-1: SF14 detects conflicts in the row-label Scope shape (template shape) ─
+# The shipped feature-product.md template uses '| **Owns** | items |'. The old
+# check only matched the '| Owns |' column-header shape, so it missed the template
+# entirely. This test fails against the old code (no SF14 warning emitted).
+test_sf14_row_label_shape_conflict() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/gamma" "$d/.spec/features/delta"
+  cat > "$d/.spec/product.md" <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-01-01
+---
+# P
+EOF
+  cat > "$d/.spec/features/gamma/product.md" <<'EOF'
+---
+type: feature-product
+feature: gamma
+sibling: tech.md
+parent: ../../product.md
+updated: 2026-01-01
+---
+## Scope
+
+| | |
+|---|---|
+| **Owns** | state machine, cursor file |
+| **Does not own** | adapters |
+EOF
+  cat > "$d/.spec/features/gamma/tech.md" <<'EOF'
+---
+type: feature-tech
+feature: gamma
+sibling: product.md
+parent: ../../tech.md
+updated: 2026-01-01
+---
+# Tech
+EOF
+  cat > "$d/.spec/features/delta/product.md" <<'EOF'
+---
+type: feature-product
+feature: delta
+sibling: tech.md
+parent: ../../product.md
+updated: 2026-01-01
+---
+## Scope
+
+| | |
+|---|---|
+| **Owns** | state machine, routing hooks |
+| **Does not own** | adapters |
+EOF
+  cat > "$d/.spec/features/delta/tech.md" <<'EOF'
+---
+type: feature-tech
+feature: delta
+sibling: product.md
+parent: ../../tech.md
+updated: 2026-01-01
+---
+# Tech
+EOF
+  local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
+  # Full message is discriminating: only fires if the row-label shape is parsed.
+  assert_contains "fix-1" "SF14 catches row-label (template) shape conflict" "$out" "SF14: scope conflict — 'delta' and 'gamma' both own: state machine"
+  rm -rf "$d"
+}
+
+# ── fix-2: link checker examines every link on a line, not only the last ────────
+# Old greedy '\[.*?\]\(...\)' + greedy sed extracted only the last target, so a
+# broken FIRST link on a multi-link line slipped through. Fails against old code.
+test_link_checker_first_of_two_broken() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec"
+  cat > "$d/.spec/product.md" <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-01-01
+---
+See [gone](missing-doc.md) and [here](tech.md) for details.
+EOF
+  cat > "$d/.spec/tech.md" <<'EOF'
+---
+type: entrypoint
+scope: tech
+children: []
+updated: 2026-01-01
+---
+# T
+EOF
+  local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
+  assert_contains "fix-2" "first of two links on a line is checked" "$out" "broken link to 'missing-doc.md'"
+  rm -rf "$d"
+}
+
+# ── fix-3: branch-doc scope/covers checks fire on the real -topic types ─────────
+# A topic doc authored WITHOUT scope/covers must be flagged; old code gated on the
+# dead 'type: branch' and never fired for template-authored topic docs.
+test_topic_doc_scope_covers_checked() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec"
+  cat > "$d/.spec/product.md" <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-01-01
+---
+# P
+EOF
+  cat > "$d/.spec/product-auth.md" <<'EOF'
+---
+type: product-topic
+parent: product.md
+updated: 2026-01-01
+---
+# Auth — Product
+EOF
+  local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
+  assert_contains "fix-3" "topic doc missing scope: warns (check fires on product-topic)" "$out" "branch doc missing 'scope:'"
+  assert_contains "fix-3" "topic doc missing covers: warns" "$out" "branch doc missing 'covers:'"
+  rm -rf "$d"
+}
+
+test_topic_doc_complete_passes() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec"
+  cat > "$d/.spec/product.md" <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-01-01
+---
+# P
+EOF
+  cat > "$d/.spec/tech-infra.md" <<'EOF'
+---
+type: tech-topic
+parent: tech.md
+scope: infra
+covers: ci, deploy
+updated: 2026-01-01
+---
+# Infra — Tech
+EOF
+  local out; out="$(cd "$d" && bash "$VALIDATE" 2>&1)"
+  assert_not_contains "fix-3" "complete topic doc raises no branch-field warning" "$out" "branch doc missing"
+  rm -rf "$d"
+}
+
+# ── fix-4: every templates/ link in reference/*.md resolves on disk ─────────────
+# Guards the product-xxx.md / tech-xxx.md rot (real files are *-topic.md).
+test_reference_template_links_resolve() {
+  local ref dir link target missing=0
+  for ref in "$SPEC_SKILL/reference"/*.md; do
+    [[ -f "$ref" ]] || continue
+    dir="$(dirname "$ref")"
+    while IFS= read -r target; do
+      [[ "$target" == templates/* ]] || continue
+      target="${target%%#*}"
+      if [[ ! -e "$dir/$target" ]]; then
+        fail "fix-4" "reference link resolves: $(basename "$ref") → $target"
+        missing=1
+      fi
+    done < <(grep -oE '\[[^]]*\]\([^)]+\)' "$ref" | sed 's/.*(\([^)]*\)).*/\1/')
+  done
+  [[ $missing -eq 0 ]] && pass "fix-4" "all templates/ links in reference/*.md resolve"
+}
+
+# ── fix-5: promote.sh is idempotent — a re-run must not duplicate blocks ─────────
+test_promote_idempotent_rerun() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/feat"
+  printf '<!-- merge -->\n## promoted section\n<!-- /merge -->\n' > "$d/.spec/features/feat/tech.md"
+  echo "# root" > "$d/.spec/tech.md"
+  (cd "$d" && bash "$SPEC_SKILL/scripts/promote.sh" feat) >/dev/null
+  (cd "$d" && bash "$SPEC_SKILL/scripts/promote.sh" feat) >/dev/null
+  local count; count="$(grep -c "promoted section" "$d/.spec/tech.md")"
+  assert_contains "fix-5" "promote re-run leaves a single copy" "count=$count" "count=1"
+  rm -rf "$d"
+}
+
+# ── fix-6: setup.sh writes a commented default .config.yaml when absent ──────────
+test_setup_writes_config() {
+  local d; d="$(mktmp)"; ( cd "$d" && bash "$SETUP" >/dev/null 2>&1 )
+  if [[ -f "$d/.spec/.config.yaml" ]]; then
+    pass "fix-6" "setup.sh created .spec/.config.yaml"
+  else
+    fail "fix-6" "setup.sh created .spec/.config.yaml"
+  fi
+  local body; body="$(cat "$d/.spec/.config.yaml" 2>/dev/null || true)"
+  assert_contains "fix-6" ".config.yaml documents vibe-flow key" "$body" "vibe-flow"
+  assert_not_contains "fix-6" ".config.yaml dropped the retired caveman key" "$body" "caveman"
+  assert_contains "fix-6" ".config.yaml documents suggest-superpowers key" "$body" "suggest-superpowers"
+  rm -rf "$d"
+}
+
+# ── fix-6: setup.sh never overwrites an existing .config.yaml ────────────────────
+test_setup_config_preserved() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec"
+  printf '# sentinel: preserved\n' > "$d/.spec/.config.yaml"
+  ( cd "$d" && bash "$SETUP" >/dev/null 2>&1 )
+  local body; body="$(cat "$d/.spec/.config.yaml")"
+  assert_contains "fix-6" "existing .config.yaml preserved across setup" "$body" "# sentinel: preserved"
+  rm -rf "$d"
 }
 
 # ── Run new tests ────────────────────────────────────────────────────────────
@@ -1047,18 +1386,28 @@ echo ""
 echo "=== spec-skill-improvements v2.0 tests ==="
 test_skill_v2_frontmatter_fields
 test_skill_roles_section
+test_skill_roles_have_agent_dirs
 test_skill_routing_new_routes
 test_feature_output_profiles
 test_promote_dry_run_no_mutation
 test_promote_reversed_markers_refused
 test_promote_valid_blocks
+test_promote_idempotent_rerun
 test_lessons_for_match
 test_lessons_for_no_match
 test_lessons_for_inject_format
 test_sf13_stale_link_warns
 test_sf13_valid_links_pass
+test_sf13_md_link_no_double_report
 test_sf14_conflict_warns
 test_sf14_no_conflict_passes
+test_sf14_row_label_shape_conflict
+test_link_checker_first_of_two_broken
+test_topic_doc_scope_covers_checked
+test_topic_doc_complete_passes
+test_reference_template_links_resolve
+test_setup_writes_config
+test_setup_config_preserved
 test_branch_doc_templates_exist
 test_scan_merges_finds_blocks
 test_scan_merges_unclosed_exits_nonzero
@@ -1069,6 +1418,7 @@ test_spec_promoter_diff_first
 test_spec_interviewer_constraint_injection
 test_spec_health_output_levels
 test_sf15_long_root_warns
+test_sf15_under_threshold_silent
 test_sf16_lesson_no_tags_warns
 test_sf16_lesson_with_tags_passes
 test_subagents_folder_wiring
