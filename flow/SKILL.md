@@ -28,9 +28,9 @@ Read the phase file for your current (or target) state, then follow it.
 | `setup` | [setup.md](setup.md) | `setup.detect`, `setup.apply` |
 | `strategy` | [strategy.md](strategy.md) | `strategy.brainstorm`, `strategy.spec` |
 | `feature` | [feature.md](feature.md) | `feature.design`, `feature.plan`, `feature.impl` |
-| `quick` | [quick.md](quick.md) | `quick.triage`, `quick.fix` |
+| `quick` | [quick.md](quick.md) | `quick.triage`, `quick.fix`, `quick.compound` |
 | `verify` | [verify.md](verify.md) | `feature.verify`, `quick.verify` |
-| `compound` | [compound.md](compound.md) | `strategy.compound`, `feature.compound`, `quick.compound` |
+| `compound` | [compound.md](compound.md) | `strategy.compound`, `feature.compound` |
 | `amend` | [amend.md](amend.md) | `amend` (modifier) |
 
 `scripts/` and `reference/` back the setup phase: `merge-agents.sh`, the `AGENTS.md`
@@ -43,6 +43,11 @@ When a delegated skill's text names its own artifact path, commits its own
 output, or hands off to another skill, the current state's orders win: write
 to the state's surface, leave commits to the flow, transition only via
 `set-state.sh`. `set-state.sh idle` is always legal — abort ends any flow.
+
+The two gated edges (`feature.plan>feature.impl`, `feature.verify>feature.compound`
+in the machine's `gates`) stop and ask. Via the `/flow` command they apply only
+with an explicit `confirm` token in the same message (e.g. `/flow feature.impl
+confirm`); without it the command stops and asks. `/flow idle` is never gated.
 
 ## Orders (D12)
 

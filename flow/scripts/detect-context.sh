@@ -12,9 +12,9 @@
 # canonical reference the skills consult.
 #
 # The three hard blocks (everything else is allow/warn):
-#   1. .spec/lessons.md            — only during a *.compound state
+#   1. .spec/lessons.md            — only during a *.compound state or setup.apply
 #   2. root .spec/{product,tech,design,plan}.md
-#                                  — only during strategy.spec or feature.compound
+#                                  — only during strategy.spec, feature.compound, or setup.apply
 #   3. .agents/skills/vibe/state.json — never by direct edit; only via set-state.sh
 
 set -euo pipefail
@@ -27,15 +27,21 @@ STATE="$SKILL_DIR/state.json"
 have_jq() { command -v jq >/dev/null 2>&1; }
 
 # Resolve the current compound state key from the cursor (default: idle).
+# Without jq, fall back to sed — the cursor is machine-written flat JSON
+# (set-state.sh), so the hard blocks stay state-aware instead of collapsing
+# every state onto idle's stricter policy on jq-less targets.
 current_state() {
+  local flow="" phase=""
   if have_jq && [[ -f "$STATE" ]] && jq -e . "$STATE" >/dev/null 2>&1; then
-    local flow phase
     flow=$(jq -r '.flow // "idle"' "$STATE")
     phase=$(jq -r '.phase // "idle"' "$STATE")
-    if [[ "$flow" == "$phase" ]]; then echo "$flow"; else echo "$flow.$phase"; fi
-  else
-    echo "idle"
+  elif ! have_jq && [[ -f "$STATE" ]]; then
+    flow=$(sed -n 's/.*"flow"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$STATE" | head -n1)
+    phase=$(sed -n 's/.*"phase"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$STATE" | head -n1)
   fi
+  [[ -n "$flow" && "$flow" != "null" ]] || flow="idle"
+  [[ -n "$phase" && "$phase" != "null" ]] || phase="idle"
+  if [[ "$flow" == "$phase" ]]; then echo "$flow"; else echo "$flow.$phase"; fi
 }
 
 # ── snapshot mode ────────────────────────────────────────────────────────────
@@ -105,7 +111,19 @@ decide() {
       case "$state" in
         strategy.spec|feature.compound) echo "allow" ;;
         setup.apply) echo "allow" ;;
-        *) echo "block:root .spec specs are writable only during strategy.spec or feature.compound (current: $state)" ;;
+        *) echo "block:root .spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: $state)" ;;
+      esac
+      return 0
+      ;;
+  esac
+
+  # Warning: feature specs are frozen once implementation begins — feature.impl and
+  # quick.fix write code, not spec. feature.design/plan (and setup) still author them.
+  case "$path" in
+    .spec/features/*|*/.spec/features/*)
+      case "$state" in
+        feature.impl|quick.fix) echo "warn:.spec/features edits are frozen during impl/fix — amend or route back to feature.design/plan (current: $state)" ;;
+        *) echo "allow" ;;
       esac
       return 0
       ;;
@@ -119,12 +137,15 @@ decide() {
       ;;
   esac
 
-  # Warning: source edits outside an implementation/fix state.
+  # Warning: source edits outside an implementation/fix state; verify writes no src
+  # — findings route back to the fix state, they are never applied in verify.
   case "$path" in
     src/*|tests/*|*/src/*|*/tests/*)
       case "$state" in
-        feature.impl|feature.verify|quick.fix|quick.verify|setup.apply) echo "allow" ;;
-        *) echo "warn:source/test edits outside an impl/fix/verify state (current: $state)" ;;
+        feature.verify) echo "warn:verify writes no src — route findings back to impl (set-state.sh feature.impl)" ;;
+        quick.verify)   echo "warn:verify writes no src — route findings back to fix (set-state.sh quick.fix)" ;;
+        feature.impl|quick.fix|setup.apply) echo "allow" ;;
+        *) echo "warn:source/test edits outside an impl/fix state (current: $state)" ;;
       esac
       return 0
       ;;

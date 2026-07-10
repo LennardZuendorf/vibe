@@ -1,5 +1,5 @@
 {
-  "$comment": "vibe flow state machine. Static source of truth for the flow. States are compound <flow>.<phase> keys. caveman is FROZEN per state (byte-stable across turns). Under D12 the per-turn orders are NOT stored here: skill-owning states carry inject:null and the orders live in the linked vibe-* skill's `## Orders (D12)` section (a <!-- vibe:orders:<state> --> block), resolved by .agents/skills/vibe/scripts/orders.sh. Only `idle` keeps an inline inject (skill-less fallback). The orders block is byte-stable; only <feature> interpolates, so the per-turn inject stays prompt-cache safe. set-state.sh is the only sanctioned writer of state.json. Caveman levels are vibe vocabulary, frozen per state (originally inspired by JuliusBrussee/caveman; no dependency).",
+  "$comment": "vibe flow state machine. Static source of truth for the flow. States are compound <flow>.<phase> keys. caveman is FROZEN per state (byte-stable across turns). Under D12 the per-turn orders are NOT stored here: skill-owning states carry inject:null and the orders live in the linked vibe skill's SKILL.md `## Orders (D12)` section (a <!-- vibe:orders:<state> --> block), resolved by .agents/skills/vibe/scripts/orders.sh. Only `idle` keeps an inline inject (skill-less fallback). The orders block is byte-stable; only <feature> interpolates, so the per-turn inject stays prompt-cache safe. set-state.sh is the only sanctioned writer of state.json. Caveman levels are vibe vocabulary, frozen per state (originally inspired by JuliusBrussee/caveman; no dependency).",
   "version": "1",
   "initial": "idle",
   "flows": ["idle", "setup", "strategy", "feature", "quick"],
@@ -99,7 +99,7 @@
       "reads": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md"],
       "writes": [".spec/features/<feature>/plan.md"],
       "inject": null,
-      "next": ["feature.impl"],
+      "next": ["feature.impl", "idle"],
       "exit": "plan.md has stable unit IDs; human approved moving to impl"
     },
     "feature.impl": {
@@ -140,7 +140,7 @@
       "reads": [".spec/lessons.md"],
       "writes": [],
       "inject": null,
-      "next": ["quick.fix", "feature.design"],
+      "next": ["quick.fix", "feature.design", "idle"],
       "exit": "root cause identified; fix is small and bounded (else escalate to feature)"
     },
     "quick.fix": {
@@ -150,7 +150,7 @@
       "reads": [".spec/lessons.md"],
       "writes": ["src/**", ".spec/quick/<slug>.md"],
       "inject": null,
-      "next": ["quick.verify"],
+      "next": ["quick.verify", "idle"],
       "exit": "fix implemented with a test that reproduces and resolves the issue"
     },
     "quick.verify": {

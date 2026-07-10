@@ -187,13 +187,31 @@ bad_gates="$(jq -r '
 ' "$MACHINE" | paste -sd, -)"
 assert_eq "flow-mvp/3" "every gates key is <known-state>><known-state> with target in source.next" "$bad_gates" ""
 
-# Abort edges: idle joins `next` of the four mid-arc states.
+# Abort edges: `set-state.sh idle` is always legal (SKILL.md precedence), so idle must
+# be in `next` for EVERY non-idle flow state — not a hand-picked sample. Modifiers
+# (amend) return to their dynamic originating state, so their `next` is intentionally
+# empty; they are excluded via the machine's own `modifiers` list. Iterating all states
+# makes this fail if the abort edge is dropped from any single one.
+non_idle_states="$(jq -r '(.modifiers // []) as $m
+  | .states | keys[]
+  | select(. != "idle")
+  | select([.] - $m | length > 0)' "$MACHINE")"
 abort_missing=""
-for st in feature.design feature.impl feature.verify strategy.brainstorm; do
+while IFS= read -r st; do
+  [[ -z "$st" ]] && continue
   has_idle="$(jq -r --arg s "$st" '[.states[$s].next[]?] | index("idle") != null' "$MACHINE")"
   [[ "$has_idle" == "true" ]] || abort_missing="$abort_missing $st"
-done
-assert_eq "flow-mvp/3" "idle is an abort edge from the four mid-arc states" "$abort_missing" ""
+done <<< "$non_idle_states"
+assert_eq "flow-mvp/3" "idle is an abort edge from every non-idle flow state" "$abort_missing" ""
+# Coverage guard: the iteration is non-trivial and DOES include the three states that
+# previously lacked the abort edge (so a regression that drops them from the sweep fails)
+# and excludes the amend modifier.
+covered_count="$(printf '%s\n' "$non_idle_states" | grep -c .)"
+[[ "$covered_count" -ge 10 ]] && pass "flow-mvp/3" "abort-edge sweep covers all $covered_count non-idle flow states" || fail "flow-mvp/3" "abort-edge sweep covered too few states ($covered_count)"
+assert_contains "flow-mvp/3" "abort-edge sweep includes feature.plan (previously missing idle)" "$non_idle_states" "feature.plan"
+assert_contains "flow-mvp/3" "abort-edge sweep includes quick.fix (previously missing idle)" "$non_idle_states" "quick.fix"
+assert_contains "flow-mvp/3" "abort-edge sweep includes quick.triage (previously missing idle)" "$non_idle_states" "quick.triage"
+assert_not_contains "flow-mvp/3" "abort-edge sweep excludes the amend modifier" "$non_idle_states" "amend"
 
 # quick.verify gains the compound + fix back-edges.
 qv_ok="$(jq -r '[.states."quick.verify".next[]] | (index("quick.compound") != null) and (index("quick.fix") != null)' "$MACHINE")"
@@ -242,6 +260,16 @@ assert_eq "flow-mvp/5" "every machine delegate appears verbatim in its phase fil
 # quick.md carries the optional quick.compound step (the quick-work compound
 # procedure lives in quick.md, not the shared compound.md).
 assert_contains "flow-mvp/6" "quick.md mentions quick.compound" "$(cat "$FLOW/quick.md")" "quick.compound"
+
+# Router row: quick.compound's procedure lives in quick.md (step 5), NOT the shared
+# compound.md (which serves only feature/strategy). The SKILL.md routing table must
+# list quick.compound under the quick.md row and no longer claim it on the compound
+# row — otherwise a reader chasing quick.compound lands in a file that doesn't cover it.
+SKILL_MD="$FLOW/SKILL.md"
+quick_router_row="$(grep -F '](quick.md)' "$SKILL_MD" | head -1)"
+compound_router_row="$(grep -F '](compound.md)' "$SKILL_MD" | head -1)"
+assert_contains "flow-mvp/3" "SKILL.md routes quick.compound to the quick.md row" "$quick_router_row" "quick.compound"
+assert_not_contains "flow-mvp/3" "SKILL.md compound row no longer claims quick.compound" "$compound_router_row" "quick.compound"
 
 # compound.md no longer implies finishing-a-development-branch performs the archive
 # move: the finishing delegate block is sequenced AFTER the Archive step.
@@ -466,6 +494,79 @@ out="$(bash "$DETECT" decide .spec/lessons.md quick.compound)"
 assert_eq "flow-mvp/3" "decide lessons.md returns allow under quick.compound" "$out" "allow"
 out="$(bash "$DETECT" decide .spec/lessons.md idle)"
 assert_contains "vibe-flow/core" "decide lessons.md blocks under idle" "$out" "block:"
+
+echo ""
+echo "=== detect-context.sh — verify writes no src, spec frozen in impl ==="
+# Verify states write no src/tests: decide returns a warn that routes findings back to
+# the fix state, NOT allow. Discriminating — asserts warn AND the correct route target,
+# so reverting to the old `allow` (or mis-routing quick.verify to feature.impl) fails.
+out="$(bash "$DETECT" decide src/app.js feature.verify)"
+assert_contains "flow-mvp/3" "decide src warns under feature.verify" "$out" "warn:"
+assert_not_contains "flow-mvp/3" "decide src does not allow under feature.verify" "$out" "allow"
+assert_contains "flow-mvp/3" "feature.verify src warn routes back to feature.impl" "$out" "set-state.sh feature.impl"
+out="$(bash "$DETECT" decide tests/app_test.js feature.verify)"
+assert_contains "flow-mvp/3" "decide tests warns under feature.verify" "$out" "warn:"
+out="$(bash "$DETECT" decide src/app.js quick.verify)"
+assert_contains "flow-mvp/3" "decide src warns under quick.verify" "$out" "warn:"
+assert_not_contains "flow-mvp/3" "decide src does not allow under quick.verify" "$out" "allow"
+assert_contains "flow-mvp/3" "quick.verify src warn routes back to quick.fix" "$out" "set-state.sh quick.fix"
+# Regression guard: the impl/fix states still allow src writes (the warn didn't over-reach).
+out="$(bash "$DETECT" decide src/app.js feature.impl)"
+assert_eq "flow-mvp/3" "decide src still allows under feature.impl" "$out" "allow"
+out="$(bash "$DETECT" decide src/app.js quick.fix)"
+assert_eq "flow-mvp/3" "decide src still allows under quick.fix" "$out" "allow"
+
+# Feature specs are frozen once impl/fix begins: decide warns instead of silently
+# allowing (feature.md forbids .spec edits in impl). Design/plan (and setup) still author.
+out="$(bash "$DETECT" decide .spec/features/widget/tech.md feature.impl)"
+assert_contains "flow-mvp/3" "decide .spec/features warns under feature.impl" "$out" "warn:"
+assert_not_contains "flow-mvp/3" "decide .spec/features does not allow under feature.impl" "$out" "allow"
+out="$(bash "$DETECT" decide .spec/features/widget/product.md quick.fix)"
+assert_contains "flow-mvp/3" "decide .spec/features warns under quick.fix" "$out" "warn:"
+out="$(bash "$DETECT" decide .spec/features/widget/tech.md feature.design)"
+assert_eq "flow-mvp/3" "decide .spec/features still allows under feature.design" "$out" "allow"
+out="$(bash "$DETECT" decide .spec/features/widget/plan.md feature.plan)"
+assert_eq "flow-mvp/3" "decide .spec/features still allows under feature.plan" "$out" "allow"
+
+echo ""
+echo "=== detect-context.sh — no-jq cursor read stays state-aware ==="
+# Without jq, current_state() falls back to sed over the machine-written cursor.
+# Discriminating: pre-fix code degraded every state to idle, so decide with NO
+# explicit state hard-blocked root-spec writes even in strategy.spec on jq-less
+# targets — the opposite of "jq recommended, not required".
+bash "$SCRIPTS/set-state.sh" strategy.spec >/dev/null
+nojq="$(mktemp -d)"
+for t in dirname sed head; do ln -sf "$(command -v "$t")" "$nojq/$t"; done
+out="$(PATH="$nojq" "$BASH_BIN" "$DETECT" decide .spec/product.md)"
+assert_eq "review-fix" "no-jq decide honors the live cursor (allow in strategy.spec)" "$out" "allow"
+out="$(PATH="$nojq" "$BASH_BIN" "$DETECT" decide .spec/lessons.md)"
+assert_contains "review-fix" "no-jq decide still blocks lessons.md in strategy.spec" "$out" "block:"
+assert_contains "review-fix" "no-jq block message names the real state, not idle" "$out" "current: strategy.spec"
+rm -rf "$nojq"
+bash "$SCRIPTS/set-state.sh" idle >/dev/null
+
+echo ""
+echo "=== /flow command — feature arg, idle-always-legal, gate token ==="
+# The /flow command is LLM-executed prose (read from the real repo, not the sandbox).
+# It must (a) forward an optional feature to set-state.sh, (b) treat idle as always
+# legal, (c) enforce the two gated edges via an explicit `confirm` token. These doc
+# assertions fail if any of those contracts is dropped from the command file.
+FLOWCMD="$SRC_ROOT/.claude/commands/flow.md"
+if [[ -f "$FLOWCMD" ]]; then
+  cmd="$(cat "$FLOWCMD")"
+  assert_contains "flow-mvp/3" "/flow forwards an optional feature to set-state.sh" "$cmd" "set-state.sh <target> [feature]"
+  assert_contains "flow-mvp/3" "/flow treats idle as always legal (skips membership + gate)" "$cmd" "Abort is always legal"
+  assert_contains "flow-mvp/3" "/flow enforces gated edges against the machine gates object" "$cmd" "gates"
+  assert_contains "flow-mvp/3" "/flow documents the confirm approval token" "$cmd" "confirm"
+  assert_contains "flow-mvp/3" "/flow argument-hint advertises feature + confirm" "$cmd" "[feature] [confirm]"
+else
+  fail "flow-mvp/3" "/flow command file present at .claude/commands/flow.md"
+fi
+# The machine still declares exactly the two gated edges the command enforces.
+gate_edge_count="$(jq -r '(.gates // {}) | keys | length' "$MACHINE")"
+assert_eq "flow-mvp/3" "machine declares exactly the two gated edges the command enforces" "$gate_edge_count" "2"
+# SKILL.md precedence documents the same confirm token (fix 5c).
+assert_contains "flow-mvp/3" "SKILL.md precedence documents the /flow confirm token" "$(cat "$FLOW/SKILL.md")" "confirm"
 
 echo ""
 echo "=== orders.sh on a fresh non-git install (stranger-eval regression) ==="

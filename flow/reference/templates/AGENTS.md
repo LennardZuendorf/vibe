@@ -123,7 +123,7 @@ This is the **end-state** the repo is building. Reference when implementing
 
 Policy lives in `detect-context.sh decide` (defaults to `idle` when `state.json` is absent):
 
-1. `.spec/lessons.md` — writable only in `*.compound` (or when explicitly recording lessons with user approval).
+1. `.spec/lessons.md` — writable only in `*.compound` or `setup.apply` (or when explicitly recording lessons with user approval).
 2. Root `.spec/{product,tech,design,plan}.md` — only in `strategy.spec`, `feature.compound`, or `setup.apply`.
 3. `.agents/skills/vibe/state.json` — only via `set-state.sh`.
 

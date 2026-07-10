@@ -10,8 +10,8 @@
 #                                   #   (used when the upstream caveman skill is absent)
 #
 # A bash script cannot introspect Claude Code's installed-skill registry, so this
-# verifies what is checkable on disk (the bundled `spec` skill, `vibe-*` shims) and
-# flags the rest as external/assumed-installed. Always exits 0.
+# verifies what is checkable on disk (the bundled `spec` skill, the consolidated
+# `vibe` skill) and flags the rest as external/assumed-installed. Always exits 0.
 
 set -euo pipefail
 
