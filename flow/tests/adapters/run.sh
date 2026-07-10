@@ -120,6 +120,51 @@ bash "$MERGE" unmerge "$d" >/dev/null 2>&1
   && pass "agent-instructions/3" "unmerge deletes the file when only the branded title would remain (regen case)" \
   || fail "agent-instructions/3" "unmerge deletes the file when only the branded title would remain (regen case)"
 rm -rf "$d"
+# branded-title cleanup, scenario 3 (title MID-FILE): a user who added prose ABOVE
+# the vibe title still gets the orphaned title removed on unmerge — the strip is by
+# FIRST exact match, wherever it sits, not line 1 only. Discriminating: the old
+# head -n1 check sees the user's heading on line 1 and leaves a mid-file title.
+d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
+{ printf '## Top\nkeep top\n\n'; cat "$d/AGENTS.md"; printf '\n## Footer\nkeep bottom\n'; } > "$d/AGENTS.md.n" && mv "$d/AGENTS.md.n" "$d/AGENTS.md"
+grep -qF '# AGENTS.md — vibe Engineering Guide' "$d/AGENTS.md" || fail "agent-instructions/3" "precondition: mid-file title present before unmerge"
+bash "$MERGE" unmerge "$d" >/dev/null 2>&1
+{ ! grep -qF 'vibe Engineering Guide' "$d/AGENTS.md" && grep -qF 'keep top' "$d/AGENTS.md" && grep -qF 'keep bottom' "$d/AGENTS.md"; } \
+  && pass "agent-instructions/3" "unmerge strips a MID-FILE vibe title (prose above it), keeps user prose" \
+  || fail "agent-instructions/3" "unmerge strips a MID-FILE vibe title (prose above it), keeps user prose"
+rm -rf "$d"
+# branded-title cleanup, scenario 4 (no title present): a file carrying managed
+# blocks but NO vibe title line keeps its own line 1 — the title strip is a no-op.
+# Discriminating: an unconditional 'sed 1d' would eat the user's first line.
+d="$(mktmp)"
+{ printf '## User Heading\nsome prose\n\n'; sed -n '/vibe:instructions:start/,/vibe:active-rules:end/p' "$TEMPLATE"; } > "$d/AGENTS.md"
+bash "$MERGE" unmerge "$d" >/dev/null 2>&1
+{ [[ "$(head -n1 "$d/AGENTS.md")" == "## User Heading" ]] && grep -qF 'some prose' "$d/AGENTS.md" \
+  && ! grep -qF 'vibe:instructions:start' "$d/AGENTS.md"; } \
+  && pass "agent-instructions/3" "unmerge leaves a no-title file's line 1 intact (title strip no-op)" \
+  || fail "agent-instructions/3" "unmerge leaves a no-title file's line 1 intact (title strip no-op)"
+rm -rf "$d"
+
+echo ""
+echo "=== agent-instructions — repo AGENTS.md block == shipped template (parity) ==="
+# The repo's OWN vibe:instructions block must stay byte-identical to the template it
+# ships, so the dogfood guide and every install target never drift. Proof: merging
+# the template into a copy of the repo's AGENTS.md is a pure no-op (byte-identical).
+REPO_AGENTS="$REPO_ROOT/AGENTS.md"
+d="$(mktmp)"; cp "$REPO_AGENTS" "$d/AGENTS.md"
+before="$(cksum < "$d/AGENTS.md")"
+bash "$MERGE" "$d" >/dev/null 2>&1
+after="$(cksum < "$d/AGENTS.md")"
+assert_eq "agent-instructions/2" "repo AGENTS.md block is byte-identical to the shipped template (no drift)" "$after" "$before"
+# Discriminating: drop a line from INSIDE the managed block; merge must repair it
+# back to the pristine repo file — proving the parity assertion above would fail the
+# moment the template gains (or loses) a line the repo block does not mirror.
+d="$(mktmp)"; sed '/^## Degrade$/d' "$REPO_AGENTS" > "$d/AGENTS.md"
+cmp -s "$d/AGENTS.md" "$REPO_AGENTS" && fail "agent-instructions/2" "precondition: corrupted block differs from pristine" || true
+bash "$MERGE" "$d" >/dev/null 2>&1
+cmp -s "$d/AGENTS.md" "$REPO_AGENTS" \
+  && pass "agent-instructions/2" "merge repairs a drifted repo block back to the template (parity is enforced)" \
+  || fail "agent-instructions/2" "merge repairs a drifted repo block back to the template (parity is enforced)"
+rm -rf "$d"
 
 echo ""
 echo "=== platform-adapters/4,5 — settings.json hook wiring (auto-wired, no plugin) ==="
@@ -137,7 +182,7 @@ for pair in "UserPromptSubmit:user-prompt-submit-inject.sh" "PreToolUse:pre-tool
   assert_contains "platform-adapters/4" "$ev command is \$CLAUDE_PROJECT_DIR-relative" "$cmd" '$CLAUDE_PROJECT_DIR/.claude/hooks/'
 done
 matcher="$(jq -r '.hooks.PreToolUse[0].matcher' "$SETTINGS")"
-assert_eq "platform-adapters/4" "PreToolUse matcher is Edit|Write|NotebookEdit" "$matcher" "Edit|Write|NotebookEdit"
+assert_eq "platform-adapters/4" "PreToolUse matcher is Edit|Write|NotebookEdit|Bash" "$matcher" "Edit|Write|NotebookEdit|Bash"
 # every wired command points at a hook script that exists and is executable.
 allok=1
 while IFS= read -r script; do
@@ -394,6 +439,39 @@ SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 grep -qF '.agents/skills/vibe/warnings.log' "$SB/.gitignore" \
   && pass "platform-adapters/6" "install gitignores the warnings relay log" \
   || fail "platform-adapters/6" "install gitignores the warnings relay log"
+rm -rf "$SB"
+
+echo ""
+echo "=== platform-adapters/6 — skill registration under .claude/skills ==="
+# Install registers /spec and the vibe skill where the docs say they live: relative
+# symlinks under .claude/skills that resolve to the copied core (a real SKILL.md).
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+{ [[ -L "$SB/.claude/skills/spec" ]] && [[ "$(readlink "$SB/.claude/skills/spec")" == "../../.agents/skills/spec" ]] \
+  && [[ -f "$SB/.claude/skills/spec/SKILL.md" ]]; } \
+  && pass "platform-adapters/6" "install registers /spec at .claude/skills/spec (resolves)" \
+  || fail "platform-adapters/6" "install registers /spec at .claude/skills/spec (resolves)"
+{ [[ -L "$SB/.claude/skills/vibe" ]] && [[ "$(readlink "$SB/.claude/skills/vibe")" == "../../.agents/skills/vibe" ]] \
+  && [[ -f "$SB/.claude/skills/vibe/SKILL.md" ]]; } \
+  && pass "platform-adapters/6" "install registers the vibe skill at .claude/skills/vibe (resolves)" \
+  || fail "platform-adapters/6" "install registers the vibe skill at .claude/skills/vibe (resolves)"
+# DISCRIMINATING: a user's own skill dir in the SHARED .claude/skills survives
+# uninstall, while EXACTLY the two vibe symlinks are removed (matched by target).
+# Fails if uninstall blanket-removes .claude/skills or leaves the vibe links behind.
+mkdir -p "$SB/.claude/skills/myskill"; printf 'mine\n' > "$SB/.claude/skills/myskill/SKILL.md"
+bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+{ [[ -f "$SB/.claude/skills/myskill/SKILL.md" ]] \
+  && [[ ! -L "$SB/.claude/skills/spec" && ! -e "$SB/.claude/skills/spec" ]] \
+  && [[ ! -L "$SB/.claude/skills/vibe" && ! -e "$SB/.claude/skills/vibe" ]]; } \
+  && pass "platform-adapters/6" "uninstall removes the vibe skill symlinks, keeps a user skill dir" \
+  || fail "platform-adapters/6" "uninstall removes the vibe skill symlinks, keeps a user skill dir"
+rm -rf "$SB"
+# a user's REAL .claude/skills/spec directory must NOT be clobbered by registration.
+SB="$(mktmp)"; mkdir -p "$SB/.claude/skills/spec"; printf 'USER real spec\n' > "$SB/.claude/skills/spec/SKILL.md"
+bash "$INSTALL" "$SB" >/dev/null 2>&1
+{ [[ ! -L "$SB/.claude/skills/spec" ]] && grep -qF 'USER real spec' "$SB/.claude/skills/spec/SKILL.md" \
+  && [[ -L "$SB/.claude/skills/vibe" ]]; } \
+  && pass "platform-adapters/6" "registration never clobbers a user's real .claude/skills/spec" \
+  || fail "platform-adapters/6" "registration never clobbers a user's real .claude/skills/spec"
 rm -rf "$SB"
 
 echo ""

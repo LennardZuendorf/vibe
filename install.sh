@@ -70,6 +70,40 @@ gi_append() {
   printf '%s\n' "$@" >> "$file"
 }
 
+# register_skill NAME — link TARGET/.claude/skills/NAME -> ../../.agents/skills/NAME
+# so the skill resolves where the docs say. Relative, so the tree stays portable.
+# Idempotent (our own symlink is left as-is); never clobbers a user's real entry or
+# a symlink they aimed elsewhere — that slot is theirs, warn once and skip.
+register_skill() {
+  local name="$1"
+  local dir="$TARGET/.claude/skills"
+  local link="$dir/$name"
+  local rel="../../.agents/skills/$name"
+  if [[ -L "$link" ]]; then
+    [[ "$(readlink "$link")" == "$rel" ]] && return 0
+    err "WARN: $link is a symlink to $(readlink "$link"), not $rel — leaving it untouched."
+    return 0
+  fi
+  if [[ -e "$link" ]]; then
+    err "WARN: $link already exists (not a vibe symlink) — leaving it untouched."
+    return 0
+  fi
+  mkdir -p "$dir"
+  ln -s "$rel" "$link"
+}
+
+# unregister_skill NAME — remove TARGET/.claude/skills/NAME only when it is exactly
+# the symlink register_skill created (a symlink whose target is ../../.agents/skills/NAME).
+# A user's real dir/file, or a symlink they aimed elsewhere, is never touched.
+unregister_skill() {
+  local name="$1"
+  local link="$TARGET/.claude/skills/$name"
+  local rel="../../.agents/skills/$name"
+  if [[ -L "$link" && "$(readlink "$link")" == "$rel" ]]; then
+    rm -f "$link"
+  fi
+}
+
 DRY_RUN=0
 WANT_SPEC=1
 WANT_FLOW=1
@@ -149,8 +183,16 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     [[ "$DRY_RUN" -eq 1 ]] || remove_shipped \
       "$SRC/.agents/skills/spec" "$TARGET/.agents/skills/spec" tests AGENTS.md
   fi
+  # Undo the spec skill registration — only our own .claude/skills/spec symlink.
+  if [[ "$WANT_SPEC" -eq 1 ]]; then
+    say "unregister .claude/skills/spec (only the vibe symlink; a user entry is kept)"
+    [[ "$DRY_RUN" -eq 1 ]] || unregister_skill spec
+  fi
 
   if [[ "$WANT_FLOW" -eq 1 ]]; then
+    # Undo the vibe skill registration — only our own .claude/skills/vibe symlink.
+    say "unregister .claude/skills/vibe (only the vibe symlink; a user entry is kept)"
+    [[ "$DRY_RUN" -eq 1 ]] || unregister_skill vibe
     if [[ -e "$TARGET/.agents/skills/vibe" ]]; then
       # Exclude the same artifacts install scrubs (tests/, AGENTS.md, evidence/)
       # plus the per-project runtime state install never ships (state.json,
@@ -206,7 +248,7 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
         # Retire artifacts a prior (plugin-based) install left behind.
         rm -f "$TARGET/.claude-plugin/plugin.json" "$TARGET/.claude/hooks/hooks.json"
         find "$TARGET/.claude/hooks" -type d -empty -delete 2>/dev/null || true
-        rmdir "$TARGET/.claude-plugin" "$TARGET/.claude" 2>/dev/null || true
+        rmdir "$TARGET/.claude/skills" "$TARGET/.claude-plugin" "$TARGET/.claude" 2>/dev/null || true
       else
         err "WARN: settings.json still wires the flow hooks (jq unavailable) — leaving .claude/hooks/*.sh and .claude/commands in place so the wiring keeps pointing at real files. Remove the vibe hook entries from .claude/settings.json by hand, then delete .claude/hooks and .claude/commands."
       fi
@@ -229,6 +271,7 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   fi
 
   if [[ "$DRY_RUN" -eq 0 ]]; then
+    rmdir "$TARGET/.claude/skills" "$TARGET/.claude" 2>/dev/null || true
     rmdir "$TARGET/.agents/skills" "$TARGET/.agents" 2>/dev/null || true
   fi
 
@@ -296,6 +339,19 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
       note "preserved existing evidence receipts across re-install"
     fi
   fi
+fi
+
+# 1b. Register the copied skills under .claude/skills so /spec and the vibe skill
+# resolve where the docs say. Each is a relative symlink into the core copied in
+# step 1; a user entry already occupying the slot is preserved (register_skill
+# warns + skips). Registration follows the half that was installed.
+if [[ "$WANT_SPEC" -eq 1 ]]; then
+  say "register spec skill at .claude/skills/spec -> ../../.agents/skills/spec"
+  [[ "$DRY_RUN" -eq 1 ]] || register_skill spec
+fi
+if [[ "$WANT_FLOW" -eq 1 ]]; then
+  say "register vibe skill at .claude/skills/vibe -> ../../.agents/skills/vibe"
+  [[ "$DRY_RUN" -eq 1 ]] || register_skill vibe
 fi
 
 # 2. Claude Code adapter (native /flow command + hook scripts). Adapter belongs

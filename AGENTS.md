@@ -1,9 +1,10 @@
 # AGENTS.md — vibe Engineering Guide
 
-<!-- vibe:instructions:start -->
-<!-- Managed by vibe-setup (merge-agents.sh). Edits inside these markers are
-     replaced on the next setup.apply / install. Content outside the markers
-     (above this line, or inside vibe:active-rules) is user-owned. -->
+> This repository builds vibe itself. The sections below are this repo's own
+> dogfood guide (user-owned prose). The generic vibe-flow contract that ships to
+> every install target lives in the managed `vibe:instructions` block further
+> down — it is byte-identical to `flow/reference/templates/AGENTS.md` and is
+> replaced on every `setup.apply` / install, so edit the template, not the block.
 
 **Repository:** vibe — self-hosting bash/Markdown/JSON workflow harness (in active build).
 **Canonical:** this file. `CLAUDE.md` symlinks here.
@@ -22,8 +23,8 @@
 - MUST NOT invent filenames or state files the repo does not have (see **Dogfood status**).
 
 The **vibe flow** (state machine, hooks, per-turn routing) is what this repo is building.
-It is **not** a prerequisite for doing work here. Follow the **Working model** below unless
-your task is explicitly to implement flow machinery.
+It is **not** a prerequisite for doing work here. Follow the **Working model** in the managed
+block below unless your task is explicitly to implement flow machinery.
 
 ## Dogfood status
 
@@ -45,48 +46,6 @@ Know what exists before you read or create files.
 | Per-turn inject / D12 orders-in-skills | **Live** — orders sourced from linked `vibe` skill via `orders.sh` |
 
 When in doubt, read [.spec/plan.md](.spec/plan.md) for spec-vs-repo gaps.
-
-## Session start
-
-Sessions are ephemeral; `.spec/` is the memory.
-
-1. Read [.spec/lessons.md](.spec/lessons.md) and [.spec/plan.md](.spec/plan.md).
-2. Identify the **feature** you are building (table in `plan.md`) and load its specs:
-   `.spec/features/<name>/{product,tech,plan}.md`.
-3. Route by intent (table below). Do **not** block on flow state.
-4. **Optional** — if `.agents/skills/vibe/state.json` exists and you are explicitly continuing
-   a flow session, read `{flow, phase, feature}` and resume the linked `vibe` skill.
-   If the file is missing, treat as `idle` and proceed with specs.
-
-## Working model (default)
-
-Use this for all implementation work until the flow harness is fully wired.
-
-```
-ASK → read .spec/ → PLAN (cite unit IDs) → CONFIRM → IMPL → verify → compound
-```
-
-| Step | Do |
-|---|---|
-| Scope | Load feature `product.md` **Scope** table — respect owns / does-not-own |
-| Plan | Follow unit IDs in feature `plan.md` (`SF*`, `VF*`, `AI*`, `U*`, …) |
-| Impl | Test-first where the plan says so; cite unit ID in commits |
-| Done | Run `bash .agents/skills/spec/scripts/validate.sh`; show evidence |
-
-**Human gates:** approve plan units before large impl; approve verify evidence before "done".
-
-### Precedence
-
-The cursor owns sequencing and artifact destinations; delegates own method.
-When a delegated skill's text names its own artifact path, commits its own
-output, or hands off to another skill, the current state's orders win: write
-to the state's surface, leave commits to the flow, transition only via
-`set-state.sh`. Scope edits are not a state: edit within the current state's
-write surface and stay put. `set-state.sh idle` is always legal — abort ends
-any flow.
-
-Root [.spec/plan.md](.spec/plan.md) owns milestones and cross-feature order.
-Feature `plan.md` owns unit tables — do not duplicate units in chat or commits prose.
 
 ## Task routing
 
@@ -122,20 +81,6 @@ This is the **end-state** the repo is building. Reference when implementing
 
 `.claude/` is a runtime adapter — not canonical.
 
-## Write invariants
-
-Policy lives in `detect-context.sh decide` (defaults to `idle` when `state.json` is absent):
-
-1. `.spec/lessons.md` — writable only in `feature.compound`, `setup.apply`, `strategy.spec`, or `quick.verify` (the flow-end states that carry the conditional lesson step; or when explicitly recording lessons with user approval).
-2. Root `.spec/{product,tech,design,plan}.md` — only in `strategy.spec`, `feature.compound`, or `setup.apply`.
-3. `.agents/skills/vibe/state.json` — only via `set-state.sh`.
-
-Everything else is allow/warn. Check before writing:
-
-```bash
-bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
-```
-
 ## Repo layout
 
 ```text
@@ -144,22 +89,6 @@ bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
 .agents/skills/vibe/   # workflow skill: router, phase files, state machine, scripts
 AGENTS.md              # this file (canonical)
 CLAUDE.md              # symlink → AGENTS.md
-```
-
-## Commands
-
-```bash
-# Spec validation — run before claiming done
-bash .agents/skills/spec/scripts/validate.sh
-
-# Write policy (works without state.json)
-bash .agents/skills/vibe/scripts/detect-context.sh
-bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
-
-# Flow tooling — only when explicitly testing or building flow
-cp .agents/skills/vibe/state.example.json .agents/skills/vibe/state.json   # seed cursor
-bash .agents/skills/vibe/scripts/set-state.sh <flow.phase> [feature]
-bash .agents/skills/vibe/scripts/validate-state.sh
 ```
 
 ## Conventions
@@ -208,6 +137,97 @@ docs(agents): rewrite instruction set
 Root: `.spec/{product,tech,design,plan,lessons}.md`.
 Features: `.spec/features/<feature>/{product,tech}.md` required; `design.md`,
 `plan.md`, `research.md` optional.
+
+<!-- vibe:instructions:start -->
+<!-- Managed by vibe (merge-agents.sh). Edits inside these markers are
+     replaced on the next setup.apply / install. Content outside the markers
+     (above this line, or inside vibe:active-rules) is user-owned. -->
+
+This project runs the **vibe flow** — a spec-first workflow harness. `.spec/` is the
+durable memory; sessions are ephemeral. Read the specs before you write code.
+
+## Session start
+
+1. Read `.spec/lessons.md` and `.spec/plan.md`.
+2. Identify the feature you are working on and load its specs:
+   `.spec/features/<name>/{product,tech,plan}.md`.
+3. If `.agents/skills/vibe/state.json` exists and you are continuing a flow session,
+   read `{flow, phase, feature}` and resume the linked `vibe` skill. A missing cursor
+   means `idle` — proceed with the specs; a missing cursor is not an error.
+
+## Driving the flow
+
+- `/flow <flow.phase> [feature] [confirm]` transitions the state machine. Pass the feature
+  name to carry it into the cursor; add the literal `confirm` token to cross a gated edge
+  (the two human gates below). Never edit `state.json` by hand.
+- Under the hood `/flow` runs
+  `bash .agents/skills/vibe/scripts/set-state.sh <flow.phase> [feature]`. That script is a
+  *writer*, not a gate — it moves the cursor but enforces no approval. The gate teeth live
+  in the `/flow` command and the hooks, not the writer.
+- Per-turn **orders** for the current state come from the linked `vibe` skill, resolved by
+  `orders.sh`. Follow the current state's orders over any delegated skill's own prose.
+
+## Working model
+
+```
+ASK → read .spec/ → PLAN → CONFIRM → IMPL → verify → compound
+```
+
+Most transitions auto-advance. Two edges are **human gates** — stop and get explicit
+approval before crossing: plan → impl, and verify → ship. Everything else flows without
+pausing to ask.
+
+## Write invariants
+
+Policy lives in `detect-context.sh decide` (defaults to `idle` when `state.json` is absent):
+
+1. `.spec/lessons.md` — writable only in `feature.compound`, `setup.apply`, `strategy.spec`,
+   or `quick.verify` (the flow-end states that carry the lesson step; or when explicitly
+   recording a lesson with user approval).
+2. Root `.spec/{product,tech,design,plan}.md` — only in `strategy.spec`, `feature.compound`,
+   or `setup.apply`.
+3. `.agents/skills/vibe/state.json` — only via `set-state.sh`.
+
+Everything else is allow/warn. Check before writing:
+
+```bash
+bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
+```
+
+## Precedence
+
+The cursor owns sequencing and artifact destinations; delegated skills own method. When a
+delegated skill's text names its own artifact path or hands off elsewhere, the current
+state's orders win: write to the state's surface, transition only via `set-state.sh`. Scope
+edits are not a state — edit within the current state's write surface and stay put.
+`set-state.sh idle` is always legal: abort ends any flow.
+
+## Commands
+
+```bash
+# Spec validation — run before claiming done
+bash .agents/skills/spec/scripts/validate.sh
+# Write policy for a path (works without state.json)
+bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
+# Health-check the harness wiring (hooks, cursor, machine)
+bash .agents/skills/vibe/scripts/doctor.sh
+```
+
+## Enforcement is partial — do not trust it blindly
+
+- The `pre-tool-use-guard` hook only intercepts `Edit`, `Write`, and `NotebookEdit` tool
+  calls. Shell redirection (`>`, `tee`, `sed -i`) bypasses it — honoring the write
+  invariants there is a **convention**, backed only by a warn-only Bash sniffer.
+- `set-state.sh` writes the cursor; it does not gate. Approvals are enforced by `/flow` and
+  the hooks, not by the writer.
+- The Stop receipt tooth (a `*.verify` state needs a fresh evidence receipt) fires only when
+  the hooks are wired into the platform (e.g. `.claude/settings.json`). No wiring, no tooth.
+
+## Degrade
+
+Scripts graceful-degrade: `jq` is recommended but optional (a pure-bash path keeps the
+cursor byte-identical), and other agents may edit concurrently — touch only your own files
+and prefer warn over hard-fail.
 <!-- vibe:instructions:end -->
 
 <!-- vibe:active-rules:start -->

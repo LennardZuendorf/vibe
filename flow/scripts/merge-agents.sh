@@ -189,7 +189,7 @@ merge() {
   awk -v s="$I_START" -v e="$I_END" '
     $0 == s { ins = 1; next }
     $0 == e { ins = 0; next }
-    ins && $0 ~ /^<!-- Managed by vibe-setup/ { skipc = 1 }
+    ins && $0 ~ /^<!-- Managed by vibe/ { skipc = 1 }
     ins && skipc && $0 ~ /-->$/ { skipc = 0; next }
     ins && !skipc { print }
   ' "$TEMPLATE" > "$tcore"
@@ -244,12 +244,27 @@ unmerge() {
 
   # Stripping the blocks can strand the vibe-branded title line vibe wrote above
   # them (user added prose outside the markers, or the active-rules block was
-  # regenerated, so the file no longer matches the pristine stub). Remove an
-  # exact-match leading title line and the blank lines it leaves; a user's own
-  # heading (any other text) is left in place.
-  if [[ "$(head -n1 "$target")" == "$TITLE_LINE" ]]; then
-    local tmp; tmp="$(mktemp "${target}.XXXXXX")"
-    sed '1d' "$target" | sed '/./,$!d' > "$tmp"
+  # regenerated, so the file no longer matches the pristine stub). Remove the FIRST
+  # exact-match title line WHEREVER it sits — that exact string is always
+  # vibe-authored — and collapse the doubled blank line its removal leaves
+  # (blank-title-blank -> blank). A user who put prose above the title no longer
+  # keeps an orphaned vibe heading. A file with no such line is left byte-identical.
+  # Kept awk-free (grep -n + sed) so unmerge runs on an awk-less target.
+  local t_line
+  t_line="$(marker_line "$target" "$TITLE_LINE")"
+  if [[ -n "$t_line" ]]; then
+    local tmp prev next del
+    tmp="$(mktemp "${target}.XXXXXX")"
+    prev=""; next="$(sed -n "$((t_line + 1))p" "$target")"
+    (( t_line > 1 )) && prev="$(sed -n "$((t_line - 1))p" "$target")"
+    del="${t_line}d"
+    # Only when the title sat between two blank lines does removing it double a
+    # blank; drop the trailing one so no seam widens. (Leading blanks from a
+    # line-1 title are handled by the trailing `sed '/./,$!d'`.)
+    if (( t_line > 1 )) && [[ -z "${prev//[[:space:]]/}" && -z "${next//[[:space:]]/}" ]]; then
+      del="${del};$((t_line + 1))d"
+    fi
+    sed "$del" "$target" | sed '/./,$!d' > "$tmp"
     mv -f "$tmp" "$target"
   fi
 
