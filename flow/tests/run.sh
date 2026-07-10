@@ -111,6 +111,34 @@ assert_contains "vibe-flow/1" "orders.sh exits 0 even without jq" "$out" "rc=0"
 assert_not_contains "vibe-flow/1" "orders.sh without jq does not crash blank" "$out" "rc=127"
 assert_contains "vibe-flow/1" "orders.sh without jq still prints a fallback" "$out" "state="
 
+# orders.sh no-jq parity (review-fix): the jq-less inject path is the missing third
+# leg (set-state + detect-context already degrade). Its output MUST be byte-
+# identical to the jq path for the cursor-driven and explicit cases below — pre-fix
+# the no-jq run printed the generic 'state=unknown' fallback for every state. Build
+# a jq-free PATH carrying only the coreutils the no-jq path uses (no jq, no awk).
+pnojq="$(mktemp -d)"
+for t in dirname sed head cat; do ln -sf "$(command -v "$t")" "$pnojq/$t"; done
+orders_parity() {
+  local label="$1"; shift
+  local a b
+  a="$(bash "$SCRIPTS/orders.sh" "$@" 2>/dev/null)"
+  b="$(PATH="$pnojq" "$BASH_BIN" "$SCRIPTS/orders.sh" "$@" 2>/dev/null)"
+  assert_eq "vibe-flow/1" "orders.sh jq/no-jq byte-identical — $label" "$b" "$a"
+}
+rm -f "$STATE"
+orders_parity "idle (no cursor)"
+cp "$FLOW/state.example.json" "$STATE"; bash "$SCRIPTS/set-state.sh" idle >/dev/null
+orders_parity "idle (cursor)"
+bash "$SCRIPTS/set-state.sh" feature.impl demo >/dev/null
+orders_parity "feature.impl (feature=demo from cursor)"
+# ...and the interpolation actually happened on the no-jq path (demo, no placeholder).
+nojq_impl="$(PATH="$pnojq" "$BASH_BIN" "$SCRIPTS/orders.sh" 2>/dev/null)"
+assert_contains "vibe-flow/1" "no-jq orders interpolate cursor feature (demo)" "$nojq_impl" "demo/n"
+assert_not_contains "vibe-flow/1" "no-jq orders leave no <feature> placeholder" "$nojq_impl" "<feature>/n"
+assert_not_contains "vibe-flow/1" "no-jq orders do not degrade to state=unknown" "$nojq_impl" "state=unknown"
+orders_parity "quick.verify (explicit arg)" quick.verify
+rm -f "$STATE"; rm -rf "$pnojq"
+
 echo ""
 echo "=== vibe-flow/3 — graceful skill degradation ==="
 out="$(bash "$SCRIPTS/check-skills.sh" feature.design 2>&1; echo "rc=$?")"
@@ -465,6 +493,21 @@ cp "$MACHINE" "$d/.agents/skills/vibe/"
 cp "$FLOW/state.example.json" "$d/.agents/skills/vibe/state.json"
 out="$(bash "$DOCTOR" "$d" 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/4" "doctor reports a valid cursor as ok" "$out" "ok   cursor"
+# No-jq target with a VALID cursor: validate-state.sh needs jq, so it would exit 1
+# and doctor used to mislabel the cursor "present but invalid — reseed". It must
+# instead report an unverified OK, never advise reseeding, and still exit 0.
+# Discriminating: the old code emitted "warn cursor" + "invalid" here.
+nojq_doc="$(mktemp -d)"
+for t in dirname readlink grep find sed head cat env; do
+  _p="$(command -v "$t" 2>/dev/null)" && ln -sf "$_p" "$nojq_doc/$t"
+done
+out="$(PATH="$nojq_doc" "$BASH_BIN" "$DOCTOR" "$d" 2>&1; echo "rc=$?")"
+assert_contains "review-fix" "no-jq doctor reports a valid cursor as ok (unverified)" "$out" "ok   cursor"
+assert_contains "review-fix" "no-jq doctor marks the cursor unverified (jq missing)" "$out" "cursor present (unverified"
+assert_not_contains "review-fix" "no-jq doctor does not warn the valid cursor invalid" "$out" "warn cursor"
+assert_not_contains "review-fix" "no-jq doctor does not advise reseeding a valid cursor" "$out" "reseed"
+assert_contains "review-fix" "no-jq doctor still exits 0" "$out" "rc=0"
+rm -rf "$nojq_doc"
 rm -rf "$d"
 # Absent dep: reported as a warn with its degrade text, still exit 0.
 d="$(mktemp -d)"; mkdir -p "$d/.spec" "$d/.agents/skills/vibe/reference"

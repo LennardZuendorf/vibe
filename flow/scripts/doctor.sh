@@ -95,10 +95,15 @@ else
   warn machine "state-machine.json missing at $MACHINE — flow harness incomplete"
 fi
 
-# flow cursor: absent is normal (idle); present-but-invalid is a warn.
+# flow cursor: absent is normal (idle); present-but-invalid is a warn. Without jq
+# validate-state.sh cannot run (it requires jq), so a valid cursor would otherwise
+# be misreported "present but invalid — reseed". Degrade to an unverified OK
+# instead: report the cursor as present-but-unverified and never advise reseeding.
 if [[ -f "$STATE" ]]; then
-  if [[ -x "$VIBE_SKILL/scripts/validate-state.sh" ]] && bash "$VIBE_SKILL/scripts/validate-state.sh" >/dev/null 2>&1; then
-    ok cursor "flow cursor valid ($(have_jq && jq -r '"\(.flow).\(.phase) feature=\(.feature // "none")"' "$STATE" 2>/dev/null || echo present))"
+  if ! have_jq; then
+    ok cursor "flow cursor present (unverified — jq missing; validate-state.sh needs jq)"
+  elif [[ -x "$VIBE_SKILL/scripts/validate-state.sh" ]] && bash "$VIBE_SKILL/scripts/validate-state.sh" >/dev/null 2>&1; then
+    ok cursor "flow cursor valid ($(jq -r '"\(.flow).\(.phase) feature=\(.feature // "none")"' "$STATE" 2>/dev/null || echo present))"
   else
     warn cursor "flow cursor present but invalid — run validate-state.sh (or reseed from state.example.json)"
   fi

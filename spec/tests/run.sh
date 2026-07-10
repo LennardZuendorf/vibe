@@ -319,6 +319,71 @@ EOF
   rm -rf "$d"
 }
 
+# ── SF12: R-ID traceability fires under any awk (mawk \b regression) ──────────
+# The old emit_r_ids used \b inside awk match(), which mawk (Debian default awk)
+# does not support, so under mawk the R-ID trace check silently never fired. A
+# product.md R-id NOT cited in plan.md must warn regardless of which awk the host
+# ships. Discriminating: reverting to the \b pattern makes this pass under gawk
+# but fail under mawk — here it must warn on whatever awk runs the suite.
+test_sf12_r_id_trace_fires() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/myfeature"
+  cat > "$d/.spec/product.md" <<'EOF'
+---
+type: entrypoint
+scope: product
+children: []
+updated: 2026-06-06
+---
+# P
+EOF
+  cat > "$d/.spec/features/myfeature/product.md" <<'EOF'
+---
+type: feature-product
+feature: myfeature
+updated: 2026-06-06
+---
+# Feature
+
+### Requirement: Thing SHALL happen (R7)
+
+#### Scenario: Happy path
+
+- **Given** x
+- **When** y
+- **Then** z
+EOF
+  cat > "$d/.spec/features/myfeature/tech.md" <<'EOF'
+---
+type: feature-tech
+feature: myfeature
+updated: 2026-06-06
+---
+# Tech
+EOF
+  cat > "$d/.spec/features/myfeature/plan.md" <<'EOF'
+---
+type: feature-plan
+feature: myfeature
+parent: ../../plan.md
+updated: 2026-06-06
+---
+# Plan
+
+## Requirements Trace
+
+| ID | Requirement | Units |
+|---|---|---|
+| — | thing | myfeature/1 |
+
+### myfeature/1 — first slice
+
+**Dependencies:** —
+EOF
+  local out; out="$( cd "$d" && bash "$VALIDATE" 2>&1 )"
+  assert_contains SF12 "untraced R-id warns under any awk (mawk \\b regression)" "$out" "R7 in product.md not cited in plan.md"
+  rm -rf "$d"
+}
+
 # ── SF11: feature plan with feature/n headings is accepted ───────────────────
 test_sf11_feature_plan_new_shape_ok() {
   local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/myfeature"
@@ -564,6 +629,7 @@ test_sf10_rfc_in_body_ok
 test_sf10_rfc_missing_warn
 test_sf11_milestones_heading_ok
 test_sf11_m0_embed_warn
+test_sf12_r_id_trace_fires
 test_sf11_feature_plan_new_shape_ok
 
 echo ""

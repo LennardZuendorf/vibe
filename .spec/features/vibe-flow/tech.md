@@ -66,22 +66,23 @@ There is **no `notes` field**. Anything that varies turn-to-turn stays out of th
 cursor so the per-turn inject can be cache-stable (see *Prompt Injection*). The
 `updated` timestamp lives in the cursor only, never in injected text.
 
-`state-machine.json` defines each state as a static entry. `caveman` is static per
-state and the `skill` field **links** the state to its owning shim — never stored
-in the mutable cursor. Under D12 the per-turn orders are sourced from that linked
-skill (see *Prompt Injection*), not from a hand-written `inject` string:
+`state-machine.json` defines each state as a static entry; the `skill` field
+**links** the state to the `vibe` skill — never stored in the mutable cursor.
+Under D12 the per-turn orders are sourced from that linked skill (see *Prompt
+Injection*), not from a hand-written `inject` string. There is no per-state
+`caveman` field: output density is one top-level `style` note for the whole
+machine (see *States, skills, and artifacts*):
 
 ```json
 {
   "feature.impl": {
-    "skill": "vibe-feature",
-    "delegates": ["superpowers:executing-plans", "superpowers:test-driven-development"],
-    "caveman": "full",
+    "skill": "vibe",
+    "delegates": ["superpowers:executing-plans", "superpowers:subagent-driven-development", "superpowers:test-driven-development", "superpowers:receiving-code-review"],
     "reads": [".spec/features/<feature>/plan.md"],
     "writes": ["src/**", "tests/**"],
     "inject": null,
-    "next": ["feature.verify"],
-    "exit": "tests reference plan unit IDs and pass"
+    "next": ["feature.verify", "idle"],
+    "exit": "plan units implemented with tests that cite their unit IDs and pass"
   }
 }
 ```
@@ -98,21 +99,25 @@ per-state table used to live here, but it was **retired 2026-07-09** — a
 hand-maintained copy of the machine drifts, and this one had gone stale
 (pre-consolidation `vibe-setup`/`vibe-strategy` skill names, no per-phase
 compound states, no edge-keyed `gates`). Read the machine for the authoritative
-per-state skill link, delegates, caveman level, write surface, and legal `next`;
-the flow carries a top-level `gates` object keyed by edge
+per-state skill link, delegates, write surface, and legal `next`; output density
+is one top-level `style` note (not a per-state level), and the flow carries a
+top-level `gates` object keyed by edge
 (`feature.plan>feature.impl`, `feature.verify>feature.compound`).
 
-Three deliberate calls, still true of the machine:
+The machine now carries **13 state entries** (`idle` plus 12 non-idle states), one
+top-level `style` note, and no per-state modifiers. Three deliberate calls in it
+are worth spelling out — but `flow/state-machine.json` is the per-state truth:
 
-- **`quick.triage` is `full`, not `ultra`.** `ultra` compresses hardest and can drop
-  edge cases; triage is exactly where a missed edge case is expensive. `ultra` is
-  reserved for `feature.compound` receipts and subagent→orchestrator summaries.
-- **`amend` is a modifier, not a flow.** The cursor never becomes `amend`
-  (`set-state.sh` refuses it). `vibe-amend` applies a targeted scope edit using the
-  **current cursor state's** write rules, then returns there. The inject hook always
-  resolves orders from the stored cursor — not from the `amend` machine entry.
-  The `amend` entry in `state-machine.json` is reference-only for `vibe-amend` skill
-  prose; under D12 it does **not** receive per-turn inject.
+- **Output density is one machine-level `style` note, not a per-state level.** The
+  per-state caveman levels (`lite`/`full`/`ultra`) and the `caveman_levels` /
+  `safety_carveouts` machine blocks were retired 2026-07-09; a single top-level
+  `style` now governs every state — compress receipts and subagent→orchestrator
+  summaries, but keep security warnings and irreversible-action confirmations in
+  full prose, and never trade reasoning depth for brevity.
+- **A scope edit is not a state.** There is no `amend` flow or modifier — the cursor
+  never becomes `amend`, and the `modifiers` array is gone (removed with `amend.md`).
+  A targeted scope edit happens within the current cursor state's write surface and
+  the cursor stays put; `set-state.sh idle` still aborts any flow.
 - **Failure routes back.** `feature.verify` can return to `feature.plan` or
   `feature.impl`, which resolves the failed-verification routing the plan left open.
 
@@ -141,8 +146,8 @@ hook is a thin shell over `orders.sh`. Verified by `flow/tests/run.sh`
 
 ### Stable plan unit IDs (D9)
 
-`feature.plan` gives every implementation unit a permanent ID (`U1`, `U2`, …) in
-`features/<f>/plan.md`. IDs never change on reorder or split. `feature.impl` and
+`feature.plan` gives every implementation unit a permanent ID (`<feature>/1`,
+`<feature>/2`, …) in `features/<f>/plan.md`. IDs never change on reorder or split. `feature.impl` and
 `feature.verify` reference units by ID, so the cursor and evidence survive
 re-planning and the state machine stays resumable. This is the one CE mechanism
 worth borrowing wholesale; we keep it lightweight (IDs in the plan markdown), not

@@ -161,8 +161,8 @@ flowchart LR
 ### Phase map
 
 Each phase, the `vibe` skill phase file that drives it, the external skills and
-feature-dev subagents it delegates to, its caveman density, the spec artifact it
-reads/writes, and what the stage is for. This is the canonical workflow contract;
+feature-dev subagents it delegates to, the spec artifact it reads/writes, and what
+the stage is for. This is the canonical workflow contract;
 the full per-state record (skill link, `next` arrays, exit predicates — orders
 sourced from the linked skill per D12) lives in
 `.agents/skills/vibe/state-machine.json` and is detailed in
@@ -176,11 +176,11 @@ ungated while its ship edge stops for approval.
 |---|---|---|---|---|---|
 | `idle` | — | — | — | R `lessons.md`, `plan.md` | Resting hub between flows. Read lessons/plan, then pick the flow that matches the request. |
 | `setup.detect` | `setup` | — | — | R repo, adapters, `.agents`, `.spec` | Read-only audit of repo + harness; report present vs missing and preflight required plugins. |
-| `setup.apply` | `setup` | `spec`, `writing-skills` | — | W `.agents/**`, baseline `.spec/**`, adapter blocks | Write/merge the bootstrap without clobbering: constitution block, flow scaffold, baseline specs. |
+| `setup.apply` | `setup` | `spec` | — | W `.agents/**`, baseline `.spec/**`, adapter blocks | Write/merge the bootstrap without clobbering: AGENTS.md instructions block, flow scaffold, baseline specs. |
 | `strategy.brainstorm` | `strategy` | `brainstorming` | — | R `lessons.md` | Shape project direction in dialogue; scratch only, no writes yet. |
 | `strategy.spec` | `strategy` | `spec` | — | W root `product/tech/design/plan`, opt `lessons.md` | Commit the agreed direction into the root specs and validate; record an optional durable lesson inline before `idle`. |
 | `feature.design` | `feature` | `brainstorming` | `code-explorer`, `code-architect` | R `lessons.md`, root `product/tech`; W `features/<f>/{product,tech}` | Trace the codebase and sketch approaches, then write the feature's product + tech specs. |
-| `feature.plan` | `feature` | `writing-plans` | `code-architect` | W `features/<f>/plan` | Turn the design into a plan with stable unit IDs (`U1`, `U2`…). Human gate before impl. |
+| `feature.plan` | `feature` | `writing-plans` | `code-architect` | W `features/<f>/plan` | Turn the design into a plan with stable unit IDs (`<feature>/1`, `<feature>/2`…). Human gate before impl. |
 | `feature.impl` | `feature` | `executing-plans`, `test-driven-development` | — | R `plan`; W `src/**`, `tests/**` | Build the plan units test-first, citing unit IDs; no spec edits. |
 | `feature.verify` | `verify` | `verification-before-completion`, `requesting-code-review`, `systematic-debugging` | `code-reviewer` | R `plan`, `src`, `tests` | Gather real evidence per unit ID and review. Human gate before ship; routes pass→compound, fail→impl/plan. |
 | `feature.compound` | `compound` | `finishing-a-development-branch`, `spec` | — | W `lessons.md`, root specs, archive, adapter blocks | Record the lesson, promote cross-cutting decisions to root, archive the feature, refresh digest. |

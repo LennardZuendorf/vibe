@@ -124,7 +124,7 @@ state, agent instruction files, or platform hooks (see feature boundaries in roo
 │   ├── product.md          # required — WHAT: Requirement+Scenario format
 │   ├── tech.md             # required — HOW: files, contracts
 │   ├── design.md           # optional (full-rigor / UI)
-│   ├── plan.md             # recommended — ### U1. units, Requirements Trace
+│   ├── plan.md             # recommended — ### <feature>/n units, Requirements Trace
 │   └── research.md         # optional
 └── archive/<feature>/      # post-merge history
 ```

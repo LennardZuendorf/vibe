@@ -16,9 +16,13 @@
 # .agents/skills/vibe/warnings.log; the UserPromptSubmit inject hook drains that
 # log to stdout (which IS injected) next turn, then truncates it.
 #
-# The three hard blocks (lessons.md outside compound; root specs outside
-# strategy.spec/feature.compound; direct state.json edits) are coded in
-# detect-context.sh, shipped warn-first elsewhere ("earn the teeth").
+# The three hard blocks are coded in detect-context.sh (single source of truth),
+# shipped warn-first elsewhere ("earn the teeth"):
+#   1. .spec/lessons.md    — allowed only in feature.compound | setup.apply |
+#                            strategy.spec | quick.verify
+#   2. root .spec/{product,tech,design,plan}.md
+#                          — allowed only in strategy.spec | feature.compound | setup.apply
+#   3. .agents/skills/vibe/state.json — never by direct edit (set-state.sh only)
 #
 # Graceful degrade (R9): missing detect-context.sh / empty or unparseable stdin ->
 # exit 0. jq is preferred for reading the path; without it a best-effort sed

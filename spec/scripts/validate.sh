@@ -256,10 +256,17 @@ check_plan_id_traceability() {
 
   local r_ids
   r_ids="$(awk '
-    function emit_r_ids(line,    s) {
+    function emit_r_ids(line,    s, m) {
+      # Portable word-boundary: mawk (Debian default awk) does not support \b
+      # inside match(), so it silently matched nothing there. This explicit
+      # boundary ((^|non-word) R<digits> (non-word|$)) behaves identically under
+      # gawk and mawk. The surrounding boundary chars are non-[R0-9], so stripping
+      # them with gsub recovers the bare R-id.
       s = line
-      while (match(s, /\bR[0-9]+\b/)) {
-        print substr(s, RSTART, RLENGTH)
+      while (match(s, /(^|[^A-Za-z0-9_])R[0-9]+([^A-Za-z0-9_]|$)/)) {
+        m = substr(s, RSTART, RLENGTH)
+        gsub(/[^R0-9]/, "", m)
+        print m
         s = substr(s, RSTART + RLENGTH)
       }
     }

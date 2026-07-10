@@ -59,9 +59,14 @@ if [[ "$HAVE_JQ" -eq 1 ]]; then
     exit 1
   fi
 else
-  # No jq: best-effort validation — a state exists iff its key appears in the
-  # machine JSON followed by a colon (a "next" array value has no trailing colon).
-  if ! grep -qE "\"${TARGET//./\\.}\"[[:space:]]*:" "$MACHINE"; then
+  # No jq: best-effort validation. State entries are objects at EXACTLY 4-space
+  # indentation in the checked-in machine ("<name>": {); meta keys
+  # ("style"/"version"/"initial"/"states"…) sit at 2 spaces, nested state fields
+  # ("skill"/"reads"…) at 6+, and the 4-space `gates` keys carry string values (not
+  # `{`). Anchoring on `^    "<name>": {` therefore matches only real states, so a
+  # meta key like `style` or `version` is rejected. Relying on the fixed indent is
+  # safe: state-machine.json is a versioned, checked-in file with stable formatting.
+  if ! grep -qE "^    \"${TARGET//./\\.}\"[[:space:]]*:[[:space:]]*\{" "$MACHINE"; then
     err "ERROR: '$TARGET' is not a known state (jq absent; validated by text match)."
     exit 1
   fi
