@@ -391,6 +391,32 @@ assert_contains "flow-legibility/3" "code-reviewer pinned to opus (verify.md)" "
 assert_contains "flow-legibility/3" "SKILL.md carries the subagent model-tier policy" "$skill_body" "mechanical/exploration → sonnet"
 
 echo ""
+echo "=== flow-legibility/4 — doctrine block + resolver ==="
+rm -f "$STATE"
+doc="$(bash "$SCRIPTS/doctrine.sh")"
+assert_contains "flow-legibility/4" "doctrine names the two human gates" "$doc" "plan → impl, and verify → ship"
+assert_contains "flow-legibility/4" "doctrine carries the durable/ephemeral framing" "$doc" "sessions are ephemeral"
+assert_contains "flow-legibility/4" "doctrine states the session-start reads" "$doc" ".spec/lessons.md"
+assert_contains "flow-legibility/4" "doctrine states the state.json write invariant" "$doc" ".agents/skills/vibe/state.json"
+assert_contains "flow-legibility/4" "doctrine prints a cursor summary (idle)" "$doc" "Cursor: idle."
+# cursor summary reflects the live cursor
+cp "$FLOW/state.example.json" "$STATE"; bash "$SCRIPTS/set-state.sh" feature.impl widget >/dev/null
+doc2="$(bash "$SCRIPTS/doctrine.sh")"
+assert_contains "flow-legibility/4" "doctrine cursor summary reflects feature.impl" "$doc2" "Cursor: feature.impl (feature=widget)."
+rm -f "$STATE"
+# jq/no-jq byte parity (mirrors orders.sh parity)
+pnojq4="$(mktemp -d)"
+for t in dirname sed head cat; do ln -sf "$(command -v "$t")" "$pnojq4/$t"; done
+a4="$(bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
+b4="$(PATH="$pnojq4" "$BASH_BIN" "$SCRIPTS/doctrine.sh" 2>/dev/null)"
+assert_eq "flow-legibility/4" "doctrine.sh jq/no-jq byte-identical (idle)" "$b4" "$a4"
+rm -rf "$pnojq4"
+# single-source parity: the AGENTS.md template carries the same invariant lines
+tmpl="$(cat "$FLOW/reference/templates/AGENTS.md")"
+assert_contains "flow-legibility/4" "AGENTS.md template shares the gate line (single-source parity)" "$tmpl" "plan → impl, and verify → ship"
+assert_contains "flow-legibility/4" "AGENTS.md template shares the ephemeral framing" "$tmpl" "sessions are ephemeral"
+
+echo ""
 echo "=== regen-active-rules.sh — digest from lessons ==="
 d="$(mktemp -d)"
 mkdir -p "$d/.spec" "$d/.agents/skills/vibe/scripts"

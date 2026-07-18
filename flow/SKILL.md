@@ -65,6 +65,24 @@ review/architecture/synthesis → opus — never an inherited default. Every
 `> **Delegate —**` block that dispatches a subagent (Task) pins the tier; copy the
 tier into the subagent prompt, since subagents get no per-turn orders.
 
+## Doctrine (SessionStart)
+
+The working-model doctrine, single-sourced here and emitted by
+`scripts/doctrine.sh` for the `SessionStart` hook (+`compact` re-inject) — the same
+block also renders as the `AGENTS.md` managed instructions, so the hook makes that
+block an optional adapter rather than the only carrier. `<feature>` is illustrative;
+`doctrine.sh` appends a live cursor summary.
+
+<!-- vibe:doctrine -->
+vibe flow — working model. `.spec/` is durable memory; sessions are ephemeral. On session start, Read `.spec/lessons.md` and `.spec/plan.md`, then the active feature's `.spec/features/<name>/{product,tech,plan}.md`. A missing `state.json` cursor means idle — not an error.
+
+You drive the flow: each turn's orders name the current state and its transition command. At a non-gated edge, run `set-state.sh <next>` yourself — nothing advances on its own.
+
+Two human gates — stop and get explicit approval before crossing: plan → impl, and verify → ship. Everything else auto-advances.
+
+Write invariants (`detect-context.sh decide`; default idle when `state.json` is absent): `.spec/lessons.md` only in feature.compound, setup.apply, strategy.spec, quick.verify; root `.spec/{product,tech,design,plan}.md` only in strategy.spec, feature.compound, setup.apply; `.agents/skills/vibe/state.json` only via `set-state.sh`.
+<!-- /vibe:doctrine -->
+
 ## Orders (D12)
 
 Machine-extractable per-state orders. The `UserPromptSubmit` inject hook resolves
