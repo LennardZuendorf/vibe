@@ -7,6 +7,10 @@ Everything between is autonomous.
 `feature.design → feature.plan →[gate] feature.impl → feature.verify →[gate]
 (feature.compound | feature.impl | feature.plan)`
 
+Iteration edges (no abort): `feature.plan → feature.design` when planning exposes a
+design gap; a research pass stays in `feature.design` — write `research.md`, no state
+change.
+
 ## Procedure
 
 1. **Locate + name.** Read `.agents/skills/vibe/state.json`. Establish the feature name

@@ -236,8 +236,17 @@ dead_sc="strategy.$dead_suffix"
 dead_qc="quick.$dead_suffix"
 gone_states="$(jq -r --arg sc "$dead_sc" --arg qc "$dead_qc" '[.states | keys[] | select(. == $sc or . == $qc or . == "amend")] | join(",")' "$MACHINE")"
 assert_eq "simplify/dead-states" "the two per-phase compound states and amend are removed from the machine" "$gone_states" ""
+# flow-legibility/1 — loop edges + research artifact
 ss_next="$(jq -c '.states."strategy.spec".next' "$MACHINE")"
-assert_eq "simplify/dead-states" "strategy.spec.next is exactly [idle]" "$ss_next" '["idle"]'
+assert_eq "flow-legibility/1" "strategy.spec loops back to brainstorm: next is [strategy.brainstorm, idle]" "$ss_next" '["strategy.brainstorm","idle"]'
+ss_no_compound="$(jq -r --arg sc "$dead_sc" '[.states."strategy.spec".next[]] | index($sc) == null' "$MACHINE")"
+assert_eq "simplify/dead-states" "strategy.spec.next carries no dead compound state" "$ss_no_compound" "true"
+fp_design="$(jq -r '[.states."feature.plan".next[]] | index("feature.design") != null' "$MACHINE")"
+assert_eq "flow-legibility/1" "feature.plan loops back to feature.design" "$fp_design" "true"
+fp_impl="$(jq -r '[.states."feature.plan".next[]] | index("feature.impl") != null' "$MACHINE")"
+assert_eq "flow-legibility/1" "feature.plan still routes to feature.impl (gate intact)" "$fp_impl" "true"
+fd_research="$(jq -r '[.states."feature.design".writes[]] | any(test("research\\.md"))' "$MACHINE")"
+assert_eq "flow-legibility/1" "research.md is a first-class feature.design write" "$fd_research" "true"
 qv_ok="$(jq -r --arg qc "$dead_qc" '[.states."quick.verify".next[]] | (index("quick.fix") != null) and (index("idle") != null) and (index($qc) == null)' "$MACHINE")"
 assert_eq "simplify/dead-states" "quick.verify.next is quick.fix + idle, no dead compound state" "$qv_ok" "true"
 # No per-state caveman field survives; a single top-level style note replaces them.

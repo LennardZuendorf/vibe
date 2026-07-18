@@ -54,7 +54,7 @@
       "reads": [".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md"],
       "writes": [".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md", ".spec/lessons.md"],
       "inject": null,
-      "next": ["idle"],
+      "next": ["strategy.brainstorm", "idle"],
       "exit": "root specs updated and validated; if a durable lesson surfaced, record it before going idle"
     },
 
@@ -62,7 +62,7 @@
       "skill": "vibe",
       "delegates": ["superpowers:brainstorming", "code-explorer", "code-architect"],
       "reads": [".spec/lessons.md", ".spec/product.md", ".spec/tech.md"],
-      "writes": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/design.md"],
+      "writes": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/design.md", ".spec/features/<feature>/research.md"],
       "inject": null,
       "next": ["feature.plan", "idle"],
       "exit": "feature product.md + tech.md written; design.md when full rigor; approach chosen"
@@ -73,7 +73,7 @@
       "reads": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md"],
       "writes": [".spec/features/<feature>/plan.md"],
       "inject": null,
-      "next": ["feature.impl", "idle"],
+      "next": ["feature.impl", "feature.design", "idle"],
       "exit": "plan.md has stable unit IDs; human approved moving to impl"
     },
     "feature.impl": {
