@@ -1030,6 +1030,24 @@ assert_eq "review-fix" "re-merge over an old-matcher entry leaves exactly one vi
 assert_contains "review-fix" "re-merge upgrades the old matcher to include Bash" "$pm2" "Bash"
 rm -rf "$mt"
 
+echo "=== install-agnostic-paths — validator refs in flow skill files ==="
+# The flow skill's phase files must reference the spec validator portably (the
+# `/spec validate` route), never a hard-coded `.agents/skills/spec/scripts/validate.sh`
+# — that only resolves in the vendored install and breaks under a global/plugin layout.
+# Two deliberate exemptions: (1) the flow skill's OWN vibe-script commands stay
+# project-root-relative because they are injected as prompt text, not run from a skill
+# dir; (2) the AGENTS.md template's Commands block is the local-install project contract
+# (all three commands use vendored paths; the plugin install never creates AGENTS.md),
+# so it is left whole. Scan the real source phase files.
+flow_validator_bad=0
+for f in "$SRC_ROOT"/flow/*.md; do
+  [[ -f "$f" ]] || continue
+  if grep -qF '.agents/skills/spec/scripts/validate.sh' "$f"; then
+    flow_validator_bad=$((flow_validator_bad + 1)); echo "        offender: ${f#"$SRC_ROOT"/}"
+  fi
+done
+assert_eq "install-agnostic-paths" "flow phase files reference the validator portably" "$flow_validator_bad" "0"
+
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

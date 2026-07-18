@@ -103,7 +103,7 @@ Every project's design lives in `.spec/`. Single source of truth for what you're
 
 1. **Pick layer** — global/root work → [strategy.md](strategy.md); one named feature → [feature.md](feature.md) + `.spec/features/<name>/`.
 2. **Pick route** — explicit `/spec <arg>` → [Routing § $ARGUMENTS](#routing); no arg → [Routing § Route by task type](#routing).
-3. **Finish** — bump `updated:` on every edited spec; run `bash .agents/skills/spec/scripts/validate.sh` (or global install path).
+3. **Finish** — bump `updated:` on every edited spec; run `scripts/validate.sh` (from your project root).
 
 ## Why Specs Exist
 
@@ -204,7 +204,7 @@ If the user says no, proceed with the spec skill's own guidance in [feature.md](
 3. **One concern per doc.** Product specs contain zero code. Tech specs contain zero UX opinions. Design-system docs may cross the line — they're the only exception.
 4. **Bump `updated:`.** Change the `updated:` date every time you edit a spec.
 5. **Keep cross-references alive.** Link parent ↔ child both ways. List children in entrypoint frontmatter.
-6. **Validate after changes.** Run `bash .agents/skills/spec/scripts/validate.sh` when the skill is vendored, or the equivalent global install path.
+6. **Validate after changes.** Run `scripts/validate.sh` from your project root.
 7. **Feature specs are branch-scoped.** Don't write them as if they're permanent. Cross-cutting decisions merge to root; the feature folder is archived transiently then deleted before the branch merges (see below). No backlog in any spec — work-ready items only; long-term ideas live in an external tracker.
 
 ## Wrapped-up features
@@ -406,4 +406,4 @@ Paths are under [reference/templates/](reference/templates/) (copy into your pro
 
 ### Validation
 
-`bash .agents/skills/spec/scripts/validate.sh` when the skill is vendored in the repo, or `bash ~/.agents/skills/spec/scripts/validate.sh` when installed globally — checks frontmatter, naming, internal links, orphaned children, and feature-folder consistency under `.spec/`.
+`scripts/validate.sh` (run from your project root) — checks frontmatter, naming, internal links, orphaned children, and feature-folder consistency under `.spec/`.

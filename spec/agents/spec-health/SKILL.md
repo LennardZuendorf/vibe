@@ -15,7 +15,7 @@ Structural health assessor. Reads the full `.spec/` tree and produces a prioriti
 
 ## Orders
 
-1. Run `bash .agents/skills/spec/scripts/validate.sh` and capture output — include all WARN/ERROR lines in the report
+1. Run `/spec validate` (the spec skill's validator) and capture output — include all WARN/ERROR lines in the report
 2. Read root `product.md`, `tech.md`, `plan.md`, `lessons.md`
 3. Check: are all features in `.spec/features/` listed in root `plan.md` Feature Sequence?
 4. Check: do any feature folders have no corresponding plan entry?
