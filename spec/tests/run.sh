@@ -1444,7 +1444,9 @@ test_skill_validator_paths_relative() {
   local f bad=0
   for f in "${docs[@]}"; do
     [[ -f "$f" ]] || continue
-    if grep -qF '.agents/skills/spec/scripts/validate.sh' "$f" || grep -q '~/\.agents/skills/' "$f"; then
+    # The literal ~ is the offender pattern we search for, not a path to expand.
+    # shellcheck disable=SC2088
+    if grep -qF '.agents/skills/spec/scripts/validate.sh' "$f" || grep -qF '~/.agents/skills/' "$f"; then
       bad=$((bad + 1)); echo "        offender: ${f#"$REPO_ROOT"/}"
     fi
   done

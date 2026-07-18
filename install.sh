@@ -139,11 +139,14 @@ install_companion_plugins() {
     fi
     say "add marketplace '$src' and install '$id' (user scope)"
     [[ "$DRY_RUN" -eq 1 ]] && continue
-    claude plugin marketplace add "$src" --scope user >/dev/null 2>&1 \
-      || { err "WARN: could not add marketplace '$src' (offline?); skipping '$name'."; continue; }
-    claude plugin install "$id" --scope user >/dev/null 2>&1 \
-      && note "installed companion '$name'" \
-      || err "WARN: could not install '$id'; skipping."
+    if ! claude plugin marketplace add "$src" --scope user >/dev/null 2>&1; then
+      err "WARN: could not add marketplace '$src' (offline?); skipping '$name'."; continue
+    fi
+    if claude plugin install "$id" --scope user >/dev/null 2>&1; then
+      note "installed companion '$name'"
+    else
+      err "WARN: could not install '$id'; skipping."
+    fi
   done
 }
 
@@ -162,9 +165,11 @@ install_global() {
   if [[ "$DRY_RUN" -eq 0 ]]; then
     claude plugin marketplace add "$SRC" --scope user >/dev/null 2>&1 \
       || err "WARN: could not add the vibe marketplace (already added?); continuing."
-    claude plugin install vibe@vibe --scope user >/dev/null 2>&1 \
-      && note "installed vibe@vibe (user scope)" \
-      || err "WARN: could not install vibe@vibe — run 'claude plugin install vibe@vibe' by hand."
+    if claude plugin install vibe@vibe --scope user >/dev/null 2>&1; then
+      note "installed vibe@vibe (user scope)"
+    else
+      err "WARN: could not install vibe@vibe — run 'claude plugin install vibe@vibe' by hand."
+    fi
   fi
   # Per-repo home for the spec framework: seed .spec/ in the current repo if it is a
   # git repo without one (the plugin carries the skills; each repo still needs its
