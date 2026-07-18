@@ -689,6 +689,27 @@ bash "$INSTALL" "$SB" --uninstall --only spec --yes >/dev/null 2>&1
   || fail "install-tooling/3" "--uninstall --only spec removes just the spec half"
 rm -rf "$SB"
 
+echo "=== install.sh — single-command modes ==="
+# --help renders the new two-mode usage (the help prints the leading comment block).
+assert_contains "install-modes" "--help documents the two modes" "$(bash "$INSTALL" --help 2>&1)" "One command, two modes"
+# Bare run (no target) defaults to the current directory — the single-command path.
+SBc="$(mktmp)"; git -C "$SBc" init -q >/dev/null 2>&1
+bare_out="$( cd "$SBc" && bash "$INSTALL" --dry-run --local 2>&1 )"
+assert_contains "install-modes" "bare run targets the current directory" "$bare_out" "$SBc/.agents/skills"
+rm -rf "$SBc"
+# --global --dry-run writes nothing and describes the per-user plugin plan.
+SBg="$(mktmp)"
+gout="$( cd "$SBg" && bash "$INSTALL" --global --dry-run 2>&1 )"
+assert_contains "install-modes" "--global plans a per-user plugin install" "$gout" "install plugin vibe@vibe at user scope"
+{ [[ ! -e "$SBg/.agents" && ! -e "$SBg/.claude" ]] && pass "install-modes" "--global --dry-run writes nothing"; } || fail "install-modes" "--global dry-run wrote files"
+rm -rf "$SBg"
+# --global without the claude CLI errors clearly (graceful, not a stack trace).
+noclaude="$(mkshim claude)"
+SBn="$(mktmp)"
+nout="$( cd "$SBn" && PATH="$noclaude" bash "$INSTALL" --global --dry-run 2>&1 || true )"
+assert_contains "install-modes" "--global without claude CLI errors clearly" "$nout" "needs the 'claude' CLI"
+rm -rf "$noclaude" "$SBn"
+
 echo "=== vibe-plugin — marketplace + plugin payload ==="
 PLUGIN_JSON="$REPO_ROOT/plugin/.claude-plugin/plugin.json"
 MARKET_JSON="$REPO_ROOT/.claude-plugin/marketplace.json"
