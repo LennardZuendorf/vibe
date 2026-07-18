@@ -67,11 +67,13 @@ tier into the subagent prompt, since subagents get no per-turn orders.
 
 ## Doctrine (SessionStart)
 
-The working-model doctrine, single-sourced here and emitted by
-`scripts/doctrine.sh` for the `SessionStart` hook (+`compact` re-inject) — the same
-block also renders as the `AGENTS.md` managed instructions, so the hook makes that
-block an optional adapter rather than the only carrier. `<feature>` is illustrative;
-`doctrine.sh` appends a live cursor summary.
+The working-model doctrine, single-sourced here for `scripts/doctrine.sh` (the
+only reader — used by the `SessionStart` hook, +`compact` re-inject). The
+`AGENTS.md` managed instructions state the same write-invariant + gate policy in
+longer prose; a discriminating parity test (`flow/tests/run.sh`) fails if the two
+disagree on which states may write what. So the hook makes the `AGENTS.md` block an
+optional adapter rather than the only carrier. `doctrine.sh` appends a live cursor
+summary after this block.
 
 <!-- vibe:doctrine -->
 vibe flow — working model. `.spec/` is durable memory; sessions are ephemeral. On session start, Read `.spec/lessons.md` and `.spec/plan.md`, then the active feature's `.spec/features/<name>/{product,tech,plan}.md`. A missing `state.json` cursor means idle — not an error.

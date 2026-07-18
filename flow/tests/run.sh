@@ -411,10 +411,19 @@ a4="$(bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
 b4="$(PATH="$pnojq4" "$BASH_BIN" "$SCRIPTS/doctrine.sh" 2>/dev/null)"
 assert_eq "flow-legibility/4" "doctrine.sh jq/no-jq byte-identical (idle)" "$b4" "$a4"
 rm -rf "$pnojq4"
-# single-source parity: the AGENTS.md template carries the same invariant lines
+# single-source parity (discriminating): both texts must agree on the gate line AND
+# on the exact set of states that may write lessons.md / root specs. Comparing the
+# write-invariant STATE SETS means adding/removing a writable state in one text
+# without the other fails here — a two-substring check would not.
 tmpl="$(cat "$FLOW/reference/templates/AGENTS.md")"
-assert_contains "flow-legibility/4" "AGENTS.md template shares the gate line (single-source parity)" "$tmpl" "plan → impl, and verify → ship"
+assert_contains "flow-legibility/4" "AGENTS.md template shares the gate line" "$tmpl" "plan → impl, and verify → ship"
 assert_contains "flow-legibility/4" "AGENTS.md template shares the ephemeral framing" "$tmpl" "sessions are ephemeral"
+states_of() { grep -oE '(feature|strategy|setup|quick)\.[a-z]+' | sort -u | paste -sd, -; }
+doc_wi_states="$(bash "$SCRIPTS/doctrine.sh" | grep -v '^Cursor:' | states_of)"
+tmpl_wi="$(awk '/^## Write invariants/{f=1;next} /^## /{f=0} f' "$FLOW/reference/templates/AGENTS.md")"
+tmpl_wi_states="$(printf '%s\n' "$tmpl_wi" | states_of)"
+assert_eq "flow-legibility/4" "doctrine + AGENTS template agree on the writable-state set (discriminating)" "$tmpl_wi_states" "$doc_wi_states"
+assert_contains "flow-legibility/4" "the shared writable-state set is non-empty" "$doc_wi_states" "feature.compound"
 
 echo ""
 echo "=== flow-legibility/6 — drift inference (detect-context.sh infer) ==="
@@ -424,6 +433,9 @@ assert_contains "flow-legibility/6" "idle + src edit infers feature.impl drift" 
 assert_contains "flow-legibility/6" "idle drift names the one-command fix" "$d1" "/flow feature.impl or quick.fix"
 d2="$(bash "$DETECT" infer $'?? src/new.sh' feature.design)"
 assert_contains "flow-legibility/6" "feature.design + src edit infers drift" "$d2" "drift:feature.impl:"
+d2b="$(bash "$DETECT" infer $' M src/x.sh' quick.triage)"
+assert_contains "flow-legibility/6" "quick.triage + src edit routes to quick.fix (not feature.impl)" "$d2b" "drift:quick.fix:"
+assert_not_contains "flow-legibility/6" "quick.triage drift does not mis-route to feature.impl" "$d2b" "feature.impl"
 d3="$(bash "$DETECT" infer $' M src/app.sh' feature.impl)"
 assert_eq "flow-legibility/6" "feature.impl + src edit is consistent (no drift)" "$d3" ""
 d4="$(bash "$DETECT" infer $' M README.md' idle)"
@@ -500,6 +512,11 @@ assert_eq "path-parity" "doctor identical via both paths (explicit root)" "$a" "
 a="$(bash "$REAL_SCRIPTS/doctor.sh" 2>&1)"
 b="$(bash "$ALIAS_SCRIPTS/doctor.sh" 2>&1)"
 assert_eq "path-parity" "doctor identical via both paths (self-located root)" "$a" "$b"
+# doctrine.sh self-locates like orders.sh and is reached through the symlink from
+# the SessionStart hook — both spellings must resolve the same SKILL.md block.
+a="$(bash "$REAL_SCRIPTS/doctrine.sh" 2>&1)"
+b="$(bash "$ALIAS_SCRIPTS/doctrine.sh" 2>&1)"
+assert_eq "path-parity" "doctrine identical via both paths" "$a" "$b"
 
 # regen-active-rules resolves the repo root by marker search, so a sandbox reached
 # via a real flow/ path and via a .agents/skills/vibe symlink yields the same

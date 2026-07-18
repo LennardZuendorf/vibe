@@ -188,13 +188,19 @@ infer() {
     feature.impl|quick.fix|feature.verify|quick.verify|setup.apply) return 0 ;;
   esac
   # A porcelain line whose path starts with src/ or tests/ (after the 2-col status
-  # + space) at a non-building state is likely cursor drift.
+  # + space) at a non-building state is likely cursor drift. Route to the build
+  # state that matches the CURRENT flow — feature states point at feature.impl, the
+  # quick flow points at quick.fix, and ambiguous hubs (idle/strategy/setup) name
+  # both. Warn-only: a wrong guess costs one advisory line.
   if printf '%s\n' "$porcelain" | grep -qE '^.{3}(src|tests?)/'; then
-    if [[ "$state" == "idle" ]]; then
-      printf 'drift:feature.impl:src/tests edits at idle — run /flow feature.impl or quick.fix\n'
-    else
-      printf 'drift:feature.impl:src edits in %s before the impl gate — run /flow feature.impl after plan approval, or set-state.sh idle\n' "$state"
-    fi
+    case "$state" in
+      feature.design|feature.plan)
+        printf 'drift:feature.impl:src edits in %s before the impl gate — advance to feature.impl (after the plan gate) or set-state.sh idle\n' "$state" ;;
+      quick.triage)
+        printf 'drift:quick.fix:src edits in quick.triage — run set-state.sh quick.fix or set-state.sh idle\n' ;;
+      *)
+        printf 'drift:feature.impl:src/tests edits at %s — run /flow feature.impl or quick.fix (or set-state.sh idle)\n' "$state" ;;
+    esac
   fi
   return 0
 }
