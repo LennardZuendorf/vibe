@@ -697,17 +697,26 @@ SBc="$(mktmp)"; git -C "$SBc" init -q >/dev/null 2>&1
 bare_out="$( cd "$SBc" && bash "$INSTALL" --dry-run --local 2>&1 )"
 assert_contains "install-modes" "bare run targets the current directory" "$bare_out" "$SBc/.agents/skills"
 rm -rf "$SBc"
+# Bare run from a SUBDIRECTORY targets the ENCLOSING repo root by marker search, not
+# the subdir (review: install.sh must not naively default to $PWD from a subdir).
+SBsub="$(mktmp)"; git -C "$SBsub" init -q >/dev/null 2>&1; mkdir -p "$SBsub/pkg/src"
+subout="$( cd "$SBsub/pkg/src" && bash "$INSTALL" --dry-run --local 2>&1 )"
+assert_contains "install-modes" "bare run from a subdir targets the repo root" "$subout" "$SBsub/.agents/skills"
+assert_not_contains "install-modes" "bare run from a subdir skips the subdir" "$subout" "pkg/src/.agents"
+rm -rf "$SBsub"
 # --global --dry-run writes nothing and describes the per-user plugin plan.
 SBg="$(mktmp)"
 gout="$( cd "$SBg" && bash "$INSTALL" --global --dry-run 2>&1 )"
 assert_contains "install-modes" "--global plans a per-user plugin install" "$gout" "install plugin vibe@vibe at user scope"
 { [[ ! -e "$SBg/.agents" && ! -e "$SBg/.claude" ]] && pass "install-modes" "--global --dry-run writes nothing"; } || fail "install-modes" "--global dry-run wrote files"
 rm -rf "$SBg"
-# --global without the claude CLI errors clearly (graceful, not a stack trace).
+# A REAL --global without the claude CLI errors clearly (graceful, not a stack
+# trace) — and exits before any mutation. A dry-run prints the plan without the CLI
+# (it touches nothing), so the error path is exercised with a real run here.
 noclaude="$(mkshim claude)"
 SBn="$(mktmp)"
-nout="$( cd "$SBn" && PATH="$noclaude" bash "$INSTALL" --global --dry-run 2>&1 || true )"
-assert_contains "install-modes" "--global without claude CLI errors clearly" "$nout" "needs the 'claude' CLI"
+nout="$( cd "$SBn" && PATH="$noclaude" bash "$INSTALL" --global 2>&1 || true )"
+assert_contains "install-modes" "real --global without claude CLI errors clearly" "$nout" "needs the 'claude' CLI"
 rm -rf "$noclaude" "$SBn"
 # An explicitly-empty target must be REJECTED, never fall through to cwd — else
 # `install.sh "" --uninstall` would strip vibe from the current directory. Regression

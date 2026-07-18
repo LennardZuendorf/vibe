@@ -155,13 +155,20 @@ install_companion_plugins() {
 # hook apply in every vibe-enabled repo. The full STATEFUL flow stays a per-repo
 # --local install. Respects --dry-run and degrades without the claude CLI.
 install_global() {
-  if ! command -v claude >/dev/null 2>&1; then
+  local have_claude=0
+  command -v claude >/dev/null 2>&1 && have_claude=1
+  # A dry-run never touches anything, so it prints the plan even without the CLI. A
+  # REAL global install needs the claude CLI to add the marketplace + install.
+  if [[ "$DRY_RUN" -eq 0 && "$have_claude" -eq 0 ]]; then
     err "ERROR: --global needs the 'claude' CLI on PATH (it installs the vibe plugin per-user)."
     err "       Install Claude Code, or run a per-repo install: ./install.sh <repo> --local"
     exit 1
   fi
   say "add the vibe marketplace ($SRC) at user scope"
   say "install plugin vibe@vibe at user scope (applies across all your repos)"
+  if [[ "$DRY_RUN" -eq 1 && "$have_claude" -eq 0 ]]; then
+    note "(dry-run) note: the 'claude' CLI is not on PATH — a real --global run needs it."
+  fi
   if [[ "$DRY_RUN" -eq 0 ]]; then
     claude plugin marketplace add "$SRC" --scope user >/dev/null 2>&1 \
       || err "WARN: could not add the vibe marketplace (already added?); continuing."
@@ -260,7 +267,16 @@ done
 # interactive run prompts (local vs global); else local. Explicit target or
 # uninstall never prompts (backward-compatible with scripted/CI invocations).
 if [[ "$TARGET_GIVEN" -eq 0 ]]; then
+  # Bare run: install into the ENCLOSING repo, not just the cwd. Search upward for a
+  # .spec/ or .git marker (same rule as the suites' _find_repo_root; `-e` catches a
+  # .git file in worktrees/submodules), so `install.sh` from a subdirectory targets
+  # the repo root. No marker at all (a brand-new project) falls back to the cwd.
   TARGET="$PWD"
+  _d="$PWD"
+  while [[ "$_d" != "/" ]]; do
+    if [[ -d "$_d/.spec" || -e "$_d/.git" ]]; then TARGET="$_d"; break; fi
+    _d="$(dirname "$_d")"
+  done
 fi
 # An explicitly-passed empty/whitespace target (`install.sh ""`) must be rejected
 # outright — never silently fall through to the current directory (that would run a

@@ -85,7 +85,16 @@ JSON
 set -euo pipefail
 cat >/dev/null 2>&1 || true   # consume stdin; unused
 
-ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+ROOT="${CLAUDE_PROJECT_DIR:-}"
+if [[ -z "$ROOT" ]]; then
+  # No CLAUDE_PROJECT_DIR (a manual/non-Claude run): find the enclosing repo root by
+  # upward marker search so detection works from a subdirectory; fall back to cwd.
+  ROOT="$PWD"; d="$PWD"
+  while [[ "$d" != "/" ]]; do
+    if [[ -d "$d/.spec" || -e "$d/.git" ]]; then ROOT="$d"; break; fi
+    d="$(dirname "$d")"
+  done
+fi
 # vibe-enabled = the project carries a .spec/ tree or a flow cursor.
 [[ -d "$ROOT/.spec" || -f "$ROOT/.agents/skills/vibe/state.json" ]] || exit 0
 
