@@ -222,9 +222,9 @@ flow/tests/adapters/run.sh                  # inject order: drift-first vs stabl
 
 | Unit | Status |
 |---|---|
-| flow-legibility/1 | NOT STARTED |
-| flow-legibility/2 | NOT STARTED |
-| flow-legibility/3 | NOT STARTED |
-| flow-legibility/4 | NOT STARTED |
-| flow-legibility/5 | NOT STARTED |
-| flow-legibility/6 | NOT STARTED |
+| flow-legibility/1 | DONE |
+| flow-legibility/2 | DONE |
+| flow-legibility/3 | DONE |
+| flow-legibility/4 | DONE |
+| flow-legibility/5 | DONE |
+| flow-legibility/6 | DONE |

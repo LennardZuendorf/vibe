@@ -262,17 +262,19 @@ every turn rather than only when the agent remembers:
 | Inject | `UserPromptSubmit` | Pull the current state's orders from its linked `vibe` phase and inject them every turn (D12). |
 | Guard | `PreToolUse` (`Edit\|Write\|NotebookEdit`) | Hard-block the three invariants, warn elsewhere, via `detect-context.sh decide`. |
 | Gate | `Stop` | Warn-first exit-predicate checks (stuck phase, impl-without-tests, forgotten `set-state.sh`). |
-| Doctrine *(rework, planned)* | `SessionStart` (+ `compact` matcher) | Inject the working model, cursor summary, and "you drive the flow" contract once per session; makes the AGENTS.md block optional. |
+| Doctrine | `SessionStart` (+ `compact` matcher) | Deliver the working-model doctrine (session-start reads, write invariants, two gates, "you drive the flow" contract) + cursor summary each session; re-inject on `compact`. Single-sourced from the `<!-- vibe:doctrine -->` block via `doctrine.sh` — shared with the AGENTS.md template, making that block optional. |
 | Redirect *(rework, planned)* | `PostToolUse` (`Skill`) | On delegate-skill load, inject the artifact redirect (`redirects.json`, `{feature}` interpolated) so superpowers keeps its method but writes into `.spec/**`. |
 
-**2026-07-18 rework direction** (see `docs/brainstorms/2026-07-17-vibe-rework.md`):
-orders become self-carrying (imperative, transition command included every turn);
-nudges move drift warnings to the front of the next inject; the machine gains
-loop edges (design↔research, `strategy.spec→brainstorm`, `plan→design`); plan
-format in `.spec/features/<f>/plan.md` becomes superpowers-native (redirected,
-not reformatted); distribution adds a per-user plugin + one-shot `stack`
-installer; delegation contracts pin subagent model tiers (mechanical→sonnet,
-review/architecture→opus).
+**2026-07-18 rework** (see `docs/brainstorms/2026-07-17-vibe-rework.md`).
+**Delivered by flow-legibility:** orders are self-carrying (imperative, the
+transition command included every turn); the `SessionStart` doctrine hook above;
+the machine's loop edges (design↔research, `strategy.spec→brainstorm`,
+`plan→design`); drift-first nudges (drift warnings surface as the first inject
+line); and model-tier pins in every delegation contract (mechanical→sonnet,
+review/architecture→opus). **Still forward-looking:** the `PostToolUse`/`Skill`
+redirect hook + superpowers-native plan format (delegation-redirect); the
+header-keyed spec-delta promotion engine (spec-delta); a per-user plugin
+(vibe-plugin) and one-shot `stack` installer (stack-installer).
 
 Each hook is a thin shell over `.agents/skills/vibe/scripts/`; the allow/warn/block
 policy lives once in `detect-context.sh` and is never duplicated. Hooks are

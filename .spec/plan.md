@@ -70,7 +70,7 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 7 | [install-tooling](features/install-tooling/plan.md) | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `flow/tests/adapters/run.sh` + `flow/tests/run.sh` | DONE | monorepo-split DONE |
 | 8 | [release-docs](features/release-docs/plan.md) | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | DONE | install-tooling DONE |
 | 9 | [flow-mvp](archive/flow-mvp/plan.md) | precedence + contract blocks, hybrid plan grammar, auto-advance + two gates, a quick-flow compound state, evidence-receipt verify tooth, output-density demoted to frozen vocabulary | `flow/tests/run.sh` (hermetic sandbox, machine⊆prose, gate↔orders, evidence-gate block/pass) | DONE | — |
-| 10 | flow-legibility | self-carrying orders (transition command in every inject), SessionStart doctrine hook (+compact re-inject), loop edges (design↔research, spec→brainstorm, plan→design), drift-first nudges, model-tier pins in delegation contracts | `flow/tests/run.sh` | NOT STARTED | — |
+| 10 | flow-legibility | self-carrying orders (transition command in every inject), SessionStart doctrine hook (+compact re-inject), loop edges (design↔research, spec→brainstorm, plan→design), drift-first nudges, model-tier pins in delegation contracts | `flow/tests/run.sh` | DONE | — |
 | 11 | delegation-redirect | `PostToolUse`/`Skill` redirect hook + `redirects.json` data map (per-repo overridable); plan format goes superpowers-native in `.spec/features/<f>/plan.md`; SDD ledger accepted as verify evidence | `flow/tests/adapters/run.sh` | NOT STARTED | flow-legibility DONE |
 | 12 | spec-delta | header-keyed ADDED/MODIFIED/REMOVED promotion engine (supersedes EOF-append `promote.sh`), implement documented `requirements:`/`units:` validators, unify R-ID shape, GWT structure + `updated:` freshness + backlink checks (warn-first), coherent `update` route | `spec/tests/run.sh` | NOT STARTED | — |
 | 13 | vibe-plugin | per-user Claude Code plugin (skills + hooks + `/flow`), repo self-detection in hooks, `install.sh --local` team-repo mode (settings.local.json + CLAUDE.local.md), doctor instruction-coverage check | `flow/tests/adapters/run.sh` | NOT STARTED | flow-legibility DONE |
@@ -84,10 +84,13 @@ Theme: vibe keeps the strategic/product spec layer and the enforcement pattern
 v6 runs brainstorm/plan/execution in its native format, redirected into
 `.spec/**`; instructions become injection-first so team repos need no AGENTS.md
 control; distribution collapses to a per-user plugin + one-shot stack installer.
-Sequence rows 10–14 above; each feature gets its own `.spec/features/<name>/`
-spec at `feature.design` time. Still deferred from earlier arcs: earn-the-teeth
-promotions beyond the verify tooth, `vibe-flow/4` `feature.deepen`, multi-lens
-review, `/spec research` wiring, and the manual gh repo metadata upload.
+flow-legibility (row 10) is **delivered** — the injection-first legibility layer
+now ships. The remaining rework sequence is delegation-redirect, spec-delta,
+vibe-plugin, and stack-installer (rows 11–14); each gets its own
+`.spec/features/<name>/` spec at `feature.design` time. Still deferred from earlier
+arcs: earn-the-teeth promotions beyond the verify tooth, `vibe-flow/4`
+`feature.deepen`, multi-lens review, `/spec research` wiring, and the manual gh repo
+metadata upload.
 
 ---
 
@@ -215,3 +218,17 @@ Cleansed notes for shipped work — detail lives in live surfaces, not this plan
   gate↔orders, and evidence-gate block/pass assertions. Its `.spec/` memory said
   NOT STARTED at merge time — the missing compound the 2026-07-09 pass repaired,
   now guarded by `check-drift.sh`. Truth = `flow/` + `flow/tests/run.sh`.
+- **flow-legibility — DONE (2026-07-18).** First 2026-07 rework feature; six units
+  making the flow self-explaining without new hard rails: self-carrying imperative
+  orders (every inject names its `set-state.sh <next>` / `/flow <next> confirm`
+  transition), a `SessionStart` doctrine hook (+`compact` re-inject) single-sourced
+  from a `<!-- vibe:doctrine -->` block via `doctrine.sh` — making the AGENTS.md block
+  optional; the machine's loop edges (design↔research, `strategy.spec→brainstorm`,
+  `plan→design`) with `research.md` a first-class `feature.design` write; drift-first
+  nudges (`detect-context.sh infer` surfaces a one-command correction as the first
+  inject line); and model-tier pins in every delegation contract (mechanical→sonnet,
+  review/architecture→opus). Two review rounds applied — the second caught a
+  prose↔prose single-source test that permitted rule-reassignment drift and re-pinned
+  it to `detect-context.sh decide` (see lessons). Warn-first and jq-optional
+  throughout. Truth = `flow/` + tests (flow 217 / adapters 126). Unblocks
+  delegation-redirect and vibe-plugin.
