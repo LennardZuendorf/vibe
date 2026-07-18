@@ -113,6 +113,7 @@ fi
 
 # Claude adapter wiring: hook scripts present + activated in settings.json (issue #12).
 _hook_scripts=(
+  session-start-doctrine.sh
   user-prompt-submit-inject.sh
   pre-tool-use-guard.sh
   stop-gate.sh
@@ -133,7 +134,7 @@ if [[ -f "$SETTINGS" ]]; then
     grep -qF "$_hs" "$SETTINGS" || _unwired+=("$_hs")
   done
   if [[ ${#_unwired[@]} -eq 0 ]]; then
-    ok adapter.activation "all three hooks wired in .claude/settings.json"
+    ok adapter.activation "all ${#_hook_scripts[@]} vibe hooks wired in .claude/settings.json"
   else
     warn adapter.activation "hooks present but NOT wired in .claude/settings.json (issue #12 gap: ${_unwired[*]}) — re-run install.sh"
   fi
@@ -143,6 +144,23 @@ else
   else
     warn adapter.activation ".claude/settings.json absent and hook scripts missing — re-run install.sh"
   fi
+fi
+
+# instruction coverage (flow-legibility/5): the working-model doctrine reaches the
+# agent via the <!-- vibe:doctrine --> block (rendered into AGENTS.md / emitted by
+# the SessionStart hook) OR a wired SessionStart hook. Warn only when neither.
+_doctrine_block=0
+grep -qF '<!-- vibe:doctrine -->' "$VIBE_SKILL/SKILL.md" 2>/dev/null && _doctrine_block=1
+_sessionstart_wired=0
+[[ -f "$SETTINGS" ]] && grep -qF 'session-start-doctrine.sh' "$SETTINGS" 2>/dev/null && _sessionstart_wired=1
+if [[ "$_doctrine_block" -eq 1 && "$_sessionstart_wired" -eq 1 ]]; then
+  ok instruction.coverage "doctrine block present and SessionStart hook wired"
+elif [[ "$_doctrine_block" -eq 1 ]]; then
+  ok instruction.coverage "doctrine block present (SessionStart hook not wired — AGENTS.md/hook can still carry it)"
+elif [[ "$_sessionstart_wired" -eq 1 ]]; then
+  ok instruction.coverage "SessionStart doctrine hook wired"
+else
+  warn instruction.coverage "no doctrine coverage — neither the <!-- vibe:doctrine --> block nor a wired SessionStart hook; run install.sh / setup.apply"
 fi
 
 # external dependency manifest + per-dep presence.
