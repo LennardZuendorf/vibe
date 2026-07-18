@@ -84,13 +84,16 @@ under the plugin root via `${CLAUDE_PLUGIN_ROOT}`.
 - Repo is its own marketplace: `.claude-plugin/marketplace.json` +
   `.claude-plugin/plugin.json` at root → `claude plugin marketplace add
   LennardZuendorf/vibe && claude plugin install vibe@vibe`.
-- `build-plugin.sh` assembles bundled `skills/{spec,vibe}` from the canonical
-  `spec/` + `flow/` (tests/contributor-docs stripped) so there is a single source
-  of truth and no committed drift. (Committed vs build-time-only assembled tree:
-  decided during planning; default is a committed `plugin/` tree refreshed by the
-  build script and drift-checked in CI.)
-- `plugin.json`: `"skills": "./skills/"`, `"commands": ["./commands/flow.md"]`,
-  `"hooks": "./hooks/hooks.json"`. Hook commands use `${CLAUDE_PLUGIN_ROOT}`.
+- `build-plugin.sh` generates the manifests + hook and **symlinks** `skills/spec ->
+  ../../spec`, `skills/vibe -> ../../flow`. `claude plugin install` dereferences the
+  symlinks into the per-user cache as real dirs (verified live: `Skills (2)`), so the
+  repo commits two symlinks instead of ~6.7k duplicated lines and nothing can drift.
+  A `commands/` dir is what mis-scans as a phantom skill — the plugin ships none.
+  `find` does not descend symlinks, so tests/ and gitignored runtime state are never
+  counted as payload. (Cross-platform note: relies on git symlink support, which the
+  repo already assumes via its `.agents/skills` symlinks.)
+- `plugin.json`: `"skills": "./skills/"` only — NO `commands` (mis-scans) and NO
+  `hooks` field (`hooks/hooks.json` auto-loads). Hook command uses `${CLAUDE_PLUGIN_ROOT}`.
 - Hooks **self-detect**: no `.spec/` and no `.agents/skills/vibe/state.json`
   (and no machine) → fast `exit 0`, so they are silent in non-vibe repos and do
   not double-fire alongside a project-scoped install.

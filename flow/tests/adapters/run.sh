@@ -726,11 +726,16 @@ if command -v jq >/dev/null 2>&1; then
 else
   { [[ -f "$PLUGIN_JSON" && -f "$MARKET_JSON" ]] && pass "vibe-plugin" "manifests present (no jq)"; } || fail "vibe-plugin" "manifests missing"
 fi
-# Both skills bundled as REAL dirs — symlinked skill dirs mis-scan (a phantom extra
-# skill); real copies discover cleanly (verified live: Skills (2) spec, vibe).
-{ [[ -f "$REPO_ROOT/plugin/skills/spec/SKILL.md" && -f "$REPO_ROOT/plugin/skills/vibe/SKILL.md" ]] \
-  && pass "vibe-plugin" "spec + vibe skills bundled as real dirs"; } || fail "vibe-plugin" "skills not bundled"
-# No per-project runtime state may ship in the plugin (cursor, receipts, warnings, tests).
+# Both skills resolve to SKILL.md through symlinks to the canonical spec/ + flow/
+# trees (zero duplication; `claude plugin install` dereferences them into real cache
+# dirs — verified live: Skills (2) spec, vibe). A commands/ dir is what mis-scans as
+# a phantom skill, so the plugin ships none.
+{ [[ -L "$REPO_ROOT/plugin/skills/spec" && -L "$REPO_ROOT/plugin/skills/vibe" \
+     && -f "$REPO_ROOT/plugin/skills/spec/SKILL.md" && -f "$REPO_ROOT/plugin/skills/vibe/SKILL.md" ]] \
+  && pass "vibe-plugin" "spec + vibe skills are symlinks resolving to SKILL.md"; } || fail "vibe-plugin" "skills not symlinked/resolvable"
+# No per-project runtime state may ship in the plugin. `find` does not descend the
+# skill symlinks, so tests/ and gitignored runtime state under spec/ + flow/ are not
+# counted here (a clean marketplace fetch has no runtime state committed anyway).
 strays="$(find "$REPO_ROOT/plugin" \( -name state.json -o -name warnings.log -o -name '*.verify' -o -name evidence -o -name tests \) 2>/dev/null | wc -l | tr -d ' ')"
 assert_eq "vibe-plugin" "plugin payload carries no runtime state" "$strays" "0"
 # Drift guard: the committed tree must equal a fresh build from spec/ + flow/, so a
