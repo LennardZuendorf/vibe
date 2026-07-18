@@ -25,49 +25,70 @@ Everything is bash, Markdown, and JSON — no runtime, no build step. The repo
 builds itself with its own harness (it is self-hosting), so what you install is
 exactly what is dogfooded here.
 
-## Which half do you want?
-
-| You want… | Install | Needs Claude Code? |
-|---|---|---|
-| **Durable, validated planning docs** for a project (any agent, or solo) | `./install.sh <repo> --only spec` | No |
-| **The full workflow harness** — flow state machine, per-turn routing, hooks | `./install.sh <repo>` (both halves) | Yes, for the hooks |
-| **Just the flow engine** without the spec skill | `./install.sh <repo> --only flow` | Yes |
-
-New here? Read the first two screens and you will know which command to run.
-
 ## Install
 
-**Prerequisites:** `bash` and [`jq`](https://jqlang.github.io/jq/) (the scripts
-degrade gracefully without `jq`, but it is recommended). `git` for the target repo.
+**Prerequisites:** `bash` and [`jq`](https://jqlang.github.io/jq/) (scripts degrade
+gracefully without `jq`, but it is recommended). `git` for the target repo. The
+`claude` CLI for the per-user plugin (`--global`).
+
+### One command
 
 ```bash
-git clone https://github.com/LennardZuendorf/vibe.git
-cd vibe
-
-# Full install into your project (spec framework + flow + Claude adapter):
-./install.sh /path/to/your/repo
-
-# Preview first — prints the plan, writes nothing:
-./install.sh /path/to/your/repo --dry-run
-
-# Spec framework only (no flow, no hooks):
-./install.sh /path/to/your/repo --only spec
-
-# Also symlink CLAUDE.md -> AGENTS.md (opt-in, never clobbers a real file):
-./install.sh /path/to/your/repo --adapters claude
+git clone https://github.com/LennardZuendorf/vibe.git && cd vibe
+./install.sh
 ```
 
-A full install **copies** the platform-neutral core into `<repo>/.agents/skills/`,
-**merges** `AGENTS.md` inside managed markers (your prose is never touched),
-seeds and gitignores the flow cursor, and writes the Claude hook wiring into
-`.claude/settings.json`. Re-running is idempotent and preserves a live flow cursor.
-(`--only spec` copies just the spec skill — no `AGENTS.md` merge or cursor.)
+Run it from inside the repo you want vibe in (or pass a target). With no arguments
+on a terminal it asks which mode you want:
 
-**Claude Code hooks** (full / flow install): `install.sh` writes `.claude/settings.json`
-with four auto-wired hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `Stop`) and
-copies the hook scripts into `.claude/hooks/`. The spec + flow skills work as plain project
-files immediately; the flow hooks activate as soon as the settings.json wiring is in place.
-`/flow` is a native project command — no plugin registration required.
+| Mode | Command | What you get |
+|---|---|---|
+| **local** (default) | `./install.sh <repo>` | Full vibe **into that repo**: the spec + vibe skills, the `/flow` command, and the four Claude Code hooks wired via `.claude/settings.json`. Self-contained; teammates get it through git. |
+| **global** | `./install.sh --global` | The **per-user plugin** (`vibe@vibe` at user scope): the spec + vibe skills and the working-model doctrine hook apply in **every** vibe repo. Needs the `claude` CLI. |
+
+The full **stateful** flow (cursor writes, `/flow`, the write-guard and Stop hooks)
+is delivered by a **local** install; the plugin carries the portable, stateless
+surface (skills + doctrine) everywhere.
+
+```bash
+./install.sh <repo>              # local: full vibe into <repo>
+./install.sh --global            # per-user plugin (across all your repos)
+./install.sh --with-plugins      # also install companion plugins (superpowers, …)
+./install.sh <repo> --dry-run    # preview; writes nothing
+./install.sh <repo> --only spec  # spec framework only (any agent, or none — no Claude needed)
+./install.sh <repo> --only flow  # flow engine only (no spec skill)
+./install.sh <repo> --adapters claude   # symlink CLAUDE.md -> AGENTS.md (opt-in, never clobbers)
+```
+
+### As a Claude Code plugin
+
+The repo **is** its own marketplace, so you can install the per-user plugin directly:
+
+```bash
+claude plugin marketplace add LennardZuendorf/vibe
+claude plugin install vibe@vibe
+```
+
+That is exactly what `./install.sh --global` runs for you. `./build-plugin.sh`
+rebuilds the plugin payload from the canonical `spec/` + `flow/` trees, and a drift
+check in the test suite keeps the committed plugin in sync.
+
+### What a local install does
+
+It **copies** the platform-neutral core into `<repo>/.agents/skills/`, **merges**
+`AGENTS.md` inside managed markers (your prose is never touched), seeds and
+gitignores the flow cursor, and writes the Claude hook wiring into
+`.claude/settings.json` — four hooks (`SessionStart`, `UserPromptSubmit`,
+`PreToolUse`, `Stop`). Re-running is idempotent and preserves a live flow cursor.
+The **local** install needs no plugin registration (`/flow` is a native project
+command); the **plugin** above is the separate per-user option.
+
+### Companion tools
+
+`--with-plugins` installs a small companion set via the `claude` CLI at user scope —
+currently **superpowers**, with a **feature-dev** slot ready to fill in. It degrades
+gracefully when the CLI is absent. "caveman" is **not** a plugin: vibe injects a
+one-line *caveman style* brevity note into the working-model doctrine every session.
 
 **Uninstall** removes only what vibe installed and keeps your content
 (`.spec/**`, your `AGENTS.md` prose, and the flow cursor unless `--yes`):
