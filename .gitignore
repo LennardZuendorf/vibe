@@ -1,5 +1,7 @@
 .compound-engineering/*.local.yaml
 .claude/settings.local.json
+# Transient subagent worktrees (git-registered isolation copies, auto-cleaned)
+.claude/worktrees/
 .DS_Store
 
 # Mutable flow cursor (OPEN-1): version the static state-machine.json, not the
