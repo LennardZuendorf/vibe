@@ -1,0 +1,45 @@
+# strategy — direction loop
+
+The strategy flow shapes project direction. It reads lessons, brainstorms, and
+writes the **root** `.spec/` docs. It never writes source code.
+
+States: `strategy.brainstorm → strategy.spec → idle`, with an iteration back-edge
+`strategy.spec → strategy.brainstorm` to re-open direction without aborting to idle.
+
+## Procedure
+
+1. **Locate.** Read `.agents/skills/vibe/state.json`. If not already in a `strategy.*`
+   state, transition in: `bash .agents/skills/vibe/scripts/set-state.sh strategy.brainstorm`.
+2. **Read lessons first.** On entering `strategy.brainstorm`, read
+   `.spec/lessons.md` so past mistakes shape direction (retrieval, not just
+   recording).
+3. **Brainstorm.**
+
+   > **Delegate — superpowers:brainstorming**
+   > - announce: "delegating to `superpowers:brainstorming` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - inject: this state's scope — its DIALOGUE phases only (direction-shaping questions)
+   > - redirect: nothing written here; the direction artifact lands in the NEXT state (`strategy.spec` root docs)
+   > - skip: its terminal design-doc write (`docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`), its self-commit, its writing-plans handoff
+
+   Scratch only — no spec writes yet. When direction is clear, advance to
+   `strategy.spec` and continue.
+4. **Spec.** In `strategy.spec`, delegate to the `spec` skill. Write **only** the
+   root docs: `.spec/product.md`, `.spec/tech.md`, `.spec/design.md`,
+   `.spec/plan.md`. Inject those exact paths. Do not touch `lessons.md` or source.
+   Validate with `/spec validate`.
+5. **Lesson (conditional).** Most strategy runs surface no durable lesson. If one
+   did, before going idle append a tagged entry to `.spec/lessons.md` and run
+   `bash .agents/skills/vibe/scripts/regen-active-rules.sh` to refresh the digest,
+   then `bash .agents/skills/vibe/scripts/set-state.sh idle`. Otherwise go straight
+   to `idle`. Trust the agent to pick — this is "trust the agent" applied to
+   control flow.
+
+## Rules
+
+- Output density follows the machine's `style` note (see [SKILL.md](SKILL.md)
+  § Style): no filler or hedging.
+- At a non-gated edge, advance immediately: `set-state.sh <next>`, announce in
+  one line, continue. Stop and ask only at a `gates` edge (see state-machine.json);
+  the strategy flow has none.
+- Keep receipts short: state, files written, validation result, next transition.
+- Security warnings and irreversible actions stay in normal prose.

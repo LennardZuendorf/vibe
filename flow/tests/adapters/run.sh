@@ -689,6 +689,37 @@ bash "$INSTALL" "$SB" --uninstall --only spec --yes >/dev/null 2>&1
   || fail "install-tooling/3" "--uninstall --only spec removes just the spec half"
 rm -rf "$SB"
 
+echo "=== vibe-plugin — marketplace + plugin payload ==="
+PLUGIN_JSON="$REPO_ROOT/plugin/.claude-plugin/plugin.json"
+MARKET_JSON="$REPO_ROOT/.claude-plugin/marketplace.json"
+BUILD_PLUGIN="$REPO_ROOT/build-plugin.sh"
+if command -v jq >/dev/null 2>&1; then
+  jq -e . "$PLUGIN_JSON" >/dev/null 2>&1 && pass "vibe-plugin" "plugin.json is valid JSON" || fail "vibe-plugin" "plugin.json invalid/missing"
+  jq -e . "$MARKET_JSON" >/dev/null 2>&1 && pass "vibe-plugin" "marketplace.json is valid JSON" || fail "vibe-plugin" "marketplace.json invalid/missing"
+  # plugin.json MUST NOT declare `hooks` (hooks/hooks.json auto-loads; declaring it
+  # too double-loads and fails plugin load) nor `commands` (/flow needs the per-repo
+  # cursor writer the plugin does not carry). Both verified live against the CLI.
+  assert_eq "vibe-plugin" "plugin.json declares no hooks field (auto-loaded)" "$(jq -r 'has("hooks")' "$PLUGIN_JSON")" "false"
+  assert_eq "vibe-plugin" "plugin.json declares no commands field" "$(jq -r 'has("commands")' "$PLUGIN_JSON")" "false"
+  assert_eq "vibe-plugin" "plugin.json bundles ./skills/" "$(jq -r '.skills' "$PLUGIN_JSON")" "./skills/"
+else
+  { [[ -f "$PLUGIN_JSON" && -f "$MARKET_JSON" ]] && pass "vibe-plugin" "manifests present (no jq)"; } || fail "vibe-plugin" "manifests missing"
+fi
+# Both skills bundled as REAL dirs — symlinked skill dirs mis-scan (a phantom extra
+# skill); real copies discover cleanly (verified live: Skills (2) spec, vibe).
+{ [[ -f "$REPO_ROOT/plugin/skills/spec/SKILL.md" && -f "$REPO_ROOT/plugin/skills/vibe/SKILL.md" ]] \
+  && pass "vibe-plugin" "spec + vibe skills bundled as real dirs"; } || fail "vibe-plugin" "skills not bundled"
+# No per-project runtime state may ship in the plugin (cursor, receipts, warnings, tests).
+strays="$(find "$REPO_ROOT/plugin" \( -name state.json -o -name warnings.log -o -name '*.verify' -o -name evidence -o -name tests \) 2>/dev/null | wc -l | tr -d ' ')"
+assert_eq "vibe-plugin" "plugin payload carries no runtime state" "$strays" "0"
+# Drift guard: the committed tree must equal a fresh build from spec/ + flow/, so a
+# skill edit without a rebuild cannot silently ship a stale plugin.
+if [[ -f "$BUILD_PLUGIN" ]] && bash "$BUILD_PLUGIN" --check >/dev/null 2>&1; then
+  pass "vibe-plugin" "committed plugin/ matches a fresh build (no drift)"
+else
+  fail "vibe-plugin" "plugin/ is stale — run ./build-plugin.sh and commit"
+fi
+
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

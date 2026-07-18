@@ -424,6 +424,18 @@ a4="$(bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
 b4="$(PATH="$pnojq4" "$BASH_BIN" "$SCRIPTS/doctrine.sh" 2>/dev/null)"
 assert_eq "flow-legibility/4" "doctrine.sh jq/no-jq byte-identical (idle)" "$b4" "$a4"
 rm -rf "$pnojq4"
+# Plugin-mode cursor: when the code lives outside the repo (per-user plugin) the
+# hook sets CLAUDE_PROJECT_DIR; doctrine.sh must read the PROJECT cursor there, not
+# the skill-co-located one. Seed a separate project dir with a distinct cursor and
+# assert the summary reflects IT (discriminating: without the redirect it reads the
+# sandbox cursor). The sandbox STATE is absent here (rm -f above), so a stale read
+# would print idle, not quick.triage.
+projd="$(mktemp -d)"
+mkdir -p "$projd/.agents/skills/vibe"
+printf '{"flow":"quick","phase":"triage","feature":"","updated":"x"}\n' > "$projd/.agents/skills/vibe/state.json"
+docp="$(CLAUDE_PROJECT_DIR="$projd" bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
+assert_contains "install-agnostic-paths" "doctrine reads the project cursor via CLAUDE_PROJECT_DIR" "$docp" "Cursor: quick.triage."
+rm -rf "$projd"
 # single-source parity, tied to the CODE: both prose texts must state the same
 # per-rule writable-state sets that detect-context.sh `decide` actually enforces.
 # Comparing PER-RULE sets against `decide` (not the union of both rules, not

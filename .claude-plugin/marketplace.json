@@ -1,0 +1,8 @@
+{
+  "name": "vibe",
+  "description": "vibe — spec-first workflow harness (spec + vibe skills, working-model doctrine hook).",
+  "owner": { "name": "Lennard Zuendorf", "url": "https://github.com/LennardZuendorf" },
+  "plugins": [
+    { "name": "vibe", "source": "./plugin" }
+  ]
+}
