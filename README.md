@@ -21,15 +21,14 @@ vibe is two things that ship together but stand alone:
   each phase (strategy / feature / quick) to the right skills and subagents,
   injects per-turn "orders", and guards its own write invariants with hooks.
 
-Everything is bash, Markdown, and JSON — no runtime, no build step. The repo
-builds itself with its own harness (it is self-hosting), so what you install is
-exactly what is dogfooded here.
+All bash, Markdown, and JSON — no runtime, no build step. The repo builds itself
+with its own harness, so what you install is exactly what is dogfooded here.
 
 ## Install
 
-**Prerequisites:** `bash` and [`jq`](https://jqlang.github.io/jq/) (scripts degrade
-gracefully without `jq`, but it is recommended). `git` for the target repo. The
-`claude` CLI for the per-user plugin (`--global`).
+**Prerequisites:** `bash`, plus `git` for the target repo.
+[`jq`](https://jqlang.github.io/jq/) is recommended (scripts degrade gracefully
+without it). The `claude` CLI is needed only for the plugin / `--global` install.
 
 ### One command
 
@@ -38,72 +37,70 @@ git clone https://github.com/LennardZuendorf/vibe.git && cd vibe
 ./install.sh
 ```
 
-Run it from inside the repo you want vibe in (or pass a target). With no arguments
-on a terminal it asks which mode you want:
+Run it from inside the repo you want vibe in, or pass a target path. A bare run
+searches upward for the enclosing repo (a `.spec`/`.git` marker) and, on a
+terminal, asks which mode you want:
 
 | Mode | Command | What you get |
 |---|---|---|
-| **local** (default) | `./install.sh <repo>` | Full vibe **into that repo**: the spec + vibe skills, the `/flow` command, and the four Claude Code hooks wired via `.claude/settings.json`. Self-contained; teammates get it through git. |
-| **global** | `./install.sh --global` | The **per-user plugin** (`vibe@vibe` at user scope): the spec + vibe skills and the working-model doctrine hook apply in **every** vibe repo. Needs the `claude` CLI. |
-
-The full **stateful** flow (cursor writes, `/flow`, the write-guard and Stop hooks)
-is delivered by a **local** install; the plugin carries the portable, stateless
-surface (skills + doctrine) everywhere.
+| **local** (default) | `./install.sh <repo>` | Full **stateful** vibe into that repo: the spec + vibe skills, the `/flow` command, and the four Claude Code hooks wired via `.claude/settings.json`. Self-contained — teammates get it through git. |
+| **global** | `./install.sh --global` | The **per-user plugin** (`vibe@vibe`, user scope): only the portable, stateless surface — the spec + vibe skills and the doctrine hook — applied in **every** vibe repo. Needs the `claude` CLI. |
 
 ```bash
 ./install.sh <repo>              # local: full vibe into <repo>
 ./install.sh --global            # per-user plugin (across all your repos)
-./install.sh --with-plugins      # also install companion plugins (superpowers, …)
-./install.sh <repo> --dry-run    # preview; writes nothing
-./install.sh <repo> --only spec  # spec framework only (any agent, or none — no Claude needed)
+./install.sh --with-plugins      # also install companion plugins (superpowers)
+./install.sh <repo> --only spec  # spec framework only (any agent, or none)
 ./install.sh <repo> --only flow  # flow engine only (no spec skill)
 ./install.sh <repo> --adapters claude   # symlink CLAUDE.md -> AGENTS.md (opt-in, never clobbers)
+./install.sh <repo> --dry-run    # preview; writes nothing
 ```
 
 ### As a Claude Code plugin
 
-The repo **is** its own marketplace, so you can install the per-user plugin directly:
+The repo **is** its own marketplace, so you can install the per-user plugin
+directly:
 
 ```bash
 claude plugin marketplace add LennardZuendorf/vibe
 claude plugin install vibe@vibe
 ```
 
-That is exactly what `./install.sh --global` runs for you. `./build-plugin.sh`
-rebuilds the plugin payload from the canonical `spec/` + `flow/` trees, and a drift
-check in the test suite keeps the committed plugin in sync.
+That is exactly what `./install.sh --global` runs for you. The plugin ships the
+spec + vibe skills and a self-detecting `SessionStart` doctrine hook — **not** the
+stateful flow (`/flow`, cursor, guard hooks), which stays a local install.
 
 ### What a local install does
 
-It **copies** the platform-neutral core into `<repo>/.agents/skills/`, **merges**
-`AGENTS.md` inside managed markers (your prose is never touched), seeds and
-gitignores the flow cursor, and writes the Claude hook wiring into
-`.claude/settings.json` — four hooks (`SessionStart`, `UserPromptSubmit`,
-`PreToolUse`, `Stop`). Re-running is idempotent and preserves a live flow cursor.
-The **local** install needs no plugin registration (`/flow` is a native project
-command); the **plugin** above is the separate per-user option.
+Copies the platform-neutral core into `<repo>/.agents/skills/`, merges `AGENTS.md`
+inside managed markers (your prose is never touched), seeds and gitignores the flow
+cursor, and wires the four Claude hooks (`SessionStart`, `UserPromptSubmit`,
+`PreToolUse`, `Stop`) into `.claude/settings.json`. Re-running is idempotent and
+preserves a live cursor. No plugin to register — `/flow` is a native project command.
 
 ### Companion tools
 
-`--with-plugins` installs a small companion set via the `claude` CLI at user scope —
-currently **superpowers**, with a **feature-dev** slot ready to fill in. It degrades
-gracefully when the CLI is absent. "caveman" is **not** a plugin: vibe injects a
-one-line *caveman style* brevity note into the working-model doctrine every session.
+`--with-plugins` installs a companion set via the `claude` CLI at user scope —
+currently **superpowers**, with a **feature-dev** slot ready to fill in. It
+degrades gracefully when the CLI is absent. "caveman" is **not** a plugin: vibe
+injects a one-line *caveman style* brevity note into the doctrine each session.
 
-**Uninstall** removes only what vibe installed and keeps your content
-(`.spec/**`, your `AGENTS.md` prose, and the flow cursor unless `--yes`):
+### Uninstall
+
+Removes only what vibe installed and keeps your content (`.spec/**`, your
+`AGENTS.md` prose, and the flow cursor unless `--yes`):
 
 ```bash
-./install.sh /path/to/your/repo --uninstall            # cursor kept; use --dry-run to preview
-./install.sh /path/to/your/repo --uninstall --yes       # also remove the flow cursor
+./install.sh /path/to/your/repo --uninstall             # cursor kept; --dry-run to preview
+./install.sh /path/to/your/repo --uninstall --yes        # also remove the flow cursor
 ./install.sh /path/to/your/repo --uninstall --only spec  # remove just one half
 ```
 
 ## The spec framework
 
-Every project using vibe gets a `.spec/` tree — the single source of truth for
-what you are building, why, and how. It ships as a bundled skill (`spec`) that
-works standalone or drives the flow's authoring phases.
+Every vibe project gets a `.spec/` tree — the single source of truth for what you
+are building, why, and how. It ships as a bundled skill (`spec`) that works
+standalone or drives the flow's authoring phases.
 
 ```
 .spec/
@@ -116,9 +113,9 @@ works standalone or drives the flow's authoring phases.
     └── research.md   optional     findings from spikes / investigations
 ```
 
-Root files carry no backlog and no archaeology; feature folders are
-branch-scoped — written at design, consumed at impl, merged (cross-cutting parts)
-at compound, then deleted before the branch merges. **Code is truth.**
+Root files carry no backlog and no archaeology; feature folders are branch-scoped —
+written at design, consumed at impl, merged (cross-cutting parts) at compound, then
+deleted before the branch merges. **Code is truth.**
 
 ```bash
 /spec setup            # initialise .spec/ with templates
@@ -161,17 +158,20 @@ flowchart LR
 
 > Simplified view — see [`flow/README.md`](flow/README.md) for the setup states.
 
-The workflow is **one skill** (`vibe`) with a router plus per-phase files
-(`setup`, `strategy`, `feature`, `quick`, `verify`, `compound`). A `SessionStart`
-hook re-injects the working-model doctrine each session (and on `compact`); each
-turn, the `UserPromptSubmit` hook injects the current state's **imperative** orders
-— they name the literal transition command to run when the job is done (resolved
-from the linked skill by `orders.sh`), and prepend a `vibe-drift:` nudge only when
-working-tree activity contradicts the cursor; a `PreToolUse` hook guards the three
-write invariants; a `Stop` hook runs warn-first exit checks and blocks in
-`*.verify` without a fresh evidence receipt. A scope edit is not a state: edit
-within the current state's write surface and stay put — `set-state.sh idle`
-always aborts.
+The workflow is **one skill** (`vibe`): a router plus per-phase files (`setup`,
+`strategy`, `feature`, `quick`, `verify`, `compound`). Four hooks drive it:
+
+- `SessionStart` re-injects the working-model doctrine each session (and on `compact`).
+- `UserPromptSubmit` injects the current state's **imperative** orders — naming the
+  literal transition command to run when the job is done (resolved from the linked
+  skill by `orders.sh`) — and prepends a `vibe-drift:` nudge when working-tree
+  activity contradicts the cursor.
+- `PreToolUse` guards the three write invariants.
+- `Stop` runs warn-first exit checks and blocks in `*.verify` without a fresh
+  evidence receipt.
+
+A scope edit is not a state: edit within the current write surface and stay put —
+`set-state.sh idle` always aborts.
 
 ### Driving the flow with `/flow`
 
@@ -184,17 +184,15 @@ when entering a feature flow:
 /flow idle                        # abort — always legal
 ```
 
-It reads the current cursor, refuses a target that is not in the state's `next`,
-and otherwise calls `set-state.sh` for you — you never hand-edit the cursor. Most
-edges **auto-advance**: the agent transitions and keeps working without asking.
-The flow stops only at a **gated edge**, and a gated edge needs an explicit
-confirm token before `/flow` will cross it. The two gates are
-`feature.plan → feature.impl` (approve the plan units + pick the impl mode) and
-`feature.verify → feature.compound` (approve shipping); the
-`quick.triage → feature.design` escalation also confirms, because it renames the
-work.
+It reads the cursor, refuses a target that is not in the state's `next`, and
+otherwise calls `set-state.sh` for you — you never hand-edit the cursor. Most edges
+**auto-advance**. The flow stops only at a **gated edge**, which needs an explicit
+confirm token before `/flow` will cross it: `feature.plan → feature.impl` (approve
+the plan units + pick the impl mode) and `feature.verify → feature.compound`
+(approve shipping). The `quick.triage → feature.design` escalation also confirms,
+because it renames the work.
 
-### A worked first run — see the loop once
+### A worked first run
 
 A one-line bug, start to finish on the **quick** flow. You type the `/flow`
 command; the inject hook answers with that state's telegraphic orders:
@@ -205,8 +203,7 @@ command; the inject hook answers with that state's telegraphic orders:
 skill=vibe · READ .spec/lessons.md first · defect: delegate superpowers:systematic-debugging (diagnose only, no fix) | non-defect: self-scope, no delegate · escalation to feature.design: announce AND confirm · done → set-state.sh quick.fix
 ```
 
-The orders name the one job and the literal exit command. You reproduce the bug,
-then advance and write the fix + its test:
+Reproduce the bug, then advance and write the fix + its test:
 
 ```text
 > /flow quick.fix
@@ -214,7 +211,7 @@ then advance and write the fix + its test:
 skill=vibe · delegate TDD + receiving-code-review on verify-routed re-entry · WRITE src/** (+ optional .spec/quick/<slug>.md note) · no root spec writes · done → set-state.sh quick.verify
 ```
 
-With the fix in, you verify:
+Then verify:
 
 ```text
 > /flow quick.verify
@@ -224,7 +221,7 @@ skill=vibe · delegate verification-before-completion + code-reviewer · gather 
 
 Now the `Stop` gate has teeth: in `quick.verify` it **refuses to end the turn**
 until a fresh `evidence/quick.md` receipt exists (staleness is git-derived). Write
-the receipt with your evidence, and `set-state.sh idle` closes the loop.
+the receipt, and `set-state.sh idle` closes the loop.
 
 ### What actually enforces what
 
@@ -240,9 +237,9 @@ not block on.
 | everything else | **Warning** | auto-advance nudges, stuck-phase / impl-without-tests smells, per-turn orders — advisory only. Warnings are relayed back and appear at your **next prompt**, not mid-turn |
 
 Everything degrades gracefully: a missing script or an unreadable cursor exits 0
-and never ends the session. Absent `jq` only costs the machine-derived warn nudges —
-the write invariants and the evidence-receipt block still fire (they read the flat
-cursor via sed).
+and never ends the session. Without `jq` you lose only the machine-derived warn
+nudges — the write invariants and the evidence-receipt block still fire (they read
+the flat cursor via sed).
 
 Deep dive: [`flow/README.md`](flow/README.md).
 
