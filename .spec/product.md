@@ -8,7 +8,7 @@ children:
   - features/install-tooling/product.md
   - features/release-docs/product.md
   - archive/flow-mvp/product.md
-updated: 2026-07-09
+updated: 2026-07-18
 ---
 
 # vibe — Product
@@ -82,6 +82,23 @@ At a project level, vibe must:
    (`--only spec|flow`), preview (`--dry-run`), and clean removal
    (`--uninstall`), plus `doctor.sh` health checks and a `deps.json` dependency
    manifest — safe to try and safe to leave.
+10. **Deliver the whole stack in one shot.** A per-user Claude Code plugin
+    carries the vibe skills, hooks, and `/flow` (plugins can bundle `skills/`
+    since mid-2026, superseding the 2026-06-18 retirement rationale at the
+    *distribution* layer); a `stack` installer registers marketplaces, enables
+    the personal plugin set (superpowers, feature-dev, vibe, simplify, caveman
+    prefs) at user level, and seeds `.spec/` + cursor per repo. The in-repo
+    `settings.json` wiring remains for shared installs.
+11. **Instructions are injection-first.** The flow doctrine reaches the agent
+    through hooks — a SessionStart working-model inject (re-injected after
+    compaction) plus per-turn self-carrying orders — so the AGENTS.md managed
+    block becomes an optional adapter and uncontrolled team repos lose nothing
+    (delivered via per-user plugin or gitignored local settings).
+12. **Delegation overrides destinations, never method.** superpowers owns
+    brainstorm/plan/execution method *and format*; vibe redirects the artifacts
+    into `.spec/**` — statically via state orders and mechanically via a
+    skill-redirect hook (`PostToolUse` on skill load, data-driven
+    `redirects.json` map, per-repo overridable).
 
 ---
 

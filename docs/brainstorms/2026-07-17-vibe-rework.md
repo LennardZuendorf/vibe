@@ -178,15 +178,36 @@ per dispatch. Fold into vibe's delegation contracts: every contract block and
 orders line that dispatches subagents names a tier (mechanical/explore →
 sonnet; review/architecture/synthesis → opus).
 
-## Open questions (human gate for strategy.spec)
+## Settled direction (2026-07-18, owner-confirmed)
 
-1. **Build-loop ownership:** thin-orchestrator rework (recommended) or full
-   surrender to superpowers with compound-only mapping?
-2. **Spec engine:** bash delta engine in the spec skill (recommended) or adopt
-   OpenSpec underneath?
-3. **Machine shape:** keep ~13 states + new loop edges, or collapse to three
-   arcs with checklist-orders?
-4. **Distribution:** commit to plugin-first for Claude (separate marketplace
-   repo?) with install.sh for neutral core?
-5. **Rewrite scope:** one rework feature (`vibe-rework`) or three sequenced
-   features (flow-slim, spec-delta, plugin-transfer)?
+The owner restated the goals — strong strategic/product specs; superpowers owns
+brainstorm/plan/execution (the real problem is only its `docs/superpowers/`
+artifact folder); near-automatic flow driven by the root model; practices
+injected into context on uncontrolled repos; one-off stack installer — and
+resolved the open questions:
+
+1. **Build loop:** destinations-only override. superpowers keeps method *and
+   format*; vibe redirects artifacts into `.spec/**`. The hybrid plan grammar
+   is retired as a mandatory format — `.spec/features/<f>/plan.md` holds
+   superpowers-native v6 output; R-trace/unit IDs become optional spec-skill
+   additions. SDD's progress ledger is accepted as verify evidence.
+2. **Spec engine:** bash delta engine in the spec skill (no OpenSpec adoption).
+3. **Machine shape:** the hooks + injection pattern **stays** — the fix is
+   legibility and agency, not demolition. Orders become imperative and
+   self-carrying (the `set-state.sh <next>` duty stated in every inject), a
+   SessionStart doctrine hook provides the comprehension anchor, drift warnings
+   move to the front of the next inject, loop edges get added.
+4. **Redirect hook (owner idea):** a `PostToolUse` hook matching the `Skill`
+   tool injects the artifact redirect at the moment a delegate skill loads —
+   data-driven via `redirects.json` (per-repo overridable, any skill addable,
+   later extendable to subagent dispatches; also carries the model-tier
+   policy). Verify PostToolUse `additionalContext` support at build time;
+   degrade to orders-carried redirects.
+5. **Stack:** superpowers, feature-dev, vibe, simplify, caveman prefs.
+6. **Subagent models:** always pinned — mechanical/explore → sonnet,
+   review/architecture/synthesis → opus.
+
+Recorded in root specs 2026-07-18 (`strategy.spec`): product.md R10–R12,
+tech.md hook table + rework note, plan.md Feature Sequence rows 10–14
+(flow-legibility, delegation-redirect, spec-delta, vibe-plugin,
+stack-installer).
