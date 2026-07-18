@@ -58,6 +58,13 @@ in the machine's `gates`) stop and ask. Via the `/flow` command they apply only
 with an explicit `confirm` token in the same message (e.g. `/flow feature.impl
 confirm`); without it the command stops and asks. `/flow idle` is never gated.
 
+## Model tiers
+
+Subagent dispatches always name a model tier — mechanical/exploration → sonnet;
+review/architecture/synthesis → opus — never an inherited default. Every
+`> **Delegate —**` block that dispatches a subagent (Task) pins the tier; copy the
+tier into the subagent prompt, since subagents get no per-turn orders.
+
 ## Orders (D12)
 
 Machine-extractable per-state orders. The `UserPromptSubmit` inject hook resolves

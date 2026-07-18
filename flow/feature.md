@@ -30,6 +30,7 @@ change.
    > - skip: its terminal write under `docs/superpowers/specs/`, its self-commit, its writing-plans handoff
 
    > **Delegate — code-explorer / code-architect**
+   > - model: code-explorer → sonnet (mechanical/trace); code-architect → opus (architecture) — pin explicitly, never inherit the default
    > - announce: "dispatching `code-explorer` (trace) + `code-architect` (sketch) — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
    > - inject: spec feature.md step 4 (which `tech.md` sections to populate, where merge markers go); text-only. Optionally dispatch 2–3 `code-architect` runs in PARALLEL (feature-dev's own pattern — each commits to ONE approach; compare, pick)
    > - redirect: HOW → `.spec/features/<name>/tech.md` (+ `design.md` at full); the subagents write no files themselves
@@ -84,6 +85,7 @@ change.
    **handover** — dispatch the plan to subagents:
 
    > **Delegate — superpowers:subagent-driven-development**
+   > - model: pin each impl subagent per task — mechanical units → sonnet, architecture-bearing units → opus (SDD mandates explicit choice; never inherit)
    > - announce: "delegating to `superpowers:subagent-driven-development` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
    > - inject: the hybrid `.spec/features/<name>/plan.md`; work on the feature branch from the plan gate (worktree only if offered+accepted); runtime artifacts stay under `.superpowers/**` (gitignored runtime, not memory)
    > - redirect: write `src/**` and `tests/**` only; cite plan unit IDs (`<name>/n`) in commits. COPY these redirect/skip lines into every subagent (Task) prompt — subagents get no per-turn orders

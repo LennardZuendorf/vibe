@@ -34,6 +34,7 @@ Serves two states:
    `code-reviewer` as the reviewer template.
 
    > **Delegate — superpowers:requesting-code-review + code-reviewer**
+   > - model: code-reviewer → opus (review) — pin explicitly, never inherit the default
    > - announce: "delegating review to `superpowers:requesting-code-review` (dispatch) with `code-reviewer` (reviewer template) — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
    > - inject: requesting-code-review's dispatch protocol; `code-reviewer`'s 0–100 confidence rubric; keep only findings at confidence ≥ 80
    > - redirect: findings route to `feature.impl` (feature) / `quick.fix` (quick) — NEVER fixed here; verify writes no `src/**`. COPY these redirect/skip lines into the reviewer (Task) prompt — subagents get no per-turn orders
