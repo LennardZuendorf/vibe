@@ -177,6 +177,10 @@ Most transitions auto-advance. Two edges are **human gates** — stop and get ex
 approval before crossing: plan → impl, and verify → ship. Everything else flows without
 pausing to ask.
 
+**Output: caveman style** — terse and high-signal, no filler or hedging; compress
+receipts and subagent summaries. Never compress security warnings, irreversible-action
+confirmations, or code/paths/commands — those stay full and byte-exact.
+
 ## Write invariants
 
 Policy lives in `detect-context.sh decide` (defaults to `idle` when `state.json` is absent):

@@ -53,6 +53,28 @@ Two carriers, one entry point.
 copy+wire; **global** drives the plugin install via the `claude` CLI, then offers
 the per-repo seed.
 
+### Plugin scope (refined during build)
+
+Empirical testing with the live `claude plugin` CLI surfaced two facts that shape
+the plugin's scope:
+
+1. `hooks/hooks.json` at the plugin root is **auto-loaded** — declaring `hooks` in
+   `plugin.json` double-loads and fails; omit the field.
+2. The flow scripts resolve `state.json` **next to the code** (`$SKILL_DIR/state.json`).
+   In a per-user plugin that is one cursor shared across every repo — wrong. A
+   correct per-repo cursor needs a coordinated resolver refactor across six scripts
+   plus their tests, and its live multi-repo behaviour cannot be verified in this
+   sandbox.
+
+Therefore the plugin carries the **stateless, portable** surface — the `vibe`+`spec`
+skills, the `/flow` command, and a **self-detecting, read-only SessionStart doctrine
+hook** (the "doctrine/instructions in every repo" value the rework wanted). The
+**full stateful flow** (cursor writes, the write-guard, the Stop receipt tooth) stays
+the tested `install.sh --local` path. Per-repo stateful flow *via the plugin* (the
+state-resolver refactor) is a documented follow-on, not claimed as working. The
+doctrine hook reads the project cursor via `$CLAUDE_PROJECT_DIR` (a small, isolated,
+tested change) so it still reports the right state.
+
 ### Plugin packaging
 
 Claude Code plugins now bundle `skills/` directly (the 2026-06-18 "can't bundle
