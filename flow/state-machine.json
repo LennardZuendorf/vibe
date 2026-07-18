@@ -15,7 +15,7 @@
       "delegates": [],
       "reads": [".spec/lessons.md", ".spec/plan.md"],
       "writes": [],
-      "inject": "state=idle · no active flow · run vibe (setup|strategy|feature|quick) · next: setup.detect | strategy.brainstorm | feature.design | quick.triage",
+      "inject": "state=idle · no active flow · pick a flow → run set-state.sh {setup.detect | strategy.brainstorm | feature.design | quick.triage}",
       "next": ["setup.detect", "strategy.brainstorm", "feature.design", "quick.triage"],
       "exit": "user has named the work; agent has chosen a flow and called set-state.sh"
     },

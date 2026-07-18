@@ -365,6 +365,21 @@ while IFS= read -r st; do
 done <<< "$(jq -r '.states | keys[]' "$MACHINE")"
 assert_eq "flow-mvp/7" "every orders block is within the 400-byte budget" "$over_budget" ""
 
+# flow-legibility/2 — self-carrying imperative orders: every block names its own
+# transition command (not just a `next:` label). Non-gated states carry
+# `set-state.sh <next>`; gated-source states carry the `/flow <next> confirm` gate.
+imperative_missing=""
+while IFS= read -r st; do
+  [[ -z "$st" ]] && continue
+  blk="$(bash "$SCRIPTS/orders.sh" "$st")"
+  if printf '%s\n' "$gate_sources" | grep -qxF "$st"; then
+    { [[ "$blk" == *"/flow"* ]] && [[ "$blk" == *"confirm"* ]]; } || imperative_missing="$imperative_missing $st(gate)"
+  else
+    [[ "$blk" == *"set-state.sh"* ]] || imperative_missing="$imperative_missing $st"
+  fi
+done <<< "$(jq -r '.states | keys[]' "$MACHINE")"
+assert_eq "flow-legibility/2" "every orders block states its transition command (set-state.sh, or /flow confirm at a gate)" "$imperative_missing" ""
+
 echo ""
 echo "=== regen-active-rules.sh — digest from lessons ==="
 d="$(mktemp -d)"
