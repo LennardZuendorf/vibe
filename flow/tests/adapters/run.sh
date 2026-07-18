@@ -709,6 +709,14 @@ SBn="$(mktmp)"
 nout="$( cd "$SBn" && PATH="$noclaude" bash "$INSTALL" --global --dry-run 2>&1 || true )"
 assert_contains "install-modes" "--global without claude CLI errors clearly" "$nout" "needs the 'claude' CLI"
 rm -rf "$noclaude" "$SBn"
+# An explicitly-empty target must be REJECTED, never fall through to cwd — else
+# `install.sh "" --uninstall` would strip vibe from the current directory. Regression
+# for a dogfood near-miss (an unset shell var expanded to an empty argument).
+SBe="$(mktmp)"
+eout="$( cd "$SBe" && bash "$INSTALL" "" --uninstall --yes 2>&1; echo "rc=$?" )"
+assert_contains "install-modes" "empty target is rejected outright" "$eout" "empty target"
+assert_not_contains "install-modes" "empty target does not reach uninstall" "$eout" "uninstalling vibe"
+rm -rf "$SBe"
 
 echo "=== vibe-plugin — marketplace + plugin payload ==="
 PLUGIN_JSON="$REPO_ROOT/plugin/.claude-plugin/plugin.json"

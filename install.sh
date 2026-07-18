@@ -262,6 +262,13 @@ done
 if [[ "$TARGET_GIVEN" -eq 0 ]]; then
   TARGET="$PWD"
 fi
+# An explicitly-passed empty/whitespace target (`install.sh ""`) must be rejected
+# outright — never silently fall through to the current directory (that would run a
+# --uninstall against cwd). Do not rely on a later `mkdir -p ""` failing.
+if [[ -z "${TARGET//[[:space:]]/}" ]]; then
+  err "ERROR: empty target. Pass a repo path, or run with NO argument to use the current directory."
+  exit 1
+fi
 if [[ -z "$MODE" ]]; then
   if [[ "$TARGET_GIVEN" -eq 1 || "$UNINSTALL" -eq 1 ]]; then
     MODE=local
