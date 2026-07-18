@@ -28,7 +28,7 @@ ADAPTERS_JSON="$REPO_ROOT/.agents/skills/vibe/reference/adapters.json"
 INSTALL="$REPO_ROOT/install.sh"
 # The vibe hook scripts are wired into a target's .claude/settings.json (issue
 # #12: settings.json is the single firing path; no plugin manifest is shipped).
-VIBE_HOOK_RE='\.claude/hooks/(user-prompt-submit-inject|pre-tool-use-guard|stop-gate)\.sh'
+VIBE_HOOK_RE='\.claude/hooks/(session-start-doctrine|user-prompt-submit-inject|pre-tool-use-guard|stop-gate)\.sh'
 
 PASS=0
 FAIL=0
@@ -174,7 +174,7 @@ SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 SETTINGS="$SB/.claude/settings.json"
 jq -e . "$SETTINGS" >/dev/null 2>&1 && pass "platform-adapters/4" "install writes a valid settings.json" || fail "platform-adapters/4" "settings.json JSON"
 # each event is wired to its script, via a $CLAUDE_PROJECT_DIR-relative command.
-for pair in "UserPromptSubmit:user-prompt-submit-inject.sh" "PreToolUse:pre-tool-use-guard.sh" "Stop:stop-gate.sh"; do
+for pair in "SessionStart:session-start-doctrine.sh" "UserPromptSubmit:user-prompt-submit-inject.sh" "PreToolUse:pre-tool-use-guard.sh" "Stop:stop-gate.sh"; do
   ev="${pair%%:*}"; script="${pair#*:}"
   cmd="$(jq -r --arg e "$ev" '.hooks[$e][]?.hooks[]?.command // empty' "$SETTINGS" 2>/dev/null)"
   assert_contains "platform-adapters/4" "settings.json wires $ev -> $script" "$cmd" "$script"
@@ -196,7 +196,7 @@ assert_eq "platform-adapters/4" "all wired hook scripts exist + executable in th
 # idempotent: a second install leaves exactly one vibe group per event.
 bash "$INSTALL" "$SB" >/dev/null 2>&1
 dupok=1
-for ev in UserPromptSubmit PreToolUse Stop; do
+for ev in SessionStart UserPromptSubmit PreToolUse Stop; do
   n="$(jq --arg e "$ev" --arg m "$VIBE_HOOK_RE" '[.hooks[$e][]? | select([.hooks[]?.command // empty] | any(test($m)))] | length' "$SETTINGS")"
   [[ "$n" == "1" ]] || { dupok=0; echo "        $ev has $n vibe groups (want 1)"; }
 done
@@ -225,12 +225,50 @@ NOJQ="$(mkshim jq)"
 PATH="$NOJQ" "$NOJQ/bash" "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
 stillwired=0; grep -qF 'stop-gate.sh' "$SB/.claude/settings.json" 2>/dev/null && stillwired=1
 hooksok=1
-for h in user-prompt-submit-inject pre-tool-use-guard stop-gate; do
+for h in session-start-doctrine user-prompt-submit-inject pre-tool-use-guard stop-gate; do
   [[ -f "$SB/.claude/hooks/$h.sh" ]] || { hooksok=0; echo "        deleted hook: $h.sh"; }
 done
 assert_eq "platform-adapters/5" "no-jq uninstall leaves settings.json wired" "$stillwired" "1"
-assert_eq "platform-adapters/5" "no-jq uninstall keeps the three hook scripts (no dead refs)" "$hooksok" "1"
+assert_eq "platform-adapters/5" "no-jq uninstall keeps the four hook scripts (no dead refs)" "$hooksok" "1"
 rm -rf "$SB" "$NOJQ"
+
+echo ""
+echo "=== flow-legibility/5 — SessionStart doctrine hook + wiring + doctor coverage ==="
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+# install wires SessionStart to the doctrine hook.
+sscmd="$(jq -r '.hooks.SessionStart[]?.hooks[]?.command // empty' "$SB/.claude/settings.json" 2>/dev/null)"
+assert_contains "flow-legibility/5" "install wires SessionStart -> session-start-doctrine.sh" "$sscmd" "session-start-doctrine.sh"
+# the hook emits the doctrine (durable/ephemeral framing) + a cursor summary.
+ssout="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/session-start-doctrine.sh" </dev/null 2>/dev/null)"
+assert_contains "flow-legibility/5" "SessionStart hook emits the doctrine" "$ssout" "sessions are ephemeral"
+assert_contains "flow-legibility/5" "SessionStart hook emits a cursor summary" "$ssout" "Cursor:"
+# graceful degrade: resolver absent -> exit 0, no output.
+rm -f "$SB/.agents/skills/vibe/scripts/doctrine.sh"
+ss_rc=0; ssdeg="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/session-start-doctrine.sh" </dev/null 2>/dev/null)" || ss_rc=$?
+assert_eq "flow-legibility/5" "SessionStart hook exits 0 when the resolver is absent" "$ss_rc" "0"
+assert_eq "flow-legibility/5" "SessionStart hook emits nothing when the resolver is absent" "$ssdeg" ""
+# doctor reports instruction coverage ok on a fresh install (block + hook wired).
+docout="$(bash "$SB/.agents/skills/vibe/scripts/doctor.sh" "$SB" 2>&1)"
+assert_contains "flow-legibility/5" "doctor reports instruction.coverage ok" "$docout" "ok   instruction.coverage"
+rm -rf "$SB"
+
+echo ""
+echo "=== flow-legibility/6 — drift-first nudge in the inject hook ==="
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+git init -q "$SB" 2>/dev/null && git -C "$SB" config user.email t@t 2>/dev/null && git -C "$SB" config user.name t 2>/dev/null
+rm -f "$SB/.agents/skills/vibe/state.json"      # idle cursor
+mkdir -p "$SB/src"; printf 'x\n' > "$SB/src/app.sh"
+inj="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" </dev/null 2>/dev/null)"
+first="$(printf '%s\n' "$inj" | head -n1)"
+assert_contains "flow-legibility/6" "inject prepends the drift nudge as line 1 (idle + src edit)" "$first" "vibe-drift:"
+assert_contains "flow-legibility/6" "inject still emits the orders after the drift line" "$inj" "state=idle"
+# clean tree -> no drift line; orders stay the first content (byte-stable path)
+rm -f "$SB/src/app.sh"
+inj2="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" </dev/null 2>/dev/null)"
+first2="$(printf '%s\n' "$inj2" | head -n1)"
+assert_not_contains "flow-legibility/6" "no drift line when no src/tests change" "$inj2" "vibe-drift:"
+assert_contains "flow-legibility/6" "orders are the first line when no drift" "$first2" "state=idle"
+rm -rf "$SB"
 
 echo ""
 echo "=== platform-adapters/1,2,3 — hooks against a real install ==="

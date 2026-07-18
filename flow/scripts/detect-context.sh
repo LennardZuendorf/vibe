@@ -5,6 +5,8 @@
 #   detect-context.sh                  # emit a JSON snapshot of the current state
 #   detect-context.sh decide <path>    # allow|warn|block for writing <path> now
 #   detect-context.sh decide <path> <state>   # ... as if in <state> (testing)
+#   detect-context.sh infer [<porcelain>] [<state>]  # drift:<state>:<reason> when
+#                                      working-tree activity contradicts the cursor
 #
 # The decision policy lives HERE, once, so every adapter's hook is a thin shell
 # that calls this and translates the verdict to its own exit-code convention.
@@ -27,6 +29,18 @@ MACHINE="$SKILL_DIR/state-machine.json"
 STATE="$SKILL_DIR/state.json"
 
 have_jq() { command -v jq >/dev/null 2>&1; }
+
+# Locate the repo/install root by upward marker search (never fixed hops) — used
+# only by `infer` to run `git status` from the right place when no porcelain is
+# passed. CLAUDE_PROJECT_DIR wins when the hook sets it.
+find_root() {
+  local d="$1"
+  while [[ -n "$d" && "$d" != "/" ]]; do
+    if [[ -d "$d/.spec" || -e "$d/.git" ]]; then printf '%s\n' "$d"; return 0; fi
+    d="$(dirname "$d")"
+  done
+  return 1
+}
 
 # Resolve the current compound state key from the cursor (default: idle).
 # Without jq, fall back to sed — the cursor is machine-written flat JSON
@@ -154,6 +168,44 @@ decide() {
   echo "allow"
 }
 
+# ── drift inference ──────────────────────────────────────────────────────────
+# infer [<porcelain>] [<state>] — emit `drift:<suggested-state>:<reason>` when
+# working-tree activity contradicts the cursor, else nothing. Read-only and
+# warn-only by construction: a false positive costs one advisory line, never a
+# block. Porcelain omitted (__git__) => read `git status --porcelain` from
+# CLAUDE_PROJECT_DIR (or a marker-located root); a passed porcelain string keeps it
+# hermetic for tests. `state` defaults to the cursor.
+infer() {
+  local porcelain="$1" state="${2:-}"
+  [[ -n "$state" ]] || state="$(current_state)"
+  if [[ "$porcelain" == "__git__" ]]; then
+    local root="${CLAUDE_PROJECT_DIR:-}"
+    [[ -n "$root" ]] || root="$(find_root "$SCRIPT_DIR")" || root="$PWD"
+    porcelain="$(git -C "$root" status --porcelain 2>/dev/null || true)"
+  fi
+  # States that legitimately churn src/tests — activity there is not drift.
+  case "$state" in
+    feature.impl|quick.fix|feature.verify|quick.verify|setup.apply) return 0 ;;
+  esac
+  # A porcelain line whose path starts with src/ or tests/ (after the 2-col status
+  # + space) at a non-building state is likely cursor drift. `tests/` (plural)
+  # matches what `decide` treats as code, so the two agree. The fix is stated as
+  # `set-state.sh <state>` (the writer, legal from any state) — NOT `/flow`, which
+  # enforces edge legality and would reject the hop from idle. Warn-only: a wrong
+  # guess costs one advisory line, and the agent picks the state it is really in.
+  if printf '%s\n' "$porcelain" | grep -qE '^.{3}(src|tests)/'; then
+    case "$state" in
+      feature.design|feature.plan)
+        printf 'drift:feature.impl:src edits in %s — set-state.sh feature.impl to match your work, or set-state.sh idle to stop\n' "$state" ;;
+      quick.triage)
+        printf 'drift:quick.fix:src edits in quick.triage — set-state.sh quick.fix, or set-state.sh idle\n' ;;
+      *)
+        printf 'drift:feature.impl:src/tests edits at %s — set the cursor to match: set-state.sh feature.impl or quick.fix (else set-state.sh idle)\n' "$state" ;;
+    esac
+  fi
+  return 0
+}
+
 case "${1:-}" in
   decide)
     if [[ -z "${2:-}" ]]; then
@@ -162,11 +214,14 @@ case "${1:-}" in
     fi
     decide "$2" "${3:-}"
     ;;
+  infer)
+    if [[ $# -ge 2 ]]; then infer "$2" "${3:-}"; else infer "__git__" ""; fi
+    ;;
   ""|snapshot)
     snapshot
     ;;
   *)
-    echo "usage: detect-context.sh [snapshot | decide <path> [state]]" >&2
+    echo "usage: detect-context.sh [snapshot | decide <path> [state] | infer [porcelain] [state]]" >&2
     exit 1
     ;;
 esac

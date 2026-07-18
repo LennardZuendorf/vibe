@@ -64,9 +64,9 @@ seeds and gitignores the flow cursor, and writes the Claude hook wiring into
 (`--only spec` copies just the spec skill — no `AGENTS.md` merge or cursor.)
 
 **Claude Code hooks** (full / flow install): `install.sh` writes `.claude/settings.json`
-with three auto-wired hooks (`UserPromptSubmit`, `PreToolUse`, `Stop`) and copies the
-hook scripts into `.claude/hooks/`. The spec + flow skills work as plain project files
-immediately; the flow hooks activate as soon as the settings.json wiring is in place.
+with four auto-wired hooks (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `Stop`) and
+copies the hook scripts into `.claude/hooks/`. The spec + flow skills work as plain project
+files immediately; the flow hooks activate as soon as the settings.json wiring is in place.
 `/flow` is a native project command — no plugin registration required.
 
 **Uninstall** removes only what vibe installed and keeps your content
@@ -91,7 +91,8 @@ works standalone or drives the flow's authoring phases.
     ├── product.md    required     what this feature does (requirements + Scope)
     ├── tech.md       required     how it is built (paths, contracts, layout)
     ├── plan.md       recommended  stable <name>/n unit IDs; verification per unit
-    └── design.md     optional     UI/UX or design-system fragment
+    ├── design.md     optional     UI/UX or design-system fragment
+    └── research.md   optional     findings from spikes / investigations
 ```
 
 Root files carry no backlog and no archaeology; feature folders are
@@ -140,9 +141,12 @@ flowchart LR
 > Simplified view — see [`flow/README.md`](flow/README.md) for the setup states.
 
 The workflow is **one skill** (`vibe`) with a router plus per-phase files
-(`setup`, `strategy`, `feature`, `quick`, `verify`, `compound`). Each
-turn, the `UserPromptSubmit` hook injects the current state's orders (resolved
-from the linked skill by `orders.sh` — D12); a `PreToolUse` hook guards the three
+(`setup`, `strategy`, `feature`, `quick`, `verify`, `compound`). A `SessionStart`
+hook re-injects the working-model doctrine each session (and on `compact`); each
+turn, the `UserPromptSubmit` hook injects the current state's **imperative** orders
+— they name the literal transition command to run when the job is done (resolved
+from the linked skill by `orders.sh`), and prepend a `vibe-drift:` nudge only when
+working-tree activity contradicts the cursor; a `PreToolUse` hook guards the three
 write invariants; a `Stop` hook runs warn-first exit checks and blocks in
 `*.verify` without a fresh evidence receipt. A scope edit is not a state: edit
 within the current state's write surface and stay put — `set-state.sh idle`
@@ -168,6 +172,38 @@ confirm token before `/flow` will cross it. The two gates are
 `feature.verify → feature.compound` (approve shipping); the
 `quick.triage → feature.design` escalation also confirms, because it renames the
 work.
+
+### A worked first run — see the loop once
+
+A one-line bug, start to finish on the **quick** flow. You type the `/flow`
+command; the inject hook answers with that state's telegraphic orders:
+
+```text
+> /flow quick.triage
+
+skill=vibe · READ .spec/lessons.md first · defect: delegate superpowers:systematic-debugging (diagnose only, no fix) | non-defect: self-scope, no delegate · escalation to feature.design: announce AND confirm · done → set-state.sh quick.fix
+```
+
+The orders name the one job and the literal exit command. You reproduce the bug,
+then advance and write the fix + its test:
+
+```text
+> /flow quick.fix
+
+skill=vibe · delegate TDD + receiving-code-review on verify-routed re-entry · WRITE src/** (+ optional .spec/quick/<slug>.md note) · no root spec writes · done → set-state.sh quick.verify
+```
+
+With the fix in, you verify:
+
+```text
+> /flow quick.verify
+
+skill=vibe · delegate verification-before-completion + code-reviewer · gather EVIDENCE the fix works and breaks nothing · no root spec writes · ... · findings → set-state.sh quick.fix | else → set-state.sh idle
+```
+
+Now the `Stop` gate has teeth: in `quick.verify` it **refuses to end the turn**
+until a fresh `evidence/quick.md` receipt exists (staleness is git-derived). Write
+the receipt with your evidence, and `set-state.sh idle` closes the loop.
 
 ### What actually enforces what
 
@@ -229,7 +265,7 @@ your-repo/                     # after install
 ├── .agents/skills/
 │   ├── spec/                  # bundled spec framework (real dir)
 │   └── vibe/                  # flow: router, phase files, state machine, scripts
-├── .claude/                   # Claude adapter: /flow command + three hooks + settings.json (flow half)
+├── .claude/                   # Claude adapter: /flow command + four hooks + settings.json (flow half)
 ├── .spec/                     # your durable project memory
 └── AGENTS.md                  # merged instructions (CLAUDE.md may symlink here)
 ```

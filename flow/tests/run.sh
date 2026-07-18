@@ -236,8 +236,17 @@ dead_sc="strategy.$dead_suffix"
 dead_qc="quick.$dead_suffix"
 gone_states="$(jq -r --arg sc "$dead_sc" --arg qc "$dead_qc" '[.states | keys[] | select(. == $sc or . == $qc or . == "amend")] | join(",")' "$MACHINE")"
 assert_eq "simplify/dead-states" "the two per-phase compound states and amend are removed from the machine" "$gone_states" ""
+# flow-legibility/1 — loop edges + research artifact
 ss_next="$(jq -c '.states."strategy.spec".next' "$MACHINE")"
-assert_eq "simplify/dead-states" "strategy.spec.next is exactly [idle]" "$ss_next" '["idle"]'
+assert_eq "flow-legibility/1" "strategy.spec loops back to brainstorm: next is [strategy.brainstorm, idle]" "$ss_next" '["strategy.brainstorm","idle"]'
+ss_no_compound="$(jq -r --arg sc "$dead_sc" '[.states."strategy.spec".next[]] | index($sc) == null' "$MACHINE")"
+assert_eq "simplify/dead-states" "strategy.spec.next carries no dead compound state" "$ss_no_compound" "true"
+fp_design="$(jq -r '[.states."feature.plan".next[]] | index("feature.design") != null' "$MACHINE")"
+assert_eq "flow-legibility/1" "feature.plan loops back to feature.design" "$fp_design" "true"
+fp_impl="$(jq -r '[.states."feature.plan".next[]] | index("feature.impl") != null' "$MACHINE")"
+assert_eq "flow-legibility/1" "feature.plan still routes to feature.impl (gate intact)" "$fp_impl" "true"
+fd_research="$(jq -r '[.states."feature.design".writes[]] | any(test("research\\.md"))' "$MACHINE")"
+assert_eq "flow-legibility/1" "research.md is a first-class feature.design write" "$fd_research" "true"
 qv_ok="$(jq -r --arg qc "$dead_qc" '[.states."quick.verify".next[]] | (index("quick.fix") != null) and (index("idle") != null) and (index($qc) == null)' "$MACHINE")"
 assert_eq "simplify/dead-states" "quick.verify.next is quick.fix + idle, no dead compound state" "$qv_ok" "true"
 # No per-state caveman field survives; a single top-level style note replaces them.
@@ -356,6 +365,127 @@ while IFS= read -r st; do
 done <<< "$(jq -r '.states | keys[]' "$MACHINE")"
 assert_eq "flow-mvp/7" "every orders block is within the 400-byte budget" "$over_budget" ""
 
+# flow-legibility/2 — self-carrying imperative orders: every block names its own
+# transition command (not just a `next:` label). Non-gated states carry
+# `set-state.sh <next>`; gated-source states carry the `/flow <next> confirm` gate.
+imperative_missing=""
+while IFS= read -r st; do
+  [[ -z "$st" ]] && continue
+  blk="$(bash "$SCRIPTS/orders.sh" "$st")"
+  if printf '%s\n' "$gate_sources" | grep -qxF "$st"; then
+    { [[ "$blk" == *"/flow"* ]] && [[ "$blk" == *"confirm"* ]]; } || imperative_missing="$imperative_missing $st(gate)"
+  else
+    [[ "$blk" == *"set-state.sh"* ]] || imperative_missing="$imperative_missing $st"
+  fi
+done <<< "$(jq -r '.states | keys[]' "$MACHINE")"
+assert_eq "flow-legibility/2" "every orders block states its transition command (set-state.sh, or /flow confirm at a gate)" "$imperative_missing" ""
+# Every set-state.sh target named in a block must be a LEGAL next for that state —
+# catches a wrong-target regression (naming a non-successor), not just presence.
+bad_target=""
+while IFS= read -r st; do
+  [[ -z "$st" ]] && continue
+  blk="$(bash "$SCRIPTS/orders.sh" "$st")"
+  nexts="$(jq -r --arg s "$st" '.states[$s].next[]?' "$MACHINE" 2>/dev/null)"
+  while IFS= read -r tgt; do
+    [[ -z "$tgt" ]] && continue
+    printf '%s\n' "$nexts" | grep -qxF "$tgt" || bad_target="$bad_target $st->$tgt"
+  done < <(printf '%s\n' "$blk" | grep -oE 'set-state\.sh [a-z][a-z.]*' | sed 's/set-state\.sh //')
+done <<< "$(jq -r '.states | keys[]' "$MACHINE")"
+assert_eq "flow-legibility/2" "every set-state.sh target in an orders block is a legal next" "$bad_target" ""
+
+echo ""
+echo "=== flow-legibility/3 — model-tier pins in delegation contracts ==="
+feat_body="$(cat "$FLOW/feature.md")"
+verify_body="$(cat "$FLOW/verify.md")"
+skill_body="$(cat "$FLOW/SKILL.md")"
+assert_contains "flow-legibility/3" "code-explorer pinned to sonnet (feature.md)" "$feat_body" "code-explorer → sonnet"
+assert_contains "flow-legibility/3" "code-architect pinned to opus (feature.md)" "$feat_body" "code-architect → opus"
+assert_contains "flow-legibility/3" "code-reviewer pinned to opus (verify.md)" "$verify_body" "code-reviewer → opus"
+assert_contains "flow-legibility/3" "SKILL.md carries the subagent model-tier policy" "$skill_body" "mechanical/exploration → sonnet"
+
+echo ""
+echo "=== flow-legibility/4 — doctrine block + resolver ==="
+rm -f "$STATE"
+doc="$(bash "$SCRIPTS/doctrine.sh")"
+assert_contains "flow-legibility/4" "doctrine names the two human gates" "$doc" "plan → impl, and verify → ship"
+assert_contains "flow-legibility/4" "doctrine carries the durable/ephemeral framing" "$doc" "sessions are ephemeral"
+assert_contains "flow-legibility/4" "doctrine states the session-start reads" "$doc" ".spec/lessons.md"
+assert_contains "flow-legibility/4" "doctrine states the state.json write invariant" "$doc" ".agents/skills/vibe/state.json"
+assert_contains "flow-legibility/4" "doctrine prints a cursor summary (idle)" "$doc" "Cursor: idle."
+# cursor summary reflects the live cursor
+cp "$FLOW/state.example.json" "$STATE"; bash "$SCRIPTS/set-state.sh" feature.impl widget >/dev/null
+doc2="$(bash "$SCRIPTS/doctrine.sh")"
+assert_contains "flow-legibility/4" "doctrine cursor summary reflects feature.impl" "$doc2" "Cursor: feature.impl (feature=widget)."
+rm -f "$STATE"
+# jq/no-jq byte parity (mirrors orders.sh parity)
+pnojq4="$(mktemp -d)"
+for t in dirname sed head cat; do ln -sf "$(command -v "$t")" "$pnojq4/$t"; done
+a4="$(bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
+b4="$(PATH="$pnojq4" "$BASH_BIN" "$SCRIPTS/doctrine.sh" 2>/dev/null)"
+assert_eq "flow-legibility/4" "doctrine.sh jq/no-jq byte-identical (idle)" "$b4" "$a4"
+rm -rf "$pnojq4"
+# single-source parity, tied to the CODE: both prose texts must state the same
+# per-rule writable-state sets that detect-context.sh `decide` actually enforces.
+# Comparing PER-RULE sets against `decide` (not the union of both rules, not
+# prose-vs-prose) catches a rule reassignment (moving a state between the lessons
+# and root rules) and a prose/code drift — the holes a union or two-substring check
+# leaves open.
+tmpl="$(cat "$FLOW/reference/templates/AGENTS.md")"
+assert_contains "flow-legibility/4" "AGENTS.md template shares the gate line" "$tmpl" "plan → impl, and verify → ship"
+assert_contains "flow-legibility/4" "AGENTS.md template shares the ephemeral framing" "$tmpl" "sessions are ephemeral"
+states_of() { grep -oE '(feature|strategy|setup|quick)\.[a-z]+' | sort -u | paste -sd, -; }
+# ground truth: the states for which `decide` returns allow, straight from the code.
+allowed_for() {
+  local p="$1" s r=""
+  while IFS= read -r s; do
+    [[ -z "$s" ]] && continue
+    [[ "$(bash "$SCRIPTS/detect-context.sh" decide "$p" "$s")" == allow ]] && r="$r$s"$'\n'
+  done < <(jq -r '.states|keys[]' "$MACHINE")
+  printf '%s' "$r" | states_of
+}
+lessons_truth="$(allowed_for .spec/lessons.md)"
+root_truth="$(allowed_for .spec/product.md)"
+assert_eq "flow-legibility/4" "decide lessons-rule set is the expected non-trivial set" "$lessons_truth" "feature.compound,quick.verify,setup.apply,strategy.spec"
+doc="$(bash "$SCRIPTS/doctrine.sh" | grep -v '^Cursor:')"
+doc_lessons="$(printf '%s\n' "$doc" | tr ';' '\n' | grep 'lessons.md' | states_of)"
+doc_root="$(printf '%s\n' "$doc" | tr ';' '\n' | grep 'product,tech' | states_of)"
+tmpl_sec="$(awk '/^## Write invariants/{f=1;next} /^## /{f=0} f' "$FLOW/reference/templates/AGENTS.md")"
+tmpl_lessons="$(printf '%s\n' "$tmpl_sec" | awk '/^1\. /{f=1} /^2\. /{f=0} f' | states_of)"
+tmpl_root="$(printf '%s\n' "$tmpl_sec" | awk '/^2\. /{f=1} /^3\. /{f=0} f' | states_of)"
+assert_eq "flow-legibility/4" "doctrine lessons rule matches decide" "$doc_lessons" "$lessons_truth"
+assert_eq "flow-legibility/4" "AGENTS template lessons rule matches decide" "$tmpl_lessons" "$lessons_truth"
+assert_eq "flow-legibility/4" "doctrine root-spec rule matches decide" "$doc_root" "$root_truth"
+assert_eq "flow-legibility/4" "AGENTS template root-spec rule matches decide" "$tmpl_root" "$root_truth"
+
+echo ""
+echo "=== flow-legibility/6 — drift inference (detect-context.sh infer) ==="
+DETECT="$SCRIPTS/detect-context.sh"
+d1="$(bash "$DETECT" infer $' M src/app.sh' idle)"
+assert_contains "flow-legibility/6" "idle + src edit infers feature.impl drift" "$d1" "drift:feature.impl:"
+assert_contains "flow-legibility/6" "idle drift names the set-state fix (not /flow, which rejects the hop)" "$d1" "set-state.sh feature.impl or quick.fix"
+assert_not_contains "flow-legibility/6" "idle drift does not emit an illegal /flow hop" "$d1" "/flow feature.impl"
+# infer matches `tests/` (plural, like decide), not singular `test/`
+dsing="$(bash "$DETECT" infer $' M test/x.sh' idle)"
+assert_eq "flow-legibility/6" "singular test/ is not code (infer agrees with decide)" "$dsing" ""
+d2="$(bash "$DETECT" infer $'?? src/new.sh' feature.design)"
+assert_contains "flow-legibility/6" "feature.design + src edit infers drift" "$d2" "drift:feature.impl:"
+d2b="$(bash "$DETECT" infer $' M src/x.sh' quick.triage)"
+assert_contains "flow-legibility/6" "quick.triage + src edit routes to quick.fix (not feature.impl)" "$d2b" "drift:quick.fix:"
+assert_not_contains "flow-legibility/6" "quick.triage drift does not mis-route to feature.impl" "$d2b" "feature.impl"
+d3="$(bash "$DETECT" infer $' M src/app.sh' feature.impl)"
+assert_eq "flow-legibility/6" "feature.impl + src edit is consistent (no drift)" "$d3" ""
+d4="$(bash "$DETECT" infer $' M README.md' idle)"
+assert_eq "flow-legibility/6" "idle + non-src edit is not drift" "$d4" ""
+d5="$(bash "$DETECT" infer "" idle)"
+assert_eq "flow-legibility/6" "idle + clean tree is not drift" "$d5" ""
+db="$(bash "$DETECT" decide .spec/lessons.md idle)"
+assert_contains "flow-legibility/6" "decide still hard-blocks lessons.md at idle (unchanged)" "$db" "block:"
+# no-jq: infer with state passed needs neither jq nor git
+pnojq6="$(mktemp -d)"; for t in dirname sed head cat grep; do ln -sf "$(command -v "$t")" "$pnojq6/$t"; done
+d6="$(PATH="$pnojq6" "$BASH_BIN" "$DETECT" infer $' M tests/t.sh' idle 2>/dev/null)"
+assert_contains "flow-legibility/6" "infer works without jq (tests/ edit, state passed)" "$d6" "drift:feature.impl:"
+rm -rf "$pnojq6"
+
 echo ""
 echo "=== regen-active-rules.sh — digest from lessons ==="
 d="$(mktemp -d)"
@@ -418,6 +548,11 @@ assert_eq "path-parity" "doctor identical via both paths (explicit root)" "$a" "
 a="$(bash "$REAL_SCRIPTS/doctor.sh" 2>&1)"
 b="$(bash "$ALIAS_SCRIPTS/doctor.sh" 2>&1)"
 assert_eq "path-parity" "doctor identical via both paths (self-located root)" "$a" "$b"
+# doctrine.sh self-locates like orders.sh and is reached through the symlink from
+# the SessionStart hook — both spellings must resolve the same SKILL.md block.
+a="$(bash "$REAL_SCRIPTS/doctrine.sh" 2>&1)"
+b="$(bash "$ALIAS_SCRIPTS/doctrine.sh" 2>&1)"
+assert_eq "path-parity" "doctrine identical via both paths" "$a" "$b"
 
 # regen-active-rules resolves the repo root by marker search, so a sandbox reached
 # via a real flow/ path and via a .agents/skills/vibe symlink yields the same

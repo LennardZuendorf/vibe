@@ -22,8 +22,9 @@ explains the split. This half needs Claude Code for the hooks to fire.
 
 The installer copies the flow core into `<repo>/.agents/skills/vibe/`, merges the
 `AGENTS.md` instructions block, seeds + gitignores the flow cursor, and writes
-`.claude/settings.json` with three auto-wired hooks (`UserPromptSubmit`,
-`PreToolUse`, `Stop`). The `vibe` skill works as plain project files immediately;
+`.claude/settings.json` with four auto-wired hooks (`SessionStart`,
+`UserPromptSubmit`, `PreToolUse`, `Stop`). The `vibe` skill works as plain project
+files immediately;
 the flow hooks activate as soon as the settings.json wiring is in place. `/flow`
 is a native project command — no plugin registration required. Check health any time:
 
@@ -39,8 +40,11 @@ A typical session:
 2. Name the work; the agent picks a flow and transitions
    (`/flow strategy.brainstorm` | `feature.design` | `quick.triage` | `setup.detect`).
 3. **Each turn**, the inject hook prepends the current state's orders: the one
-   job, what to delegate, what you may write, and the legal `next`. You do that
-   job — nothing wider.
+   job, what to delegate, what you may write, and the **imperative** transition
+   command to run when done (`done → set-state.sh quick.fix`, or `on ship → /flow
+   feature.compound confirm` at a gate) — not just a `next:` label. A `vibe-drift:`
+   correction line is prepended ahead of the orders **only** when working-tree
+   activity contradicts the cursor. You do that job — nothing wider.
 4. At a **human gate** (before impl, before ship) you approve, then transition
    with `/flow <flow.phase>` to the next state.
 5. The flow ends back at **`idle`** after `feature.compound` (or after
@@ -65,12 +69,14 @@ flowchart LR
     end
     subgraph strategy
         SB[brainstorm] --> SS[spec]
+        SS -->|iterate| SB
     end
     subgraph feature
         D[design] --> P[plan] -. human gate .-> IM[impl] --> V[verify]
         V -. human gate .-> C[compound]
         V -->|targeted fix| IM
         V -->|major drift| P
+        P -->|revise design| D
     end
     subgraph quick
         T[triage] --> F[fix] --> QV[verify]
@@ -98,14 +104,19 @@ bash .agents/skills/vibe/scripts/set-state.sh feature.design my-feature
 The `/flow` command wraps this: it reads the current state, refuses if the target
 is not in `next`, and otherwise calls `set-state.sh` for you.
 
-## Per-turn orders (D12)
+## Per-turn orders
 
 The per-turn "orders" are not stored in the machine. Skill-owning states carry
 `inject: null`; their orders live in the linked skill as byte-stable
 `<!-- vibe:orders:<state> -->` blocks in [SKILL.md](SKILL.md) § Orders. Each turn
 the inject hook resolves the current `<flow>.<phase>`, follows its `skill` link,
-and emits the matching block verbatim — `<feature>` is the only interpolation, so
-the inject stays prompt-cache stable. Resolve orders manually with:
+and emits the matching block verbatim. Each block is **imperative** — it names the
+literal transition command to run (`done → set-state.sh quick.fix`, or a gated
+`on ship → /flow feature.compound confirm`), not just a `next:` label — and
+`<feature>` is the only interpolation, so the inject stays prompt-cache stable. A
+`vibe-drift:` correction line is prepended ahead of the orders only when
+working-tree activity contradicts the cursor (git-derived), leaving the orders
+block byte-stable on every no-drift turn. Resolve orders manually with:
 
 ```bash
 bash .agents/skills/vibe/scripts/orders.sh            # current state
@@ -114,18 +125,30 @@ bash .agents/skills/vibe/scripts/orders.sh feature.impl  # an explicit state
 
 Only `idle` keeps an inline inject, as the skill-less fallback.
 
-## The three hooks
+## The four hooks
 
 Thin shells over `scripts/`; the allow/warn/block policy lives once in
 `detect-context.sh`. Each degrades warn-first and exits 0 on any missing keystone.
 
 | Hook | Event | Does |
 |---|---|---|
+| `session-start-doctrine.sh` | `SessionStart` (all sources, incl. `compact` re-inject) | emits the working-model doctrine + a live cursor summary each session, single-sourced from the `<!-- vibe:doctrine -->` block via `doctrine.sh`; wired with no matcher (all sources) |
 | `user-prompt-submit-inject.sh` | `UserPromptSubmit` | injects the current state's orders every turn |
 | `pre-tool-use-guard.sh` | `PreToolUse` (Edit/Write/NotebookEdit/Bash) | hard-blocks the three write invariants on **file-tool** calls; on `Bash` it only **warns** when a command looks like it writes a guarded path (see caveats below) |
 | `stop-gate.sh` | `Stop` | warn-first exit checks; blocks in `*.verify` without a fresh evidence receipt — with or without `jq` |
 
 Wired automatically by `install.sh` into `.claude/settings.json`; hook scripts resolve their data via `$CLAUDE_PROJECT_DIR`.
+
+The `SessionStart` hook single-sources the doctrine from the same
+`<!-- vibe:doctrine -->` block the `AGENTS.md` template renders (a discriminating
+parity test fails if the two disagree on which states may write what), so on
+**Claude Code** the `AGENTS.md` managed block becomes a redundant adapter rather
+than the only carrier. Scope this honestly: today the hook ships **only** through
+the committed `.claude/settings.json` a full install writes — the per-user plugin
+/ `--local` team delivery is deferred to the **vibe-plugin** feature. So
+`AGENTS.md` is optional **on Claude Code once vibe-plugin ships**; on hookless
+hosts (Codex, Warp) there are no hooks at all, so `AGENTS.md` stays the carrier
+there.
 
 ## Write invariants
 
@@ -179,7 +202,7 @@ All under `.agents/skills/vibe/scripts/` at runtime.
 | [regen-active-rules.sh](scripts/regen-active-rules.sh) | render `lessons.md` → the `AGENTS.md` active-rules digest |
 | [doctor.sh](scripts/doctor.sh) | warn-only install health report (always exits 0) |
 | [merge-agents.sh](scripts/merge-agents.sh) | `AGENTS.md` marker merge / unmerge + adapter symlinks |
-| [merge-settings.sh](scripts/merge-settings.sh) | wires the three hooks into `.claude/settings.json` |
+| [merge-settings.sh](scripts/merge-settings.sh) | wires the four hooks into `.claude/settings.json` |
 
 ## Dependencies & degrade
 

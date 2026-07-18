@@ -64,6 +64,12 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** compound, drift, dogfood, ci
 **Date:** 2026-07-09
 
+### A single-source parity test must pin prose to the code, not to a sibling doc
+**Pattern:** flow-legibility's write invariants live in three places: enforced in `detect-context.sh decide`, restated in the `<!-- vibe:doctrine -->` block, and rendered in the AGENTS.md template. The first "single-source" test only compared the doctrine block and the template *to each other*, and only on the union of state *names* — so it passed even when a rule was reassigned to the wrong state (e.g. lessons.md writable in a state `decide` actually blocks). Two prose copies agreeing proves nothing about the policy they both claim to describe; the code was never in the loop.
+**Rule:** Any doc that restates a code-enforced policy must be parity-tested against the CODE, per rule, not against a sibling doc. Extract each rule's allow-set from the enforcer (`detect-context.sh decide`) and assert the prose's per-rule state set matches it exactly — a set-equality check, not a name-union. A prose↔prose test only catches copy-paste rot; it silently permits rule-reassignment drift, which is the failure that actually misleads an agent.
+**Tags:** spec, single-source, discriminating-tests, doctrine, parity
+**Date:** 2026-07-18
+
 <!-- Format for each lesson:
 ### [Short description]
 **Pattern:** What went wrong and why

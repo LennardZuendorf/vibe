@@ -3,7 +3,8 @@
 The strategy flow shapes project direction. It reads lessons, brainstorms, and
 writes the **root** `.spec/` docs. It never writes source code.
 
-States: `strategy.brainstorm → strategy.spec → idle`.
+States: `strategy.brainstorm → strategy.spec → idle`, with an iteration back-edge
+`strategy.spec → strategy.brainstorm` to re-open direction without aborting to idle.
 
 ## Procedure
 

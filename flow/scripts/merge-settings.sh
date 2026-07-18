@@ -2,19 +2,20 @@
 # merge-settings.sh — wire (or unwire) the vibe flow hooks in a target repo's
 # .claude/settings.json, so the hooks fire natively without a plugin.
 #
-#   merge-settings.sh merge   <target-root>   # add the three vibe hook entries
+#   merge-settings.sh merge   <target-root>   # add the four vibe hook entries
 #   merge-settings.sh unmerge <target-root>   # remove only the vibe hook entries
 #
 # Contract (byte-exact — install.sh, doctor, and the docs describe this shape):
-#   .claude/settings.json gains a "hooks" object with three vibe entries, each a
+#   .claude/settings.json gains a "hooks" object with four vibe entries, each a
 #   command of the form  bash "$CLAUDE_PROJECT_DIR/.claude/hooks/<script>.sh":
+#     SessionStart     -> session-start-doctrine.sh       (no matcher: all sources incl. compact)
 #     UserPromptSubmit -> user-prompt-submit-inject.sh   (no matcher, timeout 10)
 #     PreToolUse       -> pre-tool-use-guard.sh           (matcher Edit|Write|NotebookEdit|Bash)
 #     Stop             -> stop-gate.sh                     (no matcher, timeout 10)
 #
 # Merge is idempotent: vibe's own groups (detected by the .claude/hooks/<script>.sh
 # command path) are stripped before re-adding, so re-running never duplicates.
-# User settings and other hooks are preserved. Unmerge removes only vibe's three
+# User settings and other hooks are preserved. Unmerge removes only vibe's four
 # groups; it drops the file only if that leaves it empty ({}).
 #
 # Graceful degrade: no jq -> warn and print the exact snippet to paste by hand;
@@ -24,10 +25,15 @@ set -euo pipefail
 
 warn() { echo "merge-settings: $1" >&2; }
 
-# The three vibe hook groups, keyed by event. $CLAUDE_PROJECT_DIR stays literal:
+# The four vibe hook groups, keyed by event. $CLAUDE_PROJECT_DIR stays literal:
 # Claude Code expands it per-project at hook time (single quotes protect it here).
 # shellcheck disable=SC2016  # intentional: keep $CLAUDE_PROJECT_DIR literal in the JSON
 VIBE_HOOKS='{
+  "SessionStart": {
+    "hooks": [
+      { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start-doctrine.sh\"", "timeout": 10 }
+    ]
+  },
   "UserPromptSubmit": {
     "hooks": [
       { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit-inject.sh\"", "timeout": 10 }
@@ -47,8 +53,8 @@ VIBE_HOOKS='{
 }'
 
 # A jq predicate: a hook group belongs to vibe iff any of its commands points at
-# one of vibe's three shipped hook scripts under .claude/hooks/.
-VIBE_MATCH='\.claude/hooks/(user-prompt-submit-inject|pre-tool-use-guard|stop-gate)\.sh'
+# one of vibe's four shipped hook scripts under .claude/hooks/.
+VIBE_MATCH='\.claude/hooks/(session-start-doctrine|user-prompt-submit-inject|pre-tool-use-guard|stop-gate)\.sh'
 
 # print_snippet — emit the JSON the user should merge into .claude/settings.json
 # by hand when jq is unavailable.
@@ -57,11 +63,12 @@ print_snippet() {
   printf '%s\n' "{ \"hooks\": $(jq_free_snippet) }" >&2
 }
 
-# jq_free_snippet — the three groups wrapped as an event->[group] map, formatted
+# jq_free_snippet — the four groups wrapped as an event->[group] map, formatted
 # without jq (VIBE_HOOKS is already valid JSON; wrap each value in an array).
 jq_free_snippet() {
   cat <<'EOF'
 {
+    "SessionStart": [ { "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start-doctrine.sh\"", "timeout": 10 } ] } ],
     "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/user-prompt-submit-inject.sh\"", "timeout": 10 } ] } ],
     "PreToolUse": [ { "matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-tool-use-guard.sh\"", "timeout": 10 } ] } ],
     "Stop": [ { "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-gate.sh\"", "timeout": 10 } ] } ]
@@ -84,6 +91,7 @@ do_merge() {
         def strip_vibe(g): (g // []) | map(
           select(([.hooks[]?.command // empty] | any(test($m))) | not));
         .hooks = (.hooks // {})
+        | .hooks.SessionStart     = (strip_vibe(.hooks.SessionStart)     + [$vibe.SessionStart])
         | .hooks.UserPromptSubmit = (strip_vibe(.hooks.UserPromptSubmit) + [$vibe.UserPromptSubmit])
         | .hooks.PreToolUse       = (strip_vibe(.hooks.PreToolUse)       + [$vibe.PreToolUse])
         | .hooks.Stop             = (strip_vibe(.hooks.Stop)             + [$vibe.Stop])
@@ -108,7 +116,8 @@ do_unmerge() {
         def strip_vibe(g): (g // []) | map(
           select(([.hooks[]?.command // empty] | any(test($m))) | not));
         if .hooks then
-          .hooks.UserPromptSubmit = strip_vibe(.hooks.UserPromptSubmit)
+          .hooks.SessionStart   = strip_vibe(.hooks.SessionStart)
+          | .hooks.UserPromptSubmit = strip_vibe(.hooks.UserPromptSubmit)
           | .hooks.PreToolUse     = strip_vibe(.hooks.PreToolUse)
           | .hooks.Stop           = strip_vibe(.hooks.Stop)
           | .hooks |= with_entries(select(.value | length > 0))
