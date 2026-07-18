@@ -253,6 +253,24 @@ assert_contains "flow-legibility/5" "doctor reports instruction.coverage ok" "$d
 rm -rf "$SB"
 
 echo ""
+echo "=== flow-legibility/6 — drift-first nudge in the inject hook ==="
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+git init -q "$SB" 2>/dev/null && git -C "$SB" config user.email t@t 2>/dev/null && git -C "$SB" config user.name t 2>/dev/null
+rm -f "$SB/.agents/skills/vibe/state.json"      # idle cursor
+mkdir -p "$SB/src"; printf 'x\n' > "$SB/src/app.sh"
+inj="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" </dev/null 2>/dev/null)"
+first="$(printf '%s\n' "$inj" | head -n1)"
+assert_contains "flow-legibility/6" "inject prepends the drift nudge as line 1 (idle + src edit)" "$first" "vibe-drift:"
+assert_contains "flow-legibility/6" "inject still emits the orders after the drift line" "$inj" "state=idle"
+# clean tree -> no drift line; orders stay the first content (byte-stable path)
+rm -f "$SB/src/app.sh"
+inj2="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" </dev/null 2>/dev/null)"
+first2="$(printf '%s\n' "$inj2" | head -n1)"
+assert_not_contains "flow-legibility/6" "no drift line when no src/tests change" "$inj2" "vibe-drift:"
+assert_contains "flow-legibility/6" "orders are the first line when no drift" "$first2" "state=idle"
+rm -rf "$SB"
+
+echo ""
 echo "=== platform-adapters/1,2,3 — hooks against a real install ==="
 SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 export CLAUDE_PROJECT_DIR="$SB"

@@ -417,6 +417,28 @@ assert_contains "flow-legibility/4" "AGENTS.md template shares the gate line (si
 assert_contains "flow-legibility/4" "AGENTS.md template shares the ephemeral framing" "$tmpl" "sessions are ephemeral"
 
 echo ""
+echo "=== flow-legibility/6 — drift inference (detect-context.sh infer) ==="
+DETECT="$SCRIPTS/detect-context.sh"
+d1="$(bash "$DETECT" infer $' M src/app.sh' idle)"
+assert_contains "flow-legibility/6" "idle + src edit infers feature.impl drift" "$d1" "drift:feature.impl:"
+assert_contains "flow-legibility/6" "idle drift names the one-command fix" "$d1" "/flow feature.impl or quick.fix"
+d2="$(bash "$DETECT" infer $'?? src/new.sh' feature.design)"
+assert_contains "flow-legibility/6" "feature.design + src edit infers drift" "$d2" "drift:feature.impl:"
+d3="$(bash "$DETECT" infer $' M src/app.sh' feature.impl)"
+assert_eq "flow-legibility/6" "feature.impl + src edit is consistent (no drift)" "$d3" ""
+d4="$(bash "$DETECT" infer $' M README.md' idle)"
+assert_eq "flow-legibility/6" "idle + non-src edit is not drift" "$d4" ""
+d5="$(bash "$DETECT" infer "" idle)"
+assert_eq "flow-legibility/6" "idle + clean tree is not drift" "$d5" ""
+db="$(bash "$DETECT" decide .spec/lessons.md idle)"
+assert_contains "flow-legibility/6" "decide still hard-blocks lessons.md at idle (unchanged)" "$db" "block:"
+# no-jq: infer with state passed needs neither jq nor git
+pnojq6="$(mktemp -d)"; for t in dirname sed head cat grep; do ln -sf "$(command -v "$t")" "$pnojq6/$t"; done
+d6="$(PATH="$pnojq6" "$BASH_BIN" "$DETECT" infer $' M tests/t.sh' idle 2>/dev/null)"
+assert_contains "flow-legibility/6" "infer works without jq (tests/ edit, state passed)" "$d6" "drift:feature.impl:"
+rm -rf "$pnojq6"
+
+echo ""
 echo "=== regen-active-rules.sh — digest from lessons ==="
 d="$(mktemp -d)"
 mkdir -p "$d/.spec" "$d/.agents/skills/vibe/scripts"
