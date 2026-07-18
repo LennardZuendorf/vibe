@@ -188,18 +188,19 @@ infer() {
     feature.impl|quick.fix|feature.verify|quick.verify|setup.apply) return 0 ;;
   esac
   # A porcelain line whose path starts with src/ or tests/ (after the 2-col status
-  # + space) at a non-building state is likely cursor drift. Route to the build
-  # state that matches the CURRENT flow — feature states point at feature.impl, the
-  # quick flow points at quick.fix, and ambiguous hubs (idle/strategy/setup) name
-  # both. Warn-only: a wrong guess costs one advisory line.
-  if printf '%s\n' "$porcelain" | grep -qE '^.{3}(src|tests?)/'; then
+  # + space) at a non-building state is likely cursor drift. `tests/` (plural)
+  # matches what `decide` treats as code, so the two agree. The fix is stated as
+  # `set-state.sh <state>` (the writer, legal from any state) — NOT `/flow`, which
+  # enforces edge legality and would reject the hop from idle. Warn-only: a wrong
+  # guess costs one advisory line, and the agent picks the state it is really in.
+  if printf '%s\n' "$porcelain" | grep -qE '^.{3}(src|tests)/'; then
     case "$state" in
       feature.design|feature.plan)
-        printf 'drift:feature.impl:src edits in %s before the impl gate — advance to feature.impl (after the plan gate) or set-state.sh idle\n' "$state" ;;
+        printf 'drift:feature.impl:src edits in %s — set-state.sh feature.impl to match your work, or set-state.sh idle to stop\n' "$state" ;;
       quick.triage)
-        printf 'drift:quick.fix:src edits in quick.triage — run set-state.sh quick.fix or set-state.sh idle\n' ;;
+        printf 'drift:quick.fix:src edits in quick.triage — set-state.sh quick.fix, or set-state.sh idle\n' ;;
       *)
-        printf 'drift:feature.impl:src/tests edits at %s — run /flow feature.impl or quick.fix (or set-state.sh idle)\n' "$state" ;;
+        printf 'drift:feature.impl:src/tests edits at %s — set the cursor to match: set-state.sh feature.impl or quick.fix (else set-state.sh idle)\n' "$state" ;;
     esac
   fi
   return 0

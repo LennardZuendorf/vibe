@@ -379,6 +379,19 @@ while IFS= read -r st; do
   fi
 done <<< "$(jq -r '.states | keys[]' "$MACHINE")"
 assert_eq "flow-legibility/2" "every orders block states its transition command (set-state.sh, or /flow confirm at a gate)" "$imperative_missing" ""
+# Every set-state.sh target named in a block must be a LEGAL next for that state —
+# catches a wrong-target regression (naming a non-successor), not just presence.
+bad_target=""
+while IFS= read -r st; do
+  [[ -z "$st" ]] && continue
+  blk="$(bash "$SCRIPTS/orders.sh" "$st")"
+  nexts="$(jq -r --arg s "$st" '.states[$s].next[]?' "$MACHINE" 2>/dev/null)"
+  while IFS= read -r tgt; do
+    [[ -z "$tgt" ]] && continue
+    printf '%s\n' "$nexts" | grep -qxF "$tgt" || bad_target="$bad_target $st->$tgt"
+  done < <(printf '%s\n' "$blk" | grep -oE 'set-state\.sh [a-z][a-z.]*' | sed 's/set-state\.sh //')
+done <<< "$(jq -r '.states | keys[]' "$MACHINE")"
+assert_eq "flow-legibility/2" "every set-state.sh target in an orders block is a legal next" "$bad_target" ""
 
 echo ""
 echo "=== flow-legibility/3 — model-tier pins in delegation contracts ==="
@@ -411,26 +424,49 @@ a4="$(bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
 b4="$(PATH="$pnojq4" "$BASH_BIN" "$SCRIPTS/doctrine.sh" 2>/dev/null)"
 assert_eq "flow-legibility/4" "doctrine.sh jq/no-jq byte-identical (idle)" "$b4" "$a4"
 rm -rf "$pnojq4"
-# single-source parity (discriminating): both texts must agree on the gate line AND
-# on the exact set of states that may write lessons.md / root specs. Comparing the
-# write-invariant STATE SETS means adding/removing a writable state in one text
-# without the other fails here — a two-substring check would not.
+# single-source parity, tied to the CODE: both prose texts must state the same
+# per-rule writable-state sets that detect-context.sh `decide` actually enforces.
+# Comparing PER-RULE sets against `decide` (not the union of both rules, not
+# prose-vs-prose) catches a rule reassignment (moving a state between the lessons
+# and root rules) and a prose/code drift — the holes a union or two-substring check
+# leaves open.
 tmpl="$(cat "$FLOW/reference/templates/AGENTS.md")"
 assert_contains "flow-legibility/4" "AGENTS.md template shares the gate line" "$tmpl" "plan → impl, and verify → ship"
 assert_contains "flow-legibility/4" "AGENTS.md template shares the ephemeral framing" "$tmpl" "sessions are ephemeral"
 states_of() { grep -oE '(feature|strategy|setup|quick)\.[a-z]+' | sort -u | paste -sd, -; }
-doc_wi_states="$(bash "$SCRIPTS/doctrine.sh" | grep -v '^Cursor:' | states_of)"
-tmpl_wi="$(awk '/^## Write invariants/{f=1;next} /^## /{f=0} f' "$FLOW/reference/templates/AGENTS.md")"
-tmpl_wi_states="$(printf '%s\n' "$tmpl_wi" | states_of)"
-assert_eq "flow-legibility/4" "doctrine + AGENTS template agree on the writable-state set (discriminating)" "$tmpl_wi_states" "$doc_wi_states"
-assert_contains "flow-legibility/4" "the shared writable-state set is non-empty" "$doc_wi_states" "feature.compound"
+# ground truth: the states for which `decide` returns allow, straight from the code.
+allowed_for() {
+  local p="$1" s r=""
+  while IFS= read -r s; do
+    [[ -z "$s" ]] && continue
+    [[ "$(bash "$SCRIPTS/detect-context.sh" decide "$p" "$s")" == allow ]] && r="$r$s"$'\n'
+  done < <(jq -r '.states|keys[]' "$MACHINE")
+  printf '%s' "$r" | states_of
+}
+lessons_truth="$(allowed_for .spec/lessons.md)"
+root_truth="$(allowed_for .spec/product.md)"
+assert_eq "flow-legibility/4" "decide lessons-rule set is the expected non-trivial set" "$lessons_truth" "feature.compound,quick.verify,setup.apply,strategy.spec"
+doc="$(bash "$SCRIPTS/doctrine.sh" | grep -v '^Cursor:')"
+doc_lessons="$(printf '%s\n' "$doc" | tr ';' '\n' | grep 'lessons.md' | states_of)"
+doc_root="$(printf '%s\n' "$doc" | tr ';' '\n' | grep 'product,tech' | states_of)"
+tmpl_sec="$(awk '/^## Write invariants/{f=1;next} /^## /{f=0} f' "$FLOW/reference/templates/AGENTS.md")"
+tmpl_lessons="$(printf '%s\n' "$tmpl_sec" | awk '/^1\. /{f=1} /^2\. /{f=0} f' | states_of)"
+tmpl_root="$(printf '%s\n' "$tmpl_sec" | awk '/^2\. /{f=1} /^3\. /{f=0} f' | states_of)"
+assert_eq "flow-legibility/4" "doctrine lessons rule matches decide" "$doc_lessons" "$lessons_truth"
+assert_eq "flow-legibility/4" "AGENTS template lessons rule matches decide" "$tmpl_lessons" "$lessons_truth"
+assert_eq "flow-legibility/4" "doctrine root-spec rule matches decide" "$doc_root" "$root_truth"
+assert_eq "flow-legibility/4" "AGENTS template root-spec rule matches decide" "$tmpl_root" "$root_truth"
 
 echo ""
 echo "=== flow-legibility/6 — drift inference (detect-context.sh infer) ==="
 DETECT="$SCRIPTS/detect-context.sh"
 d1="$(bash "$DETECT" infer $' M src/app.sh' idle)"
 assert_contains "flow-legibility/6" "idle + src edit infers feature.impl drift" "$d1" "drift:feature.impl:"
-assert_contains "flow-legibility/6" "idle drift names the one-command fix" "$d1" "/flow feature.impl or quick.fix"
+assert_contains "flow-legibility/6" "idle drift names the set-state fix (not /flow, which rejects the hop)" "$d1" "set-state.sh feature.impl or quick.fix"
+assert_not_contains "flow-legibility/6" "idle drift does not emit an illegal /flow hop" "$d1" "/flow feature.impl"
+# infer matches `tests/` (plural, like decide), not singular `test/`
+dsing="$(bash "$DETECT" infer $' M test/x.sh' idle)"
+assert_eq "flow-legibility/6" "singular test/ is not code (infer agrees with decide)" "$dsing" ""
 d2="$(bash "$DETECT" infer $'?? src/new.sh' feature.design)"
 assert_contains "flow-legibility/6" "feature.design + src edit infers drift" "$d2" "drift:feature.impl:"
 d2b="$(bash "$DETECT" infer $' M src/x.sh' quick.triage)"

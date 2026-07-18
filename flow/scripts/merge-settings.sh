@@ -25,7 +25,7 @@ set -euo pipefail
 
 warn() { echo "merge-settings: $1" >&2; }
 
-# The three vibe hook groups, keyed by event. $CLAUDE_PROJECT_DIR stays literal:
+# The four vibe hook groups, keyed by event. $CLAUDE_PROJECT_DIR stays literal:
 # Claude Code expands it per-project at hook time (single quotes protect it here).
 # shellcheck disable=SC2016  # intentional: keep $CLAUDE_PROJECT_DIR literal in the JSON
 VIBE_HOOKS='{
@@ -53,7 +53,7 @@ VIBE_HOOKS='{
 }'
 
 # A jq predicate: a hook group belongs to vibe iff any of its commands points at
-# one of vibe's three shipped hook scripts under .claude/hooks/.
+# one of vibe's four shipped hook scripts under .claude/hooks/.
 VIBE_MATCH='\.claude/hooks/(session-start-doctrine|user-prompt-submit-inject|pre-tool-use-guard|stop-gate)\.sh'
 
 # print_snippet — emit the JSON the user should merge into .claude/settings.json
@@ -63,7 +63,7 @@ print_snippet() {
   printf '%s\n' "{ \"hooks\": $(jq_free_snippet) }" >&2
 }
 
-# jq_free_snippet — the three groups wrapped as an event->[group] map, formatted
+# jq_free_snippet — the four groups wrapped as an event->[group] map, formatted
 # without jq (VIBE_HOOKS is already valid JSON; wrap each value in an array).
 jq_free_snippet() {
   cat <<'EOF'
