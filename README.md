@@ -26,11 +26,22 @@ with its own harness, so what you install is exactly what is dogfooded here.
 
 ## Install
 
-**Prerequisites:** `bash`, plus `git` for the target repo.
+**Prerequisites:** `bash` and `curl` (or `wget`), plus `git` for the target repo.
 [`jq`](https://jqlang.github.io/jq/) is recommended (scripts degrade gracefully
 without it). The `claude` CLI is needed only for the plugin / `--global` install.
 
 ### One command
+
+No clone required — run it straight from the web, from inside the repo you want
+vibe in:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LennardZuendorf/vibe/main/install.sh | bash
+```
+
+It fetches a snapshot (override with `VIBE_REF=<branch|tag>`) and runs a local
+install into the current repo. Pass flags after `bash -s --` (e.g.
+`… | bash -s -- --dry-run`). Or, from a clone:
 
 ```bash
 git clone https://github.com/LennardZuendorf/vibe.git && cd vibe
@@ -91,6 +102,10 @@ Removes only what vibe installed and keeps your content (`.spec/**`, your
 `AGENTS.md` prose, and the flow cursor unless `--yes`):
 
 ```bash
+# No clone, from inside the installed repo:
+curl -fsSL https://raw.githubusercontent.com/LennardZuendorf/vibe/main/install.sh | bash -s -- --uninstall
+
+# Or from a clone, against an explicit target:
 ./install.sh /path/to/your/repo --uninstall             # cursor kept; --dry-run to preview
 ./install.sh /path/to/your/repo --uninstall --yes        # also remove the flow cursor
 ./install.sh /path/to/your/repo --uninstall --only spec  # remove just one half
