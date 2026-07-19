@@ -26,7 +26,7 @@ States: `strategy.brainstorm → strategy.spec → idle`, with an iteration back
 4. **Spec.** In `strategy.spec`, delegate to the `spec` skill. Write **only** the
    root docs: `.spec/product.md`, `.spec/tech.md`, `.spec/design.md`,
    `.spec/plan.md`. Inject those exact paths. Do not touch `lessons.md` or source.
-   Validate with `bash .agents/skills/spec/scripts/validate.sh`.
+   Validate with `/spec validate`.
 5. **Lesson (conditional).** Most strategy runs surface no durable lesson. If one
    did, before going idle append a tagged entry to `.spec/lessons.md` and run
    `bash .agents/skills/vibe/scripts/regen-active-rules.sh` to refresh the digest,

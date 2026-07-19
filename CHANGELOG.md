@@ -13,6 +13,26 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Added
 
+- **Single-command installer with local/global modes** — bare `bash install.sh`
+  defaults to the current repo and, on a TTY, asks **local** (full per-repo install)
+  vs **global** (per-user plugin). New `--local` / `--global` / `--with-plugins`
+  flags; explicit-target invocations behave exactly as before.
+- **Per-user Claude Code plugin + marketplace** — `build-plugin.sh` assembles a
+  self-contained plugin payload (spec + vibe skills + a self-detecting, read-only
+  SessionStart doctrine hook) from the canonical `spec/` + `flow/` trees, and a
+  repo-root `marketplace.json` makes the repo its own marketplace
+  (`claude plugin marketplace add LennardZuendorf/vibe && claude plugin install
+  vibe@vibe`). A drift guard keeps the committed plugin in sync with the sources.
+  The full **stateful** flow (cursor, `/flow`, guard/Stop hooks) stays a per-repo
+  install; the plugin carries the portable, stateless surface everywhere.
+- **Companion-plugin install** — `install.sh --with-plugins` installs superpowers
+  (a feature-dev slot is ready to fill in) at user scope via the `claude` CLI,
+  degrading gracefully when the CLI is absent.
+- **Caveman-style output note** — injected into the single-sourced working-model
+  doctrine (emitted every session by `doctrine.sh` / the SessionStart hook), not a
+  plugin dependency.
+- **doctor instruction-coverage** now counts the per-user plugin as a third doctrine
+  carrier (alongside the AGENTS.md block and a wired SessionStart hook).
 - **Compound-enforcement gate** — `spec/scripts/check-drift.sh` (CI-wired after
   `validate.sh`) fails when a merged feature has no row in the root `.spec/plan.md`
   and errors on hand-written test-assertion counts (counts must come from the
@@ -69,6 +89,12 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Fixed
 
+- **Install-model-agnostic skill paths** — skill files referenced the validator as
+  a hard-coded `.agents/skills/spec/scripts/validate.sh` (plus a `~/.agents/…` global
+  enumeration), which only resolves in the vendored install and breaks under a
+  global/plugin layout. Per agentskills.io, SKILL.md / phase files now reference
+  `scripts/validate.sh` skill-relative (or `/spec validate` cross-skill), guarded
+  against regression in the spec and flow suites.
 - Verified bugs across the flow engine, installer, and spec skill (see the branch
   review).
 - **Stranger-eval hardening (fresh no-git / no-jq / no-awk targets)** — a wave of

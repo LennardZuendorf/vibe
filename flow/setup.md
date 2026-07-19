@@ -12,7 +12,7 @@ Report present vs missing:
   (`set-state.sh`, `validate-state.sh`, `detect-context.sh`, `regen-active-rules.sh`,
   `orders.sh`, `check-skills.sh`).
 - the consolidated `vibe` skill and the bundled `spec` skill.
-- **`AGENTS.md` health** (per [agent-instructions](../../../.spec/features/agent-instructions/tech.md)):
+- **`AGENTS.md` health:**
   - `AGENTS.md`: missing / present-no-markers / present-managed-ok / present-managed-stale (differs from template).
   - `vibe:instructions` block: absent / current / stale.
   - `vibe:constitution` block (legacy): absent / present-needs-migration.
@@ -37,7 +37,7 @@ clobbering:
    into the repo-root `AGENTS.md` **inside the `vibe:instructions` markers only**.
    Create it if missing; migrate a legacy `vibe:constitution` block; wrap an
    unmarked equivalent guide; never touch content outside the markers. (Supersedes
-   the old constitution-block merge — see [agent-instructions](../../../.spec/features/agent-instructions/product.md).)
+   the old constitution-block merge.)
 2. **Adapter symlinks (user-driven).** Read `reference/adapters.json` and offer the
    adapters the user wants (all opt-in — none by default, per `adapters.json`).
    For each chosen one,

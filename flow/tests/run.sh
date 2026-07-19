@@ -424,6 +424,18 @@ a4="$(bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
 b4="$(PATH="$pnojq4" "$BASH_BIN" "$SCRIPTS/doctrine.sh" 2>/dev/null)"
 assert_eq "flow-legibility/4" "doctrine.sh jq/no-jq byte-identical (idle)" "$b4" "$a4"
 rm -rf "$pnojq4"
+# Plugin-mode cursor: when the code lives outside the repo (per-user plugin) the
+# hook sets CLAUDE_PROJECT_DIR; doctrine.sh must read the PROJECT cursor there, not
+# the skill-co-located one. Seed a separate project dir with a distinct cursor and
+# assert the summary reflects IT (discriminating: without the redirect it reads the
+# sandbox cursor). The sandbox STATE is absent here (rm -f above), so a stale read
+# would print idle, not quick.triage.
+projd="$(mktemp -d)"
+mkdir -p "$projd/.agents/skills/vibe"
+printf '{"flow":"quick","phase":"triage","feature":"","updated":"x"}\n' > "$projd/.agents/skills/vibe/state.json"
+docp="$(CLAUDE_PROJECT_DIR="$projd" bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
+assert_contains "install-agnostic-paths" "doctrine reads the project cursor via CLAUDE_PROJECT_DIR" "$docp" "Cursor: quick.triage."
+rm -rf "$projd"
 # single-source parity, tied to the CODE: both prose texts must state the same
 # per-rule writable-state sets that detect-context.sh `decide` actually enforces.
 # Comparing PER-RULE sets against `decide` (not the union of both rules, not
@@ -1029,6 +1041,24 @@ pm2="$(jq -r "$guard_group"' | .[0].matcher' "$mt/.claude/settings.json")"
 assert_eq "review-fix" "re-merge over an old-matcher entry leaves exactly one vibe group" "$n2" "1"
 assert_contains "review-fix" "re-merge upgrades the old matcher to include Bash" "$pm2" "Bash"
 rm -rf "$mt"
+
+echo "=== install-agnostic-paths — validator refs in flow skill files ==="
+# The flow skill's phase files must reference the spec validator portably (the
+# `/spec validate` route), never a hard-coded `.agents/skills/spec/scripts/validate.sh`
+# — that only resolves in the vendored install and breaks under a global/plugin layout.
+# Two deliberate exemptions: (1) the flow skill's OWN vibe-script commands stay
+# project-root-relative because they are injected as prompt text, not run from a skill
+# dir; (2) the AGENTS.md template's Commands block is the local-install project contract
+# (all three commands use vendored paths; the plugin install never creates AGENTS.md),
+# so it is left whole. Scan the real source phase files.
+flow_validator_bad=0
+for f in "$SRC_ROOT"/flow/*.md; do
+  [[ -f "$f" ]] || continue
+  if grep -qF '.agents/skills/spec/scripts/validate.sh' "$f"; then
+    flow_validator_bad=$((flow_validator_bad + 1)); echo "        offender: ${f#"$SRC_ROOT"/}"
+  fi
+done
+assert_eq "install-agnostic-paths" "flow phase files reference the validator portably" "$flow_validator_bad" "0"
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

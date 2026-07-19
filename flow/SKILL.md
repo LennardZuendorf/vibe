@@ -83,6 +83,8 @@ You drive the flow: each turn's orders name the current state and its transition
 Two human gates — stop and get explicit approval before crossing: plan → impl, and verify → ship. Everything else auto-advances.
 
 Write invariants (`detect-context.sh decide`; default idle when `state.json` is absent): `.spec/lessons.md` only in feature.compound, setup.apply, strategy.spec, quick.verify; root `.spec/{product,tech,design,plan}.md` only in strategy.spec, feature.compound, setup.apply; `.agents/skills/vibe/state.json` only via `set-state.sh`.
+
+Output: caveman style — terse and high-signal, no filler or hedging; compress receipts and subagent summaries. Never compress security warnings, irreversible-action confirmations, or code/paths/commands — those stay full and byte-exact.
 <!-- /vibe:doctrine -->
 
 ## Orders (D12)

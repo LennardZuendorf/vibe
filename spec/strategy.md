@@ -126,6 +126,6 @@ If you started writing something in a feature folder and it clearly applies to *
 - **Tech writing:** [reference/tech.md](reference/tech.md)
 - **Plan writing:** [reference/plan.md](reference/plan.md)
 
-After editing root or branch specs: `bash .agents/skills/spec/scripts/validate.sh` when vendored, or the equivalent global install path — [scripts/validate.sh](scripts/validate.sh).
+After editing root or branch specs, run [`scripts/validate.sh`](scripts/validate.sh) from your project root.
 
 Feature work: [feature.md](feature.md).

@@ -153,14 +153,20 @@ _doctrine_block=0
 grep -qF '<!-- vibe:doctrine -->' "$VIBE_SKILL/SKILL.md" 2>/dev/null && _doctrine_block=1
 _sessionstart_wired=0
 [[ -f "$SETTINGS" ]] && grep -qF 'session-start-doctrine.sh' "$SETTINGS" 2>/dev/null && _sessionstart_wired=1
-if [[ "$_doctrine_block" -eq 1 && "$_sessionstart_wired" -eq 1 ]]; then
-  ok instruction.coverage "doctrine block present and SessionStart hook wired"
-elif [[ "$_doctrine_block" -eq 1 ]]; then
-  ok instruction.coverage "doctrine block present (SessionStart hook not wired — AGENTS.md/hook can still carry it)"
-elif [[ "$_sessionstart_wired" -eq 1 ]]; then
-  ok instruction.coverage "SessionStart doctrine hook wired"
+# Third carrier: the per-user vibe plugin (its SessionStart hook injects the doctrine
+# in every vibe repo). Filesystem probe — CLI-independent, like dep_present.
+_plugin_installed=0
+if [[ -d "$HOME/.claude/plugins" ]]; then
+  find "$HOME/.claude/plugins" -maxdepth 6 -type f -name plugin.json -path '*vibe*' -print -quit 2>/dev/null | grep -q . && _plugin_installed=1
+fi
+if [[ "$_doctrine_block" -eq 1 || "$_sessionstart_wired" -eq 1 || "$_plugin_installed" -eq 1 ]]; then
+  _carriers=""
+  [[ "$_doctrine_block" -eq 1 ]]    && _carriers+="doctrine block, "
+  [[ "$_sessionstart_wired" -eq 1 ]] && _carriers+="SessionStart hook, "
+  [[ "$_plugin_installed" -eq 1 ]]  && _carriers+="per-user plugin, "
+  ok instruction.coverage "doctrine reaches the agent via: ${_carriers%, }"
 else
-  warn instruction.coverage "no doctrine coverage — neither the <!-- vibe:doctrine --> block nor a wired SessionStart hook; run install.sh / setup.apply"
+  warn instruction.coverage "no doctrine coverage — no <!-- vibe:doctrine --> block, no wired SessionStart hook, no per-user plugin; run install.sh (--local or --global) / setup.apply"
 fi
 
 # external dependency manifest + per-dep presence.

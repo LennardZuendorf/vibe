@@ -1,6 +1,6 @@
 # The vibe flow
 
-> **For humans.** This README is the standalone guide to the flow half of vibe.
+> **For humans.** This README is the standalone guide to the flow half of vibe kit.
 > Agents route through [SKILL.md](SKILL.md) — the `vibe` skill router — instead.
 
 The **vibe flow** is a state-machine workflow for **Claude Code**. It turns a
@@ -26,7 +26,8 @@ The installer copies the flow core into `<repo>/.agents/skills/vibe/`, merges th
 `UserPromptSubmit`, `PreToolUse`, `Stop`). The `vibe` skill works as plain project
 files immediately;
 the flow hooks activate as soon as the settings.json wiring is in place. `/flow`
-is a native project command — no plugin registration required. Check health any time:
+is a native project command — the local install needs no plugin registration (a
+per-user plugin is available separately: `install.sh --global`). Check health any time:
 
 ```bash
 bash .agents/skills/vibe/scripts/doctor.sh   # warn-only, always exits 0
@@ -143,12 +144,12 @@ The `SessionStart` hook single-sources the doctrine from the same
 `<!-- vibe:doctrine -->` block the `AGENTS.md` template renders (a discriminating
 parity test fails if the two disagree on which states may write what), so on
 **Claude Code** the `AGENTS.md` managed block becomes a redundant adapter rather
-than the only carrier. Scope this honestly: today the hook ships **only** through
-the committed `.claude/settings.json` a full install writes — the per-user plugin
-/ `--local` team delivery is deferred to the **vibe-plugin** feature. So
-`AGENTS.md` is optional **on Claude Code once vibe-plugin ships**; on hookless
-hosts (Codex, Warp) there are no hooks at all, so `AGENTS.md` stays the carrier
-there.
+than the only carrier. Scope this honestly: the hook ships two ways — through the
+committed `.claude/settings.json` a local install writes, and through the
+**per-user plugin** (`install.sh --global` / `claude plugin install vibe@vibe`),
+whose self-detecting SessionStart hook carries the doctrine in every vibe-enabled
+repo. So `AGENTS.md` is optional **on Claude Code**; on hookless hosts (Codex,
+Warp) there are no hooks at all, so `AGENTS.md` stays the carrier there.
 
 ## Write invariants
 

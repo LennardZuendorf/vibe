@@ -1,14 +1,8 @@
 ---
 type: entrypoint
 scope: product
-children:
-  - features/vibe-flow/product.md
-  - features/platform-adapters/product.md
-  - features/agent-instructions/product.md
-  - features/install-tooling/product.md
-  - features/release-docs/product.md
-  - archive/flow-mvp/product.md
-updated: 2026-07-18
+children: []
+updated: 2026-07-19
 ---
 
 # vibe — Product
@@ -83,11 +77,13 @@ At a project level, vibe must:
    (`--uninstall`), plus `doctor.sh` health checks and a `deps.json` dependency
    manifest — safe to try and safe to leave.
 10. **Deliver the whole stack in one shot.** A per-user Claude Code plugin
-    carries the vibe skills, hooks, and `/flow` (plugins can bundle `skills/`
-    since mid-2026, superseding the 2026-06-18 retirement rationale at the
-    *distribution* layer); a `stack` installer registers marketplaces, enables
-    the personal plugin set (superpowers, feature-dev, vibe, simplify, caveman
-    prefs) at user level, and seeds `.spec/` + cursor per repo. The in-repo
+    carries the `vibe`+`spec` skills and a self-detecting doctrine hook (plugins
+    can bundle `skills/` since mid-2026, superseding the 2026-06-18 retirement
+    rationale at the *distribution* layer; the stateful `/flow` + guard hooks
+    stay a `--local` install); `install.sh --with-plugins` registers the
+    marketplace and installs the companion plugin set (superpowers, feature-dev
+    slot) at user level, while `--local` seeds `.spec/` + cursor per repo and the
+    caveman preference ships as a one-line doctrine note. The in-repo
     `settings.json` wiring remains for shared installs.
 11. **Instructions are injection-first.** The flow doctrine reaches the agent
     through hooks — a SessionStart working-model inject (re-injected after
@@ -129,11 +125,11 @@ style rather than a broad marketplace audience.
 
 ## Product Pieces
 
-| Piece | What It Owns | Feature Spec |
+| Piece | What It Owns | Lives In |
 |---|---|---|
-| `spec` framework | `.spec/` docs, templates, validation, wrap-up rules, feature authoring flow | Bundled [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) (done) |
-| `vibe` flow | `.agents/skills/vibe/` state, the one `vibe` skill (router + phase files), phase routing | [features/vibe-flow/](features/vibe-flow/product.md) |
-| Platform adapters | `AGENTS.md`, `CLAUDE.md`, and the **Claude Code adapter** — the `/flow` command + the flow **hooks** wired via `.claude/settings.json`; `install.sh` install lifecycle | [features/platform-adapters/](features/platform-adapters/product.md) + [features/install-tooling/](features/install-tooling/product.md) |
+| `spec` framework | `.spec/` docs, templates, validation, wrap-up rules, feature authoring flow | [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) |
+| `vibe` flow | `.agents/skills/vibe/` state, the one `vibe` skill (router + phase files), phase routing | [`.agents/skills/vibe/`](../.agents/skills/vibe/SKILL.md) |
+| Platform adapters | `AGENTS.md`, `CLAUDE.md`, and the **Claude Code adapter** — the `/flow` command + the flow **hooks** wired via `.claude/settings.json`; `install.sh` install lifecycle | `install.sh`, `.claude/**` |
 
 ---
 
@@ -182,8 +178,8 @@ feature-dev subagents it delegates to, the spec artifact it reads/writes, and wh
 the stage is for. This is the canonical workflow contract;
 the full per-state record (skill link, `next` arrays, exit predicates — orders
 sourced from the linked skill per D12) lives in
-`.agents/skills/vibe/state-machine.json` and is detailed in
-[features/vibe-flow/tech.md](features/vibe-flow/tech.md). The two human gates are
+`.agents/skills/vibe/state-machine.json` and is summarized in the root
+[tech.md](tech.md). The two human gates are
 keyed by **edge** in the machine's `gates` object
 (`feature.plan>feature.impl`, `feature.verify>feature.compound`), not by state —
 so `feature.verify`'s fix/drift back-edges to `feature.impl`/`feature.plan` stay
@@ -222,7 +218,7 @@ hedging, compress receipts and subagent→orchestrator summaries. Compression is
 commands stay byte-exact. Regardless of density, security warnings and
 irreversible-action confirmations stay in full prose. A single inject owner
 emits the same note each turn so adapters and subagents stay consistent (see
-features/vibe-flow).
+the Vibe Flow Contract in [tech.md](tech.md)).
 
 ---
 
@@ -258,12 +254,16 @@ features/vibe-flow).
 
 ## Features
 
-| Feature | Covers |
-|---|---|
-| **spec framework (done)** | Durable `.spec/` planning model: two-layer docs, strict templates, warn-first validation, Requirement+Scenario format. Live: [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md). |
-| **[features/vibe-flow/](features/vibe-flow/product.md)** | The one `vibe` skill (router + phase files), `.agents/skills/vibe/` state, state machine, phase routing, delegated skill output paths. |
-| **[features/agent-instructions/](features/agent-instructions/product.md)** | `AGENTS.md` template + marker merge + adapter symlinks (`CLAUDE.md`, `WARP.md`). |
-| **[features/platform-adapters/](features/platform-adapters/product.md)** | Claude Code adapter (`/flow` + three hooks via `.claude/settings.json`) + `install.sh` core provisioning. |
-| **[features/install-tooling/](features/install-tooling/product.md)** | Install lifecycle: `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json`. |
-| **[features/release-docs/](features/release-docs/product.md)** | Public release: READMEs, trust rails (LICENSE/CHANGELOG/CI), logo, examples, stranger eval. |
-| **[archive/flow-mvp/](archive/flow-mvp/product.md)** (done) | Personal operating layer: precedence + delegation contract blocks, hybrid plan grammar, auto-advance with two edge-keyed gates, a quick-flow compound state, evidence-receipt verify tooth, output-density demoted to frozen vocabulary. Merged PR #14; archived. |
+All features below are **delivered**; their branch specs were compounded into these
+root docs and the feature folders removed (see the Delivered history in [plan.md](plan.md)).
+
+| Feature | Covers | Lives in |
+|---|---|---|
+| **spec framework** | Durable `.spec/` planning model: two-layer docs, strict templates, warn-first validation, Requirement+Scenario format. | [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) |
+| **vibe-flow** | The one `vibe` skill (router + phase files), `.agents/skills/vibe/` state, state machine, phase routing, delegated skill output paths. | [`.agents/skills/vibe/`](../.agents/skills/vibe/SKILL.md) |
+| **agent-instructions** | `AGENTS.md` template + marker merge + adapter symlinks (`CLAUDE.md`, `WARP.md`). | `flow/reference/templates/AGENTS.md`, `flow/scripts/merge-agents.sh` |
+| **platform-adapters** | Claude Code adapter (`/flow` + three hooks via `.claude/settings.json`) + `install.sh` core provisioning. | `.claude/**`, `install.sh` |
+| **install-tooling** | Install lifecycle: `--only`/`--dry-run`/`--uninstall`, one-command curl bootstrap, `doctor.sh`, `deps.json`. | `install.sh`, `flow/scripts/doctor.sh` |
+| **install-distribution** | One-command `install.sh` (local default / `--global` per-user plugin / interactive), `--with-plugins` companion set, self-hosting plugin + marketplace, self-detecting doctrine hook, `doctor` instruction-coverage. Full stateful-flow-via-plugin deferred. | `install.sh`, `build-plugin.sh`, `.claude-plugin/`, `plugin/` |
+| **release-docs** | Public release: READMEs, trust rails (LICENSE/CHANGELOG/CI), logo. | `README.md`, `spec/README.md`, `flow/README.md` |
+| **flow-mvp** | Personal operating layer: precedence + delegation contract blocks, hybrid plan grammar, auto-advance with two edge-keyed gates, a quick-flow compound state, evidence-receipt verify tooth, output-density demoted to frozen vocabulary. | `flow/`, `flow/state-machine.json` |

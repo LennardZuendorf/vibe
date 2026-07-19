@@ -1,14 +1,8 @@
 ---
 type: entrypoint
 scope: technical
-children:
-  - features/vibe-flow/tech.md
-  - features/platform-adapters/tech.md
-  - features/agent-instructions/tech.md
-  - features/install-tooling/tech.md
-  - features/release-docs/tech.md
-  - archive/flow-mvp/tech.md
-updated: 2026-07-18
+children: []
+updated: 2026-07-19
 ---
 
 # vibe — Technical Architecture
@@ -195,8 +189,8 @@ from that linked skill's phase block rather than a hand-written `inject` string.
 owner (the `UserPromptSubmit` hook) pulls the current state's orders from its
 linked skill and injects them once per turn,
 keeping the inject byte-stable and prompt-cache-safe. `set-state.sh` is the only
-sanctioned writer. Full per-state mapping lives in
-[features/vibe-flow/tech.md](features/vibe-flow/tech.md).
+sanctioned writer. The full per-state mapping is the data in
+`.agents/skills/vibe/state-machine.json` itself.
 
 ---
 
@@ -265,21 +259,23 @@ every turn rather than only when the agent remembers:
 | Doctrine | `SessionStart` (+ `compact` matcher) | Deliver the working-model doctrine (session-start reads, write invariants, two gates, "you drive the flow" contract) + cursor summary each session; re-inject on `compact`. Single-sourced from the `<!-- vibe:doctrine -->` block via `doctrine.sh` — shared with the AGENTS.md template, making that block optional. |
 | Redirect *(rework, planned)* | `PostToolUse` (`Skill`) | On delegate-skill load, inject the artifact redirect (`redirects.json`, `{feature}` interpolated) so superpowers keeps its method but writes into `.spec/**`. |
 
-**2026-07-18 rework** (see `docs/brainstorms/2026-07-17-vibe-rework.md`).
+**2026-07-18 rework.**
 **Delivered by flow-legibility:** orders are self-carrying (imperative, the
 transition command included every turn); the `SessionStart` doctrine hook above;
 the machine's loop edges (design↔research, `strategy.spec→brainstorm`,
 `plan→design`); drift-first nudges (drift warnings surface as the first inject
 line); and model-tier pins in every delegation contract (mechanical→sonnet,
-review/architecture→opus). **Still forward-looking:** the `PostToolUse`/`Skill`
-redirect hook + superpowers-native plan format (delegation-redirect); the
-header-keyed spec-delta promotion engine (spec-delta); a per-user plugin
-(vibe-plugin) and one-shot `stack` installer (stack-installer).
+review/architecture→opus). **Delivered by install-distribution:** the per-user
+plugin + self-hosting marketplace and the one-command installer (the leaner
+successor to the old vibe-plugin/stack-installer sketches; full
+stateful-flow-via-plugin deferred). **Still forward-looking:** the
+`PostToolUse`/`Skill` redirect hook + superpowers-native plan format
+(delegation-redirect) and the header-keyed spec-delta promotion engine (spec-delta).
 
 Each hook is a thin shell over `.agents/skills/vibe/scripts/`; the allow/warn/block
 policy lives once in `detect-context.sh` and is never duplicated. Hooks are
-earned warn-first and degrade gracefully (exit 0 on any missing keystone). Full
-wiring is in [features/platform-adapters/tech.md](features/platform-adapters/tech.md).
+earned warn-first and degrade gracefully (exit 0 on any missing keystone). The
+live wiring is `.claude/settings.json` (installer-written) + `.claude/hooks/`.
 
 ---
 
@@ -316,12 +312,16 @@ build time does not reflect the current layout.
 
 ## Features
 
-| Feature | Covers |
-|---|---|
-| **spec framework (done)** | Spec skill, templates, validation, authoring flow. [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) |
-| **[features/vibe-flow/](features/vibe-flow/tech.md)** | `.agents/skills/vibe/` state machine, scripts, the one `vibe` skill's contracts. |
-| **[features/agent-instructions/](features/agent-instructions/tech.md)** | `AGENTS.md` template + `merge-agents.sh` marker merge + adapter symlinks. |
-| **[features/platform-adapters/](features/platform-adapters/tech.md)** | Claude adapter (`/flow` + three hooks via `.claude/settings.json`), `install.sh` core provisioning. |
-| **[features/install-tooling/](features/install-tooling/tech.md)** | `install.sh` flags, `doctor.sh`, `deps.json`. |
-| **[features/release-docs/](features/release-docs/tech.md)** | READMEs, rails (LICENSE/CHANGELOG/CI/runner), logo, examples, stranger eval. |
-| **[archive/flow-mvp/](archive/flow-mvp/tech.md)** (done) | Operating-layer MVP: precedence + contract-block delegation, hybrid plan grammar, `gates` on edges, a quick-flow compound state, evidence-receipt Stop tooth, output-density demoted to frozen vocabulary. Archived. |
+All delivered; branch specs were compounded into these root docs and the feature
+folders removed (see [plan.md](plan.md)).
+
+| Feature | Covers | Lives in |
+|---|---|---|
+| **spec framework** | Spec skill, templates, validation, authoring flow. | [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) |
+| **vibe-flow** | `.agents/skills/vibe/` state machine, scripts, the one `vibe` skill's contracts. | `flow/`, `flow/state-machine.json` |
+| **agent-instructions** | `AGENTS.md` template + `merge-agents.sh` marker merge + adapter symlinks. | `flow/reference/templates/AGENTS.md`, `flow/scripts/merge-agents.sh` |
+| **platform-adapters** | Claude adapter (`/flow` + three hooks via `.claude/settings.json`), `install.sh` core provisioning. | `.claude/**`, `install.sh` |
+| **install-tooling** | `install.sh` flags + curl bootstrap, `doctor.sh`, `deps.json`. | `install.sh`, `flow/scripts/doctor.sh`, `flow/reference/deps.json` |
+| **install-distribution** | `install.sh` local/global/`--with-plugins` + curl bootstrap; `build-plugin.sh` generates the marketplace plugin (symlinked skills, self-detecting `session-start.sh` doctrine hook); `doctor.sh` instruction-coverage. Tests: install modes + plugin-packaging integrity in `flow/tests/adapters/run.sh`, portable validator paths in `spec/tests/run.sh`. | `install.sh`, `build-plugin.sh`, `.claude-plugin/marketplace.json`, `plugin/**`, `flow/scripts/doctrine.sh` |
+| **release-docs** | READMEs, rails (LICENSE/CHANGELOG/CI/runner), logo. | `README.md`, `spec/README.md`, `flow/README.md` |
+| **flow-mvp** | Operating-layer MVP: precedence + contract-block delegation, hybrid plan grammar, `gates` on edges, a quick-flow compound state, evidence-receipt Stop tooth, output-density demoted to frozen vocabulary. | `flow/`, `flow/state-machine.json` |

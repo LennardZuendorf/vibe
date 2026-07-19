@@ -1427,6 +1427,37 @@ test_config_section_present
 test_config_defaults_documented
 test_flow_mvp_4_template_hybrid_grammar
 
+# ── install-agnostic paths: skill files reference the validator skill-relative ──
+# Per agentskills.io, a SKILL.md references its bundled scripts relative to the
+# SKILL.md (e.g. `scripts/validate.sh`) so the reference is correct in EVERY install
+# model — vendored `.agents/skills/spec/`, `~/.agents/…` global, or a plugin cache.
+# A hard-coded `.agents/skills/spec/scripts/validate.sh` (or a `~/.agents/…`
+# enumeration) only resolves in one layout and silently breaks in the others.
+# Discriminating guard: fail if any spec skill doc reintroduces the absolute form.
+test_skill_validator_paths_relative() {
+  local docs=(
+    "$REPO_ROOT/spec/SKILL.md"
+    "$REPO_ROOT/spec/strategy.md"
+    "$REPO_ROOT/spec/feature.md"
+    "$REPO_ROOT/spec/agents/spec-health/SKILL.md"
+  )
+  local f bad=0
+  for f in "${docs[@]}"; do
+    [[ -f "$f" ]] || continue
+    # The literal ~ is the offender pattern we search for, not a path to expand.
+    # shellcheck disable=SC2088
+    if grep -qF '.agents/skills/spec/scripts/validate.sh' "$f" || grep -qF '~/.agents/skills/' "$f"; then
+      bad=$((bad + 1)); echo "        offender: ${f#"$REPO_ROOT"/}"
+    fi
+  done
+  if [[ "$bad" -eq 0 ]]; then
+    pass "install-agnostic-paths" "spec skill files reference validate.sh skill-relative (no install-absolute path)"
+  else
+    fail "install-agnostic-paths" "spec skill files still hard-code an install-absolute validate.sh path"
+  fi
+}
+test_skill_validator_paths_relative
+
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

@@ -2,10 +2,8 @@
 type: entrypoint
 scope: design
 design_format: google-labs-code/design.md-inspired
-children:
-  - features/vibe-flow/design.md
-  - features/platform-adapters/design.md
-updated: 2026-07-03
+children: []
+updated: 2026-07-19
 ---
 
 # vibe — Design
@@ -80,7 +78,6 @@ The spec framework should feel like a small map, not a documentation maze:
 
 ## Feature Design Index
 
-| Feature | Design Detail |
-|---|---|
-| vibe-flow | [features/vibe-flow/design.md](features/vibe-flow/design.md) |
-| platform-adapters | [features/platform-adapters/design.md](features/platform-adapters/design.md) |
+No feature designs are open. Feature `design.md` fragments are branch-scoped and
+were removed when their features compounded; the cross-cutting design language
+lives in this document.

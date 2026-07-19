@@ -689,6 +689,80 @@ bash "$INSTALL" "$SB" --uninstall --only spec --yes >/dev/null 2>&1
   || fail "install-tooling/3" "--uninstall --only spec removes just the spec half"
 rm -rf "$SB"
 
+echo "=== install.sh — single-command modes ==="
+# --help renders the new two-mode usage (the help prints the leading comment block).
+assert_contains "install-modes" "--help documents the two modes" "$(bash "$INSTALL" --help 2>&1)" "One command, two modes"
+# Bare run (no target) defaults to the current directory — the single-command path.
+SBc="$(mktmp)"; git -C "$SBc" init -q >/dev/null 2>&1
+bare_out="$( cd "$SBc" && bash "$INSTALL" --dry-run --local 2>&1 )"
+assert_contains "install-modes" "bare run targets the current directory" "$bare_out" "$SBc/.agents/skills"
+rm -rf "$SBc"
+# Bare run from a SUBDIRECTORY targets the ENCLOSING repo root by marker search, not
+# the subdir (review: install.sh must not naively default to $PWD from a subdir).
+SBsub="$(mktmp)"; git -C "$SBsub" init -q >/dev/null 2>&1; mkdir -p "$SBsub/pkg/src"
+subout="$( cd "$SBsub/pkg/src" && bash "$INSTALL" --dry-run --local 2>&1 )"
+assert_contains "install-modes" "bare run from a subdir targets the repo root" "$subout" "$SBsub/.agents/skills"
+assert_not_contains "install-modes" "bare run from a subdir skips the subdir" "$subout" "pkg/src/.agents"
+rm -rf "$SBsub"
+# --global --dry-run writes nothing and describes the per-user plugin plan.
+SBg="$(mktmp)"
+gout="$( cd "$SBg" && bash "$INSTALL" --global --dry-run 2>&1 )"
+assert_contains "install-modes" "--global plans a per-user plugin install" "$gout" "install plugin vibe@vibe at user scope"
+{ [[ ! -e "$SBg/.agents" && ! -e "$SBg/.claude" ]] && pass "install-modes" "--global --dry-run writes nothing"; } || fail "install-modes" "--global dry-run wrote files"
+rm -rf "$SBg"
+# A REAL --global without the claude CLI errors clearly (graceful, not a stack
+# trace) — and exits before any mutation. A dry-run prints the plan without the CLI
+# (it touches nothing), so the error path is exercised with a real run here.
+noclaude="$(mkshim claude)"
+SBn="$(mktmp)"
+nout="$( cd "$SBn" && PATH="$noclaude" bash "$INSTALL" --global 2>&1 || true )"
+assert_contains "install-modes" "real --global without claude CLI errors clearly" "$nout" "needs the 'claude' CLI"
+rm -rf "$noclaude" "$SBn"
+# An explicitly-empty target must be REJECTED, never fall through to cwd — else
+# `install.sh "" --uninstall` would strip vibe from the current directory. Regression
+# for a dogfood near-miss (an unset shell var expanded to an empty argument).
+SBe="$(mktmp)"
+eout="$( cd "$SBe" && bash "$INSTALL" "" --uninstall --yes 2>&1; echo "rc=$?" )"
+assert_contains "install-modes" "empty target is rejected outright" "$eout" "empty target"
+assert_not_contains "install-modes" "empty target does not reach uninstall" "$eout" "uninstalling vibe"
+rm -rf "$SBe"
+
+echo "=== vibe-plugin — marketplace + plugin payload ==="
+PLUGIN_JSON="$REPO_ROOT/plugin/.claude-plugin/plugin.json"
+MARKET_JSON="$REPO_ROOT/.claude-plugin/marketplace.json"
+BUILD_PLUGIN="$REPO_ROOT/build-plugin.sh"
+if command -v jq >/dev/null 2>&1; then
+  jq -e . "$PLUGIN_JSON" >/dev/null 2>&1 && pass "vibe-plugin" "plugin.json is valid JSON" || fail "vibe-plugin" "plugin.json invalid/missing"
+  jq -e . "$MARKET_JSON" >/dev/null 2>&1 && pass "vibe-plugin" "marketplace.json is valid JSON" || fail "vibe-plugin" "marketplace.json invalid/missing"
+  # plugin.json MUST NOT declare `hooks` (hooks/hooks.json auto-loads; declaring it
+  # too double-loads and fails plugin load) nor `commands` (/flow needs the per-repo
+  # cursor writer the plugin does not carry). Both verified live against the CLI.
+  assert_eq "vibe-plugin" "plugin.json declares no hooks field (auto-loaded)" "$(jq -r 'has("hooks")' "$PLUGIN_JSON")" "false"
+  assert_eq "vibe-plugin" "plugin.json declares no commands field" "$(jq -r 'has("commands")' "$PLUGIN_JSON")" "false"
+  assert_eq "vibe-plugin" "plugin.json bundles ./skills/" "$(jq -r '.skills' "$PLUGIN_JSON")" "./skills/"
+else
+  { [[ -f "$PLUGIN_JSON" && -f "$MARKET_JSON" ]] && pass "vibe-plugin" "manifests present (no jq)"; } || fail "vibe-plugin" "manifests missing"
+fi
+# Both skills resolve to SKILL.md through symlinks to the canonical spec/ + flow/
+# trees (zero duplication; `claude plugin install` dereferences them into real cache
+# dirs — verified live: Skills (2) spec, vibe). A commands/ dir is what mis-scans as
+# a phantom skill, so the plugin ships none.
+{ [[ -L "$REPO_ROOT/plugin/skills/spec" && -L "$REPO_ROOT/plugin/skills/vibe" \
+     && -f "$REPO_ROOT/plugin/skills/spec/SKILL.md" && -f "$REPO_ROOT/plugin/skills/vibe/SKILL.md" ]] \
+  && pass "vibe-plugin" "spec + vibe skills are symlinks resolving to SKILL.md"; } || fail "vibe-plugin" "skills not symlinked/resolvable"
+# No per-project runtime state may ship in the plugin. `find` does not descend the
+# skill symlinks, so tests/ and gitignored runtime state under spec/ + flow/ are not
+# counted here (a clean marketplace fetch has no runtime state committed anyway).
+strays="$(find "$REPO_ROOT/plugin" \( -name state.json -o -name warnings.log -o -name '*.verify' -o -name evidence -o -name tests \) 2>/dev/null | wc -l | tr -d ' ')"
+assert_eq "vibe-plugin" "plugin payload carries no runtime state" "$strays" "0"
+# Drift guard: the committed tree must equal a fresh build from spec/ + flow/, so a
+# skill edit without a rebuild cannot silently ship a stale plugin.
+if [[ -f "$BUILD_PLUGIN" ]] && bash "$BUILD_PLUGIN" --check >/dev/null 2>&1; then
+  pass "vibe-plugin" "committed plugin/ matches a fresh build (no drift)"
+else
+  fail "vibe-plugin" "plugin/ is stale — run ./build-plugin.sh and commit"
+fi
+
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

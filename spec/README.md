@@ -1,6 +1,6 @@
 # The spec framework
 
-> **For humans.** This README is the standalone guide to the spec half of vibe.
+> **For humans.** This README is the standalone guide to the spec half of vibe kit.
 > Agents read [SKILL.md](SKILL.md) instead — it is the router they route through.
 
 The **spec framework** is a durable planning layer for a codebase. It teaches an

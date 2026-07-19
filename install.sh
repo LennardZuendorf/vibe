@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
-# install.sh — install the vibe workflow harness into a target repo.
+# install.sh — install the vibe workflow harness. One command, two modes.
 #
-#   ./install.sh <target-repo-root> [--only spec|flow] [--dry-run] [--uninstall] [--yes] [--adapters claude,warp]
+#   ./install.sh                 # single command: default to THIS repo; on a TTY,
+#                                #   ask local vs global first.
+#   ./install.sh <repo>          # local: full vibe into <repo> (explicit target).
+#   ./install.sh --global        # per-user plugin (spec + vibe skills + doctrine,
+#                                #   applies across every repo) via the claude CLI.
+#   ./install.sh --with-plugins  # also offer companion plugins (superpowers, …).
 #
-# What it does (OPEN-3 default = COPY the platform-neutral core; MERGE the
-# instruction file with markers; never blind-overwrite user content):
+# No checkout required — run straight from the web (installs into the current repo):
+#   curl -fsSL https://raw.githubusercontent.com/LennardZuendorf/vibe/main/install.sh | bash
+# Piped from curl (no skill bundle beside the script) it fetches a repo snapshot
+# first (override with VIBE_REPO / VIBE_REF), then runs the local install.
+#
+# LOCAL install (copy the platform-neutral core; merge the instruction file with
+# markers; never blind-overwrite user content):
 #   1. Copy the core   .agents/skills/{spec,vibe} (skills + vibe flow engine).
 #   2. Copy the Claude adapter   .claude/commands + .claude/hooks/*.sh scripts.
 #   3. Wire the flow hooks into   .claude/settings.json (merge, never clobber).
@@ -14,7 +24,14 @@
 #   7. Symlink requested adapters (CLAUDE.md, WARP.md) — opt-in, never clobber.
 #   8. Report that hooks are live and /flow is a native project command.
 #
+# GLOBAL install installs the per-user vibe plugin (marketplace add + plugin
+# install) so the skills + doctrine apply everywhere; the full STATEFUL flow
+# (cursor, /flow, hooks) is a per-repo `--local` install.
+#
 # Flags:
+#   --local            full per-repo install into the target (the default).
+#   --global           per-user plugin install via the claude CLI.
+#   --with-plugins     also install companion plugins (superpowers; feature-dev slot).
 #   --only spec|flow   install (or uninstall) a single half (default: both).
 #   --dry-run          print the action plan and write nothing.
 #   --uninstall        remove managed artifacts; preserve .spec/, user AGENTS.md
@@ -28,7 +45,37 @@
 
 set -euo pipefail
 
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)" || SRC=""
+
+# ── network bootstrap ────────────────────────────────────────────────────────
+# Run straight from the web (curl … | bash) with no checkout: the skill bundle
+# is not beside this script, so fetch a snapshot of the repo and re-run the real
+# installer from the extracted tree (which then resolves like a normal checkout).
+# Skipped whenever the bundle IS present, so a local ./install.sh never downloads.
+VIBE_REPO="${VIBE_REPO:-LennardZuendorf/vibe}"
+VIBE_REF="${VIBE_REF:-main}"
+if [[ -z "${SRC:-}" || ! -f "$SRC/flow/state-machine.json" || ! -f "$SRC/spec/SKILL.md" ]]; then
+  tarball="https://codeload.github.com/$VIBE_REPO/tar.gz/$VIBE_REF"
+  boot_tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-boot.XXXXXX")"
+  trap 'rm -rf "$boot_tmp"' EXIT
+  echo "install: fetching vibe ($VIBE_REPO@$VIBE_REF) …" >&2
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$tarball" | tar -xzf - -C "$boot_tmp"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- "$tarball" | tar -xzf - -C "$boot_tmp"
+  else
+    echo "install: ERROR: need curl or wget to install from the network." >&2
+    exit 1
+  fi
+  boot_src="$(find "$boot_tmp" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+  if [[ -z "$boot_src" || ! -f "$boot_src/install.sh" ]]; then
+    echo "install: ERROR: fetched archive is missing install.sh." >&2
+    exit 1
+  fi
+  boot_rc=0
+  bash "$boot_src/install.sh" "$@" || boot_rc=$?
+  exit "$boot_rc"
+fi
 
 err() { echo "install: $1" >&2; }
 note() { echo "install: $1"; }
@@ -104,12 +151,119 @@ unregister_skill() {
   fi
 }
 
+# ── companion plugins (opt-in --with-plugins) ──────────────────────────────────
+# superpowers is verified against the live marketplace. feature-dev has no stable
+# public marketplace id, so it ships as a documented slot — fill it in when known.
+# caveman is intentionally absent: it is an injected "caveman style" doctrine note,
+# not a plugin. Each entry: "name@marketplace|marketplace-source".
+VIBE_COMPANIONS=(
+  "superpowers@superpowers-marketplace|obra/superpowers-marketplace"
+  # "feature-dev@<marketplace>|<owner/repo>"   # add when its marketplace id is known
+)
+
+install_companion_plugins() {
+  if ! command -v claude >/dev/null 2>&1; then
+    err "WARN: --with-plugins needs the 'claude' CLI on PATH; skipping companion plugins."
+    return 0
+  fi
+  local entry id src name
+  for entry in "${VIBE_COMPANIONS[@]}"; do
+    id="${entry%%|*}"; src="${entry#*|}"; name="${id%%@*}"
+    if claude plugin list 2>/dev/null | grep -q "$name@"; then
+      note "companion '$name' already installed — skipping"; continue
+    fi
+    say "add marketplace '$src' and install '$id' (user scope)"
+    [[ "$DRY_RUN" -eq 1 ]] && continue
+    if ! claude plugin marketplace add "$src" --scope user >/dev/null 2>&1; then
+      err "WARN: could not add marketplace '$src' (offline?); skipping '$name'."; continue
+    fi
+    if claude plugin install "$id" --scope user >/dev/null 2>&1; then
+      note "installed companion '$name'"
+    else
+      err "WARN: could not install '$id'; skipping."
+    fi
+  done
+}
+
+# ── global (per-user plugin) install ───────────────────────────────────────────
+# Install the vibe plugin at user scope so its spec + vibe skills and the doctrine
+# hook apply in every vibe-enabled repo. The full STATEFUL flow stays a per-repo
+# --local install. Respects --dry-run and degrades without the claude CLI.
+install_global() {
+  local have_claude=0
+  command -v claude >/dev/null 2>&1 && have_claude=1
+  # A dry-run never touches anything, so it prints the plan even without the CLI. A
+  # REAL global install needs the claude CLI to add the marketplace + install.
+  if [[ "$DRY_RUN" -eq 0 && "$have_claude" -eq 0 ]]; then
+    err "ERROR: --global needs the 'claude' CLI on PATH (it installs the vibe plugin per-user)."
+    err "       Install Claude Code, or run a per-repo install: ./install.sh <repo> --local"
+    exit 1
+  fi
+  say "add the vibe marketplace ($SRC) at user scope"
+  say "install plugin vibe@vibe at user scope (applies across all your repos)"
+  if [[ "$DRY_RUN" -eq 1 && "$have_claude" -eq 0 ]]; then
+    note "(dry-run) note: the 'claude' CLI is not on PATH — a real --global run needs it."
+  fi
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    claude plugin marketplace add "$SRC" --scope user >/dev/null 2>&1 \
+      || err "WARN: could not add the vibe marketplace (already added?); continuing."
+    if claude plugin install vibe@vibe --scope user >/dev/null 2>&1; then
+      note "installed vibe@vibe (user scope)"
+    else
+      err "WARN: could not install vibe@vibe — run 'claude plugin install vibe@vibe' by hand."
+    fi
+  fi
+  # Per-repo home for the spec framework: seed .spec/ in the current repo if it is a
+  # git repo without one (the plugin carries the skills; each repo still needs its
+  # own .spec/ memory). The full stateful flow is a separate --local install.
+  if [[ -d "$TARGET/.git" && ! -d "$TARGET/.spec" ]]; then
+    say "seed .spec/ in $TARGET (spec framework home for this repo)"
+    if [[ "$DRY_RUN" -eq 0 && -f "$SRC/spec/scripts/setup.sh" ]]; then
+      ( cd "$TARGET" && bash "$SRC/spec/scripts/setup.sh" ) >/dev/null 2>&1 \
+        || err "WARN: .spec/ seed skipped (run 'bash spec/scripts/setup.sh' in the repo)."
+    fi
+  fi
+  [[ "$WITH_PLUGINS" -eq 1 ]] && install_companion_plugins
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "install: [dry-run] global plan complete — nothing was written."
+  else
+    cat <<EOF
+install: done (global / per-user plugin).
+install:   vibe@vibe is installed at user scope — its spec + vibe skills and the
+install:   SessionStart doctrine hook now apply in every vibe-enabled repo (one with
+install:   a .spec/ tree). Restart Claude Code to load it.
+install:   For the FULL stateful flow (cursor, /flow, hooks) in a repo, run:
+install:     ./install.sh <repo> --local
+EOF
+  fi
+  exit 0
+}
+
+# ── interactive mode prompt (bare TTY run only) ────────────────────────────────
+prompt_mode() {
+  local ans
+  {
+    echo "vibe install — choose a mode:"
+    echo "  [1] local   full vibe into THIS repo ($TARGET): spec + flow + Claude adapter (default)"
+    echo "  [2] global  per-user plugin (spec + vibe skills + doctrine, every repo)"
+    printf 'Mode [1/2]? '
+  } >&2
+  read -r ans || ans=""
+  case "$ans" in
+    2|g|global) echo global ;;
+    *)          echo local ;;
+  esac
+}
+
 DRY_RUN=0
 WANT_SPEC=1
 WANT_FLOW=1
 UNINSTALL=0
 ASSUME_YES=0
+MODE=""
+WITH_PLUGINS=0
 TARGET=""
+TARGET_GIVEN=0
 ADAPTERS=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -120,6 +274,9 @@ while [[ $# -gt 0 ]]; do
     --dry-run) DRY_RUN=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     --yes|-y) ASSUME_YES=1; shift ;;
+    --local)  MODE=local;  shift ;;
+    --global) MODE=global; shift ;;
+    --with-plugins) WITH_PLUGINS=1; shift ;;
     --only)
       case "${2:-}" in
         spec) WANT_FLOW=0 ;;
@@ -134,15 +291,43 @@ while [[ $# -gt 0 ]]; do
         *) err "ERROR: --only takes 'spec' or 'flow' (got '${1#*=}')"; exit 1 ;;
       esac
       shift ;;
-    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,/^set -euo pipefail/p' "$0" | sed '$d'; exit 0 ;;
     -*) err "ERROR: unknown option '$1'"; exit 1 ;;
-    *) TARGET="$1"; shift ;;
+    *) TARGET="$1"; TARGET_GIVEN=1; shift ;;
   esac
 done
 
-if [[ -z "$TARGET" ]]; then
-  err "ERROR: target repo root required. Usage: ./install.sh <target-repo-root> [--only spec|flow] [--dry-run] [--adapters claude,warp]"
+# Single-command resolution. A bare run (no target) defaults to THIS directory; an
+# explicit target behaves exactly as before. Mode: --local/--global win; else a bare
+# interactive run prompts (local vs global); else local. Explicit target or
+# uninstall never prompts (backward-compatible with scripted/CI invocations).
+if [[ "$TARGET_GIVEN" -eq 0 ]]; then
+  # Bare run: install into the ENCLOSING repo, not just the cwd. Search upward for a
+  # .spec/ or .git marker (same rule as the suites' _find_repo_root; `-e` catches a
+  # .git file in worktrees/submodules), so `install.sh` from a subdirectory targets
+  # the repo root. No marker at all (a brand-new project) falls back to the cwd.
+  TARGET="$PWD"
+  _d="$PWD"
+  while [[ "$_d" != "/" ]]; do
+    if [[ -d "$_d/.spec" || -e "$_d/.git" ]]; then TARGET="$_d"; break; fi
+    _d="$(dirname "$_d")"
+  done
+fi
+# An explicitly-passed empty/whitespace target (`install.sh ""`) must be rejected
+# outright — never silently fall through to the current directory (that would run a
+# --uninstall against cwd). Do not rely on a later `mkdir -p ""` failing.
+if [[ -z "${TARGET//[[:space:]]/}" ]]; then
+  err "ERROR: empty target. Pass a repo path, or run with NO argument to use the current directory."
   exit 1
+fi
+if [[ -z "$MODE" ]]; then
+  if [[ "$TARGET_GIVEN" -eq 1 || "$UNINSTALL" -eq 1 ]]; then
+    MODE=local
+  elif [[ -t 0 && "$DRY_RUN" -eq 0 ]]; then
+    MODE="$(prompt_mode)"
+  else
+    MODE=local
+  fi
 fi
 
 # Resolve TARGET to an absolute path. Create it only for a real install; a
@@ -159,9 +344,18 @@ else
   esac
 fi
 
-if [[ "$TARGET" == "$SRC" ]]; then
+# A LOCAL install into the vibe source repo itself is meaningless (it already IS
+# vibe). Global mode is fine from here — it installs the per-user plugin, not into
+# this tree — so only guard the local path.
+if [[ "$MODE" == "local" && "$UNINSTALL" -eq 0 && "$TARGET" == "$SRC" ]]; then
   err "ERROR: target is the vibe source repo itself; nothing to install."
+  err "       Run from inside another repo, pass a target, or use --global."
   exit 1
+fi
+
+# Global (per-user plugin) install is a distinct, self-contained path.
+if [[ "$MODE" == "global" && "$UNINSTALL" -eq 0 ]]; then
+  install_global
 fi
 
 # ── uninstall ────────────────────────────────────────────────────────────────
@@ -454,6 +648,12 @@ if [[ -n "$ADAPTERS" ]]; then
       esac
     done
   fi
+fi
+
+# 7b. Companion plugins (opt-in --with-plugins). A user-level set applied across
+# repos, installed via the claude CLI; graceful-degrade when it is absent.
+if [[ "$WITH_PLUGINS" -eq 1 ]]; then
+  install_companion_plugins
 fi
 
 # 8. Completion guidance — tailored to what was actually installed.

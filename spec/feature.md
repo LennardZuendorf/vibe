@@ -97,10 +97,12 @@ evidence summary, and a draft lesson entry (pattern, rule, tags) for the human t
 
 ## Examples in this repo
 
-- [.spec/features/vibe-flow/](../../../.spec/features/vibe-flow) — flow state machine + one `vibe` skill (units `vibe-flow/n`)
-- [`.agents/skills/spec/`](../../) — spec framework (units `spec/n`, delivered — wrapped up; no feature folder)
-- [.spec/features/agent-instructions/](../../../.spec/features/agent-instructions) — `AGENTS.md` template and adapter symlinks (units `agent-instructions/n`)
-- [.spec/features/platform-adapters/](../../../.spec/features/platform-adapters) — Codex / Claude Code adapters (units `platform-adapters/n`)
+Feature folders are ephemeral — written at design, consumed at impl, then deleted
+before the branch merges — so this repo currently keeps none. The filled-in root
+docs under [`.spec/`](../.spec) (product / tech / design / plan / lessons) are
+the standing worked example.
+
+- [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) — spec framework (units `spec/n`, delivered — wrapped up; no feature folder)
 
 ## Anatomy of `features/<name>/`
 

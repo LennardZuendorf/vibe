@@ -38,7 +38,18 @@ else
   SKILLS_DIR="$REPO_ROOT/.agents/skills"
 fi
 SKILL_MD="$SKILLS_DIR/vibe/SKILL.md"
-STATE="$SKILL_DIR/state.json"
+
+# The cursor is per-project runtime state. When a hook sets CLAUDE_PROJECT_DIR
+# (e.g. a per-user plugin whose code lives OUTSIDE the repo under
+# ${CLAUDE_PLUGIN_ROOT}), read the project's cursor there so the summary reflects
+# THIS repo, not the shared plugin dir. Otherwise the cursor sits next to this
+# skill (the vendored install). Only redirect when the project cursor exists, so a
+# vendored/dogfood run is byte-for-byte unchanged.
+if [[ -n "${CLAUDE_PROJECT_DIR:-}" && -f "$CLAUDE_PROJECT_DIR/.agents/skills/vibe/state.json" ]]; then
+  STATE="$CLAUDE_PROJECT_DIR/.agents/skills/vibe/state.json"
+else
+  STATE="$SKILL_DIR/state.json"
+fi
 
 have_jq() { command -v jq >/dev/null 2>&1; }
 
