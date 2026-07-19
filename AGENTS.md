@@ -57,9 +57,9 @@ Route by **intent**, not by flow cursor.
 | Build a named feature | `.spec/features/<name>/` + root `plan.md` | per feature Scope |
 | Small bounded fix | relevant feature spec or `.spec/quick/<slug>.md` | minimal |
 | Spec / plan work | `.agents/skills/spec/SKILL.md` | `.spec/**` per write rules |
-| Build flow machinery | `.spec/features/vibe-flow/` | `.agents/skills/vibe/`, `vibe` skill |
-| Build adapters / hooks | `.spec/features/platform-adapters/` | `.claude/`, `install.sh` |
-| Build AGENTS.md provisioning | `.spec/features/agent-instructions/` | templates, merge scripts |
+| Build flow machinery | `.spec/tech.md` + `.agents/skills/vibe/` | `.agents/skills/vibe/`, `vibe` skill |
+| Build adapters / hooks | `.spec/tech.md` + `.claude/` | `.claude/`, `install.sh` |
+| Build AGENTS.md provisioning | `flow/reference/templates/AGENTS.md` | templates, merge scripts |
 | Set up or repair harness | `.agents/skills/vibe/SKILL.md` | `.agents/**`, managed blocks |
 
 `vibe` skill phases are **helpers** for their domains. Read the matching feature spec first;
@@ -67,8 +67,8 @@ the skill does not override `.spec/`.
 
 ## Target harness
 
-This is the **end-state** the repo is building. Reference when implementing
-[vibe-flow](.spec/features/vibe-flow/product.md) or [platform-adapters](.spec/features/platform-adapters/product.md) — not for ordinary feature work.
+This is the **end-state** the repo is building. Reference the root
+[product.md](.spec/product.md) and [tech.md](.spec/tech.md) — not for ordinary feature work.
 
 - **Cursor:** `.agents/skills/vibe/state.json` — `{flow, phase, feature, updated}`; create from
   `state.example.json` only when testing transitions.

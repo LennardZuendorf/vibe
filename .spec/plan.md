@@ -16,14 +16,15 @@ feature plan, never here.
 
 **Parent specs:** [product.md](product.md), [tech.md](tech.md), [design.md](design.md)
 
-**Feature plans:**
+**Delivered features** — all compounded into the root docs; branch spec folders
+removed (history in the Delivered section below). Truth is the code + tests:
 
-| Feature | Owns | Plan |
+| Feature | Owns | Tests |
 |---|---|---|
 | `spec` skill bundle | root `.spec/` + [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) | [`spec/tests/run.sh`](../spec/tests/run.sh) |
-| [vibe-flow](features/vibe-flow/product.md) | `.agents/skills/vibe/` + `vibe` skill | [plan.md](features/vibe-flow/plan.md) |
-| [agent-instructions](features/agent-instructions/product.md) | `AGENTS.md` template + symlinks | [plan.md](features/agent-instructions/plan.md) |
-| [platform-adapters](features/platform-adapters/product.md) | hooks + `/flow` + installer (settings.json wiring) | [plan.md](features/platform-adapters/plan.md) |
+| vibe-flow | `.agents/skills/vibe/` + `vibe` skill | [`flow/tests/run.sh`](../flow/tests/run.sh) |
+| agent-instructions | `AGENTS.md` template + symlinks | [`flow/tests/adapters/run.sh`](../flow/tests/adapters/run.sh) |
+| platform-adapters | hooks + `/flow` + installer (settings.json wiring) | [`flow/tests/adapters/run.sh`](../flow/tests/adapters/run.sh) |
 
 ---
 
@@ -67,9 +68,9 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 4 | platform-adapters | three hooks + `/flow` + `install.sh` (settings.json wiring) | `flow/tests/adapters/run.sh` | DONE | agent-instructions DONE |
 | 5 | dogfood | hook/merge/install behaviours + earn-the-teeth | scripted + lessons | DONE | platform-adapters DONE |
 | 6 | monorepo-split | `spec/`+`flow/` split + symlinks + truth sweep + orphan compound | suites + validate + grep evidence | DONE | — |
-| 7 | [install-tooling](features/install-tooling/plan.md) | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `flow/tests/adapters/run.sh` + `flow/tests/run.sh` | DONE | monorepo-split DONE |
-| 8 | [release-docs](features/release-docs/plan.md) | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | DONE | install-tooling DONE |
-| 9 | [flow-mvp](archive/flow-mvp/plan.md) | precedence + contract blocks, hybrid plan grammar, auto-advance + two gates, a quick-flow compound state, evidence-receipt verify tooth, output-density demoted to frozen vocabulary | `flow/tests/run.sh` (hermetic sandbox, machine⊆prose, gate↔orders, evidence-gate block/pass) | DONE | — |
+| 7 | install-tooling | `--only`/`--dry-run`/`--uninstall`, `doctor.sh`, `deps.json` | `flow/tests/adapters/run.sh` + `flow/tests/run.sh` | DONE | monorepo-split DONE |
+| 8 | release-docs | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | DONE | install-tooling DONE |
+| 9 | flow-mvp | precedence + contract blocks, hybrid plan grammar, auto-advance + two gates, a quick-flow compound state, evidence-receipt verify tooth, output-density demoted to frozen vocabulary | `flow/tests/run.sh` (hermetic sandbox, machine⊆prose, gate↔orders, evidence-gate block/pass) | DONE | — |
 | 10 | flow-legibility | self-carrying orders (transition command in every inject), SessionStart doctrine hook (+compact re-inject), loop edges (design↔research, spec→brainstorm, plan→design), drift-first nudges, model-tier pins in delegation contracts | `flow/tests/run.sh` | DONE | — |
 | 11 | delegation-redirect | `PostToolUse`/`Skill` redirect hook + `redirects.json` data map (per-repo overridable); plan format goes superpowers-native in `.spec/features/<f>/plan.md`; SDD ledger accepted as verify evidence | `flow/tests/adapters/run.sh` | NOT STARTED | flow-legibility DONE |
 | 12 | spec-delta | header-keyed ADDED/MODIFIED/REMOVED promotion engine (supersedes EOF-append `promote.sh`), implement documented `requirements:`/`units:` validators, unify R-ID shape, GWT structure + `updated:` freshness + backlink checks (warn-first), coherent `update` route | `spec/tests/run.sh` | NOT STARTED | — |
@@ -77,8 +78,7 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 14 | stack-installer | one-shot `stack` command: marketplaces + user-level plugin set (superpowers, feature-dev, vibe, simplify, caveman prefs) + per-repo seed; idempotent, `--dry-run` | scripted eval (fresh target) | NOT STARTED | vibe-plugin DONE |
 
 **Active focus:** the 2026-07 rework (`claude/vibe-framework-rework-hy1xp5`,
-direction settled 2026-07-18 — see
-[docs/brainstorms/2026-07-17-vibe-rework.md](../docs/brainstorms/2026-07-17-vibe-rework.md)).
+direction settled 2026-07-18).
 Theme: vibe keeps the strategic/product spec layer and the enforcement pattern
 (cursor + hooks + injection) but stops owning build *method* — superpowers
 v6 runs brainstorm/plan/execution in its native format, redirected into
@@ -191,7 +191,7 @@ Cleansed notes for shipped work — detail lives in live surfaces, not this plan
   rails (MIT LICENSE, CHANGELOG 0.1.0, `tests/run.sh`, GitHub CI, issue templates);
   four rainbow SVG logo candidates; a worked `examples/todo-api/.spec/` sample was
   **deferred** (never shipped — the tree does not exist); and a README-only
-  stranger eval (`docs/evals/stranger-2026-07-03.md`) that gated the docs. Eval
+  stranger eval (README-only, run in a throwaway sandbox) that gated the docs. It
   found + fixed the orders.sh fresh-install bug and five doc frictions. gh repo
   metadata deferred to a documented manual step (sandbox boundary). Suites green.
 - **install-tooling — DONE (2026-07-03).** `install.sh` refactored to per-half,
