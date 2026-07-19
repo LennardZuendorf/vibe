@@ -8,6 +8,11 @@
 #                                #   applies across every repo) via the claude CLI.
 #   ./install.sh --with-plugins  # also offer companion plugins (superpowers, …).
 #
+# No checkout required — run straight from the web (installs into the current repo):
+#   curl -fsSL https://raw.githubusercontent.com/LennardZuendorf/vibe/main/install.sh | bash
+# Piped from curl (no skill bundle beside the script) it fetches a repo snapshot
+# first (override with VIBE_REPO / VIBE_REF), then runs the local install.
+#
 # LOCAL install (copy the platform-neutral core; merge the instruction file with
 # markers; never blind-overwrite user content):
 #   1. Copy the core   .agents/skills/{spec,vibe} (skills + vibe flow engine).
@@ -40,7 +45,37 @@
 
 set -euo pipefail
 
-SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)" || SRC=""
+
+# ── network bootstrap ────────────────────────────────────────────────────────
+# Run straight from the web (curl … | bash) with no checkout: the skill bundle
+# is not beside this script, so fetch a snapshot of the repo and re-run the real
+# installer from the extracted tree (which then resolves like a normal checkout).
+# Skipped whenever the bundle IS present, so a local ./install.sh never downloads.
+VIBE_REPO="${VIBE_REPO:-LennardZuendorf/vibe}"
+VIBE_REF="${VIBE_REF:-main}"
+if [[ -z "${SRC:-}" || ! -f "$SRC/flow/state-machine.json" || ! -f "$SRC/spec/SKILL.md" ]]; then
+  tarball="https://codeload.github.com/$VIBE_REPO/tar.gz/$VIBE_REF"
+  boot_tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-boot.XXXXXX")"
+  trap 'rm -rf "$boot_tmp"' EXIT
+  echo "install: fetching vibe ($VIBE_REPO@$VIBE_REF) …" >&2
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$tarball" | tar -xzf - -C "$boot_tmp"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- "$tarball" | tar -xzf - -C "$boot_tmp"
+  else
+    echo "install: ERROR: need curl or wget to install from the network." >&2
+    exit 1
+  fi
+  boot_src="$(find "$boot_tmp" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+  if [[ -z "$boot_src" || ! -f "$boot_src/install.sh" ]]; then
+    echo "install: ERROR: fetched archive is missing install.sh." >&2
+    exit 1
+  fi
+  boot_rc=0
+  bash "$boot_src/install.sh" "$@" || boot_rc=$?
+  exit "$boot_rc"
+fi
 
 err() { echo "install: $1" >&2; }
 note() { echo "install: $1"; }
