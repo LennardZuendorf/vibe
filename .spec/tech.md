@@ -265,10 +265,12 @@ transition command included every turn); the `SessionStart` doctrine hook above;
 the machine's loop edges (design↔research, `strategy.spec→brainstorm`,
 `plan→design`); drift-first nudges (drift warnings surface as the first inject
 line); and model-tier pins in every delegation contract (mechanical→sonnet,
-review/architecture→opus). **Still forward-looking:** the `PostToolUse`/`Skill`
-redirect hook + superpowers-native plan format (delegation-redirect); the
-header-keyed spec-delta promotion engine (spec-delta); a per-user plugin
-(vibe-plugin) and one-shot `stack` installer (stack-installer).
+review/architecture→opus). **Delivered by install-distribution:** the per-user
+plugin + self-hosting marketplace and the one-command installer (the leaner
+successor to the old vibe-plugin/stack-installer sketches; full
+stateful-flow-via-plugin deferred). **Still forward-looking:** the
+`PostToolUse`/`Skill` redirect hook + superpowers-native plan format
+(delegation-redirect) and the header-keyed spec-delta promotion engine (spec-delta).
 
 Each hook is a thin shell over `.agents/skills/vibe/scripts/`; the allow/warn/block
 policy lives once in `detect-context.sh` and is never duplicated. Hooks are
@@ -320,5 +322,6 @@ folders removed (see [plan.md](plan.md)).
 | **agent-instructions** | `AGENTS.md` template + `merge-agents.sh` marker merge + adapter symlinks. | `flow/reference/templates/AGENTS.md`, `flow/scripts/merge-agents.sh` |
 | **platform-adapters** | Claude adapter (`/flow` + three hooks via `.claude/settings.json`), `install.sh` core provisioning. | `.claude/**`, `install.sh` |
 | **install-tooling** | `install.sh` flags + curl bootstrap, `doctor.sh`, `deps.json`. | `install.sh`, `flow/scripts/doctor.sh`, `flow/reference/deps.json` |
+| **install-distribution** | `install.sh` local/global/`--with-plugins` + curl bootstrap; `build-plugin.sh` generates the marketplace plugin (symlinked skills, self-detecting `session-start.sh` doctrine hook); `doctor.sh` instruction-coverage. Tests: install modes + plugin-packaging integrity in `flow/tests/adapters/run.sh`, portable validator paths in `spec/tests/run.sh`. | `install.sh`, `build-plugin.sh`, `.claude-plugin/marketplace.json`, `plugin/**`, `flow/scripts/doctrine.sh` |
 | **release-docs** | READMEs, rails (LICENSE/CHANGELOG/CI/runner), logo. | `README.md`, `spec/README.md`, `flow/README.md` |
 | **flow-mvp** | Operating-layer MVP: precedence + contract-block delegation, hybrid plan grammar, `gates` on edges, a quick-flow compound state, evidence-receipt Stop tooth, output-density demoted to frozen vocabulary. | `flow/`, `flow/state-machine.json` |

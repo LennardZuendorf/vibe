@@ -25,6 +25,7 @@ removed (history in the Delivered section below). Truth is the code + tests:
 | vibe-flow | `.agents/skills/vibe/` + `vibe` skill | [`flow/tests/run.sh`](../flow/tests/run.sh) |
 | agent-instructions | `AGENTS.md` template + symlinks | [`flow/tests/adapters/run.sh`](../flow/tests/adapters/run.sh) |
 | platform-adapters | hooks + `/flow` + installer (settings.json wiring) | [`flow/tests/adapters/run.sh`](../flow/tests/adapters/run.sh) |
+| install-distribution | one-command `install.sh` (local/global), self-hosting plugin + marketplace, doctrine hook, `--with-plugins` companion set | [`flow/tests/adapters/run.sh`](../flow/tests/adapters/run.sh) + [`spec/tests/run.sh`](../spec/tests/run.sh) |
 
 ---
 
@@ -74,8 +75,7 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 10 | flow-legibility | self-carrying orders (transition command in every inject), SessionStart doctrine hook (+compact re-inject), loop edges (design↔research, spec→brainstorm, plan→design), drift-first nudges, model-tier pins in delegation contracts | `flow/tests/run.sh` | DONE | — |
 | 11 | delegation-redirect | `PostToolUse`/`Skill` redirect hook + `redirects.json` data map (per-repo overridable); plan format goes superpowers-native in `.spec/features/<f>/plan.md`; SDD ledger accepted as verify evidence | `flow/tests/adapters/run.sh` | NOT STARTED | flow-legibility DONE |
 | 12 | spec-delta | header-keyed ADDED/MODIFIED/REMOVED promotion engine (supersedes EOF-append `promote.sh`), implement documented `requirements:`/`units:` validators, unify R-ID shape, GWT structure + `updated:` freshness + backlink checks (warn-first), coherent `update` route | `spec/tests/run.sh` | NOT STARTED | — |
-| 13 | vibe-plugin | per-user Claude Code plugin (skills + hooks + `/flow`), repo self-detection in hooks, `install.sh --local` team-repo mode (settings.local.json + CLAUDE.local.md), doctor instruction-coverage check | `flow/tests/adapters/run.sh` | NOT STARTED | flow-legibility DONE |
-| 14 | stack-installer | one-shot `stack` command: marketplaces + user-level plugin set (superpowers, feature-dev, vibe, simplify, caveman prefs) + per-repo seed; idempotent, `--dry-run` | scripted eval (fresh target) | NOT STARTED | vibe-plugin DONE |
+| 13 | install-distribution | one-command `install.sh` (local default / `--global` per-user plugin / interactive), `--with-plugins` companion set (superpowers + feature-dev slot), self-hosting plugin + marketplace (`build-plugin.sh`, self-detecting doctrine hook), curl bootstrap, `doctor` instruction-coverage, caveman doctrine note, skill-relative path sweep + CI guard | `flow/tests/adapters/run.sh` + `spec/tests/run.sh` | DONE | flow-legibility DONE |
 
 **Active focus:** the 2026-07 rework (`claude/vibe-framework-rework-hy1xp5`,
 direction settled 2026-07-18).
@@ -83,10 +83,12 @@ Theme: vibe keeps the strategic/product spec layer and the enforcement pattern
 (cursor + hooks + injection) but stops owning build *method* — superpowers
 v6 runs brainstorm/plan/execution in its native format, redirected into
 `.spec/**`; instructions become injection-first so team repos need no AGENTS.md
-control; distribution collapses to a per-user plugin + one-shot stack installer.
-flow-legibility (row 10) is **delivered** — the injection-first legibility layer
-now ships. The remaining rework sequence is delegation-redirect, spec-delta,
-vibe-plugin, and stack-installer (rows 11–14); each gets its own
+control; distribution collapses to a per-user plugin + one-command installer.
+flow-legibility (row 10) and install-distribution (row 13) are **delivered** —
+the injection-first legibility layer and the one-command installer + self-hosting
+plugin now ship (install-distribution folded in the old vibe-plugin/stack-installer
+sketches; full stateful-flow-via-plugin is deferred). The remaining rework sequence
+is delegation-redirect and spec-delta (rows 11–12); each gets its own
 `.spec/features/<name>/` spec at `feature.design` time. Still deferred from earlier
 arcs: earn-the-teeth promotions beyond the verify tooth, `vibe-flow/4`
 `feature.deepen`, multi-lens review, `/spec research` wiring, and the manual gh repo
@@ -231,4 +233,4 @@ Cleansed notes for shipped work — detail lives in live surfaces, not this plan
   prose↔prose single-source test that permitted rule-reassignment drift and re-pinned
   it to `detect-context.sh decide` (see lessons). Warn-first and jq-optional
   throughout. Truth = `flow/` + tests (flow 217 / adapters 126). Unblocks
-  delegation-redirect and vibe-plugin.
+  delegation-redirect and install-distribution.

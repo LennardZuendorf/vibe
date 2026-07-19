@@ -99,10 +99,10 @@ evidence summary, and a draft lesson entry (pattern, rule, tags) for the human t
 
 Feature folders are ephemeral — written at design, consumed at impl, then deleted
 before the branch merges — so this repo currently keeps none. The filled-in root
-docs under [`.spec/`](../../../.spec) (product / tech / design / plan / lessons) are
+docs under [`.spec/`](../.spec) (product / tech / design / plan / lessons) are
 the standing worked example.
 
-- [`.agents/skills/spec/`](../../) — spec framework (units `spec/n`, delivered — wrapped up; no feature folder)
+- [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) — spec framework (units `spec/n`, delivered — wrapped up; no feature folder)
 
 ## Anatomy of `features/<name>/`
 

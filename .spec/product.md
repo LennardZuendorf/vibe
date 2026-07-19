@@ -77,11 +77,13 @@ At a project level, vibe must:
    (`--uninstall`), plus `doctor.sh` health checks and a `deps.json` dependency
    manifest — safe to try and safe to leave.
 10. **Deliver the whole stack in one shot.** A per-user Claude Code plugin
-    carries the vibe skills, hooks, and `/flow` (plugins can bundle `skills/`
-    since mid-2026, superseding the 2026-06-18 retirement rationale at the
-    *distribution* layer); a `stack` installer registers marketplaces, enables
-    the personal plugin set (superpowers, feature-dev, vibe, simplify, caveman
-    prefs) at user level, and seeds `.spec/` + cursor per repo. The in-repo
+    carries the `vibe`+`spec` skills and a self-detecting doctrine hook (plugins
+    can bundle `skills/` since mid-2026, superseding the 2026-06-18 retirement
+    rationale at the *distribution* layer; the stateful `/flow` + guard hooks
+    stay a `--local` install); `install.sh --with-plugins` registers the
+    marketplace and installs the companion plugin set (superpowers, feature-dev
+    slot) at user level, while `--local` seeds `.spec/` + cursor per repo and the
+    caveman preference ships as a one-line doctrine note. The in-repo
     `settings.json` wiring remains for shared installs.
 11. **Instructions are injection-first.** The flow doctrine reaches the agent
     through hooks — a SessionStart working-model inject (re-injected after
@@ -262,5 +264,6 @@ root docs and the feature folders removed (see the Delivered history in [plan.md
 | **agent-instructions** | `AGENTS.md` template + marker merge + adapter symlinks (`CLAUDE.md`, `WARP.md`). | `flow/reference/templates/AGENTS.md`, `flow/scripts/merge-agents.sh` |
 | **platform-adapters** | Claude Code adapter (`/flow` + three hooks via `.claude/settings.json`) + `install.sh` core provisioning. | `.claude/**`, `install.sh` |
 | **install-tooling** | Install lifecycle: `--only`/`--dry-run`/`--uninstall`, one-command curl bootstrap, `doctor.sh`, `deps.json`. | `install.sh`, `flow/scripts/doctor.sh` |
+| **install-distribution** | One-command `install.sh` (local default / `--global` per-user plugin / interactive), `--with-plugins` companion set, self-hosting plugin + marketplace, self-detecting doctrine hook, `doctor` instruction-coverage. Full stateful-flow-via-plugin deferred. | `install.sh`, `build-plugin.sh`, `.claude-plugin/`, `plugin/` |
 | **release-docs** | Public release: READMEs, trust rails (LICENSE/CHANGELOG/CI), logo. | `README.md`, `spec/README.md`, `flow/README.md` |
 | **flow-mvp** | Personal operating layer: precedence + delegation contract blocks, hybrid plan grammar, auto-advance with two edge-keyed gates, a quick-flow compound state, evidence-receipt verify tooth, output-density demoted to frozen vocabulary. | `flow/`, `flow/state-machine.json` |
