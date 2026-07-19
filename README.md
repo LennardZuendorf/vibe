@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/img/logo.svg" alt="vibe" width="360">
+<img src="docs/img/logo.png" alt="vibe kit" width="460">
 
 **A self-hosting spec + workflow harness for coding with agents.**
 
@@ -12,7 +12,7 @@
 
 ---
 
-vibe is two things that ship together but stand alone:
+vibe kit is two things that ship together but stand alone:
 
 - **The spec framework** — a durable `.spec/` planning layer (product / tech /
   design / plan / lessons) with templates and a validator. Works with **any**
@@ -33,7 +33,7 @@ without it). The `claude` CLI is needed only for the plugin / `--global` install
 ### One command
 
 No clone required — run it straight from the web, from inside the repo you want
-vibe in:
+vibe kit in:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LennardZuendorf/vibe/main/install.sh | bash
@@ -48,17 +48,17 @@ git clone https://github.com/LennardZuendorf/vibe.git && cd vibe
 ./install.sh
 ```
 
-Run it from inside the repo you want vibe in, or pass a target path. A bare run
+Run it from inside the repo you want vibe kit in, or pass a target path. A bare run
 searches upward for the enclosing repo (a `.spec`/`.git` marker) and, on a
 terminal, asks which mode you want:
 
 | Mode | Command | What you get |
 |---|---|---|
-| **local** (default) | `./install.sh <repo>` | Full **stateful** vibe into that repo: the spec + vibe skills, the `/flow` command, and the four Claude Code hooks wired via `.claude/settings.json`. Self-contained — teammates get it through git. |
-| **global** | `./install.sh --global` | The **per-user plugin** (`vibe@vibe`, user scope): only the portable, stateless surface — the spec + vibe skills and the doctrine hook — applied in **every** vibe repo. Needs the `claude` CLI. |
+| **local** (default) | `./install.sh <repo>` | Full **stateful** vibe kit into that repo: the spec + vibe skills, the `/flow` command, and the four Claude Code hooks wired via `.claude/settings.json`. Self-contained — teammates get it through git. |
+| **global** | `./install.sh --global` | The **per-user plugin** (`vibe@vibe`, user scope): only the portable, stateless surface — the spec + vibe skills and the doctrine hook — applied in **every** vibe kit repo. Needs the `claude` CLI. |
 
 ```bash
-./install.sh <repo>              # local: full vibe into <repo>
+./install.sh <repo>              # local: full vibe kit into <repo>
 ./install.sh --global            # per-user plugin (across all your repos)
 ./install.sh --with-plugins      # also install companion plugins (superpowers)
 ./install.sh <repo> --only spec  # spec framework only (any agent, or none)
@@ -93,12 +93,12 @@ preserves a live cursor. No plugin to register — `/flow` is a native project c
 
 `--with-plugins` installs a companion set via the `claude` CLI at user scope —
 currently **superpowers**, with a **feature-dev** slot ready to fill in. It
-degrades gracefully when the CLI is absent. "caveman" is **not** a plugin: vibe
+degrades gracefully when the CLI is absent. "caveman" is **not** a plugin: vibe kit
 injects a one-line *caveman style* brevity note into the doctrine each session.
 
 ### Uninstall
 
-Removes only what vibe installed and keeps your content (`.spec/**`, your
+Removes only what vibe kit installed and keeps your content (`.spec/**`, your
 `AGENTS.md` prose, and the flow cursor unless `--yes`):
 
 ```bash
@@ -113,7 +113,7 @@ curl -fsSL https://raw.githubusercontent.com/LennardZuendorf/vibe/main/install.s
 
 ## The spec framework
 
-Every vibe project gets a `.spec/` tree — the single source of truth for what you
+Every vibe kit project gets a `.spec/` tree — the single source of truth for what you
 are building, why, and how. It ships as a bundled skill (`spec`) that works
 standalone or drives the flow's authoring phases.
 
@@ -260,7 +260,7 @@ Deep dive: [`flow/README.md`](flow/README.md).
 
 ## Dependencies
 
-vibe bundles only the `spec` skill. The flow *delegates* to external skills and
+vibe kit bundles only the `spec` skill. The flow *delegates* to external skills and
 subagents, declared once in [`flow/reference/deps.json`](flow/reference/deps.json)
 and reported by `doctor.sh`. **Every dependency degrades gracefully — a missing
 one warns, never hard-fails.**
@@ -272,7 +272,7 @@ one warns, never hard-fails.**
 
 ## Platform support
 
-vibe is portable by design; capability scales with the host.
+vibe kit is portable by design; capability scales with the host.
 
 | Host | What works | What is absent |
 |---|---|---|

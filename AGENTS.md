@@ -1,6 +1,6 @@
-# AGENTS.md — vibe Engineering Guide
+# AGENTS.md — vibe kit Engineering Guide
 
-> This repository builds vibe itself. The sections below are this repo's own
+> This repository builds vibe kit itself. The sections below are this repo's own
 > dogfood guide (user-owned prose). The generic vibe-flow contract that ships to
 > every install target lives in the managed `vibe:instructions` block further
 > down — it is byte-identical to `flow/reference/templates/AGENTS.md` and is

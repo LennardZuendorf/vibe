@@ -1,6 +1,6 @@
 # The vibe flow
 
-> **For humans.** This README is the standalone guide to the flow half of vibe.
+> **For humans.** This README is the standalone guide to the flow half of vibe kit.
 > Agents route through [SKILL.md](SKILL.md) — the `vibe` skill router — instead.
 
 The **vibe flow** is a state-machine workflow for **Claude Code**. It turns a
