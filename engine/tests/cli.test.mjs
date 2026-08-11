@@ -5,6 +5,11 @@ import { test, assert, assertEqual, assertIncludes, runCli } from './run.mjs';
 
 const COMMANDS = ['state', 'orders', 'doctrine', 'doctor'];
 
+// Commands land one unit at a time (js-core/3-6). Each ported command drops
+// out of this list — its own *.test.mjs covers real behaviour instead. Only
+// the still-unimplemented ones should hit the "not implemented yet" path.
+const NOT_YET_IMPLEMENTED = ['orders', 'doctrine', 'doctor'];
+
 test('--help lists the four commands', () => {
   const result = runCli(['--help']);
   assertEqual(result.code, 0, `expected exit 0, got ${result.code}; stderr: ${result.stderr}`);
@@ -32,7 +37,7 @@ test('unknown subcommand exits non-zero and names itself', () => {
 });
 
 test('known-but-unimplemented subcommand exits non-zero, not-implemented message', () => {
-  for (const name of COMMANDS) {
+  for (const name of NOT_YET_IMPLEMENTED) {
     const result = runCli([name]);
     assert(result.code !== 0, `expected '${name}' to exit non-zero before it is implemented`);
     assertIncludes(result.stderr.toLowerCase(), 'not implemented', `stderr for '${name}' should say not implemented`);
