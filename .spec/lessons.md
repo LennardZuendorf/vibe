@@ -70,6 +70,12 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** spec, single-source, discriminating-tests, doctrine, parity
 **Date:** 2026-07-18
 
+### Injected context is append-only — budget it and class it by trigger
+**Pattern:** The flow's injection design treated hook output as if it were a refreshable status line. It is not: `UserPromptSubmit` stdout enters the conversation layer, which is append-only, so a byte-stable per-turn order accumulates one copy per turn for the whole session — and the `Stop` gate's stuck-phase predicate fired *every* non-idle turn, queueing a redundant `vibe-warn:` line into every subsequent prompt. Two adjacent errors came from the same wrong mental model: `doctrine.sh` appended a live `Cursor:` line to `SessionStart`, whose output is *replayed* rather than re-run on `--resume` (so it is stale by construction), and the write invariants were restated in seven prose locations while the guard already enforced them — against documented guidance that a bloated instruction file makes Claude "ignore your actual instructions".
+**Rule:** Treat every injection channel as a context budget with an explicit line cap, and class payload by trigger: *level* (every turn — the minimum that must always be true), *edge* (only when the cursor changes — orders, contracts, retrieved lessons), *event* (only when something happened — drift, warnings). Never put live state on `SessionStart`; it replays stale on resume. Never state in always-on prose what a hook enforces — render it in the guard's verdict at the moment of violation, where it is transient, free, and actionable. Lint the budgets in CI; discipline will not hold them.
+**Tags:** injection, context-budget, hooks, prompt-cache, doctrine, agents-md
+**Date:** 2026-08-10
+
 <!-- Format for each lesson:
 ### [Short description]
 **Pattern:** What went wrong and why
