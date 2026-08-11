@@ -1,6 +1,14 @@
 // engine/cursor.mjs — readCursor()/writeCursor(): the only cursor JSON I/O.
 //
-// readCursor(root):
+// Both take `vibeDir` — the vibe skill's own directory, where state.json
+// lives — not a project root. Callers resolve that directory once via
+// `resolveVibeDir()` in root.mjs (which knows the self-relative/
+// installed-vs-dogfood layout distinction) and pass it in explicitly; this
+// module never re-derives it, so there is exactly one place that owns that
+// resolution (the duplicate-primitive scan's whole point). Tests pass
+// whatever directory their fixture uses (e.g. sandbox.flowDir) directly.
+//
+// readCursor(vibeDir):
 //   - absent file            -> {state: "idle", flow: "idle", phase: "idle",
 //                                 feature: null, updated: null}
 //   - present, valid object  -> per-field defaults mirror the bash readers'
@@ -27,16 +35,16 @@ export class CursorParseError extends Error {
   }
 }
 
-function cursorPath(root) {
-  return path.join(root, 'flow', 'state.json');
+function cursorPath(vibeDir) {
+  return path.join(vibeDir, 'state.json');
 }
 
 function stateKey(flow, phase) {
   return flow === phase ? flow : `${flow}.${phase}`;
 }
 
-export function readCursor(root) {
-  const filePath = cursorPath(root);
+export function readCursor(vibeDir) {
+  const filePath = cursorPath(vibeDir);
 
   let raw;
   try {
@@ -64,8 +72,8 @@ export function readCursor(root) {
 
 // Atomic; preserves the cursor's shape (key order flow, phase, feature,
 // updated) so byte parity with the bash writer's hand-rolled printf holds.
-export function writeCursor(root, { flow, phase, feature = null }) {
-  const filePath = cursorPath(root);
+export function writeCursor(vibeDir, { flow, phase, feature = null }) {
+  const filePath = cursorPath(vibeDir);
   const updated = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
   const body = { flow, phase, feature: feature ?? null, updated };
   writeJsonAtomic(filePath, body);

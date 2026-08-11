@@ -16,13 +16,27 @@ export function readJson(filePath) {
 // Writes `data` (JSON.stringify'd, 2-space indent, trailing newline) to a
 // sibling temp file in the target's own directory, then renames it over the
 // target. Same-directory temp file keeps the rename on one filesystem, so it
-// is atomic — matching the bash `mktemp "$FILE.XXXXXX"` + `mv -f` behaviour
-// a crash mid-write can never truncate.
+// is atomic — matching the bash `mktemp "$FILE.XXXXXX"` + `mv -f` behaviour:
+// a crash mid-write can never truncate the target. If the write or rename
+// itself fails (ENOSPC, EACCES, ...), the temp file is unlinked before the
+// error propagates — matching bash's `trap 'rm -f "$TMP"' EXIT` — so a
+// failed write never leaves a stray `.<name>.<pid>.<ts>.tmp` behind.
 export function writeJsonAtomic(filePath, data) {
   const dir = path.dirname(filePath);
   const base = path.basename(filePath);
   const tmpPath = path.join(dir, `.${base}.${process.pid}.${Date.now()}.tmp`);
   const body = `${JSON.stringify(data, null, 2)}\n`;
-  fs.writeFileSync(tmpPath, body, 'utf8');
-  fs.renameSync(tmpPath, filePath);
+  try {
+    fs.writeFileSync(tmpPath, body, 'utf8');
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    try {
+      fs.unlinkSync(tmpPath);
+    } catch {
+      // Nothing to clean up (write itself never created the file) or the
+      // filesystem is already unusable — either way, surface the original
+      // error, not this best-effort cleanup's.
+    }
+    throw err;
+  }
 }

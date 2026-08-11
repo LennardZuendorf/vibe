@@ -1,6 +1,6 @@
 // engine/tests/json.test.mjs — engine/json.mjs (js-core/2).
 
-import { readdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { test, assert, assertEqual, assertThrows, makeSandbox } from './run.mjs';
 import { readJson, writeJsonAtomic } from '../json.mjs';
@@ -95,6 +95,32 @@ test('writeJsonAtomic: overwrites an existing file in place (rename semantics)',
     writeJsonAtomic(target, { v: 1 });
     writeJsonAtomic(target, { v: 2 });
     assertEqual(JSON.parse(readFileSync(target, 'utf8')), { v: 2 });
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+// js-core/2 review, Finding 3 (Important) — no cleanup on write failure.
+// Force the rename leg to fail (target is an existing directory, so
+// renaming a regular temp file onto it always errors) and assert the temp
+// file this call created does not survive the failure — mirrors bash's
+// `trap 'rm -f "$TMP"' EXIT`.
+test('writeJsonAtomic: unlinks its temp file when the write/rename fails, leaking nothing', () => {
+  const sandbox = makeSandbox();
+  try {
+    const target = path.join(sandbox.dir, 'out4.json');
+    mkdirSync(target); // target is a directory, so renaming onto it must fail
+
+    let threw = false;
+    try {
+      writeJsonAtomic(target, { a: 1 });
+    } catch {
+      threw = true;
+    }
+    assert(threw, 'expected writeJsonAtomic to propagate the rename failure');
+
+    const leftovers = readdirSync(sandbox.dir).filter((f) => f.includes('.tmp'));
+    assertEqual(leftovers, [], `temp file leaked after a failed write: ${leftovers.join(', ')}`);
   } finally {
     sandbox.cleanup();
   }

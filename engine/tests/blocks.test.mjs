@@ -77,7 +77,18 @@ test('extractBlock: an empty block (opener immediately followed by closer) retur
   assertEqual(extractBlock(text, 'vibe:doctrine'), '');
 });
 
-test('extractBlock: picks the first matching opener when an id repeats (sed range semantics)', () => {
+// js-core/2 review, Finding 4 — on a duplicated id, this correctly returns
+// the first block's content in isolation. That is NOT what the sed oracle
+// does and this must not be read as a parity claim: `sed -n '/o/,/c/p'`
+// re-activates its range on the second opener too, so raw sed prints all
+// six lines, and the outer `sed '1d;$d'` (which strips only the first/last
+// line of that whole run) leaves a garbled four-line blob — "first", the
+// first block's closer, the second opener, and "second" — verified by hand
+// against `sed -n '/^<!-- vibe:doctrine -->$/,/^<!-- \/vibe:doctrine -->$/p' | sed '1d;$d'`.
+// Real fixtures never duplicate a state id, so this divergence is not on
+// unit 8's parity matrix; the JS behaviour here is simply better than the
+// oracle's, deliberately kept rather than reproduced.
+test('extractBlock: a duplicated id returns the first block cleanly (deliberate improvement over the sed oracle, not parity)', () => {
   const text = [
     '<!-- vibe:doctrine -->',
     'first',
