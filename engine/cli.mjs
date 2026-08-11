@@ -40,12 +40,27 @@ function printHelp() {
   console.log(lines.join('\n'));
 }
 
+// A missing-module error names the specifier it failed to resolve in its
+// message (Node gives no structured field for this). Only treat the error
+// as "not implemented yet" when the missing specifier IS the command module
+// itself — otherwise the command module exists but one of ITS OWN imports is
+// broken, which is a real bug and must not be swallowed as "not implemented".
+function missingSpecifierIsCommandModule(err, modulePath) {
+  const match = /Cannot find module '([^']+)'/.exec(err && err.message ? err.message : '');
+  if (!match) return false;
+  const missing = match[1];
+  const missingPath = missing.startsWith('file://') ? fileURLToPath(missing) : missing;
+  return path.resolve(missingPath) === path.resolve(modulePath);
+}
+
 async function loadCommand(name) {
   const modulePath = path.join(__dirname, 'commands', `${name}.mjs`);
   try {
     return await import(pathToFileURL(modulePath).href);
   } catch (err) {
-    if (err && (err.code === 'ERR_MODULE_NOT_FOUND' || err.code === 'MODULE_NOT_FOUND')) {
+    const isMissingModule =
+      err && (err.code === 'ERR_MODULE_NOT_FOUND' || err.code === 'MODULE_NOT_FOUND');
+    if (isMissingModule && missingSpecifierIsCommandModule(err, modulePath)) {
       throw new CliError(`'${name}' is not implemented yet.`);
     }
     throw err;

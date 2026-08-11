@@ -184,14 +184,22 @@ async function main() {
   const files = discoverTestFiles();
 
   if (files.length === 0) {
-    console.log('no test files found (engine/tests/*.test.mjs)');
+    // Fail loud: a runner that reports "0 total, exit 0" on broken
+    // discovery is indistinguishable from a runner that ran everything and
+    // found it clean. Units 2-8 drive this via filtered runs — a typo or a
+    // discovery bug must not read as green.
+    console.error('no test files found (engine/tests/*.test.mjs) — treating as a failure');
+    process.exitCode = 1;
+    return;
   }
 
   await loadTestFiles(files);
 
   const selected = selectTests(filters);
   if (filters.length > 0 && selected.length === 0) {
-    console.log(`no tests matched filter(s): ${filters.join(', ')}`);
+    console.error(`no tests matched filter(s): ${filters.join(', ')} — treating as a failure`);
+    process.exitCode = 1;
+    return;
   }
 
   let pass = 0;
