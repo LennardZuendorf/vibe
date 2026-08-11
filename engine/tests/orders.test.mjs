@@ -358,6 +358,175 @@ test('feature interpolation survives quotes, backslashes, and non-ASCII characte
 });
 
 // ---------------------------------------------------------------------------
+// Review round 1 fixtures (js-core/4 fix round 1) — the matrix's blind spot:
+// every state in the real machine links skill "vibe", so a real lookup and
+// a hardcoded 'vibe' are observationally identical. Finding 1 closes that
+// hole with a mutated machine that links a DIFFERENT skill. Findings 2-4
+// pin trailing-newline parity, the never-throws contract for malformed
+// arguments, and the missing-machine/absent-vibeDir paths.
+// ---------------------------------------------------------------------------
+
+test('parity: a state linking a non-"vibe" skill resolves through THAT skill, not a hardcoded "vibe" (Finding 1)', () => {
+  const sandbox = makeOrdersSandbox({
+    cursor: { flow: 'idle', phase: 'idle', feature: 'widget', updated: '2026-01-01T00:00:00Z' },
+  });
+  try {
+    const machine = JSON.parse(readFileSync(sandbox.machinePath, 'utf8'));
+    assertEqual(machine.states['quick.fix'].skill, 'vibe', 'sanity: this state really does start out linked to vibe');
+    machine.states['quick.fix'].skill = 'spec';
+    writeFileSync(sandbox.machinePath, `${JSON.stringify(machine, null, 2)}\n`);
+
+    const specSkillDir = path.join(sandbox.skillsDir, 'spec');
+    mkdirSync(specSkillDir, { recursive: true });
+    writeFileSync(
+      path.join(specSkillDir, 'SKILL.md'),
+      ['<!-- vibe:orders:quick.fix -->', 'skill=spec · DISTINCT block for <feature>', '<!-- /vibe:orders -->', ''].join('\n'),
+    );
+
+    const engineResult = runEngine(sandbox, ['quick.fix']);
+    assertEqual(engineResult.code, 0);
+    assertEqual(
+      engineResult.stdout,
+      'skill=spec · DISTINCT block for widget\n',
+      `expected the engine to follow the mutated skill link to spec/SKILL.md, got: ${JSON.stringify(engineResult.stdout)}`,
+    );
+    assert(
+      !engineResult.stdout.startsWith('skill=vibe'),
+      'a hardcoded "vibe" lookup (the forbidden oracle no-jq shortcut) would wrongly resolve the vibe skill\'s own quick.fix block instead',
+    );
+
+    // Differential confirmation against the real oracle's jq path (which
+    // also does a real field lookup, not a shortcut) — only meaningful when
+    // jq is actually on PATH, since the oracle's OWN no-jq path is exactly
+    // the shortcut this fixture exists to rule out on the engine side.
+    if (JQ_PRESENT) {
+      const oracleResult = runOracle(sandbox.scriptPath, ['quick.fix']);
+      assertEqual(oracleResult.code, 0);
+      assertEqual(
+        engineResult.stdout,
+        oracleResult.stdout,
+        `mutated-skill-link parity broken\noracle: ${JSON.stringify(oracleResult.stdout)}\nengine: ${JSON.stringify(engineResult.stdout)}`,
+      );
+    }
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('parity: a block ending in a blank line strips trailing newlines like bash $(...) (Finding 2)', () => {
+  const skillMd = ['<!-- vibe:orders:quick.fix -->', 'real line', '', '', '<!-- /vibe:orders -->'].join('\n');
+  const sandbox = makeOrdersSandbox({ skillMd });
+  try {
+    const oracleResult = runOracle(sandbox.scriptPath, ['quick.fix']);
+    const engineResult = runEngine(sandbox, ['quick.fix']);
+    assertEqual(oracleResult.code, 0);
+    assertEqual(engineResult.code, 0);
+    assertEqual(
+      oracleResult.stdout,
+      'real line\n',
+      'oracle sanity: command substitution strips the trailing blank lines before printf re-adds exactly one',
+    );
+    assertEqual(
+      engineResult.stdout,
+      oracleResult.stdout,
+      `trailing-newline parity broken (pre-fix the engine kept the blank lines)\noracle: ${JSON.stringify(oracleResult.stdout)}\nengine: ${JSON.stringify(engineResult.stdout)}`,
+    );
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('runOrders never throws: skillsDir is not a string (Finding 3)', () => {
+  const sandbox = makeOrdersSandbox();
+  try {
+    let threw = false;
+    let result;
+    try {
+      result = runOrders(sandbox.flowDir, undefined, ['feature.impl']);
+    } catch {
+      threw = true;
+    }
+    assert(!threw, 'runOrders must not throw when skillsDir is undefined');
+    assertEqual(result.code, 0);
+    assertEqual(result.stdout, `${GENERIC_FALLBACK}\n`);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('runOrders never throws: args is null (Finding 3)', () => {
+  const sandbox = makeOrdersSandbox({
+    cursor: { flow: 'quick', phase: 'triage', feature: null, updated: '2026-01-01T00:00:00Z' },
+  });
+  try {
+    let threw = false;
+    let result;
+    try {
+      result = runOrders(sandbox.flowDir, sandbox.skillsDir, null);
+    } catch {
+      threw = true;
+    }
+    assert(!threw, 'runOrders must not throw when args is null');
+    assertEqual(result.code, 0);
+    assertMatch(result.stdout, /^skill=vibe/, 'falls back to the cursor state (quick.triage) when args carries no override');
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('parity: missing state-machine.json falls through to the generic fallback on both sides (Finding 4)', () => {
+  const sandbox = makeOrdersSandbox();
+  try {
+    rmSync(sandbox.machinePath);
+    const oracleResult = runOracle(sandbox.scriptPath, ['feature.impl']);
+    const engineResult = runEngine(sandbox, ['feature.impl']);
+    assertEqual(oracleResult.code, 0);
+    assertEqual(engineResult.code, 0);
+    assertEqual(oracleResult.stdout, `${GENERIC_FALLBACK}\n`);
+    assertEqual(engineResult.stdout, oracleResult.stdout);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('runOrders never throws: absent vibeDir degrades to the generic fallback (Finding 4)', () => {
+  const sandbox = makeOrdersSandbox();
+  try {
+    const bogusVibeDir = path.join(sandbox.dir, 'does-not-exist-at-all');
+    let threw = false;
+    let result;
+    try {
+      result = runOrders(bogusVibeDir, sandbox.skillsDir, ['feature.impl']);
+    } catch {
+      threw = true;
+    }
+    assert(!threw, 'runOrders must not throw for an absent vibeDir');
+    assertEqual(result.code, 0);
+    assertEqual(result.stdout, `${GENERIC_FALLBACK}\n`);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('runOrders never throws: vibeDir is undefined (Finding 4)', () => {
+  const sandbox = makeOrdersSandbox();
+  try {
+    let threw = false;
+    let result;
+    try {
+      result = runOrders(undefined, sandbox.skillsDir, ['feature.impl']);
+    } catch {
+      threw = true;
+    }
+    assert(!threw, 'runOrders must not throw when vibeDir is undefined');
+    assertEqual(result.code, 0);
+    assertEqual(result.stdout, `${GENERIC_FALLBACK}\n`);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // CLI end-to-end wiring — a full install-layout fixture (engine/ copied in,
 // no flow/ dir at all, no .git/.spec anywhere), spawning the real `vibe
 // orders` entry point, the same way js-core/2's "install target" tests and

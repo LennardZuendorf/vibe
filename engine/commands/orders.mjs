@@ -35,6 +35,19 @@ function line(s) {
   return `${s}\n`;
 }
 
+// Mirrors bash `$(...)` command substitution, which strips ALL trailing
+// newlines from a captured value before it is ever assigned. Both
+// extract_block()'s and machine_inject()'s bash equivalents are captured via
+// `$(...)` before interpolate()/printf run, so a block whose content ends in
+// a blank line (or an inject string with a stray trailing newline) loses
+// that trailing whitespace on the oracle side. extractBlock() itself must
+// not do this trimming (other consumers may want the raw block), so it is
+// applied here, once, on the two call sites that are analogous to a bash
+// command substitution.
+function stripTrailingNewlines(s) {
+  return s.replace(/\n+$/, '');
+}
+
 // Cursor -> {state, feature}. An ABSENT cursor legitimately means idle
 // (readCursor's own documented contract). A PRESENT-but-corrupt cursor also
 // degrades to idle/empty-feature here — this is orders-specific, matching
@@ -72,10 +85,15 @@ function machineInject(machine, stateKey) {
 
 // Pure: takes the resolved vibeDir + skillsDir and raw CLI args, returns
 // {code, stdout, stderr} — NEVER throws, so unit 7's hook shims can call it
-// straight through, matching state.mjs's runSet/runGet contract.
-export function runOrders(vibeDir, skillsDir, args = []) {
+// straight through, matching state.mjs's runSet/runGet contract. That
+// contract holds for any argument shape, not just the well-formed ones: a
+// non-string skillsDir (undefined, a nonexistent path) and a non-array args
+// (null, a plain default only covers `undefined`) must degrade, never throw
+// — review round 1, Finding 3.
+export function runOrders(vibeDir, skillsDir, args) {
+  const safeArgs = Array.isArray(args) ? args : [];
   const { state: cursorState, feature } = cursorStateAndFeature(vibeDir);
-  const stateKey = args[0] || cursorState;
+  const stateKey = safeArgs[0] || cursorState;
 
   let machine;
   try {
@@ -90,7 +108,7 @@ export function runOrders(vibeDir, skillsDir, args = []) {
   if (machine) {
     // 1. Prefer the linked skill's orders block (D12).
     const skill = machineSkill(machine, stateKey);
-    if (skill) {
+    if (skill && typeof skillsDir === 'string') {
       const skillFile = path.join(skillsDir, skill, 'SKILL.md');
       let text;
       try {
@@ -99,16 +117,23 @@ export function runOrders(vibeDir, skillsDir, args = []) {
         text = undefined; // missing skill file — fall through, never fail
       }
       if (text !== undefined) {
-        const block = extractBlock(text, `vibe:orders:${stateKey}`);
-        if (block) {
-          return { code: 0, stdout: line(interpolate(block, feature)), stderr: '' };
+        const rawBlock = extractBlock(text, `vibe:orders:${stateKey}`);
+        if (rawBlock !== undefined) {
+          // Command-substitution parity (Finding 2): strip trailing
+          // newlines before the truthiness check AND before interpolating,
+          // so a block ending in a blank line collapses exactly like the
+          // oracle's `BLOCK="$(extract_block ...)"` does.
+          const block = stripTrailingNewlines(rawBlock);
+          if (block) {
+            return { code: 0, stdout: line(interpolate(block, feature)), stderr: '' };
+          }
         }
       }
     }
 
     // 2. Fall back to the machine's inline inject (idle, or a skill with no
     // block yet).
-    const inline = machineInject(machine, stateKey);
+    const inline = stripTrailingNewlines(machineInject(machine, stateKey));
     if (inline) {
       return { code: 0, stdout: line(interpolate(inline, feature)), stderr: '' };
     }
