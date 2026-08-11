@@ -34,22 +34,55 @@ function hasMarker(dir) {
 // Validate the full chain of directory names, not just "go up and hope" —
 // that is what lets the dogfood repo (engine/ sitting at the repo top
 // level, not nested under .agents/skills/vibe/) correctly fall through to
-// the next strategy instead of resolving to some unrelated directory.
-function selfRelativeVibeDir() {
+// the next strategy instead of resolving to some unrelated directory. This
+// is the ONLY layout with a meaningful "project root" three levels up (see
+// selfRelativeRoot below) — a per-user plugin (pluginVibeDir) has none.
+function vendoredVibeDir() {
   const vibeDir = path.dirname(__dirname);
   const skillsDir = path.dirname(vibeDir);
   const agentsDir = path.dirname(skillsDir);
-  const isInstalledLayout =
+  const isVendoredLayout =
     path.basename(vibeDir) === 'vibe' &&
     path.basename(skillsDir) === 'skills' &&
     path.basename(agentsDir) === '.agents';
-  return isInstalledLayout ? vibeDir : undefined;
+  return isVendoredLayout ? vibeDir : undefined;
+}
+
+// A per-user PLUGIN engine lives at <PLUGIN_ROOT>/skills/vibe/engine — ONE
+// level shallower than the vendored layout (no `.agents/` wrapper), because
+// build-plugin.sh ships `skills/vibe` as a top-level symlink to flow/, not
+// nested under `.agents/skills/`; see the real bash plugin hook's own
+// self-location, `${CLAUDE_PLUGIN_ROOT}/skills/vibe/scripts/doctrine.sh`
+// (plugin/hooks/session-start.sh). Recognized by the SAME sibling-SKILL.md
+// probe resolveSkillsDir() already uses for the vendored layout's fallback,
+// so the two checks never disagree about what counts as "the skill is
+// really here". Without this leg, a plugin-installed engine falls through
+// resolveVibeDir()'s CLAUDE_PROJECT_DIR-honouring fallback below and reads
+// the WRONG project's skill instead of its own — the exact plugin-layout
+// gap review round 1 (js-core/5, Finding 2) found and this closes.
+function pluginVibeDir() {
+  const vibeDir = path.dirname(__dirname);
+  const skillsDir = path.dirname(vibeDir);
+  const isPluginLayout =
+    path.basename(vibeDir) === 'vibe' &&
+    path.basename(skillsDir) === 'skills' &&
+    fs.existsSync(path.join(vibeDir, 'SKILL.md'));
+  return isPluginLayout ? vibeDir : undefined;
+}
+
+function selfRelativeVibeDir() {
+  return vendoredVibeDir() ?? pluginVibeDir();
 }
 
 // The project root is three levels above the self-relative vibe dir
-// (vibe -> skills -> .agents -> ROOT) when that chain validates.
+// (vibe -> skills -> .agents -> ROOT) when that STRICT vendored chain
+// validates. Deliberately uses vendoredVibeDir(), not selfRelativeVibeDir():
+// a per-user plugin's engine has no project root of its own to report (its
+// three-levels-up would land outside the plugin entirely) — callers that
+// need the actual project root from a plugin context use CLAUDE_PROJECT_DIR
+// (resolveRoot's own next leg), not this.
 function selfRelativeRoot() {
-  const vibeDir = selfRelativeVibeDir();
+  const vibeDir = vendoredVibeDir();
   return vibeDir ? path.dirname(path.dirname(path.dirname(vibeDir))) : undefined;
 }
 
@@ -110,4 +143,25 @@ export function resolveSkillsDir(opts = {}) {
   }
 
   return path.join(resolveRoot(opts), '.agents', 'skills');
+}
+
+// DOCTRINE-ONLY. Not a general vibeDir/root resolver — implements exactly
+// one thing: flow/scripts/doctrine.sh's own narrow precedence rule (its
+// STATE variable, lines 48-52), which prefers a PROJECT's own cursor over
+// the skill-local one, but ONLY when CLAUDE_PROJECT_DIR is set AND that
+// project's `.agents/skills/vibe/state.json` actually exists. Deliberately
+// does not consult self-relative/marker resolution at all — the oracle
+// never does either for this one lookup, it is a literal env-gated path
+// check. Kept here, not duplicated as a literal in commands/doctrine.mjs,
+// so the `.agents/skills/vibe` layout constant is defined exactly once and
+// the duplicate-primitive scan (js-core/8) needs no exemption for it
+// (review round 1, Finding 3). Returns undefined — never a guess — when
+// there is nothing to redirect to; the caller (doctrine.mjs) decides the
+// fallback, matching the oracle's own STATE assignment shape.
+export function resolveProjectCursorDir(opts = {}) {
+  const projectDir = opts.projectDir ?? process.env.CLAUDE_PROJECT_DIR;
+  if (!projectDir) return undefined;
+
+  const candidate = path.join(projectDir, '.agents', 'skills', 'vibe');
+  return fs.existsSync(path.join(candidate, 'state.json')) ? candidate : undefined;
 }

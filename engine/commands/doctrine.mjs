@@ -34,20 +34,28 @@
 // (state, orders) rely on that stability. The two rules are allowed to
 // disagree because they answer different questions. resolveVibeDir's own
 // contract is left untouched; this command layers the oracle's
-// CLAUDE_PROJECT_DIR-first rule on top, locally, only for the cursor it
-// reads to print the summary line.
+// CLAUDE_PROJECT_DIR-first rule on top, via resolveProjectCursorDir()
+// (root.mjs), only for the cursor it reads to print the summary line.
+//
+// PLUGIN-LAYOUT NOTE (review round 1, Finding 2): the claim above — "the
+// doctrine BLOCK always comes from the engine's own installed skill" — only
+// holds once resolveVibeDir()/resolveSkillsDir() actually recognize the
+// layout in question. root.mjs now recognizes both the vendored
+// (.agents/skills/vibe/engine) AND per-user-plugin (skills/vibe/engine)
+// installed layouts, so this command's own reasoning here is unaffected;
+// see root.mjs's selfRelativeVibeDir()/pluginVibeDir() for the fix.
 //
 // Per repo convention: never re-derive vibeDir/skillsDir resolution logic,
 // never parse cursor/machine JSON directly here — resolveVibeDir/
-// resolveSkillsDir (root.mjs), readCursor (cursor.mjs), extractBlock
-// (blocks.mjs) are the only primitives for that. The CLAUDE_PROJECT_DIR
-// literal below is not a re-derivation of resolveVibeDir's self-relative
-// logic — it is this command's own, narrower rule, matching the oracle's
-// own hardcoded path.
+// resolveSkillsDir/resolveProjectCursorDir (root.mjs), readCursor
+// (cursor.mjs), extractBlock (blocks.mjs) are the only primitives for that.
+// The `.agents/skills/vibe` layout constant used by the CLAUDE_PROJECT_DIR
+// rule is single-sourced in resolveProjectCursorDir() (root.mjs), not
+// duplicated as a literal here.
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveVibeDir, resolveSkillsDir } from '../root.mjs';
+import { resolveVibeDir, resolveSkillsDir, resolveProjectCursorDir } from '../root.mjs';
 import { readCursor } from '../cursor.mjs';
 import { extractBlock } from '../blocks.mjs';
 
@@ -60,24 +68,12 @@ function stripTrailingNewlines(s) {
   return s.replace(/\n+$/, '');
 }
 
-// The oracle's own CLAUDE_PROJECT_DIR-first cursor rule (see header) — a
-// literal path exactly as doctrine.sh writes it, never derived via
-// resolveVibeDir/resolveRoot.
-function projectVibeDir() {
-  const projectDir = process.env.CLAUDE_PROJECT_DIR;
-  return projectDir ? path.join(projectDir, '.agents', 'skills', 'vibe') : undefined;
-}
-
-// Only redirect to the project's cursor when it actually exists, so a
-// vendored/dogfood run (no CLAUDE_PROJECT_DIR, or a project with no cursor
-// of its own yet) is byte-for-byte unchanged and falls through to the
-// skill-local `vibeDir`.
+// Only redirect to the project's cursor when resolveProjectCursorDir()
+// actually finds one, so a vendored/dogfood run (no CLAUDE_PROJECT_DIR, or
+// a project with no cursor of its own yet) is byte-for-byte unchanged and
+// falls through to the skill-local `vibeDir`.
 function cursorDir(vibeDir) {
-  const candidate = projectVibeDir();
-  if (candidate && fs.existsSync(path.join(candidate, 'state.json'))) {
-    return candidate;
-  }
-  return vibeDir;
+  return resolveProjectCursorDir() ?? vibeDir;
 }
 
 // A present-but-corrupt cursor degrades to idle/no-feature here, matching
@@ -89,10 +85,25 @@ function cursorDir(vibeDir) {
 function cursorStateAndFeature(dir) {
   try {
     const cursor = readCursor(dir);
-    return { state: cursor.state, feature: cursor.feature ?? '' };
+    return { state: cursor.state, feature: cursor.feature ?? null };
   } catch {
-    return { state: 'idle', feature: '' };
+    return { state: 'idle', feature: null };
   }
+}
+
+// Mirrors jq's `// empty` + `-r` for an arbitrary JSON value (review round
+// 1, Finding 4): jq's alternative operator treats EVERYTHING except `false`
+// and `null` as truthy — including `0` and `""` — which a plain JS `feature
+// ? ... : ...` gets wrong for `0` (JS-falsy, jq-truthy). `-r` prints a raw
+// string as-is; anything else (numbers, booleans, objects, arrays) prints
+// as normal jq JSON output, which for non-scalars is PRETTY (2-space
+// indent) by default, not compact — reproduced here with
+// `JSON.stringify(value, null, 2)` rather than the compact default.
+// Reachable only via a hand-edited cursor (readCursor/writeCursor never
+// produce a non-string/non-null feature), but a real divergence once it is.
+function jqAltRaw(value) {
+  if (value === null || value === undefined || value === false) return '';
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
 }
 
 const SILENT = { code: 0, stdout: '', stderr: '' };
@@ -127,10 +138,11 @@ export function runDoctrine(vibeDir, skillsDir) {
   const { state, feature } =
     typeof vibeDir === 'string'
       ? cursorStateAndFeature(cursorDir(vibeDir))
-      : { state: 'idle', feature: '' };
+      : { state: 'idle', feature: null };
+  const featureText = jqAltRaw(feature);
 
   // DELIBERATE BUG — see header. Do not fix here; inject-triggers owns it.
-  stdout += feature ? `Cursor: ${state} (feature=${feature}).\n` : `Cursor: ${state}.\n`;
+  stdout += featureText ? `Cursor: ${state} (feature=${featureText}).\n` : `Cursor: ${state}.\n`;
 
   return { code: 0, stdout, stderr: '' };
 }
