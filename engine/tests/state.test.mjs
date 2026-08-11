@@ -7,6 +7,14 @@
 // the exact SCRIPT_DIR/SKILL_DIR-relative layout the script expects — so its
 // self-relative path resolution runs for real, against sandbox files, and
 // never touches this repo's live flow/state.json.
+//
+// Review round 1 additions (Finding 3): the matrix below is now adversarial,
+// not just happy paths — prototype-polluting keys, a corrupt cursor, a
+// missing machine file, an empty-string feature, and an escaping-sensitive
+// feature name. Every failure-path case asserts BOTH the exit code AND that
+// the cursor bytes are byte-identical before/after, on both the oracle and
+// the engine, so a regression that silently succeeds-but-corrupts cannot
+// slip through as "well, it exited non-zero somewhere".
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -45,8 +53,26 @@ function normalizeCursorBytes(raw) {
 
 const TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
+// Whether this runner has jq. The oracle's `next:` stdout line is jq-only
+// (see set-state.sh's own comment); the engine emits it unconditionally.
+// Guard full-stdout comparisons on this so a future no-jq CI leg (unit 8)
+// FAILS LOUDLY on a real divergence rather than silently comparing nothing —
+// it still compares the jq-independent arrow line either way.
+const JQ_PRESENT = runCommand('bash', ['-c', 'command -v jq >/dev/null 2>&1']).code === 0;
+
+function assertStdoutParity(engineStdout, oracleStdout, msg) {
+  if (JQ_PRESENT) {
+    assertEqual(engineStdout, oracleStdout, msg);
+  } else {
+    const engineArrow = engineStdout.split('\n')[0];
+    const oracleArrow = oracleStdout.split('\n')[0];
+    assertEqual(engineArrow, oracleArrow, `${msg} (arrow line only — no jq on this runner)`);
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Parity matrix — set, with and without an existing cursor.
+// Parity matrix — set, with and without an existing cursor. Every fixture
+// now also parity-checks stdout, not just cursor bytes.
 // ---------------------------------------------------------------------------
 
 const FIXTURES = [
@@ -72,14 +98,32 @@ const FIXTURES = [
   },
   { name: 'single-token target (idle) from a fresh cursor', start: null, target: 'idle', feature: undefined },
   { name: 'quick flow, no feature ever set', start: null, target: 'quick.triage', feature: undefined },
+  {
+    // Adversarial: empty string is falsy in both bash's `-n` test and JS
+    // truthiness, so it must NOT become the literal feature "" — it must
+    // fall through to the same carry-forward/clear precedence as "no arg".
+    name: 'empty-string feature argument is treated as absent, not as the feature ""',
+    start: { flow: 'feature', phase: 'design', feature: 'kept', updated: '2020-01-01T00:00:00Z' },
+    target: 'feature.plan',
+    feature: '',
+    explicitArgs: (fx) => [fx.target, ''],
+  },
+  {
+    // Adversarial: escaping-sensitive characters must survive both jq's
+    // --arg quoting and JSON.stringify's escaping identically.
+    name: 'feature name with quotes, backslash, and non-ASCII characters',
+    start: null,
+    target: 'feature.design',
+    feature: 'o"Brien\\path\\name — π',
+  },
 ];
 
 for (const fx of FIXTURES) {
-  test(`parity: cursor bytes match oracle — ${fx.name}`, () => {
+  test(`parity: cursor bytes + stdout match oracle — ${fx.name}`, () => {
     const oracle = makeOracleSandbox({ cursor: fx.start ?? undefined });
     const engine = makeSandbox({ cursor: fx.start ?? undefined });
     try {
-      const args = fx.feature ? [fx.target, fx.feature] : [fx.target];
+      const args = fx.explicitArgs ? fx.explicitArgs(fx) : fx.feature ? [fx.target, fx.feature] : [fx.target];
 
       const oracleResult = runOracle(oracle.scriptPath, args);
       assertEqual(oracleResult.code, 0, `oracle failed: ${oracleResult.stderr}`);
@@ -96,6 +140,8 @@ for (const fx of FIXTURES) {
         `cursor bytes diverge for ${fx.name}\noracle:\n${oracleBytes}\nengine:\n${engineBytes}`,
       );
 
+      assertStdoutParity(engineResult.stdout, oracleResult.stdout, `stdout diverges for ${fx.name}`);
+
       const engineTs = JSON.parse(engineBytes).updated;
       assertMatch(engineTs, TIMESTAMP_RE, `engine 'updated' must match bash date -u format, got ${engineTs}`);
       const oracleTs = JSON.parse(oracleBytes).updated;
@@ -106,20 +152,6 @@ for (const fx of FIXTURES) {
     }
   });
 }
-
-test('parity: stdout arrow + next line match the oracle', () => {
-  const oracle = makeOracleSandbox();
-  const engine = makeSandbox();
-  try {
-    const oracleResult = runOracle(oracle.scriptPath, ['feature.plan']);
-    const engineResult = runSet(engine.flowDir, ['feature.plan']);
-
-    assertEqual(engineResult.stdout, oracleResult.stdout);
-  } finally {
-    oracle.cleanup();
-    engine.cleanup();
-  }
-});
 
 test('parity: WARN line for feature.* with no feature matches oracle stderr shape (non-blocking, exit 0)', () => {
   const oracle = makeOracleSandbox();
@@ -142,7 +174,8 @@ test('parity: unknown state is rejected by both, cursor left untouched', () => {
   const oracle = makeOracleSandbox();
   const engine = makeSandbox();
   try {
-    const before = readFileSync(engine.cursorPath, 'utf8');
+    const oracleBefore = readFileSync(oracle.cursorPath, 'utf8');
+    const engineBefore = readFileSync(engine.cursorPath, 'utf8');
 
     const oracleResult = runOracle(oracle.scriptPath, ['not.a.real.state']);
     const engineResult = runSet(engine.flowDir, ['not.a.real.state']);
@@ -151,8 +184,145 @@ test('parity: unknown state is rejected by both, cursor left untouched', () => {
     assertEqual(engineResult.code, 1, 'engine should reject an unknown state');
     assertMatch(engineResult.stderr, /is not a known state/);
 
-    const after = readFileSync(engine.cursorPath, 'utf8');
-    assertEqual(after, before, 'a rejected target must not touch the cursor');
+    assertEqual(readFileSync(oracle.cursorPath, 'utf8'), oracleBefore, 'oracle cursor must be untouched');
+    assertEqual(readFileSync(engine.cursorPath, 'utf8'), engineBefore, 'engine cursor must be untouched');
+  } finally {
+    oracle.cleanup();
+    engine.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Adversarial matrix (review round 1, Finding 3) — each case is a sad path
+// that was NOT covered before, asserting exit code AND cursor-bytes-
+// unchanged (or correctly-recovered, for the corrupt-cursor case) on both
+// sides. Findings 1 and 2 both live in exactly this gap.
+// ---------------------------------------------------------------------------
+
+// Finding 1: Object.prototype members must not be readable as machine
+// states through a bare `machine.states[key]` lookup.
+const PROTOTYPE_KEYS = ['constructor', 'toString', 'valueOf', '__proto__', 'hasOwnProperty'];
+
+for (const key of PROTOTYPE_KEYS) {
+  test(`adversarial: prototype key '${key}' is rejected by both, not resolved as a state`, () => {
+    const oracle = makeOracleSandbox();
+    const engine = makeSandbox();
+    try {
+      const oracleBefore = readFileSync(oracle.cursorPath, 'utf8');
+      const engineBefore = readFileSync(engine.cursorPath, 'utf8');
+
+      const oracleResult = runOracle(oracle.scriptPath, [key]);
+      const engineResult = runSet(engine.flowDir, [key]);
+
+      assert(oracleResult.code !== 0, `oracle must reject prototype key '${key}'`);
+      assertEqual(engineResult.code, 1, `engine must reject prototype key '${key}'`);
+      assertMatch(engineResult.stderr, /is not a known state/);
+
+      assertEqual(readFileSync(oracle.cursorPath, 'utf8'), oracleBefore, `oracle cursor untouched for '${key}'`);
+      assertEqual(readFileSync(engine.cursorPath, 'utf8'), engineBefore, `engine cursor untouched for '${key}'`);
+    } finally {
+      oracle.cleanup();
+      engine.cleanup();
+    }
+  });
+}
+
+test('adversarial: stateOf() itself rejects prototype keys directly (root-cause coverage, not just via runSet)', async () => {
+  const { loadMachine, stateOf } = await import('../machine.mjs');
+  const sandbox = makeSandbox();
+  try {
+    const machine = loadMachine(sandbox.flowDir);
+    for (const key of PROTOTYPE_KEYS) {
+      assertEqual(stateOf(machine, key), undefined, `stateOf must not resolve inherited '${key}'`);
+    }
+    // Sanity: a real state still resolves — this isn't just "always undefined".
+    assert(stateOf(machine, 'idle') !== undefined, 'a real state must still resolve');
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+// Finding 2: a corrupt cursor must not brick the one CLI writer path that
+// can recover it. The oracle recovers via jq's `// "null" ... || echo
+// "null"` fallback; the engine must match that recovery, not throw.
+test('adversarial: corrupt (unparseable) cursor recovers on both sides — writer degrades feature to null, exits 0', () => {
+  const oracle = makeOracleSandbox();
+  const engine = makeSandbox();
+  try {
+    writeFileSync(oracle.cursorPath, '{ this is not valid json');
+    writeFileSync(engine.cursorPath, '{ this is not valid json');
+
+    const oracleResult = runOracle(oracle.scriptPath, ['feature.impl']);
+    const engineResult = runSet(engine.flowDir, ['feature.impl']);
+
+    assertEqual(oracleResult.code, 0, `oracle should recover, got stderr: ${oracleResult.stderr}`);
+    assertEqual(engineResult.code, 0, `engine should recover, got stderr: ${engineResult.stderr}`);
+
+    const oracleCursor = JSON.parse(readFileSync(oracle.cursorPath, 'utf8'));
+    const engineCursor = JSON.parse(readFileSync(engine.cursorPath, 'utf8'));
+
+    assertEqual(oracleCursor.feature, null, 'oracle must degrade the unreadable feature to null');
+    assertEqual(engineCursor.feature, null, 'engine must degrade the unreadable feature to null');
+    assertEqual(oracleCursor.flow, 'feature');
+    assertEqual(engineCursor.flow, 'feature');
+    assertEqual(oracleCursor.phase, 'impl');
+    assertEqual(engineCursor.phase, 'impl');
+  } finally {
+    oracle.cleanup();
+    engine.cleanup();
+  }
+});
+
+test('adversarial: readCursor() itself still throws CursorParseError on a corrupt cursor — only the writer degrades', () => {
+  const sandbox = makeSandbox();
+  try {
+    writeFileSync(sandbox.cursorPath, '{ this is not valid json');
+    let threw = false;
+    try {
+      readCursor(sandbox.flowDir);
+    } catch (err) {
+      threw = true;
+      assertEqual(err.name, 'CursorParseError');
+    }
+    assert(threw, 'readCursor must keep throwing — Finding 2 says fix the writer, not the reader');
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('adversarial: runGet does NOT degrade a corrupt cursor — reports the error instead of a fake idle', () => {
+  const sandbox = makeSandbox();
+  try {
+    writeFileSync(sandbox.cursorPath, '{ this is not valid json');
+    const result = runGet(sandbox.flowDir);
+    assertEqual(result.code, 1, 'get must surface a corrupt cursor as an error, not silently answer idle');
+    assertMatch(result.stderr, /malformed/);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+// Missing machine file: both sides must fail loudly, cursor must be left
+// exactly as it was.
+test('adversarial: missing state-machine.json fails loudly on both sides, cursor untouched', () => {
+  const oracle = makeOracleSandbox();
+  const engine = makeSandbox();
+  try {
+    rmSync(oracle.machinePath);
+    rmSync(engine.machinePath);
+
+    const oracleBefore = readFileSync(oracle.cursorPath, 'utf8');
+    const engineBefore = readFileSync(engine.cursorPath, 'utf8');
+
+    const oracleResult = runOracle(oracle.scriptPath, ['idle']);
+    const engineResult = runSet(engine.flowDir, ['idle']);
+
+    assert(oracleResult.code !== 0, 'oracle should fail with no machine file');
+    assertEqual(engineResult.code, 1, 'engine should fail with no machine file');
+    assertMatch(engineResult.stderr, /state machine/i);
+
+    assertEqual(readFileSync(oracle.cursorPath, 'utf8'), oracleBefore, 'oracle cursor untouched');
+    assertEqual(readFileSync(engine.cursorPath, 'utf8'), engineBefore, 'engine cursor untouched');
   } finally {
     oracle.cleanup();
     engine.cleanup();
@@ -265,16 +435,6 @@ test('runSet: single-token target (idle) writes flow===phase, not idle.idle', ()
   }
 });
 
-test('runSet: stdout prints the arrow line and next: line for a state with next states', () => {
-  const sandbox = makeSandbox();
-  try {
-    const result = runSet(sandbox.flowDir, ['feature.impl']);
-    assertEqual(result.stdout, '-> feature.impl\n   next: feature.verify, idle\n');
-  } finally {
-    sandbox.cleanup();
-  }
-});
-
 test('runSet: gate enforcement is explicitly out of scope — a gated edge writes without a confirm token', () => {
   // feature.plan -> feature.impl is a human gate in the machine's `gates` map,
   // but set-state.sh (and therefore this port) never checks it — that is
@@ -324,6 +484,30 @@ test('runGet: reflects a set cursor after runSet wrote it', () => {
   }
 });
 
+// Byte-exact, not just JSON.parse — a revert to an unindented
+// `JSON.stringify(x)` (no 2-space arg) or a dropped trailing newline would
+// still parse fine and this test would not have caught it before. Units 4-6
+// consume this exact shape.
+test('runGet: stdout is byte-exact pretty JSON (2-space indent, trailing newline), not just parseable', () => {
+  const sandbox = makeSandbox({
+    cursor: { flow: 'feature', phase: 'impl', feature: 'js-core', updated: '2026-01-01T00:00:00Z' },
+  });
+  try {
+    const result = runGet(sandbox.flowDir);
+    const expected =
+      '{\n' +
+      '  "flow": "feature",\n' +
+      '  "phase": "impl",\n' +
+      '  "feature": "js-core",\n' +
+      '  "updated": "2026-01-01T00:00:00Z",\n' +
+      '  "state": "feature.impl"\n' +
+      '}\n';
+    assertEqual(result.stdout, expected);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // CLI end-to-end wiring — a full install-layout fixture (engine/ copied in,
 // no flow/ dir at all), spawning the real `vibe state set` entry point, the
@@ -345,23 +529,31 @@ test('CLI: `vibe state set` end-to-end on an install-layout fixture', () => {
     path.join(vibeDir, 'state-machine.json'),
   );
 
+  // The oracle's stdout for the same target, so the expectation is spawned,
+  // never hand-copied — even for this CLI-level end-to-end check.
+  const oracle = makeOracleSandbox();
+
   const unrelatedCwd = mkdtempSync(path.join(tmpdir(), 'vibe-state-cli-cwd-'));
   const prevEnv = process.env.CLAUDE_PROJECT_DIR;
   delete process.env.CLAUDE_PROJECT_DIR;
 
   try {
+    const oracleResult = runOracle(oracle.scriptPath, ['quick.triage']);
+    assertEqual(oracleResult.code, 0, `oracle failed: ${oracleResult.stderr}`);
+
     const result = runCommand(
       process.execPath,
       [path.join(engineDir, 'cli.mjs'), 'state', 'set', 'quick.triage'],
       { cwd: unrelatedCwd },
     );
     assertEqual(result.code, 0, `stderr: ${result.stderr}`);
-    assertEqual(result.stdout, '-> quick.triage\n   next: quick.fix, feature.design, idle\n');
+    assertStdoutParity(result.stdout, oracleResult.stdout, 'CLI end-to-end stdout diverges from oracle');
 
     const cursor = JSON.parse(readFileSync(path.join(vibeDir, 'state.json'), 'utf8'));
     assertEqual(cursor.flow, 'quick');
     assertEqual(cursor.phase, 'triage');
   } finally {
+    oracle.cleanup();
     rmSync(installRoot, { recursive: true, force: true });
     rmSync(unrelatedCwd, { recursive: true, force: true });
     if (prevEnv !== undefined) process.env.CLAUDE_PROJECT_DIR = prevEnv;
@@ -369,11 +561,23 @@ test('CLI: `vibe state set` end-to-end on an install-layout fixture', () => {
 });
 
 test('CLI: `vibe state` with no subcommand is a named error, not a crash', () => {
-  // No sandbox/install-layout wiring needed: an empty sub never reaches
-  // readCursor/loadMachine (see the branch order in state.mjs's run()), so
-  // this is safe to run with vibeDir resolving via the normal default path —
-  // it fails before ever touching a cursor.
-  const result = runCommand(process.execPath, [path.join(REPO_ROOT, 'engine', 'cli.mjs'), 'state']);
-  assertEqual(result.code, 1);
-  assertMatch(result.stderr, /unknown subcommand/);
+  // Defensive sandboxing even though this path never reaches
+  // readCursor/loadMachine (see the branch order in state.mjs's run()): cwd
+  // is a bare, unrelated temp dir and CLAUDE_PROJECT_DIR is cleared, so a
+  // future refactor that makes this path touch a cursor can never resolve
+  // to this repo's live flow/state.json.
+  const bareCwd = mkdtempSync(path.join(tmpdir(), 'vibe-state-cli-nosubcmd-'));
+  const prevEnv = process.env.CLAUDE_PROJECT_DIR;
+  process.env.CLAUDE_PROJECT_DIR = bareCwd;
+  try {
+    const result = runCommand(process.execPath, [path.join(REPO_ROOT, 'engine', 'cli.mjs'), 'state'], {
+      cwd: bareCwd,
+    });
+    assertEqual(result.code, 1);
+    assertMatch(result.stderr, /unknown subcommand/);
+  } finally {
+    rmSync(bareCwd, { recursive: true, force: true });
+    if (prevEnv === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = prevEnv;
+  }
 });

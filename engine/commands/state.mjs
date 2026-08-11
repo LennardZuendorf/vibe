@@ -36,9 +36,16 @@ function line(s) {
   return `${s}\n`;
 }
 
+function errMsg(err) {
+  return err && err.message ? err.message : String(err);
+}
+
 // Pure: takes the vibeDir and raw `set` args, returns {code, stdout,
-// stderr} — never touches process.std{out,err} itself, so it is directly
-// unit-testable without spawning a process.
+// stderr} — NEVER throws, so it is directly unit-testable without spawning
+// a process and safe for unit 7's hook shims to call straight through
+// without wrapping it in their own try/catch. Every failure path below
+// (missing/corrupt machine, corrupt cursor, a failed write) converts to a
+// returned result instead of propagating.
 export function runSet(vibeDir, args) {
   const [target, newFeature] = args;
 
@@ -52,7 +59,17 @@ export function runSet(vibeDir, args) {
     };
   }
 
-  const machine = loadMachine(vibeDir);
+  let machine;
+  try {
+    machine = loadMachine(vibeDir);
+  } catch (err) {
+    return {
+      code: 1,
+      stdout: '',
+      stderr: line(`vibe state: ERROR: cannot read state machine: ${errMsg(err)}`),
+    };
+  }
+
   if (!stateOf(machine, target)) {
     const legal = Object.keys(machine.states ?? {}).join(', ');
     return {
@@ -68,9 +85,24 @@ export function runSet(vibeDir, args) {
 
   // Feature carry-forward — mirrors the oracle's precedence exactly: a new
   // feature argument wins; moving to idle clears it; otherwise the current
-  // cursor's feature is preserved (readCursor already normalizes an absent
-  // cursor's feature to null, matching the oracle's `// "null"` default).
-  const curFeature = readCursor(vibeDir).feature;
+  // cursor's feature is preserved.
+  //
+  // Writer-only degrade (review round 1, Finding 2): readCursor()'s
+  // throwing contract is correct for READERS (a malformed cursor is a real
+  // problem `get` must surface) but wrong here — the writer only needs the
+  // previous `feature` value, and `vibe state set idle` is the only CLI
+  // path that can ever fix a corrupt cursor. The oracle's own jq path
+  // already recovers silently (`jq -r '.feature // "null"' 2>/dev/null ||
+  // echo "null"`) and goes on to write a fresh, valid cursor; degrading to
+  // null here and proceeding matches that, instead of bricking the one
+  // recovery path bash has.
+  let curFeature = null;
+  try {
+    curFeature = readCursor(vibeDir).feature;
+  } catch {
+    curFeature = null;
+  }
+
   let feature;
   if (newFeature) {
     feature = newFeature;
@@ -89,7 +121,15 @@ export function runSet(vibeDir, args) {
     );
   }
 
-  writeCursor(vibeDir, { flow, phase, feature });
+  try {
+    writeCursor(vibeDir, { flow, phase, feature });
+  } catch (err) {
+    return {
+      code: 1,
+      stdout: '',
+      stderr: line(`vibe state: ERROR: failed to write cursor: ${errMsg(err)}`),
+    };
+  }
 
   let stdout = line(`-> ${target}`);
   const next = stateOf(machine, target).next;
@@ -101,9 +141,17 @@ export function runSet(vibeDir, args) {
 }
 
 // No bash oracle — see header. Prints the resolved cursor as pretty JSON.
+// Unlike `set`, a corrupt cursor here is NOT degraded: `get`'s only job is
+// reporting what the cursor says, so silently answering "idle" for a
+// present-but-malformed file would be a wrong answer, not a recovery.
+// Still never throws — converts to a {code:1,...} result like `set` does.
 export function runGet(vibeDir) {
-  const cursor = readCursor(vibeDir);
-  return { code: 0, stdout: `${JSON.stringify(cursor, null, 2)}\n`, stderr: '' };
+  try {
+    const cursor = readCursor(vibeDir);
+    return { code: 0, stdout: `${JSON.stringify(cursor, null, 2)}\n`, stderr: '' };
+  } catch (err) {
+    return { code: 1, stdout: '', stderr: line(`vibe state: ERROR: ${errMsg(err)}`) };
+  }
 }
 
 export default async function run(argv, opts = {}) {

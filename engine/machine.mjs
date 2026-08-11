@@ -16,5 +16,13 @@ export function loadMachine(vibeDir) {
 }
 
 export function stateOf(machine, key) {
-  return machine && machine.states ? machine.states[key] : undefined;
+  if (!machine || !machine.states) return undefined;
+  // Own-property check only — `key` is untrusted CLI input, and a bare `[]`
+  // lookup resolves inherited Object.prototype members (constructor,
+  // toString, valueOf, hasOwnProperty, __proto__, ...) as if they were real
+  // states. Every consumer (stateOf is the ONLY state lookup primitive)
+  // inherits this fix; do not re-check in callers.
+  return Object.prototype.hasOwnProperty.call(machine.states, key)
+    ? machine.states[key]
+    : undefined;
 }
