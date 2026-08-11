@@ -16,3 +16,7 @@ flow/warnings.log
 .serena/
 # Overnight run artifact (local morning report, not merged)
 REPORT.md
+
+# js-core engine: zero runtime dependencies by contract — this should never
+# populate, but ignore it defensively rather than trust that convention.
+node_modules/
