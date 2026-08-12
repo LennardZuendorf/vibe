@@ -13,27 +13,35 @@ How the engine is laid out, what each module owns, and how parity is proven.
 ## Files
 
 ```text
-engine/
+flow/engine/                # INSIDE the vibe skill dir — see the note below
 ├── cli.mjs                 # arg parse + dispatch; the only process entry
-├── root.mjs                # resolveRoot()  — self-relative, marker fallback
+├── root.mjs                # resolveRoot / resolveVibeDir / resolveSkillsDir /
+│                           # resolveProjectCursorDir
 ├── cursor.mjs              # readCursor() / writeCursor()  — the only JSON cursor I/O
-├── machine.mjs             # loadMachine()  — state-machine.json + lookups
+├── machine.mjs             # loadMachine() / machinePath() / stateOf()
 ├── blocks.mjs              # extractBlock() — the one marker grammar
-├── json.mjs                # readJson()/writeJsonAtomic() — mktemp + rename
+├── json.mjs                # readJson()/writeJsonAtomic() — temp + rename
 └── commands/
     ├── state.mjs           # get | set  (writer only; gating lands in machine-teeth)
     ├── orders.mjs          # resolve current state's orders
     ├── doctrine.mjs        # emit the doctrine block
-    └── doctor.mjs          # health report, always exit 0
+    ├── doctor.mjs          # health report, always exit 0
+    └── hook.mjs            # the four hook entrypoints
 
-engine/tests/
-├── run.mjs                 # harness: assert helpers, sandbox fixtures
-├── parity.test.mjs         # R2 — bash vs engine, with and without jq
-├── degrade.test.mjs        # R3, R4 — fresh target, absent node
-└── primitives.test.mjs     # R1, R6 — duplicate-primitive scan, error paths
-
-.claude/hooks/*.sh          # rewritten shims (3 lines each)
+flow/engine/tests/          # harness + per-module suites, oracle-spawning
+.claude/hooks/*.sh          # shims: `command -v node || exit 0` then `exec node …`
 ```
+
+**Why the engine lives under `flow/`, not at the repo root.** `install.sh:517`
+copies `.agents/skills/vibe` (a symlink to `flow/`) into the target, and
+`plugin/skills/vibe` symlinks to the same place. Putting the engine inside that
+directory means both carriers ship it with **no packaging change** — which is
+what keeps "packaging is plugin-runtime's decision" an honest deferral. It also
+means `resolveVibeDir()`'s self-relative leg resolves correctly *in this repo*:
+with the engine at the repo root its parent was the root, not the vibe dir, so
+the dogfood repo silently exercised the fallback while only fixtures covered the
+primary path — the privileged-target lesson, inverted. Corrected during
+`js-core/7`, which the original top-level layout would have blocked outright.
 
 ## Contract — API
 
