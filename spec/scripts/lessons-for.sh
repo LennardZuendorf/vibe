@@ -27,7 +27,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   if [[ "$line" =~ ^###[[:space:]] ]]; then
     if [[ $in_lesson -eq 1 && -n "$current_block" ]]; then
       tags_line="$(printf '%s\n' "$current_block" | grep '^\*\*Tags:\*\*' | head -1 || true)"
-      for tag in "${TAGS[@]}"; do
+      for tag in ${TAGS[@]+"${TAGS[@]}"}; do
         if printf '%s\n' "$tags_line" | grep -qi "$tag"; then
           matched_blocks+=("$current_block")
           break
@@ -43,7 +43,7 @@ done < "$LESSONS_FILE"
 
 if [[ $in_lesson -eq 1 && -n "$current_block" ]]; then
   tags_line="$(printf '%s\n' "$current_block" | grep '^\*\*Tags:\*\*' | head -1 || true)"
-  for tag in "${TAGS[@]}"; do
+  for tag in ${TAGS[@]+"${TAGS[@]}"}; do
     if printf '%s\n' "$tags_line" | grep -qi "$tag"; then
       matched_blocks+=("$current_block")
       break
@@ -55,14 +55,14 @@ fi
 
 case "$FORMAT" in
   inject)
-    echo "<!-- lessons: ${TAGS[*]} -->"
-    for block in "${matched_blocks[@]}"; do printf '%s\n\n' "$block"; done
+    echo "<!-- lessons: ${TAGS[*]:-} -->"
+    for block in ${matched_blocks[@]+"${matched_blocks[@]}"}; do printf '%s\n\n' "$block"; done
     echo "<!-- /lessons -->"
     ;;
   json)
     printf '['
     first=1
-    for block in "${matched_blocks[@]}"; do
+    for block in ${matched_blocks[@]+"${matched_blocks[@]}"}; do
       [[ $first -eq 0 ]] && printf ','
       title="$(printf '%s\n' "$block" | head -1 | sed 's/^### //')"
       pattern="$(printf '%s\n' "$block" | grep '^\*\*Pattern:\*\*' | sed 's/\*\*Pattern:\*\* //' || true)"
@@ -76,6 +76,6 @@ case "$FORMAT" in
     printf ']\n'
     ;;
   *)
-    for block in "${matched_blocks[@]}"; do printf '%s\n---\n' "$block"; done
+    for block in ${matched_blocks[@]+"${matched_blocks[@]}"}; do printf '%s\n---\n' "$block"; done
     ;;
 esac

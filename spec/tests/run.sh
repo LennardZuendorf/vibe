@@ -586,7 +586,7 @@ test_sf17_templates() {
     feature-product.md feature-tech.md feature-plan.md feature-design.md
   )
   local t
-  for t in "${expected[@]}"; do
+  for t in ${expected[@]+"${expected[@]}"}; do
     if [[ -f "$SPEC_SKILL/reference/templates/$t" ]]; then
       pass SF17 "template exists: $t"
     else
@@ -1442,7 +1442,7 @@ test_skill_validator_paths_relative() {
     "$REPO_ROOT/spec/agents/spec-health/SKILL.md"
   )
   local f bad=0
-  for f in "${docs[@]}"; do
+  for f in ${docs[@]+"${docs[@]}"}; do
     [[ -f "$f" ]] || continue
     # The literal ~ is the offender pattern we search for, not a path to expand.
     # shellcheck disable=SC2088

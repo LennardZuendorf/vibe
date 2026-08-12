@@ -24,6 +24,7 @@ import {
   mkdirSync,
   writeFileSync,
   copyFileSync,
+  realpathSync,
   rmSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -153,6 +154,22 @@ export function makeCliWithPlaceholderCommand(placeholder = 'zzz-test-placeholde
 // Sandbox fixture builder
 // ---------------------------------------------------------------------------
 
+// mkTempRoot — mkdtempSync, then realpath. The ONLY correct way to build a temp
+// root a fixture will later compare a resolved path against.
+//
+// os.tmpdir() hands back the UNRESOLVED $TMPDIR (on macOS `/var/folders/…`,
+// where /var is a symlink to private/var), but Node's ESM loader realpaths
+// `import.meta.url` — so any module imported out of that fixture sees
+// `/private/var/folders/…` and every self-relative path it derives is in the
+// canonical form. Comparing that against the raw mkdtempSync string fails on
+// macOS while passing on Linux, where /tmp is a real directory (js-core/8 fix
+// round 1: 9 of the 10 macOS engine failures were exactly this). Normalizing
+// here — not in root.mjs — keeps the production resolver free of a realpathSync
+// on its hot path; the canonical path is the right thing for it to return.
+export function mkTempRoot(prefix) {
+  return realpathSync(mkdtempSync(path.join(tmpdir(), prefix)));
+}
+
 // Builds a throwaway temp repo containing a flow/state.json cursor and a
 // flow/state-machine.json (copied byte-for-byte from the real repo so
 // fixtures never drift from the actual machine definition). Returns paths
@@ -276,7 +293,23 @@ async function main() {
   process.exitCode = fail > 0 ? 1 : 0;
 }
 
-const isMain = process.argv[1] && path.resolve(process.argv[1]) === __filename;
+// `__filename` comes from `import.meta.url`, which Node's ESM loader has already
+// realpath'd — so argv[1] must be realpath'd too, not merely path.resolve'd
+// (which normalizes `.`/`..` but never follows symlinks). Without this the
+// runner silently no-ops to exit 0 whenever any component of its invocation path
+// is a symlink: `.agents/skills/vibe` -> `flow/`, a symlinked checkout, or every
+// macOS temp dir (/var -> private/var). realpathSync throws on a path that does
+// not exist, so fall back to the plain resolution.
+const argvPath = (() => {
+  const raw = process.argv[1];
+  if (!raw) return null;
+  try {
+    return realpathSync(raw);
+  } catch {
+    return path.resolve(raw);
+  }
+})();
+const isMain = argvPath !== null && argvPath === __filename;
 if (isMain) {
   main().catch((err) => {
     console.error('test runner crashed:', err && err.stack ? err.stack : err);

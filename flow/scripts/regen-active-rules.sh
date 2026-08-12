@@ -142,7 +142,7 @@ $END"
 
 DIGEST="$(build_digest)"
 seen=""
-for t in "${TARGETS[@]}"; do
+for t in ${TARGETS[@]+"${TARGETS[@]}"}; do
   resolved="$t"
   if command -v realpath >/dev/null 2>&1; then
     resolved="$(realpath "$t" 2>/dev/null || echo "$t")"

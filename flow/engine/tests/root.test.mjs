@@ -1,10 +1,9 @@
 // engine/tests/root.test.mjs — engine/root.mjs (js-core/2, R3).
 
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, copyFileSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { test, assert, assertEqual } from './run.mjs';
+import { test, assert, assertEqual, mkTempRoot } from './run.mjs';
 
 const ROOT_MJS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'root.mjs');
 
@@ -24,7 +23,7 @@ test('resolveRoot: a bare mktemp -d with no .git/.spec and no CLAUDE_PROJECT_DIR
   const { resolveRoot } = await import(pathToFileURL(ROOT_MJS).href + '?b');
   const prev = process.env.CLAUDE_PROJECT_DIR;
   delete process.env.CLAUDE_PROJECT_DIR;
-  const bareDir = mkdtempSync(path.join(tmpdir(), 'vibe-root-bare-'));
+  const bareDir = mkTempRoot('vibe-root-bare-');
   try {
     // No .git, no .spec anywhere under bareDir's own tree. Self-relative
     // fails too (this module's real __dirname isn't nested under
@@ -42,7 +41,7 @@ test('resolveRoot: marker search walks upward from cwd to find .spec', async () 
   const { resolveRoot } = await import(pathToFileURL(ROOT_MJS).href + '?c');
   const prev = process.env.CLAUDE_PROJECT_DIR;
   delete process.env.CLAUDE_PROJECT_DIR;
-  const projectDir = mkdtempSync(path.join(tmpdir(), 'vibe-root-marker-'));
+  const projectDir = mkTempRoot('vibe-root-marker-');
   const nested = path.join(projectDir, 'a', 'b', 'c');
   mkdirSync(nested, { recursive: true });
   mkdirSync(path.join(projectDir, '.spec'), { recursive: true });
@@ -60,7 +59,7 @@ test('resolveRoot: self-relative resolves an installed-layout engine (.agents/sk
 
   // Build a fresh, marker-less "install target" and copy root.mjs into the
   // exact nested layout the hook shim expects: <ROOT>/.agents/skills/vibe/engine.
-  const installRoot = mkdtempSync(path.join(tmpdir(), 'vibe-root-install-'));
+  const installRoot = mkTempRoot('vibe-root-install-');
   const engineDir = path.join(installRoot, '.agents', 'skills', 'vibe', 'engine');
   mkdirSync(engineDir, { recursive: true });
   const copiedRootMjs = path.join(engineDir, 'root.mjs');
@@ -68,7 +67,7 @@ test('resolveRoot: self-relative resolves an installed-layout engine (.agents/sk
 
   // A directory the resolver must NOT wander into via marker search or cwd —
   // proves the installed root came from self-relative structure, not luck.
-  const unrelatedCwd = mkdtempSync(path.join(tmpdir(), 'vibe-root-unrelated-'));
+  const unrelatedCwd = mkTempRoot('vibe-root-unrelated-');
 
   try {
     const { resolveRoot } = await import(pathToFileURL(copiedRootMjs).href);
@@ -111,14 +110,14 @@ test('resolveVibeDir: self-relative resolves an installed layout to the vibe dir
   const prev = process.env.CLAUDE_PROJECT_DIR;
   delete process.env.CLAUDE_PROJECT_DIR;
 
-  const installRoot = mkdtempSync(path.join(tmpdir(), 'vibe-vibedir-install-'));
+  const installRoot = mkTempRoot('vibe-vibedir-install-');
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(engineDir, { recursive: true });
   const copiedRootMjs = path.join(engineDir, 'root.mjs');
   copyFileSync(ROOT_MJS, copiedRootMjs);
 
-  const unrelatedCwd = mkdtempSync(path.join(tmpdir(), 'vibe-vibedir-unrelated-'));
+  const unrelatedCwd = mkTempRoot('vibe-vibedir-unrelated-');
 
   try {
     const { resolveVibeDir } = await import(pathToFileURL(copiedRootMjs).href);
@@ -169,7 +168,7 @@ test('resolveSkillsDir: installed layout resolves via the sibling vibe/SKILL.md 
   const prev = process.env.CLAUDE_PROJECT_DIR;
   delete process.env.CLAUDE_PROJECT_DIR;
 
-  const installRoot = mkdtempSync(path.join(tmpdir(), 'vibe-skillsdir-install-'));
+  const installRoot = mkTempRoot('vibe-skillsdir-install-');
   const skillsDir = path.join(installRoot, '.agents', 'skills');
   const vibeDir = path.join(skillsDir, 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
@@ -177,7 +176,7 @@ test('resolveSkillsDir: installed layout resolves via the sibling vibe/SKILL.md 
   writeFileSync(path.join(vibeDir, 'SKILL.md'), '# vibe\n');
   copyFileSync(ROOT_MJS, path.join(engineDir, 'root.mjs'));
 
-  const unrelatedCwd = mkdtempSync(path.join(tmpdir(), 'vibe-skillsdir-unrelated-'));
+  const unrelatedCwd = mkTempRoot('vibe-skillsdir-unrelated-');
 
   try {
     const { resolveSkillsDir } = await import(pathToFileURL(path.join(engineDir, 'root.mjs')).href);
@@ -194,7 +193,7 @@ test('resolveSkillsDir: no sibling vibe/SKILL.md falls back to root + .agents/sk
   const prev = process.env.CLAUDE_PROJECT_DIR;
   delete process.env.CLAUDE_PROJECT_DIR;
 
-  const projectDir = mkdtempSync(path.join(tmpdir(), 'vibe-skillsdir-fallback-'));
+  const projectDir = mkTempRoot('vibe-skillsdir-fallback-');
   mkdirSync(path.join(projectDir, '.spec'), { recursive: true });
   // vibeDir override points somewhere with no sibling SKILL.md at all.
   const lonelyVibeDir = path.join(projectDir, 'somewhere', 'vibe');
@@ -221,7 +220,7 @@ test('resolveSkillsDir: no sibling vibe/SKILL.md falls back to root + .agents/sk
 // ---------------------------------------------------------------------------
 
 function buildPluginFixture() {
-  const pluginRoot = mkdtempSync(path.join(tmpdir(), 'vibe-plugin-'));
+  const pluginRoot = mkTempRoot('vibe-plugin-');
   const vibeDir = path.join(pluginRoot, 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(engineDir, { recursive: true });
@@ -236,7 +235,7 @@ test('resolveVibeDir: recognizes the per-user plugin layout (skills/vibe/engine,
   delete process.env.CLAUDE_PROJECT_DIR;
 
   const { pluginRoot, vibeDir, copiedRootMjs } = buildPluginFixture();
-  const unrelatedCwd = mkdtempSync(path.join(tmpdir(), 'vibe-plugin-unrelated-'));
+  const unrelatedCwd = mkTempRoot('vibe-plugin-unrelated-');
 
   try {
     const { resolveVibeDir } = await import(pathToFileURL(copiedRootMjs).href);
@@ -257,7 +256,7 @@ test('resolveVibeDir: the plugin layout is NOT hijacked by an ambient CLAUDE_PRO
   // completely ignored for the SKILL location (doctrine.mjs's own,
   // separate resolveProjectCursorDir() is the only thing allowed to look
   // at CLAUDE_PROJECT_DIR, and only for the cursor).
-  const projectDir = mkdtempSync(path.join(tmpdir(), 'vibe-plugin-project-'));
+  const projectDir = mkTempRoot('vibe-plugin-project-');
   mkdirSync(path.join(projectDir, '.agents', 'skills', 'vibe'), { recursive: true });
 
   const prev = process.env.CLAUDE_PROJECT_DIR;
@@ -281,7 +280,7 @@ test('resolveSkillsDir: the plugin layout resolves to <PLUGIN_ROOT>/skills via t
   delete process.env.CLAUDE_PROJECT_DIR;
 
   const { pluginRoot, copiedRootMjs } = buildPluginFixture();
-  const unrelatedCwd = mkdtempSync(path.join(tmpdir(), 'vibe-plugin-skillsdir-unrelated-'));
+  const unrelatedCwd = mkTempRoot('vibe-plugin-skillsdir-unrelated-');
 
   try {
     const { resolveSkillsDir } = await import(pathToFileURL(copiedRootMjs).href);
@@ -303,7 +302,7 @@ test('resolveRoot: the plugin layout has no project root of its own — self-rel
   delete process.env.CLAUDE_PROJECT_DIR;
 
   const { pluginRoot, copiedRootMjs } = buildPluginFixture();
-  const bareCwd = mkdtempSync(path.join(tmpdir(), 'vibe-plugin-root-bare-'));
+  const bareCwd = mkTempRoot('vibe-plugin-root-bare-');
 
   try {
     const { resolveRoot } = await import(pathToFileURL(copiedRootMjs).href);
@@ -334,7 +333,7 @@ test('resolveProjectCursorDir: undefined when CLAUDE_PROJECT_DIR is unset', asyn
 
 test('resolveProjectCursorDir: undefined when CLAUDE_PROJECT_DIR is set but has no cursor', async () => {
   const { resolveProjectCursorDir } = await import(pathToFileURL(ROOT_MJS).href + '?j');
-  const projectDir = mkdtempSync(path.join(tmpdir(), 'vibe-projectcursor-empty-'));
+  const projectDir = mkTempRoot('vibe-projectcursor-empty-');
   try {
     assertEqual(resolveProjectCursorDir({ projectDir }), undefined);
   } finally {
@@ -344,7 +343,7 @@ test('resolveProjectCursorDir: undefined when CLAUDE_PROJECT_DIR is set but has 
 
 test('resolveProjectCursorDir: the project vibe dir when its state.json exists', async () => {
   const { resolveProjectCursorDir } = await import(pathToFileURL(ROOT_MJS).href + '?k');
-  const projectDir = mkdtempSync(path.join(tmpdir(), 'vibe-projectcursor-present-'));
+  const projectDir = mkTempRoot('vibe-projectcursor-present-');
   const projectVibeDir = path.join(projectDir, '.agents', 'skills', 'vibe');
   mkdirSync(projectVibeDir, { recursive: true });
   writeFileSync(path.join(projectVibeDir, 'state.json'), '{}\n');

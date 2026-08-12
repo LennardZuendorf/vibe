@@ -58,6 +58,18 @@ jobs:
           done
           PATH="$NOJQ_BIN" node flow/engine/tests/run.mjs
 
+      # js-core/8 fix round 1 (review Minor 7): every *.mjs derives its own path
+      # via fileURLToPath, never `new URL(import.meta.url).pathname`, because the
+      # latter keeps percent-encoding and breaks on any path with a space. That
+      # sweep is load-bearing but no other leg checks out into such a path, so a
+      # reintroduction would ship green. This leg is the guard.
+      - name: Engine suite from a path containing a space
+        run: |
+          SPACED="$(mktemp -d)/with space/vibe"
+          mkdir -p "$SPACED"
+          tar -cf - --exclude=.git . | tar -xf - -C "$SPACED"
+          cd "$SPACED" && node flow/engine/tests/run.mjs
+
       - name: Spec validation
         run: bash .agents/skills/spec/scripts/validate.sh
 
@@ -84,7 +96,16 @@ jobs:
           node-version: '20'
 
       - name: System bash is really 3.2 (sanity — this job is pointless otherwise)
-        run: /bin/bash --version | head -1
+        # Asserts, not just prints: if Apple or the runner image ever ships a
+        # newer /bin/bash this job silently stops testing what it claims while
+        # staying green. Fail loudly instead and let a human retarget it.
+        run: |
+          v="$(/bin/bash --version | head -1)"
+          echo "$v"
+          case "$v" in
+            *"version 3.2"*) ;;
+            *) echo "/bin/bash is no longer 3.2 — this job no longer tests bash 3.2" >&2; exit 1 ;;
+          esac
 
       - name: Ensure jq (not preinstalled on every macOS image)
         run: command -v jq >/dev/null 2>&1 || brew install jq
