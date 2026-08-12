@@ -242,8 +242,12 @@ assert_contains "flow-legibility/5" "install wires SessionStart -> session-start
 ssout="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/session-start-doctrine.sh" </dev/null 2>/dev/null)"
 assert_contains "flow-legibility/5" "SessionStart hook emits the doctrine" "$ssout" "sessions are ephemeral"
 assert_contains "flow-legibility/5" "SessionStart hook emits a cursor summary" "$ssout" "Cursor:"
-# graceful degrade: resolver absent -> exit 0, no output.
-rm -f "$SB/.agents/skills/vibe/scripts/doctrine.sh"
+# graceful degrade: resolver absent -> exit 0, no output. The hook is now
+# node-first (js-core/7): its real resolver is the vibe skill's SKILL.md
+# (engine/commands/doctrine.mjs reads it directly, no bash script involved),
+# not doctrine.sh — remove both so the degrade fires regardless of which
+# implementation actually runs.
+rm -f "$SB/.agents/skills/vibe/scripts/doctrine.sh" "$SB/.agents/skills/vibe/SKILL.md"
 ss_rc=0; ssdeg="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/session-start-doctrine.sh" </dev/null 2>/dev/null)" || ss_rc=$?
 assert_eq "flow-legibility/5" "SessionStart hook exits 0 when the resolver is absent" "$ss_rc" "0"
 assert_eq "flow-legibility/5" "SessionStart hook emits nothing when the resolver is absent" "$ssdeg" ""
@@ -326,8 +330,11 @@ printf '' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc
 assert_eq "platform-adapters/2" "guard exits 0 on empty stdin" "$rc" "0"
 # guard no-jq degrade: the three hard blocks still fire without jq (detect-context
 # is pure bash; the path is extracted via sed). Assert exit 2 on a state.json edit.
+# `node` is included (js-core/7): the hook is node-first now, so a farm that
+# omits it would accidentally test the UNRELATED "Node absent" degrade (R4,
+# always exit 0) instead of the jq-absent path this fixture means to exercise.
 NOJQ_BIN="$(mktmp)"
-for _t in dirname date mktemp mv rm sed grep head cat bash env awk find; do
+for _t in dirname date mktemp mv rm sed grep head cat bash env awk find node; do
   _p="$(command -v "$_t" 2>/dev/null)" && ln -s "$_p" "$NOJQ_BIN/$_t"
 done
 rc=0

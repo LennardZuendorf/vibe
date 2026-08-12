@@ -80,15 +80,17 @@ test('resolveRoot: self-relative resolves an installed-layout engine (.agents/sk
   }
 });
 
-test('resolveRoot: dogfood-style layout (engine/ at repo top level) is not mistaken for the installed layout', async () => {
-  // Sanity check on the real, in-repo engine/root.mjs: this repo's engine/
-  // sits at the top level, so self-relative must NOT fire here — only the
-  // marker search (this repo has both .git and .spec) should resolve it.
+test('resolveRoot: dogfood-style layout (flow/engine, skill dir named "flow" not "vibe") is not mistaken for the installed layout', async () => {
+  // Sanity check on the real, in-repo flow/engine/root.mjs: this repo's
+  // skill dir is named "flow", not "vibe" (flow/engine/root.mjs's own
+  // vibeDir basename is "flow"), so vendoredVibeDir()'s basename==='vibe'
+  // check must NOT fire here — only the marker search (this repo has both
+  // .git and .spec) should resolve it.
   const { resolveRoot } = await import(pathToFileURL(ROOT_MJS).href + '?d');
   const prev = process.env.CLAUDE_PROJECT_DIR;
   delete process.env.CLAUDE_PROJECT_DIR;
   try {
-    const repoRoot = path.resolve(path.dirname(ROOT_MJS), '..');
+    const repoRoot = path.resolve(path.dirname(ROOT_MJS), '..', '..');
     const resolved = resolveRoot({ cwd: repoRoot });
     assertEqual(resolved, repoRoot);
   } finally {
@@ -131,17 +133,18 @@ test('resolveVibeDir: self-relative resolves an installed layout to the vibe dir
 });
 
 test('resolveVibeDir: dogfood layout falls back to root + .agents/skills/vibe, which resolves through the flow/ symlink', async () => {
-  // Sanity check against the real, in-repo engine/root.mjs: self-relative
-  // fails here (engine/ is top-level, not nested), so this exercises the
-  // fallback. In THIS repo .agents/skills/vibe is a real symlink to flow/,
-  // so reading through the fallback path must land on the same
-  // state-machine.json content as flow/state-machine.json — proving the
-  // fallback isn't just string-equal to the right answer by luck.
+  // Sanity check against the real, in-repo flow/engine/root.mjs:
+  // self-relative fails here (the skill dir is named "flow", not "vibe"),
+  // so this exercises the fallback. In THIS repo .agents/skills/vibe is a
+  // real symlink to flow/, so reading through the fallback path must land
+  // on the same state-machine.json content as flow/state-machine.json —
+  // proving the fallback isn't just string-equal to the right answer by
+  // luck.
   const { resolveVibeDir } = await import(pathToFileURL(ROOT_MJS).href + '?f');
   const prev = process.env.CLAUDE_PROJECT_DIR;
   delete process.env.CLAUDE_PROJECT_DIR;
   try {
-    const repoRoot = path.resolve(path.dirname(ROOT_MJS), '..');
+    const repoRoot = path.resolve(path.dirname(ROOT_MJS), '..', '..');
     const resolved = resolveVibeDir({ cwd: repoRoot });
     assertEqual(resolved, path.join(repoRoot, '.agents', 'skills', 'vibe'));
 

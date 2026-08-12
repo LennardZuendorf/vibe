@@ -34,8 +34,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TESTS_DIR = __dirname;
-const REPO_ROOT = path.resolve(__dirname, '..', '..');
-const CLI_PATH = path.join(REPO_ROOT, 'engine', 'cli.mjs');
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
+const CLI_PATH = path.join(REPO_ROOT, 'flow', 'engine', 'cli.mjs');
 
 // ---------------------------------------------------------------------------
 // Assert helpers
@@ -131,9 +131,9 @@ export function runCli(args = [], opts = {}) {
 export function makeCliWithPlaceholderCommand(placeholder = 'zzz-test-placeholder') {
   const dir = mkdtempSync(path.join(tmpdir(), 'vibe-cli-placeholder-'));
   const src = readFileSync(CLI_PATH, 'utf8');
-  const marker = "const COMMANDS = ['state', 'orders', 'doctrine', 'doctor'];";
+  const marker = "const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook'];";
   assert(src.includes(marker), 'cli.mjs COMMANDS array literal has changed shape — update this test helper');
-  const patched = src.replace(marker, `const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', '${placeholder}'];`);
+  const patched = src.replace(marker, `const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook', '${placeholder}'];`);
   const cliPath = path.join(dir, 'cli.mjs');
   writeFileSync(cliPath, patched);
   const commandsDir = path.join(dir, 'commands');

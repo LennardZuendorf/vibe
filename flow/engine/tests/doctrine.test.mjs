@@ -31,7 +31,7 @@ import path from 'node:path';
 import { test, assert, assertEqual, assertMatch, assertIncludes, makeSandbox, runCommand } from './run.mjs';
 import { runDoctrine } from '../commands/doctrine.mjs';
 
-const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
+const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..', '..');
 const ORACLE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'doctrine.sh');
 const REAL_SKILL_MD = readFileSync(path.join(REPO_ROOT, 'flow', 'SKILL.md'), 'utf8');
 
@@ -404,7 +404,7 @@ test('CLI: doctrine block follows the installed skill (self-relative), but the C
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
-  cpSync(path.join(REPO_ROOT, 'engine'), engineDir, {
+  cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {
     recursive: true,
     filter: (src) => !src.includes(`${path.sep}tests${path.sep}`) && !src.endsWith(`${path.sep}tests`),
   });
@@ -478,7 +478,7 @@ function buildPluginDoctrineFixture() {
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(scriptsDir, { recursive: true });
   copyFileSync(ORACLE_SRC, path.join(scriptsDir, 'doctrine.sh'));
-  cpSync(path.join(REPO_ROOT, 'engine'), engineDir, {
+  cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {
     recursive: true,
     filter: (src) => !src.includes(`${path.sep}tests${path.sep}`) && !src.endsWith(`${path.sep}tests`),
   });
@@ -657,7 +657,7 @@ test('CLI: `vibe doctrine` on a fresh non-git install-layout fixture emits the b
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
-  cpSync(path.join(REPO_ROOT, 'engine'), engineDir, {
+  cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {
     recursive: true,
     filter: (src) => !src.includes(`${path.sep}tests${path.sep}`) && !src.endsWith(`${path.sep}tests`),
   });

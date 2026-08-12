@@ -3,9 +3,9 @@
 
 import { test, assert, assertEqual, assertIncludes, runCli, runCommand, makeCliWithPlaceholderCommand } from './run.mjs';
 
-const COMMANDS = ['state', 'orders', 'doctrine', 'doctor'];
+const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook'];
 
-test('--help lists the four commands', () => {
+test('--help lists the five commands', () => {
   const result = runCli(['--help']);
   assertEqual(result.code, 0, `expected exit 0, got ${result.code}; stderr: ${result.stderr}`);
   for (const name of COMMANDS) {

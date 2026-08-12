@@ -49,7 +49,7 @@ import path from 'node:path';
 import { test, assert, assertEqual, assertMatch, runCommand, skip } from './run.mjs';
 import { runDoctor } from '../commands/doctor.mjs';
 
-const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
+const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..', '..');
 const ORACLE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'doctor.sh');
 const VALIDATE_STATE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'validate-state.sh');
 const REAL_MACHINE = readFileSync(path.join(REPO_ROOT, 'flow', 'state-machine.json'), 'utf8');
@@ -1047,7 +1047,7 @@ test('CLI: `vibe doctor` on a fresh non-git install-layout fixture exits 0 and r
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
-  cpSync(path.join(REPO_ROOT, 'engine'), engineDir, {
+  cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {
     recursive: true,
     filter: (src) => !src.includes(`${path.sep}tests${path.sep}`) && !src.endsWith(`${path.sep}tests`),
   });
@@ -1082,7 +1082,7 @@ test('CLI: `vibe doctor` with CLAUDE_PROJECT_DIR set to this repo matches the re
   process.env.CLAUDE_PROJECT_DIR = REPO_ROOT;
   try {
     const oracleResult = runCommand('bash', [ORACLE_SRC], { cwd: REPO_ROOT, env: { CLAUDE_PROJECT_DIR: REPO_ROOT } });
-    const engineResult = runCommand(process.execPath, [path.join(REPO_ROOT, 'engine', 'cli.mjs'), 'doctor'], {
+    const engineResult = runCommand(process.execPath, [path.join(REPO_ROOT, 'flow', 'engine', 'cli.mjs'), 'doctor'], {
       cwd: REPO_ROOT,
       env: { CLAUDE_PROJECT_DIR: REPO_ROOT },
     });
@@ -1108,7 +1108,7 @@ test('CLI: a vendored install ignores a mismatched CLAUDE_PROJECT_DIR for the ro
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
-  cpSync(path.join(REPO_ROOT, 'engine'), engineDir, {
+  cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {
     recursive: true,
     filter: (src) => !src.includes(`${path.sep}tests${path.sep}`) && !src.endsWith(`${path.sep}tests`),
   });
@@ -1151,7 +1151,7 @@ test('CLI: a positional root argument is silently ignored — the self-resolved 
   const prevEnv = process.env.CLAUDE_PROJECT_DIR;
   delete process.env.CLAUDE_PROJECT_DIR;
   try {
-    const result = runCommand(process.execPath, [path.join(REPO_ROOT, 'engine', 'cli.mjs'), 'doctor', '/some/other/root'], {
+    const result = runCommand(process.execPath, [path.join(REPO_ROOT, 'flow', 'engine', 'cli.mjs'), 'doctor', '/some/other/root'], {
       cwd: REPO_ROOT,
     });
     assertEqual(result.code, 0, `stderr: ${result.stderr}`);

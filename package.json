@@ -3,7 +3,7 @@
   "version": "0.3.0-dev",
   "type": "module",
   "bin": {
-    "vibe": "./engine/cli.mjs"
+    "vibe": "./flow/engine/cli.mjs"
   },
   "engines": {
     "node": ">=18"

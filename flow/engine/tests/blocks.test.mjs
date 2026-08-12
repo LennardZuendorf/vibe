@@ -106,7 +106,7 @@ test('extractBlock: pulls a real, non-trivial block out of flow/SKILL.md', async
   const { readFileSync } = await import('node:fs');
   const path = await import('node:path');
   const skillMd = readFileSync(
-    path.join(path.dirname(new URL(import.meta.url).pathname), '..', '..', 'flow', 'SKILL.md'),
+    path.join(path.dirname(new URL(import.meta.url).pathname), '..', '..', 'SKILL.md'),
     'utf8',
   );
   const block = extractBlock(skillMd, 'vibe:doctrine');

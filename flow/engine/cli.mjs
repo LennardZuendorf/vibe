@@ -16,7 +16,7 @@ const __dirname = path.dirname(__filename);
 // The four commands this unit wires dispatch for. Later units add the
 // module at engine/commands/<name>.mjs; until then dispatch reports a clear
 // "not implemented yet" instead of a raw module-resolution error.
-const COMMANDS = ['state', 'orders', 'doctrine', 'doctor'];
+const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook'];
 
 class CliError extends Error {
   constructor(message) {
