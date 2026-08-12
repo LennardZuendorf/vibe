@@ -1148,6 +1148,7 @@ echo "=== js-core/8 — bash-3.2 portability lint (stock macOS /bin/bash) ==="
 B32_BARE_SLICE='\$\{[A-Za-z_][A-Za-z0-9_]*\[[@*]\]\}'
 B32_BANNED='(declare|local|typeset)[[:space:]]+-[a-zA-Z]*[An]|(map[f]ile|read[a]rray)[[:space:]]|glob[s]tar|&>[>]|\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?(,,|,|\^\^|\^)\}|\$\{[A-Za-z_][A-Za-z0-9_]*@[A-Za-z]\}'
 b32_bad=0
+B32_ROOT="$SRC_ROOT"
 b32_scan() {
   local file="$1" label="$2" pattern="$3" hits
   hits="$(sed -e 's/^[[:space:]]*#.*$//' \
@@ -1158,14 +1159,81 @@ b32_scan() {
   while IFS= read -r h; do
     [[ -n "$h" ]] || continue
     b32_bad=$((b32_bad + 1))
-    echo "        $label ${file#"$SRC_ROOT"/}:${h%%:*}"
+    echo "        $label ${file#"$B32_ROOT"/}:${h%%:*}"
   done <<< "$hits"
 }
-while IFS= read -r f; do
-  b32_scan "$f" "unguarded array slice under set -u:" "$B32_BARE_SLICE"
-  b32_scan "$f" "bash-4-only construct:" "$B32_BANNED"
-done < <(find "$SRC_ROOT" -name '*.sh' -not -path '*/.git/*' | sort)
+# Enumerate the scripts this lint owns, null-delimited (paths may contain spaces).
+# `git ls-files` is what makes the assertion's word "tracked" literally true: a
+# filesystem walk also picks up gitignored trees, whose offenders nobody can fix.
+# Index order is already sorted, so the report stays deterministic. Non-git install
+# targets (this tool ships into repos with no .git) degrade to a find(1) walk that
+# still asks `git check-ignore` per file whenever git can answer — warn-first, never
+# hard-fail: an unanswerable path is scanned rather than silently skipped.
+b32_list_scripts() {
+  local root="$1" rel f
+  if command -v git >/dev/null 2>&1 &&
+     git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    while IFS= read -r -d '' rel; do
+      printf '%s\0' "$root/$rel"
+    done < <(git -C "$root" ls-files -z --full-name -- '*.sh' 2>/dev/null)
+    return 0
+  fi
+  while IFS= read -r -d '' f; do
+    git -C "$root" check-ignore -q -- "$f" 2>/dev/null && continue
+    printf '%s\0' "$f"
+  done < <(find "$root" -name '*.sh' -not -path '*/.git/*' -print0)
+}
+b32_lint() {
+  local root="$1" f
+  B32_ROOT="$root"
+  while IFS= read -r -d '' f; do
+    b32_scan "$f" "unguarded array slice under set -u:" "$B32_BARE_SLICE"
+    b32_scan "$f" "bash-4-only construct:" "$B32_BANNED"
+  done < <(b32_list_scripts "$root")
+}
+b32_lint "$SRC_ROOT"
 assert_eq "js-core/8" "no bash-3.2-hostile constructs in tracked shell scripts" "$b32_bad" "0"
+
+# Enumeration teeth, pinned in BOTH directions. A filesystem walk used to report
+# offenders inside gitignored trees — a leftover subagent worktree under
+# .claude/worktrees/ (this repo spawns them), or node_modules/. Those files are
+# pinned at another commit and nobody can fix them, so the lint went red for every
+# developer using worktrees while CI (a fresh checkout, no worktrees) stayed green:
+# a guard that cries wolf is a guard people learn to ignore. The cure must not be a
+# scan narrowed until it finds nothing, so the tracked direction is pinned too.
+# The probe's offender lives in a directory with a space to hold the null-delimited
+# enumeration honest.
+B32PROBE="$(mktemp -d)"
+mkdir -p "$B32PROBE/ignored" "$B32PROBE/tracked dir"
+printf 'ignored/\n' > "$B32PROBE/.gitignore"
+# The hostile spelling is split across two literals so this file's own source
+# cannot match the scan it is feeding, same reason as the [A]-class patterns above.
+# The slice must reach the probe file unexpanded — it is data, not an expansion.
+# shellcheck disable=SC2016
+b32_hostile='printf "%s\n" "${'"arr[@]"'}"'
+for d in ignored "tracked dir"; do
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'set -euo pipefail'
+    echo 'arr=()'
+    echo "$b32_hostile"
+  } > "$B32PROBE/$d/bad.sh"
+done
+git -C "$B32PROBE" init -q >/dev/null 2>&1 || true
+git -C "$B32PROBE" add -A >/dev/null 2>&1 || true
+b32_probe_out="$(b32_bad=0; b32_lint "$B32PROBE" 2>&1)"
+assert_not_contains "js-core/8" "bash-3.2 lint ignores gitignored trees (worktrees, node_modules)" \
+  "$b32_probe_out" "ignored/bad.sh"
+assert_contains "js-core/8" "bash-3.2 lint still flags a tracked script (path with spaces)" \
+  "$b32_probe_out" "tracked dir/bad.sh"
+# Install targets can have no .git at all (the stranger-eval lesson). The fallback
+# walk must still find offenders there — an enumeration that degrades to silence
+# would make the lint vacuous on every target that is not this repo.
+rm -rf "$B32PROBE/.git"
+b32_nogit_out="$(b32_bad=0; b32_lint "$B32PROBE" 2>&1)"
+assert_contains "js-core/8" "bash-3.2 lint degrades to a find walk with no .git" \
+  "$b32_nogit_out" "tracked dir/bad.sh"
+rm -rf "$B32PROBE"
 
 echo ""
 echo "=== js-core/8 — every .mjs derives its own path via fileURLToPath ==="
