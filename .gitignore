@@ -17,6 +17,13 @@ flow/warnings.log
 # Overnight run artifact (local morning report, not merged)
 REPORT.md
 
+# Delegated-skill default output paths. superpowers writes its design docs and
+# plans here by default; vibe redirects those artifacts into .spec/** (the
+# `skip:` lines in flow/{feature,strategy}.md). Ignored so a delegate that
+# writes here anyway cannot land it in the repo. Canonical paths beat skill
+# defaults — see .spec/product.md Design Principle 5.
+docs/superpowers/
+
 # js-core engine: zero runtime dependencies by contract — this should never
 # populate, but ignore it defensively rather than trust that convention.
 node_modules/

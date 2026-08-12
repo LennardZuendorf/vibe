@@ -38,30 +38,53 @@ engine/tests/
 ## Contract — API
 
 ```js
-// root.mjs
-resolveRoot(opts?: {cwd?: string}) -> string
+// root.mjs — four resolvers, each with one job
+resolveRoot(opts?) -> string
+// Repo root, for genuinely root-scoped things (.spec/, .gitignore).
 // Order: CLAUDE_PROJECT_DIR -> self-relative (import.meta.url) -> upward
 // .spec/.git search -> cwd. Self-relative precedes marker search because a
 // fresh install target has neither marker (see the stranger-eval lesson).
 
-// cursor.mjs
-readCursor(root) -> {flow, phase, feature, updated, state}   // state = "<flow>.<phase>"
-                 | {state: "idle", ...}                       // when absent
-                 // throws CursorParseError when present but malformed
-writeCursor(root, {flow, phase, feature}) -> void             // atomic, preserves shape
+resolveVibeDir(opts?) -> string
+// The skill dir holding state.json + state-machine.json. Self-relative from
+// the engine's own location, recognising BOTH payload layouts:
+// <root>/.agents/skills/vibe/engine (installed) and <plugin>/skills/vibe/engine
+// (per-user plugin). Deliberately IGNORES CLAUDE_PROJECT_DIR once that chain
+// validates, so a per-user plugin reads its own skill, not the project's.
+resolveSkillsDir(opts?) -> string          // parent of the vibe dir; finds sibling skills
+resolveProjectCursorDir(opts?) -> string | undefined
+// doctrine-ONLY. Reproduces doctrine.sh's CLAUDE_PROJECT_DIR-first cursor rule,
+// gated on that state.json existing. Single-sources the `.agents/skills/vibe`
+// layout constant so no command re-derives it. No other command has this axis.
+
+// cursor.mjs — takes the VIBE DIR, not the repo root
+readCursor(vibeDir) -> {flow, phase, feature, updated, state}  // state = "<flow>.<phase>"
+                     | {state: "idle", ...}                     // when absent
+                     // throws CursorParseError when present but malformed.
+                     // Missing flow/phase in otherwise-valid JSON soft-default
+                     // to "idle" per field, matching jq's `// "idle"`.
+writeCursor(vibeDir, {flow, phase, feature})                    // atomic; temp unlinked on failure
 
 // machine.mjs
-loadMachine(root) -> {states, flows, phases, gates, initial, version, style}
-stateOf(machine, key) -> stateRecord | undefined
+loadMachine(vibeDir) -> {states, flows, phases, gates, initial, version, style}
+stateOf(machine, key) -> stateRecord | undefined   // own-property guarded:
+// a prototype key such as `constructor` must not resolve, matching the oracle
 
 // blocks.mjs
 extractBlock(text, id) -> string | undefined
-// ONE grammar. Accepts the legacy asymmetric closer during js-core so ported
-// output stays byte-identical; content-layer migrates authors to the single form.
+// ONE grammar. Returns undefined on a missing closer — a deliberate divergence
+// from the oracle's sed range, which leaks the file tail. content-layer
+// migrates authors to the single marker form.
 ```
 
-Every command receives `{root, cursor, machine}` resolved once by `cli.mjs` and
-never re-reads them. This is what the duplicate-primitive scan enforces.
+Commands resolve their dirs once at dispatch and use these functions; none
+re-derives a primitive, parses cursor or machine JSON directly, or hardcodes a
+layout path. That is what the duplicate-primitive scan enforces.
+
+Every command's runnable function returns `{code, stdout, stderr}`, never throws
+— including on non-string and non-array argument shapes — and never touches
+`process.std*`. The hook shims call these directly, so an exception there would
+surface as a broken hook rather than a handled exit code.
 
 ## Implementation Detail
 
