@@ -125,7 +125,7 @@ if [[ "$MODE" == "check" ]]; then
   trap 'rm -rf "$tmp"' EXIT
   emit_files "$tmp"
   drift=0
-  for f in "${GEN_FILES[@]}"; do
+  for f in ${GEN_FILES[@]+"${GEN_FILES[@]}"}; do
     if ! diff -q "$tmp/$f" "$SRC/$f" >/dev/null 2>&1; then
       drift=1; echo "build-plugin: stale $f" >&2
     fi

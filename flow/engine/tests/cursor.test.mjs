@@ -11,17 +11,16 @@
 // found) or, for the install-target scenario below, actually exercise
 // resolveVibeDir() end to end.
 
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, copyFileSync, rmSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { test, assert, assertEqual, makeSandbox } from './run.mjs';
+import { test, assert, assertEqual, makeSandbox, mkTempRoot } from './run.mjs';
 import { readCursor, writeCursor, CursorParseError } from '../cursor.mjs';
 
 const ROOT_MJS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'root.mjs');
 
 function bareDir() {
-  return mkdtempSync(path.join(tmpdir(), 'vibe-cursor-'));
+  return mkTempRoot('vibe-cursor-');
 }
 
 test('readCursor: absent cursor file reads as idle', () => {
@@ -152,7 +151,7 @@ test('sandbox self-check: makeSandbox\'s own cursor never triggers CursorParseEr
 // its self-relative resolution triggers for real) resolves vibeDir, and the
 // real (uncopied) cursor.mjs reads through it.
 test('CRITICAL (Finding 1): cursor reads correctly from an install-target layout with no flow/ dir', async () => {
-  const installRoot = mkdtempSync(path.join(tmpdir(), 'vibe-install-cursor-'));
+  const installRoot = mkTempRoot('vibe-install-cursor-');
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(engineDir, { recursive: true });
@@ -168,7 +167,7 @@ test('CRITICAL (Finding 1): cursor reads correctly from an install-target layout
   );
 
   // A cwd the resolver must NOT wander into via marker search or luck.
-  const unrelatedCwd = mkdtempSync(path.join(tmpdir(), 'vibe-install-cwd-'));
+  const unrelatedCwd = mkTempRoot('vibe-install-cwd-');
 
   const prevEnv = process.env.CLAUDE_PROJECT_DIR;
   delete process.env.CLAUDE_PROJECT_DIR;

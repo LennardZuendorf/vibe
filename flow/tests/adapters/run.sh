@@ -37,7 +37,11 @@ fail() { echo "  FAIL [$1] $2"; FAIL=$((FAIL + 1)); }
 assert_contains()     { if [[ "$3" == *"$4"* ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        want contains: $4"; echo "        got: $3"; fi; }
 assert_not_contains() { if [[ "$3" != *"$4"* ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        want NOT contains: $4"; fi; }
 assert_eq()           { if [[ "$3" == "$4" ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        want: $4"; echo "        got: $3"; fi; }
-mktmp() { mktemp -d "${TMPDIR:-/tmp}/vibe-adapt.XXXXXX"; }
+# macOS sets $TMPDIR WITH a trailing slash, so the naive template yields a
+# literal `…/T//vibe-adapt.XXXXXX` that BSD mktemp hands back verbatim — while
+# install.sh normalizes its target through `cd … && pwd`, which collapses the
+# `//`. Same directory, different string, two spurious failures. Strip it once.
+mktmp() { local t="${TMPDIR:-/tmp}"; mktemp -d "${t%/}/vibe-adapt.XXXXXX"; }
 # mkshim TOOL... — a PATH dir symlinking a broad toolset MINUS the named tools, to
 # exercise graceful-degrade when an optional executor (jq / awk) is unavailable on
 # a target. Prints the dir path.

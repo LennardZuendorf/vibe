@@ -26,7 +26,7 @@ check_design_tokens() {
 
   while IFS= read -r group; do
     [[ -n "$group" ]] && yellow "$label: empty token group '$group'"
-  done < <(awk -v groups="${TOKEN_GROUPS[*]}" '
+  done < <(awk -v groups="${TOKEN_GROUPS[*]:-}" '
     BEGIN {
       split(groups, garr, " ")
       for (i in garr) tg[garr[i]] = 1
@@ -310,7 +310,7 @@ check_plan_id_traceability() {
 # link checker above; SF13 owns only the directory-link case to avoid double-reporting.
 check_sf13_stale_feature_links() {
   local root_files=(".spec/product.md" ".spec/tech.md" ".spec/design.md" ".spec/plan.md")
-  for f in "${root_files[@]}"; do
+  for f in ${root_files[@]+"${root_files[@]}"}; do
     [[ -f "$f" ]] || continue
     while IFS= read -r target; do
       [[ "$target" == *.md ]] && continue
@@ -369,7 +369,7 @@ check_sf14_scope_conflicts() {
 check_sf15_root_spec_length() {
   local max_lines="${SPEC_ROOT_MAX_LINES:-300}"
   local root_files=(".spec/product.md" ".spec/tech.md" ".spec/design.md" ".spec/plan.md" ".spec/lessons.md")
-  for f in "${root_files[@]}"; do
+  for f in ${root_files[@]+"${root_files[@]}"}; do
     [[ -f "$f" ]] || continue
     local count
     count="$(wc -l < "$f")"
@@ -435,7 +435,7 @@ fi
 
 # ─── Validate root layer files ──────────────────────────────────────────────
 
-for f in "${specs[@]}"; do
+for f in ${specs[@]+"${specs[@]}"}; do
   name=$(basename "$f")
   echo "--- $name ---"
 

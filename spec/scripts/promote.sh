@@ -56,7 +56,7 @@ target_content="$(cat "$TARGET"; printf x)"; target_content="${target_content%x}
 to_append=""
 appended=0
 skipped=0
-for block in "${BLOCKS[@]}"; do
+for block in ${BLOCKS[@]+"${BLOCKS[@]}"}; do
   if [[ "$target_content" == *"$block"* ]]; then
     skipped=$((skipped + 1))
     continue

@@ -86,7 +86,7 @@ while IFS= read -r f; do
 done < <(find "$SPEC_DIR" -type f -name '*.md' -not -path "$SPEC_DIR/archive/*" 2>/dev/null | sort)
 
 if [[ ${#scan_targets[@]} -gt 0 ]]; then
-  for f in "${scan_targets[@]}"; do
+  for f in ${scan_targets[@]+"${scan_targets[@]}"}; do
     while IFS= read -r hit; do
       [[ -n "$hit" ]] || continue
       err "hand-written test count in ${f#"$REPO_ROOT"/}:$hit"

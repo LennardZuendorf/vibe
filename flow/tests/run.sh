@@ -1083,5 +1083,104 @@ done
 assert_eq "install-agnostic-paths" "flow phase files reference the validator portably" "$flow_validator_bad" "0"
 
 echo ""
+echo "=== js-core/8 — tests/run.sh dispatches sub-suites on ITS OWN interpreter ==="
+# The macOS CI leg exists to run everything under stock /bin/bash 3.2. That is
+# only true if the aggregator hands its OWN interpreter down: dispatching through
+# a PATH-resolved `bash` lets a Homebrew bash 5 on the runner silently execute
+# the three bash suites (and every nested `bash script` inside them), so a
+# bash-3.2 regression stays invisible on the one leg built to catch it.
+#
+# The probe is a miniature repo whose four suite scripts are stubs, run with a
+# DECOY `bash` earlier on PATH than the real one. The decoy is a working shell —
+# it just announces itself before exec'ing the real binary — so the tree keeps
+# running either way; the only signal is whether its marker appears.
+AGG_INTERP="${BASH:-$(command -v bash)}"
+PROBE="$(mktemp -d)"
+mkdir -p "$PROBE/.spec" "$PROBE/tests" "$PROBE/spec/tests" "$PROBE/flow/tests/adapters" \
+         "$PROBE/flow/engine/tests" "$PROBE/decoy" "$PROBE/realbin"
+# Invoke through a symlink alias of the same binary: the PATH-resolved `bash`
+# and the aggregator's own $BASH then differ as STRINGS while staying the same
+# shell, so the assertion discriminates on any machine — no second bash needed.
+ALIAS="$PROBE/realbin/bash"
+ln -s "$AGG_INTERP" "$ALIAS"
+cp "$SRC_ROOT/tests/run.sh" "$PROBE/tests/run.sh"
+for s in spec/tests/run.sh flow/tests/run.sh flow/tests/adapters/run.sh; do
+  # The stub's own body is data, not code to expand here — $BASH must reach the
+  # file literally so the STUB reports which shell executed it.
+  # shellcheck disable=SC2016
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'echo "DISPATCHED-ON=$BASH"'
+    # nested invocation: the suites run install.sh / the hooks this way ~200x
+    echo 'bash -c ":"'
+  } > "$PROBE/$s"
+  chmod +x "$PROBE/$s"
+done
+printf 'process.stdout.write("stub-engine\\n");\n' > "$PROBE/flow/engine/tests/run.mjs"
+{
+  echo '#!/bin/sh'
+  echo 'echo "DECOY-BASH-USED" >&2'
+  echo "exec $AGG_INTERP \"\$@\""
+} > "$PROBE/decoy/bash"
+chmod +x "$PROBE/decoy/bash"
+probe_out="$(PATH="$PROBE/decoy:$PATH" "$ALIAS" "$PROBE/tests/run.sh" 2>&1 || true)"
+assert_not_contains "js-core/8" "no suite (or nested call) resolves bash through PATH" "$probe_out" "DECOY-BASH-USED"
+probe_dispatched="$(printf '%s\n' "$probe_out" | grep -c "DISPATCHED-ON=$ALIAS" || true)"
+assert_eq "js-core/8" "all three bash suites run on the aggregator's own interpreter" "$probe_dispatched" "3"
+rm -rf "$PROBE"
+
+echo ""
+echo "=== js-core/8 — bash-3.2 portability lint (stock macOS /bin/bash) ==="
+# Stock macOS ships /bin/bash 3.2.57 (Apple froze it at the last GPLv2 release) and
+# every tracked script here runs under `set -u`. bash < 4.4 raises
+# `arr[@]: unbound variable` and ABORTS when an EMPTY array is expanded through an
+# unguarded [@] / [*] slice. That is exactly how the shipped `install.sh --uninstall`
+# died on every macOS machine: it aborted mid-way, silently skipping hook removal,
+# the CLAUDE.md/WARP.md symlink loop and the AGENTS.md unmerge. The 3.2-safe
+# spellings are ${arr[@]+"..."} in list context and ${arr[*]:-} in string context;
+# ${#arr[@]} is already safe. Five more bash-4-only constructs are banned alongside,
+# so the next one cannot land silently either.
+#
+# Patterns are written with one-character classes ([A] for A) so this file's own
+# source cannot match itself while it is scanned, and the two guarded array
+# spellings are stripped from each line before the bare-slice pattern runs (the
+# fix idiom nests a literal slice inside its own guard).
+B32_BARE_SLICE='\$\{[A-Za-z_][A-Za-z0-9_]*\[[@*]\]\}'
+B32_BANNED='(declare|local|typeset)[[:space:]]+-[a-zA-Z]*[An]|(map[f]ile|read[a]rray)[[:space:]]|glob[s]tar|&>[>]|\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?(,,|,|\^\^|\^)\}|\$\{[A-Za-z_][A-Za-z0-9_]*@[A-Za-z]\}'
+b32_bad=0
+b32_scan() {
+  local file="$1" label="$2" pattern="$3" hits
+  hits="$(sed -e 's/^[[:space:]]*#.*$//' \
+              -e 's/\${[A-Za-z_][A-Za-z0-9_]*\[[@*]\][-+][^}]*}//g' \
+              -e 's/\${[A-Za-z_][A-Za-z0-9_]*\[[@*]\]:[-+][^}]*}//g' "$file" \
+          | grep -nE "$pattern" || true)"
+  [[ -n "$hits" ]] || return 0
+  while IFS= read -r h; do
+    [[ -n "$h" ]] || continue
+    b32_bad=$((b32_bad + 1))
+    echo "        $label ${file#"$SRC_ROOT"/}:${h%%:*}"
+  done <<< "$hits"
+}
+while IFS= read -r f; do
+  b32_scan "$f" "unguarded array slice under set -u:" "$B32_BARE_SLICE"
+  b32_scan "$f" "bash-4-only construct:" "$B32_BANNED"
+done < <(find "$SRC_ROOT" -name '*.sh' -not -path '*/.git/*' | sort)
+assert_eq "js-core/8" "no bash-3.2-hostile constructs in tracked shell scripts" "$b32_bad" "0"
+
+echo ""
+echo "=== js-core/8 — every .mjs derives its own path via fileURLToPath ==="
+# `new URL(import.meta.url).pathname` keeps percent-encoding, so a checkout under
+# `…/with space/vibe` yields `…/with%20space/…` and the module crashes at import.
+# The sweep to fileURLToPath is complete and mutation-proved load-bearing; this
+# grep is what stops a reintroduction, together with CI's spaced-path leg.
+url_pathname_bad=0
+while IFS= read -r f; do
+  if grep -qE 'new URL\(import\.meta\.url\)' "$f"; then
+    url_pathname_bad=$((url_pathname_bad + 1)); echo "        offender: ${f#"$SRC_ROOT"/}"
+  fi
+done < <(find "$SRC_ROOT/flow" -name '*.mjs' | sort)
+assert_eq "js-core/8" "no .mjs re-derives its path from new URL(import.meta.url)" "$url_pathname_bad" "0"
+
+echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

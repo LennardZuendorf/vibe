@@ -96,7 +96,7 @@ remove_shipped() {
   while IFS= read -r f; do
     rel="${f#"$src"/}"
     skip=0
-    for ex in "${excludes[@]}"; do
+    for ex in ${excludes[@]+"${excludes[@]}"}; do
       if [[ "$rel" == "$ex" || "$rel" == "$ex"/* ]]; then skip=1; break; fi
     done
     [[ "$skip" -eq 1 ]] && continue
@@ -167,7 +167,7 @@ install_companion_plugins() {
     return 0
   fi
   local entry id src name
-  for entry in "${VIBE_COMPANIONS[@]}"; do
+  for entry in ${VIBE_COMPANIONS[@]+"${VIBE_COMPANIONS[@]}"}; do
     id="${entry%%|*}"; src="${entry#*|}"; name="${id%%@*}"
     if claude plugin list 2>/dev/null | grep -q "$name@"; then
       note "companion '$name' already installed — skipping"; continue
@@ -638,7 +638,7 @@ if [[ -n "$ADAPTERS" ]]; then
     err "WARN: --adapters is skipped under --only spec (adapter symlinks need the flow half's AGENTS.md)."
   else
     IFS=',' read -r -a chosen <<< "$ADAPTERS"
-    for a in "${chosen[@]}"; do
+    for a in ${chosen[@]+"${chosen[@]}"}; do
       case "$a" in
         claude) say "symlink CLAUDE.md -> AGENTS.md"
                 [[ "$DRY_RUN" -eq 1 ]] || bash "$MERGE" link "CLAUDE.md" "$TARGET" || err "WARN: CLAUDE.md not linked (real file?)." ;;
