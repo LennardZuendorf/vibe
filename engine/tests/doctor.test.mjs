@@ -373,6 +373,50 @@ test('divergence pin: machine — invalid JSON but jq absent still reports ok (d
 });
 
 // ---------------------------------------------------------------------------
+// Review round 2 regressions — both introduced by round 1's loadMachine()
+// rewrite, both would FAIL against the round-1 code (verified by hand
+// before this fix): dropping the isRegularFile() gate lost the
+// directory-at-the-path case (loadMachine() throws EISDIR, not ENOENT, so
+// the "missing" branch never fired), and dropping the explicit
+// null/false check lost the top-level-false case (destructuring `false`
+// does not throw).
+// ---------------------------------------------------------------------------
+
+test('regression pin: machine — a DIRECTORY at state-machine.json\'s path reports missing, not invalid JSON', () => {
+  const sandbox = makeHealthySandbox();
+  try {
+    rmSync(path.join(sandbox.vibeDir, 'state-machine.json'), { force: true });
+    mkdirSync(path.join(sandbox.vibeDir, 'state-machine.json'), { recursive: true }); // a directory, not a file
+    const oracleResult = runOracle(sandbox);
+    const engineResult = runEngine(sandbox);
+    assertEqual(oracleResult.code, 0);
+    assertEqual(engineResult.code, 0);
+    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertMatch(oracleResult.stdout, /warn machine state-machine\.json missing at .* — flow harness incomplete/, 'oracle sanity');
+    assertMatch(engineResult.stdout, /warn machine state-machine\.json missing at .* — flow harness incomplete/);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('regression pin: machine — a top-level `false` document reports not valid JSON, jq present', () => {
+  if (!JQ_PRESENT) skip('requires jq on PATH');
+  const sandbox = makeHealthySandbox();
+  try {
+    addMachine(sandbox, 'false\n');
+    const oracleResult = runOracle(sandbox);
+    const engineResult = runEngine(sandbox);
+    assertEqual(oracleResult.code, 0);
+    assertEqual(engineResult.code, 0);
+    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertMatch(oracleResult.stdout, /warn machine state-machine\.json is present but not valid JSON/, 'oracle sanity');
+    assertMatch(engineResult.stdout, /warn machine state-machine\.json is present but not valid JSON/);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // cursor — absent, invalid, missing/non-executable validate-state.sh,
 // valid with various flow/phase/feature shapes.
 // ---------------------------------------------------------------------------
@@ -826,6 +870,27 @@ test('parity: deps — absent dependency reports the manifest degrade text verba
       engineResult.stdout,
       /warn dep\.feature-dev subagent-collection 'feature-dev' not found — degrade: the orchestrator performs the explore \/ architect \/ review step inline/,
     );
+  } finally {
+    cleanupAll(sandbox, home);
+  }
+});
+
+// The "six levels deep, not found" test below alone cannot discriminate
+// maxDepth=5 from a mutated maxDepth=3 (or 1, or 0) — anything smaller than
+// 6 also reports "not found" for that fixture. Pin the OTHER edge too: a
+// dependency exactly at the maxdepth-5 boundary must still be found. Only
+// the pair together pins 5 exactly (review round 2, folded-in finding —
+// symmetric with findPluginJson's own boundary pair from round 1).
+test('parity: deps — a dependency exactly five levels deep IS found (maxdepth boundary)', () => {
+  if (!JQ_PRESENT) skip('requires jq on PATH');
+  const sandbox = makeHealthySandbox();
+  const home = makeHomeFixture({ plugins: [path.join('a', 'b', 'c', 'd', 'superpowers')] });
+  try {
+    const oracleResult = runOracle(sandbox, { home });
+    const engineResult = runEngine(sandbox, { home });
+    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertMatch(oracleResult.stdout, /ok {3}dep\.superpowers skill-collection 'superpowers' present on disk/, 'oracle sanity: found at the boundary');
+    assertMatch(engineResult.stdout, /ok {3}dep\.superpowers skill-collection 'superpowers' present on disk/);
   } finally {
     cleanupAll(sandbox, home);
   }

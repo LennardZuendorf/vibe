@@ -28,11 +28,14 @@
 //
 // Per repo convention: never re-derive root/vibeDir/skillsDir, never parse
 // cursor/machine/manifest JSON directly here — resolveRoot/resolveVibeDir/
-// resolveSkillsDir (root.mjs), readCursor (cursor.mjs), loadMachine
-// (machine.mjs), readJson (json.mjs) are the only primitives for that. The
-// machine check below uses loadMachine() exclusively (review round 1,
-// Finding 2) — state.json/deps.json/SKILL.md/.claude/** joins stay direct
-// because no primitive owns those paths (doctrine.mjs's own precedent).
+// resolveSkillsDir (root.mjs), readCursor (cursor.mjs), loadMachine +
+// machinePath (machine.mjs), readJson (json.mjs) are the only primitives
+// for that. The machine check below reads exclusively via loadMachine()
+// and gets its path exclusively via machinePath() (review round 1 Finding
+// 2, tightened in round 2: a residual local `path.join` for the machine
+// file was still present after round 1 and has been removed) —
+// state.json/deps.json/SKILL.md/.claude/** joins stay direct because no
+// primitive owns those paths (doctrine.mjs's own precedent).
 //
 // resolveRoot()'s root note (review round 1, Finding 3): resolveRoot()
 // checks CLAUDE_PROJECT_DIR BEFORE self-relative resolution, unconditionally
@@ -46,7 +49,7 @@
 // target the real install. doctor.mjs is the first shipped consumer of
 // resolveRoot() to reach this. Rather than resolveRoot(opts) directly, the
 // CLI wrapper below derives root from the already-resolved skillsDir via
-// rootFromSkillsDir() — see its own comment for why that is safe and not a
+// rootForReport() — see its own comment for why that is safe and not a
 // re-derivation of the vibeDir/skillsDir join itself.
 
 import fs from 'node:fs';
@@ -54,7 +57,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { resolveRoot, resolveVibeDir, resolveSkillsDir } from '../root.mjs';
 import { readCursor } from '../cursor.mjs';
-import { loadMachine } from '../machine.mjs';
+import { loadMachine, machinePath } from '../machine.mjs';
 import { readJson } from '../json.mjs';
 
 const HOOK_SCRIPTS = [
@@ -190,38 +193,44 @@ function checkToolJq(jq) {
 
 // ---------------------------------------------------------------------------
 // machine — state-machine.json presence + (jq-gated) parse validity.
-// loadMachine() (machine.mjs) is the ONLY read of this file (review round 1,
-// Finding 2) — no local path.join/readJson pair here. loadMachine() throws
-// for ENOENT (ours to distinguish as "missing", using the fs error's own
-// `.path`, never a re-joined path), for invalid JSON (SyntaxError), and for
-// a top-level `null` (destructuring `null` throws); it does NOT throw for a
-// top-level `false`/number/string/array (those simply destructure to
-// all-undefined fields) — jq's `-e` would fail on `false` too, but that
-// exact byte is unreachable through loadMachine()'s return shape alone and
-// is not worth re-deriving the read to chase. When jq is absent the oracle
-// skips validation ENTIRELY and always reports "present" — not a
-// smarter/safer check, a documented shortcut. Reproduce it as-is.
+//
+// PATH: machinePath(vibeDir) (machine.mjs) — the single-sourced join, never
+// re-derived here (review round 2: a local `joinMaybe(vibeDir,
+// 'state-machine.json')` fallback was exactly the residue the round-1 fix
+// was supposed to remove).
+//
+// EXISTENCE/TYPE: gated on isRegularFile(), matching the oracle's own
+// `[[ -f "$MACHINE" ]]` — which is false for BOTH an absent path and a
+// non-regular one (a directory, a socket, ...). Reading via loadMachine()
+// alone cannot make this distinction: an ENOENT and an EISDIR both throw,
+// but only ENOENT means "missing" to the oracle — a directory at this path
+// must also report "missing", not "not valid JSON" (review round 2,
+// Regression 1). Doing the existence check BEFORE attempting a read avoids
+// that ambiguity entirely, rather than trying to disambiguate fs error
+// codes after the fact.
+//
+// PARSE VALIDITY (jq-gated): loadMachine() (machine.mjs) is the ONLY read
+// of this file — no local readJson/JSON.parse here (review round 1, Finding
+// 2). loadMachine() itself now rejects a top-level `null` OR `false`
+// document (machine.mjs review round 2, Regression 2 — destructuring
+// `false` alone does not throw, so this needed an explicit check in the
+// primitive that owns the read, not a re-derivation here). When jq is
+// absent the oracle skips validation ENTIRELY and always reports "present"
+// — not a smarter/safer check, a documented shortcut. Reproduce it as-is.
 // ---------------------------------------------------------------------------
 
 function checkMachine(vibeDir, jqPresent) {
-  let readError;
-  try {
-    loadMachine(vibeDir);
-  } catch (err) {
-    readError = err;
-  }
-
-  if (!readError) {
-    return ok('machine', 'state-machine.json present');
-  }
-
-  if (readError.code === 'ENOENT') {
-    const p = typeof readError.path === 'string' ? readError.path : joinMaybe(vibeDir, 'state-machine.json');
+  const p = typeof vibeDir === 'string' ? machinePath(vibeDir) : undefined;
+  if (!isRegularFile(p)) {
     return warn('machine', `state-machine.json missing at ${p} — flow harness incomplete`);
   }
 
   if (jqPresent) {
-    return warn('machine', 'state-machine.json is present but not valid JSON');
+    try {
+      loadMachine(vibeDir);
+    } catch {
+      return warn('machine', 'state-machine.json is present but not valid JSON');
+    }
   }
   return ok('machine', 'state-machine.json present');
 }
