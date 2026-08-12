@@ -56,7 +56,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { resolveRoot, resolveVibeDir, resolveSkillsDir } from '../root.mjs';
-import { readCursor } from '../cursor.mjs';
+import { readCursor, cursorPath } from '../cursor.mjs';
 import { loadMachine, machinePath } from '../machine.mjs';
 import { readJson } from '../json.mjs';
 
@@ -258,7 +258,10 @@ function jqFeatureOrNone(value) {
 }
 
 function checkCursor(vibeDir, jqPresent) {
-  const statePath = joinMaybe(vibeDir, 'state.json');
+  // Path via cursorPath() (cursor.mjs) — the same single-sourcing checkMachine
+  // above does with machinePath(), and guarded the same way, so a non-string
+  // vibeDir degrades to "absent" instead of throwing in path.join.
+  const statePath = typeof vibeDir === 'string' ? cursorPath(vibeDir) : undefined;
   if (!isRegularFile(statePath)) {
     return ok('cursor', 'no flow cursor (idle) — normal when not mid-flow');
   }

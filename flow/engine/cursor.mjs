@@ -35,7 +35,14 @@ export class CursorParseError extends Error {
   }
 }
 
-function cursorPath(vibeDir) {
+// The one place `state.json`'s path is joined. Exported for the same reason
+// machine.mjs exports machinePath(): a caller that needs only the PATH — the
+// existence checks in doctor.mjs's checkCursor() and root.mjs's
+// resolveProjectCursorDir() — calls this instead of re-deriving the join and
+// so never has to name the cursor file itself. The duplicate-primitive scan
+// (js-core/8) enforces exactly that: cursor.mjs is the only module allowed to
+// spell 'state.json' as a path.
+export function cursorPath(vibeDir) {
   return path.join(vibeDir, 'state.json');
 }
 

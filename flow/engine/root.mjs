@@ -53,10 +53,21 @@ function vendoredVibeDir() {
 // build-plugin.sh ships `skills/vibe` as a top-level symlink to flow/, not
 // nested under `.agents/skills/`; see the real bash plugin hook's own
 // self-location, `${CLAUDE_PLUGIN_ROOT}/skills/vibe/scripts/doctrine.sh`
-// (plugin/hooks/session-start.sh). Recognized by the SAME sibling-SKILL.md
-// probe resolveSkillsDir() already uses for the vendored layout's fallback,
-// so the two checks never disagree about what counts as "the skill is
-// really here". Without this leg, a plugin-installed engine falls through
+// (plugin/hooks/session-start.sh). Recognized by a sibling-SKILL.md probe
+// like the one resolveSkillsDir() uses — but NOT the same probe, and the two
+// CAN disagree (js-core/5 re-review). resolveSkillsDir() (and orders.sh's own
+// SKILLS_DIR resolution, its oracle) is name-agnostic: it accepts any parent
+// directory holding a `vibe/SKILL.md`. This function additionally requires
+// that parent to be named literally `skills`, which is strictly narrower.
+// Demonstrated divergence: an engine at `<X>/mySkills/vibe/engine` fails this
+// probe, so resolveVibeDir() falls through to the CLAUDE_PROJECT_DIR-honouring
+// fallback and the engine prints the PROJECT's doctrine, while the oracle —
+// which only needs `$SKILL_PARENT/vibe/SKILL.md` — prints the plugin's own.
+// Every layout actually shipped (`skills/`, `.agents/skills/`,
+// `.claude/skills/`) is named `skills`, so no shipped configuration reaches
+// that gap and the behaviour stays as-is; the narrowing is simply not the
+// equivalence an earlier revision of this comment claimed it was. Without
+// this leg at all, a plugin-installed engine falls through
 // resolveVibeDir()'s CLAUDE_PROJECT_DIR-honouring fallback below and reads
 // the WRONG project's skill instead of its own — the exact plugin-layout
 // gap review round 1 (js-core/5, Finding 2) found and this closes.
@@ -168,5 +179,11 @@ export function resolveProjectCursorDir(opts = {}) {
   if (!projectDir) return undefined;
 
   const candidate = path.join(projectDir, '.agents', 'skills', 'vibe');
+  // Deliberately NOT routed through cursorPath() (cursor.mjs): root.mjs is
+  // the self-location primitive and must stay importable on its own — the
+  // fixtures in root.test.mjs copy this single file into synthetic install
+  // layouts, and an import of cursor.mjs would drag json.mjs along with it.
+  // The duplicate-primitive scan carries this as an exact one-LINE waiver
+  // instead, so a SECOND cursor-file literal in root.mjs still fails.
   return fs.existsSync(path.join(candidate, 'state.json')) ? candidate : undefined;
 }
