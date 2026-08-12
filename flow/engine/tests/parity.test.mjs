@@ -27,7 +27,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSy
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, assert, assertEqual, assertMatch, makeSandbox, runCommand } from './run.mjs';
+import { test, assert, assertEqual, assertMatch, skip, makeSandbox, runCommand } from './run.mjs';
 import { runSet } from '../commands/state.mjs';
 import { runOrders } from '../commands/orders.mjs';
 import { runDoctrine } from '../commands/doctrine.mjs';
@@ -81,9 +81,36 @@ function noJqShimDir() {
   const script = `${MKTMP_FN}\n${MKSHIM_FN}\nmkshim jq`;
   const res = runCommand('bash', ['-c', script]);
   assert(res.code === 0, `mkshim() failed while building the no-jq shim: ${res.stderr}`);
-  cachedNoJqShimDir = res.stdout.trim();
-  assert(cachedNoJqShimDir.length > 0, 'mkshim() printed an empty dir path');
+  const dir = res.stdout.trim();
+  assert(dir.length > 0, 'mkshim() printed an empty dir path');
+
+  // Review round 1, Minor 3: a semantically-broken mkshim BODY (one that
+  // still leaves jq reachable) was caught only incidentally — 5 doctor legs
+  // went red because doctor is handed jqPresent:false while its oracle sees
+  // jq, and the other 20 no-jq legs would have run WITH jq and reported
+  // green. Assert the postcondition directly, so shim failure is loud and
+  // immediate rather than a side effect five tests later.
+  const probe = runCommand(path.join(dir, 'bash'), ['-c', 'command -v jq'], { env: { PATH: dir } });
+  assert(
+    probe.code !== 0 && probe.stdout.trim() === '',
+    `mkshim jq produced a dir where jq is STILL reachable (${probe.stdout.trim()}) — every "no-jq" leg below would silently run with jq`,
+  );
+
+  cachedNoJqShimDir = dir;
   return cachedNoJqShimDir;
+}
+
+// Every `x jq` leg below needs jq to actually be on this runner's PATH.
+// Without it, runOracleScript('jq') just inherits the same jq-less PATH the
+// 'no-jq' leg pins, so the jq half of the matrix silently degenerates into a
+// byte-identical duplicate of the no-jq half — 30 tests reporting `ok` while
+// asserting nothing new. CI's own "engine suite with jq stripped from PATH"
+// step runs on exactly that PATH, so this is not hypothetical. A real skip
+// keeps the counts honest (review round 1, Finding 4).
+function requireJqFor(mode) {
+  if (mode === 'jq' && !JQ_PRESENT) {
+    skip('requires jq on PATH — the jq leg would otherwise duplicate the no-jq leg and assert nothing new');
+  }
 }
 
 // Runs a bash ORACLE script under a given jq mode. 'jq' inherits this
@@ -231,6 +258,7 @@ function normalizeCursorBytes(raw) {
 for (const fixture of CURSOR_FIXTURES) {
   for (const mode of JQ_MODES) {
     test(`parity matrix: orders — ${fixture.name} x ${mode}`, () => {
+      requireJqFor(mode);
       const sandbox = makeReadSandbox(fixture);
       try {
         const oracleResult = runOracleScript(sandbox.ordersPath, [], mode);
@@ -256,6 +284,7 @@ for (const fixture of CURSOR_FIXTURES) {
 for (const fixture of CURSOR_FIXTURES) {
   for (const mode of JQ_MODES) {
     test(`parity matrix: doctrine — ${fixture.name} x ${mode}`, () => {
+      requireJqFor(mode);
       const sandbox = makeReadSandbox(fixture);
       const prevEnv = process.env.CLAUDE_PROJECT_DIR;
       delete process.env.CLAUDE_PROJECT_DIR; // never let the ambient session env redirect the cursor read
@@ -293,6 +322,7 @@ const STATE_TARGET = 'quick.fix';
 for (const fixture of CURSOR_FIXTURES) {
   for (const mode of JQ_MODES) {
     test(`parity matrix: state — ${fixture.name} x ${mode}`, () => {
+      requireJqFor(mode);
       const oracle = makeStateOracleSandbox(fixture);
       const engine = makeStateEngineSandbox(fixture);
       try {
@@ -309,8 +339,11 @@ for (const fixture of CURSOR_FIXTURES) {
           `cursor bytes diverge for ${fixture.name} x ${mode}\noracle:\n${oracleBytes}\nengine:\n${engineBytes}`,
         );
 
-        const jqReallyUsed = mode === 'jq' && JQ_PRESENT;
-        if (jqReallyUsed) {
+        // mode === 'jq' now implies jq really is present — requireJqFor()
+        // skipped the leg otherwise, instead of silently downgrading to the
+        // first-line-only comparison below while still printing a full pass
+        // (review round 1, Finding 4).
+        if (mode === 'jq') {
           assertEqual(engineResult.stdout, oracleResult.stdout, `stdout diverges for ${fixture.name} x ${mode}`);
         } else {
           // The oracle's `next:` line is jq-only; the engine emits it
@@ -338,9 +371,18 @@ for (const fixture of CURSOR_FIXTURES) {
 
 const DOCTOR_HOME = mkdtempSync(path.join(tmpdir(), 'vibe-parity-doctor-home-'));
 
+// Module-scope tmpdirs have no per-test finally to clean them, so they leaked
+// one directory per run (review round 1, Minor 4). Removed on process exit
+// instead — after the last test that could still need them.
+process.on('exit', () => {
+  rmSync(DOCTOR_HOME, { recursive: true, force: true });
+  if (cachedNoJqShimDir) rmSync(cachedNoJqShimDir, { recursive: true, force: true });
+});
+
 for (const fixture of CURSOR_FIXTURES) {
   for (const mode of JQ_MODES) {
     test(`parity matrix: doctor — ${fixture.name} x ${mode}`, () => {
+      requireJqFor(mode);
       const sandbox = makeDoctorSandbox(fixture);
       try {
         const oracleResult = runOracleScript(sandbox.scriptPath, [], mode, { HOME: DOCTOR_HOME });
@@ -382,6 +424,7 @@ for (const fixture of CURSOR_FIXTURES) {
 for (const fixture of CURSOR_FIXTURES) {
   for (const mode of JQ_MODES) {
     test(`parity matrix: hook session-start-doctrine — ${fixture.name} x ${mode}`, () => {
+      requireJqFor(mode);
       const sandbox = makeReadSandbox(fixture);
       const prevEnv = process.env.CLAUDE_PROJECT_DIR;
       delete process.env.CLAUDE_PROJECT_DIR;
@@ -402,6 +445,7 @@ for (const fixture of CURSOR_FIXTURES) {
     });
 
     test(`parity matrix: hook user-prompt-submit-inject — ${fixture.name} x ${mode}`, () => {
+      requireJqFor(mode);
       const sandbox = makeReadSandbox(fixture);
       try {
         const oracleResult = runOracleScript(sandbox.ordersPath, [], mode);
@@ -443,11 +487,15 @@ for (const fixture of CURSOR_FIXTURES) {
 // ---------------------------------------------------------------------------
 
 test('KNOWN DIVERGENCE: cursor.flow = 5 (number) — oracle "Cursor: 5.impl.", engine "Cursor: idle.impl." — do not change this', () => {
+  // The divergence lives specifically in jq's `//` truthiness; without jq on
+  // this runner the oracle takes its sed degrade path instead (a DIFFERENT,
+  // already-covered code path), so there is nothing to pin here. This MUST be
+  // skip(), not a bare `return`: a return reports `ok` and is indistinguishable
+  // from a pin that actually ran — and CI's jq-stripped leg runs on exactly
+  // that PATH, so the pin read green while asserting nothing (review round 1,
+  // Finding 4).
   if (!JQ_PRESENT) {
-    // The divergence lives specifically in jq's `//` truthiness; without jq
-    // on this runner the oracle takes its sed degrade path instead (a
-    // DIFFERENT, already-covered code path), so there is nothing to pin here.
-    return;
+    skip("requires jq on PATH — the divergence lives in jq's // truthiness");
   }
   const sandbox = makeReadSandbox({ cursor: { flow: 5, phase: 'impl', feature: null, updated: FIXED_TS } });
   const prevEnv = process.env.CLAUDE_PROJECT_DIR;
