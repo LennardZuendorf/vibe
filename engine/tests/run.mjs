@@ -67,6 +67,22 @@ export function assertIncludes(haystack, needle, msg) {
   );
 }
 
+// A test calls `skip(reason)` to opt out of an unmet precondition (e.g. no
+// jq on PATH) — it must show up in the summary as a SKIP, never silently
+// count as a pass. A plain early `return` inside a passing test body is
+// indistinguishable from "ran and asserted nothing was wrong"; the CI leg
+// that strips jq from PATH needs to see how many assertions actually ran.
+export class Skipped extends Error {
+  constructor(reason = 'skipped') {
+    super(reason);
+    this.name = 'Skipped';
+  }
+}
+
+export function skip(reason) {
+  throw new Skipped(reason);
+}
+
 export async function assertThrows(fn, msg) {
   let threw = false;
   try {
@@ -235,6 +251,7 @@ async function main() {
 
   let pass = 0;
   let fail = 0;
+  let skipped = 0;
 
   for (const { file, name, fn } of selected) {
     try {
@@ -242,6 +259,11 @@ async function main() {
       pass += 1;
       console.log(`  ok    ${file} :: ${name}`);
     } catch (err) {
+      if (err instanceof Skipped) {
+        skipped += 1;
+        console.log(`  skip  ${file} :: ${name} (${err.message})`);
+        continue;
+      }
       fail += 1;
       console.log(`  FAIL  ${file} :: ${name}`);
       console.log(`        ${err && err.stack ? err.stack : err}`);
@@ -249,7 +271,7 @@ async function main() {
   }
 
   console.log('');
-  console.log(`${pass} passed, ${fail} failed, ${selected.length} total`);
+  console.log(`${pass} passed, ${fail} failed, ${skipped} skipped, ${selected.length} total`);
 
   process.exitCode = fail > 0 ? 1 : 0;
 }

@@ -46,7 +46,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { test, assert, assertEqual, assertMatch, runCommand } from './run.mjs';
+import { test, assert, assertEqual, assertMatch, runCommand, skip } from './run.mjs';
 import { runDoctor } from '../commands/doctor.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
@@ -339,7 +339,7 @@ test('parity: machine — missing state-machine.json', () => {
 });
 
 test('parity: machine — present but not valid JSON (jq present required for this to differ)', () => {
-  if (!JQ_PRESENT) return; // the no-jq variant is pinned separately below
+  if (!JQ_PRESENT) skip('requires jq on PATH — the no-jq variant is pinned separately below');
   const sandbox = makeHealthySandbox();
   try {
     addMachine(sandbox, '{ this is not json');
@@ -391,7 +391,7 @@ test('parity: cursor — absent cursor is idle, ok', () => {
 });
 
 test('parity: cursor — invalid (unparseable) JSON, jq present', () => {
-  if (!JQ_PRESENT) return;
+  if (!JQ_PRESENT) skip('requires jq on PATH');
   const sandbox = makeHealthySandbox();
   try {
     addCursor(sandbox, '{ not json at all');
@@ -405,7 +405,7 @@ test('parity: cursor — invalid (unparseable) JSON, jq present', () => {
 });
 
 test('parity: cursor — missing validate-state.sh degrades to invalid, jq present', () => {
-  if (!JQ_PRESENT) return;
+  if (!JQ_PRESENT) skip('requires jq on PATH');
   const sandbox = makeHealthySandbox();
   try {
     rmSync(path.join(sandbox.vibeDir, 'scripts', 'validate-state.sh'));
@@ -419,7 +419,7 @@ test('parity: cursor — missing validate-state.sh degrades to invalid, jq prese
 });
 
 test('parity: cursor — non-executable validate-state.sh degrades to invalid, jq present', () => {
-  if (!JQ_PRESENT) return;
+  if (!JQ_PRESENT) skip('requires jq on PATH');
   const sandbox = makeHealthySandbox();
   try {
     addValidateState(sandbox, { executable: false });
@@ -433,7 +433,7 @@ test('parity: cursor — non-executable validate-state.sh degrades to invalid, j
 });
 
 test('parity: cursor — valid, with a feature set', () => {
-  if (!JQ_PRESENT) return;
+  if (!JQ_PRESENT) skip('requires jq on PATH');
   const sandbox = makeHealthySandbox();
   try {
     addCursor(sandbox, { flow: 'feature', phase: 'impl', feature: 'widget', updated: '2026-01-01T00:00:00Z' });
@@ -493,6 +493,26 @@ test('parity: adapter — settings.json present but missing one hook name (issue
     const engineResult = runEngine(sandbox);
     assertEqual(engineResult.stdout, oracleResult.stdout);
     assertMatch(engineResult.stdout, /warn adapter\.activation hooks present but NOT wired.*pre-tool-use-guard\.sh/);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('parity: adapter — settings.json present but missing TWO hook names joins with a single space (review round 1, Finding 4)', () => {
+  // A single-missing-hook fixture cannot discriminate `join(' ')` (matches
+  // bash's `${_unwired[*]}`) from a mutated `join(', ')` — both produce the
+  // same one-element string. Two missing names make them diverge.
+  const sandbox = makeHealthySandbox();
+  try {
+    addSettings(sandbox, HOOK_SCRIPTS.filter((n) => n !== 'pre-tool-use-guard.sh' && n !== 'stop-gate.sh'));
+    const oracleResult = runOracle(sandbox);
+    const engineResult = runEngine(sandbox);
+    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertMatch(
+      engineResult.stdout,
+      /warn adapter\.activation hooks present but NOT wired in \.claude\/settings\.json \(issue #12 gap: pre-tool-use-guard\.sh stop-gate\.sh\) — re-run install\.sh/,
+    );
+    assert(!engineResult.stdout.includes('pre-tool-use-guard.sh, stop-gate.sh'), 'must join with a single space, not a comma');
   } finally {
     sandbox.cleanup();
   }
@@ -617,6 +637,103 @@ test('parity: instruction.coverage — all three carriers combine in the listed 
   }
 });
 
+// maxdepth boundary for findPluginJson (review round 1, Finding 5) — the
+// deps side already pins this (below, "six levels deep... maxdepth 5");
+// this makes instruction.coverage's own -maxdepth 6 symmetric: exactly at
+// the boundary (found) vs one level past it (not found). A mutation from 6
+// to 4 (or any off-by-one) fails one of this pair.
+test('parity: instruction.coverage — plugin.json exactly at the maxdepth-6 boundary is found', () => {
+  const sandbox = makeHealthySandbox();
+  const home = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-home-plugin-depth6-'));
+  try {
+    addSkillMd(sandbox, '# vibe skill\n\nno doctrine marker here\n');
+    rmSync(path.join(sandbox.dir, '.claude'), { recursive: true, force: true });
+    // pluginsDir(level0)/a/b/c/d/e(level5)/plugin.json -> entry at level 6.
+    const deepDir = path.join(home, '.claude', 'plugins', 'a', 'b', 'c', 'd', 'vibe-e');
+    mkdirSync(deepDir, { recursive: true });
+    writeFileSync(path.join(deepDir, 'plugin.json'), '{}\n');
+
+    const oracleResult = runOracle(sandbox, { home });
+    const engineResult = runEngine(sandbox, { home });
+    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertMatch(oracleResult.stdout, /doctrine reaches the agent via: .*per-user plugin/, 'oracle sanity: found at the boundary');
+    assertMatch(engineResult.stdout, /doctrine reaches the agent via: .*per-user plugin/);
+  } finally {
+    sandbox.cleanup();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('parity: instruction.coverage — plugin.json one level past maxdepth 6 is NOT found', () => {
+  const sandbox = makeHealthySandbox();
+  const home = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-home-plugin-depth7-'));
+  try {
+    addSkillMd(sandbox, '# vibe skill\n\nno doctrine marker here\n');
+    rmSync(path.join(sandbox.dir, '.claude'), { recursive: true, force: true });
+    // One directory deeper than the boundary test above -> entry at level 7.
+    const deepDir = path.join(home, '.claude', 'plugins', 'a', 'b', 'c', 'd', 'e', 'vibe-f');
+    mkdirSync(deepDir, { recursive: true });
+    writeFileSync(path.join(deepDir, 'plugin.json'), '{}\n');
+
+    const oracleResult = runOracle(sandbox, { home });
+    const engineResult = runEngine(sandbox, { home });
+    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertMatch(engineResult.stdout, /warn instruction\.coverage no doctrine coverage/);
+  } finally {
+    sandbox.cleanup();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// Symlinked $HOME/.claude/plugins (review round 1, Finding 1): find's
+// default -P never follows a symlinked STARTING POINT, so nothing inside it
+// is ever seen; a shortcut using a plain recursive readdir would wrongly
+// find matches through the symlink.
+test('parity: instruction.coverage — a symlinked $HOME/.claude/plugins is never descended into', () => {
+  const sandbox = makeHealthySandbox();
+  const home = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-home-pluginsymlink-'));
+  const realPlugins = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-realplugins-'));
+  try {
+    addSkillMd(sandbox, '# vibe skill\n\nno doctrine marker here\n');
+    rmSync(path.join(sandbox.dir, '.claude'), { recursive: true, force: true });
+    const pluginDir = path.join(realPlugins, 'vibe-plugin');
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(path.join(pluginDir, 'plugin.json'), '{}\n');
+    mkdirSync(path.join(home, '.claude'), { recursive: true });
+    symlinkSync(realPlugins, path.join(home, '.claude', 'plugins'));
+
+    const oracleResult = runOracle(sandbox, { home });
+    const engineResult = runEngine(sandbox, { home });
+    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertMatch(engineResult.stdout, /warn instruction\.coverage no doctrine coverage/, 'a symlinked plugins dir must not be traversed');
+  } finally {
+    sandbox.cleanup();
+    rmSync(home, { recursive: true, force: true });
+    rmSync(realPlugins, { recursive: true, force: true });
+  }
+});
+
+test('parity: deps — a dependency reachable only through a symlinked $HOME/.claude/plugins is NOT found', () => {
+  if (!JQ_PRESENT) skip('requires jq on PATH');
+  const sandbox = makeHealthySandbox();
+  const home = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-home-depsymlink-'));
+  const realPlugins = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-realplugins-deps-'));
+  try {
+    mkdirSync(path.join(realPlugins, 'superpowers'), { recursive: true });
+    mkdirSync(path.join(home, '.claude'), { recursive: true });
+    symlinkSync(realPlugins, path.join(home, '.claude', 'plugins'));
+
+    const oracleResult = runOracle(sandbox, { home });
+    const engineResult = runEngine(sandbox, { home });
+    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertMatch(engineResult.stdout, /warn dep\.superpowers skill-collection 'superpowers' not found/);
+  } finally {
+    sandbox.cleanup();
+    rmSync(home, { recursive: true, force: true });
+    rmSync(realPlugins, { recursive: true, force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // deps.manifest + per-dep presence.
 // ---------------------------------------------------------------------------
@@ -635,7 +752,7 @@ test('parity: deps.manifest — missing deps.json', () => {
 });
 
 test('parity: deps.manifest — invalid JSON, jq present', () => {
-  if (!JQ_PRESENT) return;
+  if (!JQ_PRESENT) skip('requires jq on PATH');
   const sandbox = makeHealthySandbox();
   try {
     addDeps(sandbox, '{ not json');
@@ -669,7 +786,7 @@ test('divergence pin: deps.manifest — jq absent warns "unavailable", never rea
 });
 
 test('parity: deps — a dependency present via $HOME/.claude/skills/<name>', () => {
-  if (!JQ_PRESENT) return;
+  if (!JQ_PRESENT) skip('requires jq on PATH');
   const sandbox = makeHealthySandbox();
   const home = makeHomeFixture({ skills: ['superpowers'] });
   try {
@@ -684,7 +801,7 @@ test('parity: deps — a dependency present via $HOME/.claude/skills/<name>', ()
 });
 
 test('parity: deps — a dependency present via a case-insensitive nested match under $HOME/.claude/plugins', () => {
-  if (!JQ_PRESENT) return;
+  if (!JQ_PRESENT) skip('requires jq on PATH');
   const sandbox = makeHealthySandbox();
   const home = makeHomeFixture({ plugins: [path.join('vendor', 'sub', 'SUPERPOWERS')] });
   try {
@@ -698,7 +815,7 @@ test('parity: deps — a dependency present via a case-insensitive nested match 
 });
 
 test('parity: deps — absent dependency reports the manifest degrade text verbatim', () => {
-  if (!JQ_PRESENT) return;
+  if (!JQ_PRESENT) skip('requires jq on PATH');
   const sandbox = makeHealthySandbox();
   const home = makeHomeFixture();
   try {
@@ -715,7 +832,7 @@ test('parity: deps — absent dependency reports the manifest degrade text verba
 });
 
 test('parity: deps — a dependency six levels deep under $HOME\\/.claude\\/plugins is NOT found (maxdepth 5)', () => {
-  if (!JQ_PRESENT) return;
+  if (!JQ_PRESENT) skip('requires jq on PATH');
   const sandbox = makeHealthySandbox();
   const home = makeHomeFixture({ plugins: [path.join('a', 'b', 'c', 'd', 'e', 'superpowers')] });
   try {
@@ -909,5 +1026,73 @@ test('CLI: `vibe doctor` with CLAUDE_PROJECT_DIR set to this repo matches the re
   } finally {
     if (prevEnv === undefined) delete process.env.CLAUDE_PROJECT_DIR;
     else process.env.CLAUDE_PROJECT_DIR = prevEnv;
+  }
+});
+
+// Review round 1, Finding 3 — the actual bug: an ordinary vendored install
+// (<installRoot>/.agents/skills/vibe/engine) run under a MISMATCHED
+// CLAUDE_PROJECT_DIR (pointing at a different project). Before the
+// rootForReport() fix, resolveRoot(opts) would win and every root-based
+// line (the header, .claude/hooks/**, .claude/settings.json) would be
+// computed against the wrong tree while core.spec/core.vibe/machine/cursor/
+// deps (vibeDir/skillsDir-based) stayed correct — an internally
+// inconsistent report. Pinned here so a regression back to bare
+// resolveRoot(opts) fails loudly.
+test('CLI: a vendored install ignores a mismatched CLAUDE_PROJECT_DIR for the root-based report lines', () => {
+  const installRoot = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-cli-vendored-'));
+  const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
+  const engineDir = path.join(vibeDir, 'engine');
+  mkdirSync(vibeDir, { recursive: true });
+  cpSync(path.join(REPO_ROOT, 'engine'), engineDir, {
+    recursive: true,
+    filter: (src) => !src.includes(`${path.sep}tests${path.sep}`) && !src.endsWith(`${path.sep}tests`),
+  });
+  copyFileSync(path.join(REPO_ROOT, 'flow', 'SKILL.md'), path.join(vibeDir, 'SKILL.md'));
+  copyFileSync(path.join(REPO_ROOT, 'flow', 'state-machine.json'), path.join(vibeDir, 'state-machine.json'));
+  mkdirSync(path.join(installRoot, '.agents', 'skills', 'spec'), { recursive: true });
+
+  const otherProject = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-cli-otherproject-'));
+  const unrelatedCwd = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-cli-vendored-cwd-'));
+  const prevEnv = process.env.CLAUDE_PROJECT_DIR;
+
+  try {
+    const result = runCommand(process.execPath, [path.join(engineDir, 'cli.mjs'), 'doctor'], {
+      cwd: unrelatedCwd,
+      env: { HOME: '/nonexistent-home', CLAUDE_PROJECT_DIR: otherProject },
+    });
+    assertEqual(result.code, 0, `stderr: ${result.stderr}`);
+    assertMatch(
+      result.stdout,
+      new RegExp(`^# vibe doctor — ${installRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\n`),
+      'header must report the vendored install root, not CLAUDE_PROJECT_DIR',
+    );
+    assert(!result.stdout.includes(otherProject), 'must never leak the mismatched CLAUDE_PROJECT_DIR into the report');
+  } finally {
+    rmSync(installRoot, { recursive: true, force: true });
+    rmSync(otherProject, { recursive: true, force: true });
+    rmSync(unrelatedCwd, { recursive: true, force: true });
+    if (prevEnv !== undefined) process.env.CLAUDE_PROJECT_DIR = prevEnv;
+    else delete process.env.CLAUDE_PROJECT_DIR;
+  }
+});
+
+// Review round 1, Finding 7 — pin the (accepted, per the coordinator's
+// ruling on concern 1) silent ignoring of doctor.sh's `[<repo-root>]`
+// positional override: today's resolvers have no opts.root leg, so an
+// explicit CLI argument cannot be honoured without re-deriving the
+// `.agents/skills/vibe` join. Documented here as intended behaviour, not
+// left silent.
+test('CLI: a positional root argument is silently ignored — the self-resolved root wins', () => {
+  const prevEnv = process.env.CLAUDE_PROJECT_DIR;
+  delete process.env.CLAUDE_PROJECT_DIR;
+  try {
+    const result = runCommand(process.execPath, [path.join(REPO_ROOT, 'engine', 'cli.mjs'), 'doctor', '/some/other/root'], {
+      cwd: REPO_ROOT,
+    });
+    assertEqual(result.code, 0, `stderr: ${result.stderr}`);
+    assertMatch(result.stdout, new RegExp(`^# vibe doctor — ${REPO_ROOT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\n`));
+    assert(!result.stdout.includes('/some/other/root'), 'the positional argument must not appear anywhere in the report');
+  } finally {
+    if (prevEnv !== undefined) process.env.CLAUDE_PROJECT_DIR = prevEnv;
   }
 });

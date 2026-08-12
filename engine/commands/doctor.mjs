@@ -28,14 +28,33 @@
 //
 // Per repo convention: never re-derive root/vibeDir/skillsDir, never parse
 // cursor/machine/manifest JSON directly here — resolveRoot/resolveVibeDir/
-// resolveSkillsDir (root.mjs), readCursor (cursor.mjs), readJson (json.mjs)
-// are the only primitives for that.
+// resolveSkillsDir (root.mjs), readCursor (cursor.mjs), loadMachine
+// (machine.mjs), readJson (json.mjs) are the only primitives for that. The
+// machine check below uses loadMachine() exclusively (review round 1,
+// Finding 2) — state.json/deps.json/SKILL.md/.claude/** joins stay direct
+// because no primitive owns those paths (doctrine.mjs's own precedent).
+//
+// resolveRoot()'s root note (review round 1, Finding 3): resolveRoot()
+// checks CLAUDE_PROJECT_DIR BEFORE self-relative resolution, unconditionally
+// — a real divergence from the oracle (which never reads CLAUDE_PROJECT_DIR
+// for ROOT at all) in the ordinary vendored-install case, not just a
+// mismatched plugin layout: `CLAUDE_PROJECT_DIR=<other-project> vibe doctor`
+// run from an installed `<root>/.agents/skills/vibe/engine` would otherwise
+// compute the header line and every `.claude/**` check against the WRONG
+// tree, while core.spec/core.vibe/machine/cursor/deps (all vibeDir/
+// skillsDir-based, which DO resolve self-relative-first) still correctly
+// target the real install. doctor.mjs is the first shipped consumer of
+// resolveRoot() to reach this. Rather than resolveRoot(opts) directly, the
+// CLI wrapper below derives root from the already-resolved skillsDir via
+// rootFromSkillsDir() — see its own comment for why that is safe and not a
+// re-derivation of the vibeDir/skillsDir join itself.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { resolveRoot, resolveVibeDir, resolveSkillsDir } from '../root.mjs';
 import { readCursor } from '../cursor.mjs';
+import { loadMachine } from '../machine.mjs';
 import { readJson } from '../json.mjs';
 
 const HOOK_SCRIPTS = [
@@ -92,6 +111,15 @@ function isExecutable(p) {
   try {
     fs.accessSync(p, fs.constants.X_OK);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+function isSymlink(p) {
+  if (typeof p !== 'string') return false;
+  try {
+    return fs.lstatSync(p).isSymbolicLink();
   } catch {
     return false;
   }
@@ -161,29 +189,39 @@ function checkToolJq(jq) {
 }
 
 // ---------------------------------------------------------------------------
-// machine — state-machine.json presence + (jq-gated) parse validity. jq's
-// `-e` fails not only on invalid JSON but also on a top-level `null`/
-// `false` document; reproduced by the explicit value check below, not just
-// a try/catch. When jq is absent the oracle skips validation ENTIRELY and
-// always reports "present" — not a smarter/safer check, a documented
-// shortcut. Reproduce it as-is.
+// machine — state-machine.json presence + (jq-gated) parse validity.
+// loadMachine() (machine.mjs) is the ONLY read of this file (review round 1,
+// Finding 2) — no local path.join/readJson pair here. loadMachine() throws
+// for ENOENT (ours to distinguish as "missing", using the fs error's own
+// `.path`, never a re-joined path), for invalid JSON (SyntaxError), and for
+// a top-level `null` (destructuring `null` throws); it does NOT throw for a
+// top-level `false`/number/string/array (those simply destructure to
+// all-undefined fields) — jq's `-e` would fail on `false` too, but that
+// exact byte is unreachable through loadMachine()'s return shape alone and
+// is not worth re-deriving the read to chase. When jq is absent the oracle
+// skips validation ENTIRELY and always reports "present" — not a
+// smarter/safer check, a documented shortcut. Reproduce it as-is.
 // ---------------------------------------------------------------------------
 
 function checkMachine(vibeDir, jqPresent) {
-  const machinePath = joinMaybe(vibeDir, 'state-machine.json');
-  if (!isRegularFile(machinePath)) {
-    return warn('machine', `state-machine.json missing at ${machinePath} — flow harness incomplete`);
+  let readError;
+  try {
+    loadMachine(vibeDir);
+  } catch (err) {
+    readError = err;
   }
+
+  if (!readError) {
+    return ok('machine', 'state-machine.json present');
+  }
+
+  if (readError.code === 'ENOENT') {
+    const p = typeof readError.path === 'string' ? readError.path : joinMaybe(vibeDir, 'state-machine.json');
+    return warn('machine', `state-machine.json missing at ${p} — flow harness incomplete`);
+  }
+
   if (jqPresent) {
-    let value;
-    try {
-      value = readJson(machinePath);
-    } catch {
-      return warn('machine', 'state-machine.json is present but not valid JSON');
-    }
-    if (value === null || value === false) {
-      return warn('machine', 'state-machine.json is present but not valid JSON');
-    }
+    return warn('machine', 'state-machine.json is present but not valid JSON');
   }
   return ok('machine', 'state-machine.json present');
 }
@@ -300,7 +338,20 @@ function checkAdapter(root) {
 // only, exact (case-sensitive) basename, substring match on the FULL path
 // as constructed from `startDir` (mirrors find's own path text, which
 // always carries the starting-point prefix).
+//
+// find's default -P NEVER follows symlinks — including the STARTING POINT
+// itself when it is one (only -H/-L opt into following it; the oracle
+// passes neither). Node's readdirSync(path) on a symlinked path silently
+// follows it (a plain opendir() syscall does), so `$HOME/.claude/plugins`
+// being a symlink would make this recurse into its target's whole tree
+// while the oracle's find just sees an un-traversable symlink and reports
+// nothing — a real byte-parity break (review round 1, Finding 1), not just
+// for this check but for dep_present()'s identical descent below. Refuse to
+// descend when the START point is a symlink; symlinks ENCOUNTERED during
+// the walk are already excluded because a Dirent's isDirectory()/isFile()
+// reflect the entry's own (unresolved) type, never the symlink's target.
 function findPluginJson(startDir, maxDepth) {
+  if (isSymlink(startDir)) return false;
   function visit(dir, level) {
     let entries;
     try {
@@ -322,10 +373,14 @@ function findPluginJson(startDir, maxDepth) {
 }
 
 // find "$dir" -maxdepth N -iname "$name": any type, case-insensitive
-// basename match, including the starting dir itself.
+// basename match, including the starting dir itself. Same symlinked-start-
+// point guard as findPluginJson() above — the basename self-check still
+// runs (find DOES evaluate the starting point path itself against the
+// test, it just never descends into it), only the descent is refused.
 function findInameBelow(startDir, name, maxDepth) {
   const target = name.toLowerCase();
   if (path.basename(startDir).toLowerCase() === target) return true;
+  if (isSymlink(startDir)) return false;
   function visit(dir, level) {
     let entries;
     try {
@@ -459,10 +514,37 @@ export function runDoctor(root, vibeDir, skillsDir, opts = {}) {
   return { code: 0, stdout, stderr: '' };
 }
 
+// Root for the header + .claude/** checks, derived from the ALREADY-resolved
+// skillsDir instead of a bare resolveRoot(opts) call (review round 1,
+// Finding 3). skillsDir is always `<root>/.agents/skills` by construction —
+// true on resolveSkillsDir()'s self-relative sibling-probe leg (the ordinary
+// vendored-install case, which deliberately ignores CLAUDE_PROJECT_DIR) AND
+// on its root-based fallback leg (which built skillsDir from that SAME
+// resolveRoot(opts) value in the first place) — so two path.dirname() calls
+// recover exactly the root each leg already used, without re-joining the
+// `.agents/skills/vibe` literal anywhere in this file. This is pure
+// directory-structure walking off an already-resolved primitive, not a new
+// resolution algorithm. It does not hold for the per-user PLUGIN layout
+// (skillsDir there is only `<pluginRoot>/skills`, one level shallower, and
+// has no meaningful project root at all) — doctor.sh ships no plugin-layout
+// consumer to be correct FOR, so that shape falls back to resolveRoot(opts)
+// unchanged, matching root.mjs's own stance that a plugin has no root.
+// Distinguished the same way root.mjs's own vendoredVibeDir() does: does
+// skillsDir's parent carry the `.agents` wrapper name?
+function rootForReport(skillsDir, opts) {
+  if (typeof skillsDir === 'string') {
+    const agentsDir = path.dirname(skillsDir);
+    if (path.basename(agentsDir) === '.agents') {
+      return path.dirname(agentsDir);
+    }
+  }
+  return resolveRoot(opts);
+}
+
 export default async function run(argv, opts = {}) {
-  const root = resolveRoot(opts);
   const vibeDir = resolveVibeDir(opts);
   const skillsDir = resolveSkillsDir(opts);
+  const root = rootForReport(skillsDir, opts);
 
   const result = runDoctor(root, vibeDir, skillsDir, opts);
 
