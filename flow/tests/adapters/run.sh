@@ -242,19 +242,25 @@ assert_contains "flow-legibility/5" "install wires SessionStart -> session-start
 ssout="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/session-start-doctrine.sh" </dev/null 2>/dev/null)"
 assert_contains "flow-legibility/5" "SessionStart hook emits the doctrine" "$ssout" "sessions are ephemeral"
 assert_contains "flow-legibility/5" "SessionStart hook emits a cursor summary" "$ssout" "Cursor:"
-# graceful degrade: resolver absent -> exit 0, no output. The hook is now
-# node-first (js-core/7): its real resolver is the vibe skill's SKILL.md
-# (engine/commands/doctrine.mjs reads it directly, no bash script involved),
-# not doctrine.sh — remove both so the degrade fires regardless of which
-# implementation actually runs.
-rm -f "$SB/.agents/skills/vibe/scripts/doctrine.sh" "$SB/.agents/skills/vibe/SKILL.md"
-ss_rc=0; ssdeg="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/session-start-doctrine.sh" </dev/null 2>/dev/null)" || ss_rc=$?
-assert_eq "flow-legibility/5" "SessionStart hook exits 0 when the resolver is absent" "$ss_rc" "0"
-assert_eq "flow-legibility/5" "SessionStart hook emits nothing when the resolver is absent" "$ssdeg" ""
 # doctor reports instruction coverage ok on a fresh install (block + hook wired).
 docout="$(bash "$SB/.agents/skills/vibe/scripts/doctor.sh" "$SB" 2>&1)"
 assert_contains "flow-legibility/5" "doctor reports instruction.coverage ok" "$docout" "ok   instruction.coverage"
 rm -rf "$SB"
+
+# graceful degrade: resolver absent -> exit 0, no output. Isolated in its own
+# sandbox (js-core/7 review round 1, Finding 5) so mutilating it (removing
+# SKILL.md) can never leak into the doctor.sh coverage check above — a prior
+# version reused $SB for both and only passed by accident, because
+# instruction.coverage happens not to read SKILL.md. The hook is node-first
+# now: its real resolver is the vibe skill's SKILL.md (engine/commands/
+# doctrine.mjs reads it directly, no bash script involved), not doctrine.sh —
+# remove both so the degrade fires regardless of which implementation runs.
+SBD="$(mktmp)"; bash "$INSTALL" "$SBD" >/dev/null 2>&1
+rm -f "$SBD/.agents/skills/vibe/scripts/doctrine.sh" "$SBD/.agents/skills/vibe/SKILL.md"
+ss_rc=0; ssdeg="$(CLAUDE_PROJECT_DIR="$SBD" bash "$SBD/.claude/hooks/session-start-doctrine.sh" </dev/null 2>/dev/null)" || ss_rc=$?
+assert_eq "flow-legibility/5" "SessionStart hook exits 0 when the resolver is absent" "$ss_rc" "0"
+assert_eq "flow-legibility/5" "SessionStart hook emits nothing when the resolver is absent" "$ssdeg" ""
+rm -rf "$SBD"
 
 echo ""
 echo "=== flow-legibility/6 — drift-first nudge in the inject hook ==="
@@ -366,6 +372,39 @@ mkdir -p "$SB/.agents/skills/vibe/evidence"
 printf 'commands + observed output per unit\n' > "$SB/.agents/skills/vibe/evidence/feature-demo.md"
 out="$(printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
 assert_contains "flow-mvp/9" "gate passes feature.verify with a fresh receipt (exit 0)" "$out" "rc=0"
+
+# js-core/7 review round 1, Finding 1 (Important): R4 had zero regression
+# coverage — the brief's own test-first steps ("with node shimmed away, each
+# hook exits 0 and emits nothing"; "guard with node absent exits 0, not 2")
+# were never added. mkshim's curated tool list never includes `node`, so a
+# plain mkshim() PATH already IS a node-absent farm. All four hooks, all
+# must exit 0 with empty stdout; the guard specifically must NOT invert a
+# real block into exit 2.
+NONODE_BIN="$(mkshim)"
+bash "$SS" feature.verify demo >/dev/null
+for h in session-start-doctrine user-prompt-submit-inject stop-gate; do
+  out="$(printf '{}' | PATH="$NONODE_BIN" bash "$SB/.claude/hooks/$h.sh" 2>&1; echo "rc=$?")"
+  assert_eq "js-core/7" "node-absent: $h exits 0 silently" "$out" "rc=0"
+done
+out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vibe/state.json"}}' \
+  | PATH="$NONODE_BIN" bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
+assert_eq "js-core/7" "node-absent: guard degrades to exit 0, NEVER inverts a block to exit 2" "$out" "rc=0"
+
+# js-core/7 review round 1, Finding 2 (Important): node present but the
+# engine directory missing (a target installed before the engine shipped, or
+# a moved/broken symlink) must degrade the same way, not crash with a raw
+# Node MODULE_NOT_FOUND stack trace. Move the engine aside, not delete —
+# restore it immediately after so the rest of the suite is unaffected.
+mv "$SB/.agents/skills/vibe/engine" "$SB/.agents/skills/vibe/engine.bak"
+for h in session-start-doctrine user-prompt-submit-inject stop-gate; do
+  out="$(printf '{}' | bash "$SB/.claude/hooks/$h.sh" 2>&1; echo "rc=$?")"
+  assert_eq "js-core/7" "engine-absent: $h exits 0 silently (no MODULE_NOT_FOUND crash)" "$out" "rc=0"
+done
+out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vibe/state.json"}}' \
+  | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
+assert_eq "js-core/7" "engine-absent: guard exits 0, not a crash and not exit 2" "$out" "rc=0"
+mv "$SB/.agents/skills/vibe/engine.bak" "$SB/.agents/skills/vibe/engine"
+
 unset CLAUDE_PROJECT_DIR
 rm -rf "$SB"
 

@@ -971,6 +971,19 @@ out="$(run_gate_nojq "$s" '{}')"
 assert_contains "review-fix" "no-jq: quick.verify with no receipt blocks (exit 2)" "$out" "rc=2"
 assert_contains "review-fix" "no-jq: quick block still names evidence/quick.md" "$out" "evidence/quick.md"
 rm -rf "$s"
+
+# DELIBERATE DIVERGENCE (js-core/7 review round 1, Finding 3): the old bash
+# gate resolved NEXT via detect-context.sh's jq-gated snapshot, so without
+# jq it left NEXT="" and predicate 3 (the stuck-phase nudge) silently never
+# fired. The ported gate resolves NEXT via loadMachine()/stateOf() — pure
+# JS, jq-independent by construction — so it now fires predicate 3 even
+# without jq. Warn-only, cannot block, and arguably more correct; pinned
+# here (not "fixed") so the divergence cannot go unnoticed.
+s="$(mk_gate_sbx feature impl widget git)"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "review-fix" "no-jq: predicate 3 (stuck-phase nudge) now fires without jq (deliberate divergence)" "$out" "still in feature.impl"
+assert_contains "review-fix" "no-jq: predicate 3 nudge is warn-only (exit 0)" "$out" "rc=0"
+rm -rf "$s"
 rm -rf "$gnojq"
 
 echo ""

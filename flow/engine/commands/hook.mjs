@@ -285,6 +285,14 @@ function cursorStateFeature(vibeDir) {
   }
 }
 
+// DELIBERATE DIVERGENCE (js-core/7 review round 1, Finding 3): the bash
+// oracle resolved NEXT via detect-context.sh's jq-gated `snapshot` — without
+// jq it left NEXT="" and predicate 3 (the stuck-phase nudge, below) silently
+// never fired. This is pure JS (loadMachine/stateOf), jq-independent by
+// construction, so it now fires predicate 3 even when jq is absent. Warn-only,
+// cannot block, arguably more correct — kept as-is rather than reproducing
+// the oracle's jq-gate, and pinned by a dedicated no-jq test in
+// flow/tests/run.sh so the divergence stays visible, not silent.
 function nextStates(vibeDir, stateKey) {
   try {
     const machine = loadMachine(vibeDir);
