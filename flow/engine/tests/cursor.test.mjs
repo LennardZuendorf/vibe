@@ -14,11 +14,11 @@
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { test, assert, assertEqual, makeSandbox } from './run.mjs';
 import { readCursor, writeCursor, CursorParseError } from '../cursor.mjs';
 
-const ROOT_MJS = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'root.mjs');
+const ROOT_MJS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'root.mjs');
 
 function bareDir() {
   return mkdtempSync(path.join(tmpdir(), 'vibe-cursor-'));

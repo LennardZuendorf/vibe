@@ -395,6 +395,18 @@ assert_eq "js-core/7" "node-absent: guard degrades to exit 0, NEVER inverts a bl
 # a moved/broken symlink) must degrade the same way, not crash with a raw
 # Node MODULE_NOT_FOUND stack trace. Move the engine aside, not delete —
 # restore it immediately after so the rest of the suite is unaffected.
+#
+# js-core/8: trap-protected. Without this, a future assertion helper that
+# hard-exits (or a stray `set -e` creeping into this section) could abort
+# the script between the mv-aside and the mv-back below, leaving $SB
+# permanently engine-less for any LATER section that reuses this trick —
+# and silently, since nothing downstream would notice engine.bak sitting
+# there instead of engine. The EXIT trap makes the restore unconditional;
+# `trap - EXIT` immediately after the normal mv-back disarms it so it never
+# double-fires (harmless either way — the second mv would just no-op via
+# `|| true` once engine.bak is already gone) and never lingers to interact
+# with any EXIT trap a later section might legitimately want to install.
+trap 'mv -f "$SB/.agents/skills/vibe/engine.bak" "$SB/.agents/skills/vibe/engine" 2>/dev/null || true' EXIT
 mv "$SB/.agents/skills/vibe/engine" "$SB/.agents/skills/vibe/engine.bak"
 for h in session-start-doctrine user-prompt-submit-inject stop-gate; do
   out="$(printf '{}' | bash "$SB/.claude/hooks/$h.sh" 2>&1; echo "rc=$?")"
@@ -404,6 +416,7 @@ out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vi
   | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
 assert_eq "js-core/7" "engine-absent: guard exits 0, not a crash and not exit 2" "$out" "rc=0"
 mv "$SB/.agents/skills/vibe/engine.bak" "$SB/.agents/skills/vibe/engine"
+trap - EXIT
 
 unset CLAUDE_PROJECT_DIR
 rm -rf "$SB"

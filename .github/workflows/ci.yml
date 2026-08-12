@@ -12,6 +12,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # js-core/8: the engine suite (flow/engine/tests/run.mjs, wired into
+      # tests/run.sh below) needs Node 18+ — pin it explicitly rather than
+      # relying on whatever ships preinstalled.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: No runtime dependencies (zero-dep engine contract)
+        run: |
+          if [ -d node_modules ]; then
+            echo "node_modules exists — the engine must have zero runtime deps" >&2
+            exit 1
+          fi
+
       # shellcheck is preinstalled on ubuntu-latest runners; the fallback below
       # installs it only if that ever changes.
       - name: Ensure shellcheck
@@ -24,11 +39,55 @@ jobs:
       - name: Shellcheck (all tracked *.sh)
         run: git ls-files '*.sh' | xargs shellcheck
 
+      # Runs all four suites (spec, flow, adapters, engine) via the combined
+      # aggregator — see tests/run.sh.
       - name: Test suites
         run: bash tests/run.sh
+
+      - name: Engine suite standalone (with jq stripped from PATH)
+        # The combined run above exercises the engine suite with this
+        # runner's normal PATH (jq present). Re-run it standalone with jq
+        # unreachable so the no-jq divergence/degrade paths threaded through
+        # every *.test.mjs file (and parity.test.mjs's own no-jq leg) are
+        # exercised for real, not just reasoned about — mirrors what the
+        # bash suites already do for their own no-jq legs.
+        run: |
+          NOJQ_BIN="$(mktemp -d)"
+          for t in bash sh mkdir dirname basename date mktemp mv cp rm rmdir sed grep head tail cat env awk find readlink ln chmod cmp diff sort cksum node git; do
+            p="$(command -v "$t" 2>/dev/null)" && ln -s "$p" "$NOJQ_BIN/$t"
+          done
+          PATH="$NOJQ_BIN" node flow/engine/tests/run.mjs
 
       - name: Spec validation
         run: bash .agents/skills/spec/scripts/validate.sh
 
       - name: Drift gate (compound + doc drift)
         run: bash spec/scripts/check-drift.sh
+
+  macos:
+    # js-core/8: stock macOS ships bash 3.2 (Apple freezes it at the last
+    # GPLv2 release) — the only way to know tests/run.sh's bash-3.2 fix
+    # (parallel indexed arrays, no `declare -A`) actually works there, not
+    # just that it was reasoned about. Runs the same aggregator as the
+    # ubuntu job, invoked via the SYSTEM /bin/bash explicitly (not whatever
+    # `bash` resolves to on PATH — GitHub's macOS runners also carry a
+    # Homebrew bash 5+ that would silently mask a bash-3.2 regression).
+    name: macOS (bash 3.2) — suites
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: System bash is really 3.2 (sanity — this job is pointless otherwise)
+        run: /bin/bash --version | head -1
+
+      - name: Ensure jq (not preinstalled on every macOS image)
+        run: command -v jq >/dev/null 2>&1 || brew install jq
+
+      - name: Test suites (via the real macOS /bin/bash, not Homebrew's)
+        run: /bin/bash tests/run.sh

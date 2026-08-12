@@ -20,6 +20,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test, assert, assertEqual, assertMatch, assertIncludes, runCommand } from './run.mjs';
 import {
   runDoctrineHook,
@@ -28,7 +29,7 @@ import {
   runGateHook,
 } from '../commands/hook.mjs';
 
-const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..', '..');
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const DETECT_ORACLE = path.join(REPO_ROOT, 'flow', 'scripts', 'detect-context.sh');
 const REAL_SKILL_MD = readFileSync(path.join(REPO_ROOT, 'flow', 'SKILL.md'), 'utf8');
 const REAL_MACHINE = path.join(REPO_ROOT, 'flow', 'state-machine.json');

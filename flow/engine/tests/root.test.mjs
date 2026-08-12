@@ -3,10 +3,10 @@
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { test, assert, assertEqual } from './run.mjs';
 
-const ROOT_MJS = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', 'root.mjs');
+const ROOT_MJS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'root.mjs');
 
 test('resolveRoot: CLAUDE_PROJECT_DIR wins over everything else when set', async () => {
   const { resolveRoot } = await import(pathToFileURL(ROOT_MJS).href + '?a');
