@@ -23,11 +23,10 @@
 // orders, doctor, and hook have no such axis, and doctrine.test.mjs already
 // owns that coverage in full.
 
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, assert, assertEqual, assertMatch, skip, makeSandbox, runCommand } from './run.mjs';
+import { test, assert, assertEqual, assertMatch, skip, makeSandbox, runCommand, mkTempRoot } from './run.mjs';
 import { runSet } from '../commands/state.mjs';
 import { runOrders } from '../commands/orders.mjs';
 import { runDoctrine } from '../commands/doctrine.mjs';
@@ -201,7 +200,7 @@ function makeStateEngineSandbox(fixture) {
 const DOCTOR_HOOK_SCRIPTS = ['session-start-doctrine.sh', 'user-prompt-submit-inject.sh', 'pre-tool-use-guard.sh', 'stop-gate.sh'];
 
 function makeDoctorSandbox(fixture) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'vibe-parity-doctor-'));
+  const dir = mkTempRoot('vibe-parity-doctor-');
   mkdirSync(path.join(dir, '.spec'), { recursive: true }); // marker for doctor.sh's find_root()
 
   const scriptsDir = path.join(dir, 'flow', 'scripts');
@@ -369,7 +368,7 @@ for (const fixture of CURSOR_FIXTURES) {
 // oracle leg actually had on PATH for that run.
 // ---------------------------------------------------------------------------
 
-const DOCTOR_HOME = mkdtempSync(path.join(tmpdir(), 'vibe-parity-doctor-home-'));
+const DOCTOR_HOME = mkTempRoot('vibe-parity-doctor-home-');
 
 // Module-scope tmpdirs have no per-test finally to clean them, so they leaked
 // one directory per run (review round 1, Minor 4). Removed on process exit

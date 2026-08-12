@@ -4,38 +4,24 @@
 // tech.md's contract: "Commands resolve their dirs once at dispatch and use
 // these functions; none re-derives a primitive, parses cursor or machine
 // JSON directly, or hardcodes a layout path." This file is what makes that
-// mechanical instead of reviewed: scanCommandsDir() below statically scans
-// every flow/engine/commands/*.mjs file (hook.mjs included — it is NOT a
-// bash-oracle port, but the SAME single-primitive contract applies to it,
-// per the task brief) for three concrete re-derivation shapes:
-//
-//   1. A direct cursor/machine JSON parse — `JSON.parse(...readFileSync...)`
-//      near a literal 'state.json'/'state-machine.json' path, bypassing
-//      readCursor()/loadMachine() (cursor.mjs / machine.mjs).
-//   2. A raw re-derivation of machinePath()'s own join — `path.join(...,
-//      'state-machine.json')` or `joinMaybe(..., 'state-machine.json')`,
-//      instead of calling the exported machinePath(vibeDir).
-//   3. A raw read of `process.env.CLAUDE_PROJECT_DIR`, instead of calling
-//      the exported resolveProjectCursorDir() (root.mjs), which single-
-//      sources both the env lookup AND the `.agents/skills/vibe` layout
-//      constant for that ONE precedence rule.
+// mechanical instead of reviewed. scanEngineTree() below reads every module
+// under flow/engine/ RECURSIVELY (hook.mjs included — it is NOT a bash-oracle
+// port, but the SAME single-primitive contract applies to it; the top-level
+// tests/ directory is the one exemption) and forbids each module from holding
+// the INGREDIENTS of a primitive it does not own — see the INGREDIENTS block
+// below for what that means and why it is an inversion of the call-shape
+// matching this scan used to do.
 //
 // What is deliberately NOT banned (false-positive traps a cruder scan would
-// fall into): a bare `path.join(vibeDir, 'state.json')` for an EXISTENCE
-// check only (doctor.mjs's checkCursor) — tech.md is explicit that no
-// primitive owns that literal, so a raw join is the sanctioned shape, same
-// as SKILL.md/deps.json/.claude/** joins. Also not banned: hook.mjs's own
-// `path.join(root, '.agents', 'skills', 'vibe')` (vibeLogDir) — that mirrors
-// the ORIGINAL hook scripts' own root-relative literals for the warnings
-// log and evidence receipts, a different question from resolveVibeDir()'s
-// or resolveProjectCursorDir()'s, so there is nothing to single-source it
-// against (see hook.mjs's own header). And plain mentions of the filenames
-// in warn()/ok() MESSAGE TEXT (doctor.mjs's checkMachine, for instance) —
-// only actual path-construction and JSON-parse call SHAPES trip the scan,
-// never a string that happens to contain "state.json" as prose.
+// fall into): plain mentions of the filenames in warn()/ok() MESSAGE TEXT
+// (doctor.mjs's checkMachine, for instance), and regexes matched against
+// someone ELSE's shell command (hook.mjs's Bash sniffer). Those are inert
+// text, they construct nothing — but they are not exempt either: each one is
+// an individually reasoned, occurrence-counted WAIVER in the list below, so
+// none of them can quietly grow a second copy.
 //
 // Doc comments in these files narrate exactly these review lessons using
-// the literal syntax of the banned shapes (e.g. doctor.mjs's own comment
+// the literal syntax of the banned ingredients (e.g. doctor.mjs's own comment
 // quotes `joinMaybe(vibeDir, 'state-machine.json')` as the bug it fixed) —
 // so comments are stripped before scanning, not just as tidiness but because
 // skipping that step would make the scan permanently red on files that are
@@ -45,11 +31,10 @@
 // folded into any shared parity helper here — this file only asserts the
 // scan's own shape, never re-implements doctrine's precedence rule.
 
-import { readFileSync, readdirSync, mkdtempSync, mkdirSync, cpSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, readdirSync, existsSync, statSync, realpathSync, mkdirSync, cpSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, assert, assertEqual } from './run.mjs';
+import { test, assert, assertEqual, mkTempRoot } from './run.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const ENGINE_DIR = path.join(REPO_ROOT, 'flow', 'engine');
@@ -274,16 +259,50 @@ export function stripComments(src) {
 // about its test scaffolding. Nothing else under flow/engine/ is exempt.
 // ---------------------------------------------------------------------------
 
-const EXCLUDED_DIRS = new Set(['tests']);
+// Exclusion is by exact RELATIVE PATH, not by directory name: matching the
+// name at any depth made `commands/tests/` exempt too, so a duplicate cursor
+// reader dropped in a directory anyone may create was never read at all.
+const EXCLUDED_PATHS = new Set(['tests']);
 
-export function listEngineSources(dir, prefix = '') {
+// `.mjs` is not the only module extension the engine can load: package.json
+// declares `"type": "module"`, so a bare `.js` file under flow/engine/ is an
+// ordinary ESM module, and `.cjs` loads too. Enumerating only `.mjs` left
+// "add the duplicate reader in a .js file" as a scope hole with no unusual
+// spelling anywhere in it.
+const SOURCE_EXTENSIONS = ['.mjs', '.js', '.cjs'];
+
+// A SYMLINK is reported by readdirSync(withFileTypes) as neither isFile()
+// nor isDirectory(), so testing those two predicates alone skips it — while
+// Node imports it perfectly well. Resolve the link and classify the target
+// instead; `seen` guards the cycle a symlinked directory can create. A broken
+// link is skipped: there is nothing there to import OR to read.
+export function listEngineSources(dir, prefix = '', seen = new Set()) {
   const out = [];
+  const real = realpathSync(dir);
+  if (seen.has(real)) return out;
+  seen.add(real);
+
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) {
-      if (EXCLUDED_DIRS.has(entry.name)) continue;
-      out.push(...listEngineSources(path.join(dir, entry.name), rel));
-    } else if (entry.isFile() && entry.name.endsWith('.mjs')) {
+    const abs = path.join(dir, entry.name);
+
+    let isDir = entry.isDirectory();
+    let isFile = entry.isFile();
+    if (entry.isSymbolicLink()) {
+      let stat;
+      try {
+        stat = statSync(abs);
+      } catch {
+        continue;
+      }
+      isDir = stat.isDirectory();
+      isFile = stat.isFile();
+    }
+
+    if (isDir) {
+      if (EXCLUDED_PATHS.has(rel)) continue;
+      out.push(...listEngineSources(abs, rel, seen));
+    } else if (isFile && SOURCE_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) {
       out.push(rel);
     }
   }
@@ -358,36 +377,75 @@ test('stripComments: preserves total length and line count on every real engine 
 // re-derives a primitive, forbid the file from holding the INGREDIENTS at
 // all:
 //
-//   * a module that never names 'state.json' cannot read or write the cursor
-//     — it must go through readCursor()/writeCursor()
-//   * a module that never names 'state-machine.json' cannot load the machine
-//     — it must go through machinePath()/loadMachine()
-//   * a module that never names CLAUDE_PROJECT_DIR, `.agents`, `.spec`/`.git`,
-//     `process.cwd`, or `import.meta.url` has no leg of resolveRoot()/
-//     resolveVibeDir()/resolveProjectCursorDir() left to re-derive
+//   * a module that can name neither 'state.json' NOR cursorPath() cannot
+//     obtain the cursor's path at all — it must go through readCursor()/
+//     writeCursor()
+//   * likewise 'state-machine.json' / machinePath() for the machine loader
+//   * a module that never names CLAUDE_PROJECT_DIR, `.agents`, `skills/vibe`,
+//     `.spec`/`.git`, `process.cwd`, `import.meta`, `argv[1]`, an ascent off
+//     its own `__dirname`, or resolveProjectCursorDir() has no leg of
+//     resolveRoot()/resolveVibeDir()/resolveProjectCursorDir() left to
+//     re-derive
 //   * a module that never writes the `<!--` marker grammar cannot
 //     re-implement extractBlock()
 //
 // That covers all five primitives R1 names (root resolver, cursor reader,
-// cursor writer, machine loader, block extractor) and is spelling-agnostic:
-// every evasion above still has to name the file, the variable, or the
-// grammar somewhere in the module.
+// cursor writer, machine loader, block extractor).
 //
-// KNOWN LIMIT (stated, not papered over): a whole-file literal ban cannot see
-// through string CONCATENATION or computed names — `'state' + '.json'`,
-// `['state', 'json'].join('.')`, `Buffer.from(...)`. Closing that needs an
-// AST, which needs a dependency this engine will not take (R5). This is the
-// strongest sound subset, not a complete one.
+// The helper clauses are load-bearing, and were the round-1 fix's own defect
+// (re-review Finding 1). Banning only the LITERAL is sound exactly while the
+// literal is the only way to reach the primitive's path — and round 1 broke
+// that premise itself, by exporting cursorPath()/machinePath() so a caller
+// needing only the path would not have to spell the filename.
+// `readJson(cursorPath(vibeDir))` was then a complete duplicate cursor reader
+// naming nothing banned. The generalized invariant, which is what the
+// ingredient list now encodes: a module may not obtain a primitive's location
+// by ANY means unless it is an allowlisted consumer, pinned line by line.
+//
+// KNOWN LIMITS (stated, not papered over):
+//
+//   1. A whole-file literal ban cannot see through ANY source-level split or
+//      re-spelling of a literal. Not just concatenation (`'state' + '.json'`)
+//      — also a line continuation inside the string (`'state\` + newline +
+//      `.json'`), a computed name (`['state','json'].join('.')`), a unicode
+//      escape (`'state.json'`), or a value built at runtime
+//      (`Buffer.from(...)`, `new Function(...)`). The boundary is "the
+//      ingredient appears verbatim in the source text", not "no
+//      concatenation". Closing it needs an AST plus constant folding, which
+//      needs a dependency this engine will not take (R5).
+//   2. Laundering through an ALLOWLISTED consumer's own name is closed for
+//      re-exports (unwaivable, see `noReexport`) and for any second use of
+//      the helper (the allowlist is occurrence-counted), but a consumer that
+//      returned the path from an existing, differently-named export would
+//      still pass. That takes a deliberate edit to an allowlisted file, which
+//      is the narrowest surface this can be reduced to without dataflow.
+//   3. Reaching a primitive's file by enumeration rather than by name
+//      (readdirSync + a filter) is not banned, because doctor.mjs enumerates
+//      directories legitimately. It re-derives nothing on its own; it would
+//      still have to identify which file it found.
+//   4. ASCENDING from a value a sanctioned resolver returned is textually
+//      indistinguishable from any other `path.dirname(someVariable)` — and
+//      doctor.mjs's rootForReport() is exactly that shape, reviewed and
+//      sanctioned (round-1 Finding 3). The single-expression spelling
+//      (`path.dirname(path.dirname(x))`) IS caught by `self-relative-ascent`;
+//      the same walk split across two statements with an intermediate
+//      variable is not. Telling the two apart needs dataflow, not a wider
+//      regex — a blunter rule would red-flag json.mjs's ordinary
+//      `path.dirname(filePath)`.
+//
+// This is the strongest sound subset, not a complete one.
 //
 // OWNERS vs WAIVERS. An ingredient's `owners` are the modules that define the
 // primitive — unrestricted there, by design (machinePath() must build the
 // machine path inside machine.mjs; resolveProjectCursorDir() must know the
 // layout inside root.mjs). Everything else needs a WAIVER: an exact,
-// individually-reasoned source line. Waivers are matched on the full trimmed
-// line text, so editing a waived line, or adding a second occurrence
-// anywhere, trips the scan again. Stale waivers fail too (see the
-// "every waiver is still used" test), so the list cannot silently rot into a
-// blanket exemption.
+// individually-reasoned source line WITH an occurrence count. Editing a waived
+// line un-waives it, and so does adding a second copy of it — byte-identical
+// or not (re-review Finding 2: content-only matching made copy-paste free,
+// which is the likeliest way a second re-derivation actually lands). A waiver
+// whose observed count drifts from its declared count in either direction
+// fails, so the list can neither rot into a blanket exemption nor quietly
+// under-report.
 // ---------------------------------------------------------------------------
 
 const INGREDIENTS = [
@@ -412,9 +470,14 @@ const INGREDIENTS = [
   },
   {
     id: 'vibe-layout',
-    re: /\\?\.agents/,
+    // `.agents` alone misses the PLUGIN leg of the layout, which is one level
+    // shallower and never names `.agents` at all: pluginVibeDir()'s
+    // `<PLUGIN_ROOT>/skills/vibe`. Both the joined-literal and the
+    // slash-separated spelling of that partial path count (re-review
+    // Finding 4, E8).
+    re: /\\?\.agents|['"`]skills['"`]\s*,\s*['"`]vibe['"`]|skills\/vibe/,
     owners: ['root.mjs'],
-    why: 'hardcodes the `.agents/skills/vibe` layout — resolveVibeDir()/resolveProjectCursorDir() (root.mjs) single-source it',
+    why: 'hardcodes the `.agents/skills/vibe` (or plugin `skills/vibe`) layout — resolveVibeDir()/resolveProjectCursorDir() (root.mjs) single-source it',
   },
   {
     id: 'root-markers',
@@ -424,21 +487,102 @@ const INGREDIENTS = [
   },
   {
     id: 'cwd-fallback',
-    re: /process\.cwd/,
+    // Every route to process.cwd that needs no string surgery: member access,
+    // computed access, a destructured `cwd`, and an aliased `process` object
+    // (the last two are the shapes M10/M11 already cover for process.env —
+    // re-review Finding 4 is that the sibling ingredients never got them).
+    re: /process\s*(?:\.\s*cwd\b|\[\s*['"`]\s*cwd)|\{[^}]*\bcwd\b[^}]*\}\s*=\s*process\b|=\s*process\s*[;,)]/,
     owners: ['root.mjs'],
-    why: "re-derives resolveRoot()'s cwd fallback leg — root.mjs owns it",
+    why: "re-derives resolveRoot()'s cwd fallback leg (however spelled — member, computed, destructured, or through an aliased `process`) — root.mjs owns it",
   },
   {
     id: 'self-location',
-    re: /import\.meta\.url/,
+    // `import.meta`, not `import.meta.url`: destructuring (`const { url } =
+    // import.meta`) and aliasing (`const m = import.meta`) reach the same
+    // ingredient without the `.url` suffix (re-review Finding 4, E5/E6).
+    // `argv[0]`/`argv[1]` is the OTHER self-location ingredient — the entry
+    // script's own path — including the array-destructuring spelling that
+    // never writes a bracket index. `process.argv.slice(2)` (cli.mjs's real,
+    // unrelated use: reading the user's arguments) matches neither.
+    re: /import\s*\.\s*meta\b|\bargv\s*(?:\[\s*[01]\s*\]|\.\s*at\s*\(\s*[01]\s*\))|\[[^\]]*\]\s*=\s*process\s*\.\s*argv\b/,
     owners: ['root.mjs'],
-    why: "self-locates from the module's own URL — that is resolveRoot()/resolveVibeDir()'s ingredient (root.mjs)",
+    why: "self-locates from the module's own URL or the entry script's path — that is resolveRoot()/resolveVibeDir()'s ingredient (root.mjs)",
+  },
+  {
+    id: 'self-relative-ascent',
+    // Walking UP from an already-self-located directory. cli.mjs holds a
+    // legitimate `__dirname` for its own commands/ dispatch, so a smuggled
+    // root resolver there needs no NEW ingredient at all — it just ascends
+    // from the one the file already has. A pure dot-dot path literal is the
+    // same move spelled through path.resolve/path.join — `'..'`, `'../'`,
+    // `'../..'`, `'/..'` all count, while an ordinary relative import
+    // specifier (`'../root.mjs'`) deliberately does not.
+    re: /path\s*\.\s*dirname\s*\(\s*(?:__dirname|__filename|path\s*\.\s*dirname)\b|['"`][/\\]?(?:\.\.[/\\])*\.\.[/\\]?['"`]/,
+    owners: ['root.mjs'],
+    why: 'ascends from a self-located directory toward a project root — that ascent is resolveRoot()/resolveVibeDir()/selfRelativeRoot() (root.mjs)',
   },
   {
     id: 'marker-grammar',
     re: /<!--|-->/,
     owners: ['blocks.mjs'],
     why: 'writes the marker-block grammar — extractBlock() (blocks.mjs) is the one grammar',
+  },
+  {
+    id: 'tests-import',
+    // tests/ is exempt because fixtures legitimately name every ingredient.
+    // That exemption is only sound while nothing SHIPPED imports out of it:
+    // otherwise "put the duplicate reader in tests/helpers.mjs and import it"
+    // is a one-line evasion of the entire scan. No engine module has ever
+    // imported from tests/, so this owns nothing and waives nothing.
+    re: /\bfrom\s*['"][^'"]*\btests\//,
+    owners: [],
+    why: 'imports from the exempt tests/ directory — nothing shipped may depend on fixture code, because fixture code is not scanned',
+  },
+
+  // --- PRIMITIVE PATH HELPERS (re-review Finding 1).
+  //
+  // Banning the filename LITERAL is only sound while naming the literal is
+  // the only way to obtain the primitive's path. Fix round 1 broke that
+  // premise: it exported cursorPath()/machinePath() so a caller needing just
+  // the path would not have to spell 'state.json' — which turned the helper
+  // into a second legal spelling of the ingredient it was meant to protect.
+  // `readJson(cursorPath(vibeDir))` is a complete duplicate cursor reader
+  // that names nothing banned.
+  //
+  // So the helper NAMES are ingredients too, and the rule generalizes: a
+  // module may not obtain a primitive's location by ANY means unless it is
+  // an allowlisted consumer, pinned line-by-line like every other waiver.
+  // Banning the identifier (rather than the import statement) is what makes
+  // this hold for a namespace import (`mod.cursorPath(v)`), a computed member
+  // (`mod['cursorPath']`), an aliased import, and a re-export — all of which
+  // still have to write the name somewhere.
+  //
+  // resolveVibeDir()/resolveRoot()/resolveSkillsDir() are deliberately NOT in
+  // this class. They hand out a DIRECTORY, which every command legitimately
+  // needs and which is useless on its own: turning one into a cursor read
+  // still requires either the banned literal or one of these helpers, both of
+  // which are covered here. Gating them would be a large allowlist that closes
+  // nothing.
+  {
+    id: 'cursor-path-helper',
+    re: /\bcursorPath\b/,
+    owners: ['cursor.mjs'],
+    noReexport: true,
+    why: "obtains the cursor file's PATH without naming it — read/write the cursor through readCursor()/writeCursor() (cursor.mjs); cursorPath() has a counted, per-line consumer allowlist",
+  },
+  {
+    id: 'machine-path-helper',
+    re: /\bmachinePath\b/,
+    owners: ['machine.mjs'],
+    noReexport: true,
+    why: "obtains the state-machine file's PATH without naming it — read it through loadMachine() (machine.mjs); machinePath() has a counted, per-line consumer allowlist",
+  },
+  {
+    id: 'project-cursor-dir-helper',
+    re: /\bresolveProjectCursorDir\b/,
+    owners: ['root.mjs'],
+    noReexport: true,
+    why: "consumes doctrine's CLAUDE_PROJECT_DIR-gated cursor-dir rule — one consumer only (doctrine.mjs), pinned per line, so the precedence rule cannot sprout a second caller silently",
   },
 ];
 
@@ -451,22 +595,32 @@ const REASONS = {
   'bash-sniffer':
     "mirrors detect-context.sh's guarded-path CLASSES for the warn-only Bash sniffer — a pattern matched against someone else's shell command, not a path this engine builds or opens.",
   'hook-root-literal':
-    "mirrors the ORIGINAL .sh hook's own $ROOT-relative literal for the warnings log / evidence receipts (hook.mjs header; js-core/7 review). This IS a real layout literal — the waiver is per-LINE precisely so a SECOND one cannot be added silently.",
+    "mirrors the ORIGINAL .sh hook's own $ROOT-relative literal for the warnings log / evidence receipts (hook.mjs header; js-core/7 review). This IS a real layout literal — the waiver allows exactly ONE occurrence (see `count`), so a SECOND copy, byte-identical or not, is a violation.",
   'layout-name-probe':
     'a path.basename() equality check on a directory NAME, walking structure off an already-resolved primitive — no path is constructed and no new resolution algorithm exists (doctor.mjs rootForReport(), round-1 Finding 3).',
   'marker-presence-probe':
     "an opener-only substring probe, deliberately NOT extractBlock(): the oracle's `grep -q '<!-- vibe:doctrine -->'` succeeds on an opener with no closer, where extractBlock() correctly returns undefined. Routing it through blocks.mjs would change behaviour and break parity.",
   'cli-self-dispatch':
-    'cli.mjs locates its own commands/ directory for module dispatch, not the repo root. A one-LINE waiver rather than an owner entry, so a second import.meta.url line here — a smuggled root resolver — still trips the scan.',
+    'cli.mjs locates its own commands/ directory for module dispatch — one level DOWN from its own file, never up toward a repo root. Waived per LINE and per OCCURRENCE COUNT rather than as an owner entry: a second self-location line here, a byte-identical copy of this one, or any ascent off the __dirname it already holds, all trip the scan (self-location / self-relative-ascent).',
+  'primitive-path-consumer':
+    "the single allowlisted consumer of a primitive's PATH helper: it needs the path only for an existence/type probe (doctor.mjs) or for one documented precedence rule (doctrine.mjs), never to read or write the file — that stays with readCursor()/writeCursor()/loadMachine(). Pinned to the exact import line and the exact use line, one occurrence each, so a SECOND use in the same file (`readJson(cursorPath(v))`) is a violation and a re-export under a new name is unwaivable.",
   'spec-sanctioned-exemption':
     "tech.md's Contract defines resolveProjectCursorDir() as doctrine's CLAUDE_PROJECT_DIR-first cursor rule 'gated on that state.json existing' — knowing the filename is its documented job. NOT routed through cursorPath() because root.mjs is the self-location primitive and must stay importable alone (root.test.mjs copies this single file into synthetic install layouts); importing cursor.mjs would drag json.mjs in behind it.",
 };
 
-// Exact-line waivers. `line` is matched against the TRIMMED source line after
-// comment-stripping, so a change to the line — or a second occurrence
-// anywhere else in the file — is a violation again.
+// Exact-line, occurrence-COUNTED waivers. `line` is matched against the
+// TRIMMED source line after comment-stripping and `count` (default 1) is how
+// many times that exact line may appear in that file. Both halves matter:
+// matching on content alone made a byte-identical copy-paste of a waived line
+// inside the same file silently free (re-review Finding 2), which is the
+// likeliest way a second layout re-derivation actually lands. Editing a waived
+// line, adding a differently-spelled one, and duplicating one are now all
+// violations; a waiver whose observed count drifts from `count` in EITHER
+// direction fails too (see the count test), so the list cannot rot into a
+// blanket exemption or quietly under-report.
 const WAIVERS = [
   { file: 'cli.mjs', id: 'self-location', reason: 'cli-self-dispatch', line: 'const __filename = fileURLToPath(import.meta.url);' },
+  { file: 'cli.mjs', id: 'self-relative-ascent', reason: 'cli-self-dispatch', line: 'const __dirname = path.dirname(__filename);' },
 
   { file: 'root.mjs', id: 'cursor-file', reason: 'spec-sanctioned-exemption', line: "return fs.existsSync(path.join(candidate, 'state.json')) ? candidate : undefined;" },
 
@@ -476,6 +630,13 @@ const WAIVERS = [
   { file: 'commands/doctor.mjs', id: 'marker-grammar', reason: 'marker-presence-probe', line: "doctrineBlock = fs.readFileSync(skillMdPath, 'utf8').includes('<!-- vibe:doctrine -->');" },
   { file: 'commands/doctor.mjs', id: 'marker-grammar', reason: 'oracle-text', line: "'no doctrine coverage — no <!-- vibe:doctrine --> block, no wired SessionStart hook, no per-user plugin; run install.sh (--local or --global) / setup.apply'," },
   { file: 'commands/doctor.mjs', id: 'vibe-layout', reason: 'layout-name-probe', line: "if (path.basename(agentsDir) === '.agents') {" },
+  { file: 'commands/doctor.mjs', id: 'cursor-path-helper', reason: 'primitive-path-consumer', line: "import { readCursor, cursorPath } from '../cursor.mjs';" },
+  { file: 'commands/doctor.mjs', id: 'cursor-path-helper', reason: 'primitive-path-consumer', line: "const statePath = typeof vibeDir === 'string' ? cursorPath(vibeDir) : undefined;" },
+  { file: 'commands/doctor.mjs', id: 'machine-path-helper', reason: 'primitive-path-consumer', line: "import { loadMachine, machinePath } from '../machine.mjs';" },
+  { file: 'commands/doctor.mjs', id: 'machine-path-helper', reason: 'primitive-path-consumer', line: "const p = typeof vibeDir === 'string' ? machinePath(vibeDir) : undefined;" },
+
+  { file: 'commands/doctrine.mjs', id: 'project-cursor-dir-helper', reason: 'primitive-path-consumer', line: "import { resolveVibeDir, resolveSkillsDir, resolveProjectCursorDir } from '../root.mjs';" },
+  { file: 'commands/doctrine.mjs', id: 'project-cursor-dir-helper', reason: 'primitive-path-consumer', line: 'return resolveProjectCursorDir() ?? vibeDir;' },
 
   { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'hook-root-literal', line: "return path.join(root, '.agents', 'skills', 'vibe');" },
   { file: 'commands/hook.mjs', id: 'root-markers', reason: 'bash-sniffer', line: 'const LESSONS_RE = /(^|[^A-Za-z0-9_])\\.spec\\/lessons\\.md/;' },
@@ -498,6 +659,13 @@ function waiverKey(w) {
   return `${w.file}|${w.id}|${w.line}`;
 }
 
+// How many occurrences of the waived line this waiver allows. Absent means
+// exactly one — the only count any waiver has needed so far, and the safe
+// default: a new copy of a waived line has to be declared, not inherited.
+function waiverCount(w) {
+  return w.count ?? 1;
+}
+
 // ---------------------------------------------------------------------------
 // The scan.
 // ---------------------------------------------------------------------------
@@ -509,13 +677,36 @@ export function scanEngineTree(dir) {
   for (const rel of listEngineSources(dir)) {
     const src = stripComments(readFileSync(path.join(dir, rel), 'utf8'));
     const lines = src.split('\n');
+
+    // Per-file waiver budget, spent as occurrences are met. Once a waiver's
+    // allowance is exhausted, every further copy of that line is a violation.
+    const budget = new Map();
+    for (const w of WAIVERS) {
+      if (w.file === rel) budget.set(waiverKey(w), waiverCount(w));
+    }
+
     for (const ing of INGREDIENTS) {
       if (ing.owners.includes(rel)) continue;
       for (let i = 0; i < lines.length; i += 1) {
         if (!ing.re.test(lines[i])) continue;
         const trimmed = lines[i].trim();
-        const waived = WAIVERS.some((w) => w.file === rel && w.id === ing.id && w.line === trimmed);
-        if (waived) continue;
+
+        // Re-exporting a primitive-path helper out of an allowlisted consumer
+        // would hand every other module a fresh, unbanned name for it — the
+        // round-1 hole one indirection further out. Unwaivable by design.
+        if (ing.noReexport && /\bexport\b/.test(lines[i])) {
+          violations.push(
+            `${rel}:${i + 1}: [${ing.id}] re-exports a primitive path helper — only its owner may export it\n    | ${trimmed}`,
+          );
+          continue;
+        }
+
+        const key = `${rel}|${ing.id}|${trimmed}`;
+        const left = budget.get(key) ?? 0;
+        if (left > 0) {
+          budget.set(key, left - 1);
+          continue;
+        }
         violations.push(`${rel}:${i + 1}: [${ing.id}] ${ing.why}\n    | ${trimmed}`);
       }
     }
@@ -523,10 +714,12 @@ export function scanEngineTree(dir) {
   return violations.sort();
 }
 
-// Which waivers actually fired during a scan of `dir` — used to fail on a
-// stale waiver, so the list can never quietly become a blanket exemption.
-export function usedWaivers(dir) {
-  const used = new Set();
+// How many times each waiver's line actually occurs in `dir`, keyed by
+// waiverKey(). Zero means a stale waiver; more than the declared `count`
+// means a new re-derivation was pasted in beside a blessed one. Both are
+// failures — see the two tests below.
+export function waiverOccurrences(dir) {
+  const counts = new Map();
   for (const rel of listEngineSources(dir)) {
     const src = stripComments(readFileSync(path.join(dir, rel), 'utf8'));
     for (const line of src.split('\n')) {
@@ -534,11 +727,11 @@ export function usedWaivers(dir) {
       for (const w of WAIVERS) {
         if (w.file !== rel || w.line !== trimmed) continue;
         const ing = INGREDIENTS.find((x) => x.id === w.id);
-        if (ing && ing.re.test(line)) used.add(waiverKey(w));
+        if (ing && ing.re.test(line)) counts.set(waiverKey(w), (counts.get(waiverKey(w)) ?? 0) + 1);
       }
     }
   }
-  return used;
+  return counts;
 }
 
 // ---------------------------------------------------------------------------
@@ -576,8 +769,8 @@ test('primitive scan: every ingredient owner really carries its ingredient (no s
 });
 
 test('primitive scan: every waiver is still used (a stale waiver is a blanket exemption in waiting)', () => {
-  const used = usedWaivers(ENGINE_DIR);
-  const stale = WAIVERS.filter((w) => !used.has(waiverKey(w))).map(waiverKey);
+  const used = waiverOccurrences(ENGINE_DIR);
+  const stale = WAIVERS.filter((w) => !used.get(waiverKey(w))).map(waiverKey);
   assertEqual(stale, [], `stale waivers — the waived line is gone, so drop the waiver:\n${stale.join('\n')}`);
 });
 
@@ -735,7 +928,220 @@ export const MUTANTS = [
     primitive: 'block extractor',
     code: "function dupExtractBlock(text, id) {\n  const open = '<!-- ' + id + ' -->';\n  return text.split('\\n').findIndex((l) => l === open);\n}\n",
   },
+
+  // --- fix-round-1 re-review, Finding 1: the HELPER-REUSE family. Round 1
+  // exported cursorPath()/machinePath() so a caller needing only the PATH
+  // would not have to name the file — which made the helper itself a legal
+  // spelling of the banned ingredient. Every one of these named NO banned
+  // token before the helper ingredients were added.
+  {
+    id: 'E1 helper reuse — readJson(cursorPath(vibeDir)) (re-review Finding 1, planted live in orders.mjs)',
+    primitive: 'cursor reader',
+    code: "import { cursorPath as _cp } from '../cursor.mjs';\nimport { readJson as _rj } from '../json.mjs';\nexport function dupReadCursor(vibeDir) {\n  const raw = _rj(_cp(vibeDir));\n  return { flow: raw.flow, phase: raw.phase, feature: raw.feature ?? null };\n}\n",
+  },
+  {
+    id: 'E2 helper reuse — JSON.parse(readFileSync(cursorPath(v)))',
+    primitive: 'cursor reader',
+    code: "import { cursorPath as _cp2 } from '../cursor.mjs';\nimport { readFileSync as _rfs3 } from 'node:fs';\nfunction dupReadCursor2(vibeDir) {\n  return JSON.parse(_rfs3(_cp2(vibeDir), 'utf8'));\n}\n",
+  },
+  {
+    id: 'E3 helper reuse — duplicate cursor WRITER via writeFileSync(cursorPath(v))',
+    primitive: 'cursor writer',
+    code: "import { cursorPath as _cp3 } from '../cursor.mjs';\nimport { writeFileSync as _wfs2 } from 'node:fs';\nfunction dupCursorWrite2(vibeDir, body) {\n  _wfs2(_cp3(vibeDir), `${JSON.stringify(body, null, 2)}\\n`);\n}\n",
+  },
+  {
+    id: 'E4 helper reuse — duplicate machine loader via readJson(machinePath(v))',
+    primitive: 'machine loader',
+    code: "import { machinePath as _mp } from '../machine.mjs';\nimport { readJson as _rj2 } from '../json.mjs';\nfunction dupLoadMachine(vibeDir) {\n  return _rj2(_mp(vibeDir));\n}\n",
+  },
+  {
+    id: 'E14 helper reuse — path in a variable, then hand-rolled field validation',
+    primitive: 'cursor reader',
+    code: "import { cursorPath as _cp4 } from '../cursor.mjs';\nimport { readJson as _rj3 } from '../json.mjs';\nfunction dupReadCursor3(vibeDir) {\n  const statePath = _cp4(vibeDir);\n  const raw = _rj3(statePath);\n  return typeof raw.flow === 'string' ? raw : { flow: 'idle', phase: 'idle' };\n}\n",
+  },
+  {
+    id: 'E15 helper reuse via a NAMESPACE import (no named binding to grep for)',
+    primitive: 'cursor reader',
+    code: "import * as _cursorMod from '../cursor.mjs';\nimport { readJson as _rj4 } from '../json.mjs';\nfunction dupReadCursor4(vibeDir) {\n  return _rj4(_cursorMod.cursorPath(vibeDir));\n}\n",
+  },
+  {
+    id: "E16 helper reuse via computed member access (_mod['cursorPath'])",
+    primitive: 'cursor reader',
+    code: "import * as _cursorMod2 from '../cursor.mjs';\nimport { readJson as _rj5 } from '../json.mjs';\nfunction dupReadCursor5(vibeDir) {\n  return _rj5(_cursorMod2['cursorPath'](vibeDir));\n}\n",
+  },
+  {
+    id: 'E17 second consumer of resolveProjectCursorDir (doctrine precedence re-derived)',
+    primitive: 'root resolver',
+    code: "import { resolveProjectCursorDir as _rpcd } from '../root.mjs';\nfunction dupDoctrineCursorDir(vibeDir) {\n  return _rpcd() ?? vibeDir;\n}\n",
+  },
+
+  // --- Finding 4: the process.env destructure/alias trick, applied to the
+  // ingredients whose siblings never got the same treatment.
+  {
+    id: 'E5 destructured import.meta (const { url: _u } = import.meta)',
+    primitive: 'root resolver',
+    code: "const { url: _u } = import.meta;\nconst _selfDir = path.dirname(fileURLToPath(_u));\nfunction dupSelfRoot2() {\n  return path.dirname(path.dirname(_selfDir));\n}\n",
+  },
+  {
+    id: 'E6 aliased import.meta (const _meta = import.meta)',
+    primitive: 'root resolver',
+    code: "const _meta = import.meta;\nconst _selfDir2 = path.dirname(fileURLToPath(_meta.url));\nfunction dupSelfRoot3() {\n  return path.dirname(path.dirname(_selfDir2));\n}\n",
+  },
+  {
+    id: "E7 bracket-notation process['cwd']()",
+    primitive: 'root resolver',
+    code: "function dupCwdRoot() {\n  return process['cwd']();\n}\n",
+  },
+  {
+    id: 'E7b destructured cwd off process',
+    primitive: 'root resolver',
+    code: 'const { cwd: _cwd } = process;\nfunction dupCwdRoot2() {\n  return _cwd();\n}\n',
+  },
+  {
+    id: 'E7c aliased process object, then .cwd()',
+    primitive: 'root resolver',
+    code: 'const _proc = process;\nfunction dupCwdRoot3() {\n  return _proc.cwd();\n}\n',
+  },
+  {
+    id: "E8 partial-path join — path.join(root, 'skills', 'vibe') (pluginVibeDir's leg, never names .agents)",
+    primitive: 'root resolver',
+    code: "function dupPluginVibeDir(root) {\n  return path.join(root, 'skills', 'vibe');\n}\n",
+  },
+  {
+    id: 'E8b partial-path join as a template literal (`${root}/skills/vibe`)',
+    primitive: 'root resolver',
+    code: 'function dupPluginVibeDir2(root) {\n  return `${root}/skills/vibe`;\n}\n',
+  },
+  {
+    id: 'E18 self-location off the entry script (process.argv[1])',
+    primitive: 'root resolver',
+    code: 'function dupEntryRoot() {\n  return path.dirname(path.dirname(process.argv[1]));\n}\n',
+  },
+  {
+    id: 'E19 self-location off a DESTRUCTURED process.argv (no brackets to grep)',
+    primitive: 'root resolver',
+    code: 'const [, _script] = process.argv;\nfunction dupEntryRoot2() {\n  return path.dirname(_script);\n}\n',
+  },
+  {
+    id: 'E21 the re-derivation moved INTO the exempt tests/ directory and imported back out',
+    primitive: 'cursor reader',
+    code: "import { dupCursorRead as _dcr } from '../tests/helpers.mjs';\nexport const readIt = (vibeDir) => _dcr(vibeDir);\n",
+  },
 ];
+
+// cli.mjs-ONLY mutants. cli.mjs legitimately holds `__filename`/`__dirname`
+// for its own commands/ dispatch, so a smuggled root resolver there needs no
+// new import.meta line at all — it just walks UP from the dirname the file
+// already has. These cannot be planted in the other two sites, where no
+// self-location exists to reuse without naming a banned ingredient.
+export const CLI_ASCENT_MUTANTS = [
+  {
+    id: 'E9 smuggled root resolver reusing cli.mjs\'s own __dirname (no new ingredient named)',
+    code: 'function smuggledRoot() {\n  return path.dirname(path.dirname(__dirname));\n}\n',
+  },
+  {
+    id: 'E10 smuggled root resolver via path.resolve(__dirname, ..., ...)',
+    code: "const _smuggledRoot = path.resolve(__dirname, '..', '..');\n",
+  },
+  {
+    id: "E13 smuggled root resolver via a MULTI-segment dot-dot literal ('../..')",
+    code: "const _smuggledRoot2 = path.join(__dirname, '../..');\n",
+  },
+];
+
+// The scan's own SCOPE, attacked. A violation the scan never reads is a
+// violation the scan cannot catch, and both of these are reachable by adding
+// one ordinary-looking file — no unusual spelling anywhere in it.
+const SCOPE_MUTANTS = [
+  {
+    id: 'E11 a duplicate cursor reader in a NESTED tests/ directory',
+    // EXCLUDED_DIRS matched by name at any depth, so `commands/tests/` was
+    // exempt too — a directory anyone may create, exempting anything in it.
+    site: 'commands/tests/dup.mjs',
+  },
+  {
+    id: 'E12 a duplicate cursor reader in a .js module',
+    // package.json declares "type": "module", so a bare .js file under
+    // flow/engine/ is an ordinary ESM module the engine can import — but the
+    // scan only enumerated *.mjs.
+    site: 'commands/dup.js',
+  },
+];
+
+for (const mutant of SCOPE_MUTANTS) {
+  test(`discriminating: cursor reader — ${mutant.id} (${mutant.site}) — is in scope`, () => {
+    const dir = makeScratchEngine();
+    try {
+      assertEqual(scanEngineTree(dir), [], 'sanity: an untouched scratch copy must start clean');
+      plantMutant(dir, mutant.site, MUTANTS[0].code);
+      const violations = scanEngineTree(dir);
+      assert(
+        violations.some((v) => v.startsWith(`${mutant.site}:`)),
+        `EVADED: ${mutant.id} was outside the scan's scope.\nscan reported: ${JSON.stringify(violations)}`,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+test('discriminating: cursor reader — E20 a SYMLINKED module under flow/engine/ — is in scope', () => {
+  // readdirSync(withFileTypes) reports a symlink as neither isFile() nor
+  // isDirectory(), so an enumerator that tests those two predicates skips it
+  // silently — while Node imports it perfectly well. This repo already ships
+  // `.agents/skills/vibe -> flow`, so symlinks into the engine tree are not a
+  // hypothetical shape here.
+  const dir = makeScratchEngine();
+  const outside = mkTempRoot('vibe-primscan-outside-');
+  try {
+    assertEqual(scanEngineTree(dir), [], 'sanity: an untouched scratch copy must start clean');
+    const realTarget = path.join(outside, 'dup.mjs');
+    writeFileSync(realTarget, NEW_FILE_PREAMBLE + MUTANTS[0].code);
+    symlinkSync(realTarget, path.join(dir, 'commands', 'linked.mjs'));
+    const violations = scanEngineTree(dir);
+    assert(
+      violations.some((v) => v.startsWith('commands/linked.mjs:')),
+      `EVADED: a symlinked engine module was never read.\nscan reported: ${JSON.stringify(violations)}`,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('primitive scan: every file under flow/engine/ (tests/ aside) has an extension the scan enumerates', () => {
+  // The scan can only ban ingredients in files it reads. Rather than trust
+  // that the extension list stays complete, fail the moment a source file
+  // with an unenumerated extension appears — adding a `.ts`/`.mts` engine
+  // module then has to update SOURCE_EXTENSIONS instead of silently landing
+  // outside the scan.
+  const unscanned = [];
+  const walk = (abs, prefix = '') => {
+    for (const entry of readdirSync(abs, { withFileTypes: true })) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (EXCLUDED_PATHS.has(rel)) continue;
+      if (entry.isDirectory()) {
+        walk(path.join(abs, entry.name), rel);
+      } else if (!SOURCE_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) {
+        unscanned.push(rel);
+      }
+    }
+  };
+  walk(ENGINE_DIR);
+  assertEqual(
+    unscanned,
+    [],
+    `files under flow/engine/ the primitive scan never reads:\n${unscanned.join('\n')}`,
+  );
+});
+
+test("primitive scan: the top-level tests/ exemption is by PATH, not by directory NAME anywhere", () => {
+  const files = listEngineSources(ENGINE_DIR);
+  assert(
+    !files.some((f) => f === 'tests' || f.startsWith('tests/')),
+    `the real tests/ directory must still be excluded, got: ${files.join(', ')}`,
+  );
+});
 
 // Where each mutant is planted. `commands/state.mjs` is an ordinary command
 // module; `cli.mjs` and `commands/sub/dup.mjs` are the two scope holes round
@@ -748,17 +1154,22 @@ const NEW_FILE_PREAMBLE =
 // A scratch copy of flow/engine/ WITHOUT tests/ (the scan skips it anyway,
 // and copying ~8k lines of fixtures per mutant would be pure waste).
 export function makeScratchEngine() {
-  const dir = mkdtempSync(path.join(tmpdir(), 'vibe-primscan-'));
+  const dir = mkTempRoot('vibe-primscan-');
+  // Skip THE tests directory, by path — not any path segment named "tests".
+  // A segment test also drops a hypothetical commands/tests/ (which the scan
+  // now reads, so the copy must contain it), and would empty the whole copy
+  // if the checkout itself ever sat under a directory called "tests".
+  const excluded = path.join(ENGINE_DIR, 'tests');
   cpSync(ENGINE_DIR, dir, {
     recursive: true,
-    filter: (src) => !src.split(path.sep).includes('tests'),
+    filter: (src) => src !== excluded && !src.startsWith(excluded + path.sep),
   });
   return dir;
 }
 
 export function plantMutant(dir, site, code) {
   const target = path.join(dir, site);
-  if (site.includes('/sub/')) {
+  if (!existsSync(target)) {
     mkdirSync(path.dirname(target), { recursive: true });
     writeFileSync(target, NEW_FILE_PREAMBLE + code);
     return;
@@ -784,6 +1195,76 @@ for (const mutant of MUTANTS) {
     }
   });
 }
+
+for (const mutant of CLI_ASCENT_MUTANTS) {
+  test(`discriminating: root resolver — ${mutant.id} — is caught in cli.mjs`, () => {
+    const dir = makeScratchEngine();
+    try {
+      assertEqual(scanEngineTree(dir), [], 'sanity: an untouched scratch copy must start clean');
+      plantMutant(dir, 'cli.mjs', mutant.code);
+      const violations = scanEngineTree(dir);
+      assert(
+        violations.some((v) => v.startsWith('cli.mjs:')),
+        `EVADED: ${mutant.id} planted in cli.mjs was not caught.\nscan reported: ${JSON.stringify(violations)}`,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// Fix-round-1 re-review, Finding 2: a waiver is an allowance for a COUNTED
+// set of occurrences, not a content pattern. Copy-pasting a waived line
+// inside its own file was the likeliest way a second layout re-derivation
+// lands, and it used to be free. This is the general form of the reviewer's
+// W1/W3/W4/W5 and T13 — every waiver in the list, not a hand-picked one.
+for (const w of WAIVERS) {
+  test(`discriminating: a byte-identical duplicate of the waived ${w.file} [${w.id}] line is caught`, () => {
+    const dir = makeScratchEngine();
+    try {
+      assertEqual(scanEngineTree(dir), [], 'sanity: an untouched scratch copy must start clean');
+      const target = path.join(dir, w.file);
+      writeFileSync(target, `${readFileSync(target, 'utf8')}\n${w.line}\n`);
+      const violations = scanEngineTree(dir);
+      assert(
+        violations.some((v) => v.startsWith(`${w.file}:`) && v.includes(`[${w.id}]`)),
+        `EVADED: a second byte-identical copy of a waived line was silently waived.\nline: ${w.line}\nscan reported: ${JSON.stringify(violations)}`,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+test('primitive scan: every waiver occurrence count matches the declared count exactly', () => {
+  const observed = waiverOccurrences(ENGINE_DIR);
+  const mismatches = WAIVERS.filter((w) => (observed.get(waiverKey(w)) ?? 0) !== waiverCount(w)).map(
+    (w) => `${waiverKey(w)}: declared ${waiverCount(w)}, observed ${observed.get(waiverKey(w)) ?? 0}`,
+  );
+  assertEqual(
+    mismatches,
+    [],
+    `a waiver's declared occurrence count no longer matches the tree — a second copy of a waived line is a NEW re-derivation, and a vanished one is a stale waiver:\n${mismatches.join('\n')}`,
+  );
+});
+
+// A primitive-path helper must not be laundered out of an allowlisted
+// consumer under a fresh name — that would hand every other module a legal
+// spelling again, one indirection further out.
+test('discriminating: an allowlisted helper consumer may not re-export the helper under a new name', () => {
+  const dir = makeScratchEngine();
+  try {
+    assertEqual(scanEngineTree(dir), [], 'sanity: an untouched scratch copy must start clean');
+    plantMutant(dir, 'commands/doctor.mjs', 'export const cp = cursorPath;\n');
+    const violations = scanEngineTree(dir);
+    assert(
+      violations.some((v) => v.startsWith('commands/doctor.mjs:') && v.includes('cursor-path-helper')),
+      `EVADED: an allowlisted consumer re-exported the helper.\nscan reported: ${JSON.stringify(violations)}`,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('discriminating: a second import.meta.url line in cli.mjs is caught (the waiver is one LINE, not a file exemption)', () => {
   const dir = makeScratchEngine();

@@ -130,7 +130,7 @@ export function runCli(args = [], opts = {}) {
 // the real, shipped COMMANDS array. Returns {cliPath, commandsDir,
 // placeholder, cleanup()}.
 export function makeCliWithPlaceholderCommand(placeholder = 'zzz-test-placeholder') {
-  const dir = mkdtempSync(path.join(tmpdir(), 'vibe-cli-placeholder-'));
+  const dir = mkTempRoot('vibe-cli-placeholder-');
   const src = readFileSync(CLI_PATH, 'utf8');
   const marker = "const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook'];";
   assert(src.includes(marker), 'cli.mjs COMMANDS array literal has changed shape — update this test helper');
@@ -175,7 +175,7 @@ export function mkTempRoot(prefix) {
 // fixtures never drift from the actual machine definition). Returns paths
 // and a cleanup() that removes the whole sandbox.
 export function makeSandbox({ cursor } = {}) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'vibe-engine-test-'));
+  const dir = mkTempRoot('vibe-engine-test-');
   const flowDir = path.join(dir, 'flow');
   mkdirSync(flowDir, { recursive: true });
 
