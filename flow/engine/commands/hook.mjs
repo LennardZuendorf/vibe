@@ -266,11 +266,28 @@ export function runGuardHook(root, stdinText, opts = {}) {
 // construction), not from shelling out to detect-context.sh snapshot.
 // ---------------------------------------------------------------------------
 
+// FAIL-SAFE, and a deliberate choice between two disagreeing bash legs
+// (js-core/8 final review, M4). The oracle's jq leg is
+// `jq -r '.stop_hook_active // false'` compared against the STRING "true", so a
+// JSON string "true" short-circuits there exactly like a boolean; its sed leg
+// matches only a bare `true`/`false` token and treats the string as false. The
+// port required `=== true` and so matched the sed leg — into the blocking
+// tooth.
+//
+// Claude Code sends a JSON boolean today, so nothing observed this. But the
+// asymmetry of the two failure modes is total: reading a truthy value as
+// "already re-entered" loses ONE turn of gate enforcement, while reading it as
+// "first entry" makes the Stop hook block its own re-invocation — a block loop,
+// the single failure mode this guard exists to prevent, and a wedged session
+// the user cannot exit. So the engine matches the jq leg: any value jq -r would
+// render as exactly `true`.
 function readStopHookActive(stdinText) {
   if (!stdinText) return false;
   try {
     const parsed = JSON.parse(stdinText);
-    return parsed && parsed.stop_hook_active === true;
+    if (!parsed) return false;
+    const raw = parsed.stop_hook_active;
+    return raw === true || raw === 'true';
   } catch {
     return false;
   }

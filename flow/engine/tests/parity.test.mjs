@@ -23,7 +23,15 @@
 // orders, doctor, and hook have no such axis, and doctrine.test.mjs already
 // owns that coverage in full.
 
-import { mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync } from 'node:fs';
+import {
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  copyFileSync,
+  rmSync,
+  utimesSync,
+  symlinkSync,
+} from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -33,6 +41,7 @@ import {
   assertMatch,
   skip,
   makeSandbox,
+  makeHookSandbox,
   runCommand,
   mkTempRoot,
   registeredTests,
@@ -41,7 +50,12 @@ import { runSet } from '../commands/state.mjs';
 import { runOrders } from '../commands/orders.mjs';
 import { runDoctrine } from '../commands/doctrine.mjs';
 import { runDoctor } from '../commands/doctor.mjs';
-import { runDoctrineHook, runInjectHook } from '../commands/hook.mjs';
+import {
+  runDoctrineHook,
+  runInjectHook,
+  runGuardHook,
+  runGateHook,
+} from '../commands/hook.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const ORDERS_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'orders.sh');
@@ -50,6 +64,11 @@ const SET_STATE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'set-state.sh');
 const DOCTOR_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'doctor.sh');
 const VALIDATE_STATE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'validate-state.sh');
 const ADAPTERS_RUN_SH = path.join(REPO_ROOT, 'flow', 'tests', 'adapters', 'run.sh');
+// The two FROZEN pre-port bash hooks (tests/oracles/, restored verbatim from
+// `main`) — the only oracles guard/gate have, because js-core/7 replaced the
+// real hooks with Node shims IN PLACE. See those files' own headers.
+const GUARD_ORACLE = path.join(REPO_ROOT, 'flow', 'engine', 'tests', 'oracles', 'pre-tool-use-guard.sh');
+const GATE_ORACLE = path.join(REPO_ROOT, 'flow', 'engine', 'tests', 'oracles', 'stop-gate.sh');
 const REAL_SKILL_MD = readFileSync(path.join(REPO_ROOT, 'flow', 'SKILL.md'), 'utf8');
 const REAL_MACHINE_SRC = path.join(REPO_ROOT, 'flow', 'state-machine.json');
 const REAL_DEPS_SRC = path.join(REPO_ROOT, 'flow', 'reference', 'deps.json');
@@ -129,12 +148,61 @@ function requireJqFor(mode) {
 // same invocation shape adapters/run.sh's own mkshim call sites use
 // (`PATH="$NOJQ" "$NOJQ/bash" ...`), so jq is unreachable no matter what the
 // ambient PATH holds.
-function runOracleScript(scriptPath, args, mode, extraEnv = {}) {
+function runOracleScript(scriptPath, args, mode, extraEnv = {}, extraOpts = {}) {
   if (mode === 'no-jq') {
     const dir = noJqShimDir();
-    return runCommand(path.join(dir, 'bash'), [scriptPath, ...args], { env: { PATH: dir, ...extraEnv } });
+    return runCommand(path.join(dir, 'bash'), [scriptPath, ...args], {
+      env: { PATH: dir, ...extraEnv },
+      ...extraOpts,
+    });
   }
-  return runCommand('bash', [scriptPath, ...args], { env: extraEnv });
+  return runCommand('bash', [scriptPath, ...args], { env: extraEnv, ...extraOpts });
+}
+
+// The two blocking hooks shell out (guard -> detect-context.sh decide; gate ->
+// git). Their no-jq leg must strip jq from the SPAWNED process too, or the
+// oracle runs jq-less while the engine's own sub-process still finds jq and the
+// "no-jq" comparison is only half honest. mkshim()'s tool list carries no `git`,
+// so the gate's no-jq leg gets it symlinked in — that is an augmentation of the
+// PATH the shim builds, never an edit to mkshim's own extracted body (jq
+// exclusion, the only thing the shim exists for, is untouched and still
+// postcondition-asserted above).
+let gitLinkedIntoShim = false;
+function noJqBash() {
+  const dir = noJqShimDir();
+  if (!gitLinkedIntoShim) {
+    gitLinkedIntoShim = true;
+    const gitPath = runCommand('bash', ['-c', 'command -v git || true']).stdout.trim();
+    if (gitPath) {
+      try {
+        symlinkSync(gitPath, path.join(dir, 'git'));
+      } catch {
+        // already linked by a previous run in this process — fine
+      }
+    }
+  }
+  return { bash: path.join(dir, 'bash'), env: { PATH: dir } };
+}
+
+// A spawn* function shaped like the ones hook.mjs injects (returns
+// {error, status, stdout}), routed through the same interpreter/PATH the oracle
+// leg used, so both sides of a no-jq comparison really are jq-less.
+function asSpawnResult(r) {
+  return { error: r.error, status: r.code, stdout: r.stdout, stderr: r.stderr };
+}
+
+function modeSpawn(mode, cwd) {
+  if (mode === 'no-jq') {
+    const { bash, env } = noJqBash();
+    return {
+      spawnDecide: (args) => asSpawnResult(runCommand(bash, args, { env, cwd })),
+      spawnGit: (args) => asSpawnResult(runCommand(path.join(noJqShimDir(), 'git'), args, { env, cwd })),
+    };
+  }
+  return {
+    spawnDecide: (args) => asSpawnResult(runCommand('bash', args, { cwd })),
+    spawnGit: (args) => asSpawnResult(runCommand('git', args, { cwd })),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -474,6 +542,361 @@ for (const fixture of CURSOR_FIXTURES) {
 }
 
 // ---------------------------------------------------------------------------
+// hook pre-tool-use-guard / hook stop-gate — THE TWO BLOCKING HOOKS, against
+// the frozen bash oracles (js-core/8 final review, I3).
+//
+// Until now the matrix imported only runDoctrineHook/runInjectHook, so the two
+// exported functions that can exit 2 — stop a tool call, stop a turn — had NO
+// bash-oracle comparison anywhere in the tree. Not because the port was
+// untrusted, but because js-core/7 replaced the real `.claude/hooks/*.sh` with
+// Node shims IN PLACE: the oracles ceased to exist, and after this branch
+// merges `main` does not hold them either. The final review had to reconstruct
+// them from git history to run the differential once.
+//
+// tests/oracles/{pre-tool-use-guard,stop-gate}.sh are those bash originals,
+// restored verbatim and frozen. This section is the differential made
+// PERMANENT: every comparison below is regenerable by anyone, in the suite, on
+// every run — which is the property the branch was missing, not the parity.
+//
+// Compared per case: exit code, stdout, stderr, AND the warnings-relay log
+// bytes (a warn that reaches stderr but never the relay is invisible to the
+// model next turn — a real behaviour difference the first three would miss).
+// ---------------------------------------------------------------------------
+
+function readWarnLog(sb) {
+  try {
+    return readFileSync(sb.warnLogPath, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+function resetWarnLog(sb) {
+  rmSync(sb.warnLogPath, { force: true });
+}
+
+// The oracle self-locates everything off $ROOT = CLAUDE_PROJECT_DIR (never a
+// vibeDir argument), so the sandbox root must be handed to it explicitly —
+// inheriting the ambient session's CLAUDE_PROJECT_DIR would point the oracle at
+// this very repo while the engine reads the sandbox.
+function oracleEnv(sb) {
+  return { CLAUDE_PROJECT_DIR: sb.root };
+}
+
+// One (oracle, engine) pair -> a divergence string, or null when identical.
+function compareHook(label, oracleRun, engineRun) {
+  const parts = [];
+  if (oracleRun.code !== engineRun.code) parts.push(`rc bash=${oracleRun.code} node=${engineRun.code}`);
+  if (oracleRun.stdout !== engineRun.stdout) {
+    parts.push(`stdout bash=${JSON.stringify(oracleRun.stdout)} node=${JSON.stringify(engineRun.stdout)}`);
+  }
+  if (oracleRun.stderr !== engineRun.stderr) {
+    parts.push(`stderr bash=${JSON.stringify(oracleRun.stderr)} node=${JSON.stringify(engineRun.stderr)}`);
+  }
+  if (oracleRun.log !== engineRun.log) {
+    parts.push(`warnings.log bash=${JSON.stringify(oracleRun.log)} node=${JSON.stringify(engineRun.log)}`);
+  }
+  return parts.length ? `${label}: ${parts.join(' | ')}` : null;
+}
+
+// ---------------------------------------------------------------------------
+// guard — 5 fixtures x {jq, no-jq}, each looping every stdin shape below.
+//
+// Shapes cover both handler arms (Bash sniffer / file-tool path policy), all
+// three verdict classes (allow / warn / block), the sanctioned-writer exemption,
+// the absolute-path strip, and every degrade the oracle spells out (empty
+// stdin, unparseable stdin, missing tool_name, missing path).
+// ---------------------------------------------------------------------------
+
+const GUARD_STDIN_SHAPES = [
+  ['empty stdin', () => ''],
+  ['unparseable stdin', () => 'not json at all'],
+  ['empty object', () => '{}'],
+  ['Bash, no command key', () => '{"tool_name":"Bash","tool_input":{}}'],
+  ['Bash, harmless command', () => '{"tool_name":"Bash","tool_input":{"command":"echo hi"}}'],
+  ['Bash, READ of a guarded path (no write op)', () => '{"tool_name":"Bash","tool_input":{"command":"cat .spec/lessons.md"}}'],
+  ['Bash, append to lessons', () => '{"tool_name":"Bash","tool_input":{"command":"echo x >> .spec/lessons.md"}}'],
+  ['Bash, sed -i a root spec', () => '{"tool_name":"Bash","tool_input":{"command":"sed -i s/a/b/ .spec/product.md"}}'],
+  ['Bash, tee a root spec', () => '{"tool_name":"Bash","tool_input":{"command":"tee .spec/tech.md"}}'],
+  ['Bash, redirect into the cursor', () => '{"tool_name":"Bash","tool_input":{"command":"echo x > .agents/skills/vibe/state.json"}}'],
+  ['Bash, cursor write VIA set-state.sh (sanctioned)', () => '{"tool_name":"Bash","tool_input":{"command":"bash .agents/skills/vibe/scripts/set-state.sh idle > .agents/skills/vibe/state.json"}}'],
+  ['Bash, rm the flow/ cursor spelling', () => '{"tool_name":"Bash","tool_input":{"command":"rm flow/state.json"}}'],
+  ['Write, no path key', () => '{"tool_name":"Write","tool_input":{}}'],
+  ['Write, lessons.md', () => '{"tool_name":"Write","tool_input":{"file_path":".spec/lessons.md"}}'],
+  ['Write, root product.md', () => '{"tool_name":"Write","tool_input":{"file_path":".spec/product.md"}}'],
+  ['Edit, the cursor itself', () => '{"tool_name":"Edit","tool_input":{"file_path":".agents/skills/vibe/state.json"}}'],
+  ['Write, ordinary source file', () => '{"tool_name":"Write","tool_input":{"file_path":"src/app.ts"}}'],
+  ['Write, a FEATURE spec (not a root one)', () => '{"tool_name":"Write","tool_input":{"file_path":".spec/features/demo/product.md"}}'],
+  ['Write, ./-prefixed lessons', () => '{"tool_name":"Write","tool_input":{"file_path":"./.spec/lessons.md"}}'],
+  ['NotebookEdit, notebook_path on a root spec', () => '{"tool_name":"NotebookEdit","tool_input":{"notebook_path":".spec/plan.md"}}'],
+  ['Write, ABSOLUTE path under the root (must be stripped)', (sb) => JSON.stringify({ tool_name: 'Write', tool_input: { file_path: path.join(sb.root, '.spec', 'lessons.md') } })],
+];
+
+assert(GUARD_STDIN_SHAPES.length >= 20, 'guard oracle differential must keep a broad stdin surface');
+
+for (const fixture of CURSOR_FIXTURES) {
+  for (const mode of JQ_MODES) {
+    test(`parity matrix: hook pre-tool-use-guard — ${fixture.name} x ${mode}`, () => {
+      requireJqFor(mode);
+      const sb = makeHookSandbox({ cursor: fixture.cursor });
+      if (fixture.absent) rmSync(sb.cursorPath, { force: true });
+      const spawns = modeSpawn(mode, sb.root);
+      const divergences = [];
+      try {
+        for (const [shapeName, build] of GUARD_STDIN_SHAPES) {
+          const stdin = build(sb);
+
+          resetWarnLog(sb);
+          const o = runOracleScript(GUARD_ORACLE, [], mode, oracleEnv(sb), { cwd: sb.root, input: stdin });
+          const oracleRun = { code: o.code, stdout: o.stdout, stderr: o.stderr, log: readWarnLog(sb) };
+
+          resetWarnLog(sb);
+          const e = runGuardHook(sb.root, stdin, { spawnDecide: spawns.spawnDecide });
+          const engineRun = { code: e.code, stdout: e.stdout, stderr: e.stderr, log: readWarnLog(sb) };
+
+          const d = compareHook(shapeName, oracleRun, engineRun);
+          if (d) divergences.push(d);
+        }
+        assertEqual(
+          divergences,
+          [],
+          `guard diverged from its frozen bash oracle (${fixture.name} x ${mode}):\n${divergences.join('\n')}`,
+        );
+      } finally {
+        sb.cleanup();
+      }
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// stop-gate — its own fixture list, because the blocking tooth lives in the two
+// *.verify states and the shared CURSOR_FIXTURES carries only one of them (and
+// never feature.verify, where the cursor's feature name selects the receipt
+// path). Registered in FAMILY_FIXTURES so the structural matrix floor below
+// checks this family against ITS table rather than the default one.
+//
+// Each case is additionally crossed with three receipt states (none / fresh /
+// stale) inside the test, over a REAL git repo so both sides read the same
+// `git status --porcelain` bytes rather than an injected fake.
+// ---------------------------------------------------------------------------
+
+const GATE_FIXTURES = [
+  ...CURSOR_FIXTURES,
+  { name: 'feature.verify with a feature', cursor: { flow: 'feature', phase: 'verify', feature: 'demo', updated: FIXED_TS } },
+  { name: 'feature.verify with a null feature', cursor: { flow: 'feature', phase: 'verify', feature: null, updated: FIXED_TS } },
+];
+
+const GATE_STDIN_SHAPES = [
+  ['empty stdin', ''],
+  ['empty object', '{}'],
+  ['unparseable stdin', 'not json at all'],
+  ['stop_hook_active false', '{"stop_hook_active":false}'],
+  ['stop_hook_active true (boolean)', '{"stop_hook_active":true}'],
+  ['stop_hook_active null', '{"stop_hook_active":null}'],
+  ['unrelated keys only', '{"session_id":"abc","transcript_path":"/tmp/x"}'],
+];
+
+// 'evidence-sibling' is the discriminating case for the evidence-dir exclusion
+// (js-core/8 final review, M1): receipts are FRESH relative to every ordinary
+// change, and the only thing newer than the receipt under test is ANOTHER
+// receipt beside it. Without the exclusion the gate calls its own receipt stale
+// and a *.verify state blocks forever. Both receipts are committed in
+// buildGateSandbox() so porcelain names them individually — an untracked
+// evidence dir collapses to `?? .agents/skills/vibe/evidence/` and the loop only
+// ever sees a directory, which is true of both sides and therefore proof of
+// nothing.
+const RECEIPT_STATES = ['none', 'fresh', 'stale', 'evidence-sibling'];
+const STALE_TS = new Date('2000-01-01T00:00:00Z');
+const FRESH_TS = new Date('2030-01-01T00:00:00Z');
+
+// Predicate 3's line, which the oracle CANNOT emit without jq: it resolves NEXT
+// through detect-context.sh's jq-gated `snapshot`, so on a jq-less target the
+// stuck-phase nudge silently never fires. hook.mjs is pure JS there and always
+// fires it — a DELIBERATE divergence declared in nextStates()'s own header and
+// already pinned by a no-jq test in flow/tests/run.sh. Stripped from the engine
+// side of the no-jq comparison only, and the strip is itself asserted below so
+// it can never quietly start hiding a real difference.
+const PRED3_RE = /^vibe-gate: still in .*\(warn-only\)\n/m;
+const PRED3_LOG_RE = /^gate: still in .*\(warn-only\)\n/m;
+
+function buildGateSandbox(fixture) {
+  const sb = makeHookSandbox({ cursor: fixture.cursor, gitInit: true });
+  if (fixture.absent) rmSync(sb.cursorPath, { force: true });
+
+  mkdirSync(path.join(sb.dir, 'pkg', 'src'), { recursive: true });
+  writeFileSync(path.join(sb.dir, 'pkg', 'src', 'deep.sh'), 'v1\n');
+  mkdirSync(path.join(sb.dir, 'tests'), { recursive: true });
+  writeFileSync(path.join(sb.dir, 'tests', 'keep.sh'), 'v1\n');
+  mkdirSync(path.join(sb.vibeDir, 'evidence'), { recursive: true });
+  for (const name of RECEIPT_NAMES) {
+    writeFileSync(path.join(sb.vibeDir, 'evidence', name), 'commands + output\n');
+  }
+  // Commit everything, so porcelain reports PER-FILE paths afterwards. An
+  // uncommitted tree collapses to `?? .agents/` and the staleness loop would
+  // only ever compare directory mtimes — true of both sides, and therefore
+  // proof of nothing.
+  runCommand('git', ['-C', sb.dir, 'add', '-A']);
+  runCommand('git', ['-C', sb.dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init']);
+  // One tracked modification: ` M pkg/src/deep.sh`, the path the staleness loop
+  // must actually stat. mtime 2025 sits between STALE_TS and FRESH_TS, so the
+  // receipt state alone decides whether it reads as stale.
+  writeFileSync(path.join(sb.dir, 'pkg', 'src', 'deep.sh'), 'v2\n');
+  utimesSync(path.join(sb.dir, 'pkg', 'src', 'deep.sh'), STALE_TS, new Date('2025-01-01T00:00:00Z'));
+  return sb;
+}
+
+const RECEIPT_NAMES = ['feature-demo.md', 'quick.md'];
+// Strictly newer than FRESH_TS — the sibling receipt must beat the one under
+// test, or the exclusion has nothing to exclude.
+const SIBLING_TS = new Date('2031-01-01T00:00:00Z');
+
+function applyReceiptState(sb, state) {
+  const evidence = path.join(sb.vibeDir, 'evidence');
+  if (state === 'none') {
+    rmSync(evidence, { recursive: true, force: true });
+    return;
+  }
+  mkdirSync(evidence, { recursive: true });
+  for (const name of RECEIPT_NAMES) {
+    const p = path.join(evidence, name);
+    writeFileSync(p, 'commands + output\n');
+    const ts = state === 'stale' ? STALE_TS : FRESH_TS;
+    utimesSync(p, ts, ts);
+  }
+  if (state === 'evidence-sibling') {
+    // quick.md is rewritten (so porcelain names it) and stamped NEWER than
+    // feature-demo.md. For the feature.verify fixtures the receipt under test is
+    // feature-demo.md, so the only thing newer than it lives inside evidence/.
+    const sibling = path.join(evidence, 'quick.md');
+    writeFileSync(sibling, 'a LATER receipt, written after feature-demo.md\n');
+    utimesSync(sibling, SIBLING_TS, SIBLING_TS);
+  }
+}
+
+for (const fixture of GATE_FIXTURES) {
+  for (const mode of JQ_MODES) {
+    test(`parity matrix: hook stop-gate — ${fixture.name} x ${mode}`, () => {
+      requireJqFor(mode);
+      const sb = buildGateSandbox(fixture);
+      const spawns = modeSpawn(mode, sb.root);
+      const divergences = [];
+      let pred3StrippedAtLeastOnce = false;
+      try {
+        for (const receiptState of RECEIPT_STATES) {
+          applyReceiptState(sb, receiptState);
+          for (const [shapeName, stdin] of GATE_STDIN_SHAPES) {
+            const label = `${shapeName} / receipt=${receiptState}`;
+
+            resetWarnLog(sb);
+            const o = runOracleScript(GATE_ORACLE, [], mode, oracleEnv(sb), { cwd: sb.root, input: stdin });
+            const oracleRun = { code: o.code, stdout: o.stdout, stderr: o.stderr, log: readWarnLog(sb) };
+
+            resetWarnLog(sb);
+            const e = runGateHook(sb.root, sb.vibeDir, stdin, { spawnGit: spawns.spawnGit });
+            const engineRun = { code: e.code, stdout: e.stdout, stderr: e.stderr, log: readWarnLog(sb) };
+
+            if (mode === 'no-jq') {
+              const hadPred3 = PRED3_RE.test(engineRun.stderr);
+              if (hadPred3) {
+                assert(
+                  !PRED3_RE.test(oracleRun.stderr),
+                  `${label}: the oracle DID emit predicate 3 without jq — the declared no-jq divergence no longer exists, ` +
+                    'so this strip is now hiding real differences; delete it and re-derive the comparison',
+                );
+                pred3StrippedAtLeastOnce = true;
+                engineRun.stderr = engineRun.stderr.replace(PRED3_RE, '');
+                engineRun.log = engineRun.log.replace(PRED3_LOG_RE, '');
+              }
+            }
+
+            const d = compareHook(label, oracleRun, engineRun);
+            if (d) divergences.push(d);
+          }
+        }
+        assertEqual(
+          divergences,
+          [],
+          `stop-gate diverged from its frozen bash oracle (${fixture.name} x ${mode}):\n${divergences.join('\n')}`,
+        );
+        // The strip above must have been EXERCISED wherever it is applicable,
+        // never silently inert: every non-idle state with legal next states
+        // fires predicate 3 in the engine.
+        if (mode === 'no-jq' && fixture.cursor && fixture.cursor.flow !== 'idle') {
+          assert(
+            pred3StrippedAtLeastOnce,
+            'no-jq: predicate 3 never fired in the engine for a non-idle state — the declared divergence has vanished',
+          );
+        }
+      } finally {
+        sb.cleanup();
+      }
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// KNOWN DIVERGENCE — `stop_hook_active` as the STRING "true" (js-core/8 final
+// review, M4). Deliberate, and the reason it is deliberate is that the ORACLE
+// DISAGREES WITH ITSELF here: `jq -r '.stop_hook_active // false'` renders the
+// string as `true` and short-circuits, while the sed leg matches only a bare
+// `true`/`false` token and falls through into the blocking tooth. There is no
+// single bash behaviour to be byte-identical to.
+//
+// The engine matches the jq leg. Not because jq is more authoritative, but
+// because the two failure modes are not symmetric: reading it as "already
+// re-entered" costs one turn of gate enforcement, reading it as "first entry"
+// makes the Stop hook block its own re-invocation — a block loop, and a wedged
+// session. The port had it the other way round, which is what the differential
+// found (30 of 252 comparisons, all on this one input).
+//
+// Claude Code sends a JSON boolean today, so this is synthetic. It is pinned
+// anyway because a platform that ever quotes the field would wedge every
+// *.verify session, and because the pin states which leg was chosen and why.
+// ---------------------------------------------------------------------------
+
+const STRING_ACTIVE = '{"stop_hook_active":"true"}';
+
+test('KNOWN DIVERGENCE: stop_hook_active as a STRING — engine matches the oracle\'s jq leg (fail-safe), not its sed leg x jq', () => {
+  requireJqFor('jq');
+  const sb = buildGateSandbox({ name: 'feature.verify with a feature', cursor: { flow: 'feature', phase: 'verify', feature: 'demo', updated: FIXED_TS } });
+  try {
+    applyReceiptState(sb, 'none'); // receipt-less: the gate would BLOCK if it ran
+    const o = runOracleScript(GATE_ORACLE, [], 'jq', oracleEnv(sb), { cwd: sb.root, input: STRING_ACTIVE });
+    const e = runGateHook(sb.root, sb.vibeDir, STRING_ACTIVE, { spawnGit: modeSpawn('jq', sb.root).spawnGit });
+    assertEqual(o.code, 0, 'oracle sanity: the jq leg short-circuits on a string "true"');
+    assertEqual(e.code, 0, 'engine matches it — never blocks its own re-invocation');
+    assertEqual(e.stderr, '', 'a re-entrant Stop must emit nothing at all');
+
+    // Discriminating control: the SAME sandbox, with the field absent, DOES
+    // block — so the exit 0 above is the re-entry guard firing, not a receipt
+    // that happened to satisfy the gate.
+    const control = runGateHook(sb.root, sb.vibeDir, '{}', { spawnGit: modeSpawn('jq', sb.root).spawnGit });
+    assertEqual(control.code, 2, 'control: without the re-entry field this fixture blocks');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('KNOWN DIVERGENCE: stop_hook_active as a STRING — the oracle\'s own sed leg would have blocked x no-jq', () => {
+  const sb = buildGateSandbox({ name: 'feature.verify with a feature', cursor: { flow: 'feature', phase: 'verify', feature: 'demo', updated: FIXED_TS } });
+  try {
+    applyReceiptState(sb, 'none');
+    const o = runOracleScript(GATE_ORACLE, [], 'no-jq', oracleEnv(sb), { cwd: sb.root, input: STRING_ACTIVE });
+    const e = runGateHook(sb.root, sb.vibeDir, STRING_ACTIVE, { spawnGit: modeSpawn('no-jq', sb.root).spawnGit });
+    assertEqual(o.code, 2, 'oracle sanity: without jq the sed leg does not recognise the quoted value and blocks');
+    assertEqual(
+      e.code,
+      0,
+      'THIS IS THE DIVERGENCE: the engine deliberately does not reproduce the sed leg here — a hook that blocks ' +
+        'its own re-invocation is a block loop. If this ever equals 2, the fail-safe choice has been reverted.',
+    );
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // KNOWN DIVERGENCE (documented, not a bug — do NOT "fix" the engine to
 // match): a hand-edited cursor with a NUMERIC `flow` of 5.
 //
@@ -546,6 +969,14 @@ test('KNOWN DIVERGENCE: cursor.flow = 5 (number) — oracle "Cursor: 5.impl.", e
 
 const MATRIX_NAME_RE = /^parity matrix: (.+) — (.+) x (jq|no-jq)$/;
 
+// A family may iterate its OWN fixture table when the shared one cannot express
+// what it needs to cover — stop-gate's blocking tooth lives in the two *.verify
+// states, and CURSOR_FIXTURES carries only one of them and never a
+// feature.verify with a feature name to resolve the receipt path from. The
+// override is declared here, so "this family iterates a different table" stays a
+// checked claim rather than an unexplained set of extra cells.
+const FAMILY_FIXTURES = new Map([['hook stop-gate', GATE_FIXTURES]]);
+
 test('parity matrix: every family covers every cursor fixture in BOTH jq modes', () => {
   const families = new Map(); // family -> Set('<fixture> x <mode>')
   for (const t of registeredTests()) {
@@ -561,27 +992,71 @@ test('parity matrix: every family covers every cursor fixture in BOTH jq modes',
       'which disarms the jq-half gate in run.mjs; update this pattern to the new convention',
   );
 
-  const expected = [];
-  for (const fixture of CURSOR_FIXTURES) {
-    for (const mode of JQ_MODES) expected.push(`${fixture.name} x ${mode}`);
-  }
+  const cellsFor = (fixtures) => {
+    const cells = [];
+    for (const fixture of fixtures) {
+      for (const mode of JQ_MODES) cells.push(`${fixture.name} x ${mode}`);
+    }
+    return cells;
+  };
 
   const gaps = [];
   for (const [family, seen] of [...families].sort()) {
+    const fixtures = FAMILY_FIXTURES.get(family) ?? CURSOR_FIXTURES;
+    const expected = cellsFor(fixtures);
     for (const cell of expected) if (!seen.has(cell)) gaps.push(`${family}: missing '${cell}'`);
     for (const cell of seen) if (!expected.includes(cell)) gaps.push(`${family}: unexpected '${cell}'`);
+    // An override may only WIDEN the shared table, never narrow it: otherwise
+    // FAMILY_FIXTURES becomes a way to shrink a family's coverage while this
+    // floor reports it complete.
+    for (const shared of CURSOR_FIXTURES) {
+      if (!fixtures.some((f) => f.name === shared.name)) {
+        gaps.push(`${family}: its FAMILY_FIXTURES override drops the shared fixture '${shared.name}'`);
+      }
+    }
   }
   assertEqual(
     gaps,
     [],
-    'the parity matrix is CURSOR_FIXTURES x JQ_MODES per family — a family that stopped generating a cell ' +
+    'the parity matrix is (that family\'s fixtures) x JQ_MODES per family — a family that stopped generating a cell ' +
       'shrinks the population the jq-half gate counts without emptying it, which is invisible to a ' +
       `non-empty floor:\n${gaps.join('\n')}`,
   );
 
+  // The two BLOCKING hooks must be IN the matrix. They were the whole gap the
+  // final review found: every other family could be present and green while
+  // guard/gate — the only two commands that can exit 2 — had no oracle at all.
+  for (const required of ['hook pre-tool-use-guard', 'hook stop-gate']) {
+    assert(
+      families.has(required),
+      `'${required}' is not in the parity matrix — the two hooks that can BLOCK a tool call or a turn must ` +
+        'always be compared against their frozen bash oracles (tests/oracles/), never trusted from a port review',
+    );
+  }
+
   // And the population is a real matrix, not a single surviving cell.
   assert(
-    expected.length >= 4 && CURSOR_FIXTURES.length >= 2 && JQ_MODES.length === 2,
-    `the matrix collapsed: ${CURSOR_FIXTURES.length} fixture(s) x ${JQ_MODES.length} mode(s)`,
+    CURSOR_FIXTURES.length >= 2 && GATE_FIXTURES.length > CURSOR_FIXTURES.length && JQ_MODES.length === 2,
+    `the matrix collapsed: ${CURSOR_FIXTURES.length} shared fixture(s), ${GATE_FIXTURES.length} gate fixture(s) x ${JQ_MODES.length} mode(s)`,
   );
+});
+
+// The frozen oracles must actually BE the pre-port bash hooks, not a
+// convenience rewrite that drifted toward the port it is supposed to judge.
+// Structural, since their provenance (git `main`) will not be reachable forever:
+// each must carry the FROZEN banner, must still contain the load-bearing
+// spellings the port had to reproduce, and must contain no trace of the Node
+// shim that replaced it.
+test('parity oracles: tests/oracles/*.sh are the frozen bash originals, not shims', () => {
+  const guard = readFileSync(GUARD_ORACLE, 'utf8');
+  const gate = readFileSync(GATE_ORACLE, 'utf8');
+  for (const [name, src] of [['pre-tool-use-guard.sh', guard], ['stop-gate.sh', gate]]) {
+    assertMatch(src, /FROZEN PARITY ORACLE/, `${name} lost its frozen-oracle banner`);
+    assert(!/cli\.mjs/.test(src), `${name} has been overwritten with the Node shim — the oracle is gone again`);
+    assert(!/exec node/.test(src), `${name} has been overwritten with the Node shim — the oracle is gone again`);
+  }
+  assertMatch(guard, /detect-context\.sh|"\$DETECT" decide/, 'the guard oracle no longer delegates to detect-context.sh');
+  assertMatch(guard, /sniff_bash/, 'the guard oracle lost its warn-only Bash sniffer');
+  assertMatch(gate, /stop_hook_active/, 'the gate oracle lost its re-entry guard');
+  assertMatch(gate, /-nt "\$receipt"/, 'the gate oracle lost its receipt staleness comparison');
 });

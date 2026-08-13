@@ -288,6 +288,58 @@ export function makeSandbox({ cursor } = {}) {
   return { dir, flowDir, cursorPath, machinePath, cleanup };
 }
 
+// makeHookSandbox — a real INSTALL-shaped layout: <root>/.agents/skills/vibe/
+// {state.json, state-machine.json, SKILL.md, scripts/detect-context.sh,
+// warnings.log?, evidence/}. Mirrors what `install.sh` lays down, handcrafted
+// (not run through bash install.sh) to keep the suite fast and hermetic.
+//
+// Shared here rather than owned by hook.test.mjs (js-core/8 final review, I3):
+// parity.test.mjs's guard/gate oracle differential spawns the FROZEN bash hooks
+// in tests/oracles/, which self-locate through exactly this layout
+// ($ROOT/.agents/skills/vibe/scripts/detect-context.sh, and detect-context.sh's
+// own SKILL_DIR=scripts/..). A second, hand-copied fixture in the parity file
+// could drift from the one hook.test.mjs asserts against, and then the two
+// suites would be honest about DIFFERENT layouts.
+export function makeHookSandbox({ cursor, includeDetect = true, gitInit = false } = {}) {
+  const dir = mkTempRoot('vibe-hook-test-');
+  const vibeDir = path.join(dir, '.agents', 'skills', 'vibe');
+  const scriptsDir = path.join(vibeDir, 'scripts');
+  mkdirSync(scriptsDir, { recursive: true });
+  copyFileSync(path.join(REPO_ROOT, 'flow', 'state-machine.json'), path.join(vibeDir, 'state-machine.json'));
+  writeFileSync(
+    path.join(vibeDir, 'SKILL.md'),
+    readFileSync(path.join(REPO_ROOT, 'flow', 'SKILL.md'), 'utf8'),
+  );
+  if (includeDetect) {
+    copyFileSync(
+      path.join(REPO_ROOT, 'flow', 'scripts', 'detect-context.sh'),
+      path.join(scriptsDir, 'detect-context.sh'),
+    );
+  }
+  const cursorPath = path.join(vibeDir, 'state.json');
+  const cursorBody = cursor ?? { flow: 'idle', phase: 'idle', feature: null, updated: '2026-01-01T00:00:00Z' };
+  writeFileSync(cursorPath, `${JSON.stringify(cursorBody, null, 2)}\n`);
+  mkdirSync(path.join(dir, '.spec'), { recursive: true });
+
+  if (gitInit) {
+    runCommand('git', ['init', '-q'], { cwd: dir });
+    runCommand('git', ['-C', dir, 'config', 'user.email', 't@t'], { cwd: dir });
+    runCommand('git', ['-C', dir, 'config', 'user.name', 't'], { cwd: dir });
+  }
+
+  const skillsDir = path.join(dir, '.agents', 'skills');
+  const warnLogPath = path.join(vibeDir, 'warnings.log');
+
+  let cleaned = false;
+  function cleanup() {
+    if (cleaned) return;
+    cleaned = true;
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  return { dir, root: dir, vibeDir, skillsDir, scriptsDir, cursorPath, warnLogPath, cleanup };
+}
+
 // ---------------------------------------------------------------------------
 // Test registry + runner
 // ---------------------------------------------------------------------------

@@ -97,7 +97,9 @@ const RAW_MKDTEMP_BUDGET = {
   'orders.test.mjs': 4,
   'state.test.mjs': 4,
   'runner.test.mjs': 2,
-  'hook.test.mjs': 1,
+  // hook.test.mjs reached 0 and came out of the table (js-core/8 final review,
+  // I3): its makeHookSandbox() moved into run.mjs's mkTempRoot()-based helper so
+  // parity.test.mjs's guard/gate oracle differential builds the same layout.
   'machine.test.mjs': 1,
 };
 

@@ -10,18 +10,23 @@
 // the two suites stay honest about the same behaviour.
 
 import {
-  mkdtempSync,
   mkdirSync,
   writeFileSync,
   readFileSync,
-  copyFileSync,
   rmSync,
   utimesSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, assert, assertEqual, assertMatch, assertIncludes, runCommand } from './run.mjs';
+import {
+  test,
+  assert,
+  assertEqual,
+  assertMatch,
+  assertIncludes,
+  runCommand,
+  makeHookSandbox,
+} from './run.mjs';
 import {
   runDoctrineHook,
   runInjectHook,
@@ -30,50 +35,14 @@ import {
 } from '../commands/hook.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const DETECT_ORACLE = path.join(REPO_ROOT, 'flow', 'scripts', 'detect-context.sh');
-const REAL_SKILL_MD = readFileSync(path.join(REPO_ROOT, 'flow', 'SKILL.md'), 'utf8');
-const REAL_MACHINE = path.join(REPO_ROOT, 'flow', 'state-machine.json');
 
 // ---------------------------------------------------------------------------
-// Fixture — a real install-shaped layout: <root>/.agents/skills/vibe/{state.json,
-// state-machine.json, SKILL.md, scripts/detect-context.sh, warnings.log?,
-// evidence/}. Mirrors what `install.sh` lays down, handcrafted (not run
-// through bash install.sh) to keep the suite fast and hermetic by default.
+// Fixture — makeHookSandbox() now lives in run.mjs so parity.test.mjs's
+// guard/gate ORACLE differential builds the byte-identical install-shaped
+// layout the frozen bash hooks self-locate through (js-core/8 final review,
+// I3). Two hand-copied fixtures would let the two suites be honest about
+// different layouts.
 // ---------------------------------------------------------------------------
-
-function makeHookSandbox({ cursor, includeDetect = true, gitInit = false } = {}) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'vibe-hook-test-'));
-  const vibeDir = path.join(dir, '.agents', 'skills', 'vibe');
-  const scriptsDir = path.join(vibeDir, 'scripts');
-  mkdirSync(scriptsDir, { recursive: true });
-  copyFileSync(REAL_MACHINE, path.join(vibeDir, 'state-machine.json'));
-  writeFileSync(path.join(vibeDir, 'SKILL.md'), REAL_SKILL_MD);
-  if (includeDetect) {
-    copyFileSync(DETECT_ORACLE, path.join(scriptsDir, 'detect-context.sh'));
-  }
-  const cursorPath = path.join(vibeDir, 'state.json');
-  const cursorBody = cursor ?? { flow: 'idle', phase: 'idle', feature: null, updated: '2026-01-01T00:00:00Z' };
-  writeFileSync(cursorPath, `${JSON.stringify(cursorBody, null, 2)}\n`);
-  mkdirSync(path.join(dir, '.spec'), { recursive: true });
-
-  if (gitInit) {
-    runCommand('git', ['init', '-q'], { cwd: dir });
-    runCommand('git', ['-C', dir, 'config', 'user.email', 't@t'], { cwd: dir });
-    runCommand('git', ['-C', dir, 'config', 'user.name', 't'], { cwd: dir });
-  }
-
-  const skillsDir = path.join(dir, '.agents', 'skills');
-  const warnLogPath = path.join(vibeDir, 'warnings.log');
-
-  let cleaned = false;
-  function cleanup() {
-    if (cleaned) return;
-    cleaned = true;
-    rmSync(dir, { recursive: true, force: true });
-  }
-
-  return { dir, root: dir, vibeDir, skillsDir, scriptsDir, cursorPath, warnLogPath, cleanup };
-}
 
 function writeCursor(sb, body) {
   writeFileSync(sb.cursorPath, `${JSON.stringify(body, null, 2)}\n`);
@@ -527,26 +496,55 @@ test('runGateHook predicate 2: a receipt older than a changed src file is stale 
   }
 });
 
-test('runGateHook predicate 2: a change under the evidence dir itself never counts as staleness', () => {
+// js-core/8 final review, M1 — this test used to report `ok` with the exclusion
+// it names DELETED. Its fixture reported the RECEIPT ITSELF as the changed path,
+// so `st.mtimeMs > receiptStat.mtimeMs` compared the file to itself and was
+// false either way; the exclusion was entirely unprotected, in this suite and in
+// the bash one.
+//
+// A discriminating fixture needs a DIFFERENT file under evidence/ that is
+// genuinely NEWER than the receipt being checked — the real shape being a
+// quick.md written after feature-demo.md in the same session. Without the
+// exclusion that blocks a *.verify state forever: a session wedge, which is why
+// the exclusion is worth a fixture that can actually see it.
+test('runGateHook predicate 2: a DIFFERENT, NEWER file under the evidence dir never counts as staleness', () => {
   const sb = makeHookSandbox({ cursor: { flow: 'feature', phase: 'verify', feature: 'demo', updated: '2026-01-01T00:00:00Z' } });
   try {
     mkdirSync(path.join(sb.vibeDir, 'evidence'), { recursive: true });
     const receipt = path.join(sb.vibeDir, 'evidence', 'feature-demo.md');
     writeFileSync(receipt, 'evidence\n');
-    const past = new Date('2020-01-01T00:00:00Z');
-    utimesSync(receipt, past, past);
+    const receiptTs = new Date('2020-01-01T00:00:00Z');
+    utimesSync(receipt, receiptTs, receiptTs);
 
-    const result = runGateHook(sb.root, sb.vibeDir, '{}', {
+    // A sibling receipt, written AFTER this one — strictly newer, and reported
+    // by porcelain under its own name.
+    const sibling = path.join(sb.vibeDir, 'evidence', 'quick.md');
+    writeFileSync(sibling, 'a later receipt\n');
+    const siblingTs = new Date('2020-06-01T00:00:00Z');
+    utimesSync(sibling, siblingTs, siblingTs);
+
+    const porcelain = ` M ${path.posix.join('.agents/skills/vibe/evidence', 'quick.md')}\n`;
+    const spawnGit = (args) =>
+      args.includes('rev-parse')
+        ? { error: null, status: 0, stdout: 'true\n' }
+        : { error: null, status: 0, stdout: porcelain };
+
+    const result = runGateHook(sb.root, sb.vibeDir, '{}', { spawnGit });
+    assertEqual(result.code, 0, 'a newer SIBLING receipt must never make the gate call its own receipt stale');
+
+    // Discriminating control: the identical fixture with the path moved OUT of
+    // the evidence dir does block — so the exit 0 above is the exclusion firing,
+    // not the mtime comparison quietly failing to see anything.
+    const outsidePath = path.join(sb.dir, 'notes.md');
+    writeFileSync(outsidePath, 'a later note\n');
+    utimesSync(outsidePath, siblingTs, siblingTs);
+    const control = runGateHook(sb.root, sb.vibeDir, '{}', {
       spawnGit: (args) =>
         args.includes('rev-parse')
           ? { error: null, status: 0, stdout: 'true\n' }
-          : {
-              error: null,
-              status: 0,
-              stdout: ` M ${path.posix.join('.agents/skills/vibe/evidence', 'feature-demo.md')}\n`,
-            },
+          : { error: null, status: 0, stdout: ' M notes.md\n' },
     });
-    assertEqual(result.code, 0);
+    assertEqual(control.code, 2, 'control: the same mtime relationship OUTSIDE evidence/ must block');
   } finally {
     sb.cleanup();
   }
