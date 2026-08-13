@@ -633,8 +633,6 @@ const GUARD_STDIN_SHAPES = [
   ['Write, ABSOLUTE path under the root (must be stripped)', (sb) => JSON.stringify({ tool_name: 'Write', tool_input: { file_path: path.join(sb.root, '.spec', 'lessons.md') } })],
 ];
 
-assert(GUARD_STDIN_SHAPES.length >= 20, 'guard oracle differential must keep a broad stdin surface');
-
 for (const fixture of CURSOR_FIXTURES) {
   for (const mode of JQ_MODES) {
     test(`parity matrix: hook pre-tool-use-guard — ${fixture.name} x ${mode}`, () => {
@@ -976,6 +974,19 @@ test('KNOWN DIVERGENCE: cursor.flow = 5 (number) — oracle "Cursor: 5.impl.", e
 // broadly-slower run is visible in the log even though it does not fail the
 // build.
 //
+// WHY THAT IS NOT ENOUGH, AND WHAT THE CONTROL IS FOR: min-of-N only survives
+// noise that some runs escape. Self-attacked by oversubscribing this machine 3x
+// (12 busy loops on 4 cores), EVERY run is contended and the floor itself
+// inflates — measured: `doctrine` min 155 ms, and the assertion goes red for a
+// reason no one can act on. So the run is CALIBRATED: a bare `node -e 0` spawn,
+// which the engine must pay before executing a single line of vibe code, is
+// timed the same way. Measured here: ~27 ms idle, ~63-71 ms under that same 3x
+// load. When the control alone eats more than 40% of the whole budget the runner
+// is not delivering usable timings, and the test SKIPS with the number rather
+// than failing — a visible "could not measure", never a silent pass. Expressing
+// the control ceiling as a fraction of the documented ceiling keeps 150 the only
+// number anyone has to maintain.
+//
 // The measured floor on the development machine is ~48 ms for orders (bash
 // oracle ~18 ms), so the 150 ms ceiling carries roughly 3x headroom. Note
 // separately that tech.md's aspirational "under 50 ms cold for orders" TARGET is
@@ -985,6 +996,20 @@ test('KNOWN DIVERGENCE: cursor.flow = 5 (number) — oracle "Cursor: 5.impl.", e
 
 const PERF_CEILING_MS = 150; // tech.md, Performance Budget — "fails above 150 ms"
 const PERF_RUNS = 9;
+// Above this, a bare interpreter start dominates the budget and the measurement
+// describes the runner rather than the engine.
+const PERF_CONTROL_CEILING_MS = PERF_CEILING_MS * 0.4;
+
+function minOf(fn) {
+  const samples = [];
+  for (let i = 0; i < PERF_RUNS; i += 1) {
+    const t0 = process.hrtime.bigint();
+    fn();
+    samples.push(Number(process.hrtime.bigint() - t0) / 1e6);
+  }
+  samples.sort((a, b) => a - b);
+  return samples;
+}
 
 const PERF_COMMANDS = [
   ['orders', ['orders']],
@@ -994,21 +1019,21 @@ const PERF_COMMANDS = [
 ];
 
 test('performance budget: every ported command stays under tech.md\'s 150 ms wall-time ceiling', () => {
+  const control = minOf(() => runCommand(process.execPath, ['-e', '0']));
+  const controlMin = control[0];
+
   const report = [];
   const over = [];
 
   for (const [name, argv] of PERF_COMMANDS) {
-    const samples = [];
-    for (let i = 0; i < PERF_RUNS; i += 1) {
-      const t0 = process.hrtime.bigint();
-      const res = runCli(argv);
-      samples.push(Number(process.hrtime.bigint() - t0) / 1e6);
+    let lastResult;
+    const samples = minOf(() => {
+      lastResult = runCli(argv);
       // A command that CRASHES is fast. Without this the budget would happily
       // certify a broken engine as well within its performance envelope.
-      assertEqual(res.code, 0, `\`vibe ${name}\` exited ${res.code} while being timed: ${res.stderr}`);
-      assert(res.stdout.length > 0, `\`vibe ${name}\` produced no output while being timed — nothing was measured`);
-    }
-    samples.sort((a, b) => a - b);
+      assertEqual(lastResult.code, 0, `\`vibe ${name}\` exited ${lastResult.code} while being timed: ${lastResult.stderr}`);
+      assert(lastResult.stdout.length > 0, `\`vibe ${name}\` produced no output while being timed — nothing was measured`);
+    });
     const min = samples[0];
     const median = samples[(samples.length - 1) >> 1];
     const max = samples[samples.length - 1];
@@ -1019,15 +1044,30 @@ test('performance budget: every ported command stays under tech.md\'s 150 ms wal
   }
 
   // "records wall time per command" — the numbers go to the log on every run,
-  // pass or fail, so a slow trend is observable before it becomes a failure.
-  console.log(`        wall time: ${report.join(' | ')}`);
+  // pass, fail or skip, so a slow trend is observable before it becomes a
+  // failure. The control is recorded too: it is what makes a number in this log
+  // comparable across machines.
+  console.log(
+    `        wall time: ${report.join(' | ')} || control (bare node -e 0): min=${controlMin.toFixed(1)}ms`,
+  );
+
+  // Calibration gate, AFTER the measurements so the numbers are always logged.
+  // MUST be skip(), never a bare return: a return reports `ok` and is
+  // indistinguishable from a budget that was actually checked.
+  if (controlMin > PERF_CONTROL_CEILING_MS) {
+    skip(
+      `runner is contended — a bare \`node -e 0\` spawn alone costs ${controlMin.toFixed(1)}ms, over ` +
+        `${PERF_CONTROL_CEILING_MS.toFixed(0)}ms (40% of the whole ${PERF_CEILING_MS}ms budget). ` +
+        'These timings describe the machine, not the engine; measured above and recorded, not asserted on',
+    );
+  }
 
   assertEqual(
     over,
     [],
     'a ported command is over tech.md\'s Performance Budget at its FASTEST of ' +
-      `${PERF_RUNS} runs, which machine noise cannot explain — this is a real regression, ` +
-      `not a flaky runner:\n${over.join('\n')}`,
+      `${PERF_RUNS} runs, on a runner whose bare interpreter start measured ${controlMin.toFixed(1)}ms — ` +
+      `machine noise cannot explain this, it is a real regression:\n${over.join('\n')}`,
   );
 });
 
@@ -1119,6 +1159,56 @@ test('parity matrix: every family covers every cursor fixture in BOTH jq modes',
     CURSOR_FIXTURES.length >= 2 && GATE_FIXTURES.length > CURSOR_FIXTURES.length && JQ_MODES.length === 2,
     `the matrix collapsed: ${CURSOR_FIXTURES.length} shared fixture(s), ${GATE_FIXTURES.length} gate fixture(s) x ${JQ_MODES.length} mode(s)`,
   );
+});
+
+// The oracle differential's own INPUT TABLES (self-attack on this file).
+//
+// Every table below can be trimmed to a single entry while the test NAMES, the
+// registered count, the per-family fixture floor above and the jq-half gate all
+// stay exactly the same — the differential keeps reporting a clean sweep of a
+// surface that no longer exists. That is the same failure mode fix round 3 found
+// in the fixture matrix, one level down in the inputs.
+//
+// Deliberately a TEST, not a module-scope assert: a floor that throws at import
+// time crashes the runner (`test runner crashed: ...`, exit 1) instead of
+// reporting a named failure among its peers. Loud either way, but only one of
+// them tells you which floor broke without reading a stack trace.
+test('parity oracles: the differential\'s input tables have not been trimmed to a token entry', () => {
+  const thin = [];
+  const floors = [
+    ['GUARD_STDIN_SHAPES', GUARD_STDIN_SHAPES.length, 20],
+    ['GATE_STDIN_SHAPES', GATE_STDIN_SHAPES.length, 7],
+    ['RECEIPT_STATES', RECEIPT_STATES.length, 4],
+    ['GATE_FIXTURES', GATE_FIXTURES.length, 7],
+  ];
+  for (const [name, actual, floor] of floors) {
+    if (actual < floor) thin.push(`${name}: ${actual} entr(ies), floor ${floor}`);
+  }
+  assertEqual(
+    thin,
+    [],
+    'an input table of the guard/gate oracle differential has shrunk. The comparison still runs and still ' +
+      `passes — over almost nothing:\n${thin.join('\n')}`,
+  );
+
+  // The receipt states are named, not just counted: the two BLOCKING outcomes
+  // and the M1 discriminating case are what the tooth IS, and a same-sized table
+  // of four harmless states would satisfy a bare length floor.
+  assertEqual(
+    [...RECEIPT_STATES].sort(),
+    ['evidence-sibling', 'fresh', 'none', 'stale'],
+    'the gate differential must keep all four receipt states: missing (block), fresh (pass), stale (block), ' +
+      'and a newer SIBLING receipt under evidence/ (must NOT block)',
+  );
+
+  // Likewise for the stdin shapes that decide whether the gate runs at all.
+  const gateShapeNames = GATE_STDIN_SHAPES.map(([n]) => n);
+  for (const required of ['empty stdin', 'unparseable stdin', 'stop_hook_active true (boolean)']) {
+    assert(
+      gateShapeNames.includes(required),
+      `the gate differential lost its '${required}' shape — that is a re-entry/degrade path, not a filler case`,
+    );
+  }
 });
 
 // The frozen oracles must actually BE the pre-port bash hooks, not a

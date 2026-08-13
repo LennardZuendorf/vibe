@@ -15,6 +15,7 @@ import {
   readFileSync,
   rmSync,
   utimesSync,
+  statSync,
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,6 +27,7 @@ import {
   assertIncludes,
   runCommand,
   makeHookSandbox,
+  skip,
 } from './run.mjs';
 import {
   runDoctrineHook,
@@ -583,6 +585,19 @@ function makeStalenessFixture(receiptEpoch, fileEpoch) {
   const changed = path.join(sb.dir, 'src', 'app.sh');
   writeFileSync(changed, 'code\n');
   utimesSync(changed, fileEpoch, fileEpoch);
+
+  // Self-attack on these tests: a filesystem whose mtime granularity is coarser
+  // than the delta (an old HFS+ volume, some network mounts) collapses the two
+  // stamps and the assertion below becomes a statement about the RUNNER, not the
+  // code — a red build nobody can act on. Assert the fixture actually
+  // materialised the delta it asks about, and skip honestly if the filesystem
+  // could not express it. Never a bare `return`: that reports `ok` and is
+  // indistinguishable from a pin that ran.
+  const want = Math.round((fileEpoch - receiptEpoch) * 1000);
+  const got = Math.round(statSync(changed).mtimeMs - statSync(receipt).mtimeMs);
+  if (got !== want) {
+    skip(`filesystem mtime granularity cannot express a ${want} ms delta (observed ${got} ms) — this fixture would test the runner, not the gate`);
+  }
   return sb;
 }
 
