@@ -550,6 +550,77 @@ test('runGateHook predicate 2: a DIFFERENT, NEWER file under the evidence dir ne
   }
 });
 
+// js-core/8 final review, M5 — every stale-receipt fixture in both suites pins
+// the receipt to 2000-01-01 or 2020-01-01, so a mutation requiring the changed
+// file to be a hundred SECONDS newer survived the whole suite. The real
+// timescale is sub-second: the receipt is written and a file is touched moments
+// later in the same turn. These three cases pin the comparison at millisecond
+// granularity and in both directions, including the exact-tie boundary.
+//
+// Deliberately engine-only (injected porcelain, no bash): the ORACLE's `-nt`
+// compares st_mtim, whose resolution is not guaranteed on every platform this
+// ships to — stock bash 3.2 on macOS is the case that matters. Asserting a 20 ms
+// delta against the oracle differential would be pinning the RUNNER's timestamp
+// resolution, not the port. Logged as residual risk instead.
+function gateWithPorcelain(sb, porcelain) {
+  return runGateHook(sb.root, sb.vibeDir, '{}', {
+    spawnGit: (args) =>
+      args.includes('rev-parse')
+        ? { error: null, status: 0, stdout: 'true\n' }
+        : { error: null, status: 0, stdout: porcelain },
+  });
+}
+
+// epochSeconds may be fractional — utimesSync takes seconds, mtimeMs reports
+// milliseconds, so a 20 ms delta is expressible exactly.
+function makeStalenessFixture(receiptEpoch, fileEpoch) {
+  const sb = makeHookSandbox({ cursor: { flow: 'feature', phase: 'verify', feature: 'demo', updated: '2026-01-01T00:00:00Z' } });
+  mkdirSync(path.join(sb.vibeDir, 'evidence'), { recursive: true });
+  const receipt = path.join(sb.vibeDir, 'evidence', 'feature-demo.md');
+  writeFileSync(receipt, 'evidence\n');
+  utimesSync(receipt, receiptEpoch, receiptEpoch);
+  mkdirSync(path.join(sb.dir, 'src'), { recursive: true });
+  const changed = path.join(sb.dir, 'src', 'app.sh');
+  writeFileSync(changed, 'code\n');
+  utimesSync(changed, fileEpoch, fileEpoch);
+  return sb;
+}
+
+const RECEIPT_EPOCH = 1767225600; // 2026-01-01T00:00:00Z, as seconds
+
+test('runGateHook predicate 2: staleness is a MILLISECOND comparison — 20 ms newer already blocks', () => {
+  const sb = makeStalenessFixture(RECEIPT_EPOCH, RECEIPT_EPOCH + 0.02);
+  try {
+    const result = gateWithPorcelain(sb, ' M src/app.sh\n');
+    assertEqual(result.code, 2, 'a file 20 ms newer than the receipt is stale — the real timescale of a verify turn');
+    assertIncludes(result.stderr, 'stale');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('runGateHook predicate 2: staleness is directional — 20 ms OLDER than the receipt never blocks', () => {
+  const sb = makeStalenessFixture(RECEIPT_EPOCH, RECEIPT_EPOCH - 0.02);
+  try {
+    assertEqual(gateWithPorcelain(sb, ' M src/app.sh\n').code, 0);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('runGateHook predicate 2: an exact mtime TIE is not stale (strictly greater, matching bash -nt)', () => {
+  const sb = makeStalenessFixture(RECEIPT_EPOCH, RECEIPT_EPOCH);
+  try {
+    assertEqual(
+      gateWithPorcelain(sb, ' M src/app.sh\n').code,
+      0,
+      'bash `-nt` is strictly greater; a `>=` here would block on every file written in the receipt\'s own instant',
+    );
+  } finally {
+    sb.cleanup();
+  }
+});
+
 test('runGateHook predicate 3 (warn-only): non-idle state with legal next states nudges toward set-state.sh', () => {
   const sb = makeHookSandbox({ cursor: { flow: 'feature', phase: 'impl', feature: 'demo', updated: '2026-01-01T00:00:00Z' } });
   try {

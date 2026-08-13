@@ -79,6 +79,64 @@ test('resolveRoot: self-relative resolves an installed-layout engine (.agents/sk
   }
 });
 
+// js-core/8 final review, M3 — the ORDER of resolveRoot()'s two middle legs is
+// the thing R3 is about ("Self-relative precedes marker search because install
+// targets frequently have neither .git nor .spec", tech.md), and swapping them
+// left the entire suite green. Neither existing fixture can discriminate: the
+// self-relative one builds a target with NO markers anywhere, so both orders
+// agree, and the marker-search one uses the repo's own root.mjs, whose
+// self-relative leg does not fire (this skill dir is named `flow`, not `vibe`).
+//
+// The order matters in a layout people actually build — vibe installed into one
+// package of a monorepo, where the enclosing repo has the marker and the package
+// does not:
+//
+//   /mono/.git                         <- marker search stops HERE
+//   /mono/pkg/.agents/skills/vibe/engine  <- self-relative resolves to /mono/pkg
+//
+// resolveRoot() feeds hook.mjs's warnings log, the evidence-receipt paths and the
+// detect-context.sh location, so the wrong answer points enforcement at the wrong
+// tree. Bounded today because hooks always carry CLAUDE_PROJECT_DIR (leg 1) — but
+// this is the requirement the branch fixed three times, and it had no test.
+test('resolveRoot: self-relative BEATS marker search — an installed package inside a marked monorepo resolves to the package', async () => {
+  const prev = process.env.CLAUDE_PROJECT_DIR;
+  delete process.env.CLAUDE_PROJECT_DIR;
+
+  const monoRoot = mkTempRoot('vibe-root-mono-');
+  mkdirSync(path.join(monoRoot, '.git'), { recursive: true }); // the ENCLOSING marker
+  const pkgDir = path.join(monoRoot, 'pkg');
+  const engineDir = path.join(pkgDir, '.agents', 'skills', 'vibe', 'engine');
+  mkdirSync(engineDir, { recursive: true });
+  const copiedRootMjs = path.join(engineDir, 'root.mjs');
+  copyFileSync(ROOT_MJS, copiedRootMjs);
+
+  try {
+    // Precondition: the fixture really is discriminating. The REPO's own
+    // root.mjs (whose self-relative leg cannot fire from this cwd) resolves the
+    // same cwd to the monorepo — so the two legs genuinely disagree here, and
+    // the assertion below is about which one wins, not about luck.
+    const { resolveRoot: repoResolveRoot } = await import(pathToFileURL(ROOT_MJS).href + '?mono');
+    assertEqual(
+      repoResolveRoot({ cwd: pkgDir }),
+      monoRoot,
+      'precondition: marker search alone answers the enclosing monorepo for this cwd',
+    );
+
+    const { resolveRoot } = await import(pathToFileURL(copiedRootMjs).href);
+    const resolved = resolveRoot({ cwd: pkgDir });
+    assertEqual(
+      resolved,
+      pkgDir,
+      'self-relative must precede the marker search: an installed engine knows its own project root, ' +
+        'and an enclosing repo marker must not override it',
+    );
+    assert(resolved !== monoRoot, 'swapping the two legs resolves to the monorepo — that is the regression this pins');
+  } finally {
+    rmSync(monoRoot, { recursive: true, force: true });
+    if (prev !== undefined) process.env.CLAUDE_PROJECT_DIR = prev;
+  }
+});
+
 test('resolveRoot: dogfood-style layout (flow/engine, skill dir named "flow" not "vibe") is not mistaken for the installed layout', async () => {
   // Sanity check on the real, in-repo flow/engine/root.mjs: this repo's
   // skill dir is named "flow", not "vibe" (flow/engine/root.mjs's own
