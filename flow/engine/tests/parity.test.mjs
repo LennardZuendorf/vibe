@@ -26,7 +26,17 @@
 import { mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, assert, assertEqual, assertMatch, skip, makeSandbox, runCommand, mkTempRoot } from './run.mjs';
+import {
+  test,
+  assert,
+  assertEqual,
+  assertMatch,
+  skip,
+  makeSandbox,
+  runCommand,
+  mkTempRoot,
+  registeredTests,
+} from './run.mjs';
 import { runSet } from '../commands/state.mjs';
 import { runOrders } from '../commands/orders.mjs';
 import { runDoctrine } from '../commands/doctrine.mjs';
@@ -516,4 +526,62 @@ test('KNOWN DIVERGENCE: cursor.flow = 5 (number) — oracle "Cursor: 5.impl.", e
     sandbox.cleanup();
     if (prevEnv !== undefined) process.env.CLAUDE_PROJECT_DIR = prevEnv;
   }
+});
+
+// ---------------------------------------------------------------------------
+// The matrix's own SHAPE (js-core/8 fix round 3; re-review round 2, Minor 2).
+//
+// runner.test.mjs asserts the jq-leg population is non-empty and that the two
+// halves are the same size. Both are satisfied by a matrix that collapsed from
+// 5 fixtures to 1 — and `jqHalfVerdict({total:1, executed:1})` is `ok`, so the
+// gate above it would report a clean sweep of a matrix that no longer exists.
+// "Adding legs widens the floor on its own" was not true: only removing the
+// LAST leg was caught.
+//
+// This is the floor that says what it means, derived from the tables the matrix
+// actually iterates (CURSOR_FIXTURES x JQ_MODES) rather than from a number
+// anyone has to remember to raise. Every family that registers at all must
+// cover every fixture in every mode.
+// ---------------------------------------------------------------------------
+
+const MATRIX_NAME_RE = /^parity matrix: (.+) — (.+) x (jq|no-jq)$/;
+
+test('parity matrix: every family covers every cursor fixture in BOTH jq modes', () => {
+  const families = new Map(); // family -> Set('<fixture> x <mode>')
+  for (const t of registeredTests()) {
+    const m = MATRIX_NAME_RE.exec(t.name);
+    if (!m) continue;
+    if (!families.has(m[1])) families.set(m[1], new Set());
+    families.get(m[1]).add(`${m[2]} x ${m[3]}`);
+  }
+
+  assert(
+    families.size > 0,
+    `no registered test name matched ${MATRIX_NAME_RE} — the parity matrix has been renamed or removed, ` +
+      'which disarms the jq-half gate in run.mjs; update this pattern to the new convention',
+  );
+
+  const expected = [];
+  for (const fixture of CURSOR_FIXTURES) {
+    for (const mode of JQ_MODES) expected.push(`${fixture.name} x ${mode}`);
+  }
+
+  const gaps = [];
+  for (const [family, seen] of [...families].sort()) {
+    for (const cell of expected) if (!seen.has(cell)) gaps.push(`${family}: missing '${cell}'`);
+    for (const cell of seen) if (!expected.includes(cell)) gaps.push(`${family}: unexpected '${cell}'`);
+  }
+  assertEqual(
+    gaps,
+    [],
+    'the parity matrix is CURSOR_FIXTURES x JQ_MODES per family — a family that stopped generating a cell ' +
+      'shrinks the population the jq-half gate counts without emptying it, which is invisible to a ' +
+      `non-empty floor:\n${gaps.join('\n')}`,
+  );
+
+  // And the population is a real matrix, not a single surviving cell.
+  assert(
+    expected.length >= 4 && CURSOR_FIXTURES.length >= 2 && JQ_MODES.length === 2,
+    `the matrix collapsed: ${CURSOR_FIXTURES.length} fixture(s) x ${JQ_MODES.length} mode(s)`,
+  );
 });
