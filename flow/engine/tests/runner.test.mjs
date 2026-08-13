@@ -6,7 +6,17 @@ import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, symlinkSync, rmSyn
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, assert, assertEqual, assertIncludes, runCommand } from './run.mjs';
+import {
+  test,
+  mkTempRoot,
+  assert,
+  assertEqual,
+  assertIncludes,
+  runCommand,
+  jqHalfVerdict,
+  JQ_LEG_NAME_RE,
+  registeredTests,
+} from './run.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -103,4 +113,116 @@ test('no raw mkdtempSync beyond the pinned legacy budget (mkTempRoot is the temp
     RAW_MKDTEMP_BUDGET,
     'raw mkdtempSync sites moved. Use mkTempRoot(prefix) from run.mjs — it realpaths the result, which is what keeps macOS (/var -> /private/var) green. If you removed sites, lower the pinned counts to match.',
   );
+});
+
+// ---------------------------------------------------------------------------
+// js-core/8 fix round 2 (re-review Finding 5) — the jq half of the parity
+// matrix must be PROVEN to have run, not merely reported honestly.
+//
+// Round 1 converted 31 silently-degenerate jq tests into honest skips. That
+// fixed the lying counts but left no gate: with jq absent the suite prints
+// `289 passed, 0 failed, 44 skipped` and exits 0. The ubuntu CI leg has no
+// `Ensure jq` step, so if the runner image ever dropped preinstalled jq, all
+// 31 would skip, both legs would stay green, and the entire jq half of R2's
+// "ported command output matches its bash original" would stop running with
+// nothing to say so.
+//
+// The gate must distinguish DELIBERATELY STRIPPED (CI's own jq-less leg, which
+// exists precisely to exercise the degrade paths and must keep skipping) from
+// UNEXPECTEDLY MISSING. Only an explicit opt-in can carry that intent, so
+// VIBE_NO_JQ=1 is the signal — and it is bidirectional: if the strip is set but
+// the jq legs ran anyway, that leg is not stripping jq and its own half is the
+// one silently not running.
+// ---------------------------------------------------------------------------
+
+test('jq gate: the jq half running normally is a pass', () => {
+  assertEqual(jqHalfVerdict({ total: 30, executed: 30, noJqOptIn: false }).ok, true);
+});
+
+test('jq gate: every jq-leg test skipped without the opt-in fails, naming the fix', () => {
+  const verdict = jqHalfVerdict({ total: 30, executed: 0, noJqOptIn: false });
+  assertEqual(verdict.ok, false, 'a skip-everything jq half must not read as a clean sweep');
+  assertIncludes(verdict.reason, '0 of 30');
+  assertIncludes(verdict.reason, 'VIBE_NO_JQ=1', 'the reason must name the deliberate-strip opt-in');
+});
+
+test('jq gate: the deliberately stripped leg is allowed to skip the whole jq half', () => {
+  assertEqual(jqHalfVerdict({ total: 30, executed: 0, noJqOptIn: true }).ok, true);
+});
+
+test('jq gate: a stripped leg where jq legs still ran is a failed strip', () => {
+  const verdict = jqHalfVerdict({ total: 30, executed: 30, noJqOptIn: true });
+  assertEqual(verdict.ok, false, 'VIBE_NO_JQ=1 with jq still reachable means the no-jq half never ran');
+  assertIncludes(verdict.reason, 'still reachable');
+});
+
+test('jq gate: a jq half that has vanished entirely fails, not passes', () => {
+  const verdict = jqHalfVerdict({ total: 0, executed: 0, noJqOptIn: false });
+  assertEqual(verdict.ok, false, 'zero discovered jq-leg tests is the vacuous state, not a clean one');
+  assertIncludes(verdict.reason, String(JQ_LEG_NAME_RE), 'the reason must name the convention it looked for');
+});
+
+test('jq gate: a jq half that has vanished fails even on the stripped leg', () => {
+  assertEqual(jqHalfVerdict({ total: 0, executed: 0, noJqOptIn: true }).ok, false);
+});
+
+// Structural floor, derived from the live registry rather than pinned as a
+// number: the population the gate counts must actually exist under the naming
+// convention the gate matches. Renaming the matrix legs breaks this loudly
+// here instead of quietly disarming the gate, and adding legs widens the floor
+// on its own (.spec/lessons.md: hand-written counts rot silently).
+test('jq gate: the jq-leg population it counts is non-empty in the real registry', () => {
+  const jqLeg = registeredTests().filter((t) => JQ_LEG_NAME_RE.test(t.name));
+  assert(
+    jqLeg.length > 0,
+    `no registered test name matches ${JQ_LEG_NAME_RE} — the parity matrix's jq legs were renamed or removed, ` +
+      'which silently disarms the jq-half gate in run.mjs; update JQ_LEG_NAME_RE to the new convention',
+  );
+  const noJqLeg = registeredTests().filter((t) => / x no-jq$/.test(t.name));
+  assertEqual(
+    jqLeg.length,
+    noJqLeg.length,
+    'the matrix is jq x no-jq — the two halves must be the same size, or one of them is not being generated',
+  );
+});
+
+// The six tests above pin the VERDICT; this one pins the WIRING. Deleting the
+// gate's call site in main() while leaving jqHalfVerdict() intact leaves all of
+// them green and the gate dead — a pure function nobody consults. Proving
+// otherwise needs a real spawned run whose jq half skips, which a synthetic
+// tests directory gives us without touching this runner's own PATH: run.mjs
+// beside a `parity.test.mjs` (the gate only speaks for a discovered set that
+// CARRIES the matrix) holding one skipping ` x jq` leg and its no-jq twin.
+test('jq gate: the gate is wired into main() — a spawned run with a skipped jq half exits non-zero', () => {
+  const dir = mkTempRoot('vibe-runner-jqgate-');
+  try {
+    copyFileSync(RUN_MJS, path.join(dir, 'run.mjs'));
+    writeFileSync(
+      path.join(dir, 'parity.test.mjs'),
+      "import { test, skip, assertEqual } from './run.mjs';\n" +
+        "test('synthetic matrix: probe x jq', () => { skip('synthetic: jq unavailable'); });\n" +
+        "test('synthetic matrix: probe x no-jq', () => { assertEqual(1, 1); });\n",
+    );
+    const runMjs = path.join(dir, 'run.mjs');
+
+    const bare = runCommand(process.execPath, [runMjs]);
+    const bareOut = bare.stdout + bare.stderr;
+    assert(
+      bare.code !== 0,
+      `a run whose whole jq half skipped must fail, got exit ${bare.code}; output: ${bareOut}`,
+    );
+    assertIncludes(bareOut, 'jq-half gate', 'the failing run must name the gate that failed it');
+    assertIncludes(bareOut, '0 of 1', 'the gate must report the population it counted');
+
+    // Same run, opt-in declared: the deliberate strip stays green, so the gate
+    // is a gate and not merely a way to fail every jq-less environment.
+    const optIn = runCommand(process.execPath, [runMjs], { env: { VIBE_NO_JQ: '1' } });
+    assertEqual(
+      optIn.code,
+      0,
+      `VIBE_NO_JQ=1 must let a deliberately skipped jq half pass; output: ${optIn.stdout}${optIn.stderr}`,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

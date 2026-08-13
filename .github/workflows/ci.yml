@@ -39,6 +39,21 @@ jobs:
       - name: Shellcheck (all tracked *.sh)
         run: git ls-files '*.sh' | xargs shellcheck
 
+      # js-core/8 fix round 2 (re-review Finding 5): this leg is the one that is
+      # SUPPOSED to have jq — the whole jq half of the parity matrix (30 legs
+      # plus the KNOWN DIVERGENCE pin) skips without it, and a skip-everything
+      # run still exits 0 on its own. Assert rather than install: if the
+      # ubuntu-latest image ever drops preinstalled jq we want to hear about it
+      # loudly, not paper over it and keep believing the matrix ran. (The macOS
+      # job installs instead, because jq is genuinely not on every macOS image.)
+      - name: jq is present (this leg must run the jq half of the parity matrix)
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "jq is not on PATH — the jq half of the parity matrix cannot run on this leg" >&2
+            exit 1
+          fi
+          jq --version
+
       # Runs all four suites (spec, flow, adapters, engine) via the combined
       # aggregator — see tests/run.sh.
       - name: Test suites
@@ -51,12 +66,19 @@ jobs:
         # every *.test.mjs file (and parity.test.mjs's own no-jq leg) are
         # exercised for real, not just reasoned about — mirrors what the
         # bash suites already do for their own no-jq legs.
+        #
+        # VIBE_NO_JQ=1 declares that skipping the jq half here is DELIBERATE.
+        # Without it the harness's jq-half gate fails the run, which is what
+        # makes an accidentally jq-less runner distinguishable from this leg
+        # (js-core/8 fix round 2, re-review Finding 5). The gate is also
+        # bidirectional: if this strip ever stopped working, the jq legs would
+        # execute despite the opt-in and the gate fails the step for that too.
         run: |
           NOJQ_BIN="$(mktemp -d)"
           for t in bash sh mkdir dirname basename date mktemp mv cp rm rmdir sed grep head tail cat env awk find readlink ln chmod cmp diff sort cksum node git; do
             p="$(command -v "$t" 2>/dev/null)" && ln -s "$p" "$NOJQ_BIN/$t"
           done
-          PATH="$NOJQ_BIN" node flow/engine/tests/run.mjs
+          PATH="$NOJQ_BIN" VIBE_NO_JQ=1 node flow/engine/tests/run.mjs
 
       # js-core/8 fix round 1 (review Minor 7): every *.mjs derives its own path
       # via fileURLToPath, never `new URL(import.meta.url).pathname`, because the
