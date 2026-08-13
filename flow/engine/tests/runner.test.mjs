@@ -193,8 +193,17 @@ test('jq gate: the jq-leg population it counts is non-empty in the real registry
 // tests directory gives us without touching this runner's own PATH: run.mjs
 // beside a `parity.test.mjs` (the gate only speaks for a discovered set that
 // CARRIES the matrix) holding one skipping ` x jq` leg and its no-jq twin.
+//
+// PATH isolation is not enough, and the first version of this test proved it by
+// failing on CI's own jq-stripped leg: that leg runs the whole suite under
+// VIBE_NO_JQ=1, runCommand's base env is process.env, so the "bare" spawn
+// inherited the opt-in, took the deliberately-skipped branch and exited 0. A
+// control case for "the variable is unset" has to DELETE it (unsetEnv), and the
+// deliberately contaminated parent below is what keeps that true on every leg
+// rather than only on the legs whose environment happened to be clean.
 test('jq gate: the gate is wired into main() — a spawned run with a skipped jq half exits non-zero', () => {
   const dir = mkTempRoot('vibe-runner-jqgate-');
+  const prevOptIn = process.env.VIBE_NO_JQ;
   try {
     copyFileSync(RUN_MJS, path.join(dir, 'run.mjs'));
     writeFileSync(
@@ -204,18 +213,34 @@ test('jq gate: the gate is wired into main() — a spawned run with a skipped jq
         "test('synthetic matrix: probe x no-jq', () => { assertEqual(1, 1); });\n",
     );
     const runMjs = path.join(dir, 'run.mjs');
+    const spawnBare = () => runCommand(process.execPath, [runMjs], { unsetEnv: ['VIBE_NO_JQ'] });
 
-    const bare = runCommand(process.execPath, [runMjs]);
-    const bareOut = bare.stdout + bare.stderr;
-    assert(
-      bare.code !== 0,
-      `a run whose whole jq half skipped must fail, got exit ${bare.code}; output: ${bareOut}`,
-    );
-    assertIncludes(bareOut, 'jq-half gate', 'the failing run must name the gate that failed it');
-    assertIncludes(bareOut, '0 of 1', 'the gate must report the population it counted');
+    const assertBareFails = (result, when) => {
+      const out = result.stdout + result.stderr;
+      assert(
+        result.code !== 0,
+        `a run whose whole jq half skipped must fail (${when}), got exit ${result.code}; output: ${out}`,
+      );
+      assertIncludes(out, 'jq-half gate', `the failing run must name the gate that failed it (${when})`);
+      assertIncludes(out, '0 of 1', `the gate must report the population it counted (${when})`);
+      assert(
+        !out.includes('deliberately skipped'),
+        `the bare spawn must not inherit the opt-in (${when}) — that is the branch this case exists to exclude; output: ${out}`,
+      );
+    };
+
+    // As the runner found it — whatever this leg's environment happens to be.
+    delete process.env.VIBE_NO_JQ;
+    assertBareFails(spawnBare(), 'parent clean');
+
+    // And with the parent DELIBERATELY contaminated, which is CI's jq-stripped
+    // leg exactly. Without unsetEnv this spawn exits 0 and the case is vacuous.
+    process.env.VIBE_NO_JQ = '1';
+    assertBareFails(spawnBare(), 'parent carries VIBE_NO_JQ=1');
 
     // Same run, opt-in declared: the deliberate strip stays green, so the gate
     // is a gate and not merely a way to fail every jq-less environment.
+    delete process.env.VIBE_NO_JQ;
     const optIn = runCommand(process.execPath, [runMjs], { env: { VIBE_NO_JQ: '1' } });
     assertEqual(
       optIn.code,
@@ -223,6 +248,40 @@ test('jq gate: the gate is wired into main() — a spawned run with a skipped jq
       `VIBE_NO_JQ=1 must let a deliberately skipped jq half pass; output: ${optIn.stdout}${optIn.stderr}`,
     );
   } finally {
+    if (prevOptIn === undefined) delete process.env.VIBE_NO_JQ;
+    else process.env.VIBE_NO_JQ = prevOptIn;
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The helper the case above leans on, pinned in its own right — the sweep found
+// eight other node-spawn sites with no env argument at all, so the next control
+// case that needs a variable absent will reach for this and must be able to
+// trust it. Both directions: inherited when nothing is said, gone when it is.
+test('runCommand: unsetEnv deletes a variable the child would otherwise inherit', () => {
+  const READ_BACK = ['-e', 'process.stdout.write(String(process.env.VIBE_UNSETENV_PROBE))'];
+  const prev = process.env.VIBE_UNSETENV_PROBE;
+  process.env.VIBE_UNSETENV_PROBE = 'inherited';
+  try {
+    assertEqual(
+      runCommand(process.execPath, READ_BACK).stdout,
+      'inherited',
+      'baseline: a child inherits process.env, so "not passed in opts.env" does NOT mean "absent"',
+    );
+    assertEqual(
+      runCommand(process.execPath, READ_BACK, { unsetEnv: ['VIBE_UNSETENV_PROBE'] }).stdout,
+      'undefined',
+      'unsetEnv must delete the variable from the child, not merely decline to set it',
+    );
+    // opts.env still wins for names it does name — unsetEnv is a deletion list,
+    // not a filter applied over the caller's own explicit values.
+    assertEqual(
+      runCommand(process.execPath, READ_BACK, { env: { VIBE_UNSETENV_PROBE: 'explicit' } }).stdout,
+      'explicit',
+      'unsetEnv must not disturb a value the caller set deliberately',
+    );
+  } finally {
+    if (prev === undefined) delete process.env.VIBE_UNSETENV_PROBE;
+    else process.env.VIBE_UNSETENV_PROBE = prev;
   }
 });

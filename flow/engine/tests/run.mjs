@@ -154,10 +154,23 @@ export async function assertThrows(fn, msg) {
 
 // Spawns any command synchronously and normalizes the result shape. Never
 // throws on a non-zero exit — callers assert on `.code`.
+//
+// `opts.unsetEnv` is a list of variable names DELETED from the child's
+// environment. Not naming a variable in `opts.env` is not the same as the child
+// not having it: the base is `process.env`, so whatever the runner inherited is
+// inherited again. A control case that means "this variable is absent" must say
+// so, or it silently becomes "absent unless someone upstream set it" — a test
+// that passes only because the ambient environment happened to be clean. This
+// suite has been bitten by that shape twice now (CLAUDE_PROJECT_DIR in
+// flow/tests/run.sh, VIBE_NO_JQ in runner.test.mjs's own jq-gate case, which
+// failed on CI's jq-stripped leg and nowhere else), so the escape lives on the
+// shared helper rather than being hand-rolled per site.
 export function runCommand(cmd, args = [], opts = {}) {
+  const env = { ...process.env, ...(opts.env ?? {}) };
+  for (const key of opts.unsetEnv ?? []) delete env[key];
   const result = spawnSync(cmd, args, {
     cwd: opts.cwd ?? REPO_ROOT,
-    env: { ...process.env, ...(opts.env ?? {}) },
+    env,
     input: opts.input,
     encoding: 'utf8',
   });
