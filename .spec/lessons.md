@@ -76,6 +76,36 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** injection, context-budget, hooks, prompt-cache, doctrine, agents-md
 **Date:** 2026-08-10
 
+### A guard is only as strong as the capability it bans, not the spelling it matches
+**Pattern:** The duplicate-primitive scan failed review three times running. Each round closed exactly the hole reported and left a smaller one of the same kind: it began matching three *spellings* of "re-derive a primitive path"; inverted to banning *ingredients* (filename literals, layout constants) — and that round exported a `cursorPath()` helper to avoid taking a waiver, creating a legal spelling of the forbidden thing; then banned the helper *identifiers* — and widened ingredients to multi-token regexes while the matcher still ran **per line**, so ordinary Prettier wrapping evaded. Separately, nothing scanned `engine/tests/`, so `await import('../tests/helpers.mjs')` reached a working duplicate cursor reader in one line. Every round believed it was done, and every round's fix was the previous round's next hole.
+**Rule:** When a guard is evaded, do not add a pattern for the evasion — that buys exactly one round. Close the *capability*: state the invariant as "no module may obtain X by any means unless allowlisted", then find the mechanical property that makes it true regardless of syntax. Match against the whole comment-stripped file, never per line. Close the scanned set under whatever relation the attacker can traverse (here, module resolution — which covers static `import`, `import()`, `require`, and `createRequire` without naming any of them). Pin exemptions by exact line *and occurrence count*, never by file. And require the implementer to produce the list of evasions it tried against its **own** fix, including the ones that failed — the round that finally held was the first to produce that artifact.
+**Tags:** js-core, discriminating-tests, static-analysis, guards, structural-closure, mutation-testing
+**Date:** 2026-08-13
+
+### A check that examines nothing must fail loudly, never pass quietly
+**Pattern:** This feature produced the same shape five times. A test harness reported `ok` from a bare `return`. Thirty-one parity tests asserted nothing when `jq` was absent and counted as passes. The bash-3.2 lint enumerated **zero** files in a git tree with an empty index, and twelve nonexistent paths when its root was a repo subdirectory — passing in both, so a release tarball could be declared clean having scanned nothing. The jq half of the matrix could vanish entirely with both CI legs green. And while verifying a fix, the controller's own mutation regex matched a line a refactor had renamed: the suite ran unmutated and returned green, which looked exactly like a caught mutant.
+**Rule:** Every guard must assert its own population — a floor on what it examined, and that the things it examined exist. Absence of findings is only evidence when presence of *input* is proven. Extend this to your own verification: after planting a mutant, confirm it actually landed (`git diff --numstat`) before believing the result, and prefer structural floors over hand-written counts, which rot. A green that cannot distinguish "checked and clean" from "checked nothing" is not a green.
+**Tags:** js-core, vacuous-tests, guards, ci, mutation-testing, verification
+**Date:** 2026-08-13
+
+### Porting a script destroys the oracle that proves the port — freeze it first
+**Pattern:** `runGuardHook` and `runGateHook` — the two hooks that can *block* a tool call or a turn — were ported by overwriting their bash originals in place. Every other command kept its oracle and was parity-tested against it; these two silently could not be, and no per-unit review noticed, because from inside each unit nothing was missing. The whole-branch review restored the oracles from `main` and found 30 real divergences: the engine blocked where bash did not, a latent block-loop that could wedge a session.
+**Rule:** When replacing an implementation, copy its predecessor into the test tree as a frozen oracle **before** the first line of the replacement is written, and make differential comparison part of the suite. Prioritise by blast radius: anything that can block, delete, or halt gets its oracle frozen first. Where an oracle disagrees with *itself* across its own code paths, follow the fail-safe branch and pin the divergence with a control — losing one turn of enforcement is recoverable, wedging a session is not.
+**Tags:** js-core, porting, parity, oracles, blocking-hooks, differential-testing
+**Date:** 2026-08-13
+
+### A control case that depends on an unset variable must delete it, not merely not set it
+**Pattern:** The jq-half gate's "bare" spawn existed to prove that a run with a skipped jq half exits non-zero. `runCommand` builds its child env from `{...process.env}`, so on the one CI leg that runs the whole suite under `VIBE_NO_JQ=1`, the bare spawn inherited the opt-in and was not bare — it took the deliberately-skipped branch, exited 0, and failed its own assertion. The test's comment said isolation was handled "without touching this runner's own PATH": PATH was isolated, the environment never was. The same class had just been fixed one file over for `CLAUDE_PROJECT_DIR`.
+**Rule:** A test whose meaning is "variable X is not set" must **delete** X from the child environment, not rely on the parent not having it — and the deletion belongs on the shared spawn helper so every call site can use it. Then run the suite under each ambient variable it reads, in both states, as its own leg. Related: run every CI leg locally, byte-exact, before pushing — the round that shipped this bug ran none of them, and the round that fixed it ran all ten.
+**Tags:** js-core, hermeticity, test-isolation, environment, ci
+**Date:** 2026-08-13
+
+### A comment asserting a safety property becomes load-bearing — test it or delete it
+**Pattern:** `install.sh` claimed "Source-only artifacts (co-located tests…) never ship" while scrubbing only `vibe/tests` and not `vibe/engine/tests`, so 8,313 lines of test code across 17 files landed in every user repo. The comment was not merely stale: the primitive scan's one exemption was *argued on that premise*, so a false comment was silently holding up a correctness argument. Across these rounds, four other comments were found asserting protections the code had just been proven not to provide — including two reason codes promising exactly the guarantee that had been demonstrated absent.
+**Rule:** Treat a comment that asserts a safety or scope property as an untested claim, and either give it a test or delete it. When a fix proves a comment wrong, correct the comment in the same commit — a stale comment is worse than none, because the next reader (and the next reviewer's reasoning) will rely on it. Prefer assertions that are structural over lists of names: scrub every `tests/` directory at any depth and assert *no test artifact anywhere* reaches a target, rather than naming two directories that the next co-located suite will silently escape.
+**Tags:** js-core, install, comments, false-invariants, packaging
+**Date:** 2026-08-13
+
 <!-- Format for each lesson:
 ### [Short description]
 **Pattern:** What went wrong and why

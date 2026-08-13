@@ -77,9 +77,9 @@ engine/tests/run.mjs     # assert helpers, sandbox fixture builder, runner
 package.json             # name, type: module, bin, engines: node >=18; no deps
 ```
 **Steps:**
-- [ ] Write a failing harness test asserting `cli.mjs --help` lists the four commands
-- [ ] Implement dispatch with an unknown-subcommand path exiting non-zero and naming the input
-- [ ] Add the sandbox fixture builder (temp repo with cursor + machine)
+- [x] Write a failing harness test asserting `cli.mjs --help` lists the four commands
+- [x] Implement dispatch with an unknown-subcommand path exiting non-zero and naming the input
+- [x] Add the sandbox fixture builder (temp repo with cursor + machine)
 **Test scenarios:** unknown subcommand exits non-zero and names itself; `--help` lists commands; runner reports pass/fail counts and exits non-zero on failure.
 **Verification:** `node engine/tests/run.mjs` green; `ls node_modules` absent.
 
@@ -98,10 +98,10 @@ engine/blocks.mjs    # extractBlock — one grammar, legacy closer accepted
 ```
 **Interfaces:** Produces the API in tech.md § Contract. Consumes nothing but `node:fs`/`node:path`.
 **Steps:**
-- [ ] Test-first: root resolves in a bare `mktemp -d` with no `.git`/`.spec`
-- [ ] Test-first: absent cursor → `idle`; malformed cursor → `CursorParseError`
-- [ ] Test-first: `extractBlock` returns undefined on a missing closer rather than the file tail
-- [ ] Implement the five modules
+- [x] Test-first: root resolves in a bare `mktemp -d` with no `.git`/`.spec`
+- [x] Test-first: absent cursor → `idle`; malformed cursor → `CursorParseError`
+- [x] Test-first: `extractBlock` returns undefined on a missing closer rather than the file tail
+- [x] Implement the five modules
 **Test scenarios:** fresh non-git target resolves (R3); malformed cursor throws named error (R6); missing cursor is idle (R6); unterminated marker block does not leak the file tail — the bug the bash `sed` range has today.
 **Verification:** `node engine/tests/run.mjs` green including the bare-directory fixture.
 
@@ -115,9 +115,9 @@ engine/blocks.mjs    # extractBlock — one grammar, legacy closer accepted
 engine/commands/state.mjs
 ```
 **Steps:**
-- [ ] Test-first: cursor bytes after `vibe state set feature.impl demo` equal bash's
-- [ ] Implement feature carry-forward: new arg wins, `idle` clears, else preserve
-- [ ] Reproduce the exact two-space serialization and key order
+- [x] Test-first: cursor bytes after `vibe state set feature.impl demo` equal bash's
+- [x] Implement feature carry-forward: new arg wins, `idle` clears, else preserve
+- [x] Reproduce the exact two-space serialization and key order
 **Test scenarios:** set with feature; set with null feature; `idle` clears feature; unknown state rejected; carry-forward preserved across phases. Gate enforcement is explicitly out of scope — that is machine-teeth.
 **Verification:** `cksum` of cursor after engine write equals after bash write, across the fixture matrix.
 
@@ -170,9 +170,9 @@ engine/commands/doctor.mjs
 .claude/hooks/pre-tool-use-guard.sh   # still delegates policy to bash detect-context.sh
 ```
 **Steps:**
-- [ ] Test-first: with `node` shimmed away, each hook exits 0 and emits nothing
-- [ ] Test-first: guard with `node` absent exits 0, not 2
-- [ ] Rewrite each shim to `command -v node || exit 0` then `exec node …`
+- [x] Test-first: with `node` shimmed away, each hook exits 0 and emits nothing
+- [x] Test-first: guard with `node` absent exits 0, not 2
+- [x] Rewrite each shim to `command -v node || exit 0` then `exec node …`
 **Test scenarios:** all four hooks with Node present produce prior behaviour; all four with Node absent exit 0 silently; guard exit 2 still propagates through `exec` when Node is present.
 **Verification:** `bash flow/tests/adapters/run.sh` green unchanged, plus the new absent-Node cases.
 
@@ -189,10 +189,10 @@ tests/run.sh                     # add the engine suite to the aggregator
 .github/workflows/ci.yml         # add engine suite + a macOS leg
 ```
 **Steps:**
-- [ ] Parity matrix: 4 commands × 5 cursor states × {jq, no-jq}, reusing `mkshim`
-- [ ] Duplicate-primitive scan: fail if any `engine/commands/*` parses cursor or machine JSON directly
-- [ ] Discriminating check: the scan must fail when a command is edited to re-read the cursor
-- [ ] Add engine suite to `tests/run.sh` and CI; add a macOS job
+- [x] Parity matrix: 4 commands × 5 cursor states × {jq, no-jq}, reusing `mkshim`
+- [x] Duplicate-primitive scan: fail if any module under `engine/` obtains a primitive's location or parses cursor or machine JSON directly
+- [x] Discriminating check: the scan must fail when a command is edited to re-read the cursor
+- [x] Add engine suite to `tests/run.sh` and CI; add a macOS job
 **Test scenarios:** full matrix green; primitive scan fails on a deliberately duplicated reader (discriminating, per the uninstall-test lesson); CI green on ubuntu and macOS.
 **Verification:** `bash tests/run.sh` runs four suites, all green, on both CI legs.
 
@@ -215,14 +215,14 @@ Units 3–6 are mutually independent and parallelise cleanly in handover mode.
 
 | Unit | Status |
 |---|---|
-| js-core/1 | NOT STARTED |
-| js-core/2 | NOT STARTED |
-| js-core/3 | NOT STARTED |
-| js-core/4 | NOT STARTED |
-| js-core/5 | NOT STARTED |
-| js-core/6 | NOT STARTED |
-| js-core/7 | NOT STARTED |
-| js-core/8 | NOT STARTED |
+| js-core/1 | DONE |
+| js-core/2 | DONE |
+| js-core/3 | DONE |
+| js-core/4 | DONE |
+| js-core/5 | DONE |
+| js-core/6 | DONE |
+| js-core/7 | DONE |
+| js-core/8 | DONE |
 
 ## Open Questions
 

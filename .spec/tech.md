@@ -239,6 +239,41 @@ not the only thing standing between a delegate and its default doc folder.
 
 ---
 
+## Engine Module Boundaries
+
+The engine's primitives are singular by contract, not by convention: one root
+resolver, one cursor reader/writer, one machine loader, one block extractor,
+one atomic JSON writer. Commands are pure functions over
+`{root, cursor, machine}` resolved once at dispatch. A duplicate-primitive scan
+in the suite fails the build when a command re-derives any of them.
+
+The scan states two mechanical clauses, both stronger than "don't duplicate":
+
+1. **No module obtains a primitive's *location* by any means** unless allowlisted
+   — banned as *ingredients* (filename literals, layout constants,
+   `CLAUDE_PROJECT_DIR`, `import.meta`, `process.cwd`, path-helper identifiers),
+   matched over the whole comment-stripped file so wrapping cannot split a token
+   pair. Allowlist entries pin exact lines *and* occurrence counts; re-export
+   laundering is unwaivable.
+2. **No module reaches outside the scanned source set.** Every specifier-shaped
+   literal must resolve inside that set, closing it under module resolution by
+   induction — so `import`, `import()`, `require`, and `createRequire` are all
+   covered without being named, and the test tree is not a back door.
+
+The residual gap needs an AST plus constant folding, which R5 forbids; those
+cases are pinned as tests asserting they *do* evade, so the documented limit is
+the measured one.
+
+Root resolution order is `CLAUDE_PROJECT_DIR` → self-relative → upward marker
+search → cwd — self-relative first because install targets often have neither
+marker. The order is pinned by test; swapping the legs fails the suite.
+
+Co-located tests are source-only: `install.sh` scrubs every `tests/` directory
+at any depth, and the adapter suite asserts structurally that no test artifact
+reaches an install target.
+
+---
+
 ## Adapter Contract
 
 Adapters never own canonical state. They read `.agents/skills/vibe` and invoke
