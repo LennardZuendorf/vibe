@@ -101,6 +101,13 @@ export function skip(reason) {
 // LOUDLY (not silently) when nothing matches it any more.
 export const JQ_LEG_NAME_RE = / x jq$/;
 
+// The OTHER half of the same matrix. It is what makes the gate's applicability
+// self-anchoring: a run that carries `x no-jq` legs but no `x jq` legs is not a
+// run without a matrix, it is a run whose jq half has been renamed away — the
+// exact disarm that used to happen silently. Exported so runner.test.mjs and
+// parity.test.mjs share one spelling of the convention instead of three.
+export const NO_JQ_LEG_NAME_RE = / x no-jq$/;
+
 // CI's own jq-stripped leg is SUPPOSED to skip the entire jq half; a runner
 // that has quietly lost jq looks identical from inside the process. Only an
 // explicit signal can separate them, so the stripped leg declares itself with
@@ -165,9 +172,17 @@ export async function assertThrows(fn, msg) {
 // flow/tests/run.sh, VIBE_NO_JQ in runner.test.mjs's own jq-gate case, which
 // failed on CI's jq-stripped leg and nowhere else), so the escape lives on the
 // shared helper rather than being hand-rolled per site.
+// Order matters and used to be backwards (js-core/8 fix round 2 re-review,
+// Minor 1): deleting AFTER the merge made `unsetEnv` win over a value the
+// caller passed explicitly in `opts.env`, while the paragraph above said the
+// opposite. `unsetEnv` is a list of names not to INHERIT, so it applies to the
+// inherited base and an explicit `opts.env` value still wins — which is the
+// only reading under which passing both is not simply a contradiction. Pinned
+// in both directions in runner.test.mjs.
 export function runCommand(cmd, args = [], opts = {}) {
-  const env = { ...process.env, ...(opts.env ?? {}) };
+  const env = { ...process.env };
   for (const key of opts.unsetEnv ?? []) delete env[key];
+  Object.assign(env, opts.env ?? {});
   const result = spawnSync(cmd, args, {
     cwd: opts.cwd ?? REPO_ROOT,
     env,
@@ -277,10 +292,6 @@ export function makeSandbox({ cursor } = {}) {
 // Test registry + runner
 // ---------------------------------------------------------------------------
 
-// The file that generates the jq x no-jq parity matrix. Its presence in the
-// discovered set is what makes the jq-half gate below applicable at all.
-const MATRIX_TEST_FILE = 'parity.test.mjs';
-
 const registry = []; // { file, name, fn }
 let currentFile = '(unknown)';
 
@@ -349,10 +360,12 @@ async function main() {
   let skipped = 0;
   let jqLegTotal = 0;
   let jqLegExecuted = 0;
+  let noJqLegTotal = 0;
 
   for (const { file, name, fn } of selected) {
     const isJqLeg = JQ_LEG_NAME_RE.test(name);
     if (isJqLeg) jqLegTotal += 1;
+    if (NO_JQ_LEG_NAME_RE.test(name)) noJqLegTotal += 1;
     try {
       await fn();
       pass += 1;
@@ -380,8 +393,23 @@ async function main() {
   // A filtered run deliberately selects a subset, and runner.test.mjs spawns
   // this file against synthetic single-test directories — neither carries the
   // parity matrix, so neither is evidence about it either way.
+  //
+  // Applicability is DERIVED from what actually registered, never from a
+  // filename. It used to be `path.basename(f) === 'parity.test.mjs'`: a
+  // hand-written name pinned by nothing, so `git mv parity.test.mjs
+  // parity-matrix.test.mjs` — an ordinary refactor with no reason to touch this
+  // file — switched the whole gate off and both CI legs stayed green
+  // (js-core/8 fix round 2 re-review, Important 3; .spec/lessons.md: hand-written
+  // values rot silently).
+  //
+  // Either half of the matrix makes the gate applicable, which is what stops the
+  // derivation from being self-disarming: renaming only the `x jq` legs leaves
+  // `x no-jq` legs registered, so the gate still runs and reports a jq-leg
+  // population of ZERO — loudly — instead of quietly concluding there is no
+  // matrix here. Renaming BOTH halves is caught by parity.test.mjs's structural
+  // matrix floor and runner.test.mjs's registry floor.
   let jqGateFailed = false;
-  const carriesMatrix = files.some((f) => path.basename(f) === MATRIX_TEST_FILE);
+  const carriesMatrix = jqLegTotal > 0 || noJqLegTotal > 0;
   if (filters.length === 0 && carriesMatrix) {
     const verdict = jqHalfVerdict({
       total: jqLegTotal,

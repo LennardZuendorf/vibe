@@ -254,6 +254,58 @@ test('jq gate: the gate is wired into main() — a spawned run with a skipped jq
   }
 });
 
+// js-core/8 fix round 3 (re-review round 2, Important 3). The gate's
+// applicability used to be `path.basename(f) === 'parity.test.mjs'` — a
+// hand-written filename referenced nowhere else and asserted by nothing, so
+// splitting or renaming the matrix file switched the entire gate off while both
+// CI legs stayed green. These two cases pin the derivation that replaced it,
+// from the outside, by spawning real runs.
+test('jq gate: renaming the matrix FILE does not disarm the gate (applicability is derived, not named)', () => {
+  const dir = mkTempRoot('vibe-runner-jqrename-');
+  try {
+    copyFileSync(RUN_MJS, path.join(dir, 'run.mjs'));
+    // Deliberately NOT called parity.test.mjs — that name is what used to be
+    // load-bearing. Same legs, skipping jq half, so the gate must still fire.
+    writeFileSync(
+      path.join(dir, 'parity-matrix-split.test.mjs'),
+      "import { test, skip, assertEqual } from './run.mjs';\n" +
+        "test('synthetic matrix: probe x jq', () => { skip('synthetic: jq unavailable'); });\n" +
+        "test('synthetic matrix: probe x no-jq', () => { assertEqual(1, 1); });\n",
+    );
+    const r = runCommand(process.execPath, [path.join(dir, 'run.mjs')], { unsetEnv: ['VIBE_NO_JQ'] });
+    const out = r.stdout + r.stderr;
+    assert(r.code !== 0, `the gate must still fire from a renamed matrix file; output: ${out}`);
+    assertIncludes(out, 'jq-half gate', 'the failing run must name the gate');
+    assertIncludes(out, '0 of 1', 'the gate must report the population it counted');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('jq gate: renaming the jq LEGS fails loudly instead of silently disarming', () => {
+  // The residual disarm the derivation could have introduced: if applicability
+  // were "some ` x jq` test registered", renaming those legs would make the
+  // gate conclude there is no matrix. Applicability is EITHER half, so a
+  // surviving no-jq half keeps the gate live and it reports a zero population.
+  const dir = mkTempRoot('vibe-runner-jqlegrename-');
+  try {
+    copyFileSync(RUN_MJS, path.join(dir, 'run.mjs'));
+    writeFileSync(
+      path.join(dir, 'parity.test.mjs'),
+      "import { test, assertEqual } from './run.mjs';\n" +
+        "test('synthetic matrix: probe x jqq', () => { assertEqual(1, 1); });\n" +
+        "test('synthetic matrix: probe x no-jq', () => { assertEqual(1, 1); });\n",
+    );
+    const r = runCommand(process.execPath, [path.join(dir, 'run.mjs')], { unsetEnv: ['VIBE_NO_JQ'] });
+    const out = r.stdout + r.stderr;
+    assert(r.code !== 0, `a renamed jq half must fail the run, not disarm the gate; output: ${out}`);
+    assertIncludes(out, 'jq-half gate', 'the failing run must name the gate');
+    assertIncludes(out, 'renamed or removed', 'the reason must say the convention stopped matching');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // The helper the case above leans on, pinned in its own right — the sweep found
 // eight other node-spawn sites with no env argument at all, so the next control
 // case that needs a variable absent will reach for this and must be able to
@@ -273,12 +325,23 @@ test('runCommand: unsetEnv deletes a variable the child would otherwise inherit'
       'undefined',
       'unsetEnv must delete the variable from the child, not merely decline to set it',
     );
-    // opts.env still wins for names it does name — unsetEnv is a deletion list,
-    // not a filter applied over the caller's own explicit values.
     assertEqual(
       runCommand(process.execPath, READ_BACK, { env: { VIBE_UNSETENV_PROBE: 'explicit' } }).stdout,
       'explicit',
       'unsetEnv must not disturb a value the caller set deliberately',
+    );
+    // The INTERACTION, which is what the comment above runCommand actually
+    // claims and what nothing tested (js-core/8 fix round 2 re-review, Minor 1).
+    // Deleting after the merge made this return 'undefined' — the documented
+    // contract inverted, and the assertion right above it could not tell,
+    // because it passes `env` with no `unsetEnv` at all.
+    assertEqual(
+      runCommand(process.execPath, READ_BACK, {
+        env: { VIBE_UNSETENV_PROBE: 'explicit' },
+        unsetEnv: ['VIBE_UNSETENV_PROBE'],
+      }).stdout,
+      'explicit',
+      'unsetEnv is a do-not-INHERIT list applied to the base env; an explicit opts.env value still wins',
     );
   } finally {
     if (prev === undefined) delete process.env.VIBE_UNSETENV_PROBE;
