@@ -37,11 +37,20 @@ export class CursorParseError extends Error {
 
 // The one place `state.json`'s path is joined. Exported for the same reason
 // machine.mjs exports machinePath(): a caller that needs only the PATH — the
-// existence checks in doctor.mjs's checkCursor() and root.mjs's
-// resolveProjectCursorDir() — calls this instead of re-deriving the join and
-// so never has to name the cursor file itself. The duplicate-primitive scan
-// (js-core/8) enforces exactly that: cursor.mjs is the only module allowed to
-// spell 'state.json' as a path.
+// existence check in doctor.mjs's checkCursor() — calls this instead of
+// re-deriving the join, and so never has to name the cursor file itself.
+//
+// Exporting it does NOT make it a free spelling of the file. On its own it
+// would have been the opposite: `readJson(cursorPath(vibeDir))` is a complete
+// duplicate cursor reader that names no banned literal, and it walked through
+// the scan when this export was introduced (js-core/8 fix round 1, re-review
+// Finding 1). So the scan bans the identifier `cursorPath` outside this module
+// too, with a counted, per-line consumer allowlist — doctor.mjs's import line
+// and its one use, and nothing else. A second use anywhere, including inside
+// doctor.mjs, and any re-export under another name, are violations.
+// root.mjs's resolveProjectCursorDir() deliberately does NOT call this (it
+// must stay importable without dragging json.mjs in); it carries its own
+// one-line waiver for the literal instead.
 export function cursorPath(vibeDir) {
   return path.join(vibeDir, 'state.json');
 }
