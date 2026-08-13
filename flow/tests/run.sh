@@ -28,6 +28,16 @@ _find_repo_root() {
 }
 SRC_ROOT="$(_find_repo_root)" || { echo "cannot locate repo root (.spec/.git)" >&2; exit 1; }
 
+# Hermeticity: scrub the ambient CLAUDE_PROJECT_DIR before any fixture runs.
+# doctrine.sh and detect-context.sh honour it BY DESIGN (the plugin-mode
+# contract), so inheriting it points them at the developer's real repo and its
+# live cursor instead of the sandbox below. Every Claude Code session exports
+# it, which is why local runs and CI diverged: two doctrine fixtures failed for
+# anyone running the suite from an agent session while CI, which sets nothing,
+# stayed green. Fixtures that WANT the variable set it per invocation
+# (`CLAUDE_PROJECT_DIR="$projd" bash …`), so nothing here needs it inherited.
+unset CLAUDE_PROJECT_DIR
+
 # One hermetic sandbox for the whole suite. It mirrors the real flow/ so every
 # self-locating script resolves its state.json, machine, and orders INTO the
 # sandbox — the live cursor is never touched. The layout preserves the
@@ -405,6 +415,15 @@ assert_contains "flow-legibility/3" "SKILL.md carries the subagent model-tier po
 
 echo ""
 echo "=== flow-legibility/4 — doctrine block + resolver ==="
+# Hermeticity precondition for everything below. doctrine.sh (and detect-context.sh)
+# honour CLAUDE_PROJECT_DIR by design — that is the plugin-mode contract asserted a
+# few lines down. Every Claude Code session exports it, so a suite that inherits it
+# reads the DEVELOPER'S live cursor instead of the sandbox's and two fixtures fail
+# locally while CI, which sets nothing, stays green. (Pre-existing since 8c97eff:
+# `CLAUDE_PROJECT_DIR=/home/user/vibe bash flow/tests/run.sh` -> 226 passed, 2 failed.)
+# The suite scrubs it at the top and every fixture that WANTS it sets it per-call.
+assert_eq "flow-legibility/4" "suite is hermetic: no ambient CLAUDE_PROJECT_DIR reaches the fixtures" \
+  "${CLAUDE_PROJECT_DIR-<unset>}" "<unset>"
 rm -f "$STATE"
 doc="$(bash "$SCRIPTS/doctrine.sh")"
 assert_contains "flow-legibility/4" "doctrine names the two human gates" "$doc" "plan → impl, and verify → ship"

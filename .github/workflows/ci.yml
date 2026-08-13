@@ -92,6 +92,17 @@ jobs:
           tar -cf - --exclude=.git . | tar -xf - -C "$SPACED"
           cd "$SPACED" && node flow/engine/tests/run.mjs
 
+      # js-core/8 fix round 2 (re-review Minor 5, PRE-EXISTING since 8c97eff):
+      # every Claude Code session exports CLAUDE_PROJECT_DIR, and the flow
+      # suite's doctrine fixtures inherited it — reading the developer's live
+      # cursor instead of the sandbox's, so the suite failed locally and passed
+      # in CI, which sets nothing. The suite now scrubs it; this leg is what
+      # keeps that true, because no other leg runs with the variable set.
+      - name: Test suites under an ambient CLAUDE_PROJECT_DIR (hermeticity)
+        env:
+          CLAUDE_PROJECT_DIR: ${{ github.workspace }}
+        run: bash tests/run.sh
+
       - name: Spec validation
         run: bash .agents/skills/spec/scripts/validate.sh
 
