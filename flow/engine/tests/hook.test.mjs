@@ -621,6 +621,45 @@ test('runGateHook predicate 2: an exact mtime TIE is not stale (strictly greater
   }
 });
 
+// js-core/8 final review — the 36-mutation sweep's fifth survivor was `skip
+// deletions`, classified EQUIVALENT on the reasoning that statSync throws on a
+// deleted path and `continue`s anyway. That holds only while a D-flagged path is
+// actually absent, and git produces the opposite routinely: `git rm --cached
+// <file>` leaves an INDEX deletion (`D `) for a file that still exists on disk
+// (with a separate `??` line for the same path). With the skip removed, that
+// existing, newer file blocks a *.verify state via a line the oracle explicitly
+// ignores. So it is not equivalent — it is oracle-matching behaviour with a
+// reachable fixture, and it is pinned here rather than waived.
+test('runGateHook predicate 2: a D-flagged porcelain line is skipped even when the file EXISTS and is newer', () => {
+  const sb = makeHookSandbox({ cursor: { flow: 'feature', phase: 'verify', feature: 'demo', updated: '2026-01-01T00:00:00Z' } });
+  try {
+    mkdirSync(path.join(sb.vibeDir, 'evidence'), { recursive: true });
+    const receipt = path.join(sb.vibeDir, 'evidence', 'feature-demo.md');
+    writeFileSync(receipt, 'evidence\n');
+    const past = new Date('2020-01-01T00:00:00Z');
+    utimesSync(receipt, past, past);
+
+    // Present on disk, and much newer than the receipt.
+    writeFileSync(path.join(sb.dir, 'unstaged.md'), 'still here\n');
+
+    assertEqual(
+      gateWithPorcelain(sb, 'D  unstaged.md\n').code,
+      0,
+      'an index-deletion line must be skipped by xy, not by statSync happening to throw',
+    );
+
+    // Control: the identical file reported under a NON-deletion status does
+    // block — so the exit 0 above is the D-skip, not an inert fixture.
+    assertEqual(
+      gateWithPorcelain(sb, ' M unstaged.md\n').code,
+      2,
+      'control: the same existing, newer file blocks when its status is not a deletion',
+    );
+  } finally {
+    sb.cleanup();
+  }
+});
+
 test('runGateHook predicate 3 (warn-only): non-idle state with legal next states nudges toward set-state.sh', () => {
   const sb = makeHookSandbox({ cursor: { flow: 'feature', phase: 'impl', feature: 'demo', updated: '2026-01-01T00:00:00Z' } });
   try {
