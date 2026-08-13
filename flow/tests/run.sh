@@ -1188,13 +1188,29 @@ b32_scan() {
     echo "        $label ${file#"$B32_ROOT"/}:${h%%:*}"
   done <<< "$hits"
 }
-# Enumerate the scripts this lint owns, null-delimited (paths may contain spaces).
+# Enumerate the files a lint owns, null-delimited (paths may contain spaces).
+# GLOB defaults to '*.sh'; the .mjs path-derivation lint at the bottom of this
+# file passes '*.mjs' rather than keeping its own raw `find` walk (js-core/8 final
+# review, M6) — one enumerator, so a gitignored tree cannot be honest for one lint
+# and invisible to the other.
+#
 # `git ls-files` is what makes the assertion's word "tracked" literally true: a
 # filesystem walk also picks up gitignored trees, whose offenders nobody can fix.
 # Index order is already sorted, so the report stays deterministic. Non-git install
 # targets (this tool ships into repos with no .git) degrade to a find(1) walk that
-# still asks `git check-ignore` per file whenever git can answer — warn-first, never
-# hard-fail: an unanswerable path is scanned rather than silently skipped.
+# still asks `git check-ignore` per file whenever git can answer.
+#
+# PRECISELY what "warn-first" means here, because the comment used to overstate it
+# (js-core/8 final review, M7): it is a property of the ENUMERATION, not of the
+# verdict. When git cannot answer whether a path is ignored, that path is SCANNED
+# rather than silently skipped — the lint never narrows itself into vacuity. An
+# offender found that way still counts toward `b32_bad`, and the caller's
+# assertion still fails. So on a source tarball with no `.git` at all and a
+# leftover ignored worktree present, this lint reports offenders nobody can fix.
+# That is a known, accepted cost: the alternative — a hardcoded skip list, or a
+# fallback that degrades to silence — is exactly the vacuity fix round 3 closed,
+# and .spec/lessons.md forbids the hand-maintained list. Recorded rather than
+# papered over.
 #
 # Two spellings here are load-bearing, both from the re-review's Finding 3:
 #   * NO `--full-name`. That flag prints paths relative to the REPOSITORY root,
@@ -1211,18 +1227,18 @@ b32_scan() {
 #     files; --exclude-standard keeps the gitignore honesty that made this
 #     rewrite necessary in the first place.
 b32_list_scripts() {
-  local root="$1" rel f
+  local root="$1" glob="${2:-*.sh}" rel f
   if command -v git >/dev/null 2>&1 &&
      git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     while IFS= read -r -d '' rel; do
       printf '%s\0' "$root/$rel"
-    done < <(git -C "$root" ls-files -z --cached --others --exclude-standard -- '*.sh' 2>/dev/null)
+    done < <(git -C "$root" ls-files -z --cached --others --exclude-standard -- "$glob" 2>/dev/null)
     return 0
   fi
   while IFS= read -r -d '' f; do
     git -C "$root" check-ignore -q -- "$f" 2>/dev/null && continue
     printf '%s\0' "$f"
-  done < <(find "$root" -name '*.sh' -not -path '*/.git/*' -print0)
+  done < <(find "$root" -name "$glob" -not -path '*/.git/*' -print0)
 }
 # COVERAGE cross-check (js-core/8 fix round 3; re-review round 2, Important 4).
 #
@@ -1581,16 +1597,24 @@ echo "=== js-core/8 — every .mjs derives its own path via fileURLToPath ==="
 # `…/with space/vibe` yields `…/with%20space/…` and the module crashes at import.
 # The sweep to fileURLToPath is complete and mutation-proved load-bearing; this
 # grep is what stops a reintroduction, together with CI's spaced-path leg.
+#
+# Enumeration is b32_list_scripts with a '*.mjs' glob, NOT a raw `find` walk
+# (js-core/8 final review, M6). The sibling bash-3.2 lint was rewritten onto
+# `git ls-files --cached --others --exclude-standard` (with a `check-ignore`
+# fallback) precisely because a filesystem walk reports offenders inside
+# gitignored trees that nobody can fix — this repo spawns subagent worktrees
+# under .claude/worktrees/, and a `flow/node_modules/` would trip it identically.
+# Two enumerators meant one lint was honest about gitignore and the other was not.
 url_pathname_bad=0
 url_scanned=0
 url_scanned_list=""
-while IFS= read -r f; do
+while IFS= read -r -d '' f; do
   url_scanned=$((url_scanned + 1))
   url_scanned_list="$url_scanned_list${f#"$SRC_ROOT"/}"$'\n'
   if grep -qE 'new URL\(import\.meta\.url\)' "$f"; then
     url_pathname_bad=$((url_pathname_bad + 1)); echo "        offender: ${f#"$SRC_ROOT"/}"
   fi
-done < <(find "$SRC_ROOT/flow" -name '*.mjs' | sort)
+done < <(b32_list_scripts "$SRC_ROOT/flow" '*.mjs')
 assert_eq "js-core/8" "no .mjs re-derives its path from new URL(import.meta.url)" "$url_pathname_bad" "0"
 # Same "scanned nothing" reasoning as the bash lint above (js-core/8 fix round 1
 # re-review, Finding 3), but asserted against the SCANNED SET rather than
@@ -1603,6 +1627,32 @@ assert_eq "js-core/8" "no .mjs re-derives its path from new URL(import.meta.url)
 assert_eq "js-core/8" ".mjs path-derivation lint actually read the engine entry point" \
   "$(printf '%s\n' "$url_scanned_list" | grep -qxF "flow/engine/cli.mjs" && echo ok || echo "flow/engine/cli.mjs was not in the scanned set")" \
   "ok"
+# Enumeration teeth in BOTH directions, same shape the bash lint's own probe uses
+# (js-core/8 final review, M6). Without this the switch off `find` is an
+# unverified claim: a pathspec that silently matched nothing would leave the
+# scanned set empty and only the self-coverage floor above would notice, and only
+# for one file.
+MJSPROBE="$(mktemp -d)"
+mkdir -p "$MJSPROBE/ignored" "$MJSPROBE/tracked dir/nested"
+printf 'ignored/\n' > "$MJSPROBE/.gitignore"
+for d in ignored "tracked dir/nested"; do
+  echo 'const p = new URL(import.meta.url).pathname;' > "$MJSPROBE/$d/probe.mjs"
+done
+git -C "$MJSPROBE" init -q >/dev/null 2>&1 || true
+git -C "$MJSPROBE" add -A >/dev/null 2>&1 || true
+mjs_probe_list=""
+while IFS= read -r -d '' f; do mjs_probe_list="$mjs_probe_list${f#"$MJSPROBE"/}"$'\n'; done < <(b32_list_scripts "$MJSPROBE" '*.mjs')
+assert_eq "js-core/8" ".mjs enumeration finds a NESTED tracked file (pathspec is recursive)" \
+  "$(printf '%s\n' "$mjs_probe_list" | grep -qxF "tracked dir/nested/probe.mjs" && echo found || echo "MISSED")" "found"
+assert_eq "js-core/8" ".mjs enumeration skips gitignored trees (worktrees, node_modules)" \
+  "$(printf '%s\n' "$mjs_probe_list" | grep -qxF "ignored/probe.mjs" && echo "LEAKED" || echo skipped)" "skipped"
+# Install targets can have no .git at all: the fallback walk must still find it.
+rm -rf "$MJSPROBE/.git"
+mjs_nogit_list=""
+while IFS= read -r -d '' f; do mjs_nogit_list="$mjs_nogit_list${f#"$MJSPROBE"/}"$'\n'; done < <(b32_list_scripts "$MJSPROBE" '*.mjs')
+assert_eq "js-core/8" ".mjs enumeration degrades to a find walk with no .git" \
+  "$(printf '%s\n' "$mjs_nogit_list" | grep -qxF "tracked dir/nested/probe.mjs" && echo found || echo "MISSED")" "found"
+rm -rf "$MJSPROBE"
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

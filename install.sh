@@ -105,6 +105,41 @@ remove_shipped() {
   find "$dst" -type d -empty -delete 2>/dev/null || true
 }
 
+# scrub_source_only SRC_DIR DST_DIR — remove from a freshly copied skill tree the
+# artifacts that exist in the source but must never reach a target: every
+# co-located `tests` directory AT ANY DEPTH, the contributor AGENTS.md, and any
+# source-side evidence receipts.
+#
+# Enumerated from SRC_DIR rather than hardcoded, because a hardcoded list is
+# exactly what failed: the previous spelling scrubbed `$TARGET/.../vibe/tests`
+# only, so js-core's `flow/engine/tests` — one level deeper — shipped 17 files
+# and 396K of oracle-spawning test code into every user repo, contradicting the
+# comment above it and falsifying the premise the R1 primitive scan's `tests/`
+# exemption is argued on. A new co-located tests dir at any depth is now covered
+# without editing anything here.
+#
+# Source-enumerated also means DST-safe in the same way remove_shipped is: a
+# path the SOURCE does not have is never touched in the target, so a user's own
+# file dropped into the skill dir survives.
+scrub_source_only() {
+  local src="$1" dst="$2" rel d
+  local dirs=()
+  [[ -d "$src" && -d "$dst" ]] || return 0
+  # -prune: never descend into a tests dir (a nested one is removed with its
+  # parent anyway), so the list is stable while the removals below run.
+  while IFS= read -r d; do
+    rel="${d#"$src"/}"
+    [[ -n "$rel" && "$rel" != "$d" ]] || continue
+    dirs+=("$rel")
+  done < <(find -L "$src" -type d -name tests -prune -print 2>/dev/null)
+  # ${var:?} on both halves: an empty $rel would make this `rm -rf "$dst/"`.
+  for rel in ${dirs[@]+"${dirs[@]}"}; do
+    rm -rf "${dst:?}/${rel:?}"
+  done
+  rm -f "$dst/AGENTS.md"
+  rm -rf "$dst/evidence"
+}
+
 # gi_append FILE LINE... — append the given lines to a .gitignore, separating them
 # from prior content with exactly one blank line — but only when FILE already
 # exists with content whose last line is non-blank. A freshly created (or
@@ -372,6 +407,14 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   # relative paths the source bundle ships — minus the artifacts install scrubs
   # before shipping (tests/, contributor AGENTS.md) — and prune emptied dirs.
   # A user file dropped into either shared skills dir is never touched.
+  #
+  # The exclude lists below are deliberately TOP-LEVEL-ONLY, and are NOT the
+  # mirror image of scrub_source_only()'s any-depth walk. A deeper source-only
+  # artifact that a PREVIOUS version of this installer shipped (js-core's
+  # `engine/tests`, 17 files) is still in the source bundle, so remove_shipped
+  # names it and cleans it up; excluding it here would strand 396K of dead test
+  # code in every target that was installed before the scrub was fixed. Both
+  # legs are exercised by the adapters suite, on a legacy-shaped target.
   if [[ "$WANT_SPEC" -eq 1 && -e "$TARGET/.agents/skills/spec" ]]; then
     say "remove the shipped files under .agents/skills/spec (user files preserved)"
     [[ "$DRY_RUN" -eq 1 ]] || remove_shipped \
@@ -388,10 +431,13 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     say "unregister .claude/skills/vibe (only the vibe symlink; a user entry is kept)"
     [[ "$DRY_RUN" -eq 1 ]] || unregister_skill vibe
     if [[ -e "$TARGET/.agents/skills/vibe" ]]; then
-      # Exclude the same artifacts install scrubs (tests/, AGENTS.md, evidence/)
-      # plus the per-project runtime state install never ships (state.json,
-      # warnings.log): remove_shipped therefore leaves the cursor + receipts
-      # intact by construction. --yes then removes those runtime files too.
+      # Exclude the top-level artifacts install scrubs (tests/, AGENTS.md,
+      # evidence/) plus the per-project runtime state install never ships
+      # (state.json, warnings.log): remove_shipped therefore leaves the cursor +
+      # receipts intact by construction. --yes then removes those runtime files
+      # too. Deeper source-only artifacts are intentionally left OUT of this list
+      # so a legacy target's shipped `engine/tests` is cleaned up — see the
+      # header note above remove_shipped's first call site.
       if [[ "$ASSUME_YES" -eq 0 ]]; then
         say "remove the shipped files under .agents/skills/vibe (preserving the flow cursor and evidence receipts; re-run with --yes to remove them)"
       else
@@ -493,8 +539,9 @@ if [[ "$WANT_SPEC" -eq 1 ]]; then
   say "copy spec skill -> $TARGET/.agents/skills/spec"
   if [[ "$DRY_RUN" -eq 0 ]]; then
     cp -RL "$SRC/.agents/skills/spec" "$TARGET/.agents/skills/"
-    # Source-only artifacts (co-located tests, contributor AGENTS.md) never ship.
-    rm -rf "$TARGET/.agents/skills/spec/tests" "$TARGET/.agents/skills/spec/AGENTS.md"
+    # Source-only artifacts (co-located tests at ANY depth, contributor
+    # AGENTS.md) never ship — enumerated from the source, not hardcoded.
+    scrub_source_only "$SRC/.agents/skills/spec" "$TARGET/.agents/skills/spec"
   fi
 fi
 if [[ "$WANT_FLOW" -eq 1 ]]; then
@@ -515,11 +562,10 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
       cp -R "$TARGET/.agents/skills/vibe/evidence/." "$SAVED_EVID/" 2>/dev/null || true
     fi
     cp -RL "$SRC/.agents/skills/vibe" "$TARGET/.agents/skills/"
-    # Source-only artifacts (co-located tests, contributor AGENTS.md) and any
-    # source-side evidence receipts never ship.
-    rm -rf "$TARGET/.agents/skills/vibe/tests" \
-           "$TARGET/.agents/skills/vibe/AGENTS.md" \
-           "$TARGET/.agents/skills/vibe/evidence"
+    # Source-only artifacts (co-located tests at ANY depth — flow/tests AND
+    # flow/engine/tests — contributor AGENTS.md) and any source-side evidence
+    # receipts never ship. Enumerated from the source, not hardcoded.
+    scrub_source_only "$SRC/.agents/skills/vibe" "$TARGET/.agents/skills/vibe"
     if [[ -n "$SAVED_CURSOR" ]]; then
       mv -f "$SAVED_CURSOR" "$TARGET/.agents/skills/vibe/state.json"
       note "preserved existing flow cursor across re-install"
