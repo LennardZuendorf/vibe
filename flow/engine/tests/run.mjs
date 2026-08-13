@@ -84,6 +84,60 @@ export function skip(reason) {
   throw new Skipped(reason);
 }
 
+// ---------------------------------------------------------------------------
+// The jq-half gate (js-core/8 fix round 2, re-review Finding 5)
+// ---------------------------------------------------------------------------
+//
+// `skip()` above made the jq half of the parity matrix report honestly. It did
+// not make anything REQUIRE that half to run. With jq absent the suite prints
+// `289 passed, 0 failed, 44 skipped` and exits 0 — so a runner image that
+// dropped preinstalled jq would silently stop verifying R2 ("ported command
+// output matches its bash original") on every leg, with both CI legs green and
+// a skip count nobody asserts on. That is the same vacuous-green shape the
+// zero-discovered-files guard in main() exists to prevent, one level up.
+//
+// The matrix generates its cases as `<case> x jq` / `<case> x no-jq`, so the
+// population is identified by name — a convention, which is why the gate fails
+// LOUDLY (not silently) when nothing matches it any more.
+export const JQ_LEG_NAME_RE = / x jq$/;
+
+// CI's own jq-stripped leg is SUPPOSED to skip the entire jq half; a runner
+// that has quietly lost jq looks identical from inside the process. Only an
+// explicit signal can separate them, so the stripped leg declares itself with
+// VIBE_NO_JQ=1 — and the gate then holds it to that claim in both directions.
+export function jqHalfVerdict({ total, executed, noJqOptIn }) {
+  if (total === 0) {
+    return {
+      ok: false,
+      reason:
+        `no test name matched ${JQ_LEG_NAME_RE} — the parity matrix's jq legs have been renamed or removed. ` +
+        'The jq-half gate is counting an empty population and can no longer fail; ' +
+        'update JQ_LEG_NAME_RE in tests/run.mjs to the new naming convention.',
+    };
+  }
+  if (noJqOptIn) {
+    if (executed > 0) {
+      return {
+        ok: false,
+        reason:
+          `VIBE_NO_JQ=1 was set but ${executed} of ${total} jq-leg tests executed — jq is still reachable. ` +
+          'This leg exists to exercise the no-jq degrade paths; it is not stripping jq, so that half is the one not running.',
+      };
+    }
+    return { ok: true, reason: `jq half deliberately skipped (VIBE_NO_JQ=1): 0 of ${total} jq-leg tests ran` };
+  }
+  if (executed === 0) {
+    return {
+      ok: false,
+      reason:
+        `the jq half of the parity matrix did not run: 0 of ${total} jq-leg tests executed (all skipped). ` +
+        'jq is missing from PATH, so every `x jq` case degenerates into a duplicate of its no-jq twin. ' +
+        'Install jq — or, if this is the deliberate jq-stripped leg, set VIBE_NO_JQ=1 so the skip is declared.',
+    };
+  }
+  return { ok: true, reason: `jq half ran: ${executed} of ${total} jq-leg tests executed` };
+}
+
 export async function assertThrows(fn, msg) {
   let threw = false;
   try {
@@ -210,6 +264,10 @@ export function makeSandbox({ cursor } = {}) {
 // Test registry + runner
 // ---------------------------------------------------------------------------
 
+// The file that generates the jq x no-jq parity matrix. Its presence in the
+// discovered set is what makes the jq-half gate below applicable at all.
+const MATRIX_TEST_FILE = 'parity.test.mjs';
+
 const registry = []; // { file, name, fn }
 let currentFile = '(unknown)';
 
@@ -220,6 +278,13 @@ function setCurrentFile(file) {
 // Test files call: import { test } from './run.mjs'; test('name', async () => {...})
 export function test(name, fn) {
   registry.push({ file: currentFile, name, fn });
+}
+
+// Read-only view of the registry, so a test can assert on the SHAPE of the
+// suite itself (see runner.test.mjs's jq-leg population floor) without being
+// able to mutate what will run.
+export function registeredTests() {
+  return registry.map(({ file, name }) => ({ file, name }));
 }
 
 function discoverTestFiles() {
@@ -269,11 +334,16 @@ async function main() {
   let pass = 0;
   let fail = 0;
   let skipped = 0;
+  let jqLegTotal = 0;
+  let jqLegExecuted = 0;
 
   for (const { file, name, fn } of selected) {
+    const isJqLeg = JQ_LEG_NAME_RE.test(name);
+    if (isJqLeg) jqLegTotal += 1;
     try {
       await fn();
       pass += 1;
+      if (isJqLeg) jqLegExecuted += 1;
       console.log(`  ok    ${file} :: ${name}`);
     } catch (err) {
       if (err instanceof Skipped) {
@@ -282,6 +352,9 @@ async function main() {
         continue;
       }
       fail += 1;
+      // A jq leg that RAN and failed still ran — the gate below asks whether the
+      // half executed, not whether it passed; `fail` already carries that.
+      if (isJqLeg) jqLegExecuted += 1;
       console.log(`  FAIL  ${file} :: ${name}`);
       console.log(`        ${err && err.stack ? err.stack : err}`);
     }
@@ -290,7 +363,27 @@ async function main() {
   console.log('');
   console.log(`${pass} passed, ${fail} failed, ${skipped} skipped, ${selected.length} total`);
 
-  process.exitCode = fail > 0 ? 1 : 0;
+  // Only a full, unfiltered run of the real suite can speak for the matrix.
+  // A filtered run deliberately selects a subset, and runner.test.mjs spawns
+  // this file against synthetic single-test directories — neither carries the
+  // parity matrix, so neither is evidence about it either way.
+  let jqGateFailed = false;
+  const carriesMatrix = files.some((f) => path.basename(f) === MATRIX_TEST_FILE);
+  if (filters.length === 0 && carriesMatrix) {
+    const verdict = jqHalfVerdict({
+      total: jqLegTotal,
+      executed: jqLegExecuted,
+      noJqOptIn: process.env.VIBE_NO_JQ === '1',
+    });
+    if (verdict.ok) {
+      console.log(`jq half: ${verdict.reason}`);
+    } else {
+      jqGateFailed = true;
+      console.error(`jq-half gate: ${verdict.reason}`);
+    }
+  }
+
+  process.exitCode = fail > 0 || jqGateFailed ? 1 : 0;
 }
 
 // `__filename` comes from `import.meta.url`, which Node's ESM loader has already
