@@ -43,6 +43,7 @@ import {
   makeSandbox,
   makeHookSandbox,
   runCommand,
+  runCli,
   mkTempRoot,
   registeredTests,
 } from './run.mjs';
@@ -949,6 +950,85 @@ test('KNOWN DIVERGENCE: cursor.flow = 5 (number) — oracle "Cursor: 5.impl.", e
     sandbox.cleanup();
     if (prevEnv !== undefined) process.env.CLAUDE_PROJECT_DIR = prevEnv;
   }
+});
+
+// ---------------------------------------------------------------------------
+// PERFORMANCE BUDGET (js-core/8 final review, I2).
+//
+// tech.md's Performance Budget says, in these words: "`parity.test.mjs` records
+// wall time per command and fails above 150 ms". No such code existed anywhere
+// under engine/tests — the spec named an assertion that did not exist, which is
+// the worst kind of number to leave in a document: the next reader believes it
+// is enforced. This is that assertion, in the file the spec names.
+//
+// WHAT IS MEASURED: the real end-to-end cost a hook pays — process spawn, module
+// graph load, and the command — via the CLI, not an in-process call. An
+// in-process measurement would exclude Node startup, which is most of the cost
+// and the entire reason the budget exists.
+//
+// WHY THE MINIMUM, NOT THE MEAN OR MEDIAN: a wall-time assertion on shared CI is
+// exactly the test everyone learns to re-run. Scheduler noise is strictly
+// ADDITIVE — a run can be delayed, never accelerated — so min-of-N is the
+// least-biased estimator of a command's true cost, and it is the only statistic
+// a noisy neighbour cannot inflate. It keeps its teeth: a genuine regression
+// (an added dependency, a synchronous scan, a second machine parse) raises the
+// floor along with everything else. The median is RECORDED alongside it, so a
+// broadly-slower run is visible in the log even though it does not fail the
+// build.
+//
+// The measured floor on the development machine is ~48 ms for orders (bash
+// oracle ~18 ms), so the 150 ms ceiling carries roughly 3x headroom. Note
+// separately that tech.md's aspirational "under 50 ms cold for orders" TARGET is
+// met only at the minimum, not at the median — a spec-drift item for compound,
+// deliberately NOT resolved here by relaxing the documented number.
+// ---------------------------------------------------------------------------
+
+const PERF_CEILING_MS = 150; // tech.md, Performance Budget — "fails above 150 ms"
+const PERF_RUNS = 9;
+
+const PERF_COMMANDS = [
+  ['orders', ['orders']],
+  ['doctrine', ['doctrine']],
+  ['state get', ['state', 'get']],
+  ['doctor', ['doctor']],
+];
+
+test('performance budget: every ported command stays under tech.md\'s 150 ms wall-time ceiling', () => {
+  const report = [];
+  const over = [];
+
+  for (const [name, argv] of PERF_COMMANDS) {
+    const samples = [];
+    for (let i = 0; i < PERF_RUNS; i += 1) {
+      const t0 = process.hrtime.bigint();
+      const res = runCli(argv);
+      samples.push(Number(process.hrtime.bigint() - t0) / 1e6);
+      // A command that CRASHES is fast. Without this the budget would happily
+      // certify a broken engine as well within its performance envelope.
+      assertEqual(res.code, 0, `\`vibe ${name}\` exited ${res.code} while being timed: ${res.stderr}`);
+      assert(res.stdout.length > 0, `\`vibe ${name}\` produced no output while being timed — nothing was measured`);
+    }
+    samples.sort((a, b) => a - b);
+    const min = samples[0];
+    const median = samples[(samples.length - 1) >> 1];
+    const max = samples[samples.length - 1];
+    report.push(`${name}: min=${min.toFixed(1)}ms median=${median.toFixed(1)}ms max=${max.toFixed(1)}ms (n=${PERF_RUNS})`);
+    if (min > PERF_CEILING_MS) {
+      over.push(`${name}: ${min.toFixed(1)}ms > ${PERF_CEILING_MS}ms (median ${median.toFixed(1)}ms, max ${max.toFixed(1)}ms)`);
+    }
+  }
+
+  // "records wall time per command" — the numbers go to the log on every run,
+  // pass or fail, so a slow trend is observable before it becomes a failure.
+  console.log(`        wall time: ${report.join(' | ')}`);
+
+  assertEqual(
+    over,
+    [],
+    'a ported command is over tech.md\'s Performance Budget at its FASTEST of ' +
+      `${PERF_RUNS} runs, which machine noise cannot explain — this is a real regression, ` +
+      `not a flaky runner:\n${over.join('\n')}`,
+  );
 });
 
 // ---------------------------------------------------------------------------
