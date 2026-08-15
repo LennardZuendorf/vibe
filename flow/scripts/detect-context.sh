@@ -101,8 +101,65 @@ snapshot() {
      }'
 }
 
+# ── the engine branch ────────────────────────────────────────────────────────
+# Runs `vibe policy decide` and prints its stdout. Returns non-zero for every
+# "the engine did not answer" outcome, which the caller reads as "delegation
+# unavailable" and falls back to the bash branch for.
+#
+# Three hardening points, all of them load-bearing rather than defensive
+# habit (inject-triggers/2 review):
+#
+#   * `</dev/null` — the PreToolUse hook feeds this script's caller a JSON
+#     event on stdin. Without the redirect the child node inherits that pipe;
+#     a node that decides to read stdin then blocks forever and wedges the
+#     hook, which is the one failure mode this harness must never have.
+#   * a TIMEOUT when one is available. GNU coreutils `timeout` is present on
+#     Linux and on any macOS with coreutils installed, but NOT on a stock
+#     macOS (where it is `gtimeout`, if at all). It is used when found and
+#     simply not used when absent — bounding the call is not worth a
+#     dependency, and faking a bound with a background kill would add a race
+#     to a hook path. On a target without `timeout`, a wedged node is
+#     unbounded here; the `</dev/null` above removes the only cause this
+#     script can control.
+#   * a strict verdict shape on the way out (is_verdict). The hooks read any
+#     line that is not `block:`/`warn:` as an allow, so forwarding whatever
+#     the engine happened to print would turn a diagnostic, a warning banner,
+#     or a partial line into a silent allow.
+engine_decide() {
+  local path="$1" state="$2"
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 10 node "$ENGINE_CLI" policy --vibe-dir "$SKILL_DIR" decide "$path" "$state" 2>/dev/null </dev/null
+  else
+    node "$ENGINE_CLI" policy --vibe-dir "$SKILL_DIR" decide "$path" "$state" 2>/dev/null </dev/null
+  fi
+}
+
+# Exactly the three shapes `decide` is contracted to emit, on ONE line: bare
+# `allow`, or `warn:`/`block:` with a non-empty reason. Anything else — empty,
+# multi-line, a bare `block:`, a stack trace — is not a verdict.
+is_verdict() {
+  local out="$1"
+  [[ "$out" != *$'\n'* ]] || return 1
+  case "$out" in
+    allow) return 0 ;;
+    warn:?*) return 0 ;;
+    block:?*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # ── decision mode ──────────────────────────────────────────────────────────—
 # Emits one of: allow | warn:<reason> | block:<reason>
+#
+# The engine answers only when node can run it, the policy data is there, the
+# engine EXITS 0, and what it printed is a well-formed verdict. Every other
+# outcome falls back to the bash branch below, which carries the same policy
+# hardcoded and so cannot be corrupted by a data file. The engine refuses
+# (exit 2, empty stdout) whenever its rule set failed to load or loaded empty
+# — a truncated policy.json, a version this engine does not understand, a
+# missing `rules` key, an unreadable file — because `decide` over zero rules
+# answers `allow` for every path, and reporting that as a verdict would make
+# every hard block disappear silently.
 #
 # The state is resolved HERE, once, and passed explicitly to whichever branch
 # answers — the engine is never left to read the cursor itself. Two branches
@@ -117,14 +174,10 @@ decide() {
   # Normalise a leading ./ before either branch sees it.
   path="${path#./}"
 
-  # The engine answers when node can run it AND the policy data is actually
-  # there. That second condition is not belt-and-braces: loadPolicy() degrades
-  # an absent policy.json to "no rules", which reads as `allow` for EVERY
-  # path — the silent-unblock direction. No data, no delegation.
   local out
   if have_node && [[ -f "$ENGINE_CLI" && -f "$POLICY_JSON" ]] \
-    && out="$(node "$ENGINE_CLI" policy --vibe-dir "$SKILL_DIR" decide "$path" "$state" 2>/dev/null)" \
-    && [[ -n "$out" ]]; then
+    && out="$(engine_decide "$path" "$state")" \
+    && is_verdict "$out"; then
     printf '%s\n' "$out"
     return 0
   fi

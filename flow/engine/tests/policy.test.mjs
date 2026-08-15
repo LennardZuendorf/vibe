@@ -487,8 +487,10 @@ test('shipped: renderInvariants on content/policy.json produces one line per rul
 // The CLI — engine/commands/policy.mjs
 // ---------------------------------------------------------------------------
 
-test('cli: `vibe policy decide` prints the bare verdict for allow, and always exits 0', () => {
-  const sb = makePolicySandbox({ rules: [] });
+test('cli: `vibe policy decide` prints the bare verdict for allow, and exits 0', () => {
+  // A LOADED policy that simply does not guard this path — not an empty one,
+  // which is now a refusal rather than a verdict (see the exit-2 tests below).
+  const sb = makePolicySandbox({ rules: [ALWAYS_RULE('r1', 'guarded.md', 'block')] });
   try {
     const result = runDecide(sb.vibeDir, ['src/index.mjs']);
     assertEqual(result.code, 0);
@@ -660,14 +662,16 @@ test('cli end-to-end: `--vibe-dir` pins WHICH install answers, whatever the cwd'
     assertMatch(pinned.stdout, /^block:/);
 
     // Discriminating control: the SAME invocation without the pin, from the
-    // same foreign cwd, resolves no policy at all and answers allow — which is
-    // exactly why detect-context.sh passes the pin and refuses to delegate
-    // when the policy file is missing.
+    // same foreign cwd, resolves no policy at all — and REFUSES rather than
+    // answering allow off an empty rule set. Both halves matter: the pin is
+    // what makes the delegation hermetic, and the refusal is what keeps a
+    // mis-resolved install from reading as "nothing is guarded".
     const unpinned = runCli(['policy', 'decide', '.spec/lessons.md', 'idle'], {
       cwd: elsewhere,
       unsetEnv: ['CLAUDE_PROJECT_DIR'],
     });
-    assertEqual(unpinned.stdout, 'allow\n');
+    assertEqual(unpinned.code, 2);
+    assertEqual(unpinned.stdout, '');
   } finally {
     rmSync(elsewhere, { recursive: true, force: true });
   }
@@ -903,27 +907,84 @@ function verdictKind(line) {
   return line === 'allow' ? 'allow' : line.split(':')[0];
 }
 
-const CROSS_RULE_PATHS = ['.spec/features/AGENTS.md', '.spec/features/x/CLAUDE.md'];
+function verdictLineOf(result) {
+  return result.verdict === 'allow' ? 'allow' : `${result.verdict}:${result.reason}`;
+}
 
-test('known divergence: on a cross-rule path the engine is stricter than bash, never looser', () => {
+// The cross-rule population is DERIVED, not hand-listed (review, Important 1).
+// A hand-written pair list stops examining anything the moment a rule is added
+// — and the rule that would break the dominance property is exactly a NEW one
+// (an exact rule with an `allow` arm, sitting below an existing glob rule,
+// makes the engine the looser branch). Every glob pattern is instantiated with
+// every OTHER rule's literal patterns, at one and two extra segments, which is
+// the complete shape "matched by a glob rule and an exact rule at once".
+function crossRulePaths(rules) {
+  const globs = [];
+  const literals = [];
+  for (const rule of rules) {
+    for (const pattern of rule.match) {
+      (/[*?]/.test(pattern) ? globs : literals).push({ id: rule.id, pattern });
+    }
+  }
+  const out = new Set();
+  for (const g of globs) {
+    for (const l of literals) {
+      if (g.id === l.id) continue;
+      out.add(g.pattern.replace(/\*/g, l.pattern));
+      out.add(g.pattern.replace(/\*/g, `sub/${l.pattern}`));
+    }
+  }
+  return [...out].sort();
+}
+
+test('known divergence: on EVERY derived cross-rule path the engine is stricter than bash, never looser', () => {
+  const { rules } = loadPolicy(REPO_VIBE_DIR);
+  const paths = crossRulePaths(rules);
+  // Population floors: a collapsed derivation must fail loudly rather than
+  // assert a property of nothing.
+  assert(paths.length >= 8, `cross-rule population collapsed to ${paths.length} path(s)`);
+  assertEqual(MACHINE_STATES.length, 13);
+
   const harness = makeMatrixHarness();
   try {
-    const engineRows = harness.runLeg(CROSS_RULE_PATHS, MACHINE_STATES, { noNode: false });
-    const bashRows = harness.runLeg(CROSS_RULE_PATHS, MACHINE_STATES, { noNode: true });
-    let differed = 0;
-    for (let i = 0; i < engineRows.length; i += 1) {
-      const engineOut = engineRows[i].split('\t')[3];
-      const bashOut = bashRows[i].split('\t')[3];
-      if (engineOut !== bashOut) differed += 1;
+    // The bash side is the real branch, spawned through detect-context.sh with
+    // node stripped. The engine side is taken IN-PROCESS: at 13 states x
+    // ~48 derived paths a node spawn per cell would add ~30s to the suite for
+    // no extra fidelity, and the substitution is validated below on the cells
+    // that actually diverge — plus the main matrix and the planted-rule test
+    // already pin that detect-context.sh's engine branch IS this module.
+    const bashRows = harness.runLeg(paths, MACHINE_STATES, { noNode: true });
+    assert(bashRows.length >= 100, `only ${bashRows.length} cross-rule cells ran`);
+
+    const differing = [];
+    for (const row of bashRows) {
+      const [p, s, , bashOut] = row.split('\t');
+      const engineOut = verdictLineOf(decide({ rules }, p, s));
+      if (engineOut !== bashOut) differing.push({ p, s, engineOut, bashOut });
       assert(
         SEVERITY[verdictKind(engineOut)] >= SEVERITY[verdictKind(bashOut)],
-        `engine is LOOSER than bash on ${engineRows[i]} (bash: ${bashOut})`,
+        `engine is LOOSER than bash on ${p} @ ${s} (engine: ${engineOut} / bash: ${bashOut})`,
       );
     }
+
     // The control that keeps this test honest: if the two branches stopped
-    // diverging here at all, this file would be asserting a property of an
-    // empty population and the comment above would be stale.
-    assert(differed > 0, 'the cross-rule divergence is gone — delete this test and its comment, do not leave it asserting nothing');
+    // diverging at all, this file would be asserting a property of an empty
+    // population and the comment above it would be stale.
+    assert(
+      differing.length > 0,
+      'the cross-rule divergence is gone — delete this test and its comment, do not leave it asserting nothing',
+    );
+
+    // ...and the in-process substitution is faithful: re-run the FIRST few
+    // diverging cells through the real delegated branch and require the same
+    // engine verdict, end to end.
+    const sample = differing.slice(0, 3);
+    const sampleRows = harness.runLeg(sample.map((d) => d.p), [sample[0].s], { noNode: false });
+    for (let i = 0; i < sample.length; i += 1) {
+      const delegated = sampleRows[i].split('\t')[3];
+      const inProcess = verdictLineOf(decide({ rules }, sample[i].p, sample[0].s));
+      assertEqual(delegated, inProcess, `${sample[i].p}: delegated and in-process engine verdicts must agree`);
+    }
   } finally {
     harness.cleanup();
   }
@@ -994,19 +1055,174 @@ test('delegation is live: a rule planted in policy.json only reaches the verdict
   }
 });
 
-test('delegation refuses to answer from an EMPTY policy: no data means the bash branch decides', () => {
-  // loadPolicy degrades an absent policy.json to "no rules", which reads as
-  // allow for every path. Delegating in that state would turn a missing data
-  // file into a silent unblock of the hard blocks, so detect-context.sh
-  // requires the file to exist before it hands over.
+// ---------------------------------------------------------------------------
+// AN UNUSABLE POLICY IS REFUSED, NEVER ANSWERED (inject-triggers/2 review,
+// Critical).
+//
+// loadPolicy() degrades every defect to `rules: []`, and `decide` over zero
+// rules answers `allow` for every path. Reported as a verdict, that turns a
+// truncated write or an engine/data version skew into the silent disappearance
+// of every hard block — with no output at all to notice. The earlier version of
+// this file covered exactly ONE route (the file deleted), which the delegation
+// already special-cased, and that is why the rest got through.
+//
+// Every route is enumerated here: the six that produce zero rules from the
+// file's CONTENT, plus the two filesystem routes, all driven end-to-end through
+// detect-context.sh as well as through runDecide.
+// ---------------------------------------------------------------------------
+
+const UNUSABLE_POLICY_BODIES = [
+  ['truncated JSON', '{"version": 1, "rules": [{'],
+  ['a zero-length file', ''],
+  ['an unknown version', '{"version": 2, "rules": [{"id": "r", "match": "a.md", "arms": [{"states": "*", "verdict": "block", "reason": "x"}]}]}\n'],
+  ['no `rules` key', '{"version": 1}\n'],
+  ['a JSON array rather than an object', '[1, 2, 3]\n'],
+  ['an explicitly empty rule set', '{"version": 1, "rules": []}\n'],
+  ['every rule malformed (all dropped)', '{"version": 1, "rules": [{"match": "a.md"}]}\n'],
+];
+
+test('refusal: every route to an unusable policy exits 2 with NOTHING on stdout', () => {
+  let covered = 0;
+  for (const [label, body] of UNUSABLE_POLICY_BODIES) {
+    const sb = makePolicySandbox(body);
+    try {
+      const result = runDecide(sb.vibeDir, ['.spec/lessons.md', 'idle']);
+      assertEqual(result.code, 2, `${label}: must refuse, not answer`);
+      assertEqual(result.stdout, '', `${label}: an ignored exit code must not be able to read an allow`);
+      assertIncludes(result.stderr, 'refusing to answer', `${label}: the refusal must say so`);
+      covered += 1;
+    } finally {
+      sb.cleanup();
+    }
+  }
+  assertEqual(covered, UNUSABLE_POLICY_BODIES.length);
+  assert(covered >= 7, `only ${covered} degrade route(s) examined`);
+});
+
+test('refusal: an ABSENT policy also refuses rather than answering allow', () => {
+  const sb = makePolicySandbox();
+  try {
+    const result = runDecide(sb.vibeDir, ['.spec/lessons.md', 'idle']);
+    assertEqual(result.code, 2);
+    assertEqual(result.stdout, '');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('delegation: EVERY unusable policy falls back to the bash branch, which still hard-blocks', () => {
+  // The end-to-end half of the refusal: what a real enforcer prints when the
+  // data file is broken. The reason strings asserted here are the BASH
+  // branch's own, so a regression that let the engine answer `allow` (or that
+  // forwarded an empty line) fails on the text, not just on a verdict class.
+  const sb = makeInstallSandbox();
+  const guarded = [
+    ['.spec/lessons.md', 'block:.spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: idle)\n'],
+    ['.agents/skills/vibe/state.json', 'block:state.json is written only via set-state.sh, never by direct edit\n'],
+    ['.spec/product.md', 'block:root .spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: idle)\n'],
+  ];
+  // The two filesystem routes join the content ones: the file removed, and the
+  // path occupied by a DIRECTORY (an unreadable policy.json that exists — a
+  // uid-independent stand-in for a permission failure, which a test running as
+  // root could not produce with chmod).
+  const routes = [
+    ...UNUSABLE_POLICY_BODIES.map(([label, body]) => [label, () => writeFileSync(sb.policyPath, body)]),
+    ['the file removed', () => rmSync(sb.policyPath, { force: true })],
+    ['a directory in its place', () => {
+      rmSync(sb.policyPath, { force: true, recursive: true });
+      mkdirSync(sb.policyPath, { recursive: true });
+    }],
+  ];
+  let checked = 0;
+  try {
+    for (const [label, breakIt] of routes) {
+      rmSync(sb.policyPath, { force: true, recursive: true });
+      breakIt();
+      for (const [target, expected] of guarded) {
+        const result = runCommand('bash', [sb.detectPath, 'decide', target, 'idle'], {
+          unsetEnv: ['CLAUDE_PROJECT_DIR'],
+        });
+        assertEqual(result.code, 0, `${label} / ${target}: decide still exits 0`);
+        assertEqual(result.stdout, expected, `${label} / ${target}: a broken policy must NOT downgrade a hard block`);
+        checked += 1;
+      }
+    }
+  } finally {
+    sb.cleanup();
+  }
+  assertEqual(checked, routes.length * guarded.length);
+  assert(checked >= 27, `only ${checked} (route x path) cells examined — the population collapsed`);
+});
+
+test('delegation: a HEALTHY policy is still delegated (the refusal did not disable the engine)', () => {
+  // The control for the three tests above: if the guard clause had simply
+  // stopped delegating, every one of them would pass and the engine would be
+  // dead. A planted rule the bash branch has never heard of proves it is not.
   const sb = makeInstallSandbox();
   try {
-    rmSync(sb.policyPath, { force: true });
-    const result = runCommand('bash', [sb.detectPath, 'decide', '.spec/lessons.md', 'idle'], {
+    const policy = JSON.parse(readFileSync(sb.policyPath, 'utf8'));
+    policy.rules.push({
+      id: 'still-live',
+      match: 'refusal-control.md',
+      arms: [{ states: '*', verdict: 'block', reason: 'the engine is still answering' }],
+    });
+    writeFileSync(sb.policyPath, `${JSON.stringify(policy, null, 2)}\n`);
+    const result = runCommand('bash', [sb.detectPath, 'decide', 'refusal-control.md', 'idle'], {
       unsetEnv: ['CLAUDE_PROJECT_DIR'],
     });
+    assertEqual(result.stdout, 'block:the engine is still answering\n');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('delegation: a non-verdict on stdout is never forwarded — the hooks read anything else as allow', () => {
+  // The engine's stdout is validated by SHAPE, not merely by being non-empty:
+  // a hook reads any line that is not `block:`/`warn:` as an allow, so a
+  // diagnostic, a banner, or a partial line reaching stdout would be a silent
+  // unblock. Simulated by replacing the engine entry point with a script that
+  // prints garbage and exits 0 — the one thing a shape check catches that an
+  // exit-code check cannot.
+  const sb = makeInstallSandbox();
+  const cliPath = path.join(sb.vibeDir, 'engine', 'cli.mjs');
+  try {
+    for (const garbage of ['console.log("surprise")', 'console.log("block:")', 'console.log("allow\\nallow")', 'console.log("")']) {
+      writeFileSync(cliPath, `${garbage};\n`);
+      const result = runCommand('bash', [sb.detectPath, 'decide', '.spec/lessons.md', 'idle'], {
+        unsetEnv: ['CLAUDE_PROJECT_DIR'],
+      });
+      assertEqual(result.code, 0);
+      assertMatch(result.stdout, /^block:\.spec\/lessons\.md is writable only during/, `garbage stdout (${garbage}) must fall back to bash`);
+    }
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('delegation: the engine call gets no stdin, so a hook event on the pipe cannot wedge it', () => {
+  // The PreToolUse hook feeds its caller a JSON event on stdin. Without the
+  // `</dev/null` redirect the child node inherits that pipe and a node that
+  // reads stdin blocks forever. Simulated with an engine that DOES read stdin:
+  // with the redirect it sees EOF and exits; without it, this test would hang.
+  const sb = makeInstallSandbox();
+  const cliPath = path.join(sb.vibeDir, 'engine', 'cli.mjs');
+  try {
+    writeFileSync(
+      cliPath,
+      [
+        "import { readFileSync } from 'node:fs';",
+        'let stdin = "";',
+        "try { stdin = readFileSync(0, 'utf8'); } catch { stdin = ''; }",
+        'process.stdout.write(`block:stdin was ${JSON.stringify(stdin)}\\n`);',
+        '',
+      ].join('\n'),
+    );
+    const result = runCommand('bash', [sb.detectPath, 'decide', '.spec/lessons.md', 'idle'], {
+      unsetEnv: ['CLAUDE_PROJECT_DIR'],
+      input: '{"tool_name":"Edit"}',
+    });
     assertEqual(result.code, 0);
-    assertMatch(result.stdout, /^block:/, 'a missing policy.json must NOT downgrade a hard block to allow');
+    assertEqual(result.stdout, 'block:stdin was ""\n', 'the engine must be handed an empty stdin, not the hook event');
   } finally {
     sb.cleanup();
   }
@@ -1080,10 +1296,11 @@ test('shipped block flow.invariants renders every rule and every arm state from 
 });
 
 test('shipped block flow.invariants states the same writable-state set the enforcer applies', () => {
-  // The parity that flow/tests/run.sh used to assert against hand-authored
-  // doctrine prose (inject-triggers/2 retires it there): for each rule, the
-  // states named in the generated prose are exactly the states `decide` lets
-  // through — checked through decide(), not by re-reading policy.json.
+  // The same shape flow/tests/run.sh asserts for the two HAND-AUTHORED prose
+  // surfaces, applied to the generated one: for each rule, the states named in
+  // the prose are exactly the states `decide` lets through — checked through
+  // decide(), not by re-reading policy.json. This is additive; those two
+  // assertions stay until inject-triggers/6 makes their surfaces generated.
   const { rules } = loadPolicy(REPO_VIBE_DIR);
   const content = loadContent(REPO_CTX.root, REPO_CTX.vibeDir);
   const resolve = buildResolver(REPO_CTX, content);

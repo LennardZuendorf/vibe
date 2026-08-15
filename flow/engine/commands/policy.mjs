@@ -15,10 +15,29 @@
 // path argument spelled `--vibe-dir` is still addressable as `decide`'s own
 // operand and can never be swallowed as an option.
 //
-// Exit codes: `decide` ALWAYS exits 0 — the verdict is the stdout line, never
-// the exit code, so a hook translates it to its own convention (block -> a
-// non-zero exit) rather than this command doing that translation itself.
-// `list`/`render` exit 1 only when the policy file itself failed to load.
+// Exit codes. The verdict is NEVER the exit code — a hook translates the
+// stdout line to its own convention (block -> a non-zero exit), this command
+// does not do that translation itself. So every ANSWERED decision, allow or
+// warn or block alike, exits 0.
+//
+//   0   an answered verdict, printed on stdout
+//   1   usage error (no path)
+//   2   REFUSED: the policy could not be loaded as a usable rule set — the
+//       file reported errors, or it loaded to zero rules. Nothing on stdout.
+//
+// Exit 2 is a correctness tooth, not tidiness (inject-triggers/2 review,
+// Critical). loadPolicy() degrades EVERY defect to `rules: []` — truncated
+// JSON, a version this engine does not understand, a missing `rules` key, a
+// zero-length file, an unreadable path, or an explicit empty list — and
+// `decide` over zero rules answers `allow` for every path on earth. Reported
+// as exit 0 with `allow` on stdout, that turns a partial write or an
+// engine/data version skew into the silent disappearance of every hard block,
+// for a caller that has no way to tell the two apart. Refusing instead lets
+// flow/scripts/detect-context.sh fall back to its own bash branch, which
+// carries the same policy hardcoded and cannot be corrupted by a data file.
+//
+// `list`/`render` exit 1 only when the policy file itself failed to load;
+// they are diagnostics, and printing what loaded is the useful answer there.
 
 import { resolveVibeDir } from '../root.mjs';
 import { readCursor } from '../cursor.mjs';
@@ -87,18 +106,30 @@ function verdictLine(result) {
   return `${result.verdict}:${result.reason}`;
 }
 
+export const DECIDE_REFUSED = 2;
+
 export function runDecide(vibeDir, args) {
   const [target, stateArg] = args;
   if (!target) {
-    // A usage error, not a verdict — this is the one case with nothing to
-    // print on stdout, so it is the one case allowed a non-zero exit.
+    // A usage error, not a verdict — nothing to print on stdout.
     return { code: 1, stdout: '', stderr: line('vibe policy decide: usage: vibe policy decide <path> [state]') };
   }
   const { rules, errors } = loadPolicy(vibeDir);
-  const state = typeof stateArg === 'string' && stateArg ? stateArg : currentState(vibeDir);
-  const result = decide({ rules }, target, state);
   let stderr = '';
   for (const err of errors) stderr += line(`vibe policy: WARN — ${err}`);
+
+  // See the exit-code block in this file's header. An unusable policy is
+  // refused, never answered — and with NOTHING on stdout, so a caller that
+  // ignores exit codes still cannot read an `allow` out of it.
+  if (errors.length > 0 || rules.length === 0) {
+    stderr += line(
+      `vibe policy decide: refusing to answer — no usable rules loaded${errors.length ? '' : ' (the policy loaded to an empty rule set)'}`,
+    );
+    return { code: DECIDE_REFUSED, stdout: '', stderr };
+  }
+
+  const state = typeof stateArg === 'string' && stateArg ? stateArg : currentState(vibeDir);
+  const result = decide({ rules }, target, state);
   return { code: 0, stdout: line(verdictLine(result)), stderr };
 }
 

@@ -455,24 +455,25 @@ printf '{"flow":"quick","phase":"triage","feature":"","updated":"x"}\n' > "$proj
 docp="$(CLAUDE_PROJECT_DIR="$projd" bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
 assert_contains "install-agnostic-paths" "doctrine reads the project cursor via CLAUDE_PROJECT_DIR" "$docp" "Cursor: quick.triage."
 rm -rf "$projd"
-# RETIRED (inject-triggers/2): the prose<->code parity assertions that compared
-# doctrine.sh's and the AGENTS.md template's hand-authored write-invariant
-# sentences against `decide`. The invariants are now DATA (flow/content/policy.json)
-# and the prose is GENERATED from that data by the `{{invariants}}` placeholder
-# (flow/content/blocks/flow/invariants.md), so parity is by construction rather
-# than by after-the-fact comparison. Four assertions were removed:
-#   doctrine lessons rule matches decide / AGENTS template lessons rule matches decide
-#   doctrine root-spec rule matches decide / AGENTS template root-spec rule matches decide
-# Their coverage moved, and the count did NOT drop — see:
-#   * flow/engine/tests/policy.test.mjs
-#       "shipped block flow.invariants states the same writable-state set the
-#        enforcer applies" — the same per-rule comparison, against generated prose
-#   * the four `decide` ground-truth pins below, which replace them here one for
-#     one. These are strictly stronger than what they replace for this suite's
-#     purpose: the flow suite runs in BOTH CI legs, so each pin is checked once
-#     against the engine (node present) and once against the permanent bash
-#     branch (node stripped), from a hand-written expected set neither branch
-#     can derive.
+# single-source parity, tied to the CODE: both prose texts must state the same
+# per-rule writable-state sets that detect-context.sh `decide` actually enforces.
+# Comparing PER-RULE sets against `decide` (not the union of both rules, not
+# prose-vs-prose) catches a rule reassignment (moving a state between the lessons
+# and root rules) and a prose/code drift — the holes a union or two-substring check
+# leaves open.
+#
+# inject-triggers/2 briefly retired these and was WRONG to (review, Important 2):
+# both surfaces they guard — the `vibe:doctrine` block in the vibe SKILL.md and
+# flow/reference/templates/AGENTS.md — still carry those sentences HAND-AUTHORED,
+# and the generated `{{invariants}}` block that is meant to replace them is not
+# composed into any shipped channel yet. A guard may only be retired once the
+# surface it guards has stopped being hand-authored. inject-triggers/6 makes both
+# surfaces render from `flow/content/policy.json` and retires these then, for real.
+#
+# The `decide` ground-truth pins added below are ADDITIVE, not a replacement:
+# they check the enforcer itself (once against the engine with node present, once
+# against the permanent bash branch in the no-node leg), where these four check
+# the shipped prose against it.
 tmpl="$(cat "$FLOW/reference/templates/AGENTS.md")"
 assert_contains "flow-legibility/4" "AGENTS.md template shares the gate line" "$tmpl" "plan → impl, and verify → ship"
 assert_contains "flow-legibility/4" "AGENTS.md template shares the ephemeral framing" "$tmpl" "sessions are ephemeral"
@@ -509,6 +510,16 @@ while IFS= read -r s; do
     && cursor_blocked=$((cursor_blocked + 1))
 done < <(jq -r '.states|keys[]' "$MACHINE")
 assert_eq "inject-triggers/2" "decide blocks a direct state.json edit in every machine state" "$cursor_blocked/$cursor_seen" "13/13"
+doc="$(bash "$SCRIPTS/doctrine.sh" | grep -v '^Cursor:')"
+doc_lessons="$(printf '%s\n' "$doc" | tr ';' '\n' | grep 'lessons.md' | states_of)"
+doc_root="$(printf '%s\n' "$doc" | tr ';' '\n' | grep 'product,tech' | states_of)"
+tmpl_sec="$(awk '/^## Write invariants/{f=1;next} /^## /{f=0} f' "$FLOW/reference/templates/AGENTS.md")"
+tmpl_lessons="$(printf '%s\n' "$tmpl_sec" | awk '/^1\. /{f=1} /^2\. /{f=0} f' | states_of)"
+tmpl_root="$(printf '%s\n' "$tmpl_sec" | awk '/^2\. /{f=1} /^3\. /{f=0} f' | states_of)"
+assert_eq "flow-legibility/4" "doctrine lessons rule matches decide" "$doc_lessons" "$lessons_truth"
+assert_eq "flow-legibility/4" "AGENTS template lessons rule matches decide" "$tmpl_lessons" "$lessons_truth"
+assert_eq "flow-legibility/4" "doctrine root-spec rule matches decide" "$doc_root" "$root_truth"
+assert_eq "flow-legibility/4" "AGENTS template root-spec rule matches decide" "$tmpl_root" "$root_truth"
 
 echo ""
 echo "=== flow-legibility/6 — drift inference (detect-context.sh infer) ==="
