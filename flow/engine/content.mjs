@@ -40,6 +40,30 @@ export const SUMMARY_BLOCK_ID = 'vibe:summary';
 const MODES = ['summary', 'body'];
 const DEFAULT_MODE = 'summary';
 
+// Trigger classes a channel by injection cadence: `level` renders every turn
+// (the per-turn style rules today), `edge` only when the flow cursor moved
+// since the last inject (the full orders), `event` only when something
+// happened this turn (the warn/drift relay). A channel with no declared
+// trigger — including every channel shipped before this field existed —
+// defaults to `level`, the safest direction: nothing silently stops being
+// injected because of a missing or misspelled value.
+const TRIGGERS = ['level', 'edge', 'event'];
+const DEFAULT_TRIGGER = 'level';
+
+// channelTrigger(channel) — the one place a channel's trigger class is read.
+// Accepts any channel-shaped object (a merged channel, or a bare {trigger}
+// probe) and always returns one of TRIGGERS: an absent or unrecognized value
+// degrades to the default rather than throwing or returning undefined, so a
+// caller (this module's mergeChannel, and the inject hook the next unit
+// wires up) never has to re-check the value's shape itself. Reporting an
+// unrecognized value is mergeChannel's job, mirroring how `render` is
+// validated below — this function's contract is just "give back a definite
+// class".
+export function channelTrigger(channel) {
+  const value = channel && typeof channel === 'object' ? channel.trigger : undefined;
+  return TRIGGERS.includes(value) ? value : DEFAULT_TRIGGER;
+}
+
 // ---------------------------------------------------------------------------
 // Small file helpers — every one of them fails soft.
 // ---------------------------------------------------------------------------
@@ -284,11 +308,16 @@ function mergeChannel(base = {}, over = {}, name, errors) {
   if (!MODES.includes(mode)) {
     errors.push(`channels.${name}.render: expected one of ${MODES.join(' | ')}, got '${mode}'`);
   }
+  const declaredTrigger = over.trigger ?? base.trigger;
+  if (declaredTrigger !== undefined && !TRIGGERS.includes(declaredTrigger)) {
+    errors.push(`channels.${name}.trigger: expected one of ${TRIGGERS.join(' | ')}, got '${declaredTrigger}'`);
+  }
   const budget = Number.isInteger(over.budget) ? over.budget : Number.isInteger(base.budget) ? base.budget : 0;
   return {
     name,
     blocks: ids,
     render: MODES.includes(mode) ? mode : DEFAULT_MODE,
+    trigger: channelTrigger({ trigger: declaredTrigger }),
     budget, // 0 = unbudgeted
     headings: over.headings ?? base.headings ?? undefined,
     // {file, block} — the document + managed block `vibe render <c> --write`
@@ -603,4 +632,77 @@ export function checkContent(ctx, content = loadContent(ctx.root, ctx.vibeDir)) 
   }
 
   return { errors, warnings, blockCount: content.blocks.size };
+}
+
+// ---------------------------------------------------------------------------
+// Edge detection — `.vibe/last-inject`, the per-project record of which
+// cursor state the last inject already carried the `edge` channels for.
+//
+// The KEY a caller passes in is the cursor state plus feature, one line —
+// `${state} ${feature}` — built from readCursor()'s own fields (cursor.mjs is
+// the only cursor reader; this module never re-derives one). Building that
+// string is the hook's job (it already holds a live cursor read for the
+// `orders` placeholder); these two functions only compare and persist it.
+//
+// Fail-open is the DELIBERATE INVERSE of the write-guard's fail-closed
+// contract: a guard that cannot read its policy must block, because silence
+// there hides a bypass. Here silence hides nothing — the worst case of
+// treating an unreadable marker as "the cursor moved" is one extra turn of
+// the full `edge` payload, which is exactly what a first inject after
+// install must carry anyway. So MISSING, UNREADABLE, EMPTY, or CORRUPT state
+// all return true, and an unwritable `.vibe/` must never throw: the next
+// turn simply finds no stored key and re-emits the edge payload again.
+// ---------------------------------------------------------------------------
+
+const LAST_INJECT_RELPATH = path.join('.vibe', 'last-inject');
+
+function lastInjectPath(root) {
+  return path.join(typeof root === 'string' && root ? root : '.', LAST_INJECT_RELPATH);
+}
+
+// cursorChangedSince(root, key) -> boolean. True unless the last recorded
+// key is BYTE-EQUAL (after trimming the trailing newline) to `key` — any
+// other outcome, including a read that fails outright, is the fail-open
+// `true`.
+export function cursorChangedSince(root, key) {
+  let raw;
+  try {
+    raw = fs.readFileSync(lastInjectPath(root), 'utf8');
+  } catch {
+    return true; // absent, unreadable, or any other fs error — fail open
+  }
+  const stored = raw.split('\n', 1)[0].trim();
+  if (!stored) return true; // empty or whitespace-only file — fail open
+  return stored !== key;
+}
+
+// recordInject(root, key) — writes `key` to `.vibe/last-inject` atomically
+// (temp file in the same directory, then rename — the pattern json.mjs's
+// writeJsonAtomic uses; this is plain text, one line, not JSON, so it does
+// not route through that JSON-specific writer). Creates `.vibe/` if needed.
+// Every failure — an unwritable directory, a `.vibe` path blocked by a
+// pre-existing non-directory file, a full disk — is swallowed: this function
+// NEVER throws. Losing one recorded inject is recoverable (the next turn's
+// cursorChangedSince just fails open again); a hook that throws here would
+// wedge the turn instead.
+export function recordInject(root, key) {
+  const filePath = lastInjectPath(root);
+  const dir = path.dirname(filePath);
+  let tmpPath;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    tmpPath = path.join(dir, `.last-inject.${process.pid}.${Date.now()}.tmp`);
+    fs.writeFileSync(tmpPath, `${key}\n`, 'utf8');
+    fs.renameSync(tmpPath, filePath);
+  } catch {
+    if (tmpPath) {
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch {
+        // nothing to clean up, or the filesystem is already unusable — either
+        // way this is best-effort and must not surface its own error
+      }
+    }
+    // swallow: recordInject never throws (see contract above)
+  }
 }

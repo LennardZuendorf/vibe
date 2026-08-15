@@ -15,11 +15,12 @@
 //      nothing" is not a green, so the shipped tree is asserted to be non-empty
 //      by structure, not by a hand-written count.
 
-import { mkdirSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, symlinkSync, existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, assert, assertEqual, assertIncludes, assertMatch, makeHookSandbox } from './run.mjs';
 import { extractBlock, stripBlock, renderBlock, upsertBlock } from '../blocks.mjs';
+import { readCursor } from '../cursor.mjs';
 import {
   parseFrontmatter,
   parseBlockFile,
@@ -27,6 +28,9 @@ import {
   renderChannel,
   renderChannelSafe,
   checkContent,
+  channelTrigger,
+  cursorChangedSince,
+  recordInject,
 } from '../content.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -353,6 +357,72 @@ test('content: a disabled channel renders nothing at all', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Trigger classing
+// ---------------------------------------------------------------------------
+
+test('content: channelTrigger defaults an undeclared trigger to level', () => {
+  assertEqual(channelTrigger({}), 'level');
+  assertEqual(channelTrigger(undefined), 'level');
+  assertEqual(channelTrigger({ trigger: undefined }), 'level');
+});
+
+test('content: channelTrigger passes through a declared, recognized trigger class', () => {
+  assertEqual(channelTrigger({ trigger: 'level' }), 'level');
+  assertEqual(channelTrigger({ trigger: 'edge' }), 'edge');
+  assertEqual(channelTrigger({ trigger: 'event' }), 'event');
+});
+
+test('content: channelTrigger degrades an unrecognized value to the default rather than passing it through', () => {
+  assertEqual(channelTrigger({ trigger: 'nonsense' }), 'level');
+});
+
+test('content: a channel with no declared trigger defaults to level, wired through mergeChannel', () => {
+  const sb = makeContentSandbox({ defaults: DEFAULTS(['a.one']), blocks: { 'a/one.md': BLOCK('a.one', 'A') } });
+  try {
+    assertEqual(loadContent(sb.dir, sb.vibeDir).channels['user-prompt'].trigger, 'level');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('content: trigger inherits from shipped defaults and can be overridden by vibe.json, like render and budget', () => {
+  const defaults = { version: 1, channels: { 'user-prompt': { render: 'summary', budget: 6, trigger: 'edge', blocks: ['a.one'] } } };
+  const blocks = { 'a/one.md': BLOCK('a.one', 'A') };
+
+  const inherited = makeContentSandbox({ defaults, blocks });
+  try {
+    assertEqual(loadContent(inherited.dir, inherited.vibeDir).channels['user-prompt'].trigger, 'edge');
+  } finally {
+    inherited.cleanup();
+  }
+
+  const overridden = makeContentSandbox({ defaults, blocks, project: { channels: { 'user-prompt': { trigger: 'event' } } } });
+  try {
+    assertEqual(loadContent(overridden.dir, overridden.vibeDir).channels['user-prompt'].trigger, 'event');
+  } finally {
+    overridden.cleanup();
+  }
+});
+
+test('content: an unknown trigger string is reported, not silently accepted', () => {
+  const sb = makeContentSandbox({
+    defaults: DEFAULTS(['a.one']),
+    blocks: { 'a/one.md': BLOCK('a.one', 'A') },
+    project: { channels: { 'user-prompt': { trigger: 'nonsense' } } },
+  });
+  try {
+    const content = loadContent(sb.dir, sb.vibeDir);
+    assertEqual(content.channels['user-prompt'].trigger, 'level', 'an invalid declared value still degrades to the safe default');
+    assertIncludes(
+      content.errors.join('\n'),
+      "channels.user-prompt.trigger: expected one of level | edge | event, got 'nonsense'",
+    );
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Placeholders
 // ---------------------------------------------------------------------------
 
@@ -642,6 +712,125 @@ test("shipped: AGENTS.md's vibe:rules block is in sync with the agents-md channe
   const inFile = extractBlock(readFileSync(path.join(REPO_ROOT, 'AGENTS.md'), 'utf8'), 'vibe:rules');
   assert(inFile !== undefined, 'AGENTS.md carries no vibe:rules block — run: vibe render agents-md --write');
   assertIncludes(inFile, rendered, 'AGENTS.md is stale — run: vibe render agents-md --write');
+});
+
+// ---------------------------------------------------------------------------
+// Edge detection — `.vibe/last-inject`
+// ---------------------------------------------------------------------------
+
+// The documented key shape: cursor state plus feature, one line — built from
+// readCursor() (the one cursor reader), never re-derived here.
+function keyFor(sb) {
+  const cursor = readCursor(sb.vibeDir);
+  return `${cursor.state} ${cursor.feature ?? ''}`;
+}
+
+test('content: cursorChangedSince is true before anything was ever recorded (no last-inject file yet)', () => {
+  const sb = makeHookSandbox();
+  try {
+    assertEqual(cursorChangedSince(sb.dir, keyFor(sb)), true);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('content: the SAME cursor recorded then checked twice reads false both times', () => {
+  const sb = makeHookSandbox({ cursor: { flow: 'feature', phase: 'impl', feature: 'js-core', updated: '2026-01-01T00:00:00Z' } });
+  try {
+    const key = keyFor(sb);
+    recordInject(sb.dir, key);
+    assertEqual(cursorChangedSince(sb.dir, key), false);
+    assertEqual(cursorChangedSince(sb.dir, key), false, 'a second read of the same recorded key is still false');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('content: a MOVED cursor reads true, and recording the new key updates what is stored', () => {
+  const sb = makeHookSandbox({ cursor: { flow: 'idle', phase: 'idle', feature: null, updated: '2026-01-01T00:00:00Z' } });
+  try {
+    const before = keyFor(sb);
+    recordInject(sb.dir, before);
+    const after = 'feature.impl js-core';
+    assertEqual(cursorChangedSince(sb.dir, after), true, 'a different key than what is stored reads as moved');
+    recordInject(sb.dir, after);
+    assertEqual(cursorChangedSince(sb.dir, after), false, 'recording the new key updates the stored marker');
+    assertEqual(cursorChangedSince(sb.dir, before), true, 'the old key no longer matches once overwritten');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('content: a MISSING last-inject file is fail-open true (a first inject after install must carry the full orders)', () => {
+  const sb = makeHookSandbox();
+  try {
+    assert(!existsSync(path.join(sb.dir, '.vibe', 'last-inject')), 'precondition: nothing has ever been recorded');
+    assertEqual(cursorChangedSince(sb.dir, 'anything'), true);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('content: an UNREADABLE last-inject (a directory sits where the file should be) is fail-open true, never throws', () => {
+  const sb = makeHookSandbox();
+  try {
+    mkdirSync(path.join(sb.dir, '.vibe', 'last-inject'), { recursive: true });
+    assertEqual(cursorChangedSince(sb.dir, 'anything'), true);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('content: an EMPTY last-inject is fail-open true', () => {
+  const sb = makeHookSandbox();
+  try {
+    mkdirSync(path.join(sb.dir, '.vibe'), { recursive: true });
+    writeFileSync(path.join(sb.dir, '.vibe', 'last-inject'), '');
+    assertEqual(cursorChangedSince(sb.dir, 'anything'), true);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('content: a CORRUPT last-inject (garbage bytes, never a real key) is fail-open true', () => {
+  const sb = makeHookSandbox();
+  try {
+    mkdirSync(path.join(sb.dir, '.vibe'), { recursive: true });
+    writeFileSync(path.join(sb.dir, '.vibe', 'last-inject'), Buffer.from([0x00, 0x01, 0xff, 0xfe, 0x0a]));
+    assertEqual(cursorChangedSince(sb.dir, 'anything'), true);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('content: recordInject into an UNWRITABLE .vibe/ never throws, and the next check still fails open', () => {
+  const sb = makeHookSandbox();
+  try {
+    // A plain FILE sits where `.vibe/` needs to be a directory, so
+    // mkdirSync(..., {recursive: true}) cannot create it.
+    writeFileSync(path.join(sb.dir, '.vibe'), 'not a directory');
+    let threw = false;
+    try {
+      recordInject(sb.dir, 'some-key');
+    } catch {
+      threw = true;
+    }
+    assertEqual(threw, false, 'recordInject must never throw, even when .vibe/ cannot be created');
+    assertEqual(cursorChangedSince(sb.dir, 'some-key'), true, 'nothing was actually recorded, so the next check fails open too');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('content: recordInject writes atomically — no stray temp file survives a successful write', () => {
+  const sb = makeHookSandbox();
+  try {
+    recordInject(sb.dir, keyFor(sb));
+    const entries = readdirSync(path.join(sb.dir, '.vibe'));
+    assertEqual(entries, ['last-inject'], 'only the final file remains, no .tmp leftovers');
+  } finally {
+    sb.cleanup();
+  }
 });
 
 // ---------------------------------------------------------------------------
