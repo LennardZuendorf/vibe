@@ -1,0 +1,27 @@
+{
+  "$comment": "The three write invariants (AGENTS.md 'Write invariants') as data. `match` is an exact relative path, or an array of exact relative paths — every string may also be a glob (`*` any run of non-`/` characters, `**` any run including `/`) for a project that wants to widen a rule without editing the engine. `states` lists where the rule's verdict is always `allow`; `verdict` applies OUTSIDE that list. Rules are tried in order and the first match wins. Never edit this file in an install; it is replaced on upgrade — override from a project's own policy layer instead.",
+  "version": 1,
+  "rules": [
+    {
+      "id": "lessons",
+      "match": ".spec/lessons.md",
+      "states": ["feature.compound", "setup.apply", "strategy.spec", "quick.verify"],
+      "verdict": "block",
+      "reason": "lessons are written at flow end; append during feature.compound, setup.apply, strategy.spec, or quick.verify"
+    },
+    {
+      "id": "root-specs",
+      "match": [".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md"],
+      "states": ["strategy.spec", "feature.compound", "setup.apply"],
+      "verdict": "block",
+      "reason": "root .spec specs are writable only during strategy.spec, feature.compound, or setup.apply"
+    },
+    {
+      "id": "cursor",
+      "match": ".agents/skills/vibe/state.json",
+      "states": [],
+      "verdict": "block",
+      "reason": "state.json is written only via set-state.sh, never by direct edit"
+    }
+  ]
+}

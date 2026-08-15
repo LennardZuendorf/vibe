@@ -214,9 +214,9 @@ export function runCli(args = [], opts = {}) {
 export function makeCliWithPlaceholderCommand(placeholder = 'zzz-test-placeholder') {
   const dir = mkTempRoot('vibe-cli-placeholder-');
   const src = readFileSync(CLI_PATH, 'utf8');
-  const marker = "const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook', 'render'];";
+  const marker = "const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook', 'render', 'policy'];";
   assert(src.includes(marker), 'cli.mjs COMMANDS array literal has changed shape — update this test helper');
-  const patched = src.replace(marker, `const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook', 'render', '${placeholder}'];`);
+  const patched = src.replace(marker, `const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook', 'render', 'policy', '${placeholder}'];`);
   const cliPath = path.join(dir, 'cli.mjs');
   writeFileSync(cliPath, patched);
   const commandsDir = path.join(dir, 'commands');

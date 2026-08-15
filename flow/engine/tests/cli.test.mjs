@@ -3,7 +3,7 @@
 
 import { test, assert, assertEqual, assertIncludes, runCli, runCommand, makeCliWithPlaceholderCommand } from './run.mjs';
 
-const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook', 'render'];
+const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook', 'render', 'policy'];
 
 test('--help lists every dispatchable command', () => {
   const result = runCli(['--help']);
