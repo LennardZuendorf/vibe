@@ -66,10 +66,15 @@ export function runDecide(vibeDir, args) {
   return { code: 0, stdout: line(verdictLine(result)), stderr };
 }
 
+function armSummary(arm) {
+  const states = arm.states === '*' ? '*' : arm.states.join('|') || '(none)';
+  return `${states}->${arm.verdict}`;
+}
+
 function ruleLine(rule) {
   const match = rule.match.join(', ');
-  const states = rule.states.length ? rule.states.join(', ') : '(none)';
-  return `${rule.id}  match=${match}  states=${states}  verdict=${rule.verdict}`;
+  const arms = rule.arms.map(armSummary).join(', ');
+  return `${rule.id}  match=${match}  arms=[${arms}]`;
 }
 
 export function runList(vibeDir) {

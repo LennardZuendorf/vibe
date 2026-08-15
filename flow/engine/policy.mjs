@@ -1,18 +1,41 @@
-// engine/policy.mjs — loadPolicy()/decide()/renderInvariants(): the write
-// invariants as data (content/policy.json), replacing the three hardcoded
-// blocks a bash guard would otherwise hand-maintain. A later unit wires that
-// guard to delegate here; this module only has to be correct on its own.
+// engine/policy.mjs — loadPolicy()/decide()/renderInvariants(): the six
+// guarded-path arms of flow/scripts/detect-context.sh's `decide()` as data,
+// replacing a hardcoded bash guard. A later unit wires that guard to
+// delegate here and adds a differential matrix over every guarded path; this
+// module only has to answer correctly on its own, but every reason string
+// and every state list below is copied element-for-element from the bash
+// source so that later matrix has something to actually agree with.
 //
 // Rule shape (content/policy.json):
-//   { id, match, states, verdict, reason }
-// `match` is a relative path, or an array of them; each entry is either an
-// EXACT path or a GLOB (`*` — any run of characters other than `/`; `**` —
-// any run including `/`). `states` lists the states in which the rule's
-// verdict is always 'allow'; the rule's own `verdict` field is what applies
-// OUTSIDE that list. Rules are tried in file order, exact matches (across
-// every rule) before glob matches (across every rule) — so a narrow exact
-// rule always outranks a broader glob rule regardless of which comes first
-// in the file — and the first rule that matches wins.
+//   { id, match, arms }
+//
+// `match` is a relative path, or an array of them. Each entry is a LITERAL
+// path or a GLOB (`*`/`?`). Every wildcard matches ANY run of characters,
+// INCLUDING `/` — there is no "stays within one directory" dialect here,
+// because every arm below is a direct port of a detect-context.sh `case`
+// pattern, and bash's own pattern matching (fnmatch without FNM_PATHNAME) is
+// exactly that: unrestricted by `/`.
+//
+// A LITERAL pattern additionally matches on any PATH-BOUNDARY SUFFIX of the
+// queried path, not only a full-string match. detect-context.sh guards every
+// one of its six arms with the same `PATTERN|*/PATTERN` idiom — "the bare
+// path, or the bare path preceded by anything and a `/`" — so an absolute
+// path, a `../`-prefixed one, or one sitting under an extra directory all
+// still hit the rule the bare relative path hits. Reproducing that here as a
+// suffix match (rather than requiring every pattern to be hand-authored with
+// its own `*/` alternative) makes it apply uniformly and makes it impossible
+// to forget on a new rule. A GLOB pattern gets the same suffix treatment: it
+// is tested against every boundary suffix, not just the whole path.
+//
+// `arms` is an ORDERED list of `{states, verdict, reason}`. `states` is
+// either an array of state keys or the literal string `"*"` — an else/
+// catch-all arm, admitted regardless of state. The FIRST arm whose `states`
+// admits the queried state wins (mirrors a bash `case "$state" in ... esac`
+// read top to bottom). `reason` may contain the literal token `{state}`,
+// replaced with the queried state at `decide()` time — this is what lets one
+// reason string carry the bash oracle's own `(current: $state)` suffix
+// verbatim, on the exact state actually queried, rather than baking in a
+// fixed string.
 //
 // Contract, matching every other engine module: NEVER throws. An absent or
 // malformed policy.json degrades to "no rules" — which makes `decide` answer
@@ -25,16 +48,49 @@ import { readJson } from './json.mjs';
 export const POLICY_RELPATH = path.join('content', 'policy.json');
 
 const VERDICTS = new Set(['allow', 'warn', 'block']);
+const SUPPORTED_VERSION = 1;
+const CATCH_ALL = '*';
+const STATE_TOKEN = '{state}';
 
 // ---------------------------------------------------------------------------
-// loadPolicy — read + validate. Every per-rule defect is reported and that
-// ONE rule is dropped; one bad rule must never take the rest of the file
-// down with it.
+// loadPolicy — read + validate. Every per-rule (and per-arm) defect is
+// reported and that ONE rule is dropped; one bad rule must never take the
+// rest of the file down with it.
 // ---------------------------------------------------------------------------
 
 function normalizeMatchField(value) {
   const list = Array.isArray(value) ? value : [value];
   return list.filter((entry) => typeof entry === 'string' && entry.length > 0);
+}
+
+// `states: "*"` is the catch-all sentinel; anything else must be an array of
+// state-key strings (an empty array is legal — it is simply an arm no state
+// can ever admit, e.g. a rule with no allow branch at all).
+function normalizeArms(value, id, errors) {
+  if (!Array.isArray(value)) {
+    errors.push(`policy: rule '${id}' has no 'arms' array`);
+    return [];
+  }
+  const arms = [];
+  value.forEach((entry, idx) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      errors.push(`policy: rule '${id}' arms[${idx}] is not an object`);
+      return;
+    }
+    const states =
+      entry.states === CATCH_ALL
+        ? CATCH_ALL
+        : Array.isArray(entry.states)
+          ? entry.states.filter((s) => typeof s === 'string')
+          : [];
+    const verdict = VERDICTS.has(entry.verdict) ? entry.verdict : 'block';
+    if (entry.verdict !== undefined && !VERDICTS.has(entry.verdict)) {
+      errors.push(`policy: rule '${id}' arms[${idx}] has an unknown verdict '${entry.verdict}' — defaulting to 'block'`);
+    }
+    const reason = typeof entry.reason === 'string' ? entry.reason : '';
+    arms.push({ states, verdict, reason });
+  });
+  return arms;
 }
 
 export function loadPolicy(vibeDir) {
@@ -53,6 +109,17 @@ export function loadPolicy(vibeDir) {
 
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     errors.push(`policy: ${filePath} is not a JSON object`);
+    return { rules: [], errors };
+  }
+  // An explicit, unrecognized version is refused outright rather than loaded
+  // silently as if it were v1 — nobody previously checked this field, so a
+  // future schema change had no way to fail loudly on an old engine reading
+  // it. An ABSENT version is not an error: it is the common case for a file
+  // this engine itself wrote before `version` existed as a check at all.
+  if (raw.version !== undefined && raw.version !== SUPPORTED_VERSION) {
+    errors.push(
+      `policy: ${filePath} declares version ${JSON.stringify(raw.version)}, but this engine only understands version ${SUPPORTED_VERSION} — refusing to load its rules`,
+    );
     return { rules: [], errors };
   }
   if (!Array.isArray(raw.rules)) {
@@ -76,22 +143,19 @@ export function loadPolicy(vibeDir) {
       errors.push(`policy: rule '${id}' has no usable 'match' path`);
       return;
     }
-    const states = Array.isArray(entry.states) ? entry.states.filter((s) => typeof s === 'string') : [];
-    const verdict = VERDICTS.has(entry.verdict) ? entry.verdict : 'block';
-    if (entry.verdict !== undefined && !VERDICTS.has(entry.verdict)) {
-      errors.push(`policy: rule '${id}' has an unknown verdict '${entry.verdict}' — defaulting to 'block'`);
+    const arms = normalizeArms(entry.arms, id, errors);
+    if (arms.length === 0) {
+      errors.push(`policy: rule '${id}' has no usable 'arms'`);
+      return;
     }
-    const reason = typeof entry.reason === 'string' ? entry.reason : '';
-    rules.push({ id, match, states, verdict, reason });
+    rules.push({ id, match, arms });
   });
 
   return { rules, errors };
 }
 
 // ---------------------------------------------------------------------------
-// Matching — glob support kept intentionally small (no dependency): `*`
-// stands for any run of characters other than `/`, `**` for any run
-// including `/`. Every other character is matched literally.
+// Matching
 // ---------------------------------------------------------------------------
 
 const GLOB_CHAR_RE = /[*?]/;
@@ -102,29 +166,27 @@ function hasGlobChars(pattern) {
 
 const REGEXP_ESCAPE_RE = /[.+^${}()|[\]\\]/g;
 
+// `*` and `?` both stand for "any run of / any one character", including
+// `/` — see the header. Every other character is matched literally.
 function globToRegExp(pattern) {
   let body = '';
-  for (let i = 0; i < pattern.length; i += 1) {
-    const c = pattern[i];
-    if (c === '*' && pattern[i + 1] === '*') {
-      body += '.*';
-      i += 1;
-    } else if (c === '*') {
-      body += '[^/]*';
-    } else if (c === '?') {
-      body += '[^/]';
-    } else {
-      body += c.replace(REGEXP_ESCAPE_RE, '\\$&');
-    }
+  for (const c of pattern) {
+    if (c === '*') body += '.*';
+    else if (c === '?') body += '.';
+    else body += c.replace(REGEXP_ESCAPE_RE, '\\$&');
   }
   return new RegExp(`^${body}$`);
 }
 
-// Compiled-pattern cache. Keyed by the pattern STRING through a Map, never a
-// plain object — a plain object indexed by attacker-shaped input (a rule's
-// own `match` entry, ultimately policy.json data) would resolve inherited
-// members for a key like '__proto__' or 'constructor' instead of a cached
-// regex. Map has no prototype-chain lookup hazard at all.
+// Compiled-pattern cache, keyed by the pattern string. A Map, not a plain
+// object — but note WHY that matters is narrower than it might look:
+// compileGlob() is only ever reached through hasGlobChars() gating its
+// caller, and no prototype-chain key ('__proto__', 'constructor', ...)
+// contains a `*` or `?`, so a plain object here would not actually be
+// reachable with a hostile key today. The Map is kept anyway because it is
+// the correct tool for "cache keyed by an arbitrary string" regardless — no
+// hasOwnProperty dance, no `in` operator surprises — not because removing it
+// would currently break anything.
 const globCache = new Map();
 
 function compileGlob(pattern) {
@@ -144,26 +206,60 @@ function matchList(rule) {
   return normalizeMatchField(rule && rule.match);
 }
 
-function ruleMatchesExact(rule, relPath) {
-  return matchList(rule).some((pattern) => pattern === relPath);
+// Every boundary suffix of a path: the path split on `/`, then rejoined from
+// each split point onward, PLUS the path itself (index 0 covers that). This
+// is what turns a single authored pattern into the bash oracle's own
+// `PATTERN|*/PATTERN` alternation, for an arbitrary number of leading
+// directories — an absolute path, a `../`-prefixed one, or a path nested
+// under an extra directory all produce a suffix equal to the bare pattern.
+function pathBoundarySuffixes(relPath) {
+  const segments = relPath.split('/');
+  const suffixes = [];
+  for (let i = 0; i < segments.length; i += 1) suffixes.push(segments.slice(i).join('/'));
+  return suffixes;
 }
 
-function ruleMatchesGlob(rule, relPath) {
-  return matchList(rule).some((pattern) => hasGlobChars(pattern) && compileGlob(pattern).test(relPath));
+function ruleMatchesExact(rule, suffixes) {
+  return matchList(rule).some((pattern) => !hasGlobChars(pattern) && suffixes.includes(pattern));
 }
 
-// `state` a rule allows through as 'allow' regardless of its own verdict.
-// Plain `.includes()` over an array — never a keyed lookup — so a state (or
-// a rule id, or a match path) spelled '__proto__'/'constructor' is just a
-// string being compared, never a property access that could resolve
+function ruleMatchesGlob(rule, suffixes) {
+  return matchList(rule).some((pattern) => {
+    if (!hasGlobChars(pattern)) return false;
+    const re = compileGlob(pattern);
+    return suffixes.some((s) => re.test(s));
+  });
+}
+
+// `{state}` -> the literal queried state, everywhere it appears in a reason.
+function interpolateReason(reason, state) {
+  return reason.split(STATE_TOKEN).join(state);
+}
+
+function armAdmitsState(arm, state) {
+  if (arm.states === CATCH_ALL) return true;
+  return Array.isArray(arm.states) && arm.states.includes(state);
+}
+
+// The first arm whose `states` admits `state` wins — a top-to-bottom `case`
+// read, same as the bash oracle's own `case "$state" in ... esac`. Plain
+// `.includes()`/`===` throughout, never a keyed property lookup, so a state
+// (or a rule id, or a match path) spelled '__proto__'/'constructor' is just
+// a string being compared, never a property access that could resolve
 // something inherited.
 function ruleVerdict(rule, state) {
-  const states = Array.isArray(rule.states) ? rule.states : [];
   const ruleId = typeof rule.id === 'string' ? rule.id : null;
-  if (states.includes(state)) return { verdict: 'allow', reason: '', ruleId };
-  const verdict = VERDICTS.has(rule.verdict) ? rule.verdict : 'block';
-  const reason = typeof rule.reason === 'string' ? rule.reason : '';
-  return { verdict, reason, ruleId };
+  const arms = Array.isArray(rule.arms) ? rule.arms : [];
+  for (const arm of arms) {
+    if (!armAdmitsState(arm, state)) continue;
+    const verdict = VERDICTS.has(arm.verdict) ? arm.verdict : 'block';
+    const reason = typeof arm.reason === 'string' ? interpolateReason(arm.reason, state) : '';
+    return { verdict, reason, ruleId };
+  }
+  // No arm admitted this state — a rule authored without a catch-all arm.
+  // An unmodeled state is not evidence a write should be blocked, so this
+  // degrades to allow rather than throwing or guessing a verdict.
+  return { verdict: 'allow', reason: '', ruleId };
 }
 
 // ---------------------------------------------------------------------------
@@ -176,16 +272,17 @@ export function decide(policy, relPath, state) {
   const rules = policy && Array.isArray(policy.rules) ? policy.rules : [];
   if (rules.length === 0) return ALLOW_UNMATCHED;
 
-  const normalizedPath = typeof relPath === 'string' ? relPath.replace(/^\.\/+/, '') : '';
+  const normalizedPath = typeof relPath === 'string' ? relPath : '';
   const stateKey = typeof state === 'string' && state ? state : 'idle';
+  const suffixes = pathBoundarySuffixes(normalizedPath);
 
   // Exact matches, across EVERY rule, before any glob match — a narrow exact
   // rule always outranks a broader glob rule irrespective of file order.
   for (const rule of rules) {
-    if (ruleMatchesExact(rule, normalizedPath)) return ruleVerdict(rule, stateKey);
+    if (ruleMatchesExact(rule, suffixes)) return ruleVerdict(rule, stateKey);
   }
   for (const rule of rules) {
-    if (ruleMatchesGlob(rule, normalizedPath)) return ruleVerdict(rule, stateKey);
+    if (ruleMatchesGlob(rule, suffixes)) return ruleVerdict(rule, stateKey);
   }
   return ALLOW_UNMATCHED;
 }
@@ -200,18 +297,29 @@ function matchDisplay(match) {
   return normalizeMatchField(match).map((p) => `\`${p}\``).join(', ');
 }
 
-function statesDisplay(states) {
-  const list = Array.isArray(states) ? states : [];
-  return list.length ? list.map((s) => `\`${s}\``).join(', ') : '(no state)';
+function armStatesDisplay(states) {
+  if (states === CATCH_ALL) return 'otherwise';
+  return Array.isArray(states) && states.length ? states.map((s) => `\`${s}\``).join(', ') : '(no state)';
+}
+
+// Prose has no live queried state to substitute, so `{state}` reads as
+// "the current state" — legible on its own, and honest about what it means.
+function humanizeReason(reason) {
+  return typeof reason === 'string' ? reason.split(STATE_TOKEN).join('the current state') : '';
+}
+
+function armDisplay(arm) {
+  const verdict = VERDICTS.has(arm.verdict) ? arm.verdict : 'block';
+  const reason = verdict !== 'allow' && arm.reason ? ` — ${humanizeReason(arm.reason)}` : '';
+  return `${armStatesDisplay(arm.states)}: ${verdict}${reason}`;
 }
 
 export function renderInvariants(policy) {
   const rules = policy && Array.isArray(policy.rules) ? policy.rules : [];
   return rules
     .map((rule) => {
-      const verdict = VERDICTS.has(rule.verdict) ? rule.verdict : 'block';
-      const reason = typeof rule.reason === 'string' && rule.reason ? ` — ${rule.reason}` : '';
-      return `- ${matchDisplay(rule.match)}: ${verdict} outside ${statesDisplay(rule.states)}${reason}`;
+      const arms = Array.isArray(rule.arms) ? rule.arms : [];
+      return `- ${matchDisplay(rule.match)} — ${arms.map(armDisplay).join('; ')}`;
     })
     .join('\n');
 }
