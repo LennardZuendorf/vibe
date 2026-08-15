@@ -5,8 +5,29 @@
     "lessons": ".spec/lessons.md"
   },
   "channels": {
+    "user-prompt.level": {
+      "$comment": "LEVEL cadence — every turn, byte-stable by construction. Two lines is the ceiling: this is the only payload that pays prompt-cache rent on every single turn, so it carries the cursor and its transition command and nothing else.",
+      "render": "summary",
+      "trigger": "level",
+      "budget": 2,
+      "blocks": ["flow.level"]
+    },
+    "user-prompt.edge": {
+      "$comment": "EDGE cadence — only on the turn after the flow cursor moves (tracked in .vibe/last-inject). This channel CARRIES the orders: when it is configured the inject hook stops emitting them separately, which is the whole point of classing the payload.",
+      "render": "summary",
+      "trigger": "edge",
+      "budget": 15,
+      "blocks": ["flow.edge"]
+    },
+    "user-prompt.event": {
+      "$comment": "EVENT cadence — only on a turn that carried an event (a drift nudge or queued warnings). Empty by default: add blocks here that are worth saying WHEN something happened and worth nothing when nothing did.",
+      "render": "summary",
+      "trigger": "event",
+      "budget": 10,
+      "blocks": []
+    },
     "user-prompt": {
-      "$comment": "Injected on EVERY turn (UserPromptSubmit), after the flow orders. Keep it byte-stable and tiny — it lands in the transcript once per turn and pays prompt-cache rent forever.",
+      "$comment": "Standing rules, LEVEL cadence (the default for any channel that declares no trigger): injected on EVERY turn (UserPromptSubmit), after the flow's own level and edge channels. Keep it byte-stable and tiny — it lands in the transcript once per turn and pays prompt-cache rent forever.",
       "render": "summary",
       "budget": 6,
       "blocks": ["style.ste100"]

@@ -39,7 +39,10 @@ function listReport(content) {
   lines.push(`blocks:   ${content.blocks.size}`);
   for (const name of Object.keys(content.channels)) {
     const channel = content.channels[name];
-    const flags = [`render=${channel.render}`];
+    // The trigger is what decides whether a channel is injected on THIS turn,
+    // so `--list` — the "what does each channel do" view — has to show it, not
+    // just what each channel composes.
+    const flags = [`render=${channel.render}`, `trigger=${channel.trigger}`];
     if (channel.budget > 0) flags.push(`budget=${channel.budget}`);
     if (!channel.enabled) flags.push('disabled');
     lines.push(`\n${name} (${flags.join(', ')})`);

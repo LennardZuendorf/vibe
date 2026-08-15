@@ -340,6 +340,45 @@ export function makeHookSandbox({ cursor, includeDetect = true, gitInit = false 
   return { dir, root: dir, vibeDir, skillsDir, scriptsDir, cursorPath, warnLogPath, cleanup };
 }
 
+// makeContentSandbox — a hook-shaped sandbox (root + installed vibeDir) PLUS a
+// content tree: shipped defaults, shipped blocks, project `.vibe/blocks`
+// overrides, and a project vibe.json. Every argument is optional, so a test can
+// build exactly the layer it is about — including the "no content at all" case,
+// which is the degrade baseline.
+//
+// Shared here for the same reason makeHookSandbox is (js-core/8 final review,
+// I3): content.test.mjs asserts what the channels COMPOSE and hook.test.mjs
+// asserts what a turn EMITS from those same channels. Two hand-copied fixtures
+// would let the two suites be honest about different content trees.
+export function makeContentSandbox({ defaults, project, blocks = {}, userBlocks = {}, cursor } = {}) {
+  const sb = makeHookSandbox({ cursor });
+  const contentDir = path.join(sb.vibeDir, 'content');
+  if (defaults !== undefined) {
+    mkdirSync(contentDir, { recursive: true });
+    writeFileSync(
+      path.join(contentDir, 'vibe.default.json'),
+      typeof defaults === 'string' ? defaults : `${JSON.stringify(defaults, null, 2)}\n`,
+    );
+  }
+  for (const [rel, body] of Object.entries(blocks)) {
+    const file = path.join(contentDir, 'blocks', rel);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, body);
+  }
+  for (const [rel, body] of Object.entries(userBlocks)) {
+    const file = path.join(sb.dir, '.vibe', 'blocks', rel);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, body);
+  }
+  if (project !== undefined) {
+    writeFileSync(
+      path.join(sb.dir, 'vibe.json'),
+      typeof project === 'string' ? project : `${JSON.stringify(project, null, 2)}\n`,
+    );
+  }
+  return { ...sb, ctx: { root: sb.dir, vibeDir: sb.vibeDir, skillsDir: sb.skillsDir } };
+}
+
 // ---------------------------------------------------------------------------
 // Test registry + runner
 // ---------------------------------------------------------------------------

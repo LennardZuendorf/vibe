@@ -418,6 +418,10 @@ function joinList(value) {
 // its lessons elsewhere only edits vibe.json.
 function lessonsFor(root, relPath, tag) {
   if (typeof relPath !== 'string' || !relPath) return '';
+  // No tag selects NOTHING, never everything: an indirect tag that resolved to
+  // nothing (a cursor with no feature, say) must not turn into a wildcard that
+  // matches a lessons file's own trailing empty tag field.
+  if (typeof tag !== 'string' || !tag) return '';
   const text = readText(path.resolve(root ?? '.', relPath));
   if (text === undefined) return '';
   const wanted = String(tag).toLowerCase();
@@ -455,16 +459,45 @@ export function buildResolver(ctx, content) {
     return info;
   }
 
+  function machine() {
+    if (cache.has('#machine')) return cache.get('#machine');
+    let value;
+    try {
+      value = loadMachine(vibeDir);
+    } catch {
+      value = undefined;
+    }
+    cache.set('#machine', value);
+    return value;
+  }
+
   function machineState() {
     if (cache.has('#state')) return cache.get('#state');
     let value;
     try {
-      value = stateOf(loadMachine(vibeDir), cursorInfo().state);
+      value = stateOf(machine(), cursorInfo().state);
     } catch {
       value = undefined;
     }
     cache.set('#state', value);
     return value;
+  }
+
+  // The command that crosses ONE edge. A gated edge is one the human must
+  // approve, so it renders as the `/flow … confirm` form; every other edge is
+  // the plain writer. The gates are DATA — the machine's own `gates` map, keyed
+  // `<current>><target>` — read through loadMachine (machine.mjs is the only
+  // machine reader; this module never opens a second one). hasOwnProperty, not
+  // a bare lookup: the key is built from cursor + machine strings, and a bare
+  // `gates['constructor>x']`-shaped probe would resolve an inherited member as
+  // if it were a gate.
+  function transitionCommand(from, to) {
+    const gates = machine()?.gates;
+    const gated =
+      gates && typeof gates === 'object'
+        ? Object.prototype.hasOwnProperty.call(gates, `${from}>${to}`)
+        : false;
+    return gated ? `/flow ${to} confirm` : `set-state.sh ${to}`;
   }
 
   const builtins = {
@@ -473,6 +506,21 @@ export function buildResolver(ctx, content) {
     phase: () => cursorInfo().state.split('.').slice(1).join('.') || cursorInfo().state,
     feature: () => cursorInfo().feature || '<feature>',
     next: () => joinList(machineState()?.next),
+    // `{{transition}}` — `{{next}}`'s imperative twin: the state names turned
+    // into the commands that actually cross those edges. One legal next
+    // renders as that one command; several render as the list of them, in the
+    // machine's own order. A state with no legal next (or an unreadable
+    // machine) renders '' rather than undefined — an empty transition is a
+    // fact about the cursor, not an authoring typo, so it must not surface as
+    // an unresolved-placeholder error.
+    transition: () => {
+      const from = cursorInfo().state;
+      const next = Array.isArray(machineState()?.next) ? machineState().next : [];
+      return next
+        .filter((to) => typeof to === 'string' && to)
+        .map((to) => transitionCommand(from, to))
+        .join(' | ');
+    },
     writes: () => joinList(machineState()?.writes),
     reads: () => joinList(machineState()?.reads),
     delegates: () => joinList(machineState()?.delegates),
@@ -498,17 +546,33 @@ export function buildResolver(ctx, content) {
     },
   };
 
-  return function resolve(name) {
+  function resolve(name) {
     if (cache.has(name)) return cache.get(name);
     let value;
     const lessonsMatch = /^lessons:(.+)$/.exec(name);
-    if (lessonsMatch) value = lessonsFor(root, content.sources.lessons, lessonsMatch[1]);
+    if (lessonsMatch) value = lessonsFor(root, content.sources.lessons, resolveTag(lessonsMatch[1]));
     else if (Object.prototype.hasOwnProperty.call(builtins, name)) value = builtins[name]();
     else if (typeof content.placeholders[name] === 'string') value = content.placeholders[name];
     else value = undefined;
     cache.set(name, value);
     return value;
-  };
+  }
+
+  // `{{lessons:TAG}}` takes a LITERAL tag. `{{lessons:.NAME}}` — a leading dot
+  // — takes an INDIRECT one: NAME is resolved as a placeholder first and its
+  // value becomes the tag, so a block can ask for "the lessons of whatever
+  // state the cursor is in" (`{{lessons:.state}}`) without inventing a second
+  // placeholder grammar or nesting braces the one regex cannot parse. Literal
+  // tags are words and never begin with a dot, so the two forms cannot
+  // collide; an indirect name that resolves to nothing yields no tag, and
+  // lessonsFor answers '' for that, exactly as it does for an unknown tag.
+  function resolveTag(raw) {
+    if (!raw.startsWith('.')) return raw;
+    const value = resolve(raw.slice(1));
+    return typeof value === 'string' ? value : '';
+  }
+
+  return resolve;
 }
 
 const PLACEHOLDER_RE = /\{\{([A-Za-z0-9_.:-]+)\}\}/g;

@@ -13,6 +13,7 @@ import {
   mkdirSync,
   writeFileSync,
   readFileSync,
+  existsSync,
   rmSync,
   utimesSync,
   statSync,
@@ -27,6 +28,7 @@ import {
   assertIncludes,
   runCommand,
   makeHookSandbox,
+  makeContentSandbox,
   skip,
 } from './run.mjs';
 import {
@@ -157,6 +159,225 @@ test('runInjectHook: integration — real detect-context.sh infer produces the d
     const result = withProjectDir(sb.root, () => runInjectHook(sb.root, sb.vibeDir, sb.skillsDir, {}));
     assertMatch(result.stdout.split('\n')[0], /^vibe-drift:/);
     assertMatch(result.stdout, /state=idle/);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// user-prompt-submit-inject — the trigger-classed payload (inject-triggers/4)
+//
+// The cadences: level every turn, edge only on the turn after the cursor
+// moved, event only on a turn that carried one. What these cases protect is
+// BYTE-STABILITY — two quiet turns in the same state emit identical bytes, so
+// the prompt cache holds — and its converse, that a cursor move still delivers
+// the full payload exactly once.
+// ---------------------------------------------------------------------------
+
+const TRIGGER_DEFAULTS = {
+  version: 1,
+  channels: {
+    'user-prompt.level': { render: 'summary', trigger: 'level', budget: 2, blocks: ['flow.level'] },
+    'user-prompt.edge': { render: 'summary', trigger: 'edge', budget: 15, blocks: ['flow.edge'] },
+    'user-prompt.event': { render: 'summary', trigger: 'event', blocks: ['flow.event'] },
+    'user-prompt': { render: 'summary', blocks: ['style.rule'] },
+  },
+};
+
+const TRIGGER_BLOCKS = {
+  'flow/level.md': '---\nid: flow.level\nchannels: [user-prompt.level]\n---\nLEVEL state={{state}} · {{transition}}\n',
+  'flow/edge.md': '---\nid: flow.edge\nchannels: [user-prompt.edge]\n---\nEDGE {{orders}}\n',
+  'flow/event.md': '---\nid: flow.event\nchannels: [user-prompt.event]\n---\nEVENT something happened\n',
+  'style/rule.md': '---\nid: style.rule\nchannels: [user-prompt]\n---\nSTYLE RULE\n',
+};
+
+function makeTriggerSandbox(cursor) {
+  return makeContentSandbox({ defaults: TRIGGER_DEFAULTS, blocks: TRIGGER_BLOCKS, cursor });
+}
+
+// A quiet turn: no drift, no queued warnings — the state the byte-stability
+// contract is about.
+function quietTurn(sb) {
+  return runInjectHook(sb.dir, sb.vibeDir, sb.skillsDir, { spawnInfer: () => ({ error: null, stdout: '' }) });
+}
+
+function countOccurrences(haystack, needle) {
+  return haystack.split(needle).length - 1;
+}
+
+test('inject: two quiet turns in the same state are BYTE-IDENTICAL (the prompt cache contract)', () => {
+  const sb = makeTriggerSandbox();
+  try {
+    // Turn 1 is the first inject ever, so it is an edge turn by definition
+    // (nothing recorded yet) — the steady state starts at turn 2.
+    const first = quietTurn(sb);
+    assertIncludes(first.stdout, 'EDGE ', 'precondition: the first inject after install carries the edge payload');
+
+    const second = quietTurn(sb);
+    const third = quietTurn(sb);
+    assertEqual(second.stdout, third.stdout, 'two quiet turns in one state must not differ by a single byte');
+    assert(!second.stdout.includes('EDGE '), 'the edge payload must not ride a turn where nothing moved');
+    assertIncludes(second.stdout, 'LEVEL state=idle', 'the level line rides every turn');
+    assertIncludes(second.stdout, 'STYLE RULE', 'and so do the standing rules');
+    assertEqual(
+      second.stdout.replace(/\n$/, '').split('\n').length,
+      2,
+      'the steady-state payload is the level line plus the standing rules, nothing else',
+    );
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('inject: the turn AFTER a transition carries the edge payload exactly once', () => {
+  const sb = makeTriggerSandbox();
+  try {
+    quietTurn(sb); // first-ever inject: records the idle cursor
+    assert(!quietTurn(sb).stdout.includes('EDGE '), 'precondition: the cursor is settled');
+
+    writeCursor(sb, { flow: 'feature', phase: 'impl', feature: 'demo', updated: '2026-01-02T00:00:00Z' });
+
+    const moved = quietTurn(sb);
+    assertEqual(countOccurrences(moved.stdout, 'EDGE '), 1, 'the edge payload rides the turn after the move, once');
+    assertIncludes(moved.stdout, 'LEVEL state=feature.impl');
+
+    const after = quietTurn(sb);
+    assert(!after.stdout.includes('EDGE '), 'and not again while the cursor sits still');
+    assertEqual(quietTurn(sb).stdout, after.stdout, 'the new state has its own byte-stable steady payload');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('inject: the recorded key is the cursor the payload was composed FOR, written once per turn', () => {
+  const sb = makeTriggerSandbox({ flow: 'feature', phase: 'impl', feature: 'demo', updated: '2026-01-01T00:00:00Z' });
+  try {
+    quietTurn(sb);
+    assertEqual(readFileSync(path.join(sb.dir, '.vibe', 'last-inject'), 'utf8'), 'feature.impl demo\n');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('inject: a BROKEN edge marker fails open — the edge payload repeats rather than being lost', () => {
+  const sb = makeTriggerSandbox();
+  try {
+    // A directory where the marker file belongs: unreadable and unwritable, so
+    // neither the compare nor the record can succeed on any turn.
+    mkdirSync(path.join(sb.dir, '.vibe', 'last-inject'), { recursive: true });
+    for (const turn of [1, 2]) {
+      const result = quietTurn(sb);
+      assertEqual(result.code, 0, `turn ${turn} must still exit 0`);
+      assertIncludes(result.stdout, 'EDGE ', `turn ${turn}: fail open means one payload too many, never one too few`);
+    }
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('inject: the event channel rides ONLY a turn that carried an event', () => {
+  const sb = makeTriggerSandbox();
+  try {
+    quietTurn(sb);
+    assert(!quietTurn(sb).stdout.includes('EVENT '), 'a quiet turn carries no event text');
+
+    const drifted = runInjectHook(sb.dir, sb.vibeDir, sb.skillsDir, {
+      spawnInfer: () => ({ error: null, stdout: 'drift:feature.impl:src edits in idle\n' }),
+    });
+    assertIncludes(drifted.stdout, 'EVENT ', 'a drift nudge is an event');
+
+    writeFileSync(sb.warnLogPath, 'guard: something (warn-only)\n');
+    const warned = quietTurn(sb);
+    assertIncludes(warned.stdout, 'EVENT ', 'a queued warning is an event too');
+    assert(!quietTurn(sb).stdout.includes('EVENT '), 'and the turn after it is quiet again');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('inject: emission order is drift, level, edge, other prompt channels, warns', () => {
+  const sb = makeTriggerSandbox();
+  try {
+    writeFileSync(sb.warnLogPath, 'guard: something (warn-only)\n');
+    const result = runInjectHook(sb.dir, sb.vibeDir, sb.skillsDir, {
+      spawnInfer: () => ({ error: null, stdout: 'drift:feature.impl:src edits in idle\n' }),
+    });
+    const lines = result.stdout.split('\n').filter(Boolean);
+    assertMatch(lines[0], /^vibe-drift: /);
+    assertMatch(lines[1], /^LEVEL /);
+    assertMatch(lines[2], /^EDGE /);
+    assertMatch(lines[3], /^EVENT /);
+    assertEqual(lines[4], 'STYLE RULE');
+    assertMatch(lines[5], /^vibe-warn: /);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('inject: the edge channel CARRIES the orders — they are never emitted twice on an edge turn', () => {
+  const sb = makeTriggerSandbox();
+  try {
+    const first = quietTurn(sb);
+    // 'no active flow' is text only the idle ORDERS carry, so counting it
+    // separates "the edge payload rendered {{orders}}" from "the hook also
+    // emitted the raw orders alongside it".
+    assertEqual(countOccurrences(first.stdout, 'no active flow'), 1, 'the orders appear once, inside the edge payload');
+    assert(!first.stdout.startsWith('state='), 'the raw orders no longer lead the payload when a channel owns them');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// BACKWARD COMPATIBILITY. Two shapes must behave exactly as they did before
+// this feature: a project whose content tree has no edge channel, and an
+// install with no content tree at all. Both keep the raw orders on every turn.
+test('inject: a content tree with NO edge channel keeps the raw orders on every turn', () => {
+  const sb = makeContentSandbox({
+    defaults: { version: 1, channels: { 'user-prompt': { render: 'summary', blocks: ['style.rule'] } } },
+    blocks: { 'style/rule.md': TRIGGER_BLOCKS['style/rule.md'] },
+  });
+  try {
+    const first = quietTurn(sb);
+    const second = quietTurn(sb);
+    assertMatch(first.stdout, /^state=idle/, 'the orders still lead the payload');
+    assertEqual(first.stdout, second.stdout, 'and still ride every turn, unchanged');
+    assertIncludes(second.stdout, 'STYLE RULE');
+    assert(!existsSync(path.join(sb.dir, '.vibe')), 'no edge channel -> no marker file is ever created');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('inject: an EMPTY edge channel does not claim the orders (a channel that composes nothing carries nothing)', () => {
+  const sb = makeContentSandbox({
+    defaults: {
+      version: 1,
+      channels: {
+        'user-prompt.edge': { render: 'summary', trigger: 'edge', blocks: [] },
+        'user-prompt': { render: 'summary', blocks: ['style.rule'] },
+      },
+    },
+    blocks: { 'style/rule.md': TRIGGER_BLOCKS['style/rule.md'] },
+  });
+  try {
+    assertMatch(quietTurn(sb).stdout, /^state=idle/);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('inject: a MALFORMED project config degrades to the pre-content payload, never throws', () => {
+  const sb = makeContentSandbox({
+    defaults: TRIGGER_DEFAULTS,
+    blocks: TRIGGER_BLOCKS,
+    project: '{ not json at all',
+  });
+  try {
+    const result = quietTurn(sb);
+    assertEqual(result.code, 0);
+    // The shipped layer still resolves, so the cadences still work — the point
+    // is that a broken layer costs output, never the turn.
+    assertIncludes(result.stdout, 'LEVEL state=idle');
   } finally {
     sb.cleanup();
   }

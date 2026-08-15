@@ -34,7 +34,14 @@ import { readCursor } from '../cursor.mjs';
 import { loadMachine, stateOf } from '../machine.mjs';
 import { runDoctrine } from './doctrine.mjs';
 import { runOrders } from './orders.mjs';
-import { renderChannelSafe } from '../content.mjs';
+import {
+  renderChannelSafe,
+  loadContent,
+  renderChannel,
+  channelTrigger,
+  cursorChangedSince,
+  recordInject,
+} from '../content.mjs';
 
 function line(s) {
   return `${s}\n`;
@@ -124,7 +131,20 @@ export function runDoctrineHook(vibeDir, skillsDir, root) {
 
 // ---------------------------------------------------------------------------
 // user-prompt-submit-inject — drift-first nudge (delegates to bash
-// detect-context.sh infer) + orders.mjs's output + the warnings relay drain.
+// detect-context.sh infer) + the trigger-classed prompt payload + the warnings
+// relay drain.
+//
+// The payload is classed by CADENCE, because this stream is append-only and
+// every line of it is re-read on every turn for the rest of the session:
+//
+//   level  every turn        the cursor line — two lines, byte-stable
+//   edge   cursor moved      the full orders for the state it moved into
+//   event  something happened  text that is worth nothing on a quiet turn
+//
+// Byte-stability is the property that matters and the reason the split exists:
+// two consecutive turns in the same state, with no drift and no warnings, emit
+// IDENTICAL bytes, so the prompt cache still holds. The edge payload is what
+// used to break that — it was re-injected verbatim on every turn.
 // ---------------------------------------------------------------------------
 
 // Mirrors bash `${drift#drift:*:}` — shortest-match removal of a
@@ -135,9 +155,104 @@ function stripDriftPrefix(s) {
   return m ? s.slice(m[0].length) : s;
 }
 
+// The per-turn prompt surface is the `user-prompt` channel and anything under
+// it (`user-prompt.level`, `.edge`, `.event`, plus whatever a project adds).
+// Every other channel belongs to a different surface — `session-start` rides
+// the session hook, `agents-md` is a document — and none of them may be
+// injected here just because they exist.
+const PROMPT_CHANNEL = 'user-prompt';
+
+function isPromptChannel(name) {
+  return name === PROMPT_CHANNEL || name.startsWith(`${PROMPT_CHANNEL}.`);
+}
+
+// Deterministic emission order, so the payload is a function of the cursor and
+// nothing else: the flow's own three cadence channels lead, in cadence order,
+// and every other prompt channel follows by name. The cursor line has to be
+// the first thing after a drift nudge and the orders have to precede the
+// standing rules a project composes — the orders are the turn's imperative,
+// the rules are context for carrying it out.
+const CHANNEL_LEAD = ['user-prompt.level', 'user-prompt.edge', 'user-prompt.event'];
+
+function compareChannels(a, b) {
+  const ra = CHANNEL_LEAD.indexOf(a);
+  const rb = CHANNEL_LEAD.indexOf(b);
+  const ka = ra === -1 ? CHANNEL_LEAD.length : ra;
+  const kb = rb === -1 ? CHANNEL_LEAD.length : rb;
+  if (ka !== kb) return ka - kb;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+// Every enabled prompt channel, in emission order, each tagged with the
+// cadence that decides whether THIS turn carries it.
+function promptChannels(content) {
+  const out = [];
+  for (const name of Object.keys(content.channels ?? {})) {
+    if (!isPromptChannel(name)) continue;
+    const channel = content.channels[name];
+    if (!channel || typeof channel !== 'object' || channel.enabled === false) continue;
+    out.push({ name, trigger: channelTrigger(channel), blocks: channel.blocks ?? [] });
+  }
+  return out.sort((a, b) => compareChannels(a.name, b.name));
+}
+
+// The cursor key the edge detector compares turns against: state plus feature,
+// one line, built from the cursor reader this module already uses for the stop
+// gate. Never re-derived from a file — cursor.mjs is the only cursor reader.
+function injectKey(vibeDir) {
+  const { state, feature } = cursorStateFeature(vibeDir);
+  return `${state} ${feature ?? ''}`;
+}
+
+// Composes the whole prompt payload for this turn. Returns `undefined` if
+// ANYTHING goes wrong — the caller then falls back to the pre-content-layer
+// payload (the raw orders) and records nothing, so a crash in here can never
+// silently swallow an edge payload: the next turn still sees the cursor as
+// moved and re-emits it.
+function composePromptPayload(ctx, hadEvent) {
+  try {
+    const content = loadContent(ctx.root, ctx.vibeDir);
+    const channels = promptChannels(content);
+
+    // Does the content layer OWN the orders this turn? It does exactly when a
+    // prompt channel claims the edge cadence and actually composes something —
+    // the shipped `user-prompt.edge` renders `{{orders}}` itself. Emitting the
+    // raw orders as well would inject them twice on every edge turn, and
+    // emitting them unconditionally would defeat the point of the split on
+    // every other turn. An install with no content tree, and any project that
+    // has not adopted these channels, has no edge channel at all and so keeps
+    // today's behaviour byte for byte.
+    const edgeChannels = channels.filter((c) => c.trigger === 'edge');
+    const ownsOrders = edgeChannels.some((c) => c.blocks.length > 0);
+
+    const key = injectKey(ctx.vibeDir);
+    // Fail-open by contract: an unreadable or absent marker reads as "moved",
+    // which costs one extra edge payload and never loses one.
+    let moved = true;
+    try {
+      moved = cursorChangedSince(ctx.root, key);
+    } catch {
+      moved = true;
+    }
+
+    const due = { level: true, edge: moved, event: hadEvent };
+
+    let text = '';
+    for (const channel of channels) {
+      if (!due[channel.trigger]) continue;
+      text += renderChannel(channel.name, ctx, content).text || '';
+    }
+
+    return { text, ownsOrders, key, record: edgeChannels.length > 0 };
+  } catch {
+    return undefined;
+  }
+}
+
 export function runInjectHook(root, vibeDir, skillsDir, opts = {}) {
   let stdout = '';
 
+  let drift = '';
   const detectPath = detectScriptPath(root);
   if (fs.existsSync(detectPath)) {
     const spawnInfer =
@@ -148,20 +263,39 @@ export function runInjectHook(root, vibeDir, skillsDir, opts = {}) {
     } catch {
       res = undefined;
     }
-    const drift = res && !res.error && typeof res.stdout === 'string' ? res.stdout.trim() : '';
+    drift = res && !res.error && typeof res.stdout === 'string' ? res.stdout.trim() : '';
     if (drift) stdout += line(`vibe-drift: ${stripDriftPrefix(drift)}`);
   }
 
-  const ordersResult = runOrders(vibeDir, skillsDir, []);
-  stdout += ordersResult.stdout || '';
+  // Drained HERE, emitted LAST. The event class needs to know whether this
+  // turn carried an event before the payload is composed, and the relay is the
+  // other half of that answer; draining early changes no output order, only
+  // when the read happens.
+  const warns = drainWarnLog(root);
 
-  // Standing rules from the content layer ride AFTER the state's orders (which
-  // are the turn's imperative) and BEFORE the warnings drain (which is
-  // event-only). Byte-stable by construction, so the per-turn prompt cache
-  // still holds; a missing/broken content tree adds nothing at all.
-  stdout += renderChannelSafe('user-prompt', { root, vibeDir, skillsDir });
+  const ctx = { root, vibeDir, skillsDir };
+  const payload = composePromptPayload(ctx, Boolean(drift) || Boolean(warns));
 
-  stdout += drainWarnLog(root);
+  if (!payload || !payload.ownsOrders) {
+    // No content layer, or no edge channel in it: the state's orders are the
+    // turn's imperative and ride every turn, exactly as before this feature.
+    stdout += runOrders(vibeDir, skillsDir, []).stdout || '';
+  }
+  if (payload) {
+    stdout += payload.text;
+    // Recorded ONCE per turn, after composing succeeded — never before, so a
+    // failure mid-compose leaves the cursor looking unchanged and the next
+    // turn re-emits the edge payload. Skipped entirely when no edge channel
+    // exists, so an install without one never grows the marker file.
+    if (payload.record) recordInject(root, payload.key);
+  } else {
+    // Compose failed outright. The legacy channel is still worth trying
+    // through its own never-throws wrapper, so a broken new channel cannot
+    // cost a project the standing rules it had before.
+    stdout += renderChannelSafe(PROMPT_CHANNEL, ctx);
+  }
+
+  stdout += warns;
 
   return { code: 0, stdout, stderr: '' };
 }

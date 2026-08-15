@@ -18,7 +18,15 @@
 import { mkdirSync, writeFileSync, readFileSync, symlinkSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, assert, assertEqual, assertIncludes, assertMatch, makeHookSandbox } from './run.mjs';
+import {
+  test,
+  assert,
+  assertEqual,
+  assertIncludes,
+  assertMatch,
+  makeHookSandbox,
+  makeContentSandbox,
+} from './run.mjs';
 import { extractBlock, stripBlock, renderBlock, upsertBlock } from '../blocks.mjs';
 import { readCursor } from '../cursor.mjs';
 import {
@@ -37,37 +45,8 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const REPO_VIBE_DIR = path.join(REPO_ROOT, 'flow');
 const REPO_SKILLS_DIR = path.join(REPO_ROOT, '.agents', 'skills');
 
-// A hook-shaped sandbox (root + installed vibeDir) plus a content tree. Every
-// argument is optional, so a test can build exactly the layer it is about —
-// including the "no content at all" case, which is the degrade baseline.
-function makeContentSandbox({ defaults, project, blocks = {}, userBlocks = {}, cursor } = {}) {
-  const sb = makeHookSandbox({ cursor });
-  const contentDir = path.join(sb.vibeDir, 'content');
-  if (defaults !== undefined) {
-    mkdirSync(contentDir, { recursive: true });
-    writeFileSync(
-      path.join(contentDir, 'vibe.default.json'),
-      typeof defaults === 'string' ? defaults : `${JSON.stringify(defaults, null, 2)}\n`,
-    );
-  }
-  for (const [rel, body] of Object.entries(blocks)) {
-    const file = path.join(contentDir, 'blocks', rel);
-    mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(file, body);
-  }
-  for (const [rel, body] of Object.entries(userBlocks)) {
-    const file = path.join(sb.dir, '.vibe', 'blocks', rel);
-    mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(file, body);
-  }
-  if (project !== undefined) {
-    writeFileSync(
-      path.join(sb.dir, 'vibe.json'),
-      typeof project === 'string' ? project : `${JSON.stringify(project, null, 2)}\n`,
-    );
-  }
-  return { ...sb, ctx: { root: sb.dir, vibeDir: sb.vibeDir, skillsDir: sb.skillsDir } };
-}
+// The content-tree sandbox lives in run.mjs (imported above) so this suite and
+// hook.test.mjs's per-turn payload cases build the SAME tree.
 
 const BLOCK = (id, summary, body) =>
   `---\nid: ${id}\ntitle: ${id} title\nchannels: [user-prompt]\n---\n<!-- vibe:summary -->\n${summary}\n<!-- /vibe:summary -->\n\n${body ?? `${id} body prose`}\n`;
@@ -485,6 +464,112 @@ test('content: {{lessons:TAG}} pulls tagged lesson titles from the configured le
   }
 });
 
+test('content: {{lessons:.NAME}} is an INDIRECT tag — the tag is the resolved placeholder, not the literal word', () => {
+  const sb = makeContentSandbox({
+    defaults: {
+      version: 1,
+      sources: { lessons: '.spec/lessons.md' },
+      channels: { 'user-prompt': { render: 'summary', blocks: ['a.one'] } },
+    },
+    blocks: { 'a/one.md': BLOCK('a.one', '{{lessons:.state}}') },
+    cursor: { flow: 'feature', phase: 'impl', feature: 'demo', updated: '2026-01-01T00:00:00Z' },
+  });
+  try {
+    // A lesson tagged with the STATE, and a decoy tagged with the literal
+    // placeholder name — so this passes only if the tag was resolved, never if
+    // `.state` leaked through as text.
+    writeFileSync(
+      path.join(sb.dir, '.spec', 'lessons.md'),
+      '### Impl lesson\n**Tags:** feature.impl, other\n\n### Decoy\n**Tags:** state, .state\n',
+    );
+    assertEqual(renderChannel('user-prompt', sb.ctx).text, '- Impl lesson\n');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('content: an indirect tag that resolves to NOTHING selects nothing — never every lesson', () => {
+  const sb = makeContentSandbox({
+    defaults: {
+      version: 1,
+      sources: { lessons: '.spec/lessons.md' },
+      channels: { 'user-prompt': { render: 'summary', blocks: ['a.one'] } },
+    },
+    // `feature` is empty on this cursor, so the tag resolves to the literal
+    // `<feature>` placeholder; `{{lessons:.nope}}` resolves to nothing at all.
+    blocks: { 'a/one.md': BLOCK('a.one', 'x={{lessons:.nope}}y') },
+  });
+  try {
+    writeFileSync(
+      path.join(sb.dir, '.spec', 'lessons.md'),
+      '### A lesson\n**Tags:** one, two,\n',
+    );
+    assertEqual(renderChannel('user-prompt', sb.ctx).text, 'x=y\n', 'an empty tag is not a wildcard');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// {{transition}} — the state names turned into the commands that cross them
+// ---------------------------------------------------------------------------
+
+function transitionIn(cursor) {
+  const sb = makeContentSandbox({
+    defaults: DEFAULTS(['a.one']),
+    blocks: { 'a/one.md': BLOCK('a.one', '{{transition}}') },
+    cursor,
+  });
+  try {
+    return renderChannel('user-prompt', sb.ctx).text.replace(/\n$/, '');
+  } finally {
+    sb.cleanup();
+  }
+}
+
+test('content: {{transition}} on a state with ONE legal next renders exactly that one command', () => {
+  assertEqual(
+    transitionIn({ flow: 'setup', phase: 'apply', feature: null, updated: '2026-01-01T00:00:00Z' }),
+    'set-state.sh idle',
+  );
+});
+
+test('content: {{transition}} renders a GATED edge as its /flow … confirm form, never as the bare writer', () => {
+  // feature.plan > feature.impl is one of the machine's two human gates.
+  const rendered = transitionIn({ flow: 'feature', phase: 'plan', feature: 'demo', updated: '2026-01-01T00:00:00Z' });
+  assertIncludes(rendered, '/flow feature.impl confirm');
+  assert(
+    !rendered.includes('set-state.sh feature.impl'),
+    `a gated edge must not also offer the ungated writer, got: ${rendered}`,
+  );
+  // Discriminating control: the UNgated siblings of the same state still render
+  // as the writer, so the assertion above is the gate firing and not a blanket
+  // rewrite of every edge.
+  assertIncludes(rendered, 'set-state.sh feature.design');
+});
+
+test('content: {{transition}} with several legal next values renders the list, in the machine’s order', () => {
+  assertEqual(
+    transitionIn({ flow: 'feature', phase: 'impl', feature: 'demo', updated: '2026-01-01T00:00:00Z' }),
+    'set-state.sh feature.verify | set-state.sh idle',
+  );
+});
+
+test('content: {{transition}} on an unreadable machine renders empty, never an unresolved-placeholder error', () => {
+  const sb = makeContentSandbox({
+    defaults: DEFAULTS(['a.one']),
+    blocks: { 'a/one.md': BLOCK('a.one', 'go: {{transition}}') },
+  });
+  try {
+    rmSync(path.join(sb.vibeDir, 'state-machine.json'));
+    const result = renderChannel('user-prompt', sb.ctx);
+    assertEqual(result.text, 'go: \n');
+    assertEqual(result.errors, [], 'an empty transition is a fact about the cursor, not an authoring typo');
+  } finally {
+    sb.cleanup();
+  }
+});
+
 test('content: a custom placeholder resolves from vibe.json; a built-in cannot be shadowed', () => {
   const sb = makeContentSandbox({
     defaults: DEFAULTS(['a.one']),
@@ -697,6 +782,54 @@ test('shipped: the three default rulesets are composed into their channels', () 
   assert(content.channels['user-prompt'].blocks.includes('style.ste100'), 'per-turn style rule');
   assert(content.channels['agents-md'].blocks.includes('delegation.subagents'), 'subagent tiers');
   assert(content.channels['agents-md'].blocks.includes('delegation.workflows'), 'dynamic workflows');
+});
+
+test('shipped: the three prompt cadences are configured, classed, and budgeted', () => {
+  const content = loadContent(REPO_ROOT, REPO_VIBE_DIR);
+  const expected = {
+    'user-prompt.level': { trigger: 'level', budget: 2 },
+    'user-prompt.edge': { trigger: 'edge', budget: 15 },
+    'user-prompt.event': { trigger: 'event', budget: 10 },
+  };
+  for (const [name, want] of Object.entries(expected)) {
+    const channel = content.channels[name];
+    assert(channel, `the shipped defaults must configure the ${name} channel`);
+    assertEqual(channel.trigger, want.trigger, `${name}.trigger`);
+    assertEqual(channel.budget, want.budget, `${name}.budget`);
+  }
+  assert(content.channels['user-prompt.level'].blocks.includes('flow.level'), 'the cursor line');
+  assert(content.channels['user-prompt.edge'].blocks.includes('flow.edge'), 'the full orders payload');
+  // The legacy channel is untouched: adopting the cadences must not have moved
+  // anyone's standing rules onto a different surface.
+  assertEqual(content.channels['user-prompt'].trigger, 'level');
+  assert(content.channels['user-prompt'].blocks.includes('style.ste100'));
+});
+
+test('shipped: the level block names the state AND its transition command, in at most two lines', () => {
+  const result = renderChannel('user-prompt.level', repoCtx);
+  assertEqual(result.errors, [], result.errors.join('; '));
+  const lines = result.text.replace(/\n$/, '').split('\n');
+  assert(lines.length <= 2, `the level payload is rent paid every turn: ${lines.length} lines`);
+  assertMatch(result.text, /state=[a-z]+(\.[a-z]+)?/);
+  assertMatch(result.text, /(set-state\.sh |\/flow )/, 'it must name the command that leaves this state');
+});
+
+test('shipped: a channel over its budget is an ERROR (the budget is a tooth, not a note)', () => {
+  const sb = makeContentSandbox({
+    defaults: {
+      version: 1,
+      channels: { 'user-prompt.level': { render: 'summary', trigger: 'level', budget: 2, blocks: ['a.one'] } },
+    },
+    blocks: { 'a/one.md': BLOCK('a.one', 'one\ntwo\nthree') },
+  });
+  try {
+    assertIncludes(
+      checkContent(sb.ctx).errors.join('\n'),
+      'channels.user-prompt.level: 3 lines exceeds the 2-line budget',
+    );
+  } finally {
+    sb.cleanup();
+  }
 });
 
 test('shipped: every channel renders inside its own budget', () => {
