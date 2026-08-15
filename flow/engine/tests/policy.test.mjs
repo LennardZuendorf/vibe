@@ -1,6 +1,17 @@
 // engine/tests/policy.test.mjs — engine/policy.mjs (loadPolicy/decide/
 // renderInvariants) and its CLI surface, engine/commands/policy.mjs
-// (inject-triggers/1, fix round 1).
+// (inject-triggers/1, fix round 1; inject-triggers/2 adds the last three
+// sections).
+//
+// Seven things are under test — the first four are unit 1's, the last three
+// are unit 2's: 5. THE DIFFERENTIAL MATRIX — every guarded path x all 13
+// machine states driven through detect-context.sh with node present (the
+// engine answers) and with node stripped from PATH (its permanent bash branch
+// answers), asserted byte-identical on stdout AND exit code, with the matrix
+// asserting its own population; 6. DELEGATION IS LIVE — a rule planted in
+// policy.json that only the engine can see; 7. GENERATED PROSE —
+// `{{invariants}}` and the block that uses it, asserted against the rule set
+// rather than a hand-copied sentence.
 //
 // Four things are under test:
 //   1. THE SHIPPED SIX ARMS — content/policy.json must model all six guarded
@@ -19,12 +30,23 @@
 //      surface the same data loadPolicy/decide/renderInvariants already
 //      prove correct.
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, assert, assertEqual, assertIncludes, assertMatch, makeHookSandbox, runCli } from './run.mjs';
+import {
+  test,
+  assert,
+  assertEqual,
+  assertIncludes,
+  assertMatch,
+  makeHookSandbox,
+  mkTempRoot,
+  runCli,
+  runCommand,
+} from './run.mjs';
 import { loadPolicy, decide, renderInvariants } from '../policy.mjs';
-import { runDecide, runList, runRenderInvariants } from '../commands/policy.mjs';
+import { runDecide, runList, runRenderInvariants, parseLeadingOptions } from '../commands/policy.mjs';
+import { buildResolver, loadContent, renderChannel } from '../content.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const REPO_VIBE_DIR = path.join(REPO_ROOT, 'flow');
@@ -596,4 +618,488 @@ test('cli end-to-end: `vibe policy decide` against the real repo reproduces the 
   const result = runCli(['policy', 'decide', '/home/user/vibe/.spec/lessons.md', 'idle']);
   assertEqual(result.code, 0);
   assertMatch(result.stdout, /^block:/);
+});
+
+// ---------------------------------------------------------------------------
+// `--vibe-dir` — the pin detect-context.sh delegates with (inject-triggers/2).
+// ---------------------------------------------------------------------------
+
+test('option: `--vibe-dir <dir>` is parsed off the front and leaves the subcommand argv intact', () => {
+  assertEqual(parseLeadingOptions(['--vibe-dir', '/x', 'decide', 'a.md', 'idle']), {
+    argv: ['decide', 'a.md', 'idle'],
+    vibeDir: '/x',
+  });
+  assertEqual(parseLeadingOptions(['--vibe-dir=/x', 'list']), { argv: ['list'], vibeDir: '/x' });
+  assertEqual(parseLeadingOptions(['decide', 'a.md']), { argv: ['decide', 'a.md'], vibeDir: undefined });
+});
+
+test('option: `--vibe-dir` is LEADING-only — a path operand spelled like the flag is still an operand', () => {
+  // The flag is stripped only while it is at the head of argv, so
+  // `decide --vibe-dir` asks about a file NAMED `--vibe-dir` rather than
+  // silently eating the one argument `decide` needs.
+  assertEqual(parseLeadingOptions(['decide', '--vibe-dir', 'idle']), {
+    argv: ['decide', '--vibe-dir', 'idle'],
+    vibeDir: undefined,
+  });
+});
+
+test('option: a `--vibe-dir` with no value falls back to normal resolution rather than erroring', () => {
+  assertEqual(parseLeadingOptions(['--vibe-dir']), { argv: [], vibeDir: undefined });
+});
+
+test('cli end-to-end: `--vibe-dir` pins WHICH install answers, whatever the cwd', () => {
+  // Run from a directory that is not the repo, with the flag pointing at the
+  // repo's own flow/ — the verdict must still come from this repo's policy.
+  const elsewhere = mkTempRoot('vibe-policy-cwd-');
+  try {
+    const pinned = runCli(['policy', '--vibe-dir', REPO_VIBE_DIR, 'decide', '.spec/lessons.md', 'idle'], {
+      cwd: elsewhere,
+      unsetEnv: ['CLAUDE_PROJECT_DIR'],
+    });
+    assertEqual(pinned.code, 0, `stderr: ${pinned.stderr}`);
+    assertMatch(pinned.stdout, /^block:/);
+
+    // Discriminating control: the SAME invocation without the pin, from the
+    // same foreign cwd, resolves no policy at all and answers allow — which is
+    // exactly why detect-context.sh passes the pin and refuses to delegate
+    // when the policy file is missing.
+    const unpinned = runCli(['policy', 'decide', '.spec/lessons.md', 'idle'], {
+      cwd: elsewhere,
+      unsetEnv: ['CLAUDE_PROJECT_DIR'],
+    });
+    assertEqual(unpinned.stdout, 'allow\n');
+  } finally {
+    rmSync(elsewhere, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// THE DIFFERENTIAL MATRIX (inject-triggers/2).
+//
+// `detect-context.sh decide` has TWO branches — the engine (`vibe policy
+// decide`) when node is available, and its own bash `case` ladder when it is
+// not. The bash branch is permanent, not transitional: it backs a hard block
+// and a target without node must still be enforced. Two implementations of one
+// policy is exactly the shape that drifts, so every guarded path x all 13
+// machine states is driven through BOTH branches here and asserted
+// byte-identical on stdout AND exit code.
+//
+// The no-node leg is a PATH shim that deliberately omits `node` (and asserts
+// that postcondition before running anything through it) — a leg that quietly
+// still had node would be comparing the engine against itself, which is the
+// vacuous green this repo has a recorded lesson about. The matrix also asserts
+// its own population: a floor on comparisons actually run, that all 13 states
+// and every shipped rule are represented, and that the verdicts observed are
+// not all the same value.
+// ---------------------------------------------------------------------------
+
+const DETECT_SH = path.join(REPO_VIBE_DIR, 'scripts', 'detect-context.sh');
+const MACHINE_STATES = Object.keys(
+  JSON.parse(readFileSync(path.join(REPO_VIBE_DIR, 'state-machine.json'), 'utf8')).states,
+).sort();
+
+// One bash process per leg, not one per cell: the driver loops the matrix
+// itself and prints `path \t state \t rc \t stdout`. 13 states x ~26 paths is
+// ~340 cells per leg; spawning each from Node would dominate the suite runtime
+// for no extra fidelity.
+const MATRIX_DRIVER = [
+  'set -u',
+  "printf '%s\\n' \"$VIBE_PATHS\" | while IFS= read -r p; do",
+  "  printf '%s\\n' \"$VIBE_STATES\" | while IFS= read -r s; do",
+  '    out="$(bash "$VIBE_DETECT" decide "$p" "$s" 2>/dev/null)" && rc=0 || rc=$?',
+  "    printf '%s\\t%s\\t%s\\t%s\\n' \"$p\" \"$s\" \"$rc\" \"$out\"",
+  '  done',
+  'done',
+  '',
+].join('\n');
+
+// A PATH carrying the tools the bash branch needs and NOT node. The tool list
+// mirrors flow/tests/adapters/run.sh's own mkshim(); `node` is absent by
+// deliberate omission, which the caller then asserts rather than assumes.
+const SHIM_BUILDER = [
+  'set -eu',
+  'dir="$1"',
+  'mkdir -p "$dir"',
+  'for t in bash sh mkdir dirname basename date mktemp mv cp rm rmdir sed grep head tail cat env awk find readlink ln chmod cmp diff sort cksum jq git; do',
+  '  p="$(command -v "$t" 2>/dev/null)" && ln -sf "$p" "$dir/$t" || true',
+  'done',
+  '',
+].join('\n');
+
+function makeMatrixHarness() {
+  const dir = mkTempRoot('vibe-policy-matrix-');
+  const driverPath = path.join(dir, 'driver.sh');
+  writeFileSync(driverPath, MATRIX_DRIVER);
+  const builderPath = path.join(dir, 'shim.sh');
+  writeFileSync(builderPath, SHIM_BUILDER);
+  const shimDir = path.join(dir, 'no-node-path');
+  const built = runCommand('bash', [builderPath, shimDir]);
+  assert(built.code === 0, `no-node PATH shim failed to build: ${built.stderr}`);
+
+  // Postconditions, asserted rather than assumed (a shim that still exposed
+  // node would make the whole matrix compare the engine against itself).
+  const nodeGone = runCommand('bash', ['-c', 'command -v node'], { env: { PATH: shimDir } });
+  assert(nodeGone.code !== 0, `the no-node shim still exposes node at ${nodeGone.stdout.trim()}`);
+  const bashThere = runCommand('bash', ['-c', 'command -v bash'], { env: { PATH: shimDir } });
+  assertEqual(bashThere.code, 0, 'the no-node shim must still carry bash');
+  const nodeHere = runCommand('bash', ['-c', 'command -v node']);
+  assertEqual(nodeHere.code, 0, 'the node leg needs node on the ambient PATH');
+
+  function runLeg(paths, states, { noNode }) {
+    const env = {
+      VIBE_DETECT: DETECT_SH,
+      VIBE_PATHS: paths.join('\n'),
+      VIBE_STATES: states.join('\n'),
+    };
+    if (noNode) env.PATH = shimDir;
+    const result = runCommand('bash', [driverPath], { env, unsetEnv: ['CLAUDE_PROJECT_DIR'] });
+    assertEqual(result.code, 0, `matrix driver failed: ${result.stderr}`);
+    const rows = result.stdout.split('\n').filter((l) => l !== '');
+    assertEqual(
+      rows.length,
+      paths.length * states.length,
+      `driver produced ${rows.length} rows, expected ${paths.length * states.length} — a verdict spanning lines would corrupt the comparison`,
+    );
+    return rows;
+  }
+
+  return { dir, shimDir, runLeg, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+// The guarded paths, DERIVED from the shipped rules rather than hand-listed —
+// a rule added to policy.json widens this matrix on its own. Each rule
+// contributes its own patterns only: a literal pattern plus the three
+// path-boundary spellings detect-context.sh's `PATTERN|*/PATTERN` idiom
+// accepts, and a glob pattern instantiated at one and two extra segments.
+function guardedPathsFor(rules) {
+  const out = [];
+  for (const rule of rules) {
+    for (const pattern of rule.match) {
+      if (/[*?]/.test(pattern)) {
+        out.push(pattern.replace(/\*/g, 'sample.md'), pattern.replace(/\*/g, 'nested/dir/sample.md'));
+      } else {
+        out.push(pattern, `/abs/root/${pattern}`, `worktree/${pattern}`, `./${pattern}`);
+      }
+    }
+  }
+  return out;
+}
+
+// Unmatched controls: a matrix of guarded paths alone cannot tell "the two
+// branches agree" from "both branches block everything".
+const CONTROL_PATHS = ['README.md', 'docs/x.md', 'flow/engine/policy.mjs', 'srcx/a.js'];
+
+test('differential matrix: every guarded path x all 13 states is byte-identical through the engine and the bash branch', () => {
+  const { rules } = loadPolicy(REPO_VIBE_DIR);
+  const paths = [...guardedPathsFor(rules), ...CONTROL_PATHS];
+  const harness = makeMatrixHarness();
+  try {
+    const engineRows = harness.runLeg(paths, MACHINE_STATES, { noNode: false });
+    const bashRows = harness.runLeg(paths, MACHINE_STATES, { noNode: true });
+
+    const mismatches = [];
+    for (let i = 0; i < engineRows.length; i += 1) {
+      if (engineRows[i] !== bashRows[i]) mismatches.push(`engine: ${engineRows[i]}\n  bash: ${bashRows[i]}`);
+    }
+    assertEqual(mismatches, [], `branches diverged on ${mismatches.length} cell(s):\n${mismatches.join('\n')}`);
+
+    // --- the matrix asserts its own population -----------------------------
+    assertEqual(MACHINE_STATES.length, 13, 'the machine no longer has 13 states — update the matrix, do not shrink it');
+    assert(paths.length >= 20, `path axis collapsed to ${paths.length} paths`);
+    assert(engineRows.length >= 250, `only ${engineRows.length} comparisons ran — the matrix is not covering the surface`);
+
+    // Every state actually appears in a row, and every shipped rule is the
+    // deciding rule for at least one cell: a matrix whose paths all fell
+    // through to the same rule would pass the count floor while proving
+    // nothing about the rest of the table.
+    const seenStates = new Set(engineRows.map((row) => row.split('\t')[1]));
+    assertEqual([...seenStates].sort(), MACHINE_STATES);
+    const decidingRules = new Set();
+    const verdictKinds = new Set();
+    for (const row of engineRows) {
+      const [p, s, rc, out] = row.split('\t');
+      assertEqual(rc, '0', `decide must exit 0 for every verdict (${p} @ ${s})`);
+      decidingRules.add(decide({ rules }, p, s).ruleId);
+      verdictKinds.add(out === 'allow' ? 'allow' : out.split(':')[0]);
+    }
+    for (const rule of rules) {
+      assert(decidingRules.has(rule.id), `no matrix cell was decided by rule '${rule.id}'`);
+    }
+    assertEqual([...verdictKinds].sort(), ['allow', 'block', 'warn'], 'the matrix must observe all three verdicts');
+  } finally {
+    harness.cleanup();
+  }
+});
+
+test('differential matrix: the EMPTY-path row is asserted explicitly, not normalized away', () => {
+  // The one row the matrix cannot express as a verdict comparison. Through
+  // detect-context.sh the two branches are still byte-identical, because the
+  // usage guard sits UPSTREAM of the delegation — the empty path never reaches
+  // either branch. The engine CLI called directly answers the same situation
+  // with its OWN usage text on stderr and exit 1, which is a different string
+  // for a different entry point; it is asserted here rather than normalized so
+  // that nobody later "fixes" the divergence by making the two texts equal and
+  // silently changes the enforcer's stdout contract.
+  const harness = makeMatrixHarness();
+  try {
+    const legs = [
+      ['engine leg', {}],
+      ['no-node leg', { PATH: harness.shimDir }],
+    ];
+    for (const [label, env] of legs) {
+      const result = runCommand('bash', [DETECT_SH, 'decide'], { env, unsetEnv: ['CLAUDE_PROJECT_DIR'] });
+      assertEqual(result.code, 1, `${label}: empty path must exit 1`);
+      assertEqual(result.stdout, '', `${label}: nothing on stdout`);
+      assertEqual(result.stderr, 'usage: detect-context.sh decide <path> [state]\n', `${label}: the oracle's usage text`);
+    }
+  } finally {
+    harness.cleanup();
+  }
+
+  const direct = runCli(['policy', 'decide']);
+  assertEqual(direct.code, 1);
+  assertEqual(direct.stdout, '');
+  assertIncludes(direct.stderr, 'usage: vibe policy decide <path> [state]');
+});
+
+test('differential matrix: node absent changes nothing about the exit-code contract', () => {
+  const harness = makeMatrixHarness();
+  try {
+    for (const env of [{}, { PATH: harness.shimDir }]) {
+      for (const [target, state, expected] of [
+        ['.spec/lessons.md', 'idle', /^block:/],
+        ['.spec/lessons.md', 'feature.compound', /^allow$/],
+        ['src/a.js', 'feature.verify', /^warn:/],
+      ]) {
+        const result = runCommand('bash', [DETECT_SH, 'decide', target, state], { env, unsetEnv: ['CLAUDE_PROJECT_DIR'] });
+        assertEqual(result.code, 0, `${target} @ ${state}: decide always exits 0`);
+        assertMatch(result.stdout.replace(/\n$/, ''), expected);
+      }
+    }
+  } finally {
+    harness.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// KNOWN DIVERGENCE — cross-rule paths (a path matched by BOTH an exact rule
+// and an earlier glob rule).
+//
+// detect-context.sh's bash branch reads its `case` ladder top to bottom, so
+// the FIRST arm wins; the engine ranks every exact match above every glob
+// match irrespective of file order (policy.mjs, pinned by its own tests). The
+// two orders only ever disagree on a path that two rules both claim —
+// `.spec/features/AGENTS.md` is the only such shape the shipped six produce.
+//
+// This is pinned, not papered over, and the direction is what makes it
+// acceptable: the engine's verdict is never LESS strict than bash's. The
+// property is asserted over the whole cross-rule set, so a future rule that
+// made the engine the LOOSER branch fails here rather than in a session.
+// ---------------------------------------------------------------------------
+
+const SEVERITY = { allow: 0, warn: 1, block: 2 };
+
+function verdictKind(line) {
+  return line === 'allow' ? 'allow' : line.split(':')[0];
+}
+
+const CROSS_RULE_PATHS = ['.spec/features/AGENTS.md', '.spec/features/x/CLAUDE.md'];
+
+test('known divergence: on a cross-rule path the engine is stricter than bash, never looser', () => {
+  const harness = makeMatrixHarness();
+  try {
+    const engineRows = harness.runLeg(CROSS_RULE_PATHS, MACHINE_STATES, { noNode: false });
+    const bashRows = harness.runLeg(CROSS_RULE_PATHS, MACHINE_STATES, { noNode: true });
+    let differed = 0;
+    for (let i = 0; i < engineRows.length; i += 1) {
+      const engineOut = engineRows[i].split('\t')[3];
+      const bashOut = bashRows[i].split('\t')[3];
+      if (engineOut !== bashOut) differed += 1;
+      assert(
+        SEVERITY[verdictKind(engineOut)] >= SEVERITY[verdictKind(bashOut)],
+        `engine is LOOSER than bash on ${engineRows[i]} (bash: ${bashOut})`,
+      );
+    }
+    // The control that keeps this test honest: if the two branches stopped
+    // diverging here at all, this file would be asserting a property of an
+    // empty population and the comment above would be stale.
+    assert(differed > 0, 'the cross-rule divergence is gone — delete this test and its comment, do not leave it asserting nothing');
+  } finally {
+    harness.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Delegation is LIVE — a mutant proves which branch answered.
+//
+// Every assertion above compares two branches that are supposed to agree, so
+// none of them can tell "the engine answered" from "the delegation silently
+// fell through to bash". This plants a rule that exists ONLY in the engine's
+// data and checks that the enforcer reports it.
+// ---------------------------------------------------------------------------
+
+function makeInstallSandbox() {
+  const dir = mkTempRoot('vibe-policy-install-');
+  const vibeDir = path.join(dir, '.agents', 'skills', 'vibe');
+  mkdirSync(vibeDir, { recursive: true });
+  // Everything the delegation needs: the script, the engine, the data.
+  cpSync(path.join(REPO_VIBE_DIR, 'scripts'), path.join(vibeDir, 'scripts'), { recursive: true });
+  cpSync(path.join(REPO_VIBE_DIR, 'engine'), path.join(vibeDir, 'engine'), {
+    recursive: true,
+    filter: (src) => path.basename(src) !== 'tests',
+  });
+  cpSync(path.join(REPO_VIBE_DIR, 'content'), path.join(vibeDir, 'content'), { recursive: true });
+  cpSync(path.join(REPO_VIBE_DIR, 'state-machine.json'), path.join(vibeDir, 'state-machine.json'));
+  const policyPath = path.join(vibeDir, 'content', 'policy.json');
+  const detectPath = path.join(vibeDir, 'scripts', 'detect-context.sh');
+  return { dir, vibeDir, policyPath, detectPath, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+test('delegation is live: a rule planted in policy.json only reaches the verdict through the engine', () => {
+  const sb = makeInstallSandbox();
+  const sentinel = 'sentinel-mutant.md';
+  try {
+    const baseline = runCommand('bash', [sb.detectPath, 'decide', sentinel, 'idle'], { unsetEnv: ['CLAUDE_PROJECT_DIR'] });
+    assertEqual(baseline.stdout, 'allow\n', 'the sentinel path must be unguarded before the mutation');
+
+    const policy = JSON.parse(readFileSync(sb.policyPath, 'utf8'));
+    policy.rules.push({
+      id: 'sentinel',
+      match: sentinel,
+      arms: [{ states: '*', verdict: 'block', reason: 'planted by the differential test' }],
+    });
+    writeFileSync(sb.policyPath, `${JSON.stringify(policy, null, 2)}\n`);
+    // Confirm the mutation actually landed before believing either result.
+    assertIncludes(readFileSync(sb.policyPath, 'utf8'), 'planted by the differential test');
+
+    const withNode = runCommand('bash', [sb.detectPath, 'decide', sentinel, 'idle'], { unsetEnv: ['CLAUDE_PROJECT_DIR'] });
+    assertEqual(
+      withNode.stdout,
+      'block:planted by the differential test\n',
+      'with node present the verdict must come from policy.json — it did not, so decide never reached the engine',
+    );
+
+    const harness = makeMatrixHarness();
+    try {
+      const withoutNode = runCommand('bash', [sb.detectPath, 'decide', sentinel, 'idle'], {
+        env: { PATH: harness.shimDir },
+        unsetEnv: ['CLAUDE_PROJECT_DIR'],
+      });
+      assertEqual(withoutNode.stdout, 'allow\n', 'without node the bash branch answers, and it has never heard of the planted rule');
+    } finally {
+      harness.cleanup();
+    }
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('delegation refuses to answer from an EMPTY policy: no data means the bash branch decides', () => {
+  // loadPolicy degrades an absent policy.json to "no rules", which reads as
+  // allow for every path. Delegating in that state would turn a missing data
+  // file into a silent unblock of the hard blocks, so detect-context.sh
+  // requires the file to exist before it hands over.
+  const sb = makeInstallSandbox();
+  try {
+    rmSync(sb.policyPath, { force: true });
+    const result = runCommand('bash', [sb.detectPath, 'decide', '.spec/lessons.md', 'idle'], {
+      unsetEnv: ['CLAUDE_PROJECT_DIR'],
+    });
+    assertEqual(result.code, 0);
+    assertMatch(result.stdout, /^block:/, 'a missing policy.json must NOT downgrade a hard block to allow');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GENERATED INVARIANT PROSE — {{invariants}} and the block that uses it.
+//
+// Asserted against the RULE SET, never against a hand-copied sentence: a
+// sentence copied into a test is the same defect as a sentence copied into
+// prose, one indirection further out.
+// ---------------------------------------------------------------------------
+
+const REPO_CTX = {
+  root: REPO_ROOT,
+  vibeDir: REPO_VIBE_DIR,
+  skillsDir: path.join(REPO_ROOT, '.agents', 'skills'),
+};
+
+test('{{invariants}}: resolves to renderInvariants over the shipped policy', () => {
+  const content = loadContent(REPO_CTX.root, REPO_CTX.vibeDir);
+  const resolve = buildResolver(REPO_CTX, content);
+  const { rules } = loadPolicy(REPO_VIBE_DIR);
+  assertEqual(resolve('invariants'), renderInvariants({ rules }).trim());
+  assertEqual(resolve('invariants').split('\n').length, rules.length);
+});
+
+test('{{invariants}}: an absent policy degrades to an empty string, never a throw', () => {
+  const sb = makeHookSandbox();
+  try {
+    const content = loadContent(sb.root, sb.vibeDir);
+    const resolve = buildResolver({ root: sb.root, vibeDir: sb.vibeDir, skillsDir: sb.skillsDir }, content);
+    assertEqual(resolve('invariants'), '');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('shipped block flow.invariants renders every rule and every arm state from the data', () => {
+  const content = loadContent(REPO_CTX.root, REPO_CTX.vibeDir);
+  const block = content.blocks.get('flow.invariants');
+  assert(block !== undefined, 'flow/content/blocks/flow/invariants.md did not load as block id flow.invariants');
+  assertIncludes(block.body, '{{invariants}}');
+
+  // Compose it through a channel of its own, so the placeholder is resolved by
+  // the real renderChannel path rather than by hand.
+  const synthetic = {
+    ...content,
+    channels: {
+      probe: { name: 'probe', blocks: ['flow.invariants'], render: 'body', budget: 0, enabled: true },
+    },
+  };
+  const result = renderChannel('probe', REPO_CTX, synthetic);
+  assertEqual(result.errors, []);
+  assertEqual(result.unresolved, []);
+
+  const { rules } = loadPolicy(REPO_VIBE_DIR);
+  assert(rules.length > 0, 'no shipped rules — this assertion would be vacuous');
+  for (const rule of rules) {
+    for (const pattern of rule.match) {
+      assertIncludes(result.text, `\`${pattern}\``, `rendered prose omits the guarded path ${pattern}`);
+    }
+    for (const arm of rule.arms) {
+      if (arm.states === '*') continue;
+      for (const state of arm.states) {
+        assertIncludes(result.text, `\`${state}\``, `rendered prose omits state ${state} of rule ${rule.id}`);
+      }
+    }
+  }
+  assert(!result.text.includes('{{'), 'an unresolved placeholder survived into the rendered prose');
+});
+
+test('shipped block flow.invariants states the same writable-state set the enforcer applies', () => {
+  // The parity that flow/tests/run.sh used to assert against hand-authored
+  // doctrine prose (inject-triggers/2 retires it there): for each rule, the
+  // states named in the generated prose are exactly the states `decide` lets
+  // through — checked through decide(), not by re-reading policy.json.
+  const { rules } = loadPolicy(REPO_VIBE_DIR);
+  const content = loadContent(REPO_CTX.root, REPO_CTX.vibeDir);
+  const resolve = buildResolver(REPO_CTX, content);
+  const lines = resolve('invariants').split('\n');
+  assertEqual(lines.length, rules.length);
+
+  let checked = 0;
+  rules.forEach((rule, idx) => {
+    const allowArm = rule.arms.find((arm) => arm.verdict === 'allow' && arm.states !== '*');
+    if (!allowArm) return;
+    const enforced = MACHINE_STATES.filter(
+      (state) => decide({ rules }, rule.match[0], state).verdict === 'allow',
+    );
+    assertEqual(allowArm.states.slice().sort(), enforced.slice().sort(), `rule ${rule.id}`);
+    for (const state of enforced) assertIncludes(lines[idx], `\`${state}\``);
+    checked += 1;
+  });
+  assert(checked >= 3, `only ${checked} rule(s) carried a state-gated allow arm — the parity check examined almost nothing`);
 });

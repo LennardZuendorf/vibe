@@ -8,10 +8,18 @@
 #   detect-context.sh infer [<porcelain>] [<state>]  # drift:<state>:<reason> when
 #                                      working-tree activity contradicts the cursor
 #
-# The decision policy lives HERE, once, so every adapter's hook is a thin shell
-# that calls this and translates the verdict to its own exit-code convention.
-# This houses the future PreToolUse decision fn (Stage 2); in Stage 1 it is the
-# canonical reference the skills consult.
+# The decision policy is DATA (content/policy.json), read by the engine's
+# `vibe policy decide`. This script is the one entry point every adapter's hook
+# calls, and it translates nothing: the verdict is stdout, the exit code stays
+# 0. `decide` delegates to the engine when node is available and answers from
+# its own bash branch when it is not.
+#
+# The bash branch is PERMANENT, not a migration stop-gap (inject-triggers/2,
+# plan decision 1). It backs a HARD BLOCK, and a target without node must still
+# be enforced — losing the guard to a missing runtime is not acceptable. The
+# differential matrix in flow/engine/tests/policy.test.mjs drives every guarded
+# path x all 13 machine states through BOTH branches and asserts byte-identical
+# stdout and exit code, so the duplication cannot drift silently.
 #
 # The three hard blocks (everything else is allow/warn):
 #   1. .spec/lessons.md            — only during feature.compound, setup.apply,
@@ -27,8 +35,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 MACHINE="$SKILL_DIR/state-machine.json"
 STATE="$SKILL_DIR/state.json"
+ENGINE_CLI="$SKILL_DIR/engine/cli.mjs"
+POLICY_JSON="$SKILL_DIR/content/policy.json"
 
 have_jq() { command -v jq >/dev/null 2>&1; }
+have_node() { command -v node >/dev/null 2>&1; }
 
 # Locate the repo/install root by upward marker search (never fixed hops) — used
 # only by `infer` to run `git status` from the right place when no porcelain is
@@ -92,12 +103,40 @@ snapshot() {
 
 # ── decision mode ──────────────────────────────────────────────────────────—
 # Emits one of: allow | warn:<reason> | block:<reason>
+#
+# The state is resolved HERE, once, and passed explicitly to whichever branch
+# answers — the engine is never left to read the cursor itself. Two branches
+# that each resolve "where are we" would be two chances to disagree about it,
+# and the differential matrix could then not tell a policy divergence from a
+# cursor-resolution one.
 decide() {
   local path="$1"
-  local state="${2:-$(current_state)}"
+  local state="${2:-}"
+  [[ -n "$state" ]] || state="$(current_state)"
 
-  # Normalise a leading ./
+  # Normalise a leading ./ before either branch sees it.
   path="${path#./}"
+
+  # The engine answers when node can run it AND the policy data is actually
+  # there. That second condition is not belt-and-braces: loadPolicy() degrades
+  # an absent policy.json to "no rules", which reads as `allow` for EVERY
+  # path — the silent-unblock direction. No data, no delegation.
+  local out
+  if have_node && [[ -f "$ENGINE_CLI" && -f "$POLICY_JSON" ]] \
+    && out="$(node "$ENGINE_CLI" policy --vibe-dir "$SKILL_DIR" decide "$path" "$state" 2>/dev/null)" \
+    && [[ -n "$out" ]]; then
+    printf '%s\n' "$out"
+    return 0
+  fi
+
+  decide_bash "$path" "$state"
+}
+
+# The bash branch. Takes an ALREADY-normalised path and an explicit state (see
+# decide above) — it is never called with either left to default.
+decide_bash() {
+  local path="$1"
+  local state="$2"
 
   # Block 3: state.json is writer-only.
   case "$path" in

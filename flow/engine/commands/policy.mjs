@@ -6,9 +6,14 @@
 //   vibe policy list                    the loaded rules, one per line
 //   vibe policy render                  {{invariants}} prose (renderInvariants)
 //
-// A later unit points flow/scripts/detect-context.sh's `decide` at this
-// command; that hand-off is NOT this file's job — this only has to answer
-// correctly on its own.
+// A LEADING `--vibe-dir <dir>` (or `--vibe-dir=<dir>`) pins which install's
+// policy data answers, instead of letting the usual self-relative/marker
+// resolution pick. flow/scripts/detect-context.sh passes the directory it
+// already self-located into, which is what makes the delegation hermetic: the
+// enforcer and the engine read the same policy.json by construction, whatever
+// the cwd or the ambient environment happens to be. Parsed LEADING-only, so a
+// path argument spelled `--vibe-dir` is still addressable as `decide`'s own
+// operand and can never be swallowed as an option.
 //
 // Exit codes: `decide` ALWAYS exits 0 — the verdict is the stdout line, never
 // the exit code, so a hook translates it to its own convention (block -> a
@@ -20,13 +25,44 @@ import { readCursor } from '../cursor.mjs';
 import { loadPolicy, decide, renderInvariants } from '../policy.mjs';
 
 const USAGE = [
-  'usage: vibe policy decide <path> [state] | list | render',
+  'usage: vibe policy [--vibe-dir <dir>] decide <path> [state] | list | render',
   '',
   '  decide <path> [state]   print allow | warn:<reason> | block:<reason> for',
   '                           writing <path> now (state defaults to the cursor)',
   '  list                    print the loaded rules',
   '  render                  print the {{invariants}} prose',
+  '  --vibe-dir <dir>        read the policy from <dir>/content/policy.json',
 ].join('\n');
+
+const VIBE_DIR_FLAG = '--vibe-dir';
+
+// Pulls a leading `--vibe-dir <dir>` / `--vibe-dir=<dir>` off argv. Returns
+// the remaining argv and the directory (undefined when the flag is absent, so
+// the caller's normal resolution still applies). A flag with no value is
+// dropped rather than treated as an error: this command's contract is to
+// answer a verdict, and falling back to normal resolution is the recoverable
+// direction.
+export function parseLeadingOptions(argv) {
+  const rest = [...argv];
+  let vibeDir;
+  while (rest.length > 0) {
+    const head = rest[0];
+    if (head === VIBE_DIR_FLAG) {
+      rest.shift();
+      const value = rest.shift();
+      if (typeof value === 'string' && value) vibeDir = value;
+      continue;
+    }
+    if (typeof head === 'string' && head.startsWith(`${VIBE_DIR_FLAG}=`)) {
+      rest.shift();
+      const value = head.slice(VIBE_DIR_FLAG.length + 1);
+      if (value) vibeDir = value;
+      continue;
+    }
+    break;
+  }
+  return { argv: rest, vibeDir };
+}
 
 function line(s) {
   return `${s}\n`;
@@ -95,9 +131,9 @@ export function runRenderInvariants(vibeDir) {
 }
 
 export default async function run(argv, opts = {}) {
-  const argv0 = Array.isArray(argv) ? argv : [];
+  const { argv: argv0, vibeDir: pinnedVibeDir } = parseLeadingOptions(Array.isArray(argv) ? argv : []);
   const [sub, ...rest] = argv0;
-  const vibeDir = resolveVibeDir(opts);
+  const vibeDir = resolveVibeDir(pinnedVibeDir ? { ...opts, vibeDir: pinnedVibeDir } : opts);
 
   let result;
   if (sub === 'decide') {

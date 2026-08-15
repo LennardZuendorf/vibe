@@ -25,6 +25,7 @@ import { extractBlock, stripBlock } from './blocks.mjs';
 import { readJson as readJsonFile } from './json.mjs';
 import { readCursor } from './cursor.mjs';
 import { loadMachine, stateOf } from './machine.mjs';
+import { loadPolicy, renderInvariants } from './policy.mjs';
 import { runOrders } from './commands/orders.mjs';
 
 export const CONFIG_BASENAME = 'vibe.json';
@@ -448,6 +449,19 @@ export function buildResolver(ctx, content) {
     delegates: () => joinList(machineState()?.delegates),
     exit: () => machineState()?.exit ?? '',
     orders: () => (runOrders(vibeDir, skillsDir, []).stdout || '').trim(),
+    // The write invariants as prose, generated from the SAME rules the
+    // enforcer decides against (content/policy.json). Hand-authored copies of
+    // this text used to be kept in step with the code by a test that could
+    // only notice disagreement after the fact; generated text cannot disagree.
+    // Degrades to '' — an absent or malformed policy contributes no sentence,
+    // it never breaks the turn.
+    invariants: () => {
+      try {
+        return renderInvariants({ rules: loadPolicy(vibeDir).rules }).trim();
+      } catch {
+        return '';
+      }
+    },
     doctrine: () => {
       const text = readText(path.join(skillsDir ?? '', 'vibe', 'SKILL.md'));
       if (text === undefined) return '';
