@@ -656,43 +656,74 @@ export function checkContent(ctx, content = loadContent(ctx.root, ctx.vibeDir)) 
 
 const LAST_INJECT_RELPATH = path.join('.vibe', 'last-inject');
 
+// A bad root (not a non-empty string) has no directory to touch at all — NOT
+// '.', which would silently redirect the read/write onto the process's own
+// CWD (fix round 1, Minor: `recordInject(undefined, key)` was writing
+// `./.vibe/last-inject` into whatever directory happened to be current).
+// Returns undefined for a bad root; callers below treat that as "there is no
+// file", never as "look in '.'".
 function lastInjectPath(root) {
-  return path.join(typeof root === 'string' && root ? root : '.', LAST_INJECT_RELPATH);
+  return typeof root === 'string' && root ? path.join(root, LAST_INJECT_RELPATH) : undefined;
+}
+
+// The ONE producer of the canonical key form, run identically by the writer
+// and the reader — never trust two call sites to independently agree on how
+// to normalize a string.
+//
+// Fix round 1, Critical: the documented key shape (above) is
+// `${state} ${feature ?? ''}`, so a feature-less cursor (idle, quick.*,
+// setup.*, strategy.* — every state with no feature) produces a key with a
+// TRAILING SPACE, e.g. `"idle "`. recordInject wrote that key verbatim while
+// cursorChangedSince trimmed only the STORED half at the comparison site —
+// two independent, silently-diverging normalizations of the same value. A
+// feature-less cursor's key could then never match its own just-recorded
+// write, so the `edge` channel would have re-fired the full orders payload
+// on every turn in exactly those states — the per-turn budget blow-up this
+// feature exists to prevent. Routing both the write and the compare through
+// this single function closes that at the root: there is now exactly one
+// place that decides what "the same key" means, so the two sides cannot
+// drift apart again.
+function canonicalizeKey(key) {
+  return typeof key === 'string' ? key.trim() : '';
 }
 
 // cursorChangedSince(root, key) -> boolean. True unless the last recorded
-// key is BYTE-EQUAL (after trimming the trailing newline) to `key` — any
-// other outcome, including a read that fails outright, is the fail-open
-// `true`.
+// key CANONICALIZES to the same value as `key` — any other outcome,
+// including a read that fails outright or a root with nowhere to read from,
+// is the fail-open `true`.
 export function cursorChangedSince(root, key) {
+  const filePath = lastInjectPath(root);
+  if (!filePath) return true; // no usable root — fail open, nothing to read
   let raw;
   try {
-    raw = fs.readFileSync(lastInjectPath(root), 'utf8');
+    raw = fs.readFileSync(filePath, 'utf8');
   } catch {
     return true; // absent, unreadable, or any other fs error — fail open
   }
-  const stored = raw.split('\n', 1)[0].trim();
+  const stored = canonicalizeKey(raw.split('\n', 1)[0]);
   if (!stored) return true; // empty or whitespace-only file — fail open
-  return stored !== key;
+  return stored !== canonicalizeKey(key);
 }
 
-// recordInject(root, key) — writes `key` to `.vibe/last-inject` atomically
-// (temp file in the same directory, then rename — the pattern json.mjs's
-// writeJsonAtomic uses; this is plain text, one line, not JSON, so it does
-// not route through that JSON-specific writer). Creates `.vibe/` if needed.
-// Every failure — an unwritable directory, a `.vibe` path blocked by a
+// recordInject(root, key) — writes the CANONICALIZED `key` to
+// `.vibe/last-inject` atomically (temp file in the same directory, then
+// rename — the pattern json.mjs's writeJsonAtomic uses; this is plain text,
+// one line, not JSON, so it does not route through that JSON-specific
+// writer). Creates `.vibe/` if needed. Every failure — a root with nowhere
+// to write, an unwritable directory, a `.vibe` path blocked by a
 // pre-existing non-directory file, a full disk — is swallowed: this function
 // NEVER throws. Losing one recorded inject is recoverable (the next turn's
 // cursorChangedSince just fails open again); a hook that throws here would
 // wedge the turn instead.
 export function recordInject(root, key) {
   const filePath = lastInjectPath(root);
+  if (!filePath) return; // no usable root — no-op, never touches the CWD
   const dir = path.dirname(filePath);
   let tmpPath;
   try {
     fs.mkdirSync(dir, { recursive: true });
     tmpPath = path.join(dir, `.last-inject.${process.pid}.${Date.now()}.tmp`);
-    fs.writeFileSync(tmpPath, `${key}\n`, 'utf8');
+    fs.writeFileSync(tmpPath, `${canonicalizeKey(key)}\n`, 'utf8');
     fs.renameSync(tmpPath, filePath);
   } catch {
     if (tmpPath) {

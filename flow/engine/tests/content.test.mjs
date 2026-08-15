@@ -15,7 +15,7 @@
 //      nothing" is not a green, so the shipped tree is asserted to be non-empty
 //      by structure, not by a hand-written count.
 
-import { mkdirSync, writeFileSync, readFileSync, symlinkSync, existsSync, readdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, symlinkSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, assert, assertEqual, assertIncludes, assertMatch, makeHookSandbox } from './run.mjs';
@@ -751,6 +751,12 @@ test('content: a MOVED cursor reads true, and recording the new key updates what
   try {
     const before = keyFor(sb);
     recordInject(sb.dir, before);
+    // The round-trip leg a non-discriminating version of this test skipped
+    // (fix round 1, Important): without this assertion, a `before` that
+    // never actually matches its own just-recorded write would pass
+    // unnoticed — this IS the assertion that catches the Critical trailing-
+    // space bug, because `before` comes from a FEATURE-LESS cursor.
+    assertEqual(cursorChangedSince(sb.dir, before), false, 'the just-recorded key must match itself on the very next check');
     const after = 'feature.impl js-core';
     assertEqual(cursorChangedSince(sb.dir, after), true, 'a different key than what is stored reads as moved');
     recordInject(sb.dir, after);
@@ -758,6 +764,48 @@ test('content: a MOVED cursor reads true, and recording the new key updates what
     assertEqual(cursorChangedSince(sb.dir, before), true, 'the old key no longer matches once overwritten');
   } finally {
     sb.cleanup();
+  }
+});
+
+test('content: a FEATURE-LESS cursor key (idle, quick.*, setup.*, strategy.*) round-trips without a trailing-space mismatch', () => {
+  // Regression pin for fix round 1's Critical: the documented key shape is
+  // `${state} ${feature ?? ''}`, so every feature-less state's key ends in a
+  // trailing space. The precondition assertion below proves this test is
+  // actually exercising that shape, not a shape that happens to already be
+  // trim-safe.
+  const sb = makeHookSandbox({ cursor: { flow: 'idle', phase: 'idle', feature: null, updated: '2026-01-01T00:00:00Z' } });
+  try {
+    const key = keyFor(sb);
+    assert(key.endsWith(' '), `precondition: expected a trailing space on a feature-less key, got ${JSON.stringify(key)}`);
+    recordInject(sb.dir, key);
+    assertEqual(cursorChangedSince(sb.dir, key), false);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('content: cursorChangedSince/recordInject canonicalize the key the SAME way regardless of incidental whitespace', () => {
+  const sb = makeHookSandbox();
+  try {
+    recordInject(sb.dir, 'quick.verify ');
+    assertEqual(cursorChangedSince(sb.dir, 'quick.verify'), false, 'a caller-side trailing space and its trimmed form are the same key');
+    assertEqual(cursorChangedSince(sb.dir, '  quick.verify  '), false, 'leading/trailing whitespace on the CHECK side is canonicalized too');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('content: a bad root (not a non-empty string) never touches the process CWD — recordInject no-ops, cursorChangedSince fails open', () => {
+  const cwdVibe = path.join(process.cwd(), '.vibe');
+  const preexisting = existsSync(cwdVibe);
+  try {
+    for (const badRoot of [undefined, null, 42, '']) {
+      recordInject(badRoot, 'some-key');
+      assertEqual(cursorChangedSince(badRoot, 'some-key'), true, `cursorChangedSince(${JSON.stringify(badRoot)}, ...) must fail open`);
+    }
+    assertEqual(existsSync(cwdVibe), preexisting, 'a bad root must never create .vibe/ in the process CWD');
+  } finally {
+    if (!preexisting && existsSync(cwdVibe)) rmSync(cwdVibe, { recursive: true, force: true });
   }
 });
 
