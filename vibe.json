@@ -1,0 +1,17 @@
+{
+  "$comment": "Project injection config. Merged OVER flow/content/vibe.default.json — user-owned, survives every upgrade. `vibe render --list` shows the resolved result; `vibe render --check` lints it. Channel keys: blocks (replace), add / remove (edit), render, budget, headings, enabled, write.",
+  "version": 1,
+  "channels": {
+    "session-start": {
+      "add": ["repo.evidence"]
+    }
+  },
+  "blocks": {
+    "repo.evidence": {
+      "title": "Evidence before done",
+      "channels": ["session-start"],
+      "summary": "evidence: run `bash tests/run.sh` and `bash .agents/skills/spec/scripts/validate.sh` before claiming any work is done — quote the output, never the intent"
+    }
+  },
+  "placeholders": {}
+}

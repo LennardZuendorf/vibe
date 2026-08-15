@@ -1,0 +1,34 @@
+{
+  "$comment": "vibe shipped injection defaults. A project overrides ANY of this from a root vibe.json — same shape, merged over these values (channels.<c>.blocks replaces, .add/.remove edit, blocks.<id> patches or defines a block, blocks.<id>.enabled=false silences one). Never edit this file in an install; it is replaced on upgrade.",
+  "version": 1,
+  "sources": {
+    "lessons": ".spec/lessons.md"
+  },
+  "channels": {
+    "user-prompt": {
+      "$comment": "Injected on EVERY turn (UserPromptSubmit), after the flow orders. Keep it byte-stable and tiny — it lands in the transcript once per turn and pays prompt-cache rent forever.",
+      "render": "summary",
+      "budget": 6,
+      "blocks": ["style.ste100"]
+    },
+    "session-start": {
+      "$comment": "Injected once per session (SessionStart, +compact), after the flow doctrine. Timeless rules only — this output replays stale on --resume, so nothing live belongs here.",
+      "render": "summary",
+      "budget": 15,
+      "blocks": []
+    },
+    "agents-md": {
+      "$comment": "Rendered into the AGENTS.md managed rules block by `vibe render agents-md --write`. Prose the model must DECIDE with, that no hook can enforce.",
+      "render": "body",
+      "budget": 80,
+      "blocks": ["delegation.subagents", "delegation.workflows"],
+      "write": {
+        "file": "AGENTS.md",
+        "block": "vibe:rules",
+        "note": "_Managed by vibe — rendered from the `agents-md` channel by `vibe render agents-md --write`. Edit the blocks or `vibe.json`, not this region._"
+      }
+    }
+  },
+  "blocks": {},
+  "placeholders": {}
+}

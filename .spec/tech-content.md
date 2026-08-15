@@ -11,6 +11,16 @@ updated: 2026-08-10
 Branch doc for the content layer: how every injected sentence is authored,
 composed, and budgeted. Parent: [tech.md](tech.md).
 
+> **Status (2026-08-15).** The authoring/composition/override half has shipped —
+> see [features/content-layer/](features/content-layer/tech.md) for what exists.
+> Two deltas from the design below, both deliberate: the project layer is a
+> single root `vibe.json` (shipped defaults live in
+> `flow/content/vibe.default.json`) rather than a `.vibe/compose.json` +
+> `policy.json` pair, and `policy.json` — write invariants as data — is NOT
+> implemented; `detect-context.sh decide` is still the single source for those.
+> Trigger classing (level/edge/event) remains inject-triggers' box; today both
+> prompt channels fire on every turn / every session start.
+
 Every injected sentence is authored once, as a **block**, and composed into a
 **channel**. One marker grammar, one resolver.
 

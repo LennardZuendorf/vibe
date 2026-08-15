@@ -206,6 +206,13 @@ state's orders win: write to the state's surface, transition only via `set-state
 edits are not a state — edit within the current state's write surface and stay put.
 `set-state.sh idle` is always legal: abort ends any flow.
 
+## Injected rules
+
+Standing rules are authored as content blocks and composed into channels: the
+per-turn prompt, session start, and the `vibe:rules` block below. Configure them in
+this repo's root `vibe.json` — add, remove, reorder, disable, or define your own —
+never by editing the block, which is regenerated.
+
 ## Commands
 
 ```bash
@@ -215,6 +222,11 @@ bash .agents/skills/spec/scripts/validate.sh
 bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
 # Health-check the harness wiring (hooks, cursor, machine)
 bash .agents/skills/vibe/scripts/doctor.sh
+# Injection config: what each channel composes, and lint it
+node .agents/skills/vibe/engine/cli.mjs render --list
+node .agents/skills/vibe/engine/cli.mjs render --check
+# Re-render the AGENTS.md rules block after editing vibe.json
+node .agents/skills/vibe/engine/cli.mjs render agents-md --write
 ```
 
 ## Enforcement is partial — do not trust it blindly
@@ -246,3 +258,41 @@ and prefer warn over hard-fail.
 - **A guard is only as strong as the capability it bans, not the spelling it matches** — When a guard is evaded, do not add a pattern for the evasion — that buys exactly one round. Close the *capability*: state the invariant as "no module may obtain X by any means unless allowlisted", then find the mechanical property that makes it true regardless of syntax. Match against the whole comment-stripped file, never per line. Close the scanned set under whatever relation the attacker can traverse (here, module resolution — which covers static `import`, `import()`, `require`, and `createRequire` without naming any of them). Pin exemptions by exact line *and occurrence count*, never by file. And require the implementer to produce the list of evasions it tried against its **own** fix, including the ones that failed — the round that finally held was the first to produce that artifact.
 - **Porting a script destroys the oracle that proves the port — freeze it first** — When replacing an implementation, copy its predecessor into the test tree as a frozen oracle **before** the first line of the replacement is written, and make differential comparison part of the suite. Prioritise by blast radius: anything that can block, delete, or halt gets its oracle frozen first. Where an oracle disagrees with *itself* across its own code paths, follow the fail-safe branch and pin the divergence with a control — losing one turn of enforcement is recoverable, wedging a session is not.
 <!-- vibe:active-rules:end -->
+
+<!-- vibe:rules -->
+_Managed by vibe — rendered from the `agents-md` channel by `vibe render agents-md --write`. Edit the blocks or `vibe.json`, not this region._
+
+## Delegating to sub-agents
+
+Model tiers for ANY delegated work — Agent-tool calls and Workflow-script `agent()`
+calls alike. Set the `model` parameter explicitly on every call; never omit it
+(omission silently inherits the session model):
+
+- `haiku` — mechanical bulk work: renames, boilerplate, format conversion, log triage.
+- `sonnet` — default for well-specified implementation with clear acceptance criteria.
+- `opus` — genuinely tricky work: concurrency, subtle algorithms, adversarial
+  verify/judge panels, gnarly debugging.
+- `fable` — rare; only when independence from your context is the point (e.g.
+  adversarial review of your own plan or a large diff). If the complexity of the task
+  warrants a Fable sub-agent, ALWAYS check with me first — never spawn one unprompted.
+
+When unsure between tiers, pick the cheaper and escalate on failure.
+
+## Dynamic workflows (Workflow tool)
+
+Applies to ALL sessions, any model. Dynamic workflows do not need to be avoided —
+reach for the Workflow tool when a task has 3+ independent parallelizable subtasks or
+would benefit from a pipeline/judge panel.
+
+Standing rule on opt-in: if ultracode is NOT on for the session (no "ultracode"
+keyword, no toggle, no orchestration request in my own words), plan first — propose
+the workflow in one or two sentences with the rough shape and cost, and wait for my
+reply; my "yes" is the opt-in. If ultracode IS on, invoke directly.
+
+**Agent models inside workflow scripts:** every `agent()` call MUST set the `model`
+parameter explicitly, chosen per "Delegating to sub-agents" above — with one
+tightening: NEVER use `fable` agents in a dynamic workflow, not even with approval.
+Only `haiku`, `sonnet`, or `opus`. If a Fable review is warranted, it happens AFTER
+the workflow completes, as a standalone Agent-tool call (ask first, per above) —
+never as a workflow stage.
+<!-- /vibe:rules -->

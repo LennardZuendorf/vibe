@@ -674,6 +674,19 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
   else
     err "WARN: merge-agents.sh not found; skipping AGENTS.md merge."
   fi
+
+  # 6b. Content layer: render the `agents-md` channel into AGENTS.md's managed
+  # vibe:rules block. Needs node (the engine); without it the instructions block
+  # above is still complete, so this degrades to a note, never a failure.
+  ENGINE_CLI="$TARGET/.agents/skills/vibe/engine/cli.mjs"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    say "render the agents-md content channel into AGENTS.md (vibe:rules block)"
+  elif [[ -f "$ENGINE_CLI" ]] && command -v node >/dev/null 2>&1; then
+    ( cd "$TARGET" && node "$ENGINE_CLI" render agents-md --write ) \
+      || err "WARN: agents-md channel not rendered (run 'node .agents/skills/vibe/engine/cli.mjs render agents-md --write')."
+  else
+    err "WARN: node not found; skipping the agents-md content render (AGENTS.md instructions block is still installed)."
+  fi
 fi
 
 # 7. Opt-in adapter symlinks. These point at AGENTS.md, which only the flow half
