@@ -832,6 +832,77 @@ test('shipped: a channel over its budget is an ERROR (the budget is a tooth, not
   }
 });
 
+// The lint half of the hook's take-over rule (fix round 1, Critical): an
+// edge-classed channel that composes blocks must ASK for the orders, because
+// the hook stops emitting them only when such a channel delivers them.
+test('checkContent: an edge-classed channel whose blocks omit {{orders}} is an ERROR', () => {
+  const sb = makeContentSandbox({
+    defaults: {
+      version: 1,
+      channels: { 'user-prompt.edge': { render: 'summary', trigger: 'edge', blocks: ['a.one'] } },
+    },
+    blocks: { 'a/one.md': BLOCK('a.one', 'no orders in here') },
+  });
+  try {
+    assertIncludes(
+      checkContent(sb.ctx).errors.join('\n'),
+      'channels.user-prompt.edge: an edge-classed channel with blocks MUST carry {{orders}}',
+    );
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('checkContent: the same channel WITH {{orders}} is clean, and the rule is edge-only', () => {
+  // Discriminating control in two directions: adding the placeholder clears
+  // the error, and a level-classed channel composing the identical block is
+  // never asked for it.
+  const withOrders = makeContentSandbox({
+    defaults: {
+      version: 1,
+      channels: { 'user-prompt.edge': { render: 'summary', trigger: 'edge', blocks: ['a.one'] } },
+    },
+    blocks: { 'a/one.md': BLOCK('a.one', 'orders: {{orders}}') },
+  });
+  try {
+    assertEqual(
+      checkContent(withOrders.ctx).errors.filter((e) => e.includes('MUST carry')),
+      [],
+    );
+  } finally {
+    withOrders.cleanup();
+  }
+
+  const levelClass = makeContentSandbox({
+    defaults: DEFAULTS(['a.one']),
+    blocks: { 'a/one.md': BLOCK('a.one', 'no orders in here') },
+  });
+  try {
+    assertEqual(
+      checkContent(levelClass.ctx).errors.filter((e) => e.includes('MUST carry')),
+      [],
+    );
+  } finally {
+    levelClass.cleanup();
+  }
+});
+
+test('checkContent: a MISSING edge block is an error too — a declared list is not a delivered one', () => {
+  const sb = makeContentSandbox({
+    defaults: {
+      version: 1,
+      channels: { 'user-prompt.edge': { render: 'summary', trigger: 'edge', blocks: ['flow.edge'] } },
+    },
+  });
+  try {
+    const errors = checkContent(sb.ctx).errors.join('\n');
+    assertIncludes(errors, "channels.user-prompt.edge: no such block 'flow.edge'");
+    assertIncludes(errors, 'MUST carry {{orders}}');
+  } finally {
+    sb.cleanup();
+  }
+});
+
 test('shipped: every channel renders inside its own budget', () => {
   const content = loadContent(REPO_ROOT, REPO_VIBE_DIR);
   for (const name of Object.keys(content.channels)) {

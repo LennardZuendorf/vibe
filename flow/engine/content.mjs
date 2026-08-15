@@ -658,6 +658,32 @@ export function renderChannelSafe(name, ctx) {
 // Lints (`vibe render --check`) — the CI tooth for authored content.
 // ---------------------------------------------------------------------------
 
+// The lint half of the hook's own take-over rule (fix round 1, Critical). The
+// inject hook stops emitting the per-turn orders only when an edge-classed
+// channel actually delivers them; it decides that from the COMPOSED TEXT, at
+// inject time, because config can promise what a tree does not contain. This
+// check is the same rule stated at CONFIG time, where an author can still act
+// on it: a channel that claims the edge cadence and composes blocks must have
+// `{{orders}}` in at least one of them.
+//
+// Source-level on purpose. Whether the orders RESOLVE depends on the cursor and
+// the machine of whoever runs the lint; whether the channel ASKS for them is a
+// property of the content tree itself, which is what is being linted. An
+// edge-classed channel with no blocks claims nothing and is exempt.
+const ORDERS_PLACEHOLDER = '{{orders}}';
+
+function carriesOrders(channel, content) {
+  if (!channel || channelTrigger(channel) !== 'edge') return true;
+  const ids = Array.isArray(channel.blocks) ? channel.blocks : [];
+  if (ids.length === 0) return true;
+  return ids.some((id) => {
+    const block = content.blocks.get(id);
+    if (!block || !block.enabled) return false;
+    const raw = channel.render === 'body' ? block.body : block.summary;
+    return typeof raw === 'string' && raw.includes(ORDERS_PLACEHOLDER);
+  });
+}
+
 export function checkContent(ctx, content = loadContent(ctx.root, ctx.vibeDir)) {
   const errors = [...content.errors];
   const warnings = [];
@@ -668,6 +694,14 @@ export function checkContent(ctx, content = loadContent(ctx.root, ctx.vibeDir)) 
     const result = renderChannel(name, ctx, content);
     errors.push(...result.errors);
     warnings.push(...result.warnings);
+    if (!carriesOrders(channel, content)) {
+      errors.push(
+        `channels.${name}: an edge-classed channel with blocks MUST carry ${ORDERS_PLACEHOLDER} — ` +
+          'the inject hook suppresses the per-turn orders only when this channel delivers them, ' +
+          `so a channel that composes [${(channel.blocks ?? []).join(', ')}] without them silently drops ` +
+          'the turn imperative (remove the blocks, or change the trigger)',
+      );
+    }
     for (const id of Array.isArray(channel.blocks) ? channel.blocks : []) {
       const block = content.blocks.get(id);
       if (!block) continue; // renderChannel already errored

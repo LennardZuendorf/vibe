@@ -274,14 +274,24 @@ rm -f "$SB/.agents/skills/vibe/state.json"      # idle cursor
 mkdir -p "$SB/src"; printf 'x\n' > "$SB/src/app.sh"
 inj="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" </dev/null 2>/dev/null)"
 first="$(printf '%s\n' "$inj" | head -n1)"
+# The orders are identified by a phrase ONLY they carry (inject-triggers/4 fix
+# round 1, Important). `state=idle` no longer discriminates: the level line
+# deliberately opens `state=<state>`, so an assertion on that substring passes
+# even with the orders permanently deleted — it was reading the level line and
+# reporting on the orders.
+IDLE_ORDERS="no active flow"
 assert_contains "flow-legibility/6" "inject prepends the drift nudge as line 1 (idle + src edit)" "$first" "vibe-drift:"
-assert_contains "flow-legibility/6" "inject still emits the orders after the drift line" "$inj" "state=idle"
-# clean tree -> no drift line; orders stay the first content (byte-stable path)
+assert_contains "flow-legibility/6" "inject still emits the orders after the drift line" "$inj" "$IDLE_ORDERS"
+# clean tree -> no drift line; the level line is the first content. The orders
+# are EDGE-cadence now: the turn above was the first inject after install (an
+# edge by definition), this one is a quiet turn in a cursor that has not moved,
+# so the full payload is deliberately absent.
 rm -f "$SB/src/app.sh"
 inj2="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" </dev/null 2>/dev/null)"
 first2="$(printf '%s\n' "$inj2" | head -n1)"
 assert_not_contains "flow-legibility/6" "no drift line when no src/tests change" "$inj2" "vibe-drift:"
-assert_contains "flow-legibility/6" "orders are the first line when no drift" "$first2" "state=idle"
+assert_contains "flow-legibility/6" "the cursor line is the first content when no drift" "$first2" "state=idle · transition:"
+assert_not_contains "flow-legibility/6" "the edge payload does not repeat on a settled cursor" "$inj2" "$IDLE_ORDERS"
 rm -rf "$SB"
 
 echo ""
@@ -293,13 +303,27 @@ WLOG="$SB/.agents/skills/vibe/warnings.log"
 # inject — behavioral: it emits the CURRENT cursor state's orders to stdout (the
 # model-visible stream), not a fixed string. Asserting rc=0 from a hook that
 # always exits 0 proves nothing, so pin the actual routed content instead.
+# Each state's orders are pinned by a phrase unique to THEM, never by the
+# `state=<state>` prefix the level line also carries (inject-triggers/4 fix
+# round 1, Important).
+IDLE_ORDERS="no active flow"
+IMPL_ORDERS="skill=vibe · delegate executing-plans"
 bash "$SS" idle >/dev/null
 out="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>/dev/null)"
-assert_contains "platform-adapters/1" "inject emits idle orders for an idle cursor" "$out" "state=idle"
+assert_contains "platform-adapters/1" "inject emits idle orders for an idle cursor" "$out" "$IDLE_ORDERS"
 bash "$SS" feature.impl demo >/dev/null
 out="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>/dev/null)"
-assert_contains "platform-adapters/1" "inject emits the cursor state's orders (feature.impl)" "$out" "executing-plans"
-assert_not_contains "platform-adapters/1" "inject does not emit a foreign state's orders" "$out" "state=idle"
+assert_contains "platform-adapters/1" "inject emits the cursor state's orders (feature.impl)" "$out" "$IMPL_ORDERS"
+assert_not_contains "platform-adapters/1" "inject does not emit a foreign state's orders" "$out" "$IDLE_ORDERS"
+# inject-triggers/4 — the cadence contract, end to end on a real install: the
+# orders ride the turn AFTER the cursor moves and not again, and two settled
+# turns are byte-identical (what keeps the prompt cache warm). The turn above
+# was the transition turn; these two are the settled ones.
+quiet1="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>/dev/null)"
+quiet2="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>/dev/null)"
+assert_not_contains "inject-triggers/4" "the edge payload rides the move once, not every turn" "$quiet1" "$IMPL_ORDERS"
+assert_contains "inject-triggers/4" "the cursor line still rides every turn" "$quiet1" "state=feature.impl · transition:"
+assert_eq "inject-triggers/4" "two settled turns are byte-identical" "$quiet1" "$quiet2"
 # guard: block lessons.md outside compound
 out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".spec/lessons.md"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
 assert_contains "platform-adapters/2" "guard blocks lessons.md (exit 2)" "$out" "rc=2"

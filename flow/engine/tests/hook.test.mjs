@@ -348,6 +348,55 @@ test('inject: a content tree with NO edge channel keeps the raw orders on every 
   }
 });
 
+// The take-over is decided on EVIDENCE — what the edge channel actually
+// composed — not on what its config declared (fix round 1, Critical). Both
+// cases below have a non-empty declared block list, and in both the orders
+// would otherwise vanish from every turn, forever, at exit 0.
+test('inject: a MISSING edge block never takes the orders away (declared is not delivered)', () => {
+  const sb = makeTriggerSandbox();
+  try {
+    // Precondition: this sandbox's edge channel works, so the loss below is
+    // the missing block and not an inert fixture.
+    assertIncludes(quietTurn(sb).stdout, 'EDGE ', 'precondition: the edge channel delivers the orders');
+
+    rmSync(path.join(sb.vibeDir, 'content', 'blocks', 'flow', 'edge.md'));
+    for (const turn of [1, 2]) {
+      const result = quietTurn(sb);
+      assertEqual(result.code, 0, `turn ${turn}: still exit 0`);
+      assertIncludes(
+        result.stdout,
+        'no active flow',
+        `turn ${turn}: the orders come back when nothing else delivers them`,
+      );
+    }
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('inject: an edge block WITHOUT {{orders}} never takes the orders away either', () => {
+  const sb = makeContentSandbox({
+    defaults: {
+      version: 1,
+      channels: {
+        'user-prompt.edge': { render: 'summary', trigger: 'edge', blocks: ['own.edge'] },
+      },
+    },
+    // A project's own edge block: it renders fine, it just does not carry the
+    // orders. `render --check` errors on this shape; the hook must survive it
+    // regardless, because a live session never runs the lint.
+    blocks: { 'own/edge.md': '---\nid: own.edge\nchannels: [user-prompt.edge]\n---\nPROJECT EDGE TEXT\n' },
+  });
+  try {
+    const first = quietTurn(sb);
+    assertIncludes(first.stdout, 'PROJECT EDGE TEXT', 'the project block still rides the edge turn');
+    assertIncludes(first.stdout, 'no active flow', 'and the orders are still emitted, because that block lacks them');
+    assertIncludes(quietTurn(sb).stdout, 'no active flow', 'on every turn, not just the first');
+  } finally {
+    sb.cleanup();
+  }
+});
+
 test('inject: an EMPTY edge channel does not claim the orders (a channel that composes nothing carries nothing)', () => {
   const sb = makeContentSandbox({
     defaults: {

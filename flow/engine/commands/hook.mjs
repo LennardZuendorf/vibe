@@ -209,21 +209,45 @@ function injectKey(vibeDir) {
 // payload (the raw orders) and records nothing, so a crash in here can never
 // silently swallow an edge payload: the next turn still sees the cursor as
 // moved and re-emits it.
-function composePromptPayload(ctx, hadEvent) {
+//
+// `orders` is the raw orders text for this turn, passed in by the caller so it
+// is resolved exactly once: it is both the fallback payload and the EVIDENCE
+// the take-over below is decided on.
+function composePromptPayload(ctx, hadEvent, orders) {
   try {
     const content = loadContent(ctx.root, ctx.vibeDir);
     const channels = promptChannels(content);
 
-    // Does the content layer OWN the orders this turn? It does exactly when a
-    // prompt channel claims the edge cadence and actually composes something —
-    // the shipped `user-prompt.edge` renders `{{orders}}` itself. Emitting the
-    // raw orders as well would inject them twice on every edge turn, and
-    // emitting them unconditionally would defeat the point of the split on
-    // every other turn. An install with no content tree, and any project that
-    // has not adopted these channels, has no edge channel at all and so keeps
-    // today's behaviour byte for byte.
-    const edgeChannels = channels.filter((c) => c.trigger === 'edge');
-    const ownsOrders = edgeChannels.some((c) => c.blocks.length > 0);
+    // Does the content layer OWN the orders this turn?
+    //
+    // Decided on EVIDENCE, never on a declaration (fix round 1, Critical). The
+    // first cut asked whether an edge-classed channel DECLARED any blocks,
+    // which is a promise about config, not a fact about output — and it had two
+    // silent-loss paths, both ending in the turn's imperative disappearing from
+    // every turn forever, at exit 0, with nothing to notice it:
+    //
+    //   (a) the composed block is missing (a partial install, or the file
+    //       deleted). The declared list is still non-empty; the channel renders
+    //       nothing at all.
+    //   (b) a project repoints the channel at its own block that carries no
+    //       `{{orders}}`. The channel renders fine and simply does not contain
+    //       them.
+    //
+    // So the channel is composed FIRST and the take-over is granted only if
+    // that composition actually produced the orders. This is the repo's own
+    // "a check that examines nothing must fail loudly" rule applied to a
+    // handover: losing a line to duplication is recoverable, losing the turn's
+    // imperative is not. `render --check` carries the same rule as a lint, so
+    // an author hears about it at config time rather than at inject time.
+    //
+    // Composed on EVERY turn, not only when the cursor moved: the evidence has
+    // to exist before the decision, and the decision is due every turn. Only
+    // the EMISSION is gated on the cadence, below.
+    const edgeText = channels
+      .filter((c) => c.trigger === 'edge')
+      .map((c) => renderChannel(c.name, ctx, content).text || '')
+      .join('');
+    const ownsOrders = Boolean(orders) && edgeText.includes(orders);
 
     const key = injectKey(ctx.vibeDir);
     // Fail-open by contract: an unreadable or absent marker reads as "moved",
@@ -243,7 +267,7 @@ function composePromptPayload(ctx, hadEvent) {
       text += renderChannel(channel.name, ctx, content).text || '';
     }
 
-    return { text, ownsOrders, key, record: edgeChannels.length > 0 };
+    return { text, ownsOrders, key, record: edgeText !== '' };
   } catch {
     return undefined;
   }
@@ -274,12 +298,18 @@ export function runInjectHook(root, vibeDir, skillsDir, opts = {}) {
   const warns = drainWarnLog(root);
 
   const ctx = { root, vibeDir, skillsDir };
-  const payload = composePromptPayload(ctx, Boolean(drift) || Boolean(warns));
+  // Resolved once and used twice: as the fallback payload below, and as the
+  // evidence composePromptPayload weighs the edge channel's output against.
+  // `{{orders}}` interpolates the TRIMMED text (content.mjs), so the evidence
+  // is trimmed and the emitted line keeps its newline.
+  const orders = runOrders(vibeDir, skillsDir, []).stdout || '';
+  const payload = composePromptPayload(ctx, Boolean(drift) || Boolean(warns), orders.trim());
 
   if (!payload || !payload.ownsOrders) {
-    // No content layer, or no edge channel in it: the state's orders are the
-    // turn's imperative and ride every turn, exactly as before this feature.
-    stdout += runOrders(vibeDir, skillsDir, []).stdout || '';
+    // No content layer, or no edge channel that actually delivers the orders:
+    // the state's orders are the turn's imperative and ride every turn,
+    // exactly as before this feature.
+    stdout += orders;
   }
   if (payload) {
     stdout += payload.text;
