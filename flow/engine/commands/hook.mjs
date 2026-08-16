@@ -4,14 +4,14 @@
 // This is NOT a port of a single bash oracle the way state/orders/doctrine/
 // doctor are — it is the JS reimplementation of what each hook SCRIPT itself
 // did around its ported command (drift-first nudge, warnings relay, guard
-// verdict translation, the evidence-receipt gate). Per the feature plan,
-// detect-context.sh's DECISION POLICY stays bash — `decide` and `infer` are
-// still invoked via `spawnSync('bash', [...])`, exactly like doctor.mjs
-// already shells out to validate-state.sh rather than reimplementing it.
-// STATE/FEATURE/NEXT resolution, by contrast, is pure JS via the existing
-// cursor.mjs/machine.mjs primitives (jq-independent by construction — no
-// no-jq branch is needed here the way detect-context.sh's own sed fallback
-// needs one).
+// verdict translation, the evidence-receipt gate). `infer` is still invoked
+// via `spawnSync('bash', [...])`, exactly like doctor.mjs already shells out
+// to validate-state.sh rather than reimplementing it; `decide` is now answered
+// IN-PROCESS from policy.mjs, with the bash spawn kept as the fallback for an
+// unusable policy — see inProcessVerdict() for the ruling and its reasons.
+// STATE/FEATURE resolution is pure JS via the existing cursor.mjs primitives
+// (jq-independent by construction — no no-jq branch is needed here the way
+// detect-context.sh's own sed fallback needs one).
 //
 // Every exported run*Hook() is pure over its inputs (root/vibeDir/skillsDir/
 // stdin text, plus injectable spawn* functions for hermetic tests) and NEVER
@@ -31,7 +31,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { resolveRoot, resolveVibeDir, resolveSkillsDir } from '../root.mjs';
 import { readCursor } from '../cursor.mjs';
-import { loadMachine, stateOf } from '../machine.mjs';
+import { loadPolicy, decide } from '../policy.mjs';
 import { runDoctrine } from './doctrine.mjs';
 import { runOrders } from './orders.mjs';
 import {
@@ -76,7 +76,20 @@ function isDir(p) {
 // guard/gate also append it here; the inject hook drains + truncates it once
 // per turn. Every failure mode (missing dir, unwritable log) is a silent
 // no-op, matching the bash originals.
+//
+// BOUNDED AND DEDUPLICATED (inject-triggers, R5). The drain writes into the
+// PROMPT, which is append-only and re-read on every subsequent turn — so an
+// unbounded drain is the one surface here that can grow without limit. A loop
+// that trips the same guard on every tool call queued one line per occurrence
+// and spent one transcript line per occurrence, for the rest of the session.
+// Identical lines now collapse to one carrying a count, and a single turn
+// emits at most RELAY_MAX_LINES of them plus a `+N more` trailer when the cap
+// truncates. The log is truncated afterwards exactly as before: what the cap
+// dropped is dropped for good rather than re-emitted next turn — the relay is
+// a nudge, not a ledger, and a warn worth blocking on is a gate, not a line.
 // ---------------------------------------------------------------------------
+
+const RELAY_MAX_LINES = 10;
 
 function appendWarnLog(root, msg) {
   if (!isDir(vibeLogDir(root))) return;
@@ -87,6 +100,20 @@ function appendWarnLog(root, msg) {
   }
 }
 
+// Queued lines -> the lines to emit: identical text collapsed to one entry
+// carrying `(xN)`, in FIRST-SEEN order (a Map preserves insertion order), so
+// the reader sees the same sequence a plain drain would have shown, minus the
+// repeats. Exported for the tests that pin the collapse and the cap.
+export function collapseWarnLines(text) {
+  if (typeof text !== 'string') return [];
+  const counts = new Map();
+  for (const raw of text.split('\n')) {
+    if (!raw) continue;
+    counts.set(raw, (counts.get(raw) ?? 0) + 1);
+  }
+  return [...counts].map(([msg, n]) => (n > 1 ? `${msg} (x${n})` : msg));
+}
+
 function drainWarnLog(root) {
   const p = warnLogPath(root);
   let text;
@@ -95,10 +122,11 @@ function drainWarnLog(root) {
   } catch {
     return '';
   }
+  const collapsed = collapseWarnLines(text);
   let out = '';
-  for (const raw of text.split('\n')) {
-    if (!raw) continue;
-    out += line(`vibe-warn: ${raw}`);
+  for (const msg of collapsed.slice(0, RELAY_MAX_LINES)) out += line(`vibe-warn: ${msg}`);
+  if (collapsed.length > RELAY_MAX_LINES) {
+    out += line(`vibe-warn: +${collapsed.length - RELAY_MAX_LINES} more`);
   }
   try {
     fs.writeFileSync(p, '');
@@ -124,7 +152,7 @@ function drainWarnLog(root) {
 // session-start channel contributes nothing and the output is byte-identical
 // to the pre-content-layer hook.
 export function runDoctrineHook(vibeDir, skillsDir, root) {
-  const result = runDoctrine(vibeDir, skillsDir);
+  const result = runDoctrine(skillsDir);
   const content = renderChannelSafe('session-start', { root, vibeDir, skillsDir });
   return { code: 0, stdout: (result.stdout || '') + content, stderr: '' };
 }
@@ -173,6 +201,9 @@ function isPromptChannel(name) {
 // standing rules a project composes — the orders are the turn's imperative,
 // the rules are context for carrying it out.
 const CHANNEL_LEAD = ['user-prompt.level', 'user-prompt.edge', 'user-prompt.event'];
+
+// The slot the raw orders occupy when no edge channel delivers them.
+const EDGE_CHANNEL = 'user-prompt.edge';
 
 function compareChannels(a, b) {
   const ra = CHANNEL_LEAD.indexOf(a);
@@ -261,13 +292,34 @@ function composePromptPayload(ctx, hadEvent, orders) {
 
     const due = { level: true, edge: moved, event: hadEvent };
 
-    let text = '';
+    // Split at the edge SLOT so the caller can splice the raw orders into it
+    // when no edge channel delivered them (fix carried over from unit 4's
+    // review): the documented order is level -> edge/orders -> event -> the
+    // standing rules a project composes, and the fallback used to PREPEND the
+    // orders ahead of the level line instead. The orders are the turn's
+    // imperative and the rules are context for carrying it out, so they must
+    // still precede everything that follows the level channels.
+    //
+    // Split by SORT POSITION, not by trigger: the edge slot exists in the
+    // emission order even on a turn carrying no edge payload, and a project's
+    // standing-rules channel is level-classed too but sorts after it — keying
+    // on the trigger would let the orders land behind the rules.
+    let levelText = '';
+    let restText = '';
     for (const channel of channels) {
       if (!due[channel.trigger]) continue;
-      text += renderChannel(channel.name, ctx, content).text || '';
+      const rendered = renderChannel(channel.name, ctx, content).text || '';
+      if (compareChannels(channel.name, EDGE_CHANNEL) < 0) levelText += rendered;
+      else restText += rendered;
     }
 
-    return { text, ownsOrders, key, record: edgeText !== '' };
+    // Recorded on ANY turn the payload was composed, not only when an edge
+    // channel produced text (fix carried over from unit 4's review): gating the
+    // record on `edgeText !== ''` meant an install whose edge channel renders
+    // nothing never wrote the marker, so cursorChangedSince() read "moved"
+    // forever. Harmless while nothing consumed it beyond the edge cadence, but
+    // it made the marker a lie the moment anything else did.
+    return { levelText, restText, ownsOrders, key, record: true };
   } catch {
     return undefined;
   }
@@ -305,20 +357,22 @@ export function runInjectHook(root, vibeDir, skillsDir, opts = {}) {
   const orders = runOrders(vibeDir, skillsDir, []).stdout || '';
   const payload = composePromptPayload(ctx, Boolean(drift) || Boolean(warns), orders.trim());
 
-  if (!payload || !payload.ownsOrders) {
-    // No content layer, or no edge channel that actually delivers the orders:
-    // the state's orders are the turn's imperative and ride every turn,
-    // exactly as before this feature.
-    stdout += orders;
-  }
   if (payload) {
-    stdout += payload.text;
+    // level -> orders (the edge slot) -> everything after it. The raw orders
+    // ride only when no edge channel actually delivered them, exactly as
+    // before this feature; what changed is that they no longer jump ahead of
+    // the level line.
+    stdout += payload.levelText;
+    if (!payload.ownsOrders) stdout += orders;
+    stdout += payload.restText;
     // Recorded ONCE per turn, after composing succeeded — never before, so a
     // failure mid-compose leaves the cursor looking unchanged and the next
-    // turn re-emits the edge payload. Skipped entirely when no edge channel
-    // exists, so an install without one never grows the marker file.
+    // turn re-emits the edge payload.
     if (payload.record) recordInject(root, payload.key);
   } else {
+    // No content layer at all: the state's orders are the turn's imperative
+    // and ride every turn, ahead of the legacy channel's standing rules.
+    stdout += orders;
     // Compose failed outright. The legacy channel is still worth trying
     // through its own never-throws wrapper, so a broken new channel cannot
     // cost a project the standing rules it had before.
@@ -332,8 +386,8 @@ export function runInjectHook(root, vibeDir, skillsDir, opts = {}) {
 
 // ---------------------------------------------------------------------------
 // pre-tool-use-guard — Bash commands get a warn-only text sniff; Edit/Write/
-// NotebookEdit get their target path routed through bash detect-context.sh
-// decide, whose verdict (allow|warn:<reason>|block:<reason>) is translated to
+// NotebookEdit get their target path decided against the write-invariant
+// policy, whose verdict (allow|warn:<reason>|block:<reason>) is translated to
 // this hook's exit-code convention (block -> stderr + exit 2, warn -> stderr
 // + relay + exit 0, allow -> exit 0).
 // ---------------------------------------------------------------------------
@@ -372,6 +426,45 @@ function stripLeadingRoot(p, root) {
   return p.startsWith(prefix) ? p.slice(prefix.length) : p;
 }
 
+// The write-invariant decision, answered IN-PROCESS (inject-triggers/5,
+// carrying over unit 2's controller ruling). Unit 2 made detect-context.sh
+// delegate `decide` to `vibe policy decide`, so a hook that reached the verdict
+// by spawning that script was spawning node again: node -> bash -> node on
+// every guarded Edit, on a PreToolUse path the user waits behind. policy.mjs is
+// pure, jq-independent and never throws, so the same answer is one call away.
+//
+// The bash spawn stays as the FALLBACK rather than being deleted, because the
+// two branches answer different failure modes. `undefined` here means "the
+// policy DATA is unusable" — absent, unreadable, a version this engine does not
+// understand, or a rule set that loaded empty — which is exactly what
+// `vibe policy decide` refuses with exit 2 so detect-context.sh can fall
+// through to its own hardcoded copy of the same policy. Answering `allow` from
+// an empty rule set would make every hard block vanish silently; falling back
+// keeps the block. A reasonless warn/block is treated the same way, mirroring
+// detect-context.sh's is_verdict() shape check.
+//
+// WHICH install answers: vibeLogDir(root) — the same directory whose
+// scripts/detect-context.sh this hook would otherwise spawn, and the same
+// directory that script self-locates as its own SKILL_DIR and passes to the
+// engine as `--vibe-dir`. Both branches therefore read one policy.json by
+// construction, whatever the cwd or the ambient environment. The state comes
+// from that directory's cursor for the same reason: two resolvers would be two
+// chances to disagree about where we are.
+function inProcessVerdict(root, relPath) {
+  try {
+    const dir = vibeLogDir(root);
+    const { rules, errors } = loadPolicy(dir);
+    if (errors.length > 0 || rules.length === 0) return undefined;
+    const { state } = cursorStateFeature(dir);
+    const { verdict, reason } = decide({ rules }, relPath, state);
+    if (verdict === 'allow') return 'allow';
+    if (!reason) return undefined;
+    return `${verdict}:${reason}`;
+  } catch {
+    return undefined;
+  }
+}
+
 export function runGuardHook(root, stdinText, opts = {}) {
   const detectPath = detectScriptPath(root);
   if (!fs.existsSync(detectPath)) return { code: 0, stdout: '', stderr: '' };
@@ -406,17 +499,26 @@ export function runGuardHook(root, stdinText, opts = {}) {
   let pathIn = extractTargetPath(parsed);
   if (!pathIn) return { code: 0, stdout: '', stderr: '' };
   pathIn = stripLeadingRoot(pathIn, root);
+  // Mirrors detect-context.sh's own `path="${path#./}"`, applied before either
+  // branch sees the path so the two cannot disagree about `./x` vs `x`. Spelled
+  // as a regex, not a string literal: a leading-dot-slash STRING is
+  // specifier-shaped, and primitives.test.mjs's module-reach rule (rightly)
+  // refuses to let a shipped module hold one it cannot resolve.
+  pathIn = pathIn.replace(/^\.\//, '');
 
-  const spawnDecide =
-    opts.spawnDecide || ((args) => spawnSync('bash', args, { encoding: 'utf8' }));
-  let res;
-  try {
-    res = spawnDecide([detectPath, 'decide', pathIn]);
-  } catch {
-    res = undefined;
+  let verdict = inProcessVerdict(root, pathIn);
+  if (verdict === undefined) {
+    const spawnDecide =
+      opts.spawnDecide || ((args) => spawnSync('bash', args, { encoding: 'utf8' }));
+    let res;
+    try {
+      res = spawnDecide([detectPath, 'decide', pathIn]);
+    } catch {
+      res = undefined;
+    }
+    verdict =
+      res && !res.error && typeof res.stdout === 'string' && res.stdout.trim() ? res.stdout.trim() : 'allow';
   }
-  const verdict =
-    res && !res.error && typeof res.stdout === 'string' && res.stdout.trim() ? res.stdout.trim() : 'allow';
 
   if (verdict.startsWith('block:')) {
     const reason = verdict.slice('block:'.length);
@@ -437,10 +539,19 @@ export function runGuardHook(root, stdinText, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// stop-gate — the re-entry guard, three predicates (TDD warn / the one
-// promoted evidence-receipt block / stuck-phase nudge). STATE, FEATURE, NEXT
-// come from readCursor()/loadMachine()/stateOf() directly (jq-independent by
-// construction), not from shelling out to detect-context.sh snapshot.
+// stop-gate — the re-entry guard and TWO predicates (TDD warn / the one
+// promoted evidence-receipt block). STATE and FEATURE come from readCursor()
+// directly (jq-independent by construction), not from shelling out to
+// detect-context.sh snapshot.
+//
+// PREDICATE 3 IS DELETED (inject-triggers, R6). It warned `still in <state> —
+// ... (next: ...)` on every Stop in a non-idle state with legal next states,
+// which is a fact the per-turn `user-prompt.level` channel now states on EVERY
+// turn. Worse than merely redundant: each firing queued a line into the
+// warnings relay, which the next inject drained into the prompt — so a
+// duplicate of a line already present became a permanent extra line in the
+// transcript, once per Stop. Nothing else moved with it: predicate 2 is the one
+// blocking tooth in the repo and is untouched below.
 // ---------------------------------------------------------------------------
 
 // FAIL-SAFE, and a deliberate choice between two disagreeing bash legs
@@ -476,24 +587,6 @@ function cursorStateFeature(vibeDir) {
     return { state: cursor.state, feature: cursor.feature ?? null };
   } catch {
     return { state: 'idle', feature: null };
-  }
-}
-
-// DELIBERATE DIVERGENCE (js-core/7 review round 1, Finding 3): the bash
-// oracle resolved NEXT via detect-context.sh's jq-gated `snapshot` — without
-// jq it left NEXT="" and predicate 3 (the stuck-phase nudge, below) silently
-// never fired. This is pure JS (loadMachine/stateOf), jq-independent by
-// construction, so it now fires predicate 3 even when jq is absent. Warn-only,
-// cannot block, arguably more correct — kept as-is rather than reproducing
-// the oracle's jq-gate, and pinned by a dedicated no-jq test in
-// flow/tests/run.sh so the divergence stays visible, not silent.
-function nextStates(vibeDir, stateKey) {
-  try {
-    const machine = loadMachine(vibeDir);
-    const entry = stateOf(machine, stateKey);
-    return Array.isArray(entry && entry.next) ? entry.next : [];
-  } catch {
-    return [];
   }
 }
 
@@ -601,7 +694,6 @@ export function runGateHook(root, vibeDir, stdinText, opts = {}) {
   if (!fs.existsSync(detectPath)) return { code: 0, stdout: '', stderr: '' };
 
   const { state, feature } = cursorStateFeature(vibeDir);
-  const next = nextStates(vibeDir, state);
   const changed = gitPorcelain(root, opts);
 
   let stderr = '';
@@ -616,12 +708,6 @@ export function runGateHook(root, vibeDir, stdinText, opts = {}) {
   const blocked = evidenceReceiptCheck(root, state, feature, changed, warn);
   if (blocked) {
     return { code: 2, stdout: '', stderr: stderr + blocked.stderr };
-  }
-
-  if (state !== 'idle' && next.length > 0) {
-    warn(
-      `still in ${state} — when this phase's exit is met, advance with set-state.sh (next: ${next.join(', ')}). (warn-only)`,
-    );
   }
 
   return { code: 0, stdout: '', stderr };

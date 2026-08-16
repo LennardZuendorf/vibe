@@ -36,6 +36,7 @@ import {
   runInjectHook,
   runGuardHook,
   runGateHook,
+  collapseWarnLines,
 } from '../commands/hook.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -50,6 +51,16 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 
 function writeCursor(sb, body) {
   writeFileSync(sb.cursorPath, `${JSON.stringify(body, null, 2)}\n`);
+}
+
+// The relay log is created lazily, so "nothing was queued" is spelled either as
+// an empty file or as no file at all — both mean the same thing to the drain.
+function readRelay(sb) {
+  try {
+    return readFileSync(sb.warnLogPath, 'utf8');
+  } catch {
+    return '';
+  }
 }
 
 // runDoctrineHook (via doctrine.mjs) and a real detect-context.sh `infer`
@@ -79,7 +90,9 @@ test('runDoctrineHook delegates to the ported doctrine command and always exits 
     const result = withProjectDir(sb.root, () => runDoctrineHook(sb.vibeDir, sb.skillsDir));
     assertEqual(result.code, 0);
     assertIncludes(result.stdout, 'sessions are ephemeral');
-    assertIncludes(result.stdout, 'Cursor: idle.');
+    // R4: SessionStart output replays verbatim on --resume, so no live state
+    // may ride it. Population floor above, negative here.
+    assert(!result.stdout.includes('Cursor:'), 'the doctrine hook must not carry the cursor');
   } finally {
     sb.cleanup();
   }
@@ -342,7 +355,15 @@ test('inject: a content tree with NO edge channel keeps the raw orders on every 
     assertMatch(first.stdout, /^state=idle/, 'the orders still lead the payload');
     assertEqual(first.stdout, second.stdout, 'and still ride every turn, unchanged');
     assertIncludes(second.stdout, 'STYLE RULE');
-    assert(!existsSync(path.join(sb.dir, '.vibe')), 'no edge channel -> no marker file is ever created');
+    // The inject IS recorded even with no edge channel (deferred fix from unit
+    // 4's review): gating the record on the edge channel having produced text
+    // left the marker permanently absent, so cursorChangedSince() answered
+    // "moved" forever — a cursor that is always wrong rather than sometimes.
+    assertEqual(
+      readFileSync(path.join(sb.dir, '.vibe', 'last-inject'), 'utf8'),
+      'idle\n',
+      'every composed turn records the cursor it was composed for, edge channel or not',
+    );
   } finally {
     sb.cleanup();
   }
@@ -430,6 +451,96 @@ test('inject: a MALFORMED project config degrades to the pre-content payload, ne
   } finally {
     sb.cleanup();
   }
+});
+
+// ---------------------------------------------------------------------------
+// The warnings relay is BOUNDED and DEDUPLICATED (inject-triggers, R5).
+//
+// The drain writes into an append-only prompt stream, so its size is not a
+// tidiness question: every line it emits is re-read on every later turn of the
+// session. A guard tripped in a loop used to cost one line per trip, forever.
+// ---------------------------------------------------------------------------
+
+function warnLinesOf(result) {
+  return result.stdout.split('\n').filter((l) => l.startsWith('vibe-warn:'));
+}
+
+test('relay: 40 identical queued warnings collapse to ONE line carrying (x40), and the log is truncated', () => {
+  const sb = makeHookSandbox();
+  try {
+    const msg = 'guard: outside an impl state (warn-only)';
+    writeFileSync(sb.warnLogPath, `${msg}\n`.repeat(40));
+    const result = quietTurn({ ...sb, dir: sb.root });
+    const warns = warnLinesOf(result);
+    assertEqual(warns.length, 1, `40 copies must collapse to one line, got ${JSON.stringify(warns)}`);
+    assertEqual(warns[0], `vibe-warn: ${msg} (x40)`);
+    assertEqual(readFileSync(sb.warnLogPath, 'utf8'), '', 'the log is truncated exactly as before');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('relay: a line queued exactly once carries NO count suffix', () => {
+  const sb = makeHookSandbox();
+  try {
+    writeFileSync(sb.warnLogPath, 'guard: one and only (warn-only)\n');
+    assertEqual(warnLinesOf(quietTurn({ ...sb, dir: sb.root })), ['vibe-warn: guard: one and only (warn-only)']);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('relay: 50 DISTINCT queued warnings emit 10 lines plus a "+40 more" trailer', () => {
+  const sb = makeHookSandbox();
+  try {
+    const queued = Array.from({ length: 50 }, (_, i) => `guard: distinct warning ${i} (warn-only)`);
+    writeFileSync(sb.warnLogPath, `${queued.join('\n')}\n`);
+    const warns = warnLinesOf(quietTurn({ ...sb, dir: sb.root }));
+    assertEqual(warns.length, 11, 'ten lines plus one trailer');
+    assertEqual(warns[0], 'vibe-warn: guard: distinct warning 0 (warn-only)', 'first-seen order is preserved');
+    assertEqual(warns[9], 'vibe-warn: guard: distinct warning 9 (warn-only)', 'the cap keeps the OLDEST ten');
+    assertEqual(warns[10], 'vibe-warn: +40 more');
+    assertEqual(readFileSync(sb.warnLogPath, 'utf8'), '', 'truncated: what the cap dropped is dropped for good');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('relay: exactly 10 distinct warnings emit 10 lines and NO trailer (the cap is not off by one)', () => {
+  const sb = makeHookSandbox();
+  try {
+    const queued = Array.from({ length: 10 }, (_, i) => `guard: warning ${i} (warn-only)`);
+    writeFileSync(sb.warnLogPath, `${queued.join('\n')}\n`);
+    const warns = warnLinesOf(quietTurn({ ...sb, dir: sb.root }));
+    assertEqual(warns.length, 10);
+    assert(!warns.some((l) => l.includes('more')), `no trailer at the cap, got ${JSON.stringify(warns)}`);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('relay: dedupe runs BEFORE the cap — 400 lines of 3 distinct warnings emit 3, not 10', () => {
+  const sb = makeHookSandbox();
+  try {
+    const three = ['guard: a (warn-only)', 'guard: b (warn-only)', 'guard: c (warn-only)'];
+    let body = '';
+    for (let i = 0; i < 400; i += 1) body += `${three[i % 3]}\n`;
+    const warns = warnLinesOf((writeFileSync(sb.warnLogPath, body), quietTurn({ ...sb, dir: sb.root })));
+    assertEqual(warns, [
+      'vibe-warn: guard: a (warn-only) (x134)',
+      'vibe-warn: guard: b (warn-only) (x133)',
+      'vibe-warn: guard: c (warn-only) (x133)',
+    ]);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('relay: collapseWarnLines is total — empty, blank-only and trailing-newline-less input never throw', () => {
+  assertEqual(collapseWarnLines(''), []);
+  assertEqual(collapseWarnLines('\n\n\n'), []);
+  assertEqual(collapseWarnLines('a\na'), ['a (x2)']);
+  assertEqual(collapseWarnLines(undefined), []);
 });
 
 // ---------------------------------------------------------------------------
@@ -608,6 +719,176 @@ test('runGuardHook: integration — real detect-context.sh allows src/ writes du
     const result = runGuardHook(sb.root, stdin, {});
     assertEqual(result.code, 0);
     assertEqual(result.stderr, '');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// pre-tool-use-guard — the verdict is answered IN-PROCESS (inject-triggers/5).
+//
+// Unit 2 made detect-context.sh delegate `decide` to `vibe policy decide`, so a
+// hook that spawned that script to reach a verdict was spawning node again:
+// node -> bash -> node per guarded Edit. The guard now calls policy.mjs
+// directly and keeps the spawn as the fallback for UNUSABLE policy data.
+//
+// What these cases have to prove, in order: (1) the in-process branch really
+// runs (the spawn is never reached), (2) its verdicts are the SAME verdicts the
+// bash branch gives — every guarded path x every machine state, which is unit
+// 2's differential replayed through the hook — and (3) unusable data still
+// falls back instead of silently answering `allow`, which is what would make
+// every hard block disappear.
+// ---------------------------------------------------------------------------
+
+const POLICY_SRC = path.join(REPO_ROOT, 'flow', 'content', 'policy.json');
+
+function withPolicy(sb, body) {
+  const dir = path.join(sb.vibeDir, 'content');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, 'policy.json'), body ?? readFileSync(POLICY_SRC, 'utf8'));
+}
+
+function guard(sb, filePath, opts = {}) {
+  return runGuardHook(sb.root, JSON.stringify({ tool_name: 'Write', tool_input: { file_path: filePath } }), opts);
+}
+
+// A spawnDecide that records whether it was reached and answers a verdict no
+// policy would ever produce, so a result carrying it proves the fallback ran.
+function spyDecide(stdout = 'allow\n') {
+  const calls = [];
+  return { calls, spawnDecide: (args) => (calls.push(args), { error: null, status: 0, stdout }) };
+}
+
+test('guard: the write-invariant verdict is answered in-process — the bash spawn is never reached', () => {
+  const sb = makeHookSandbox();
+  try {
+    withPolicy(sb);
+    const spy = spyDecide('allow\n');
+    const result = guard(sb, '.spec/lessons.md', { spawnDecide: spy.spawnDecide });
+    assertEqual(result.code, 2, 'lessons.md at idle is a hard block');
+    assertIncludes(result.stderr, 'BLOCKED');
+    assertEqual(spy.calls.length, 0, 'no node -> bash -> node round trip when the policy is usable');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('guard: in-process verdicts translate exactly as before — block -> 2, warn -> 0 + relay, allow -> silent', () => {
+  const sb = makeHookSandbox();
+  try {
+    withPolicy(sb);
+
+    const blocked = guard(sb, '.agents/skills/vibe/state.json');
+    assertEqual(blocked.code, 2);
+    assertIncludes(blocked.stderr, 'BLOCKED');
+    assertIncludes(blocked.stderr, 'set-state.sh');
+
+    rmSync(sb.warnLogPath, { force: true });
+    const warned = guard(sb, 'src/x.sh');
+    assertEqual(warned.code, 0);
+    assertIncludes(warned.stderr, 'vibe-guard: warn —');
+    assertIncludes(readRelay(sb), 'guard:');
+
+    rmSync(sb.warnLogPath, { force: true });
+    const allowed = guard(sb, 'notes/scratch.md');
+    assertEqual(allowed.code, 0);
+    assertEqual(allowed.stderr, '');
+    assertEqual(readRelay(sb), '', 'an allow queues nothing');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// The differential: in-process (policy present) vs the bash branch of the real
+// detect-context.sh (policy removed, so the script cannot delegate either).
+// Same paths, same states, same fixture — the only variable is which branch
+// answered.
+test('guard: in-process and bash-branch verdicts agree on every guarded path x every machine state', () => {
+  const machine = JSON.parse(readFileSync(path.join(REPO_ROOT, 'flow', 'state-machine.json'), 'utf8'));
+  const states = Object.keys(machine.states);
+  const paths = [
+    '.spec/lessons.md',
+    '.spec/product.md',
+    '.spec/tech.md',
+    '.spec/design.md',
+    '.spec/plan.md',
+    '.agents/skills/vibe/state.json',
+    '.spec/features/demo/product.md',
+    'AGENTS.md',
+    'CLAUDE.md',
+    'src/app.ts',
+    'tests/app.test.ts',
+    'README.md',
+    './.spec/lessons.md',
+  ];
+  assert(states.length >= 10 && paths.length >= 13, 'population floor: the matrix must span the real state list');
+
+  const sb = makeHookSandbox();
+  const divergences = [];
+  let compared = 0;
+  try {
+    for (const key of states) {
+      const [flow, phase = flow] = key.split('.');
+      writeCursor(sb, { flow, phase, feature: 'demo', updated: '2026-01-01T00:00:00Z' });
+      for (const p of paths) {
+        withPolicy(sb);
+        rmSync(sb.warnLogPath, { force: true });
+        const inproc = guard(sb, p);
+        const inprocLog = readRelay(sb);
+
+        rmSync(path.join(sb.vibeDir, 'content', 'policy.json'), { force: true });
+        rmSync(sb.warnLogPath, { force: true });
+        const bash = guard(sb, p);
+        const bashLog = readRelay(sb);
+
+        compared += 1;
+        if (inproc.code !== bash.code || inproc.stderr !== bash.stderr || inprocLog !== bashLog) {
+          divergences.push(
+            `${key} x ${p}: in-process rc=${inproc.code} ${JSON.stringify(inproc.stderr)} ${JSON.stringify(inprocLog)} ` +
+              `| bash rc=${bash.code} ${JSON.stringify(bash.stderr)} ${JSON.stringify(bashLog)}`,
+          );
+        }
+      }
+    }
+    assertEqual(divergences, [], `the controller ruling changed a verdict:\n${divergences.join('\n')}`);
+    assertEqual(compared, states.length * paths.length, 'every cell was actually compared');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// Unusable policy data must FALL BACK, never answer. `decide` over zero rules
+// says `allow` for every path on earth, so answering from one would delete every
+// hard block silently — the exact failure `vibe policy decide`'s exit 2 exists
+// to prevent.
+for (const [label, body] of [
+  ['a truncated file', '{ "version": 1, "rules": ['],
+  ['a version this engine does not understand', '{"version":99,"rules":[{"id":"x","match":["a"],"arms":[{"states":"*","verdict":"block","reason":"r"}]}]}'],
+  ['an empty rule set', '{"version":1,"rules":[]}'],
+  ['no rules key at all', '{"version":1}'],
+]) {
+  test(`guard: ${label} falls back to the bash branch instead of answering allow`, () => {
+    const sb = makeHookSandbox();
+    try {
+      withPolicy(sb, body);
+      const spy = spyDecide('block:the fallback answered\n');
+      const result = guard(sb, '.spec/lessons.md', { spawnDecide: spy.spawnDecide });
+      assertEqual(spy.calls.length, 1, 'the fallback must be reached exactly once');
+      assertEqual(result.code, 2, 'and its verdict is the one that counts');
+      assertIncludes(result.stderr, 'the fallback answered');
+    } finally {
+      sb.cleanup();
+    }
+  });
+}
+
+test('guard: unusable policy + the REAL detect-context.sh still hard-blocks (the fallback is not theoretical)', () => {
+  const sb = makeHookSandbox();
+  try {
+    withPolicy(sb, '{"version":1,"rules":[]}');
+    const result = guard(sb, '.agents/skills/vibe/state.json');
+    assertEqual(result.code, 2, 'an empty rule set must not delete the cursor block');
+    assertIncludes(result.stderr, 'BLOCKED');
   } finally {
     sb.cleanup();
   }
@@ -945,24 +1226,56 @@ test('runGateHook predicate 2: a D-flagged porcelain line is skipped even when t
   }
 });
 
-test('runGateHook predicate 3 (warn-only): non-idle state with legal next states nudges toward set-state.sh', () => {
+// R6 — predicate 3 (the stuck-phase nudge) is DELETED. The level channel names
+// the state on every turn, so the nudge was duplication that also queued a
+// relay line per Stop. Asserted for every non-idle state the machine has, not
+// just one: a deletion that only holds for the state someone remembered to test
+// is not a deletion.
+test('runGateHook: no state nudges any more — predicate 3 is gone (R6)', () => {
+  const machine = JSON.parse(readFileSync(path.join(REPO_ROOT, 'flow', 'state-machine.json'), 'utf8'));
+  const states = Object.keys(machine.states).filter((k) => k !== 'idle');
+  assert(states.length >= 10, `population floor: expected the machine's full state list, got ${states.length}`);
+  let nudgeless = 0;
+  for (const key of states) {
+    const [flow, phase = flow] = key.split('.');
+    const sb = makeHookSandbox({ cursor: { flow, phase, feature: 'demo', updated: '2026-01-01T00:00:00Z' } });
+    try {
+      const result = runGateHook(sb.root, sb.vibeDir, '{}', { spawnGit: () => ({ error: new Error('no git') }) });
+      assert(!result.stderr.includes('still in'), `${key}: the stuck-phase nudge is deleted, but stderr carried it`);
+      assert(
+        !readRelay(sb).includes('still in'),
+        `${key}: the stuck-phase nudge is deleted, but it was queued to the relay`,
+      );
+      nudgeless += 1;
+    } finally {
+      sb.cleanup();
+    }
+  }
+  assertEqual(nudgeless, states.length, 'every non-idle state was actually examined');
+});
+
+test('runGateHook: a non-idle state with nothing else to say is now SILENT (exit 0, empty stderr, empty relay)', () => {
   const sb = makeHookSandbox({ cursor: { flow: 'feature', phase: 'impl', feature: 'demo', updated: '2026-01-01T00:00:00Z' } });
   try {
     const result = runGateHook(sb.root, sb.vibeDir, '{}', { spawnGit: () => ({ error: new Error('no git') }) });
     assertEqual(result.code, 0);
-    assertIncludes(result.stderr, 'still in feature.impl');
-    assertIncludes(readFileSync(sb.warnLogPath, 'utf8'), 'gate:');
+    assertEqual(result.stderr, '');
+    assertEqual(readRelay(sb), '', 'nothing queued for the next inject to drain');
   } finally {
     sb.cleanup();
   }
 });
 
-test('runGateHook predicate 3: idle never nudges', () => {
-  const sb = makeHookSandbox();
+// CONTROL for the two negatives above: the gate still reaches stderr AND the
+// relay when it has something to say. Without this, "no nudge" would be
+// satisfied by a gate that stopped running at all.
+test('runGateHook: the surviving warn path still writes stderr and the relay', () => {
+  const sb = makeHookSandbox({ cursor: { flow: 'feature', phase: 'verify', feature: null, updated: '2026-01-01T00:00:00Z' } });
   try {
     const result = runGateHook(sb.root, sb.vibeDir, '{}', { spawnGit: () => ({ error: new Error('no git') }) });
     assertEqual(result.code, 0);
-    assertEqual(result.stderr, '');
+    assertIncludes(result.stderr, 'names no feature');
+    assertIncludes(readFileSync(sb.warnLogPath, 'utf8'), 'gate:');
   } finally {
     sb.cleanup();
   }
@@ -979,7 +1292,7 @@ test('runGateHook: corrupt cursor degrades to idle, never throws or blocks', () 
   }
 });
 
-test('runGateHook: integration — real git repo, non-verify state, no changes -> predicate 3 warns and relays', () => {
+test('runGateHook: integration — real git repo, non-verify state, no changes -> exit 0 and nothing queued', () => {
   const sb = makeHookSandbox({
     gitInit: true,
     cursor: { flow: 'feature', phase: 'impl', feature: 'demo', updated: '2026-01-01T00:00:00Z' },
@@ -987,7 +1300,8 @@ test('runGateHook: integration — real git repo, non-verify state, no changes -
   try {
     const result = runGateHook(sb.root, sb.vibeDir, '{}', {});
     assertEqual(result.code, 0);
-    assertIncludes(readFileSync(sb.warnLogPath, 'utf8'), 'gate:');
+    assertEqual(result.stderr, '', 'a clean tree in a building state has nothing to warn about since R6');
+    assertEqual(readRelay(sb), '');
   } finally {
     sb.cleanup();
   }
@@ -1006,7 +1320,8 @@ test('CLI: `vibe hook session-start-doctrine` end to end', () => {
       { env: { CLAUDE_PROJECT_DIR: sb.root }, input: '' },
     );
     assertEqual(result.code, 0);
-    assertIncludes(result.stdout, 'Cursor: idle.');
+    assertIncludes(result.stdout, 'sessions are ephemeral');
+    assert(!result.stdout.includes('Cursor:'), 'end to end, the SessionStart payload names no state (R4)');
   } finally {
     sb.cleanup();
   }

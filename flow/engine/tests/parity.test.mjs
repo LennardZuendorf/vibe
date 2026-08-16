@@ -28,6 +28,7 @@ import {
   writeFileSync,
   readFileSync,
   copyFileSync,
+  existsSync,
   rmSync,
   utimesSync,
   symlinkSync,
@@ -368,7 +369,7 @@ for (const fixture of CURSOR_FIXTURES) {
       delete process.env.CLAUDE_PROJECT_DIR; // never let the ambient session env redirect the cursor read
       try {
         const oracleResult = runOracleScript(sandbox.doctrinePath, [], mode);
-        const engineResult = runDoctrine(sandbox.flowDir, sandbox.skillsDir);
+        const engineResult = runDoctrine(sandbox.skillsDir);
         assertEqual(oracleResult.code, 0, `oracle failed (${mode}): ${oracleResult.stderr}`);
         assertEqual(engineResult.code, 0);
         assertEqual(
@@ -607,6 +608,16 @@ function compareHook(label, oracleRun, engineRun) {
 // three verdict classes (allow / warn / block), the sanctioned-writer exemption,
 // the absolute-path strip, and every degrade the oracle spells out (empty
 // stdin, unparseable stdin, missing tool_name, missing path).
+//
+// WHICH BRANCH THIS MATRIX COMPARES: the guard answers from policy.mjs
+// IN-PROCESS when the install carries usable policy data, and falls back to
+// spawning detect-context.sh when it does not (inject-triggers/5). This
+// fixture ships no content/policy.json, so the fallback is what runs — which is
+// the branch the frozen bash oracle also takes, and therefore the only
+// comparison that means anything here. Asserted, not assumed: a fixture that
+// silently grew a policy file would turn every case below into a comparison of
+// the engine against itself. hook.test.mjs owns the in-process branch, and
+// pins the two branches against each other directly.
 // ---------------------------------------------------------------------------
 
 const GUARD_STDIN_SHAPES = [
@@ -639,6 +650,11 @@ for (const fixture of CURSOR_FIXTURES) {
       requireJqFor(mode);
       const sb = makeHookSandbox({ cursor: fixture.cursor });
       if (fixture.absent) rmSync(sb.cursorPath, { force: true });
+      assert(
+        !existsSync(path.join(sb.vibeDir, 'content', 'policy.json')),
+        'this matrix compares the SPAWN branch: a policy.json in the fixture would make the guard answer ' +
+          'in-process and stop exercising the bash oracle at all',
+      );
       const spawns = modeSpawn(mode, sb.root);
       const divergences = [];
       try {
@@ -709,13 +725,15 @@ const RECEIPT_STATES = ['none', 'fresh', 'stale', 'evidence-sibling'];
 const STALE_TS = new Date('2000-01-01T00:00:00Z');
 const FRESH_TS = new Date('2030-01-01T00:00:00Z');
 
-// Predicate 3's line, which the oracle CANNOT emit without jq: it resolves NEXT
-// through detect-context.sh's jq-gated `snapshot`, so on a jq-less target the
-// stuck-phase nudge silently never fires. hook.mjs is pure JS there and always
-// fires it — a DELIBERATE divergence declared in nextStates()'s own header and
-// already pinned by a no-jq test in flow/tests/run.sh. Stripped from the engine
-// side of the no-jq comparison only, and the strip is itself asserted below so
-// it can never quietly start hiding a real difference.
+// Predicate 3's line. The DIRECTION of this divergence reversed in
+// inject-triggers/5: the engine no longer has a predicate 3 at all (R6 deleted
+// the stuck-phase nudge — the per-turn level channel states the same thing on
+// every turn), while the FROZEN oracle still fires it whenever it can resolve
+// NEXT, which is to say whenever jq is present (it reads NEXT through
+// detect-context.sh's jq-gated `snapshot`). So the line is now stripped from
+// the ORACLE side, never the engine's, and the engine is asserted to be free of
+// it BEFORE any strip happens — a strip that ran on both sides could hide a
+// real difference, and one that ran unasserted could hide the deletion failing.
 const PRED3_RE = /^vibe-gate: still in .*\(warn-only\)\n/m;
 const PRED3_LOG_RE = /^gate: still in .*\(warn-only\)\n/m;
 
@@ -844,18 +862,15 @@ for (const fixture of GATE_FIXTURES) {
               continue;
             }
 
-            if (mode === 'no-jq') {
-              const hadPred3 = PRED3_RE.test(engineRun.stderr);
-              if (hadPred3) {
-                assert(
-                  !PRED3_RE.test(oracleRun.stderr),
-                  `${label}: the oracle DID emit predicate 3 without jq — the declared no-jq divergence no longer exists, ` +
-                    'so this strip is now hiding real differences; delete it and re-derive the comparison',
-                );
-                pred3StrippedAtLeastOnce = true;
-                engineRun.stderr = engineRun.stderr.replace(PRED3_RE, '');
-                engineRun.log = engineRun.log.replace(PRED3_LOG_RE, '');
-              }
+            assert(
+              !PRED3_RE.test(engineRun.stderr) && !PRED3_LOG_RE.test(engineRun.log),
+              `${label}: the engine emitted the stuck-phase nudge — R6 deleted predicate 3, so this strip would ` +
+                'be papering over a resurrected surface instead of a declared divergence',
+            );
+            if (PRED3_RE.test(oracleRun.stderr) || PRED3_LOG_RE.test(oracleRun.log)) {
+              pred3StrippedAtLeastOnce = true;
+              oracleRun.stderr = oracleRun.stderr.replace(PRED3_RE, '');
+              oracleRun.log = oracleRun.log.replace(PRED3_LOG_RE, '');
             }
 
             const d = compareHook(label, oracleRun, engineRun);
@@ -868,13 +883,18 @@ for (const fixture of GATE_FIXTURES) {
           `stop-gate diverged from its frozen bash oracle (${fixture.name} x ${mode}):\n${divergences.join('\n')}`,
         );
         // The strip above must have been EXERCISED wherever it is applicable,
-        // never silently inert: every non-idle state with legal next states
-        // fires predicate 3 in the engine.
-        if (mode === 'no-jq' && fixture.cursor && fixture.cursor.flow !== 'idle') {
+        // never silently inert: with jq the oracle fires predicate 3 for every
+        // non-idle state that has legal next states, so a run in which nothing
+        // was ever stripped means the oracle stopped emitting it — and then the
+        // comparison is no longer proving the engine dropped anything.
+        if (mode === 'jq' && fixture.cursor && fixture.cursor.flow !== 'idle') {
           assert(
             pred3StrippedAtLeastOnce,
-            'no-jq: predicate 3 never fired in the engine for a non-idle state — the declared divergence has vanished',
+            'jq: the oracle never emitted predicate 3 for a non-idle state — nothing was stripped, so this ' +
+              'matrix is no longer evidence that R6 removed anything',
           );
+        }
+        if (mode === 'no-jq' && fixture.cursor && fixture.cursor.flow !== 'idle') {
           // Same anti-inertness bar for the platform carve-out: on a BSD sed
           // every non-idle fixture has at least one receipt state where the
           // oracle really does warn or block on a re-entrant Stop. If none of
@@ -1028,60 +1048,13 @@ test('KNOWN DIVERGENCE: stop_hook_active as a STRING — the oracle\'s own sed l
   }
 });
 
-// ---------------------------------------------------------------------------
-// KNOWN DIVERGENCE (documented, not a bug — do NOT "fix" the engine to
-// match): a hand-edited cursor with a NUMERIC `flow` of 5.
-//
-// doctrine.sh's current_state() computes `flow=$(jq -r '.flow // "idle"'
-// "$STATE")` — jq's `//` treats a number as truthy (only `false`/`null`
-// fall through), so it prints the literal "5", and doctrine.sh echoes
-// "Cursor: 5.impl." with NO validation against the machine at all (unlike
-// doctor's cursor check, which delegates to validate-state.sh and would
-// reject "5.impl" as an unknown state on both sides identically — no
-// divergence there). readCursor()'s own contract (cursor.mjs) requires
-// `typeof raw.flow === 'string'` before accepting it and defaults to "idle"
-// otherwise — that guard exists specifically so a corrupted/wrong-typed
-// field can never be silently treated as valid (see cursor.mjs's header on
-// CursorParseError), so the engine reports "Cursor: idle.impl." instead.
-//
-// Only a hand-edited cursor can ever produce this (writeCursor() never
-// emits a non-string flow), but it is a REAL, directly observable
-// divergence once it happens — pinned here per the task brief so it can
-// never drift silently.
-// ---------------------------------------------------------------------------
-
-test('KNOWN DIVERGENCE: cursor.flow = 5 (number) — oracle "Cursor: 5.impl.", engine "Cursor: idle.impl." — do not change this', () => {
-  // The divergence lives specifically in jq's `//` truthiness; without jq on
-  // this runner the oracle takes its sed degrade path instead (a DIFFERENT,
-  // already-covered code path), so there is nothing to pin here. This MUST be
-  // skip(), not a bare `return`: a return reports `ok` and is indistinguishable
-  // from a pin that actually ran — and CI's jq-stripped leg runs on exactly
-  // that PATH, so the pin read green while asserting nothing (review round 1,
-  // Finding 4).
-  if (!JQ_PRESENT) {
-    skip("requires jq on PATH — the divergence lives in jq's // truthiness");
-  }
-  const sandbox = makeReadSandbox({ cursor: { flow: 5, phase: 'impl', feature: null, updated: FIXED_TS } });
-  const prevEnv = process.env.CLAUDE_PROJECT_DIR;
-  delete process.env.CLAUDE_PROJECT_DIR;
-  try {
-    const oracleResult = runOracleScript(sandbox.doctrinePath, [], 'jq');
-    const engineResult = runDoctrine(sandbox.flowDir, sandbox.skillsDir);
-    assertEqual(oracleResult.code, 0);
-    assertEqual(engineResult.code, 0);
-
-    assertMatch(oracleResult.stdout, /\nCursor: 5\.impl\.\n$/, 'oracle sanity: jq\'s // treats the number 5 as truthy');
-    assertMatch(engineResult.stdout, /\nCursor: idle\.impl\.\n$/, 'engine: a non-string flow is never trusted, defaults to idle');
-
-    assert(
-      engineResult.stdout !== oracleResult.stdout,
-      'this IS the documented divergence — if this ever passes as equal, the pin itself needs updating, not silently deleting',
-    );
-  } finally {
-    sandbox.cleanup();
-    if (prevEnv !== undefined) process.env.CLAUDE_PROJECT_DIR = prevEnv;
-  }
-});
+// The `cursor.flow = 5` KNOWN DIVERGENCE pin lived here until
+// inject-triggers/5. It pinned oracle "Cursor: 5.impl." against engine
+// "Cursor: idle.impl." — jq's `//` truthiness versus readCursor()'s
+// `typeof raw.flow === 'string'` guard. R4 deleted the cursor line from BOTH
+// implementations, so neither side reads a cursor here at all and the
+// divergence has no surface left to appear on. The guard it documented is
+// still cursor.mjs's, and cursor.test.mjs owns it directly.
 
 // ---------------------------------------------------------------------------
 // PERFORMANCE BUDGET (js-core/8 final review, I2).

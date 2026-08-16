@@ -242,10 +242,15 @@ SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 # install wires SessionStart to the doctrine hook.
 sscmd="$(jq -r '.hooks.SessionStart[]?.hooks[]?.command // empty' "$SB/.claude/settings.json" 2>/dev/null)"
 assert_contains "flow-legibility/5" "install wires SessionStart -> session-start-doctrine.sh" "$sscmd" "session-start-doctrine.sh"
-# the hook emits the doctrine (durable/ephemeral framing) + a cursor summary.
+# the hook emits the doctrine (durable/ephemeral framing) and NO live state:
+# SessionStart output is REPLAYED verbatim on --resume, so a cursor printed here
+# goes stale the moment the cursor moves (inject-triggers/5, R4). The
+# doctrine assertion is this negative's population floor — there is a payload,
+# and it names no state. Discriminating: before R4 this hook printed
+# "Cursor: idle." on the line after the block.
 ssout="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/session-start-doctrine.sh" </dev/null 2>/dev/null)"
 assert_contains "flow-legibility/5" "SessionStart hook emits the doctrine" "$ssout" "sessions are ephemeral"
-assert_contains "flow-legibility/5" "SessionStart hook emits a cursor summary" "$ssout" "Cursor:"
+assert_not_contains "inject-triggers/5" "SessionStart hook emits no cursor summary" "$ssout" "Cursor:"
 # doctor reports instruction coverage ok on a fresh install (block + hook wired).
 docout="$(bash "$SB/.agents/skills/vibe/scripts/doctor.sh" "$SB" 2>&1)"
 assert_contains "flow-legibility/5" "doctor reports instruction.coverage ok" "$docout" "ok   instruction.coverage"
@@ -380,16 +385,28 @@ printf '{"tool_name":"NotebookEdit","tool_input":{"notebook_path":"nb.ipynb"}}' 
   | PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
 assert_eq "platform-adapters/2" "guard allows a normal notebook_path without jq (exit 0)" "$rc" "0"
 rm -rf "$NOJQ_BIN"
-# gate: warn-only in a non-verify state -> exit 0, warn queued to the relay (not
-# lost to stderr). No git changes in the temp install, so predicate 3 fires.
+# gate: a non-verify state is SILENT since inject-triggers/5 (R6) deleted
+# predicate 3 — the stuck-phase nudge said what the per-turn level channel now
+# says every turn, and queued a relay line per Stop to say it. Discriminating:
+# before R6 this queued 'gate: still in feature.impl ...'.
 bash "$SS" feature.impl demo >/dev/null
 : > "$WLOG" 2>/dev/null || true
 rc=0
 printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" >/dev/null 2>&1 || rc=$?
 assert_eq "platform-adapters/3" "gate exits 0 in a non-verify state" "$rc" "0"
 grep -q '^gate:' "$WLOG" 2>/dev/null \
-  && pass "platform-adapters/3" "gate queues a warn-only smell to the relay log" \
-  || fail "platform-adapters/3" "gate queues a warn-only smell to the relay log"
+  && fail "inject-triggers/5" "gate queues no stuck-phase nudge (predicate 3 deleted)" \
+  || pass "inject-triggers/5" "gate queues no stuck-phase nudge (predicate 3 deleted)"
+# CONTROL for that negative: the gate can still reach the relay from this very
+# install. feature.verify with no feature named is the surviving warn-only path.
+bash "$SS" idle >/dev/null; bash "$SS" feature.verify >/dev/null 2>&1
+: > "$WLOG" 2>/dev/null || true
+rc=0
+printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" >/dev/null 2>&1 || rc=$?
+assert_eq "platform-adapters/3" "gate exits 0 when it cannot resolve a receipt path" "$rc" "0"
+grep -q '^gate:' "$WLOG" 2>/dev/null \
+  && pass "platform-adapters/3" "control: the gate still queues a warn-only smell to the relay log" \
+  || fail "platform-adapters/3" "control: the gate still queues a warn-only smell to the relay log"
 # flow-mvp/9 — the one promoted tooth: a *.verify state requires a fresh evidence
 # receipt. Against a real install (not a git repo -> existence-only staleness).
 bash "$SS" feature.verify demo >/dev/null

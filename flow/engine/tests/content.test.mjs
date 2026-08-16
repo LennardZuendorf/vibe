@@ -1159,7 +1159,7 @@ test('hooks: a doctrine call with NO content tree is byte-identical to the porte
   try {
     assertEqual(
       runDoctrineHook(sb.vibeDir, sb.skillsDir, sb.dir).stdout,
-      runDoctrine(sb.vibeDir, sb.skillsDir).stdout,
+      runDoctrine(sb.skillsDir).stdout,
     );
   } finally {
     sb.cleanup();

@@ -430,11 +430,20 @@ assert_contains "flow-legibility/4" "doctrine names the two human gates" "$doc" 
 assert_contains "flow-legibility/4" "doctrine carries the durable/ephemeral framing" "$doc" "sessions are ephemeral"
 assert_contains "flow-legibility/4" "doctrine states the session-start reads" "$doc" ".spec/lessons.md"
 assert_contains "flow-legibility/4" "doctrine states the state.json write invariant" "$doc" ".agents/skills/vibe/state.json"
-assert_contains "flow-legibility/4" "doctrine prints a cursor summary (idle)" "$doc" "Cursor: idle."
-# cursor summary reflects the live cursor
+# inject-triggers/5 (R4): NO live state rides SessionStart output — Claude Code
+# replays that output verbatim on --resume, so a cursor line printed here is
+# stale by construction, and the per-turn level channel names the state anyway.
+# The four assertions above are the population floor for this negative: there IS
+# a payload, and it does not name a state.
+assert_not_contains "inject-triggers/5" "doctrine prints no cursor summary (idle)" "$doc" "Cursor:"
+# ... and still none when the live cursor is somewhere interesting. Discriminating:
+# before R4 this printed 'Cursor: feature.impl (feature=widget).'
 cp "$FLOW/state.example.json" "$STATE"; bash "$SCRIPTS/set-state.sh" feature.impl widget >/dev/null
 doc2="$(bash "$SCRIPTS/doctrine.sh")"
-assert_contains "flow-legibility/4" "doctrine cursor summary reflects feature.impl" "$doc2" "Cursor: feature.impl (feature=widget)."
+assert_contains "inject-triggers/5" "doctrine still emits the block with a live cursor set" "$doc2" "sessions are ephemeral"
+assert_not_contains "inject-triggers/5" "doctrine names no state, whatever the cursor says" "$doc2" "Cursor:"
+assert_not_contains "inject-triggers/5" "doctrine leaks no feature name either" "$doc2" "widget"
+assert_eq "inject-triggers/5" "doctrine output is a function of SKILL.md alone (cursor-independent)" "$doc2" "$doc"
 rm -f "$STATE"
 # jq/no-jq byte parity (mirrors orders.sh parity)
 pnojq4="$(mktemp -d)"
@@ -443,17 +452,18 @@ a4="$(bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
 b4="$(PATH="$pnojq4" "$BASH_BIN" "$SCRIPTS/doctrine.sh" 2>/dev/null)"
 assert_eq "flow-legibility/4" "doctrine.sh jq/no-jq byte-identical (idle)" "$b4" "$a4"
 rm -rf "$pnojq4"
-# Plugin-mode cursor: when the code lives outside the repo (per-user plugin) the
-# hook sets CLAUDE_PROJECT_DIR; doctrine.sh must read the PROJECT cursor there, not
-# the skill-co-located one. Seed a separate project dir with a distinct cursor and
-# assert the summary reflects IT (discriminating: without the redirect it reads the
-# sandbox cursor). The sandbox STATE is absent here (rm -f above), so a stale read
-# would print idle, not quick.triage.
+# Plugin mode: the hook sets CLAUDE_PROJECT_DIR when the code lives outside the
+# repo (per-user plugin). doctrine.sh used to read the PROJECT cursor through it;
+# since R4 it reads no cursor at all, so the env var is inert here. Seeded with a
+# distinct project cursor anyway — discriminating in the other direction now: a
+# doctrine.sh that still consulted it would print quick.triage.
 projd="$(mktemp -d)"
 mkdir -p "$projd/.agents/skills/vibe"
 printf '{"flow":"quick","phase":"triage","feature":"","updated":"x"}\n' > "$projd/.agents/skills/vibe/state.json"
 docp="$(CLAUDE_PROJECT_DIR="$projd" bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
-assert_contains "install-agnostic-paths" "doctrine reads the project cursor via CLAUDE_PROJECT_DIR" "$docp" "Cursor: quick.triage."
+assert_contains "inject-triggers/5" "doctrine still emits the block under CLAUDE_PROJECT_DIR" "$docp" "sessions are ephemeral"
+assert_not_contains "inject-triggers/5" "CLAUDE_PROJECT_DIR no longer selects a cursor to print" "$docp" "Cursor:"
+assert_not_contains "inject-triggers/5" "the project cursor's state does not leak either" "$docp" "quick.triage"
 rm -rf "$projd"
 # single-source parity, tied to the CODE: both prose texts must state the same
 # per-rule writable-state sets that detect-context.sh `decide` actually enforces.
@@ -510,7 +520,7 @@ while IFS= read -r s; do
     && cursor_blocked=$((cursor_blocked + 1))
 done < <(jq -r '.states|keys[]' "$MACHINE")
 assert_eq "inject-triggers/2" "decide blocks a direct state.json edit in every machine state" "$cursor_blocked/$cursor_seen" "13/13"
-doc="$(bash "$SCRIPTS/doctrine.sh" | grep -v '^Cursor:')"
+doc="$(bash "$SCRIPTS/doctrine.sh")"   # no Cursor: line to filter out since R4
 doc_lessons="$(printf '%s\n' "$doc" | tr ';' '\n' | grep 'lessons.md' | states_of)"
 doc_root="$(printf '%s\n' "$doc" | tr ';' '\n' | grep 'product,tech' | states_of)"
 tmpl_sec="$(awk '/^## Write invariants/{f=1;next} /^## /{f=0} f' "$FLOW/reference/templates/AGENTS.md")"
@@ -1024,17 +1034,21 @@ assert_contains "review-fix" "no-jq: quick.verify with no receipt blocks (exit 2
 assert_contains "review-fix" "no-jq: quick block still names evidence/quick.md" "$out" "evidence/quick.md"
 rm -rf "$s"
 
-# DELIBERATE DIVERGENCE (js-core/7 review round 1, Finding 3): the old bash
-# gate resolved NEXT via detect-context.sh's jq-gated snapshot, so without
-# jq it left NEXT="" and predicate 3 (the stuck-phase nudge) silently never
-# fired. The ported gate resolves NEXT via loadMachine()/stateOf() — pure
-# JS, jq-independent by construction — so it now fires predicate 3 even
-# without jq. Warn-only, cannot block, and arguably more correct; pinned
-# here (not "fixed") so the divergence cannot go unnoticed.
+# inject-triggers/5 (R6): predicate 3 (the stuck-phase nudge) is DELETED. It
+# said what the per-turn level channel now says on every turn, and it queued a
+# relay line on every Stop to say it. What used to be pinned here was the
+# jq-dependence of that nudge; what is pinned here now is its absence — with a
+# control, so "no nudge" cannot be satisfied by a gate that stopped running.
 s="$(mk_gate_sbx feature impl widget git)"
 out="$(run_gate_nojq "$s" '{}')"
-assert_contains "review-fix" "no-jq: predicate 3 (stuck-phase nudge) now fires without jq (deliberate divergence)" "$out" "still in feature.impl"
-assert_contains "review-fix" "no-jq: predicate 3 nudge is warn-only (exit 0)" "$out" "rc=0"
+assert_not_contains "inject-triggers/5" "no-jq: no stuck-phase nudge in a non-idle state" "$out" "still in"
+assert_contains "inject-triggers/5" "no-jq: a non-idle state exits 0" "$out" "rc=0"
+rm -rf "$s"
+# CONTROL: the same no-jq gate DOES still speak when it has something to say —
+# feature.verify with no receipt is the one blocking tooth.
+s="$(mk_gate_sbx feature verify widget git)"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "inject-triggers/5" "no-jq control: the evidence tooth still blocks (exit 2)" "$out" "rc=2"
 rm -rf "$s"
 rm -rf "$gnojq"
 

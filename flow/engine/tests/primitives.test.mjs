@@ -904,8 +904,12 @@ const WAIVERS = [
   { file: 'commands/doctor.mjs', id: 'machine-path-helper', reason: 'primitive-path-consumer', line: "import { loadMachine, machinePath } from '../machine.mjs';" },
   { file: 'commands/doctor.mjs', id: 'machine-path-helper', reason: 'primitive-path-consumer', line: "const p = typeof vibeDir === 'string' ? machinePath(vibeDir) : undefined;" },
 
-  { file: 'commands/doctrine.mjs', id: 'project-cursor-dir-helper', reason: 'primitive-path-consumer', line: "import { resolveVibeDir, resolveSkillsDir, resolveProjectCursorDir } from '../root.mjs';" },
-  { file: 'commands/doctrine.mjs', id: 'project-cursor-dir-helper', reason: 'primitive-path-consumer', line: 'return resolveProjectCursorDir() ?? vibeDir;' },
+  // commands/doctrine.mjs held the only two waivers for
+  // `project-cursor-dir-helper` (its CLAUDE_PROJECT_DIR-first cursor rule).
+  // inject-triggers/5 deleted the cursor line from SessionStart output, so the
+  // command reads no cursor and the waivers went with it. The INGREDIENT stays
+  // — resolveProjectCursorDir() is still root.mjs's, and mutant E17 still
+  // proves a second consumer is caught — it simply has no consumers now.
 
   { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'hook-root-literal', line: "return path.join(root, '.agents', 'skills', 'vibe');" },
   { file: 'commands/hook.mjs', id: 'root-markers', reason: 'bash-sniffer', line: 'const LESSONS_RE = /(^|[^A-Za-z0-9_])\\.spec\\/lessons\\.md/;' },

@@ -21,9 +21,17 @@
 //
 // Adversarial, not just happy paths (per the task brief): missing doctrine
 // block, no doctrine markers at all, missing AND misspelled closing marker,
-// an empty/blank-only block, absent SKILL.md, absent cursor, corrupt
-// cursor, feature present vs null, and the CLAUDE_PROJECT_DIR precedence
-// cases carried forward from unit 2's review.
+// an empty/blank-only block, and absent SKILL.md.
+//
+// NO CURSOR ANYWHERE (inject-triggers, R4). Until unit 5 this command appended
+// a live `Cursor: <state>.` line, and roughly half this file existed to pin
+// that line's format, its jq-truthiness edge cases, and its CLAUDE_PROJECT_DIR
+// precedence rule. SessionStart output REPLAYS on --resume, so the line was
+// stale by construction; it is deleted from the command and from the oracle
+// together, and the cases that only described it are deleted with it. What
+// replaces them is a NEGATIVE assertion with a population floor
+// (`emits the block and NO cursor line`, below): a payload that names no state
+// only proves something while there is still a payload.
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -71,7 +79,7 @@ function runOracle(scriptPath, opts = {}) {
 }
 
 function runEngine(sandbox) {
-  return runDoctrine(sandbox.flowDir, sandbox.skillsDir);
+  return runDoctrine(sandbox.skillsDir);
 }
 
 // runDoctrine reads CLAUDE_PROJECT_DIR straight from process.env (matching
@@ -94,10 +102,10 @@ function withProjectDir(value, fn) {
 }
 
 // ---------------------------------------------------------------------------
-// Happy path — doctrine block emitted verbatim + cursor line.
+// Happy path — the doctrine block, verbatim, and nothing after it (R4).
 // ---------------------------------------------------------------------------
 
-test('parity: doctrine block emitted verbatim, idle cursor with no feature', () => {
+test('parity: doctrine block emitted verbatim, and NO cursor line follows it', () => {
   const sandbox = makeDoctrineSandbox({
     cursor: { flow: 'idle', phase: 'idle', feature: null, updated: '2026-01-01T00:00:00Z' },
   });
@@ -109,28 +117,63 @@ test('parity: doctrine block emitted verbatim, idle cursor with no feature', () 
       assertEqual(oracleResult.code, 0);
       assertEqual(engineResult.code, 0);
       assertEqual(engineResult.stdout, oracleResult.stdout);
+      // Population floor first: "names no state" is only evidence while there
+      // IS a payload to examine.
       assertMatch(engineResult.stdout, /^vibe flow — working model\./, 'doctrine block content leads the output');
-      assertMatch(engineResult.stdout, /\nCursor: idle\.\n$/, 'cursor line appended in the current format');
+      assert(engineResult.stdout.length > 200, 'sanity: the block really was emitted, so the negative below has input');
+      assert(!engineResult.stdout.includes('Cursor:'), 'SessionStart output must not carry the cursor — it replays stale on --resume');
+      assert(!oracleResult.stdout.includes('Cursor:'), 'oracle sanity: the bash side dropped the same line');
     });
   } finally {
     sandbox.cleanup();
   }
 });
 
-test('parity: cursor line carries the feature when the cursor has one', () => {
-  const sandbox = makeDoctrineSandbox({
-    cursor: { flow: 'feature', phase: 'impl', feature: 'widget', updated: '2026-01-01T00:00:00Z' },
-  });
-  try {
-    withProjectDir(undefined, () => {
-      const oracleResult = runOracle(sandbox.scriptPath);
-      const engineResult = runEngine(sandbox);
-
-      assertEqual(engineResult.stdout, oracleResult.stdout);
-      assertMatch(engineResult.stdout, /\nCursor: feature\.impl \(feature=widget\)\.\n$/);
-    });
-  } finally {
-    sandbox.cleanup();
+// The strongest statement of R4: the payload is a function of the SKILL.md
+// block alone. Four cursors that used to produce four different last lines —
+// including an absent one and an unparseable one — now produce identical bytes,
+// on both sides.
+test('parity: the payload is identical for every cursor, present, absent or corrupt', () => {
+  const cursors = [
+    { flow: 'idle', phase: 'idle', feature: null, updated: '2026-01-01T00:00:00Z' },
+    { flow: 'feature', phase: 'impl', feature: 'widget', updated: '2026-01-01T00:00:00Z' },
+    { flow: 'quick', phase: 'verify', feature: 'other', updated: '2026-01-01T00:00:00Z' },
+  ];
+  const outputs = [];
+  for (const cursor of cursors) {
+    const sandbox = makeDoctrineSandbox({ cursor });
+    try {
+      withProjectDir(undefined, () => {
+        const oracleResult = runOracle(sandbox.scriptPath);
+        const engineResult = runEngine(sandbox);
+        assertEqual(engineResult.code, 0);
+        assertEqual(engineResult.stdout, oracleResult.stdout, 'engine and oracle agree for this cursor');
+        outputs.push(engineResult.stdout);
+      });
+    } finally {
+      sandbox.cleanup();
+    }
+  }
+  // Absent cursor, and a present-but-unparseable one.
+  for (const mutate of [(sb) => rmSync(sb.cursorPath), (sb) => writeFileSync(sb.cursorPath, '{ this is not valid json')]) {
+    const sandbox = makeDoctrineSandbox();
+    try {
+      mutate(sandbox);
+      withProjectDir(undefined, () => {
+        const oracleResult = runOracle(sandbox.scriptPath);
+        const engineResult = runEngine(sandbox);
+        assertEqual(oracleResult.code, 0, `oracle should degrade, not fail: ${oracleResult.stderr}`);
+        assertEqual(engineResult.code, 0, `engine should degrade, not fail: ${engineResult.stderr}`);
+        assertEqual(engineResult.stdout, oracleResult.stdout);
+        outputs.push(engineResult.stdout);
+      });
+    } finally {
+      sandbox.cleanup();
+    }
+  }
+  assert(outputs[0].length > 200, 'sanity: there is a payload to compare');
+  for (const out of outputs) {
+    assertEqual(out, outputs[0], 'the cursor must not reach SessionStart output by any route');
   }
 });
 
@@ -274,51 +317,15 @@ test('divergence: a misspelled closing marker also leaks on the oracle, NOT on t
 });
 
 // ---------------------------------------------------------------------------
-// Absent / corrupt cursor.
+// CLAUDE_PROJECT_DIR is now INERT for this command (R4). It used to select
+// which cursor the summary line read; with no summary line there is nothing
+// left for it to select, and the doctrine BLOCK has always come from the
+// engine's own installed skill (root.mjs's contract, unchanged). Pinned in
+// both directions: a project cursor that differs from the skill-local one
+// changes no byte, and the block still follows the installed skill.
 // ---------------------------------------------------------------------------
 
-test('parity: absent cursor → Cursor: idle., matching the oracle', () => {
-  const sandbox = makeDoctrineSandbox();
-  try {
-    rmSync(sandbox.cursorPath);
-    withProjectDir(undefined, () => {
-      const oracleResult = runOracle(sandbox.scriptPath);
-      const engineResult = runEngine(sandbox);
-      assertEqual(engineResult.stdout, oracleResult.stdout);
-      assertMatch(engineResult.stdout, /\nCursor: idle\.\n$/);
-    });
-  } finally {
-    sandbox.cleanup();
-  }
-});
-
-test('parity: corrupt (unparseable) cursor degrades to idle on both sides, exit 0', () => {
-  const sandbox = makeDoctrineSandbox();
-  try {
-    writeFileSync(sandbox.cursorPath, '{ this is not valid json');
-    withProjectDir(undefined, () => {
-      const oracleResult = runOracle(sandbox.scriptPath);
-      const engineResult = runEngine(sandbox);
-      assertEqual(oracleResult.code, 0, `oracle should degrade, not fail: ${oracleResult.stderr}`);
-      assertEqual(engineResult.code, 0, `engine should degrade, not fail: ${engineResult.stderr}`);
-      assertEqual(engineResult.stdout, oracleResult.stdout);
-      assertMatch(engineResult.stdout, /\nCursor: idle\.\n$/);
-    });
-  } finally {
-    sandbox.cleanup();
-  }
-});
-
-// ---------------------------------------------------------------------------
-// CLAUDE_PROJECT_DIR precedence — carried forward from unit 2's review.
-// The oracle prefers $CLAUDE_PROJECT_DIR/.agents/skills/vibe/state.json for
-// the CURSOR when that file exists, falling back to the skill-local
-// state.json otherwise. Only the cursor lookup honours this; the doctrine
-// block itself always comes from the skill-local SKILL.md (skillsDir),
-// exactly like the oracle's SKILL_MD, which never moves.
-// ---------------------------------------------------------------------------
-
-test('parity: CLAUDE_PROJECT_DIR cursor wins over the skill-local cursor when it exists and differs', () => {
+test('parity: a CLAUDE_PROJECT_DIR cursor changes nothing — the env var no longer reaches the output', () => {
   const sandbox = makeDoctrineSandbox({
     cursor: { flow: 'idle', phase: 'idle', feature: null, updated: '2026-01-01T00:00:00Z' },
   });
@@ -335,72 +342,25 @@ test('parity: CLAUDE_PROJECT_DIR cursor wins over the skill-local cursor when it
       )}\n`,
     );
 
-    const oracleResult = runOracle(sandbox.scriptPath, { env: { CLAUDE_PROJECT_DIR: projectDir } });
-    const engineResult = withProjectDir(projectDir, () => runEngine(sandbox));
+    const oracleWith = runOracle(sandbox.scriptPath, { env: { CLAUDE_PROJECT_DIR: projectDir } });
+    const oracleWithout = runOracle(sandbox.scriptPath, { env: { CLAUDE_PROJECT_DIR: '' } });
+    const engineWith = withProjectDir(projectDir, () => runEngine(sandbox));
+    const engineWithout = withProjectDir(undefined, () => runEngine(sandbox));
 
-    assertEqual(oracleResult.code, 0);
-    assertEqual(engineResult.code, 0);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
-    assertMatch(
-      engineResult.stdout,
-      /\nCursor: quick\.verify \(feature=project-feature\)\.\n$/,
-      'the PROJECT cursor must win, not the skill-local idle cursor',
-    );
-    assert(
-      !engineResult.stdout.includes('Cursor: idle'),
-      'a shortcut that ignored CLAUDE_PROJECT_DIR would wrongly report the skill-local idle cursor',
-    );
+    assertEqual(oracleWith.code, 0);
+    assertEqual(engineWith.code, 0);
+    assert(engineWith.stdout.length > 200, 'sanity: there is a payload for the comparison to be about');
+    assertEqual(engineWith.stdout, oracleWith.stdout, 'engine and oracle agree with the env var set');
+    assertEqual(engineWith.stdout, engineWithout.stdout, 'the project cursor must not reach the engine output');
+    assertEqual(oracleWith.stdout, oracleWithout.stdout, 'nor the oracle output');
+    assert(!engineWith.stdout.includes('project-feature'), 'the project cursor must not leak in any spelling');
   } finally {
     sandbox.cleanup();
     rmSync(projectDir, { recursive: true, force: true });
   }
 });
 
-test('parity: CLAUDE_PROJECT_DIR set but its cursor file is absent → falls back to the skill-local cursor', () => {
-  const sandbox = makeDoctrineSandbox({
-    cursor: { flow: 'feature', phase: 'design', feature: 'local-feature', updated: '2026-01-01T00:00:00Z' },
-  });
-  const projectDir = mkdtempSync(path.join(tmpdir(), 'vibe-doctrine-project-empty-'));
-  try {
-    // CLAUDE_PROJECT_DIR points somewhere real, but with no
-    // .agents/skills/vibe/state.json inside it — the oracle's own
-    // `-f "$CLAUDE_PROJECT_DIR/..."` guard must fail and fall through.
-    const oracleResult = runOracle(sandbox.scriptPath, { env: { CLAUDE_PROJECT_DIR: projectDir } });
-    const engineResult = withProjectDir(projectDir, () => runEngine(sandbox));
-
-    assertEqual(engineResult.stdout, oracleResult.stdout);
-    assertMatch(engineResult.stdout, /\nCursor: feature\.design \(feature=local-feature\)\.\n$/);
-  } finally {
-    sandbox.cleanup();
-    rmSync(projectDir, { recursive: true, force: true });
-  }
-});
-
-test('parity: CLAUDE_PROJECT_DIR unset → skill-local cursor, unchanged from before the precedence rule existed', () => {
-  const sandbox = makeDoctrineSandbox({
-    cursor: { flow: 'setup', phase: 'apply', feature: null, updated: '2026-01-01T00:00:00Z' },
-  });
-  try {
-    const oracleResult = runOracle(sandbox.scriptPath, { env: { CLAUDE_PROJECT_DIR: '' } });
-    const engineResult = withProjectDir(undefined, () => runEngine(sandbox));
-    assertEqual(engineResult.stdout, oracleResult.stdout);
-    assertMatch(engineResult.stdout, /\nCursor: setup\.apply\.\n$/);
-  } finally {
-    sandbox.cleanup();
-  }
-});
-
-// ---------------------------------------------------------------------------
-// The precedence RULING: resolveVibeDir()/resolveSkillsDir() ignore
-// CLAUDE_PROJECT_DIR once the installed self-relative chain validates
-// (root.mjs's own contract, unchanged) — so the doctrine BLOCK always comes
-// from the engine's own installed skill, while the CURSOR line follows
-// CLAUDE_PROJECT_DIR when it has one. Pinned end-to-end via the real CLI on
-// an install-layout fixture whose project cursor deliberately differs from
-// the skill-local one, so a shortcut in either direction fails this test.
-// ---------------------------------------------------------------------------
-
-test('CLI: doctrine block follows the installed skill (self-relative), but the Cursor line follows CLAUDE_PROJECT_DIR', () => {
+test('CLI: the doctrine block follows the installed skill (self-relative), and no cursor rides along', () => {
   const installRoot = mkdtempSync(path.join(tmpdir(), 'vibe-doctrine-cli-install-'));
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
@@ -443,12 +403,8 @@ test('CLI: doctrine block follows the installed skill (self-relative), but the C
     });
 
     assertEqual(result.code, 0, `stderr: ${result.stderr}`);
-    assertMatch(result.stdout, /^INSTALLED SKILL DOCTRINE TEXT\n/, 'doctrine block sourced from the installed skill, not the project');
-    assertMatch(
-      result.stdout,
-      /\nCursor: quick\.fix \(feature=plugin-project\)\.\n$/,
-      'cursor line sourced from CLAUDE_PROJECT_DIR, not the skill-local (idle) cursor',
-    );
+    assertEqual(result.stdout, 'INSTALLED SKILL DOCTRINE TEXT\n', 'the block, whole, and nothing after it');
+    assert(!result.stdout.includes('plugin-project'), 'no project cursor rides SessionStart output');
   } finally {
     rmSync(installRoot, { recursive: true, force: true });
     rmSync(projectDir, { recursive: true, force: true });
@@ -521,7 +477,7 @@ test('parity: plugin layout (skills/vibe/engine) — project has its own SKILL.m
     assertMatch(engineResult.stdout, /^PLUGIN DOCTRINE TEXT\n/, 'block must be the plugin\'s own, not the project\'s');
     assert(!engineResult.stdout.includes('PROJECT DOCTRINE TEXT'), 'must never leak the project doctrine block');
     assertEqual(engineResult.stdout, oracleResult.stdout);
-    assertMatch(engineResult.stdout, /\nCursor: quick\.fix \(feature=proj\)\.\n$/, 'cursor still follows CLAUDE_PROJECT_DIR');
+    assert(!engineResult.stdout.includes('Cursor:'), 'no cursor line on either side, whatever the layout');
   } finally {
     rmSync(pluginRoot, { recursive: true, force: true });
     rmSync(projectDir, { recursive: true, force: true });
@@ -573,87 +529,27 @@ test('parity: plugin layout — project has NO SKILL.md at all, plugin doctrine 
 // js-core/4, Finding 3/4).
 // ---------------------------------------------------------------------------
 
-test('runDoctrine never throws: skillsDir is undefined', () => {
-  const sandbox = makeDoctrineSandbox();
-  try {
+for (const [label, arg] of [['undefined', undefined], ['null', null], ['a number', 42], ['an object', {}]]) {
+  test(`runDoctrine never throws: skillsDir is ${label}`, () => {
     let threw = false;
     let result;
     try {
-      result = runDoctrine(sandbox.flowDir, undefined);
+      result = runDoctrine(arg);
     } catch {
       threw = true;
     }
-    assert(!threw, 'runDoctrine must not throw when skillsDir is undefined');
+    assert(!threw, `runDoctrine must not throw when skillsDir is ${label}`);
     assertEqual(result.code, 0);
     assertEqual(result.stdout, '');
-  } finally {
-    sandbox.cleanup();
-  }
-});
-
-test('runDoctrine never throws: skillsDir is not a string', () => {
-  const sandbox = makeDoctrineSandbox();
-  try {
-    let threw = false;
-    let result;
-    try {
-      result = runDoctrine(sandbox.flowDir, 42);
-    } catch {
-      threw = true;
-    }
-    assert(!threw, 'runDoctrine must not throw when skillsDir is a number');
-    assertEqual(result.code, 0);
-    assertEqual(result.stdout, '');
-  } finally {
-    sandbox.cleanup();
-  }
-});
-
-test('runDoctrine never throws: vibeDir is undefined → cursor degrades to idle, block still resolves', () => {
-  const sandbox = makeDoctrineSandbox({
-    cursor: { flow: 'quick', phase: 'triage', feature: 'x', updated: '2026-01-01T00:00:00Z' },
   });
-  try {
-    let threw = false;
-    let result;
-    try {
-      result = runDoctrine(undefined, sandbox.skillsDir);
-    } catch {
-      threw = true;
-    }
-    assert(!threw, 'runDoctrine must not throw when vibeDir is undefined');
-    assertEqual(result.code, 0);
-    assertMatch(result.stdout, /^vibe flow — working model\./);
-    assertMatch(result.stdout, /\nCursor: idle\.\n$/, 'no vibeDir means no cursor to read — idle, not a crash');
-  } finally {
-    sandbox.cleanup();
-  }
-});
-
-test('runDoctrine never throws: vibeDir is null', () => {
-  const sandbox = makeDoctrineSandbox();
-  try {
-    let threw = false;
-    let result;
-    try {
-      result = runDoctrine(null, sandbox.skillsDir);
-    } catch {
-      threw = true;
-    }
-    assert(!threw, 'runDoctrine must not throw when vibeDir is null');
-    assertEqual(result.code, 0);
-    assertMatch(result.stdout, /\nCursor: idle\.\n$/);
-  } finally {
-    sandbox.cleanup();
-  }
-});
+}
 
 // ---------------------------------------------------------------------------
 // CLI end-to-end wiring on a fresh non-git install-layout fixture (R3, same
 // pattern as orders.test.mjs / state.test.mjs's install-target tests).
 // ---------------------------------------------------------------------------
 
-test('CLI: `vibe doctrine` on a fresh non-git install-layout fixture emits the block and Cursor: idle.', () => {
+test('CLI: `vibe doctrine` on a fresh non-git install-layout fixture emits the block, and only the block', () => {
   const installRoot = mkdtempSync(path.join(tmpdir(), 'vibe-doctrine-cli-fresh-'));
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
@@ -676,7 +572,7 @@ test('CLI: `vibe doctrine` on a fresh non-git install-layout fixture emits the b
     });
     assertEqual(result.code, 0, `stderr: ${result.stderr}`);
     assertMatch(result.stdout, /^vibe flow — working model\./);
-    assertMatch(result.stdout, /\nCursor: idle\.\n$/);
+    assert(!result.stdout.includes('Cursor:'), 'no cursor line, even on an install with no cursor to name');
   } finally {
     rmSync(installRoot, { recursive: true, force: true });
     rmSync(unrelatedCwd, { recursive: true, force: true });
@@ -684,71 +580,10 @@ test('CLI: `vibe doctrine` on a fresh non-git install-layout fixture emits the b
   }
 });
 
-// ---------------------------------------------------------------------------
-// Non-string cursor `feature` (review round 1, Finding 4). jq's `//` treats
-// everything except `false`/`null` as truthy — including `0` — so a cursor
-// with `"feature": 0` DOES get a Cursor line on the oracle. A plain JS
-// `feature ? ... : ...` gets this wrong (0 is JS-falsy). Only reachable via
-// a hand-edited cursor; readCursor/writeCursor never produce these shapes.
-// ---------------------------------------------------------------------------
-
-test('parity: a numeric feature of 0 still gets a Cursor line (jq truthy, JS-falsy mismatch)', () => {
-  const sandbox = makeDoctrineSandbox({
-    cursor: { flow: 'quick', phase: 'fix', feature: 0, updated: '2026-01-01T00:00:00Z' },
-  });
-  try {
-    withProjectDir(undefined, () => {
-      const engineResult = runEngine(sandbox);
-      assertEqual(engineResult.code, 0);
-      assertMatch(
-        engineResult.stdout,
-        /\nCursor: quick\.fix \(feature=0\)\.\n$/,
-        'feature=0 must still render, matching jq: only false/null are falsy for //',
-      );
-      if (JQ_PRESENT) {
-        const oracleResult = runOracle(sandbox.scriptPath);
-        assertEqual(engineResult.stdout, oracleResult.stdout);
-      }
-    });
-  } finally {
-    sandbox.cleanup();
-  }
-});
-
-test('parity: an object feature renders as pretty (2-space) JSON, matching jq\'s default output', () => {
-  const sandbox = makeDoctrineSandbox({
-    cursor: { flow: 'quick', phase: 'fix', feature: { x: 1, y: 2 }, updated: '2026-01-01T00:00:00Z' },
-  });
-  try {
-    withProjectDir(undefined, () => {
-      const engineResult = runEngine(sandbox);
-      assertEqual(engineResult.code, 0);
-      assertIncludes(engineResult.stdout, 'Cursor: quick.fix (feature={\n  "x": 1,\n  "y": 2\n}).\n');
-      if (JQ_PRESENT) {
-        const oracleResult = runOracle(sandbox.scriptPath);
-        assertEqual(engineResult.stdout, oracleResult.stdout);
-      }
-    });
-  } finally {
-    sandbox.cleanup();
-  }
-});
-
-test('parity: a boolean-false feature is treated as absent, same as jq (the one value both sides agree is falsy)', () => {
-  const sandbox = makeDoctrineSandbox({
-    cursor: { flow: 'quick', phase: 'fix', feature: false, updated: '2026-01-01T00:00:00Z' },
-  });
-  try {
-    withProjectDir(undefined, () => {
-      const engineResult = runEngine(sandbox);
-      assertEqual(engineResult.code, 0);
-      assertMatch(engineResult.stdout, /\nCursor: quick\.fix\.\n$/);
-      if (JQ_PRESENT) {
-        const oracleResult = runOracle(sandbox.scriptPath);
-        assertEqual(engineResult.stdout, oracleResult.stdout);
-      }
-    });
-  } finally {
-    sandbox.cleanup();
-  }
-});
+// The non-string `feature` cases (jq's `//` truthiness, its 2-space
+// pretty-print, and the `feature: false` agreement) lived here until unit 5.
+// They pinned jqAltRaw(), which existed only to render the cursor line — with
+// the line gone the function is gone, and a test for a code path that no longer
+// exists is exactly the vacuous green this repo's lessons warn about. The
+// `feature`-independence they cared about is now covered by
+// 'the payload is identical for every cursor', above.

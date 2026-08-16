@@ -93,7 +93,7 @@ test('normal run with matching tests still exits 0', () => {
 // new test file — fail immediately.
 const RAW_MKDTEMP_BUDGET = {
   'run.mjs': 1, // mkTempRoot()'s own definition — the one sanctioned call
-  'doctrine.test.mjs': 12,
+  'doctrine.test.mjs': 11,
   'orders.test.mjs': 4,
   'state.test.mjs': 4,
   'runner.test.mjs': 2,
