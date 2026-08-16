@@ -39,6 +39,43 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'flow', 'engine', 'cli.mjs');
 
 // ---------------------------------------------------------------------------
+// HERMETICITY — the developer's own git configuration must not change what this
+// suite proves (inject-triggers/6 fix round 3).
+//
+// The stop-gate parity fixtures compare a frozen bash oracle (plain
+// `git status --porcelain`, collapsing untracked directories) against the
+// engine (`-uall`, enumerating them). A `~/.gitconfig` carrying
+//   [status]
+//     showUntrackedFiles = all
+// makes the ORACLE enumerate too, the two agree, and the KNOWN DIVERGENCE pin
+// turns into a false red — on the machine of whoever happens to have that
+// setting, and nowhere else. Reproduced exactly that way before this fix:
+// `HOME=<fake with that config> node run.mjs` -> 659 passed, 2 failed.
+//
+// Neutralized here, once, on the SHARED harness rather than at the one call
+// site that noticed. Three variables because git's own precedence needs all
+// three: GIT_CONFIG_GLOBAL/SYSTEM redirect the two config files (git >= 2.32),
+// GIT_CONFIG_NOSYSTEM covers older gits that ignore GIT_CONFIG_SYSTEM.
+//
+// Set on process.env, not merely passed to runCommand: the engine's own
+// `spawnSync('git', …)` runs IN THIS PROCESS and inherits from here, and
+// runCommand builds every child env from `{...process.env}`, so one assignment
+// covers the in-process spawns, the oracle's bash, and the fixtures' own
+// `git init`/`add`/`commit` alike. This is the same "delete it, do not merely
+// not set it" rule `unsetEnv` exists for, applied to a variable git reads from
+// a FILE rather than from the environment — the only way to delete a file's
+// influence is to point git at a different one.
+//
+// Deliberately global to the suite, not scoped to the gate fixtures: any test
+// that shells out to git inherits the same clean configuration, so a future
+// fixture cannot quietly depend on a developer's aliases, `core.autocrlf`, or
+// `status.showUntrackedFiles`. Asserted live in parity.test.mjs, in BOTH
+// ambient states (a fake HOME that sets the option, and an empty one).
+process.env.GIT_CONFIG_GLOBAL = '/dev/null';
+process.env.GIT_CONFIG_SYSTEM = '/dev/null';
+process.env.GIT_CONFIG_NOSYSTEM = '1';
+
+// ---------------------------------------------------------------------------
 // Assert helpers
 // ---------------------------------------------------------------------------
 

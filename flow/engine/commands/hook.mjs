@@ -664,9 +664,12 @@ function cursorStateFeature(vibeDir) {
 //
 // THE COST OF `-uall`, AND WHY THE RESULT IS A THREE-WAY ANSWER (fix round 2).
 // One row per untracked FILE means the output grows with the tree: a repo with
-// a large un-ignored untracked directory (measured: 14,400 files, 1.83 MB of
-// porcelain; the threshold is roughly 9k–35k files depending on path length)
-// overruns spawnSync's DEFAULT 1 MiB maxBuffer. spawnSync then returns
+// a large un-ignored untracked directory overruns spawnSync's DEFAULT 1 MiB
+// maxBuffer. Two independent measurements, both of 14,400 untracked files:
+// 1.83 MB of porcelain with short paths (the original report) and 5,072,090
+// bytes with ~330-character paths (the reproduction in the evidence receipt) —
+// the byte count is a function of PATH LENGTH, not file count alone, which is
+// why the overrun threshold lands anywhere from roughly 9k to 35k files. spawnSync then returns
 // `status: null, error: ENOBUFS` — and the previous revision swallowed that and
 // returned `''`, which the scan reads as "nothing changed". A modified,
 // newer-than-the-receipt source file then exited 0. `-uall` had turned the only

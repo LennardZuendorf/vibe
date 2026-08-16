@@ -1056,6 +1056,86 @@ for (const fixture of GATE_FIXTURES) {
 // asserts the dialect really does behave as claimed, so the pin cannot rot.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// The untracked-directory pin above only means anything while the ORACLE really
+// does collapse — and that is a git CONFIG decision, not a git constant. A
+// developer (or a CI image) with
+//   [status]
+//     showUntrackedFiles = all
+// in ~/.gitconfig makes the frozen oracle enumerate too, the two sides agree,
+// and the pin fails as a FALSE RED on their machine only. Observed exactly that
+// way: `HOME=<fake with that option> node run.mjs` -> 659 passed, 2 failed, and
+// only that fixture failed.
+//
+// run.mjs neutralizes it for the whole suite (GIT_CONFIG_GLOBAL/SYSTEM +
+// GIT_CONFIG_NOSYSTEM). This test is what keeps that neutralization from
+// rotting into a comment: it exercises the config in BOTH ambient states, and
+// the hostile state is produced by DELETING the neutralization from the child
+// env — not by hoping the ambient machine has the option unset, which is the
+// exact shape this repo's `unsetEnv` lesson exists for.
+// ---------------------------------------------------------------------------
+test('hermetic: an ambient status.showUntrackedFiles cannot change what the gate parity fixtures prove', () => {
+  const fixture = GATE_FIXTURES.find((f) => f.untracked);
+  assert(fixture, 'floor: the untracked-directory fixture must exist for this test to guard anything');
+  const sb = buildGateSandbox(fixture);
+  const home = mkTempRoot('vibe-parity-home-');
+  const emptyHome = mkTempRoot('vibe-parity-home-empty-');
+  const NEUTRALIZERS = ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_NOSYSTEM'];
+  const plainPorcelain = (opts) => runCommand('git', ['-C', sb.dir, 'status', '--porcelain'], opts).stdout;
+  try {
+    writeFileSync(path.join(home, '.gitconfig'), '[status]\n\tshowUntrackedFiles = all\n');
+
+    // (a) THE FAILURE MODE, reproduced on purpose: hostile config, and the
+    // harness's neutralization deleted from the child environment. git
+    // enumerates, so the oracle would see what the engine sees and the
+    // divergence pin would go red for a reason that has nothing to do with the
+    // code. This is the control that proves (b) is doing work.
+    const hostile = plainPorcelain({ env: { HOME: home }, unsetEnv: NEUTRALIZERS });
+    assert(
+      hostile.includes(`${UNTRACKED_FILE_REL}`),
+      `floor: with the neutralization removed, an ambient showUntrackedFiles=all must make plain --porcelain ` +
+        `enumerate ${UNTRACKED_FILE_REL} — if it does not, this test is no longer reproducing the failure it guards:\n${hostile}`,
+    );
+
+    // (b) Same hostile config, neutralization in place (the harness default):
+    // git collapses the directory again, which is the behaviour the frozen
+    // oracle is pinned against.
+    const neutralized = plainPorcelain({ env: { HOME: home } });
+    assert(
+      neutralized.includes('?? vendor/') && !neutralized.includes(UNTRACKED_FILE_REL),
+      `the suite's git-config neutralization is not in effect — an ambient ~/.gitconfig is reaching the ` +
+        `fixtures:\n${neutralized}`,
+    );
+
+    // (c) The other ambient state, asserted rather than assumed: an empty HOME
+    // must produce the identical bytes. A neutralization that only worked when
+    // something was there to neutralize would be indistinguishable from luck.
+    assertEqual(
+      plainPorcelain({ env: { HOME: emptyHome } }),
+      neutralized,
+      'a clean HOME and a hostile HOME must give the fixtures byte-identical porcelain',
+    );
+
+    // (d) And the engine is unaffected in every state — it passes `-uall`
+    // explicitly, so it enumerates no matter what the config says.
+    for (const [label, opts] of [
+      ['hostile HOME', { env: { HOME: home } }],
+      ['empty HOME', { env: { HOME: emptyHome } }],
+      ['hostile HOME, neutralization deleted', { env: { HOME: home }, unsetEnv: NEUTRALIZERS }],
+    ]) {
+      const engineView = runCommand('git', ['-C', sb.dir, 'status', '--porcelain', '-uall'], opts).stdout;
+      assert(
+        engineView.includes(UNTRACKED_FILE_REL),
+        `${label}: the engine's own argv must enumerate regardless of config; got:\n${engineView}`,
+      );
+    }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(emptyHome, { recursive: true, force: true });
+    sb.cleanup();
+  }
+});
+
 test("KNOWN DIVERGENCE (BSD sed): stop_hook_active true — the ENGINE returns early (right); the ORACLE's no-jq sed leg misses the token because \\| is GNU-only", () => {
   const sb = buildGateSandbox({
     name: 'quick.verify',

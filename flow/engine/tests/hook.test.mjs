@@ -1408,8 +1408,10 @@ test('runGateHook predicate 2: the marker is excluded in its TRACKED spelling as
 // fix is to fail CLOSED on an undeterminable working tree.
 //
 // One row per untracked FILE means the output grows with the tree. Measured on
-// a real repo: 14,400 un-ignored untracked files produce 1.83 MB of porcelain,
-// which overran spawnSync's DEFAULT 1 MiB maxBuffer. spawnSync then hands back
+// real repos: 14,400 un-ignored untracked files produce 1.83 MB of porcelain
+// with short paths, and 5,072,090 bytes with ~330-character ones — the size
+// follows PATH LENGTH, not file count alone. Either way it overran spawnSync's
+// DEFAULT 1 MiB maxBuffer. spawnSync then hands back
 // `status: null, error: ENOBUFS`, the old code swallowed it and returned '',
 // and the scan read that as "nothing changed" — so a modified `src.txt` newer
 // than the receipt exited 0. The only blocking tooth in the harness, waved
