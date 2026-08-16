@@ -1403,6 +1403,127 @@ test('runGateHook predicate 2: the marker is excluded in its TRACKED spelling as
   }
 });
 
+// ---------------------------------------------------------------------------
+// FIX ROUND 2 — `-uall` made the blocking tooth fail OPEN at scale, and the
+// fix is to fail CLOSED on an undeterminable working tree.
+//
+// One row per untracked FILE means the output grows with the tree. Measured on
+// a real repo: 14,400 un-ignored untracked files produce 1.83 MB of porcelain,
+// which overran spawnSync's DEFAULT 1 MiB maxBuffer. spawnSync then hands back
+// `status: null, error: ENOBUFS`, the old code swallowed it and returned '',
+// and the scan read that as "nothing changed" — so a modified `src.txt` newer
+// than the receipt exited 0. The only blocking tooth in the harness, waved
+// through in exactly the repos whose working tree is hardest to track.
+//
+// Both halves are pinned below with REAL files and a REAL spawn: the raised
+// ceiling reads a tree the old default could not, and a genuine ENOBUFS blocks
+// instead of passing. Only the THRESHOLD is scaled in the second test (via the
+// documented `porcelainMaxBuffer` seam) — the overrun itself is real.
+// ---------------------------------------------------------------------------
+
+// Build `count` untracked files with very long paths, so porcelain crosses a
+// byte budget with as few filesystem writes as the suite can get away with
+// (~620 bytes of output per file). Every file is stamped WELL BEFORE the
+// receipt: the tree must be large, not stale — otherwise these fixtures would
+// block for the ordinary staleness reason and prove nothing about the buffer.
+// Returns the porcelain size in bytes.
+function plantUntrackedTree(sb, count) {
+  const deep = path.join(sb.dir, 'vendor', 'a'.repeat(200), 'b'.repeat(200));
+  mkdirSync(deep, { recursive: true });
+  const ancient = new Date('1990-01-01T00:00:00Z');
+  for (let i = 0; i < count; i += 1) {
+    const f = path.join(deep, `${'c'.repeat(190)}-${i}.txt`);
+    writeFileSync(f, 'x\n');
+    utimesSync(f, ancient, ancient);
+  }
+  return realPorcelain(sb).length;
+}
+
+test('runGateHook predicate 2: a >1 MiB untracked tree is still READ — the raised buffer is what makes the tooth work at scale', () => {
+  const sb = makeRealGitFixture();
+  try {
+    const bytes = plantUntrackedTree(sb, 1800);
+    assert(
+      bytes > 1024 * 1024,
+      `floor: this fixture must exceed the 1 MiB DEFAULT maxBuffer to mean anything, got ${bytes} bytes`,
+    );
+
+    // The one thing that must be noticed: a tracked file modified after the
+    // receipt. Under the old default buffer git's output was discarded and this
+    // exited 0.
+    writeFileSync(path.join(sb.dir, 'src.txt'), 'v2 — edited after the receipt\n');
+
+    const result = gateOnRealGit(sb);
+    assertEqual(result.code, 2, 'a receipt older than a modified source file must block, however big the untracked tree is');
+    assertIncludes(result.stderr, 'src.txt');
+    assertIncludes(result.stderr, 'stale');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('runGateHook predicate 2: a real ENOBUFS is an UNDETERMINABLE tree and BLOCKS — never a silent pass', () => {
+  const sb = makeRealGitFixture();
+  try {
+    const bytes = plantUntrackedTree(sb, 200);
+    assert(bytes > 4096, `floor: the fixture must overrun the 4 KiB ceiling below, got ${bytes} bytes`);
+
+    // Real files, real git, real spawn — only the ceiling is scaled so the test
+    // runs in a second. Nothing here is mocked.
+    const result = runGateHook(sb.root, sb.vibeDir, '{}', { porcelainMaxBuffer: 4096 });
+    assertEqual(result.code, 2, '"I could not look" must never resolve to "nothing changed" on a blocking tooth');
+    assertIncludes(result.stderr, 'working tree state could not be determined');
+    assertIncludes(result.stderr, 'ENOBUFS');
+    assertIncludes(result.stderr, 'not verifying? abort with');
+
+    // Discriminating control: the SAME repo with a ceiling that fits passes,
+    // so the block above is the overrun and not something else about the tree.
+    assertEqual(
+      runGateHook(sb.root, sb.vibeDir, '{}', { porcelainMaxBuffer: 32 * 1024 * 1024 }).code,
+      0,
+      'control: with a buffer that fits, this same tree is clean and the gate passes',
+    );
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// The other spawn failures that mean the same thing. A non-zero `git status`
+// (a git that rejects `-uall`, a broken index) is just as undeterminable as
+// ENOBUFS — and `rev-parse` failing is NOT: that is "no git / not a work tree",
+// the documented existence-only degrade every non-git install target relies on.
+test('runGateHook predicate 2: a failing `git status` blocks, while "not a git repo" still passes', () => {
+  const sb = makeRealGitFixture();
+  try {
+    const statusFails = (args) =>
+      args.includes('rev-parse')
+        ? { error: null, status: 0, stdout: 'true\n' }
+        : { error: null, status: 128, stdout: '' };
+    const blocked = runGateHook(sb.root, sb.vibeDir, '{}', { spawnGit: statusFails });
+    assertEqual(blocked.code, 2, 'a work tree whose status cannot be read is undeterminable, not clean');
+    assertIncludes(blocked.stderr, 'could not be determined');
+
+    const noGit = runGateHook(sb.root, sb.vibeDir, '{}', { spawnGit: () => ({ error: new Error('no git') }) });
+    assertEqual(noGit.code, 0, 'a non-git target keeps its existence-only pass — fail-closed here would wedge every one of them');
+    assertEqual(noGit.stderr, '');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('runGateHook predicate 2: an undeterminable tree with NO receipt still reports the missing receipt, not the buffer', () => {
+  const sb = makeRealGitFixture();
+  try {
+    rmSync(path.join(sb.vibeDir, 'evidence'), { recursive: true, force: true });
+    plantUntrackedTree(sb, 200);
+    const result = runGateHook(sb.root, sb.vibeDir, '{}', { porcelainMaxBuffer: 4096 });
+    assertEqual(result.code, 2);
+    assertIncludes(result.stderr, "needs an evidence receipt before 'done'");
+  } finally {
+    sb.cleanup();
+  }
+});
+
 // R6 — predicate 3 (the stuck-phase nudge) is DELETED. The level channel names
 // the state on every turn, so the nudge was duplication that also queued a
 // relay line per Stop. Asserted for every non-idle state the machine has, not

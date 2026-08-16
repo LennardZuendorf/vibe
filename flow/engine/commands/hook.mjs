@@ -49,6 +49,13 @@ function line(s) {
   return `${s}\n`;
 }
 
+// The gate's escape hatch, byte-parity text from the bash oracle. Named once
+// rather than spelled at each block site: fix round 2 added a third block
+// (an undeterminable working tree) and a third copy of this literal, which is
+// precisely the "second re-derivation" the duplicate-primitive scan exists to
+// catch. One constant, one occurrence, one waiver.
+const ABORT_HINT = '  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle';
+
 // ---------------------------------------------------------------------------
 // Shared root-relative paths (mirror each hook's own literal exactly).
 // ---------------------------------------------------------------------------
@@ -651,24 +658,60 @@ function cursorStateFeature(vibeDir) {
 //
 // It also makes the engine STRICTER than the frozen bash oracle
 // (tests/oracles/stop-gate.sh), which has no `-uall` — a deliberate divergence
-// in the fail-safe direction for a blocking tooth, pinned by the tests named in
-// isOwnRuntimeState()'s note. `git status` has accepted `-uall` since well
-// before any git this harness can run on; a git that rejected the flag would
-// exit non-zero and the whole scan degrades to "no changes" (pass), never to a
-// throw.
+// in the fail-safe direction for a blocking tooth, pinned as an executable
+// KNOWN DIVERGENCE in parity.test.mjs (the `untracked directory` gate fixture)
+// alongside the tests named in isOwnRuntimeState()'s note.
 //
-// A caller that injects `spawnGit` (the hermetic tests) sees the same argv, so
-// what the tests pin is what ships.
+// THE COST OF `-uall`, AND WHY THE RESULT IS A THREE-WAY ANSWER (fix round 2).
+// One row per untracked FILE means the output grows with the tree: a repo with
+// a large un-ignored untracked directory (measured: 14,400 files, 1.83 MB of
+// porcelain; the threshold is roughly 9k–35k files depending on path length)
+// overruns spawnSync's DEFAULT 1 MiB maxBuffer. spawnSync then returns
+// `status: null, error: ENOBUFS` — and the previous revision swallowed that and
+// returned `''`, which the scan reads as "nothing changed". A modified,
+// newer-than-the-receipt source file then exited 0. `-uall` had turned the only
+// blocking tooth in the harness into one that fails OPEN exactly where a repo is
+// messiest. Gitignored trees never counted (node_modules is fine); an un-ignored
+// `vendor/` or build directory did.
+//
+// So: raise the ceiling AND stop conflating the two zero-length answers.
+//   { determined: true,  text }  — git answered; `text` is the truth, '' means clean
+//   { determined: false }        — this IS a work tree but its state could not be
+//                                  read (ENOBUFS, a killed process, a git that
+//                                  rejects a flag, anything else)
+//   { determined: false, noGit } — not a work tree / no git at all
+// "I could not look" is not "nothing changed": the caller BLOCKS on the middle
+// case (see evidenceReceiptCheck) and keeps the long-standing existence-only
+// pass on the last one, which is the documented contract for a non-git target
+// and must not become a block.
+//
+// A caller that injects `spawnGit` (the hermetic tests) sees the same argv and
+// the same options object, so what the tests pin is what ships.
+// 32 MiB — roughly 250k untracked rows, where the default 1 MiB was ~9k. Big
+// enough that no real working tree reaches it by accident, bounded enough that
+// a runaway `git status` cannot eat the machine. `opts.porcelainMaxBuffer` is a
+// TEST SEAM (same spirit as the injectable spawn functions): the fail-closed
+// path is exercised with REAL files and a real ENOBUFS from a real spawn, just
+// at a threshold a test suite can reach in a second instead of a minute.
+const PORCELAIN_MAX_BUFFER = 32 * 1024 * 1024;
+
 function gitPorcelain(root, opts) {
-  const spawnGit = opts.spawnGit || ((args) => spawnSync('git', args, { encoding: 'utf8' }));
+  const spawnGit =
+    opts.spawnGit || ((args, spawnOpts) => spawnSync('git', args, { encoding: 'utf8', ...spawnOpts }));
+  const maxBuffer = typeof opts.porcelainMaxBuffer === 'number' ? opts.porcelainMaxBuffer : PORCELAIN_MAX_BUFFER;
   try {
     const check = spawnGit(['-C', root, 'rev-parse', '--is-inside-work-tree']);
-    if (!check || check.error || check.status !== 0) return '';
-    const res = spawnGit(['-C', root, 'status', '--porcelain', '-uall']);
-    if (!res || res.error || res.status !== 0) return '';
-    return typeof res.stdout === 'string' ? res.stdout.replace(/\n+$/, '') : '';
-  } catch {
-    return '';
+    if (!check || check.error || check.status !== 0) return { determined: false, noGit: true, text: '' };
+    const res = spawnGit(['-C', root, 'status', '--porcelain', '-uall'], { maxBuffer });
+    if (!res || res.error || res.status !== 0 || typeof res.stdout !== 'string') {
+      const why = res && res.error && res.error.code ? res.error.code : 'git status failed';
+      return { determined: false, text: '', why };
+    }
+    return { determined: true, text: res.stdout.replace(/\n+$/, ''), why: undefined };
+  } catch (err) {
+    // A throw from the spawn itself is the same class of answer as ENOBUFS —
+    // the tree state is unknown, and this function still never throws.
+    return { determined: false, text: '', why: (err && err.code) || 'spawn threw' };
   }
 }
 
@@ -689,8 +732,9 @@ function predicateTdd(state, changed) {
 // fresh evidence receipt. Returns {stderr} to block (exit 2), or undefined to
 // continue. `warn` is a callback so the "no feature named" degrade can queue
 // its own warn-only line without this function owning stderr accumulation.
-function evidenceReceiptCheck(root, state, feature, changed, warn) {
+function evidenceReceiptCheck(root, state, feature, tree, warn) {
   if (state !== 'feature.verify' && state !== 'quick.verify') return undefined;
+  const changed = tree.text;
 
   let receipt;
   if (state === 'feature.verify') {
@@ -717,7 +761,33 @@ function evidenceReceiptCheck(root, state, feature, changed, warn) {
         line(`vibe-gate: BLOCKED — ${state} needs an evidence receipt before 'done'.`) +
         line(`  expected: ${receipt}`) +
         line(`  it must record the commands you ran and their observed output (per unit ID for a feature).`) +
-        line(`  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle`),
+        line(ABORT_HINT),
+    };
+  }
+
+  // FAIL CLOSED on an undeterminable working tree (fix round 2). The receipt
+  // exists, so the only question left is whether the tree moved under it — and
+  // if git could not tell us (ENOBUFS on a huge untracked tree, a killed
+  // process, a rejected flag), the honest answer is "unknown", which for a
+  // BLOCKING tooth must resolve to a block. The alternative is what the previous
+  // revision shipped: silently treating "I could not look" as "nothing changed",
+  // which waved a genuinely stale receipt through in exactly the repos where the
+  // working tree is hardest to keep track of.
+  //
+  // `noGit` is deliberately NOT this case. A target with no git, or a directory
+  // that is not a work tree, has always degraded to existence-only staleness —
+  // that is the documented contract for non-git installs, and turning it into a
+  // block would wedge every one of them.
+  if (!tree.determined) {
+    if (tree.noGit) return undefined;
+    return {
+      stderr:
+        line('vibe-gate: BLOCKED — the working tree state could not be determined, so the receipt cannot be trusted.') +
+        line(`  receipt: ${receipt}`) +
+        line(`  git status --porcelain -uall did not answer (${tree.why}).`) +
+        line('  a huge UN-IGNORED untracked tree is the usual cause — gitignore it (or commit it) and re-run the Stop.') +
+        line('  "I could not look" is not "nothing changed", so this blocks rather than passing you through.') +
+        line(ABORT_HINT),
     };
   }
 
@@ -748,7 +818,7 @@ function evidenceReceiptCheck(root, state, feature, changed, warn) {
           line(`  receipt: ${receipt}`) +
           line(`  changed after it was written: ${p}`) +
           line('  re-run verification and rewrite the receipt with fresh commands + output.') +
-          line('  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle'),
+          line(ABORT_HINT),
       };
     }
   }
@@ -762,7 +832,7 @@ export function runGateHook(root, vibeDir, stdinText, opts = {}) {
   if (!fs.existsSync(detectPath)) return { code: 0, stdout: '', stderr: '' };
 
   const { state, feature } = cursorStateFeature(vibeDir);
-  const changed = gitPorcelain(root, opts);
+  const tree = gitPorcelain(root, opts);
 
   let stderr = '';
   const warn = (msg) => {
@@ -770,10 +840,13 @@ export function runGateHook(root, vibeDir, stdinText, opts = {}) {
     appendWarnLog(root, `gate: ${msg}`);
   };
 
-  const p1 = predicateTdd(state, changed);
+  // Predicate 1 is warn-only, so an undeterminable tree simply gives it nothing
+  // to say — `tree.text` is '' in that case and the predicate no-ops. Only the
+  // BLOCKING predicate below distinguishes "unknown" from "clean".
+  const p1 = predicateTdd(state, tree.text);
   if (p1) warn(p1);
 
-  const blocked = evidenceReceiptCheck(root, state, feature, changed, warn);
+  const blocked = evidenceReceiptCheck(root, state, feature, tree, warn);
   if (blocked) {
     return { code: 2, stdout: '', stderr: stderr + blocked.stderr };
   }

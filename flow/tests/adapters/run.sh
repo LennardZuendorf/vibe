@@ -65,34 +65,85 @@ assert_contains "agent-instructions/2" "adapters.json lists WARP.md" "$out" "WAR
 
 echo ""
 echo "=== agent-instructions/3 — merge-agents.sh ==="
+# inject-triggers/6 fix round 2 — STDERR IS ASSERTED, not discarded.
+#
+# Of the 17 $MERGE invocations in this file, 8 discarded stderr and the one that
+# captured it only asserted a warning was PRESENT. A `tmp: unbound variable`
+# regression (a RETURN trap firing a second time with its locals out of scope)
+# therefore printed on every single run while this suite reported 184 passed,
+# 0 failed — the script "worked", noisily, and nothing could tell.
+#
+# merge_run runs merge-agents.sh with stdout and stderr captured SEPARATELY,
+# leaves stdout in $MERGE_STDOUT for the caller, and asserts stderr is exactly
+# empty. The divergent-append path is the one case that must warn; it keeps
+# using a plain call with 2>&1 and asserts the warning's presence.
+MERGE_STDOUT=""
+merge_run() {
+  local desc="$1"; shift
+  local errf rc
+  errf="$(mktmp)/stderr"
+  MERGE_STDOUT="$(bash "$MERGE" "$@" 2>"$errf")"
+  rc=$?
+  local errtxt; errtxt="$(cat "$errf")"; rm -f "$errf"
+  if [[ -z "$errtxt" ]]; then
+    pass "inject-triggers/6" "stderr clean: $desc"
+  else
+    fail "inject-triggers/6" "stderr clean: $desc"
+    echo "        stderr: $errtxt"
+  fi
+  return $rc
+}
 # create
-d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
+d="$(mktmp)"; merge_run "merge case 1 (create from template)" "$d"
+merge_run "merge case 1 re-run (create -> no-op)" "$d"
 grep -qF '<!-- vibe:instructions:start -->' "$d/AGENTS.md" && pass "agent-instructions/3" "missing -> create from template" || fail "agent-instructions/3" "create"
 # preserve preamble + replace inner + idempotent
 d="$(mktmp)"; { echo "## Our Team"; echo "keep me"; echo ""; cat "$TEMPLATE"; } > "$d/AGENTS.md"
-bash "$MERGE" "$d" >/dev/null
+merge_run "merge case 2 (replace the instructions block)" "$d"
 grep -qF "keep me" "$d/AGENTS.md" && pass "agent-instructions/3" "user preamble preserved (R2)" || fail "agent-instructions/3" "preamble"
-out="$(bash "$MERGE" "$d")"; assert_contains "agent-instructions/3" "re-run is a no-op" "$out" "no-op"
+merge_run "merge case 2 re-run (no-op)" "$d"
+assert_contains "agent-instructions/3" "re-run is a no-op" "$MERGE_STDOUT" "no-op"
 # constitution migration
 d="$(mktmp)"; printf '# R\n\n<!-- vibe:constitution:start -->\nold\n<!-- vibe:constitution:end -->\n' > "$d/AGENTS.md"
-bash "$MERGE" "$d" >/dev/null
+merge_run "merge case 3 (constitution -> instructions migration)" "$d"
+merge_run "merge case 3 re-run (no-op)" "$d"
 grep -qF '<!-- vibe:instructions:start -->' "$d/AGENTS.md" && ! grep -qF 'vibe:constitution' "$d/AGENTS.md" \
   && pass "agent-instructions/3" "constitution -> instructions migration" || fail "agent-instructions/3" "migration"
-# divergent -> append + warn, preserve content
+# merge case 4 — no markers, but the body IS the template's instructions body:
+# wrap it in markers instead of appending a second copy. Built with the same
+# marker/comment stripping merge's own `tcore` does, since `normalize()` only
+# compares blank-squeezed text.
+d="$(mktmp)"
+awk '/vibe:instructions:start/{f=1;next} /vibe:instructions:end/{f=0} f' "$TEMPLATE" \
+  | awk '/^<!-- Managed by vibe/{c=1} c&&/-->$/{c=0;next} !c' > "$d/AGENTS.md"
+merge_run "merge case 4 (wrap an unmarked-equivalent body)" "$d"
+assert_contains "agent-instructions/3" "unmarked-equivalent body is WRAPPED, not appended twice" "$MERGE_STDOUT" "wrapped"
+assert_eq "agent-instructions/3" "wrap does not duplicate the body" \
+  "$(grep -c '^## Working model' "$d/AGENTS.md")" "1"
+merge_run "merge case 4 re-run (no-op)" "$d"
+rm -rf "$d"
+# merge case 5 — divergent -> append + warn, preserve content. THE ONE PATH THAT
+# IS SUPPOSED TO WRITE TO STDERR, so it is asserted by content rather than by
+# emptiness: exactly the two merge-agents WARN lines, nothing else. Anything
+# unexpected on stderr here (a `tmp: unbound variable`, a stray tool error) fails
+# this the same way it fails the merge_run cases above.
 d="$(mktmp)"; printf '# Different\n\nmine\n' > "$d/AGENTS.md"
-out="$(bash "$MERGE" "$d" 2>&1)"
+errf="$(mktmp)/err"; out="$(bash "$MERGE" "$d" 2>"$errf")"
 { grep -qF "mine" "$d/AGENTS.md" && grep -qF '<!-- vibe:instructions:start -->' "$d/AGENTS.md"; } \
   && assert_contains "agent-instructions/3" "divergent appends + warns" "$out" "append" \
   || fail "agent-instructions/3" "divergent append"
+assert_eq "inject-triggers/6" "divergent path writes exactly 2 stderr lines, both merge-agents WARNs" \
+  "$(wc -l < "$errf" | tr -d ' ')/$(grep -c '^merge-agents: WARN — ' "$errf")" "2/2"
 # reversed markers must be refused, not silently mangled (content-safety invariant)
 d="$(mktmp)"; printf '# R\n<!-- vibe:instructions:end -->\nmid\n<!-- vibe:instructions:start -->\ntail\n' > "$d/AGENTS.md"
 rmbefore="$(cat "$d/AGENTS.md")"
 if bash "$MERGE" "$d" >/dev/null 2>&1; then fail "agent-instructions/3" "reversed markers must be refused"; else pass "agent-instructions/3" "reversed markers refused (content safety)"; fi
 assert_eq "agent-instructions/3" "reversed-marker file left untouched" "$(cat "$d/AGENTS.md")" "$rmbefore"
 # link: skip correct, block real file
-d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
-bash "$MERGE" link CLAUDE.md "$d" >/dev/null
-out="$(bash "$MERGE" link CLAUDE.md "$d")"; assert_contains "agent-instructions/5" "symlink idempotent skip" "$out" "skip"
+d="$(mktmp)"; merge_run "merge before link (create)" "$d"
+merge_run "link CLAUDE.md" link CLAUDE.md "$d"
+merge_run "link CLAUDE.md re-run (idempotent skip)" link CLAUDE.md "$d"
+assert_contains "agent-instructions/5" "symlink idempotent skip" "$MERGE_STDOUT" "skip"
 [[ -L "$d/CLAUDE.md" && "$(readlink "$d/CLAUDE.md")" == "AGENTS.md" ]] && pass "agent-instructions/5" "relative symlink to AGENTS.md" || fail "agent-instructions/5" "symlink target"
 printf 'real\n' > "$d/WARP.md"
 if bash "$MERGE" link WARP.md "$d" >/dev/null 2>&1; then fail "agent-instructions/5" "real file must not be clobbered"; else pass "agent-instructions/5" "real file blocked (R5)"; fi
@@ -100,7 +151,7 @@ if bash "$MERGE" link WARP.md "$d" >/dev/null 2>&1; then fail "agent-instruction
 # unmerge path still strips BOTH managed blocks. Discriminating — the old awk
 # marker lookup exits 127 under set -e and leaves the block intact.
 NOAWK="$(mkshim awk)"
-d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
+d="$(mktmp)"; merge_run "merge before awk-less unmerge (create)" "$d"
 printf '\n## My Team\nkeep this prose\n' >> "$d/AGENTS.md"   # user prose => not a pure stub
 PATH="$NOAWK" "$NOAWK/bash" "$MERGE" unmerge "$d" >/dev/null 2>&1
 { ! grep -qF 'vibe:instructions:start' "$d/AGENTS.md" && ! grep -qF 'vibe:active-rules:start' "$d/AGENTS.md" && grep -qF 'keep this prose' "$d/AGENTS.md"; } \
@@ -117,9 +168,9 @@ rm -rf "$NOAWK" "$d"
 # regenerated block makes the file diverge from the pristine stub, so the stub
 # short-circuit does not fire; stripping the blocks strands the title. Removing it
 # leaves only whitespace, so the vibe-created file is deleted (no orphan title).
-d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
+d="$(mktmp)"; merge_run "merge before active-rules regen (create)" "$d"
 sed 's/_No lessons recorded yet\._/- do the thing/' "$d/AGENTS.md" > "$d/AGENTS.md.n" && mv "$d/AGENTS.md.n" "$d/AGENTS.md"
-bash "$MERGE" unmerge "$d" >/dev/null 2>&1
+merge_run "unmerge (regen case)" unmerge "$d"
 [[ ! -e "$d/AGENTS.md" ]] \
   && pass "agent-instructions/3" "unmerge deletes the file when only the branded title would remain (regen case)" \
   || fail "agent-instructions/3" "unmerge deletes the file when only the branded title would remain (regen case)"
@@ -128,10 +179,10 @@ rm -rf "$d"
 # the vibe title still gets the orphaned title removed on unmerge — the strip is by
 # FIRST exact match, wherever it sits, not line 1 only. Discriminating: the old
 # head -n1 check sees the user's heading on line 1 and leaves a mid-file title.
-d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
+d="$(mktmp)"; merge_run "merge before mid-file-title unmerge (create)" "$d"
 { printf '## Top\nkeep top\n\n'; cat "$d/AGENTS.md"; printf '\n## Footer\nkeep bottom\n'; } > "$d/AGENTS.md.n" && mv "$d/AGENTS.md.n" "$d/AGENTS.md"
 grep -qF '# AGENTS.md — vibe Engineering Guide' "$d/AGENTS.md" || fail "agent-instructions/3" "precondition: mid-file title present before unmerge"
-bash "$MERGE" unmerge "$d" >/dev/null 2>&1
+merge_run "unmerge (mid-file title)" unmerge "$d"
 { ! grep -qF 'vibe Engineering Guide' "$d/AGENTS.md" && grep -qF 'keep top' "$d/AGENTS.md" && grep -qF 'keep bottom' "$d/AGENTS.md"; } \
   && pass "agent-instructions/3" "unmerge strips a MID-FILE vibe title (prose above it), keeps user prose" \
   || fail "agent-instructions/3" "unmerge strips a MID-FILE vibe title (prose above it), keeps user prose"
@@ -141,7 +192,7 @@ rm -rf "$d"
 # Discriminating: an unconditional 'sed 1d' would eat the user's first line.
 d="$(mktmp)"
 { printf '## User Heading\nsome prose\n\n'; sed -n '/vibe:instructions:start/,/vibe:active-rules:end/p' "$TEMPLATE"; } > "$d/AGENTS.md"
-bash "$MERGE" unmerge "$d" >/dev/null 2>&1
+merge_run "unmerge (no title present)" unmerge "$d"
 { [[ "$(head -n1 "$d/AGENTS.md")" == "## User Heading" ]] && grep -qF 'some prose' "$d/AGENTS.md" \
   && ! grep -qF 'vibe:instructions:start' "$d/AGENTS.md"; } \
   && pass "agent-instructions/3" "unmerge leaves a no-title file's line 1 intact (title strip no-op)" \
@@ -156,7 +207,7 @@ echo "=== agent-instructions — repo AGENTS.md block == shipped template (parit
 REPO_AGENTS="$REPO_ROOT/AGENTS.md"
 d="$(mktmp)"; cp "$REPO_AGENTS" "$d/AGENTS.md"
 before="$(cksum < "$d/AGENTS.md")"
-bash "$MERGE" "$d" >/dev/null 2>&1
+merge_run "merge into the repo's own AGENTS.md (parity no-op)" "$d"
 after="$(cksum < "$d/AGENTS.md")"
 assert_eq "agent-instructions/2" "repo AGENTS.md block is byte-identical to the shipped template (no drift)" "$after" "$before"
 # Discriminating: drop a line from INSIDE the managed block; merge must repair it
@@ -164,7 +215,7 @@ assert_eq "agent-instructions/2" "repo AGENTS.md block is byte-identical to the 
 # moment the template gains (or loses) a line the repo block does not mirror.
 d="$(mktmp)"; sed '/^## Degrade$/d' "$REPO_AGENTS" > "$d/AGENTS.md"
 cmp -s "$d/AGENTS.md" "$REPO_AGENTS" && fail "agent-instructions/2" "precondition: corrupted block differs from pristine" || true
-bash "$MERGE" "$d" >/dev/null 2>&1
+merge_run "merge repairs a drifted repo block" "$d"
 cmp -s "$d/AGENTS.md" "$REPO_AGENTS" \
   && pass "agent-instructions/2" "merge repairs a drifted repo block back to the template (parity is enforced)" \
   || fail "agent-instructions/2" "merge repairs a drifted repo block back to the template (parity is enforced)"

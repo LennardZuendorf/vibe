@@ -700,6 +700,17 @@ const GATE_FIXTURES = [
   ...CURSOR_FIXTURES,
   { name: 'feature.verify with a feature', cursor: { flow: 'feature', phase: 'verify', feature: 'demo', updated: FIXED_TS } },
   { name: 'feature.verify with a null feature', cursor: { flow: 'feature', phase: 'verify', feature: null, updated: FIXED_TS } },
+  // inject-triggers/6 fix round 2 — the fixture that can EXECUTE the code path
+  // round 1 changed. Every fixture above commits its whole tree, so the matrix
+  // contained zero untracked rows and `-uall` made no observable difference in
+  // it: a green that could not tell "checked and clean" from "checked nothing"
+  // (this repo's Active Rule 1). See UNTRACKED_WHY below for the divergence it
+  // pins.
+  {
+    name: 'untracked directory (engine enumerates, oracle collapses)',
+    cursor: { flow: 'quick', phase: 'verify', feature: null, updated: FIXED_TS },
+    untracked: true,
+  },
 ];
 
 const GATE_STDIN_SHAPES = [
@@ -763,6 +774,46 @@ const SED_HAS_BRE_ALTERNATION = (() => {
 // re-entry" on BOTH dialects, so they stay in the byte-for-byte comparison.)
 const REENTRY_TRUE_SHAPE = 'stop_hook_active true (boolean)';
 
+// ---------------------------------------------------------------------------
+// KNOWN DIVERGENCE (UNTRACKED DIRECTORY) — inject-triggers/6 fix round 2.
+// Direction, stated once: THE ENGINE IS RIGHT. THE FROZEN ORACLE IS WRONG.
+//
+// The oracle runs `git status --porcelain` with no `-uall`, so a wholly
+// untracked directory arrives as ONE row — the directory. Its staleness test is
+// then `[[ "$ROOT/vendor/" -nt "$receipt" ]]`, a stat of the DIRECTORY, and a
+// directory's mtime does not move when a file inside it is edited in place. So
+// the oracle answers "nothing newer than the receipt" for a tree that changed,
+// and a `*.verify` Stop passes on a stale receipt. The engine enumerates the
+// files and blocks.
+//
+// The engine must NEVER be "fixed" to match. This is the only blocking tooth in
+// the harness; matching the oracle here would mean shipping a known way to
+// bypass it by keeping work in an un-ignored untracked directory.
+//
+// The oracle stays BYTE-FROZEN — its evidentiary value is that it is unedited,
+// so what this records is that the historical bash hook genuinely had this hole
+// and the port closed it. Nothing user-facing is affected: the shipped
+// stop-gate.sh is a three-line `exec node` shim.
+//
+// Not a skip. In the receipt states where the two disagree the ENGINE's
+// behaviour is asserted in full (blocks, names the FILE not the directory), and
+// the ORACLE's is asserted too (passes) — so if the oracle ever starts catching
+// this, the pin fails and must be re-derived rather than rotting into a silent
+// carve-out. The post-loop control additionally fails if the divergence never
+// occurred at all.
+const UNTRACKED_FILE_TS = new Date('2035-01-01T00:00:00Z'); // newer than FRESH_TS and SIBLING_TS
+const UNTRACKED_DIR_TS = new Date('1990-01-01T00:00:00Z'); // older than STALE_TS
+const UNTRACKED_FILE_REL = 'vendor/lib.sh';
+// The receipt states in which the untracked FILE is the only thing newer than
+// the receipt under test, so the collapsed-directory oracle misses it. In
+// 'stale' (receipt at 2000) the tracked `pkg/src/deep.sh` (2025) is newer too
+// and sorts FIRST, so both sides block on the identical path and the ordinary
+// byte comparison runs; in 'none' both block on the missing receipt.
+const ORACLE_BLIND_RECEIPTS = new Set(['fresh', 'evidence-sibling']);
+const UNTRACKED_WHY =
+  'ENGINE RIGHT / ORACLE WRONG: the oracle collapses a wholly-untracked directory to one row and stats the ' +
+  'DIRECTORY, whose mtime does not move when a file inside it is edited in place — so it passes a stale receipt';
+
 const BSD_SED_WHY =
   "ENGINE RIGHT / ORACLE WRONG ON THIS PLATFORM: this sed has no GNU BRE alternation, so the oracle's no-jq " +
   're-entry read (\\(true\\|false\\)) matches nothing and it runs the gate on a Stop it was told had already fired';
@@ -790,6 +841,25 @@ function buildGateSandbox(fixture) {
   // receipt state alone decides whether it reads as stale.
   writeFileSync(path.join(sb.dir, 'pkg', 'src', 'deep.sh'), 'v2\n');
   utimesSync(path.join(sb.dir, 'pkg', 'src', 'deep.sh'), STALE_TS, new Date('2025-01-01T00:00:00Z'));
+
+  // The untracked-directory fixture: one wholly-untracked directory holding one
+  // file EDITED IN PLACE long after the directory itself was last written.
+  // git reports it as `?? vendor/` (oracle, no -uall) or as the file itself
+  // (engine, -uall) — and the two stats disagree:
+  //   directory mtime 1990  ->  older than every receipt state  ->  oracle: pass
+  //   file      mtime 2035  ->  newer than every receipt state  ->  engine: block
+  // Editing a file in place does not move its directory's mtime, which is
+  // exactly why a collapsed row cannot answer the staleness question. The
+  // directory is stamped LAST, after the file, or writing the file would move
+  // it back to now.
+  if (fixture.untracked) {
+    const vendor = path.join(sb.dir, 'vendor');
+    mkdirSync(vendor, { recursive: true });
+    const lib = path.join(vendor, 'lib.sh');
+    writeFileSync(lib, 'edited in place, long after the directory was created\n');
+    utimesSync(lib, UNTRACKED_FILE_TS, UNTRACKED_FILE_TS);
+    utimesSync(vendor, UNTRACKED_DIR_TS, UNTRACKED_DIR_TS);
+  }
   return sb;
 }
 
@@ -830,6 +900,7 @@ for (const fixture of GATE_FIXTURES) {
       const divergences = [];
       let pred3StrippedAtLeastOnce = false;
       let bsdSedOracleDivergedAtLeastOnce = false;
+      let untrackedOracleDivergedAtLeastOnce = false;
       try {
         for (const receiptState of RECEIPT_STATES) {
           applyReceiptState(sb, receiptState);
@@ -873,6 +944,31 @@ for (const fixture of GATE_FIXTURES) {
               oracleRun.log = oracleRun.log.replace(PRED3_LOG_RE, '');
             }
 
+            // KNOWN DIVERGENCE (UNTRACKED DIRECTORY), full statement above.
+            // Deliberately placed AFTER the predicate-3 handling: the oracle
+            // PASSES these cases, so it reaches predicate 3 and emits the nudge
+            // R6 deleted — and that emission is what keeps the pred3
+            // anti-inertness control below honest for this fixture.
+            // Only where the untracked file is the ONLY thing newer than the
+            // receipt, and only on a stdin shape that actually runs the gate —
+            // a re-entrant Stop returns early on both sides and stays in the
+            // byte comparison.
+            if (fixture.untracked && ORACLE_BLIND_RECEIPTS.has(receiptState) && shapeName !== REENTRY_TRUE_SHAPE) {
+              assertEqual(engineRun.code, 2, `${label}: ${UNTRACKED_WHY}. The engine must BLOCK — this is the only blocking tooth there is`);
+              assert(
+                engineRun.stderr.includes(UNTRACKED_FILE_REL),
+                `${label}: ${UNTRACKED_WHY}. The engine must name the FILE (${UNTRACKED_FILE_REL}), not the directory; got:\n${engineRun.stderr}`,
+              );
+              assertEqual(
+                oracleRun.code,
+                0,
+                `${label}: the frozen oracle is expected to MISS this. If it now blocks, this platform's git or the ` +
+                  'oracle changed — re-derive the pin rather than leaving a carve-out that suppresses a real comparison',
+              );
+              if (compareHook(label, oracleRun, engineRun) !== null) untrackedOracleDivergedAtLeastOnce = true;
+              continue;
+            }
+
             const d = compareHook(label, oracleRun, engineRun);
             if (d) divergences.push(d);
           }
@@ -887,6 +983,19 @@ for (const fixture of GATE_FIXTURES) {
         // non-idle state that has legal next states, so a run in which nothing
         // was ever stripped means the oracle stopped emitting it — and then the
         // comparison is no longer proving the engine dropped anything.
+        // Anti-inertness control for the untracked-directory carve-out: it must
+        // have STOOD IN for a real divergence at least once, in both jq modes
+        // (the divergence is about porcelain, not jq). If the two sides agreed
+        // everywhere, the carve-out is suppressing nothing and must be deleted
+        // so the byte comparison runs — the same bar the BSD-sed pin carries.
+        if (fixture.untracked) {
+          assert(
+            untrackedOracleDivergedAtLeastOnce,
+            `untracked-directory carve-out is INERT for ${fixture.name} x ${mode}: the oracle agreed with the ` +
+              'engine on every receipt state, so it no longer stands in for a divergence — delete the carve-out ' +
+              'and let the byte comparison run',
+          );
+        }
         if (mode === 'jq' && fixture.cursor && fixture.cursor.flow !== 'idle') {
           assert(
             pred3StrippedAtLeastOnce,

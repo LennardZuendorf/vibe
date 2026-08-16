@@ -920,8 +920,12 @@ const WAIVERS = [
   { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'bash-sniffer', line: 'const STATE_JSON_RE = /(\\.agents\\/skills\\/vibe\\/state\\.json|(^|[^A-Za-z0-9_])flow\\/state\\.json)/;' },
   { file: 'commands/hook.mjs', id: 'cursor-file', reason: 'bash-sniffer', line: "return '.agents/skills/vibe/state.json (use set-state.sh)';" },
   { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'bash-sniffer', line: "return '.agents/skills/vibe/state.json (use set-state.sh)';" },
-  { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'oracle-text', line: 'line(`  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle`),' },
-  { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'oracle-text', line: "line('  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle')," },
+  // inject-triggers/6 fix round 2: the gate grew a THIRD block (an
+  // undeterminable working tree) and with it a third copy of the abort line.
+  // Three literals would have been three waivers for one sentence, so the
+  // sentence is now a single named constant — two waivers retired, one added,
+  // and a second spelling anywhere in the file is a violation again.
+  { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'oracle-text', line: "const ABORT_HINT = '  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle';" },
   { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'hook-root-literal', line: "const evidRel = '.agents/skills/vibe/evidence';" },
 
   { file: 'commands/orders.mjs', id: 'machine-file', reason: 'oracle-text', line: "'state=unknown · read .agents/skills/vibe/state-machine.json and pick the matching vibe phase · transition via set-state.sh';" },
