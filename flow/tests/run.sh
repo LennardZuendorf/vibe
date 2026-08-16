@@ -473,12 +473,20 @@ rm -rf "$projd"
 # leaves open.
 #
 # inject-triggers/2 briefly retired these and was WRONG to (review, Important 2):
-# both surfaces they guard — the `vibe:doctrine` block in the vibe SKILL.md and
-# flow/reference/templates/AGENTS.md — still carry those sentences HAND-AUTHORED,
-# and the generated `{{invariants}}` block that is meant to replace them is not
-# composed into any shipped channel yet. A guard may only be retired once the
-# surface it guards has stopped being hand-authored. inject-triggers/6 makes both
-# surfaces render from `flow/content/policy.json` and retires these then, for real.
+# a guard may only be retired once the surface it guards has stopped being
+# hand-authored. inject-triggers/6 retires HALF of them, one for one:
+#
+#   * the AGENTS.md TEMPLATE no longer enumerates any state. `flow.invariants`
+#     is composed into the shipped `agents-md` channel, so the states reach a
+#     target's AGENTS.md rendered from `content/policy.json` — the same data
+#     `decide` reads. The two template assertions are replaced below by the
+#     same per-rule comparison run against the RENDER, plus a floor proving the
+#     template really stopped enumerating (a deletion that is only a deletion
+#     would otherwise read as a pass).
+#   * the `vibe:doctrine` block in the vibe SKILL.md is STILL hand-authored —
+#     doctrine.sh emits that block verbatim and nothing generates it. Its two
+#     assertions therefore STAY. Retiring them would leave the SessionStart
+#     payload free to drift from the enforcer with nothing watching.
 #
 # The `decide` ground-truth pins added below are ADDITIVE, not a replacement:
 # they check the enforcer itself (once against the engine with node present, once
@@ -523,13 +531,42 @@ assert_eq "inject-triggers/2" "decide blocks a direct state.json edit in every m
 doc="$(bash "$SCRIPTS/doctrine.sh")"   # no Cursor: line to filter out since R4
 doc_lessons="$(printf '%s\n' "$doc" | tr ';' '\n' | grep 'lessons.md' | states_of)"
 doc_root="$(printf '%s\n' "$doc" | tr ';' '\n' | grep 'product,tech' | states_of)"
-tmpl_sec="$(awk '/^## Write invariants/{f=1;next} /^## /{f=0} f' "$FLOW/reference/templates/AGENTS.md")"
-tmpl_lessons="$(printf '%s\n' "$tmpl_sec" | awk '/^1\. /{f=1} /^2\. /{f=0} f' | states_of)"
-tmpl_root="$(printf '%s\n' "$tmpl_sec" | awk '/^2\. /{f=1} /^3\. /{f=0} f' | states_of)"
 assert_eq "flow-legibility/4" "doctrine lessons rule matches decide" "$doc_lessons" "$lessons_truth"
-assert_eq "flow-legibility/4" "AGENTS template lessons rule matches decide" "$tmpl_lessons" "$lessons_truth"
 assert_eq "flow-legibility/4" "doctrine root-spec rule matches decide" "$doc_root" "$root_truth"
-assert_eq "flow-legibility/4" "AGENTS template root-spec rule matches decide" "$tmpl_root" "$root_truth"
+# The template's replacement, in two halves.
+#
+# Half 1 — the template states no rule of its own any more. A bare
+# assert_not_contains would pass just as happily against a DELETED template, so
+# the negative carries a floor: the template is still there, still the
+# instructions block, and still names the enforcer command.
+# Structural, not phrase-matched: every `<flow>.<phase>` token in the WHOLE
+# template, not the ones inside a section a rename could move out from under.
+# Exactly one survives — `setup.apply`, in the managed-marker comment that says
+# when the block is replaced — so any re-added rule enumeration, in any section
+# and any wording, fails this.
+tmpl_states="$(printf '%s\n' "$tmpl" | states_of)"
+tmpl_state_lines="$(printf '%s\n' "$tmpl" | grep -cE '(feature|strategy|setup|quick)\.[a-z]+')"
+assert_contains "inject-triggers/6" "floor: the template is present and is the instructions block" "$tmpl" "<!-- vibe:instructions:start -->"
+assert_contains "inject-triggers/6" "floor: the template still points at the enforcer" "$tmpl" "detect-context.sh decide <path>"
+assert_eq "inject-triggers/6" "the AGENTS.md template names no flow state outside the marker comment" "$tmpl_states" "setup.apply"
+assert_eq "inject-triggers/6" "... and it does so on exactly one line (the marker comment)" "$tmpl_state_lines" "1"
+assert_contains "inject-triggers/6" "... which is the managed-marker comment, not a write rule" \
+  "$(printf '%s\n' "$tmpl" | grep -E '(feature|strategy|setup|quick)\.[a-z]+')" "replaced on the next setup.apply"
+# Half 2 — the states a target now READS come from the render, and the render
+# agrees with `decide` per rule. Same comparison the two retired assertions
+# made, moved onto the generated text.
+if command -v node >/dev/null 2>&1; then
+  rend="$( cd "$REPO_ROOT" && node "$FLOW/engine/cli.mjs" render agents-md 2>/dev/null )"
+  rend_lessons="$(printf '%s\n' "$rend" | grep -F ".spec/lessons.md" | states_of)"
+  rend_root="$(printf '%s\n' "$rend" | grep -F ".spec/product.md" | states_of)"
+  assert_contains "inject-triggers/6" "floor: the agents-md render carries the invariants block" "$rend" "Write invariants"
+  assert_eq "inject-triggers/6" "floor: each rule is rendered on exactly one line" \
+    "$(printf '%s\n' "$rend" | grep -cF ".spec/lessons.md")/$(printf '%s\n' "$rend" | grep -cF ".spec/product.md")" "1/1"
+  assert_eq "inject-triggers/6" "rendered lessons rule matches decide" "$rend_lessons" "$lessons_truth"
+  assert_eq "inject-triggers/6" "rendered root-spec rule matches decide" "$rend_root" "$root_truth"
+else
+  echo "  SKIP [inject-triggers/6] rendered write invariants (node not on PATH)"
+fi
 
 echo ""
 echo "=== flow-legibility/6 — drift inference (detect-context.sh infer) ==="

@@ -451,6 +451,11 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
                 "$TARGET/.agents/skills/vibe/warnings.log"
           rm -rf "$TARGET/.agents/skills/vibe/evidence"
           find "$TARGET/.agents/skills/vibe" -type d -empty -delete 2>/dev/null || true
+          # The inject marker is runtime state like the cursor. Remove the FILE
+          # only, then the directory if that emptied it — `.vibe/blocks/**` is
+          # the project's own authored content and is never install's to delete.
+          rm -f "$TARGET/.vibe/last-inject"
+          rmdir "$TARGET/.vibe" 2>/dev/null || true
         fi
       fi
     fi
@@ -466,7 +471,9 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
           -e '# vibe evidence receipts (runtime verification output, not memory)' \
           -e '.agents/skills/vibe/evidence/' \
           -e '# vibe warnings relay (runtime warn-first channel; surfaced then truncated)' \
-          -e '.agents/skills/vibe/warnings.log' "$GI" 2>/dev/null \
+          -e '.agents/skills/vibe/warnings.log' \
+          -e '# vibe inject edge-detection marker (runtime; records the cursor the last inject saw)' \
+          -e '.vibe/last-inject' "$GI" 2>/dev/null \
           | awk 'NF{last=NR} {line[NR]=$0} END{for(i=1;i<=last;i++) print line[i]}' >"$GI_TMP" || true
         if [[ -s "$GI_TMP" ]]; then mv -f "$GI_TMP" "$GI"; else rm -f "$GI_TMP" "$GI"; fi
       fi
@@ -659,6 +666,19 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
     [[ "$DRY_RUN" -eq 1 ]] || gi_append "$GI" \
       "# vibe warnings relay (runtime warn-first channel; surfaced then truncated)" \
       ".agents/skills/vibe/warnings.log"
+  fi
+  # The inject hook's edge-detection marker (content.mjs recordInject). NOT
+  # optional tidiness: left untracked, git reports the collapsed `?? .vibe/`
+  # directory on every turn after the first inject, and the Stop gate's
+  # receipt-staleness scan reads that as "changed after the receipt was
+  # written" — blocking every *.verify state over a path nobody touched.
+  # `.vibe/blocks/**` (a project's own authored content blocks) stays tracked:
+  # only the marker file is ignored.
+  if ! { [[ -f "$GI" ]] && grep -qF ".vibe/last-inject" "$GI"; }; then
+    say "add .vibe/last-inject to .gitignore"
+    [[ "$DRY_RUN" -eq 1 ]] || gi_append "$GI" \
+      "# vibe inject edge-detection marker (runtime; records the cursor the last inject saw)" \
+      ".vibe/last-inject"
   fi
 fi
 

@@ -31,7 +31,13 @@ import { runOrders } from './commands/orders.mjs';
 export const CONFIG_BASENAME = 'vibe.json';
 export const DEFAULT_CONFIG_RELPATH = path.join('content', 'vibe.default.json');
 export const SHIPPED_BLOCKS_RELPATH = path.join('content', 'blocks');
-export const USER_BLOCKS_RELPATH = path.join('.vibe', 'blocks');
+// The project-local vibe directory: a project's own authored blocks live under
+// it, and so does the edge-detection marker written every inject (see
+// LAST_INJECT_RELPATH below). Exported as a name, not respelled by callers —
+// the stop gate has to recognize this directory to keep its own runtime writes
+// out of the receipt-staleness scan.
+export const VIBE_DIR_RELPATH = '.vibe';
+export const USER_BLOCKS_RELPATH = path.join(VIBE_DIR_RELPATH, 'blocks');
 export const SUMMARY_BLOCK_ID = 'vibe:summary';
 
 // Render modes. `summary` is for prompt channels — terse lines, no headings,
@@ -752,7 +758,7 @@ export function checkContent(ctx, content = loadContent(ctx.root, ctx.vibeDir)) 
 // turn simply finds no stored key and re-emits the edge payload again.
 // ---------------------------------------------------------------------------
 
-const LAST_INJECT_RELPATH = path.join('.vibe', 'last-inject');
+export const LAST_INJECT_RELPATH = path.join(VIBE_DIR_RELPATH, 'last-inject');
 
 // A bad root (not a non-empty string) has no directory to touch at all — NOT
 // '.', which would silently redirect the read/write onto the process's own

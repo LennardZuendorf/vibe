@@ -41,6 +41,8 @@ import {
   channelTrigger,
   cursorChangedSince,
   recordInject,
+  VIBE_DIR_RELPATH,
+  LAST_INJECT_RELPATH,
 } from '../content.mjs';
 
 function line(s) {
@@ -69,6 +71,45 @@ function isDir(p) {
   } catch {
     return false;
   }
+}
+
+// git speaks POSIX separators in `status --porcelain` whatever the platform;
+// path.join does not. One normalizer so the two halves compare like for like.
+function toPosix(p) {
+  return typeof p === 'string' ? p.split(path.sep).join('/') : '';
+}
+
+// ---------------------------------------------------------------------------
+// Vibe's OWN runtime state — the files this harness writes on the very turns
+// it is gating. The receipt-staleness scan (predicate 2) must skip them, or
+// the harness stales its own receipt and blocks a `*.verify` state over a path
+// the human never touched.
+//
+// Observed, not theorized (inject-triggers/6): a fresh install, one inject
+// turn, and the gate reported `changed after it was written: .vibe/` — the
+// collapsed untracked-directory entry git prints for the edge-detection marker
+// `recordInject()` writes every turn. That wedges the only blocking tooth in
+// the repo, with no exit but `set-state.sh idle`.
+//
+// Fixed belt AND braces: install.sh gitignores `.vibe/last-inject` alongside
+// the cursor, the evidence dir and the warnings log (step 5), so on a current
+// install git never reports it at all — and this exclusion catches the targets
+// that gitignore cannot: an install made before the marker existed, or one
+// whose `.gitignore` a project edited.
+//
+// Deliberately NARROW — the tooth keeps every bite it had. Only three things
+// are excluded: the evidence directory (as before), the warnings relay log,
+// and the marker — by its exact path, plus the `.vibe/` directory entry in the
+// one spelling git uses when the WHOLE directory is untracked and it has
+// nothing finer to report. A tracked file under `.vibe/` (a project's own
+// authored blocks, `.vibe/blocks/**`) is reported individually by git, is not
+// matched here, and still stales the receipt.
+function isOwnRuntimeState(root, p) {
+  const evidRel = '.agents/skills/vibe/evidence';
+  if (p === evidRel || p.startsWith(`${evidRel}/`)) return true;
+  if (p === toPosix(path.relative(root, warnLogPath(root)))) return true;
+  if (p === toPosix(LAST_INJECT_RELPATH)) return true;
+  return p === `${toPosix(VIBE_DIR_RELPATH)}/`;
 }
 
 // ---------------------------------------------------------------------------
@@ -654,7 +695,6 @@ function evidenceReceiptCheck(root, state, feature, changed, warn) {
 
   if (!changed) return undefined;
 
-  const evidRel = '.agents/skills/vibe/evidence';
   for (const raw of changed.split('\n')) {
     if (!raw) continue;
     const xy = raw.slice(0, 2);
@@ -664,7 +704,7 @@ function evidenceReceiptCheck(root, state, feature, changed, warn) {
       const idx = p.lastIndexOf(' -> ');
       if (idx !== -1) p = p.slice(idx + 4); // rename/copy -> new path
     }
-    if (p === evidRel || p.startsWith(`${evidRel}/`)) continue; // exclude the evidence dir
+    if (isOwnRuntimeState(root, p)) continue; // this harness's own writes
 
     const f = path.join(root, p);
     let st;

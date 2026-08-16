@@ -1226,6 +1226,106 @@ test('runGateHook predicate 2: a D-flagged porcelain line is skipped even when t
   }
 });
 
+// ---------------------------------------------------------------------------
+// inject-triggers/6 — the harness must not stale its OWN receipt.
+//
+// Found on a real install, not theorized: install, one inject turn, then a
+// `*.verify` state with a receipt written moments earlier. `recordInject()`
+// creates `.vibe/last-inject`, nothing gitignored it, and `git status
+// --porcelain` collapses the wholly-untracked directory to a single `?? .vibe/`
+// line — which the staleness scan read as "changed after it was written" and
+// BLOCKED, over a path the human never touched. That wedges the only blocking
+// tooth in the harness; the exit is `set-state.sh idle`, i.e. abandoning the
+// flow.
+//
+// Fixed twice over — install.sh gitignores the marker (see
+// flow/tests/adapters/run.sh) and the scan skips this harness's own runtime
+// writes. Each case below carries a CONTROL with the identical mtime
+// relationship on a path that is NOT vibe runtime state, so an exit 0 proves
+// the exclusion fired rather than the fixture being inert.
+// ---------------------------------------------------------------------------
+
+// A receipt at 2020, everything else written now — the shape of the real bug.
+function makeOwnStateFixture() {
+  const sb = makeHookSandbox({ cursor: { flow: 'quick', phase: 'verify', feature: null, updated: '2026-01-01T00:00:00Z' } });
+  mkdirSync(path.join(sb.vibeDir, 'evidence'), { recursive: true });
+  const receipt = path.join(sb.vibeDir, 'evidence', 'quick.md');
+  writeFileSync(receipt, 'commands + output\n');
+  const past = new Date('2020-01-01T00:00:00Z');
+  utimesSync(receipt, past, past);
+  return sb;
+}
+
+test('runGateHook predicate 2: the collapsed `?? .vibe/` untracked-directory entry never stales the receipt', () => {
+  const sb = makeOwnStateFixture();
+  try {
+    // Exactly what one inject turn leaves behind.
+    mkdirSync(path.join(sb.dir, '.vibe'), { recursive: true });
+    writeFileSync(path.join(sb.dir, '.vibe', 'last-inject'), 'quick.verify\n');
+
+    assertEqual(
+      gateWithPorcelain(sb, '?? .vibe/\n').code,
+      0,
+      'the inject marker is this harness writing to itself — it can never make a receipt stale',
+    );
+
+    // Control: an identically-shaped untracked directory that is NOT vibe's.
+    mkdirSync(path.join(sb.dir, '.other'), { recursive: true });
+    writeFileSync(path.join(sb.dir, '.other', 'thing'), 'x\n');
+    assertEqual(
+      gateWithPorcelain(sb, '?? .other/\n').code,
+      2,
+      'control: the same collapsed-directory shape outside vibe runtime state must still block',
+    );
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('runGateHook predicate 2: `.vibe/last-inject` reported by exact path never stales the receipt', () => {
+  const sb = makeOwnStateFixture();
+  try {
+    mkdirSync(path.join(sb.dir, '.vibe'), { recursive: true });
+    writeFileSync(path.join(sb.dir, '.vibe', 'last-inject'), 'quick.verify\n');
+    assertEqual(gateWithPorcelain(sb, '?? .vibe/last-inject\n').code, 0);
+    // The tracked-file spelling git uses once anything under .vibe/ is tracked.
+    assertEqual(gateWithPorcelain(sb, ' M .vibe/last-inject\n').code, 0);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('runGateHook predicate 2: the warnings relay log is the harness writing to itself, not a change', () => {
+  const sb = makeOwnStateFixture();
+  try {
+    writeFileSync(sb.warnLogPath, 'guard: something\n');
+    assertEqual(
+      gateWithPorcelain(sb, ' M .agents/skills/vibe/warnings.log\n').code,
+      0,
+      'the guard appends to this log on the same turns the gate runs',
+    );
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// The tooth keeps every bite it had: the exclusion is three named paths, not
+// "anything under .vibe/". A project's own authored content blocks live at
+// `.vibe/blocks/**`, git reports them individually, and editing one after the
+// receipt is a real change to what the session injects.
+test('runGateHook predicate 2: an authored block under .vibe/blocks STILL stales the receipt', () => {
+  const sb = makeOwnStateFixture();
+  try {
+    mkdirSync(path.join(sb.dir, '.vibe', 'blocks'), { recursive: true });
+    writeFileSync(path.join(sb.dir, '.vibe', 'blocks', 'team.md'), 'authored\n');
+    const result = gateWithPorcelain(sb, ' M .vibe/blocks/team.md\n');
+    assertEqual(result.code, 2, 'excluding the whole .vibe/ directory would have blunted the tooth here');
+    assertIncludes(result.stderr, '.vibe/blocks/team.md');
+  } finally {
+    sb.cleanup();
+  }
+});
+
 // R6 — predicate 3 (the stuck-phase nudge) is DELETED. The level channel names
 // the state on every turn, so the nudge was duplication that also queued a
 // relay line per Stop. Asserted for every non-idle state the machine has, not

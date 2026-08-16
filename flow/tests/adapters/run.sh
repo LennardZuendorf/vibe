@@ -418,6 +418,58 @@ printf 'commands + observed output per unit\n' > "$SB/.agents/skills/vibe/eviden
 out="$(printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
 assert_contains "flow-mvp/9" "gate passes feature.verify with a fresh receipt (exit 0)" "$out" "rc=0"
 
+# inject-triggers/6 — the harness must not wedge itself. In a real GIT repo the
+# staleness scan runs for real, and the inject hook's own edge-detection marker
+# (.vibe/last-inject) used to end up in `git status --porcelain` as the
+# collapsed `?? .vibe/` line, which the gate read as "changed after the receipt
+# was written" and BLOCKED — every *.verify state, on a path the human never
+# touched. Belt (install gitignores it) and braces (the scan skips vibe's own
+# runtime writes) are both exercised here, end to end, against a real install.
+SBG="$(mktmp)"
+if git -C "$SBG" init -q >/dev/null 2>&1 \
+   && git -C "$SBG" config user.email t@t >/dev/null 2>&1 \
+   && git -C "$SBG" config user.name t >/dev/null 2>&1; then
+  bash "$INSTALL" "$SBG" >/dev/null 2>&1
+  grep -qxF '.vibe/last-inject' "$SBG/.gitignore" \
+    && pass "inject-triggers/6" "install gitignores the inject edge-detection marker" \
+    || fail "inject-triggers/6" "install gitignores the inject edge-detection marker"
+  git -C "$SBG" add -A >/dev/null 2>&1; git -C "$SBG" commit -qm install >/dev/null 2>&1
+  CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.agents/skills/vibe/scripts/set-state.sh" quick.verify >/dev/null 2>&1
+  mkdir -p "$SBG/.agents/skills/vibe/evidence"
+  printf 'commands + observed output\n' > "$SBG/.agents/skills/vibe/evidence/quick.md"
+  sleep 1
+  # One inject turn — this is what writes .vibe/last-inject.
+  printf '{}' | CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.claude/hooks/user-prompt-submit-inject.sh" >/dev/null 2>&1
+  [[ -f "$SBG/.vibe/last-inject" ]] \
+    && pass "inject-triggers/6" "one inject turn writes the marker (population floor for the two checks below)" \
+    || fail "inject-triggers/6" "one inject turn writes the marker (population floor for the two checks below)"
+  assert_eq "inject-triggers/6" "the marker is invisible to git after install (belt)" \
+    "$(git -C "$SBG" status --porcelain)" ""
+  out="$(printf '{}' | CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+  assert_contains "inject-triggers/6" "gate passes quick.verify after an inject turn (fresh receipt)" "$out" "rc=0"
+  # Braces: strip the ignore line (a target installed before the marker existed)
+  # so git reports the collapsed `?? .vibe/` — the exact wedge, now excluded by
+  # the scan itself.
+  grep -vxF '.vibe/last-inject' "$SBG/.gitignore" > "$SBG/.gi" && mv "$SBG/.gi" "$SBG/.gitignore"
+  # Commit that edit: an uncommitted .gitignore is itself newer than the receipt
+  # and would block for its own, unrelated reason — leaving `?? .vibe/` as the
+  # ONLY thing the scan has to judge, which is the point of this leg.
+  git -C "$SBG" add .gitignore >/dev/null 2>&1; git -C "$SBG" commit -qm legacy >/dev/null 2>&1
+  assert_eq "inject-triggers/6" "control: with the ignore line stripped git DOES report the marker" \
+    "$(git -C "$SBG" status --porcelain | grep -c '\.vibe')" "1"
+  out="$(printf '{}' | CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+  assert_contains "inject-triggers/6" "gate still passes with the marker VISIBLE to git (braces)" "$out" "rc=0"
+  # ... and the tooth is undamaged: a real source file touched after the receipt
+  # still blocks, from this same install, this same turn.
+  sleep 1; printf 'edited\n' > "$SBG/src.txt"
+  out="$(printf '{}' | CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+  assert_contains "inject-triggers/6" "control: a real source file newer than the receipt still BLOCKS" "$out" "rc=2"
+  assert_contains "inject-triggers/6" "the block names the real changed path, not vibe runtime state" "$out" "src.txt"
+else
+  fail "inject-triggers/6" "could not init a git repo for the receipt-staleness fixture"
+fi
+rm -rf "$SBG"
+
 # js-core/7 review round 1, Finding 1 (Important): R4 had zero regression
 # coverage — the brief's own test-first steps ("with node shimmed away, each
 # hook exits 0 and emits nothing"; "guard with node absent exits 0, not 2")
@@ -770,7 +822,14 @@ SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 bash "$SB/.agents/skills/vibe/scripts/set-state.sh" feature.impl widget >/dev/null 2>&1
 mkdir -p "$SB/.agents/skills/vibe/evidence"
 printf 'receipt: tests run\n' > "$SB/.agents/skills/vibe/evidence/feature-widget.md"
+# The inject marker is runtime state like the cursor — seeded here so the
+# --yes assertions below have a population to examine, and so the no---yes
+# leg proves preservation rather than absence.
+mkdir -p "$SB/.vibe"; printf 'feature.impl widget\n' > "$SB/.vibe/last-inject"
 bash "$INSTALL" "$SB" --uninstall >/dev/null 2>&1
+[[ -f "$SB/.vibe/last-inject" ]] \
+  && pass "inject-triggers/6" "inject marker survives uninstall without --yes" \
+  || fail "inject-triggers/6" "inject marker survives uninstall without --yes"
 if [[ -f "$SB/.agents/skills/vibe/state.json" ]] && grep -qF widget "$SB/.agents/skills/vibe/state.json"; then
   pass "install-tooling/3" "live cursor survives uninstall without --yes"
 else
@@ -789,6 +848,15 @@ if [[ -f "$SB/.gitignore" ]] && grep -qF "evidence" "$SB/.gitignore"; then
 else
   pass "flow-mvp/9" "--yes strips the evidence gitignore stanza"
 fi
+# ... including the inject marker stanza, and the marker file itself.
+if [[ -f "$SB/.gitignore" ]] && grep -qF ".vibe/last-inject" "$SB/.gitignore"; then
+  fail "inject-triggers/6" "--yes strips the inject-marker gitignore stanza"
+else
+  pass "inject-triggers/6" "--yes strips the inject-marker gitignore stanza"
+fi
+[[ ! -e "$SB/.vibe/last-inject" ]] \
+  && pass "inject-triggers/6" "--yes removes the inject marker (runtime state, like the cursor)" \
+  || fail "inject-triggers/6" "--yes removes the inject marker (runtime state, like the cursor)"
 rm -rf "$SB"
 # Reversed-marker AGENTS.md -> uninstall refuses to touch it (marker lesson regression).
 SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1

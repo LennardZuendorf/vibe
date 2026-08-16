@@ -39,10 +39,10 @@
       "blocks": []
     },
     "agents-md": {
-      "$comment": "Rendered into the AGENTS.md managed rules block by `vibe render agents-md --write`. Prose the model must DECIDE with, that no hook can enforce.",
+      "$comment": "Rendered into the AGENTS.md managed rules block by `vibe render agents-md --write`. Prose the model must DECIDE with, that no hook can enforce — plus `flow.invariants`, the ONE surface where the write rules are stated for a reader: it renders {{invariants}} straight from content/policy.json, the same data detect-context.sh decides against, so the shipped text cannot drift from the enforcer. The AGENTS.md instructions template deliberately no longer restates them.",
       "render": "body",
       "budget": 80,
-      "blocks": ["delegation.subagents", "delegation.workflows"],
+      "blocks": ["flow.invariants", "delegation.subagents", "delegation.workflows"],
       "write": {
         "file": "AGENTS.md",
         "block": "vibe:rules",

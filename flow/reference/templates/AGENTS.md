@@ -43,18 +43,14 @@ pausing to ask.
 receipts and subagent summaries. Never compress security warnings, irreversible-action
 confirmations, or code/paths/commands — those stay full and byte-exact.
 
-## Write invariants
+## Write policy
 
-Policy lives in `detect-context.sh decide` (defaults to `idle` when `state.json` is absent):
-
-1. `.spec/lessons.md` — writable only in `feature.compound`, `setup.apply`, `strategy.spec`,
-   or `quick.verify` (the flow-end states that carry the lesson step; or when explicitly
-   recording a lesson with user approval).
-2. Root `.spec/{product,tech,design,plan}.md` — only in `strategy.spec`, `feature.compound`,
-   or `setup.apply`.
-3. `.agents/skills/vibe/state.json` — only via `set-state.sh`.
-
-Everything else is allow/warn. Check before writing:
+Which paths this harness restricts, and in which states, is **data**:
+`content/policy.json`, read by `detect-context.sh decide` (which defaults to `idle`
+when `state.json` is absent). The rules are rendered rule-by-rule into the
+`vibe:rules` block below — this section states no state list of its own, because a
+second hand-written copy is a copy that can disagree with the enforcer. Check any
+path before writing it:
 
 ```bash
 bash .agents/skills/vibe/scripts/detect-context.sh decide <path>

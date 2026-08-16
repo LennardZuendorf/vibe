@@ -136,11 +136,32 @@ configured as data. Shipped defaults live in
 [`content/blocks/**`](content/blocks); a project overrides any of it from a root
 `vibe.json` that install never rewrites.
 
-| Channel | Fires | Form | Default blocks |
+Every channel declares a **trigger** — the cadence that decides whether it is
+injected on *this* turn. Three classes, and a channel that declares none is
+`level` (nothing silently stops being injected because a field was misspelled):
+
+| Trigger | Fires | Why |
+|---|---|---|
+| `level` | **every turn** | standing facts. This is the only payload that pays prompt-cache rent on every turn, so it stays tiny and byte-stable |
+| `edge` | only on the turn **after the flow cursor moves** | the expensive payload — the full orders. The cursor key of the last inject is recorded in `.vibe/last-inject`; a missing or unreadable marker means "everything is an edge", so a first inject after install still carries the orders |
+| `event` | only on a turn where **something happened** | a drift nudge or queued warnings. Worth saying when it occurred, worth nothing when it did not |
+
+| Channel | Trigger | Form | Default blocks |
 |---|---|---|---|
-| `user-prompt` | every turn, after the orders | terse summary, ≤6 lines | `style.ste100` — brief technical English (ASD-STE100) |
-| `session-start` | session start + `compact` | terse summary, ≤15 lines | — |
-| `agents-md` | `vibe render agents-md --write`, and every install | prose body, ≤80 lines | `delegation.subagents` (model tiers), `delegation.workflows` (dynamic workflows) |
+| `user-prompt.level` | `level` | summary, ≤2 lines | `flow.level` — `state=<state> · transition: <command>` |
+| `user-prompt.edge` | `edge` | summary, ≤15 lines | `flow.edge` — `{{orders}}`, delegates, matching lessons |
+| `user-prompt.event` | `event` | summary, ≤10 lines | — (empty by default) |
+| `user-prompt` | `level` | summary, ≤6 lines | `style.ste100` — brief technical English (ASD-STE100) |
+| `session-start` | `level` | summary, ≤15 lines | — (no live state: this output replays stale after `--resume`) |
+| `agents-md` | — | prose body, ≤80 lines | `flow.invariants` (write policy, rendered from `content/policy.json`), `delegation.subagents` (model tiers), `delegation.workflows` (dynamic workflows) |
+
+**One hard rule the hook enforces.** The inject hook stops emitting the per-turn
+orders separately only when an edge-classed channel actually *delivers* them —
+it decides that from the composed text, at inject time. So an edge-classed
+channel that composes any block **MUST** carry `{{orders}}` in one of them, or
+the turn silently loses its imperative. `render --check` states the same rule at
+config time, where you can still act on it, and **errors** (exit 1) when a
+channel breaks it. An edge channel with no blocks claims nothing and is exempt.
 
 ```bash
 node .agents/skills/vibe/engine/cli.mjs render --list     # resolved channels, blocks, sources
@@ -154,7 +175,8 @@ node .agents/skills/vibe/engine/cli.mjs render agents-md --write  # sync the AGE
 {
   "channels": {
     "user-prompt": { "remove": ["style.ste100"], "add": ["team.review"] },
-    "session-start": { "add": ["team.review"] }
+    "session-start": { "add": ["team.review"] },
+    "team.oncall": { "trigger": "event", "budget": 4, "blocks": ["team.pager"] }
   },
   "blocks": {
     "team.review": {
@@ -170,13 +192,18 @@ node .agents/skills/vibe/engine/cli.mjs render agents-md --write  # sync the AGE
 A block is a markdown file with frontmatter (`id`, `title`, `channels`), a
 `<!-- vibe:summary -->` block for prompt channels, and prose below it for document
 channels — one author point, two verbosities. Text may interpolate `{{state}}`,
-`{{feature}}`, `{{next}}`, `{{writes}}`, `{{reads}}`, `{{delegates}}`, `{{exit}}`,
-`{{orders}}`, `{{doctrine}}`, `{{lessons:TAG}}`, and any name under
-`placeholders`. An unknown placeholder stays literal and `--check` reports it.
+`{{flow}}`, `{{phase}}`, `{{feature}}`, `{{next}}`, `{{transition}}` (`{{next}}`'s
+imperative twin — the commands that cross those edges), `{{writes}}`, `{{reads}}`,
+`{{delegates}}`, `{{exit}}`, `{{orders}}`, `{{doctrine}}`, `{{invariants}}` (the
+write policy, rendered from `content/policy.json`), `{{lessons:TAG}}`, and any name
+under `placeholders`. An unknown placeholder stays literal and `--check` reports it.
 
 Degrade: no content tree, a malformed `vibe.json`, or no `node` means less
 injected text — never a failed hook. `--check` is the only place those errors
-become a non-zero exit.
+become a non-zero exit. Edge detection fails **open**: an absent, unreadable,
+empty or corrupt `.vibe/last-inject` reads as "the cursor moved", so the worst
+case is one extra turn of the full orders. `install.sh` gitignores that marker
+alongside the cursor, the evidence receipts and the warnings log.
 
 ## The four hooks
 
@@ -185,16 +212,18 @@ Thin shells over `scripts/`; the allow/warn/block policy lives once in
 
 | Hook | Event | Does |
 |---|---|---|
-| `session-start-doctrine.sh` | `SessionStart` (all sources, incl. `compact` re-inject) | emits the working-model doctrine + a live cursor summary each session, single-sourced from the `<!-- vibe:doctrine -->` block via `doctrine.sh`; wired with no matcher (all sources) |
-| `user-prompt-submit-inject.sh` | `UserPromptSubmit` | injects the current state's orders every turn |
+| `session-start-doctrine.sh` | `SessionStart` (all sources, incl. `compact` re-inject) | emits the working-model doctrine each session, single-sourced from the `<!-- vibe:doctrine -->` block via `doctrine.sh`; wired with no matcher (all sources). Carries **no live state** — this output replays verbatim after `--resume`, so a cursor line printed here is stale by construction |
+| `user-prompt-submit-inject.sh` | `UserPromptSubmit` | injects the trigger-classed channels: the two-line level payload every turn, the full orders on the turn after the cursor moves, event text only when an event occurred |
 | `pre-tool-use-guard.sh` | `PreToolUse` (Edit/Write/NotebookEdit/Bash) | hard-blocks the three write invariants on **file-tool** calls; on `Bash` it only **warns** when a command looks like it writes a guarded path (see caveats below) |
 | `stop-gate.sh` | `Stop` | warn-first exit checks; blocks in `*.verify` without a fresh evidence receipt — with or without `jq` |
 
 Wired automatically by `install.sh` into `.claude/settings.json`; hook scripts resolve their data via `$CLAUDE_PROJECT_DIR`.
 
-The `SessionStart` hook single-sources the doctrine from the same
-`<!-- vibe:doctrine -->` block the `AGENTS.md` template renders (a discriminating
-parity test fails if the two disagree on which states may write what), so on
+The `SessionStart` hook single-sources the doctrine from the
+`<!-- vibe:doctrine -->` block in [SKILL.md](SKILL.md) — the one surface that
+still states the write rules by hand, and a discriminating parity test fails if
+it disagrees with what `decide` enforces. (The `AGENTS.md` side stopped being
+hand-authored: its rules block is rendered from `content/policy.json`.) So on
 **Claude Code** the `AGENTS.md` managed block becomes a redundant adapter rather
 than the only carrier. Scope this honestly: the hook ships two ways — through the
 committed `.claude/settings.json` a local install writes, and through the
@@ -203,21 +232,61 @@ whose self-detecting SessionStart hook carries the doctrine in every vibe-enable
 repo. So `AGENTS.md` is optional **on Claude Code**; on hookless hosts (Codex,
 Warp) there are no hooks at all, so `AGENTS.md` stays the carrier there.
 
-## Write invariants
+## Write invariants (`content/policy.json`)
 
-Three hard blocks enforced by
-[scripts/detect-context.sh](scripts/detect-context.sh) `decide`; everything else
-is allow or warn:
+The write policy is **data**, not code and not prose:
+[`content/policy.json`](content/policy.json) holds one rule per guarded path —
+three that block, three that warn. Both halves of the harness read that one
+file: [scripts/detect-context.sh](scripts/detect-context.sh) `decide` (which the
+`PreToolUse` guard translates into its allow/warn/block verdict) and the
+`{{invariants}}` placeholder that renders the rules as prose into `AGENTS.md`.
+Neither restates the other, so the shipped text cannot drift from the enforcer.
 
-1. **`.spec/lessons.md`** — writable only during `feature.compound`,
-   `setup.apply`, `strategy.spec`, or `quick.verify` (the flow-end states that
-   carry the conditional lesson step).
-2. **Root `.spec/{product,tech,design,plan}.md`** — writable only during
-   `strategy.spec`, `feature.compound`, or `setup.apply`.
-3. **`.agents/skills/vibe/state.json`** — never by direct edit; only via
-   `set-state.sh`.
+```jsonc
+{
+  "id": "lessons",
+  "match": ".spec/lessons.md",              // a literal path or a glob; an array is allowed
+  "arms": [                                  // read top to bottom, first match wins
+    { "states": ["feature.compound", "setup.apply", "strategy.spec", "quick.verify"],
+      "verdict": "allow", "reason": "" },
+    { "states": "*",                         // "*" is the else arm
+      "verdict": "block", "reason": "…lessons are written at flow end… (current: {state})" }
+  ]
+}
+```
 
-Check any path before writing:
+Ask the policy anything, without a hook in the loop:
+
+```bash
+node .agents/skills/vibe/engine/cli.mjs policy decide .spec/lessons.md          # verdict for the CURRENT cursor
+node .agents/skills/vibe/engine/cli.mjs policy decide .spec/product.md feature.impl  # …or for a named state
+node .agents/skills/vibe/engine/cli.mjs policy list                             # the loaded rules, one per line
+node .agents/skills/vibe/engine/cli.mjs policy render                           # the {{invariants}} prose
+```
+
+`policy decide` prints `allow` / `warn:<reason>` / `block:<reason>` and exits 0
+for **every answered verdict** — the verdict is never the exit code; translating
+it is the caller's job. It exits **2** only when the policy could not be loaded
+as a usable rule set (malformed file, unknown version, zero rules), because a
+policy that degraded to "no rules" would answer `allow` for every path on earth.
+That refusal is what lets `detect-context.sh` fall back to its own bash branch,
+which carries the same rules hardcoded and cannot be corrupted by a data file —
+so the guard keeps its teeth with a broken `policy.json`, and with no `node` at
+all.
+
+The shipped rules, in one sentence each:
+
+1. **`.agents/skills/vibe/state.json`** — blocked in every state; the cursor is
+   written only by `set-state.sh`.
+2. **`.spec/lessons.md`** — blocked outside the flow-end states that carry the
+   conditional lesson step.
+3. **Root `.spec/{product,tech,design,plan}.md`** — blocked outside the states
+   that own the root specs.
+4. **`.spec/features/*`**, **`CLAUDE.md` / `AGENTS.md`**, **`src/*` + `tests/*`** —
+   warn-only bands.
+
+The *authoritative* state lists are in the file, and `policy render` prints them;
+this README deliberately does not copy them.
 
 ```bash
 bash .agents/skills/vibe/scripts/detect-context.sh decide .spec/product.md
@@ -279,6 +348,11 @@ The flow half. Addressed at runtime under `.agents/skills/vibe/`.
 | [state-machine.json](state-machine.json) | static machine — states, skills, `style`, `next` (data, not prose) |
 | [state.example.json](state.example.json) | cursor template; copy to `state.json` to test transitions |
 | `state.json` | runtime cursor — gitignored; created by the installer / `set-state.sh` |
+| [content/policy.json](content/policy.json) | the write invariants as data — read by `decide` and by `{{invariants}}` |
+| [content/vibe.default.json](content/vibe.default.json) | shipped channel + block defaults (a project's `vibe.json` merges over it) |
+| [content/blocks/](content/blocks) | shipped content blocks (flow level/edge/invariants, style, delegation) |
+| [engine/](engine) | the zero-dependency Node engine (`cli.mjs`: `state`, `orders`, `doctrine`, `doctor`, `render`, `policy`, `hook`) |
+| `.vibe/last-inject` *(project root)* | edge-detection marker — gitignored runtime state, like the cursor |
 | [scripts/](scripts/) | the nine scripts above |
 | [reference/deps.json](reference/deps.json) | dependency manifest (the table above) |
 | [reference/adapters.json](reference/adapters.json) | adapter definitions consumed by setup / merge |
