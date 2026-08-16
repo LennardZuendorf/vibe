@@ -539,19 +539,24 @@ assert_eq "flow-legibility/4" "doctrine root-spec rule matches decide" "$doc_roo
 # assert_not_contains would pass just as happily against a DELETED template, so
 # the negative carries a floor: the template is still there, still the
 # instructions block, and still names the enforcer command.
-# Structural, not phrase-matched: every `<flow>.<phase>` token in the WHOLE
-# template, not the ones inside a section a rename could move out from under.
-# Exactly one survives — `setup.apply`, in the managed-marker comment that says
-# when the block is replaced — so any re-added rule enumeration, in any section
-# and any wording, fails this.
-tmpl_states="$(printf '%s\n' "$tmpl" | states_of)"
-tmpl_state_lines="$(printf '%s\n' "$tmpl" | grep -cE '(feature|strategy|setup|quick)\.[a-z]+')"
+# Structural, not phrase-matched: every `<flow>.<phase>` token in the template's
+# HAND-AUTHORED half — the whole file minus the generated `vibe:rules` region
+# (which the template now ships pre-rendered; see Important 2 below) — not just
+# the ones inside a section a rename could move out from under. Exactly one
+# survives, `setup.apply`, in the managed-marker comment that says when the
+# block is replaced. Any re-added rule enumeration by hand, in any section and
+# any wording, fails this; the generated block is checked for equality with the
+# render instead, which is a stronger property than "says nothing".
+tmpl_hand="$(awk '/^<!-- vibe:rules -->$/{skip=1} !skip{print} /^<!-- \/vibe:rules -->$/{skip=0}' "$FLOW/reference/templates/AGENTS.md")"
+tmpl_states="$(printf '%s\n' "$tmpl_hand" | states_of)"
+tmpl_state_lines="$(printf '%s\n' "$tmpl_hand" | grep -cE '(feature|strategy|setup|quick)\.[a-z]+')"
 assert_contains "inject-triggers/6" "floor: the template is present and is the instructions block" "$tmpl" "<!-- vibe:instructions:start -->"
 assert_contains "inject-triggers/6" "floor: the template still points at the enforcer" "$tmpl" "detect-context.sh decide <path>"
-assert_eq "inject-triggers/6" "the AGENTS.md template names no flow state outside the marker comment" "$tmpl_states" "setup.apply"
+assert_contains "inject-triggers/6" "floor: the hand-authored half is most of the template" "$tmpl_hand" "## Write policy"
+assert_eq "inject-triggers/6" "the template's hand-authored half names no flow state outside the marker comment" "$tmpl_states" "setup.apply"
 assert_eq "inject-triggers/6" "... and it does so on exactly one line (the marker comment)" "$tmpl_state_lines" "1"
 assert_contains "inject-triggers/6" "... which is the managed-marker comment, not a write rule" \
-  "$(printf '%s\n' "$tmpl" | grep -E '(feature|strategy|setup|quick)\.[a-z]+')" "replaced on the next setup.apply"
+  "$(printf '%s\n' "$tmpl_hand" | grep -E '(feature|strategy|setup|quick)\.[a-z]+')" "replaced on the next setup.apply"
 # Half 2 — the states a target now READS come from the render, and the render
 # agrees with `decide` per rule. Same comparison the two retired assertions
 # made, moved onto the generated text.
@@ -564,6 +569,24 @@ if command -v node >/dev/null 2>&1; then
     "$(printf '%s\n' "$rend" | grep -cF ".spec/lessons.md")/$(printf '%s\n' "$rend" | grep -cF ".spec/product.md")" "1/1"
   assert_eq "inject-triggers/6" "rendered lessons rule matches decide" "$rend_lessons" "$lessons_truth"
   assert_eq "inject-triggers/6" "rendered root-spec rule matches decide" "$rend_root" "$root_truth"
+  # Fix round 1, Important 2 — the template SHIPS a pre-rendered copy of this
+  # block, so a target with no node (a hookless host, where AGENTS.md is the
+  # only carrier there is) still receives the real enumerated rules instead of
+  # two sections pointing at a block that was never written. That copy is only
+  # safe while it cannot drift: it must equal, byte for byte, what
+  # `render agents-md` composes from content/policy.json — which is also what
+  # makes an install WITH node re-render it to "no change".
+  tmpl_rules="$(awk '/^<!-- vibe:rules -->$/{f=1;next} /^<!-- \/vibe:rules -->$/{f=0} f' "$FLOW/reference/templates/AGENTS.md")"
+  tmpl_rules_note="$(printf '%s\n' "$tmpl_rules" | head -n1)"
+  tmpl_rules_body="$(printf '%s\n' "$tmpl_rules" | sed '1,2d')"
+  assert_contains "inject-triggers/6" "the template ships a vibe:rules block with the managed-region note" \
+    "$tmpl_rules_note" "_Managed by vibe"
+  assert_eq "inject-triggers/6" "the template's shipped vibe:rules body IS the agents-md render (no drift possible)" \
+    "$tmpl_rules_body" "$rend"
+  # Floor for that equality: neither side is empty, and the body really carries
+  # the generated rules (an empty-vs-empty comparison would pass just as well).
+  assert_contains "inject-triggers/6" "floor: the shipped block carries the generated invariants" \
+    "$tmpl_rules_body" ".spec/lessons.md"
 else
   echo "  SKIP [inject-triggers/6] rendered write invariants (node not on PATH)"
 fi

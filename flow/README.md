@@ -205,6 +205,14 @@ empty or corrupt `.vibe/last-inject` reads as "the cursor moved", so the worst
 case is one extra turn of the full orders. `install.sh` gitignores that marker
 alongside the cursor, the evidence receipts and the warnings log.
 
+The `agents-md` channel is the one that must survive a **node-less** target,
+because on a hookless host `AGENTS.md` is the only carrier there is. So
+[the instructions template](reference/templates/AGENTS.md) ships a
+**pre-rendered copy** of the block and `merge-agents.sh` seeds it when a target
+has none — byte-identical to what `render agents-md` composes (a test fails if
+the two ever drift), so an install *with* node re-renders it to `no change` and
+a project's own customization, once rendered, is never overwritten by a merge.
+
 ## The four hooks
 
 Thin shells over `scripts/`; the allow/warn/block policy lives once in

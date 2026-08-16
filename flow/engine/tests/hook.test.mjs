@@ -1245,82 +1245,159 @@ test('runGateHook predicate 2: a D-flagged porcelain line is skipped even when t
 // the exclusion fired rather than the fixture being inert.
 // ---------------------------------------------------------------------------
 
-// A receipt at 2020, everything else written now — the shape of the real bug.
-function makeOwnStateFixture() {
-  const sb = makeHookSandbox({ cursor: { flow: 'quick', phase: 'verify', feature: null, updated: '2026-01-01T00:00:00Z' } });
+// FIX ROUND 1, IMPORTANT 1 — these cases are driven by a REAL git repo and the
+// porcelain git ACTUALLY emits, never by a hand-written line. The first
+// revision of this fix pinned ` M .vibe/blocks/team.md`, a spelling git only
+// produces once something under `.vibe/` is already tracked; on a shipped
+// install the whole directory is untracked and plain `--porcelain` collapses it
+// to `?? .vibe/`. The test agreed with the comment beside the code and neither
+// agreed with git, so an authored block edited after the receipt slipped
+// through. Reading the real bytes is what makes the claim checkable.
+//
+// A receipt stamped 2020 with everything else written now — the shape of the
+// real bug. Everything is committed first, so each row below is a genuine
+// untracked-or-modified path and not an artefact of an uncommitted tree.
+function makeRealGitFixture({ gitignore } = {}) {
+  const sb = makeHookSandbox({
+    cursor: { flow: 'quick', phase: 'verify', feature: null, updated: '2026-01-01T00:00:00Z' },
+    gitInit: true,
+  });
   mkdirSync(path.join(sb.vibeDir, 'evidence'), { recursive: true });
   const receipt = path.join(sb.vibeDir, 'evidence', 'quick.md');
   writeFileSync(receipt, 'commands + output\n');
+  writeFileSync(path.join(sb.dir, 'src.txt'), 'v1\n');
+  if (gitignore) writeFileSync(path.join(sb.dir, '.gitignore'), `${gitignore}\n`);
+  runCommand('git', ['-C', sb.dir, 'add', '-A'], { cwd: sb.dir });
+  runCommand('git', ['-C', sb.dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init'], { cwd: sb.dir });
   const past = new Date('2020-01-01T00:00:00Z');
   utimesSync(receipt, past, past);
   return sb;
 }
 
-test('runGateHook predicate 2: the collapsed `?? .vibe/` untracked-directory entry never stales the receipt', () => {
-  const sb = makeOwnStateFixture();
+// What the gate itself will see: the same argv gitPorcelain() runs.
+function realPorcelain(sb) {
+  return runCommand('git', ['-C', sb.dir, 'status', '--porcelain', '-uall'], { cwd: sb.dir }).stdout;
+}
+
+// No injected spawnGit — the real binary, on the real repo.
+function gateOnRealGit(sb) {
+  return runGateHook(sb.root, sb.vibeDir, '{}', {});
+}
+
+test('runGateHook predicate 2: the inject marker never stales the receipt, on the porcelain git really emits', () => {
+  const sb = makeRealGitFixture();
   try {
-    // Exactly what one inject turn leaves behind.
+    // Exactly what one inject turn leaves behind on a target that does not
+    // gitignore it (an install made before the marker existed).
     mkdirSync(path.join(sb.dir, '.vibe'), { recursive: true });
     writeFileSync(path.join(sb.dir, '.vibe', 'last-inject'), 'quick.verify\n');
 
+    const porcelain = realPorcelain(sb);
     assertEqual(
-      gateWithPorcelain(sb, '?? .vibe/\n').code,
+      porcelain,
+      '?? .vibe/last-inject\n',
+      'floor: git enumerates the marker as its own row (this is what -uall buys; plain --porcelain says `?? .vibe/`)',
+    );
+    assertEqual(
+      gateOnRealGit(sb).code,
       0,
       'the inject marker is this harness writing to itself — it can never make a receipt stale',
-    );
-
-    // Control: an identically-shaped untracked directory that is NOT vibe's.
-    mkdirSync(path.join(sb.dir, '.other'), { recursive: true });
-    writeFileSync(path.join(sb.dir, '.other', 'thing'), 'x\n');
-    assertEqual(
-      gateWithPorcelain(sb, '?? .other/\n').code,
-      2,
-      'control: the same collapsed-directory shape outside vibe runtime state must still block',
     );
   } finally {
     sb.cleanup();
   }
 });
 
-test('runGateHook predicate 2: `.vibe/last-inject` reported by exact path never stales the receipt', () => {
-  const sb = makeOwnStateFixture();
+// THE case the first revision got wrong. Same untracked `.vibe/` directory, one
+// authored block inside it: the exclusion must reach the marker and nothing
+// else. Under plain `--porcelain` both files hide behind one `?? .vibe/` row and
+// this exits 0 — a stale receipt passing while the injected content changed.
+test('runGateHook predicate 2: an authored block under .vibe/blocks STILL stales the receipt (real porcelain)', () => {
+  const sb = makeRealGitFixture();
+  try {
+    mkdirSync(path.join(sb.dir, '.vibe', 'blocks'), { recursive: true });
+    writeFileSync(path.join(sb.dir, '.vibe', 'last-inject'), 'quick.verify\n');
+    writeFileSync(path.join(sb.dir, '.vibe', 'blocks', 'team.md'), 'authored\n');
+
+    assertEqual(
+      realPorcelain(sb),
+      '?? .vibe/blocks/team.md\n?? .vibe/last-inject\n',
+      'floor: the marker and the authored block are SEPARATE rows — the whole premise of the exclusion',
+    );
+    const result = gateOnRealGit(sb);
+    assertEqual(result.code, 2, 'a block that changes what every later turn injects is a change the receipt does not describe');
+    assertIncludes(result.stderr, '.vibe/blocks/team.md');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// The shipped install: `.gitignore` carries the marker (install.sh step 5), so
+// git never mentions it at all — and the authored block still blocks.
+test('runGateHook predicate 2: with the marker gitignored, only the authored block reaches the scan', () => {
+  const sb = makeRealGitFixture({ gitignore: '.vibe/last-inject' });
   try {
     mkdirSync(path.join(sb.dir, '.vibe'), { recursive: true });
     writeFileSync(path.join(sb.dir, '.vibe', 'last-inject'), 'quick.verify\n');
-    assertEqual(gateWithPorcelain(sb, '?? .vibe/last-inject\n').code, 0);
-    // The tracked-file spelling git uses once anything under .vibe/ is tracked.
-    assertEqual(gateWithPorcelain(sb, ' M .vibe/last-inject\n').code, 0);
+    assertEqual(realPorcelain(sb), '', 'floor: the belt alone already hides the marker');
+    assertEqual(gateOnRealGit(sb).code, 0);
+
+    mkdirSync(path.join(sb.dir, '.vibe', 'blocks'), { recursive: true });
+    writeFileSync(path.join(sb.dir, '.vibe', 'blocks', 'team.md'), 'authored\n');
+    assertEqual(realPorcelain(sb), '?? .vibe/blocks/team.md\n');
+    assertEqual(gateOnRealGit(sb).code, 2, 'control: the gitignored marker is excluded, its neighbour is not');
   } finally {
     sb.cleanup();
   }
 });
 
 test('runGateHook predicate 2: the warnings relay log is the harness writing to itself, not a change', () => {
-  const sb = makeOwnStateFixture();
+  const sb = makeRealGitFixture();
   try {
     writeFileSync(sb.warnLogPath, 'guard: something\n');
+    assertEqual(realPorcelain(sb), '?? .agents/skills/vibe/warnings.log\n', 'floor: git does report it');
     assertEqual(
-      gateWithPorcelain(sb, ' M .agents/skills/vibe/warnings.log\n').code,
+      gateOnRealGit(sb).code,
       0,
       'the guard appends to this log on the same turns the gate runs',
     );
+
+    // Control: an ordinary untracked file in the same repo, same mtime relation.
+    writeFileSync(path.join(sb.dir, 'notes.md'), 'later\n');
+    const result = gateOnRealGit(sb);
+    assertEqual(result.code, 2, 'control: a path that is not vibe runtime state must still block');
+    assertIncludes(result.stderr, 'notes.md');
   } finally {
     sb.cleanup();
   }
 });
 
-// The tooth keeps every bite it had: the exclusion is three named paths, not
-// "anything under .vibe/". A project's own authored content blocks live at
-// `.vibe/blocks/**`, git reports them individually, and editing one after the
-// receipt is a real change to what the session injects.
-test('runGateHook predicate 2: an authored block under .vibe/blocks STILL stales the receipt', () => {
-  const sb = makeOwnStateFixture();
+// -uall changes what an untracked DIRECTORY looks like to the scan, so pin that
+// directly: a foreign untracked directory is enumerated per file and blocks by
+// naming the file, not the directory.
+test('runGateHook predicate 2: a foreign untracked directory is enumerated per file and blocks by file name', () => {
+  const sb = makeRealGitFixture();
   try {
-    mkdirSync(path.join(sb.dir, '.vibe', 'blocks'), { recursive: true });
-    writeFileSync(path.join(sb.dir, '.vibe', 'blocks', 'team.md'), 'authored\n');
-    const result = gateWithPorcelain(sb, ' M .vibe/blocks/team.md\n');
-    assertEqual(result.code, 2, 'excluding the whole .vibe/ directory would have blunted the tooth here');
-    assertIncludes(result.stderr, '.vibe/blocks/team.md');
+    mkdirSync(path.join(sb.dir, '.other'), { recursive: true });
+    writeFileSync(path.join(sb.dir, '.other', 'thing.md'), 'x\n');
+    assertEqual(realPorcelain(sb), '?? .other/thing.md\n');
+    const result = gateOnRealGit(sb);
+    assertEqual(result.code, 2);
+    assertIncludes(result.stderr, '.other/thing.md');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// The injected-porcelain legs stay too: they are the only way to pin the
+// spellings git produces on OTHER repo shapes (a tracked file under `.vibe/`,
+// once a project commits its authored blocks), which no single fixture emits.
+test('runGateHook predicate 2: the marker is excluded in its TRACKED spelling as well', () => {
+  const sb = makeRealGitFixture();
+  try {
+    mkdirSync(path.join(sb.dir, '.vibe'), { recursive: true });
+    writeFileSync(path.join(sb.dir, '.vibe', 'last-inject'), 'quick.verify\n');
+    assertEqual(gateWithPorcelain(sb, ' M .vibe/last-inject\n').code, 0);
   } finally {
     sb.cleanup();
   }

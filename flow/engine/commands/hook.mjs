@@ -97,19 +97,26 @@ function toPosix(p) {
 // that gitignore cannot: an install made before the marker existed, or one
 // whose `.gitignore` a project edited.
 //
-// Deliberately NARROW — the tooth keeps every bite it had. Only three things
-// are excluded: the evidence directory (as before), the warnings relay log,
-// and the marker — by its exact path, plus the `.vibe/` directory entry in the
-// one spelling git uses when the WHOLE directory is untracked and it has
-// nothing finer to report. A tracked file under `.vibe/` (a project's own
-// authored blocks, `.vibe/blocks/**`) is reported individually by git, is not
-// matched here, and still stales the receipt.
+// Deliberately NARROW — EXACTLY three paths, all of them written by this
+// harness itself: the evidence directory (as before), the warnings relay log,
+// and the inject marker. Nothing else under `.vibe/` is excluded: a project's
+// own authored blocks (`.vibe/blocks/**`) change what every later turn injects,
+// so editing one after the receipt was written IS a change the receipt no
+// longer describes, and it must still block.
+//
+// That precision is only real because gitPorcelain() asks for `-uall` (see its
+// own note). Without it git collapses a wholly-untracked `.vibe/` to a single
+// `?? .vibe/` row, and there is no way to exclude the marker without excluding
+// the authored blocks sitting beside it — the first revision of this fix
+// excluded the directory row and carried a comment claiming blocks still
+// blocked, which was false on a shipped install (fix round 1, Important 1).
+// Enumerated rows make the claim true, and it is pinned by a test that reads
+// the porcelain git ACTUALLY emits rather than a hand-written one.
 function isOwnRuntimeState(root, p) {
   const evidRel = '.agents/skills/vibe/evidence';
   if (p === evidRel || p.startsWith(`${evidRel}/`)) return true;
   if (p === toPosix(path.relative(root, warnLogPath(root)))) return true;
-  if (p === toPosix(LAST_INJECT_RELPATH)) return true;
-  return p === `${toPosix(VIBE_DIR_RELPATH)}/`;
+  return p === toPosix(LAST_INJECT_RELPATH);
 }
 
 // ---------------------------------------------------------------------------
@@ -631,12 +638,33 @@ function cursorStateFeature(vibeDir) {
   }
 }
 
+// `-uall`, and it is load-bearing rather than cosmetic. Plain
+// `git status --porcelain` COLLAPSES a wholly-untracked directory into one row
+// (`?? .vibe/`), which costs the staleness scan below both of its properties:
+// it cannot see the individual file that changed (so it compares a DIRECTORY's
+// mtime, which does not move when a file inside is edited in place — a stale
+// receipt passes), and it cannot distinguish this harness's own runtime marker
+// from a project's authored blocks sitting in the same directory (so excluding
+// one means excluding the other). `-uall` gives one row per file and both
+// properties come back: `.vibe/last-inject` is excluded by name, and
+// `.vibe/blocks/team.md` blocks, on the porcelain git really emits.
+//
+// It also makes the engine STRICTER than the frozen bash oracle
+// (tests/oracles/stop-gate.sh), which has no `-uall` — a deliberate divergence
+// in the fail-safe direction for a blocking tooth, pinned by the tests named in
+// isOwnRuntimeState()'s note. `git status` has accepted `-uall` since well
+// before any git this harness can run on; a git that rejected the flag would
+// exit non-zero and the whole scan degrades to "no changes" (pass), never to a
+// throw.
+//
+// A caller that injects `spawnGit` (the hermetic tests) sees the same argv, so
+// what the tests pin is what ships.
 function gitPorcelain(root, opts) {
   const spawnGit = opts.spawnGit || ((args) => spawnSync('git', args, { encoding: 'utf8' }));
   try {
     const check = spawnGit(['-C', root, 'rev-parse', '--is-inside-work-tree']);
     if (!check || check.error || check.status !== 0) return '';
-    const res = spawnGit(['-C', root, 'status', '--porcelain']);
+    const res = spawnGit(['-C', root, 'status', '--porcelain', '-uall']);
     if (!res || res.error || res.status !== 0) return '';
     return typeof res.stdout === 'string' ? res.stdout.replace(/\n+$/, '') : '';
   } catch {

@@ -455,10 +455,21 @@ if git -C "$SBG" init -q >/dev/null 2>&1 \
   # and would block for its own, unrelated reason — leaving `?? .vibe/` as the
   # ONLY thing the scan has to judge, which is the point of this leg.
   git -C "$SBG" add .gitignore >/dev/null 2>&1; git -C "$SBG" commit -qm legacy >/dev/null 2>&1
-  assert_eq "inject-triggers/6" "control: with the ignore line stripped git DOES report the marker" \
-    "$(git -C "$SBG" status --porcelain | grep -c '\.vibe')" "1"
+  # Asserted with the SAME argv the gate itself runs (`-uall`): the marker is one
+  # enumerated row, not the collapsed `?? .vibe/` directory a plain --porcelain
+  # would report. That enumeration is what lets the exclusion name the marker
+  # without swallowing whatever else lives under .vibe/ (fix round 1).
+  assert_eq "inject-triggers/6" "control: with the ignore line stripped git enumerates the marker itself" \
+    "$(git -C "$SBG" status --porcelain -uall)" "?? .vibe/last-inject"
   out="$(printf '{}' | CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
   assert_contains "inject-triggers/6" "gate still passes with the marker VISIBLE to git (braces)" "$out" "rc=0"
+  # ... and an authored block beside the marker, in that same untracked
+  # directory, DOES stale the receipt: it changes what every later turn injects.
+  sleep 1; mkdir -p "$SBG/.vibe/blocks"; printf 'authored\n' > "$SBG/.vibe/blocks/team.md"
+  out="$(printf '{}' | CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+  assert_contains "inject-triggers/6" "an authored .vibe/blocks file newer than the receipt BLOCKS" "$out" "rc=2"
+  assert_contains "inject-triggers/6" "the block names the authored file, not the directory" "$out" ".vibe/blocks/team.md"
+  rm -rf "$SBG/.vibe/blocks"
   # ... and the tooth is undamaged: a real source file touched after the receipt
   # still blocks, from this same install, this same turn.
   sleep 1; printf 'edited\n' > "$SBG/src.txt"
@@ -514,6 +525,35 @@ out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vi
 assert_eq "js-core/7" "engine-absent: guard exits 0, not a crash and not exit 2" "$out" "rc=0"
 mv "$SB/.agents/skills/vibe/engine.bak" "$SB/.agents/skills/vibe/engine"
 trap - EXIT
+
+
+# inject-triggers/6 fix round 1, Important 2 — a NODE-LESS install must still
+# receive the write rules. They are no longer restated by hand in the
+# instructions block (they render from content/policy.json), and
+# `render agents-md --write` needs node; on a hookless host AGENTS.md is the
+# only carrier there is, so a missing block would be a straight regression.
+# merge-agents.sh seeds the template's pre-rendered copy, and the template's
+# copy is byte-identical to the render (flow/tests/run.sh proves that), so the
+# same target re-installed WITH node re-renders to "no change".
+SBNN="$(mktmp)"
+PATH="$NONODE_BIN" "$NONODE_BIN/bash" "$INSTALL" "$SBNN" --only flow >/dev/null 2>&1
+grep -qxF '<!-- vibe:rules -->' "$SBNN/AGENTS.md" \
+  && pass "inject-triggers/6" "node-absent install still ships the vibe:rules block" \
+  || fail "inject-triggers/6" "node-absent install still ships the vibe:rules block"
+grep -qF 'writable only during feature.compound' "$SBNN/AGENTS.md" \
+  && pass "inject-triggers/6" "node-absent install carries the real enumerated write rules" \
+  || fail "inject-triggers/6" "node-absent install carries the real enumerated write rules"
+grep -qF 'Delegating to sub-agents' "$SBNN/AGENTS.md" \
+  && pass "inject-triggers/6" "node-absent install carries the rest of the agents-md channel too" \
+  || fail "inject-triggers/6" "node-absent install carries the rest of the agents-md channel too"
+if command -v node >/dev/null 2>&1; then
+  out="$( cd "$SBNN" && node "$SBNN/.agents/skills/vibe/engine/cli.mjs" render agents-md --write 2>&1 )"
+  assert_contains "inject-triggers/6" "re-rendering that target with node is a NO-OP (the shipped copy is the render)" \
+    "$out" "no change"
+else
+  echo "  SKIP [inject-triggers/6] re-render idempotence (node not on PATH)"
+fi
+rm -rf "$SBNN"
 
 unset CLAUDE_PROJECT_DIR
 rm -rf "$SB"
