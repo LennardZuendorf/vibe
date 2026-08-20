@@ -61,16 +61,34 @@ function stripTrailingNewlines(s) {
 function cursorStateAndFeature(vibeDir) {
   try {
     const cursor = readCursor(vibeDir);
-    return { state: cursor.state, feature: cursor.feature ?? '' };
+    return { state: cursor.state, feature: cursor.feature ?? null };
   } catch {
-    return { state: 'idle', feature: '' };
+    return { state: 'idle', feature: null };
   }
+}
+
+// Mirrors jq's `// empty` + `-r` for an arbitrary JSON value (review round
+// 1, Finding 4, shared with doctrine.mjs's identical helper): jq's
+// alternative operator treats EVERYTHING except `false` and `null` as
+// truthy — including `0` and `""` — which a plain JS `feature ? ... : ...`
+// gets wrong for `0` (JS-falsy, jq-truthy: the oracle's `current_feature()`
+// captures jq's raw "0" and `[[ -n "0" ]]` is true, so it DOES interpolate).
+// `-r` prints a raw string as-is; anything else (numbers, booleans,
+// objects, arrays) prints as normal jq JSON output, which for non-scalars
+// is PRETTY (2-space indent) by default, not compact — reproduced with
+// `JSON.stringify(value, null, 2)`. Reachable only via a hand-edited
+// cursor (readCursor/writeCursor never produce a non-string/non-null
+// feature), but a real divergence once it is.
+function jqAltRaw(value) {
+  if (value === null || value === undefined || value === false) return '';
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
 }
 
 // <feature> is the only interpolation; a feature-less cursor leaves the
 // literal placeholder in place (still valid guidance, still byte-stable).
 function interpolate(text, feature) {
-  return feature ? text.split('<feature>').join(feature) : text;
+  const featureText = jqAltRaw(feature);
+  return featureText ? text.split('<feature>').join(featureText) : text;
 }
 
 function machineSkill(machine, stateKey) {

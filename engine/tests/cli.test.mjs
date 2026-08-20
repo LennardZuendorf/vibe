@@ -8,7 +8,7 @@ const COMMANDS = ['state', 'orders', 'doctrine', 'doctor'];
 // Commands land one unit at a time (js-core/3-6). Each ported command drops
 // out of this list — its own *.test.mjs covers real behaviour instead. Only
 // the still-unimplemented ones should hit the "not implemented yet" path.
-const NOT_YET_IMPLEMENTED = ['doctrine', 'doctor'];
+const NOT_YET_IMPLEMENTED = ['doctor'];
 
 test('--help lists the four commands', () => {
   const result = runCli(['--help']);

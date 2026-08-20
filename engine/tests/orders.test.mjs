@@ -27,7 +27,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { test, assert, assertEqual, assertMatch, makeSandbox, runCommand } from './run.mjs';
+import { test, assert, assertEqual, assertMatch, assertIncludes, makeSandbox, runCommand } from './run.mjs';
 import { runOrders } from '../commands/orders.mjs';
 import { loadMachine } from '../machine.mjs';
 
@@ -605,5 +605,65 @@ test('CLI: `vibe orders` with an explicit state arg on the install-layout fixtur
     rmSync(installRoot, { recursive: true, force: true });
     rmSync(unrelatedCwd, { recursive: true, force: true });
     if (prevEnv !== undefined) process.env.CLAUDE_PROJECT_DIR = prevEnv;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Non-string cursor `feature` (review round 1, Finding 4 — shared bug with
+// doctrine.mjs). jq's `//` treats everything except `false`/`null` as
+// truthy, including `0`, so a cursor with `"feature": 0` DOES get
+// interpolated on the oracle; a plain JS `feature ? ... : ...` gets this
+// wrong (0 is JS-falsy). Only reachable via a hand-edited cursor.
+// ---------------------------------------------------------------------------
+
+test('parity: a numeric feature of 0 is interpolated (jq truthy, JS-falsy mismatch)', () => {
+  const sandbox = makeOrdersSandbox({
+    cursor: { flow: 'feature', phase: 'plan', feature: 0, updated: '2026-01-01T00:00:00Z' },
+  });
+  try {
+    const engineResult = runEngine(sandbox, ['feature.plan']);
+    assertEqual(engineResult.code, 0);
+    assertIncludes(engineResult.stdout, '.spec/features/0/plan.md', 'feature=0 must interpolate, not leave the placeholder');
+    assert(!engineResult.stdout.includes('<feature>'), 'no literal placeholder should survive');
+    if (JQ_PRESENT) {
+      const oracleResult = runOracle(sandbox.scriptPath, ['feature.plan']);
+      assertEqual(engineResult.stdout, oracleResult.stdout);
+    }
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('parity: a boolean-false feature is treated as absent, same as jq (the placeholder survives)', () => {
+  const sandbox = makeOrdersSandbox({
+    cursor: { flow: 'feature', phase: 'plan', feature: false, updated: '2026-01-01T00:00:00Z' },
+  });
+  try {
+    const engineResult = runEngine(sandbox, ['feature.plan']);
+    assertEqual(engineResult.code, 0);
+    assertIncludes(engineResult.stdout, '<feature>', 'feature=false must leave the literal placeholder, matching jq falsy');
+    if (JQ_PRESENT) {
+      const oracleResult = runOracle(sandbox.scriptPath, ['feature.plan']);
+      assertEqual(engineResult.stdout, oracleResult.stdout);
+    }
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('parity: an object feature interpolates as pretty (2-space) JSON, matching jq\'s default output', () => {
+  const sandbox = makeOrdersSandbox({
+    cursor: { flow: 'feature', phase: 'plan', feature: { x: 1, y: 2 }, updated: '2026-01-01T00:00:00Z' },
+  });
+  try {
+    const engineResult = runEngine(sandbox, ['feature.plan']);
+    assertEqual(engineResult.code, 0);
+    assertIncludes(engineResult.stdout, '{\n  "x": 1,\n  "y": 2\n}');
+    if (JQ_PRESENT) {
+      const oracleResult = runOracle(sandbox.scriptPath, ['feature.plan']);
+      assertEqual(engineResult.stdout, oracleResult.stdout);
+    }
+  } finally {
+    sandbox.cleanup();
   }
 });
