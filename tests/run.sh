@@ -13,6 +13,10 @@
 # lockstep by position (SUITE_INTERPRETERS[i]/SUITE_SCRIPTS[i]/SUITE_NAMES[i]
 # all describe the SAME suite). Do not reorder one without the other two.
 
+# -e is deliberately absent: this is a reporter/aggregator (see contract
+# above) that MUST keep running every remaining suite after one fails, then
+# exit non-zero as a summary. `errexit` would abort at the first failing
+# suite and break that contract.
 set -uo pipefail
 
 # Repo root by upward marker search (.spec / .git) — depth- and symlink-agnostic:
