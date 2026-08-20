@@ -120,7 +120,11 @@ remove_shipped() {
 #
 # Source-enumerated also means DST-safe in the same way remove_shipped is: a
 # path the SOURCE does not have is never touched in the target, so a user's own
-# file dropped into the skill dir survives.
+# file dropped into the skill dir survives — AGENTS.md and evidence/ are each
+# removed only when SRC_DIR carries that same path. The vibe-skill call site
+# (install.sh's copy-vibe step) saves the target's evidence/ before this call
+# and restores it after, so scrubbing a source-side evidence/ here never loses
+# a target's own receipts.
 scrub_source_only() {
   local src="$1" dst="$2" rel d
   local dirs=()
@@ -136,8 +140,9 @@ scrub_source_only() {
   for rel in ${dirs[@]+"${dirs[@]}"}; do
     rm -rf "${dst:?}/${rel:?}"
   done
-  rm -f "$dst/AGENTS.md"
-  rm -rf "$dst/evidence"
+  [[ -f "$src/AGENTS.md" ]] && rm -f "$dst/AGENTS.md"
+  [[ -d "$src/evidence" ]] && rm -rf "${dst:?}/evidence"
+  return 0
 }
 
 # gi_append FILE LINE... — append the given lines to a .gitignore, separating them

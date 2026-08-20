@@ -716,6 +716,33 @@ bash "$FS/install.sh" "$SB" >/dev/null 2>&1
   && pass "platform-adapters/6" "target evidence survives re-install; source evidence still excluded" \
   || fail "platform-adapters/6" "re-install must preserve target evidence and exclude source evidence"
 rm -rf "$SB" "$FS"
+# SCOPE CONTRACT (discriminating): scrub_source_only must remove $dst/AGENTS.md
+# only when $src carries one — today's real source always ships one, so this
+# needs a fake source, at a path (AGENTS.md) the SOURCE genuinely lacks, to be
+# discriminating. Mirrors flow/+spec/ top-level (not just the .agents/skills/*
+# symlink targets the FS fixture above uses) so the network-bootstrap check at
+# the top of install.sh (which requires flow/state-machine.json + spec/SKILL.md)
+# sees a real local checkout and never fetches over the network.
+FS2="$(mktmp)"
+cp "$INSTALL" "$FS2/install.sh"
+mkdir -p "$FS2/.agents/skills" "$FS2/.claude"
+cp -RL "$REPO_ROOT/flow" "$FS2/flow"
+cp -RL "$REPO_ROOT/spec" "$FS2/spec"
+ln -s ../../flow "$FS2/.agents/skills/vibe"
+ln -s ../../spec "$FS2/.agents/skills/spec"
+cp -RL "$REPO_ROOT/.claude/commands" "$FS2/.claude/commands"
+cp -RL "$REPO_ROOT/.claude/hooks" "$FS2/.claude/hooks"
+rm -f "$FS2/flow/AGENTS.md"
+SB="$(mktmp)"; bash "$FS2/install.sh" "$SB" >/dev/null 2>&1
+printf 'mine, not the contributor guide\n' > "$SB/.agents/skills/vibe/AGENTS.md"
+[[ -f "$SB/.agents/skills/vibe/AGENTS.md" ]] \
+  && pass "platform-adapters/6" "fixture: target-owned AGENTS.md exists before re-install (population floor)" \
+  || fail "platform-adapters/6" "fixture: target-owned AGENTS.md exists before re-install (population floor)"
+bash "$FS2/install.sh" "$SB" >/dev/null 2>&1
+[[ -f "$SB/.agents/skills/vibe/AGENTS.md" ]] \
+  && pass "platform-adapters/6" "target-owned AGENTS.md survives a re-install once source stops shipping one" \
+  || fail "platform-adapters/6" "target-owned AGENTS.md must survive a re-install once source stops shipping one"
+rm -rf "$SB" "$FS2"
 # gitignore nitpick: a freshly created .gitignore must NOT start with a blank line.
 SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 [[ -n "$(head -n1 "$SB/.gitignore")" ]] \
