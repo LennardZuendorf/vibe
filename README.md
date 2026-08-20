@@ -93,8 +93,8 @@ preserves a live cursor. No plugin to register — `/flow` is a native project c
 
 `--with-plugins` installs a companion set via the `claude` CLI at user scope —
 currently **superpowers**, with a **feature-dev** slot ready to fill in. It
-degrades gracefully when the CLI is absent. "caveman" is **not** a plugin: vibe kit
-injects a one-line *caveman style* brevity note into the doctrine each session.
+degrades gracefully when the CLI is absent. Response style is **not** a plugin: vibe
+kit injects the `style.ste100` brief-technical-English rule into every turn.
 
 ### Uninstall
 

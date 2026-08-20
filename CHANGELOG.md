@@ -28,9 +28,11 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 - **Companion-plugin install** — `install.sh --with-plugins` installs superpowers
   (a feature-dev slot is ready to fill in) at user scope via the `claude` CLI,
   degrading gracefully when the CLI is absent.
-- **Caveman-style output note** — injected into the single-sourced working-model
-  doctrine (emitted every session by `doctrine.sh` / the SessionStart hook), not a
-  plugin dependency.
+- **Brief-technical-English output rule** — ASD-STE100: answer first, one idea per
+  sentence, active voice, no filler. Ships as the `style.ste100` content block
+  injected every turn, and is restated in the single-sourced working-model doctrine
+  (emitted every session by `doctrine.sh` / the SessionStart hook). Not a plugin
+  dependency.
 - **doctor instruction-coverage** now counts the per-user plugin as a third doctrine
   carrier (alongside the AGENTS.md block and a wired SessionStart hook).
 - **Compound-enforcement gate** — `spec/scripts/check-drift.sh` (CI-wired after
@@ -67,6 +69,10 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Simplified
 
+- **"Caveman" retired as the name of the style** — the shipped doctrine, the
+  `AGENTS.md` template, the README, and the installer now name the ASD-STE100 rule
+  directly. A suite guard pins every shipped style surface against the word
+  returning.
 - **Caveman levels → one style note** — the per-state `caveman` levels
   (`lite`/`full`/`ultra`), the `caveman_levels`/`safety_carveouts` machine blocks,
   and the `check-skills.sh caveman` fallback are gone. A single top-level `style`

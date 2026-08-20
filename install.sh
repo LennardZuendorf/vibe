@@ -189,8 +189,9 @@ unregister_skill() {
 # ── companion plugins (opt-in --with-plugins) ──────────────────────────────────
 # superpowers is verified against the live marketplace. feature-dev has no stable
 # public marketplace id, so it ships as a documented slot — fill it in when known.
-# caveman is intentionally absent: it is an injected "caveman style" doctrine note,
-# not a plugin. Each entry: "name@marketplace|marketplace-source".
+# Response style is intentionally absent: brief technical English ships as the
+# injected `style.ste100` content block, not a plugin. Each entry:
+# "name@marketplace|marketplace-source".
 VIBE_COMPANIONS=(
   "superpowers@superpowers-marketplace|obra/superpowers-marketplace"
   # "feature-dev@<marketplace>|<owner/repo>"   # add when its marketplace id is known

@@ -267,6 +267,51 @@ assert_eq "simplify/style" "machine carries a top-level style note" "$has_style"
 no_cav_levels="$(jq -r '(has("caveman_levels") or has("safety_carveouts") or has("modifiers"))' "$MACHINE")"
 assert_eq "simplify/style" "caveman_levels, safety_carveouts, and modifiers are removed" "$no_cav_levels" "false"
 
+# The word "caveman" is retired from every SHIPPED style surface — the doctrine
+# block, the AGENTS.md template and this repo's own copy, the README, the
+# installer, and the canonical style block. The replacement is the ASD-STE100
+# rule that already ships as `style.ste100`.
+#
+# These files live OUTSIDE the sandbox (README.md and install.sh are never
+# copied into it), so they are read from $SRC_ROOT. A negative assertion over a
+# path that does not exist passes vacuously, so the loop carries its own floor:
+# every surface must exist, must be non-empty, and the count of surfaces
+# actually examined is pinned. Deleting a file from the list below fails the
+# count; renaming one out from under the test fails the existence leg.
+STYLE_SURFACES=(
+  "flow/SKILL.md"
+  "flow/reference/templates/AGENTS.md"
+  "AGENTS.md"
+  "README.md"
+  "install.sh"
+  "flow/content/blocks/style/ste100.md"
+)
+style_seen=0
+style_clean=0
+for rel in ${STYLE_SURFACES[@]+"${STYLE_SURFACES[@]}"}; do
+  f="$SRC_ROOT/$rel"
+  if [[ ! -s "$f" ]]; then fail "style/ste100" "shipped style surface exists and is non-empty: $rel"; continue; fi
+  style_seen=$((style_seen + 1))
+  if grep -qi caveman "$f"; then
+    fail "style/ste100" "$rel names the retired caveman style"
+  else
+    style_clean=$((style_clean + 1))
+  fi
+done
+assert_eq "style/ste100" "every shipped style surface was examined" "$style_seen" "${#STYLE_SURFACES[@]}"
+assert_eq "style/ste100" "all 6 shipped style surfaces examined and none names caveman" "$style_clean/$style_seen" "6/6"
+
+# Positive half: the surfaces that STATE the rule say what replaced it. Without
+# this a wholesale deletion of the style note would pass the negative above.
+doctrine_block="$(awk '/^<!-- vibe:doctrine -->$/{f=1;next} /^<!-- \/vibe:doctrine -->$/{f=0} f' "$SRC_ROOT/flow/SKILL.md")"
+assert_contains "style/ste100" "the doctrine block names brief technical English" "$doctrine_block" "brief technical English"
+assert_contains "style/ste100" "the doctrine block leads with answer-first" "$doctrine_block" "answer first"
+tmpl_style="$(cat "$SRC_ROOT/flow/reference/templates/AGENTS.md")"
+assert_contains "style/ste100" "the AGENTS.md template names brief technical English" "$tmpl_style" "brief technical English"
+ste_block="$(cat "$SRC_ROOT/flow/content/blocks/style/ste100.md")"
+assert_contains "style/ste100" "style.ste100 carries the answer-first rule" "$ste_block" "Answer first"
+assert_contains "style/ste100" "style.ste100 keeps the byte-exact carve-out" "$ste_block" "byte-exact"
+
 # Router hygiene: idle drops its router delegate; setup.apply keeps only spec.
 idle_deleg="$(jq -c '.states.idle.delegates' "$MACHINE")"
 assert_eq "flow-mvp/3" "idle delegates array is empty" "$idle_deleg" "[]"
