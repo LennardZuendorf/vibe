@@ -126,6 +126,58 @@ bash .agents/skills/vibe/scripts/orders.sh feature.impl  # an explicit state
 
 Only `idle` keeps an inline inject, as the skill-less fallback.
 
+## Injection config (`vibe.json`)
+
+The orders above are the *flow's* words. Everything else vibe injects — the
+per-turn style rule, session-start rules, and the standing rules rendered into
+`AGENTS.md` — is **content**: blocks authored once, composed into channels,
+configured as data. Shipped defaults live in
+[`content/vibe.default.json`](content/vibe.default.json) +
+[`content/blocks/**`](content/blocks); a project overrides any of it from a root
+`vibe.json` that install never rewrites.
+
+| Channel | Fires | Form | Default blocks |
+|---|---|---|---|
+| `user-prompt` | every turn, after the orders | terse summary, ≤6 lines | `style.ste100` — brief technical English (ASD-STE100) |
+| `session-start` | session start + `compact` | terse summary, ≤15 lines | — |
+| `agents-md` | `vibe render agents-md --write`, and every install | prose body, ≤80 lines | `delegation.subagents` (model tiers), `delegation.workflows` (dynamic workflows) |
+
+```bash
+node .agents/skills/vibe/engine/cli.mjs render --list     # resolved channels, blocks, sources
+node .agents/skills/vibe/engine/cli.mjs render --check    # lint: unknown ids, budgets, placeholders
+node .agents/skills/vibe/engine/cli.mjs render user-prompt        # see exactly what a turn injects
+node .agents/skills/vibe/engine/cli.mjs render agents-md --write  # sync the AGENTS.md vibe:rules block
+```
+
+```jsonc
+// vibe.json — project layer, merged over the shipped defaults
+{
+  "channels": {
+    "user-prompt": { "remove": ["style.ste100"], "add": ["team.review"] },
+    "session-start": { "add": ["team.review"] }
+  },
+  "blocks": {
+    "team.review": {
+      "title": "Review rules",
+      "summary": "review: name the failing case before proposing a fix",
+      "body": "Longer prose for document channels…"      // or "file": ".vibe/blocks/review.md"
+    }
+  },
+  "placeholders": { "team": "platform" }
+}
+```
+
+A block is a markdown file with frontmatter (`id`, `title`, `channels`), a
+`<!-- vibe:summary -->` block for prompt channels, and prose below it for document
+channels — one author point, two verbosities. Text may interpolate `{{state}}`,
+`{{feature}}`, `{{next}}`, `{{writes}}`, `{{reads}}`, `{{delegates}}`, `{{exit}}`,
+`{{orders}}`, `{{doctrine}}`, `{{lessons:TAG}}`, and any name under
+`placeholders`. An unknown placeholder stays literal and `--check` reports it.
+
+Degrade: no content tree, a malformed `vibe.json`, or no `node` means less
+injected text — never a failed hook. `--check` is the only place those errors
+become a non-zero exit.
+
 ## The four hooks
 
 Thin shells over `scripts/`; the allow/warn/block policy lives once in

@@ -652,6 +652,19 @@ printf 'user note\n' > "$SB/.agents/skills/spec/mynote.md"
 mkdir -p "$SB/.agents/skills/spec/sub"; printf 'nested\n' > "$SB/.agents/skills/spec/sub/deep.txt"
 printf 'user flow note\n' > "$SB/.agents/skills/vibe/mynote.md"
 printf '## My Team\nkeep this prose\n\n%s\n' "$(cat "$SB/AGENTS.md")" > "$SB/AGENTS.md.new" && mv "$SB/AGENTS.md.new" "$SB/AGENTS.md"
+# content-layer: the install rendered the agents-md channel into AGENTS.md's
+# vibe:rules block (needs node; skipped honestly when the runner has none, so an
+# absent runtime never reads as a passing assertion).
+if command -v node >/dev/null 2>&1; then
+  grep -qF '<!-- vibe:rules -->' "$SB/AGENTS.md" \
+    && pass "content-layer" "install renders the agents-md channel into AGENTS.md" \
+    || fail "content-layer" "install renders the agents-md channel into AGENTS.md"
+  grep -qF 'Delegating to sub-agents' "$SB/AGENTS.md" \
+    && pass "content-layer" "the shipped delegation ruleset reaches AGENTS.md" \
+    || fail "content-layer" "the shipped delegation ruleset reaches AGENTS.md"
+else
+  echo "  SKIP [content-layer] agents-md render (node not on PATH)"
+fi
 bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
 ok=1
 # Check the shipped payload is gone (the dirs themselves survive here because the
@@ -681,6 +694,9 @@ grep -qF "vibe:instructions:start" "$SB/AGENTS.md" && fail "install-tooling/3" "
 # discriminating: the vibe:active-rules block must ALSO be stripped (unmerge used
 # to leave it orphaned). Fails if only vibe:instructions is removed.
 grep -qF "vibe:active-rules:start" "$SB/AGENTS.md" && fail "install-tooling/3" "managed active-rules block removed" || pass "install-tooling/3" "managed active-rules block removed"
+# content-layer: the rendered vibe:rules block is vibe-authored prose too — an
+# uninstall that strips only the two older blocks leaves it stranded.
+grep -qF "vibe:rules" "$SB/AGENTS.md" && fail "content-layer" "managed vibe:rules block removed on uninstall" || pass "content-layer" "managed vibe:rules block removed on uninstall"
 [[ -f "$SB/.spec/product.md" ]] && pass "install-tooling/3" ".spec/ preserved across uninstall" || fail "install-tooling/3" ".spec/ preserved"
 rm -rf "$SB"
 # uninstall inverse (fix): adapter symlinks + vibe-created stub AGENTS.md.

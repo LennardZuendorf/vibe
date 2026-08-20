@@ -3,9 +3,9 @@
 
 import { test, assert, assertEqual, assertIncludes, runCli, runCommand, makeCliWithPlaceholderCommand } from './run.mjs';
 
-const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook'];
+const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook', 'render'];
 
-test('--help lists the five commands', () => {
+test('--help lists every dispatchable command', () => {
   const result = runCli(['--help']);
   assertEqual(result.code, 0, `expected exit 0, got ${result.code}; stderr: ${result.stderr}`);
   for (const name of COMMANDS) {
@@ -32,7 +32,7 @@ test('unknown subcommand exits non-zero and names itself', () => {
 });
 
 test('known-but-unimplemented subcommand exits non-zero, not-implemented message', () => {
-  // All four real commands are implemented as of js-core/6 — there is no
+  // Every real command is implemented — there is no
   // longer a genuinely unimplemented name in cli.mjs's own COMMANDS array.
   // Exercise the same dispatch path against a synthetic placeholder command
   // instead (see makeCliWithPlaceholderCommand's own header).

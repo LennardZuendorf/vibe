@@ -68,6 +68,13 @@ state's orders win: write to the state's surface, transition only via `set-state
 edits are not a state — edit within the current state's write surface and stay put.
 `set-state.sh idle` is always legal: abort ends any flow.
 
+## Injected rules
+
+Standing rules are authored as content blocks and composed into channels: the
+per-turn prompt, session start, and the `vibe:rules` block below. Configure them in
+this repo's root `vibe.json` — add, remove, reorder, disable, or define your own —
+never by editing the block, which is regenerated.
+
 ## Commands
 
 ```bash
@@ -77,6 +84,11 @@ bash .agents/skills/spec/scripts/validate.sh
 bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
 # Health-check the harness wiring (hooks, cursor, machine)
 bash .agents/skills/vibe/scripts/doctor.sh
+# Injection config: what each channel composes, and lint it
+node .agents/skills/vibe/engine/cli.mjs render --list
+node .agents/skills/vibe/engine/cli.mjs render --check
+# Re-render the AGENTS.md rules block after editing vibe.json
+node .agents/skills/vibe/engine/cli.mjs render agents-md --write
 ```
 
 ## Enforcement is partial — do not trust it blindly

@@ -34,6 +34,7 @@ import { readCursor } from '../cursor.mjs';
 import { loadMachine, stateOf } from '../machine.mjs';
 import { runDoctrine } from './doctrine.mjs';
 import { runOrders } from './orders.mjs';
+import { renderChannelSafe } from '../content.mjs';
 
 function line(s) {
   return `${s}\n`;
@@ -110,9 +111,15 @@ function drainWarnLog(root) {
 // contract and the bash shim's `bash "$DOCTRINE" 2>/dev/null || true; exit 0`.
 // ---------------------------------------------------------------------------
 
-export function runDoctrineHook(vibeDir, skillsDir) {
+// `root` is optional and trails the ported arguments deliberately: the
+// doctrine port itself never needed a project root, and the content layer must
+// not change that call's shape. With no root (or no content tree) the
+// session-start channel contributes nothing and the output is byte-identical
+// to the pre-content-layer hook.
+export function runDoctrineHook(vibeDir, skillsDir, root) {
   const result = runDoctrine(vibeDir, skillsDir);
-  return { code: 0, stdout: result.stdout || '', stderr: '' };
+  const content = renderChannelSafe('session-start', { root, vibeDir, skillsDir });
+  return { code: 0, stdout: (result.stdout || '') + content, stderr: '' };
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +154,12 @@ export function runInjectHook(root, vibeDir, skillsDir, opts = {}) {
 
   const ordersResult = runOrders(vibeDir, skillsDir, []);
   stdout += ordersResult.stdout || '';
+
+  // Standing rules from the content layer ride AFTER the state's orders (which
+  // are the turn's imperative) and BEFORE the warnings drain (which is
+  // event-only). Byte-stable by construction, so the per-turn prompt cache
+  // still holds; a missing/broken content tree adds nothing at all.
+  stdout += renderChannelSafe('user-prompt', { root, vibeDir, skillsDir });
 
   stdout += drainWarnLog(root);
 
@@ -475,7 +488,7 @@ export default async function run(argv, opts = {}) {
   switch (name) {
     case 'session-start-doctrine':
       readStdinSync();
-      result = runDoctrineHook(vibeDir, skillsDir);
+      result = runDoctrineHook(vibeDir, skillsDir, root);
       break;
     case 'user-prompt-submit-inject':
       readStdinSync();

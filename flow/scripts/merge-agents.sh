@@ -35,6 +35,11 @@ C_START="<!-- vibe:constitution:start -->"
 C_END="<!-- vibe:constitution:end -->"
 AR_START="<!-- vibe:active-rules:start -->"
 AR_END="<!-- vibe:active-rules:end -->"
+# The content layer's rendered rules block (`vibe render agents-md --write`).
+# merge never writes it — the engine owns it — but unmerge must remove it, or
+# uninstall leaves vibe-authored prose behind.
+R_START="<!-- vibe:rules -->"
+R_END="<!-- /vibe:rules -->"
 # The template's branded title line, above the managed markers. vibe writes it
 # when it creates the file; unmerge removes it when nothing else vibe-owned keeps
 # the file alive. Exact-match only — a user's own heading is never touched.
@@ -217,17 +222,19 @@ unmerge() {
   local target="$root/AGENTS.md"
   [[ -f "$target" ]] || { note "no AGENTS.md at $target — nothing to remove"; return 0; }
 
-  local had_i=0 had_ar=0
+  local had_i=0 had_ar=0 had_r=0
   grep -qF "$I_START"  "$target" && grep -qF "$I_END"  "$target" && had_i=1
   grep -qF "$AR_START" "$target" && grep -qF "$AR_END" "$target" && had_ar=1
-  if [[ "$had_i" -eq 0 && "$had_ar" -eq 0 ]]; then
+  grep -qF "$R_START"  "$target" && grep -qF "$R_END"  "$target" && had_r=1
+  if [[ "$had_i" -eq 0 && "$had_ar" -eq 0 && "$had_r" -eq 0 ]]; then
     note "no vibe managed blocks in $target — left untouched"; return 0
   fi
 
-  # Pre-flight both blocks BEFORE mutating, so a reversed-marker refusal (die)
+  # Pre-flight every block BEFORE mutating, so a reversed-marker refusal (die)
   # leaves the file untouched rather than half-stripped.
   assert_not_reversed "$target" "$I_START"  "$I_END"
   assert_not_reversed "$target" "$AR_START" "$AR_END"
+  assert_not_reversed "$target" "$R_START"  "$R_END"
 
   # Pure stub: the file is (normalized) the template vibe would create, with no
   # user content added around the managed blocks — including the template's own
@@ -241,6 +248,7 @@ unmerge() {
 
   strip_managed_block "$target" "$I_START"  "$I_END"
   strip_managed_block "$target" "$AR_START" "$AR_END"
+  strip_managed_block "$target" "$R_START"  "$R_END"
 
   # Stripping the blocks can strand the vibe-branded title line vibe wrote above
   # them (user added prose outside the markers, or the active-rules block was

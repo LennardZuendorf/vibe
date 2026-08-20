@@ -258,6 +258,32 @@ the flat cursor via sed).
 
 Deep dive: [`flow/README.md`](flow/README.md).
 
+### Injecting your own rules (`vibe.json`)
+
+Beyond the flow's own orders, vibe injects **content blocks** — rules authored
+once and composed into channels: every turn (`user-prompt`), once per session
+(`session-start`), and into the `AGENTS.md` managed rules block (`agents-md`).
+Three ship enabled: brief technical English per turn, and sub-agent model tiers
+plus dynamic-workflow usage in `AGENTS.md`.
+
+A root `vibe.json` — never rewritten by install or upgrade — turns any of it on
+or off and adds your own:
+
+```jsonc
+{
+  "channels": { "user-prompt": { "add": ["team.review"] } },
+  "blocks": { "team.review": { "title": "Review rules", "summary": "review: name the failing case before proposing a fix" } }
+}
+```
+
+```bash
+vibe render --list     # what each channel composes, and from where
+vibe render --check    # lint: unknown ids, line budgets, unresolved placeholders
+vibe render agents-md --write   # re-sync the AGENTS.md rules block
+```
+
+Full reference: [`flow/README.md` § Injection config](flow/README.md#injection-config-vibejson).
+
 ## Dependencies
 
 vibe kit bundles only the `spec` skill. The flow *delegates* to external skills and
