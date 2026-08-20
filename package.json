@@ -1,0 +1,11 @@
+{
+  "name": "vibe-kit",
+  "version": "0.3.0-dev",
+  "type": "module",
+  "bin": {
+    "vibe": "./engine/cli.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
