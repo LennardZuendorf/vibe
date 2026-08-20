@@ -1,28 +1,30 @@
 #!/usr/bin/env bash
-# session-start-doctrine.sh — vibe flow SessionStart hook (flow-legibility/5).
+# session-start-doctrine.sh — vibe flow SessionStart hook (js-core/7).
 #
-# Event: SessionStart (all sources, incl. `compact` re-inject). Emits the vibe
-# working-model doctrine + a live cursor summary so the agent gets the flow
-# contract every session — making the AGENTS.md managed block an optional adapter
-# rather than the only carrier of the doctrine.
+# Event: SessionStart (all sources, incl. `compact` re-inject). Node-first:
+# execs into the JS engine's `hook session-start-doctrine` command, which
+# reproduces this hook's prior behaviour (emit the vibe doctrine block + a
+# live cursor summary) via engine/commands/doctrine.mjs. `exec` replaces the
+# shell so the engine's exit code and stdout propagate unchanged.
 #
-# Thin shell: all content lives in .agents/skills/vibe/scripts/doctrine.sh, which
-# single-sources the doctrine from the vibe skill's SKILL.md. stdout on exit 0 is
-# added to the session context.
-#
-# Graceful degrade: missing project dir / resolver -> exit 0, inject nothing,
-# never break the session.
+# Graceful degrade (R4): no `node` on PATH -> exit 0 silently, inject
+# nothing. Enforcement/inject is lost, never inverted into a spurious block —
+# this hook's contract was already "never break the session" and stays that
+# way with Node absent.
 
 set -euo pipefail
 
-cat >/dev/null 2>&1 || true   # consume stdin; we don't need it
+command -v node >/dev/null 2>&1 || exit 0
 
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-DOCTRINE="$ROOT/.agents/skills/vibe/scripts/doctrine.sh"
+ENGINE="${VIBE_ENGINE:-$ROOT/.agents/skills/vibe/engine}"
 
-[[ -f "$DOCTRINE" ]] || exit 0
+# Graceful degrade (R4, review round 1 Finding 2): every old per-command
+# resolver guarded its own script (`[[ -f "$DOCTRINE" ]] || exit 0` etc) --
+# the shim must guard the engine the same way, or a target installed before
+# the engine shipped (or a moved/broken symlink) gets a raw Node
+# MODULE_NOT_FOUND stack trace on every prompt/tool call instead of a silent
+# no-op.
+[[ -f "$ENGINE/cli.mjs" ]] || exit 0
 
-# doctrine.sh always exits 0 and self-degrades; guard anyway.
-bash "$DOCTRINE" 2>/dev/null || true
-
-exit 0
+exec node "$ENGINE/cli.mjs" hook session-start-doctrine

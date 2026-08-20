@@ -6,7 +6,7 @@ import path from 'node:path';
 import { test, assert, assertEqual, makeSandbox } from './run.mjs';
 import { loadMachine, stateOf } from '../machine.mjs';
 
-const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
+const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..', '..');
 
 test('loadMachine: returns the contract shape from the real state-machine.json', () => {
   const sandbox = makeSandbox();

@@ -815,6 +815,9 @@ mk_gate_sbx() {
   mkdir -p "$s/.agents/skills/vibe/scripts"
   cp "$SRC_ROOT/flow/scripts/detect-context.sh" "$s/.agents/skills/vibe/scripts/"
   cp "$SRC_ROOT/flow/state-machine.json" "$s/.agents/skills/vibe/"
+  # js-core/7: the hook is node-first now, so it also reads the JS engine at
+  # its standard nested path (the same one install.sh's `cp -RL` lands it at).
+  cp -R "$SRC_ROOT/flow/engine" "$s/.agents/skills/vibe/engine"
   local feat_json="null"
   [[ "$feature" != "null" ]] && feat_json="\"$feature\""
   printf '{"flow":"%s","phase":"%s","feature":%s,"updated":"2026-07-08T00:00:00Z"}\n' \
@@ -909,7 +912,10 @@ echo "=== review-fix — stop-gate is jq-optional (no-jq PATH shim) ==="
 # must match the jq path above. Discriminating: restore `command -v jq || exit 0` and
 # every block case below flips to rc=0.
 gnojq="$(mktemp -d)"
-for _t in dirname sed head cat grep git; do
+# `node` included (js-core/7): the hook is node-first now, so a farm that
+# omits it would test the unrelated "Node absent" degrade (R4, always exit 0)
+# instead of the jq-absent path this fixture means to exercise.
+for _t in dirname sed head cat grep git node; do
   _p="$(command -v "$_t" 2>/dev/null)" && ln -sf "$_p" "$gnojq/$_t"
 done
 run_gate_nojq() { printf '%s' "$2" | PATH="$gnojq" CLAUDE_PROJECT_DIR="$1" "$BASH_BIN" "$GATE" 2>&1; echo "rc=$?"; }
@@ -965,6 +971,19 @@ out="$(run_gate_nojq "$s" '{}')"
 assert_contains "review-fix" "no-jq: quick.verify with no receipt blocks (exit 2)" "$out" "rc=2"
 assert_contains "review-fix" "no-jq: quick block still names evidence/quick.md" "$out" "evidence/quick.md"
 rm -rf "$s"
+
+# DELIBERATE DIVERGENCE (js-core/7 review round 1, Finding 3): the old bash
+# gate resolved NEXT via detect-context.sh's jq-gated snapshot, so without
+# jq it left NEXT="" and predicate 3 (the stuck-phase nudge) silently never
+# fired. The ported gate resolves NEXT via loadMachine()/stateOf() — pure
+# JS, jq-independent by construction — so it now fires predicate 3 even
+# without jq. Warn-only, cannot block, and arguably more correct; pinned
+# here (not "fixed") so the divergence cannot go unnoticed.
+s="$(mk_gate_sbx feature impl widget git)"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "review-fix" "no-jq: predicate 3 (stuck-phase nudge) now fires without jq (deliberate divergence)" "$out" "still in feature.impl"
+assert_contains "review-fix" "no-jq: predicate 3 nudge is warn-only (exit 0)" "$out" "rc=0"
+rm -rf "$s"
 rm -rf "$gnojq"
 
 echo ""
@@ -978,6 +997,9 @@ gsbx="$(mktemp -d)"
 mkdir -p "$gsbx/.agents/skills/vibe/scripts"
 cp "$SRC_ROOT/flow/scripts/detect-context.sh" "$gsbx/.agents/skills/vibe/scripts/"
 cp "$SRC_ROOT/flow/state-machine.json" "$gsbx/.agents/skills/vibe/"
+# js-core/7: the hook is node-first now, so it also reads the JS engine at
+# its standard nested path (the same one install.sh's `cp -RL` lands it at).
+cp -R "$SRC_ROOT/flow/engine" "$gsbx/.agents/skills/vibe/engine"
 run_guard() { printf '%s' "$2" | CLAUDE_PROJECT_DIR="$1" bash "$GUARD" 2>&1; echo "rc=$?"; }
 
 out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"echo x >> .spec/lessons.md"}}')"

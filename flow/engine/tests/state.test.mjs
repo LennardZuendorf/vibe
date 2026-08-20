@@ -23,7 +23,7 @@ import { test, assert, assertEqual, assertMatch, makeSandbox, runCommand } from 
 import { runSet, runGet } from '../commands/state.mjs';
 import { readCursor } from '../cursor.mjs';
 
-const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
+const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..', '..');
 const ORACLE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'set-state.sh');
 
 // ---------------------------------------------------------------------------
@@ -520,7 +520,7 @@ test('CLI: `vibe state set` end-to-end on an install-layout fixture', () => {
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
-  cpSync(path.join(REPO_ROOT, 'engine'), engineDir, {
+  cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {
     recursive: true,
     filter: (src) => !src.includes(`${path.sep}tests${path.sep}`) && !src.endsWith(`${path.sep}tests`),
   });
@@ -570,7 +570,7 @@ test('CLI: `vibe state` with no subcommand is a named error, not a crash', () =>
   const prevEnv = process.env.CLAUDE_PROJECT_DIR;
   process.env.CLAUDE_PROJECT_DIR = bareCwd;
   try {
-    const result = runCommand(process.execPath, [path.join(REPO_ROOT, 'engine', 'cli.mjs'), 'state'], {
+    const result = runCommand(process.execPath, [path.join(REPO_ROOT, 'flow', 'engine', 'cli.mjs'), 'state'], {
       cwd: bareCwd,
     });
     assertEqual(result.code, 1);

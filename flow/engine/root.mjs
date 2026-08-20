@@ -113,11 +113,16 @@ export function resolveRoot(opts = {}) {
 
 // The vibe skill's own directory — where state.json and state-machine.json
 // actually live. In an installed target this is engine/'s immediate parent.
-// This source repo does not nest engine/ under a skill dir at all (it sits
-// at the repo top level; flow/ is the skill dir, symlinked at
-// .agents/skills/vibe), so the self-relative leg legitimately does not
-// apply here and this falls through to root + the fixed
-// `.agents/skills/vibe` suffix — which resolves correctly via that symlink.
+// engine/ lives at flow/engine/ in THIS source repo (js-core/7 review round
+// 1, Finding 4) so install.sh's existing `.agents/skills/vibe` copy (a
+// dereferenced copy of flow/) ships it automatically — but that placement
+// alone does NOT make the self-relative leg fire here: vendoredVibeDir()'s
+// chain requires the skill dir to be literally named "vibe", and this
+// repo's is named "flow". So resolveVibeDir() legitimately falls through to
+// root + the fixed `.agents/skills/vibe` suffix even in this repo — which
+// still resolves correctly via that symlink. The self-relative leg matches
+// only in a real installed target, where the copy actually IS named
+// `.agents/skills/vibe/engine`.
 export function resolveVibeDir(opts = {}) {
   if (opts.vibeDir) return opts.vibeDir;
 

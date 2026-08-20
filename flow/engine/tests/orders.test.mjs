@@ -31,7 +31,7 @@ import { test, assert, assertEqual, assertMatch, assertIncludes, makeSandbox, ru
 import { runOrders } from '../commands/orders.mjs';
 import { loadMachine } from '../machine.mjs';
 
-const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
+const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..', '..');
 const ORACLE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'orders.sh');
 const REAL_SKILL_MD = readFileSync(path.join(REPO_ROOT, 'flow', 'SKILL.md'), 'utf8');
 const GENERIC_FALLBACK =
@@ -539,7 +539,7 @@ test('CLI: `vibe orders` on a fresh non-git install-layout fixture returns idle 
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
-  cpSync(path.join(REPO_ROOT, 'engine'), engineDir, {
+  cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {
     recursive: true,
     filter: (src) => !src.includes(`${path.sep}tests${path.sep}`) && !src.endsWith(`${path.sep}tests`),
   });
@@ -579,7 +579,7 @@ test('CLI: `vibe orders` with an explicit state arg on the install-layout fixtur
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
-  cpSync(path.join(REPO_ROOT, 'engine'), engineDir, {
+  cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {
     recursive: true,
     filter: (src) => !src.includes(`${path.sep}tests${path.sep}`) && !src.endsWith(`${path.sep}tests`),
   });

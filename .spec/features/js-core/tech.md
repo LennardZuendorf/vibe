@@ -36,12 +36,21 @@ flow/engine/tests/          # harness + per-module suites, oracle-spawning
 copies `.agents/skills/vibe` (a symlink to `flow/`) into the target, and
 `plugin/skills/vibe` symlinks to the same place. Putting the engine inside that
 directory means both carriers ship it with **no packaging change** — which is
-what keeps "packaging is plugin-runtime's decision" an honest deferral. It also
-means `resolveVibeDir()`'s self-relative leg resolves correctly *in this repo*:
-with the engine at the repo root its parent was the root, not the vibe dir, so
-the dogfood repo silently exercised the fallback while only fixtures covered the
-primary path — the privileged-target lesson, inverted. Corrected during
-`js-core/7`, which the original top-level layout would have blocked outright.
+what keeps "packaging is plugin-runtime's decision" an honest deferral. Corrected
+during `js-core/7`, which the original top-level layout would have blocked
+outright: the shims resolve
+`$CLAUDE_PROJECT_DIR/.agents/skills/vibe/engine/cli.mjs`, and nothing shipped an
+engine there.
+
+`resolveVibeDir()`'s self-relative leg is a **separate** question, and the move
+does not change it here. That leg expects `…/vibe/engine`; this repo's directory
+is named `flow`, so resolution still falls through to `root + .agents/skills/vibe`
+in the dogfood repo and matches self-relatively only in an install target, where
+the directory really is `vibe`. The fallback is correct behaviour, not a bug —
+but it does mean the primary leg is exercised by fixtures and real targets and
+never by this repo's own runtime. Treat any change to it as untested-by-dogfood
+and pin it in `flow/engine/tests/root.test.mjs`. (An earlier revision of this
+note claimed the move made that leg fire here; it does not.)
 
 ## Contract — API
 
