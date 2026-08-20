@@ -68,6 +68,8 @@ resolveVibeDir(opts?) -> string
 // <root>/.agents/skills/vibe/engine (installed) and <plugin>/skills/vibe/engine
 // (per-user plugin). Deliberately IGNORES CLAUDE_PROJECT_DIR once that chain
 // validates, so a per-user plugin reads its own skill, not the project's.
+// The plugin leg additionally requires the parent directory be named `skills`,
+// so an arbitrary <x>/vibe/engine does not satisfy it.
 resolveSkillsDir(opts?) -> string          // parent of the vibe dir; finds sibling skills
 resolveProjectCursorDir(opts?) -> string | undefined
 // doctrine-ONLY. Reproduces doctrine.sh's CLAUDE_PROJECT_DIR-first cursor rule,
@@ -75,6 +77,7 @@ resolveProjectCursorDir(opts?) -> string | undefined
 // layout constant so no command re-derives it. No other command has this axis.
 
 // cursor.mjs — takes the VIBE DIR, not the repo root
+cursorPath(vibeDir) -> string   // the ONE place the cursor filename is spelled
 readCursor(vibeDir) -> {flow, phase, feature, updated, state}  // state = "<flow>.<phase>"
                      | {state: "idle", ...}                     // when absent
                      // throws CursorParseError when present but malformed.
@@ -83,6 +86,7 @@ readCursor(vibeDir) -> {flow, phase, feature, updated, state}  // state = "<flow
 writeCursor(vibeDir, {flow, phase, feature})                    // atomic; temp unlinked on failure
 
 // machine.mjs
+machinePath(vibeDir) -> string  // the ONE place the machine filename is spelled
 loadMachine(vibeDir) -> {states, flows, phases, gates, initial, version, style}
 stateOf(machine, key) -> stateRecord | undefined   // own-property guarded:
 // a prototype key such as `constructor` must not resolve, matching the oracle
@@ -121,6 +125,16 @@ rather than relying on `JSON.stringify` defaults. `parity.test.mjs` compares
 {jq present, jq absent}. The jq-absent leg uses the existing `mkshim` helper
 from `flow/tests/adapters/run.sh` so both suites shim identically.
 
+The matrix also covers the two hooks that can **block** — guard (`PreToolUse`)
+and gate (`Stop`). Their bash oracles are frozen in
+`flow/engine/tests/oracles/` rather than left in place, because porting a script
+overwrites the very thing that proves the port: 210 guard + 392 gate
+comparisons per run, on a real git repo, comparing rc + stdout + stderr +
+warnings-log bytes. Where the oracle disagrees with itself across its own jq and
+sed legs, the engine follows the **fail-safe** leg — losing one turn of
+enforcement is recoverable, wedging a session in a block loop is not — and the
+resulting divergence from the other leg is pinned in both modes with a control.
+
 **Error taxonomy.** `CursorParseError` and `UnknownStateError` exit 1 with a
 one-line stderr naming the file and the cause. Everything else in `doctor`
 degrades to a warn line and exit 0, preserving the never-end-the-session rule.
@@ -153,9 +167,34 @@ one atomic JSON writer. Commands are pure functions over
 `{root, cursor, machine}` resolved once at dispatch. A duplicate-primitive scan
 in the suite fails the build when a command re-derives any of them.
 
+The scan enforces two mechanical clauses, both stronger than "don't duplicate":
+
+1. **No module may obtain a primitive's *location* by any means** unless it is an
+   allowlisted consumer — banned as *ingredients* (the filename literals, the
+   layout constants, `CLAUDE_PROJECT_DIR`, `import.meta`, `process.cwd`, and the
+   path-helper identifiers), matched against the whole comment-stripped file so
+   line wrapping cannot split a token pair. The allowlist pins exact lines *and
+   occurrence counts*, so a second use in an allowlisted file is still a
+   violation, and re-export laundering is unwaivable.
+2. **No module may reach outside the scanned source set.** Every
+   specifier-shaped literal resolves against its own module's directory and must
+   land inside the scanned tree, which closes that tree under module resolution
+   by induction. Because the rule names no syntax, static `import`, dynamic
+   `import()`, `require`, and `createRequire` are all covered without being
+   enumerated — the test tree is not a back door.
+
+The residual gap needs an AST plus constant folding, which R5's zero-dependency
+rule forbids; those cases are pinned as executable tests that assert they *do*
+evade, so the documented limit is the measured one.
+
 Root resolution order is `CLAUDE_PROJECT_DIR` → self-relative → upward marker
 search → cwd. Self-relative precedes marker search because install targets
-frequently have neither `.git` nor `.spec`.
+frequently have neither `.git` nor `.spec`. That ordering is spec-mandated and
+pinned by test — swapping the legs must fail the suite.
+
+Co-located tests are source-only: `install.sh` scrubs every `tests/` directory
+from the payload at any depth, and the adapter suite asserts structurally that
+no test artifact reaches an install target.
 <!-- /merge -->
 
 ## Performance Budget
@@ -165,6 +204,14 @@ that matters. Target: under 50 ms cold for `orders` on a warm filesystem —
 achievable with no dependencies, four small module loads, and a single JSON
 parse. `parity.test.mjs` records wall time per command and fails above 150 ms,
 leaving headroom without pinning a flaky threshold.
+
+**As delivered:** `orders` measures min 47.9 ms / median ~50 ms on an idle
+runner — inside the 150 ms ceiling with roughly 3× headroom, but *level with*
+the 50 ms target rather than under it. The target is aspirational; the 150 ms
+ceiling is the enforced contract. The assertion calibrates each run against a
+bare `node -e 0` spawn (27 ms idle, 63–71 ms contended) and **skips with the
+measured number** when the runner cannot deliver a usable measurement, so a
+loaded CI box never produces either a silent pass or an unactionable red.
 
 ## Open Questions
 
