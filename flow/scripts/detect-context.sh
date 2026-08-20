@@ -8,10 +8,18 @@
 #   detect-context.sh infer [<porcelain>] [<state>]  # drift:<state>:<reason> when
 #                                      working-tree activity contradicts the cursor
 #
-# The decision policy lives HERE, once, so every adapter's hook is a thin shell
-# that calls this and translates the verdict to its own exit-code convention.
-# This houses the future PreToolUse decision fn (Stage 2); in Stage 1 it is the
-# canonical reference the skills consult.
+# The decision policy is DATA (content/policy.json), read by the engine's
+# `vibe policy decide`. This script is the one entry point every adapter's hook
+# calls, and it translates nothing: the verdict is stdout, the exit code stays
+# 0. `decide` delegates to the engine when node is available and answers from
+# its own bash branch when it is not.
+#
+# The bash branch is PERMANENT, not a migration stop-gap (inject-triggers/2,
+# plan decision 1). It backs a HARD BLOCK, and a target without node must still
+# be enforced — losing the guard to a missing runtime is not acceptable. The
+# differential matrix in flow/engine/tests/policy.test.mjs drives every guarded
+# path x all 13 machine states through BOTH branches and asserts byte-identical
+# stdout and exit code, so the duplication cannot drift silently.
 #
 # The three hard blocks (everything else is allow/warn):
 #   1. .spec/lessons.md            — only during feature.compound, setup.apply,
@@ -27,8 +35,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 MACHINE="$SKILL_DIR/state-machine.json"
 STATE="$SKILL_DIR/state.json"
+ENGINE_CLI="$SKILL_DIR/engine/cli.mjs"
+POLICY_JSON="$SKILL_DIR/content/policy.json"
 
 have_jq() { command -v jq >/dev/null 2>&1; }
+have_node() { command -v node >/dev/null 2>&1; }
 
 # Locate the repo/install root by upward marker search (never fixed hops) — used
 # only by `infer` to run `git status` from the right place when no porcelain is
@@ -90,14 +101,95 @@ snapshot() {
      }'
 }
 
+# ── the engine branch ────────────────────────────────────────────────────────
+# Runs `vibe policy decide` and prints its stdout. Returns non-zero for every
+# "the engine did not answer" outcome, which the caller reads as "delegation
+# unavailable" and falls back to the bash branch for.
+#
+# Three hardening points, all of them load-bearing rather than defensive
+# habit (inject-triggers/2 review):
+#
+#   * `</dev/null` — the PreToolUse hook feeds this script's caller a JSON
+#     event on stdin. Without the redirect the child node inherits that pipe;
+#     a node that decides to read stdin then blocks forever and wedges the
+#     hook, which is the one failure mode this harness must never have.
+#   * a TIMEOUT when one is available. GNU coreutils `timeout` is present on
+#     Linux and on any macOS with coreutils installed, but NOT on a stock
+#     macOS (where it is `gtimeout`, if at all). It is used when found and
+#     simply not used when absent — bounding the call is not worth a
+#     dependency, and faking a bound with a background kill would add a race
+#     to a hook path. On a target without `timeout`, a wedged node is
+#     unbounded here; the `</dev/null` above removes the only cause this
+#     script can control.
+#   * a strict verdict shape on the way out (is_verdict). The hooks read any
+#     line that is not `block:`/`warn:` as an allow, so forwarding whatever
+#     the engine happened to print would turn a diagnostic, a warning banner,
+#     or a partial line into a silent allow.
+engine_decide() {
+  local path="$1" state="$2"
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 10 node "$ENGINE_CLI" policy --vibe-dir "$SKILL_DIR" decide "$path" "$state" 2>/dev/null </dev/null
+  else
+    node "$ENGINE_CLI" policy --vibe-dir "$SKILL_DIR" decide "$path" "$state" 2>/dev/null </dev/null
+  fi
+}
+
+# Exactly the three shapes `decide` is contracted to emit, on ONE line: bare
+# `allow`, or `warn:`/`block:` with a non-empty reason. Anything else — empty,
+# multi-line, a bare `block:`, a stack trace — is not a verdict.
+is_verdict() {
+  local out="$1"
+  [[ "$out" != *$'\n'* ]] || return 1
+  case "$out" in
+    allow) return 0 ;;
+    warn:?*) return 0 ;;
+    block:?*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # ── decision mode ──────────────────────────────────────────────────────────—
 # Emits one of: allow | warn:<reason> | block:<reason>
+#
+# The engine answers only when node can run it, the policy data is there, the
+# engine EXITS 0, and what it printed is a well-formed verdict. Every other
+# outcome falls back to the bash branch below, which carries the same policy
+# hardcoded and so cannot be corrupted by a data file. The engine refuses
+# (exit 2, empty stdout) whenever its rule set failed to load or loaded empty
+# — a truncated policy.json, a version this engine does not understand, a
+# missing `rules` key, an unreadable file — because `decide` over zero rules
+# answers `allow` for every path, and reporting that as a verdict would make
+# every hard block disappear silently.
+#
+# The state is resolved HERE, once, and passed explicitly to whichever branch
+# answers — the engine is never left to read the cursor itself. Two branches
+# that each resolve "where are we" would be two chances to disagree about it,
+# and the differential matrix could then not tell a policy divergence from a
+# cursor-resolution one.
 decide() {
   local path="$1"
-  local state="${2:-$(current_state)}"
+  local state="${2:-}"
+  [[ -n "$state" ]] || state="$(current_state)"
 
-  # Normalise a leading ./
+  # Normalise a leading ./ before either branch sees it.
   path="${path#./}"
+
+  local out
+  if have_node && [[ -f "$ENGINE_CLI" && -f "$POLICY_JSON" ]] \
+    && out="$(engine_decide "$path" "$state")" \
+    && is_verdict "$out"; then
+    printf '%s\n' "$out"
+    return 0
+  fi
+
+  decide_bash "$path" "$state"
+}
+
+# The bash branch. Takes an ALREADY-normalised path and an explicit state (see
+# decide above) — it is never called with either left to default.
+decide_bash() {
+  local path="$1"
+  local state="$2"
 
   # Block 3: state.json is writer-only.
   case "$path" in

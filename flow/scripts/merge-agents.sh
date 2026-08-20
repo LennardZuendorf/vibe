@@ -36,8 +36,10 @@ C_END="<!-- vibe:constitution:end -->"
 AR_START="<!-- vibe:active-rules:start -->"
 AR_END="<!-- vibe:active-rules:end -->"
 # The content layer's rendered rules block (`vibe render agents-md --write`).
-# merge never writes it — the engine owns it — but unmerge must remove it, or
-# uninstall leaves vibe-authored prose behind.
+# The engine OWNS it: merge never edits an existing one, and re-rendering
+# replaces it byte-for-byte. merge only SEEDS it, from the copy the template
+# ships, when the target has none — see seed_rules_block(). unmerge removes it,
+# or uninstall would leave vibe-authored prose behind.
 R_START="<!-- vibe:rules -->"
 R_END="<!-- /vibe:rules -->"
 # The template's branded title line, above the managed markers. vibe writes it
@@ -149,7 +151,50 @@ link_adapter() {
 }
 
 # ── merge mode ─────────────────────────────────────────────────────────────────
+# seed_rules_block TARGET — give a target that has NO vibe:rules block the copy
+# the template ships, and never touch one that already exists.
+#
+# Why merge does this at all (inject-triggers/6 fix round 1, Important 2): the
+# write rules are no longer restated by hand inside the instructions block —
+# they are rendered from content/policy.json. `vibe render agents-md --write`
+# does that rendering and needs node. A target WITHOUT node (and a hookless host
+# like Codex or Warp, where AGENTS.md is the only carrier there is) would
+# otherwise end up with two sections pointing at a block that does not exist and
+# no rules at all — a regression against what shipped before. The template's
+# copy is byte-identical to the render (a test in flow/tests/run.sh fails if it
+# drifts), so a later install WITH node re-renders it to exactly the same bytes
+# and reports "no change".
+#
+# Never overwrites: an existing block may be a project's own composition
+# (vibe.json can add, remove or reorder blocks), which is the engine's to
+# manage, not this script's.
+seed_rules_block() {
+  local target="$1"
+  [[ -f "$target" ]] || return 0
+  grep -qxF "$R_START" "$target" && return 0
+  local block; block="$(mktemp "${target}.rules.XXXXXX")"
+  extract_region "$TEMPLATE" "$R_START" "$R_END" > "$block"
+  if [[ -s "$block" ]]; then
+    { printf '\n'; cat "$block"; } >> "$target"
+    note "seeded the vibe:rules block in $target from the template"
+  fi
+  rm -f "$block"
+}
+
+# merge_instructions runs in a SUBSHELL: it installs a `trap ... RETURN` to
+# clean its temp files, and a RETURN trap set inside a function stays armed for
+# the enclosing scope — so calling it plainly from here fires that trap a second
+# time when merge() itself returns, with its `$tmp` locals long out of scope
+# (`tmp: unbound variable` under `set -u`). The subshell scopes the trap to the
+# call. Every write it makes is a file write, so nothing is lost, and `set -e`
+# still propagates a `die`.
 merge() {
+  local root="${1:-.}"
+  ( merge_instructions "$root" )
+  seed_rules_block "$root/AGENTS.md"
+}
+
+merge_instructions() {
   local root="${1:-.}"
   local target="$root/AGENTS.md"
   [[ -f "$TEMPLATE" ]] || die "template not found at $TEMPLATE"

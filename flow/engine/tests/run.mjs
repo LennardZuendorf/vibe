@@ -39,6 +39,43 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const CLI_PATH = path.join(REPO_ROOT, 'flow', 'engine', 'cli.mjs');
 
 // ---------------------------------------------------------------------------
+// HERMETICITY — the developer's own git configuration must not change what this
+// suite proves (inject-triggers/6 fix round 3).
+//
+// The stop-gate parity fixtures compare a frozen bash oracle (plain
+// `git status --porcelain`, collapsing untracked directories) against the
+// engine (`-uall`, enumerating them). A `~/.gitconfig` carrying
+//   [status]
+//     showUntrackedFiles = all
+// makes the ORACLE enumerate too, the two agree, and the KNOWN DIVERGENCE pin
+// turns into a false red — on the machine of whoever happens to have that
+// setting, and nowhere else. Reproduced exactly that way before this fix:
+// `HOME=<fake with that config> node run.mjs` -> 659 passed, 2 failed.
+//
+// Neutralized here, once, on the SHARED harness rather than at the one call
+// site that noticed. Three variables because git's own precedence needs all
+// three: GIT_CONFIG_GLOBAL/SYSTEM redirect the two config files (git >= 2.32),
+// GIT_CONFIG_NOSYSTEM covers older gits that ignore GIT_CONFIG_SYSTEM.
+//
+// Set on process.env, not merely passed to runCommand: the engine's own
+// `spawnSync('git', …)` runs IN THIS PROCESS and inherits from here, and
+// runCommand builds every child env from `{...process.env}`, so one assignment
+// covers the in-process spawns, the oracle's bash, and the fixtures' own
+// `git init`/`add`/`commit` alike. This is the same "delete it, do not merely
+// not set it" rule `unsetEnv` exists for, applied to a variable git reads from
+// a FILE rather than from the environment — the only way to delete a file's
+// influence is to point git at a different one.
+//
+// Deliberately global to the suite, not scoped to the gate fixtures: any test
+// that shells out to git inherits the same clean configuration, so a future
+// fixture cannot quietly depend on a developer's aliases, `core.autocrlf`, or
+// `status.showUntrackedFiles`. Asserted live in parity.test.mjs, in BOTH
+// ambient states (a fake HOME that sets the option, and an empty one).
+process.env.GIT_CONFIG_GLOBAL = '/dev/null';
+process.env.GIT_CONFIG_SYSTEM = '/dev/null';
+process.env.GIT_CONFIG_NOSYSTEM = '1';
+
+// ---------------------------------------------------------------------------
 // Assert helpers
 // ---------------------------------------------------------------------------
 
@@ -214,9 +251,9 @@ export function runCli(args = [], opts = {}) {
 export function makeCliWithPlaceholderCommand(placeholder = 'zzz-test-placeholder') {
   const dir = mkTempRoot('vibe-cli-placeholder-');
   const src = readFileSync(CLI_PATH, 'utf8');
-  const marker = "const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook', 'render'];";
+  const marker = "const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook', 'render', 'policy'];";
   assert(src.includes(marker), 'cli.mjs COMMANDS array literal has changed shape — update this test helper');
-  const patched = src.replace(marker, `const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook', 'render', '${placeholder}'];`);
+  const patched = src.replace(marker, `const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', 'hook', 'render', 'policy', '${placeholder}'];`);
   const cliPath = path.join(dir, 'cli.mjs');
   writeFileSync(cliPath, patched);
   const commandsDir = path.join(dir, 'commands');
@@ -338,6 +375,45 @@ export function makeHookSandbox({ cursor, includeDetect = true, gitInit = false 
   }
 
   return { dir, root: dir, vibeDir, skillsDir, scriptsDir, cursorPath, warnLogPath, cleanup };
+}
+
+// makeContentSandbox — a hook-shaped sandbox (root + installed vibeDir) PLUS a
+// content tree: shipped defaults, shipped blocks, project `.vibe/blocks`
+// overrides, and a project vibe.json. Every argument is optional, so a test can
+// build exactly the layer it is about — including the "no content at all" case,
+// which is the degrade baseline.
+//
+// Shared here for the same reason makeHookSandbox is (js-core/8 final review,
+// I3): content.test.mjs asserts what the channels COMPOSE and hook.test.mjs
+// asserts what a turn EMITS from those same channels. Two hand-copied fixtures
+// would let the two suites be honest about different content trees.
+export function makeContentSandbox({ defaults, project, blocks = {}, userBlocks = {}, cursor } = {}) {
+  const sb = makeHookSandbox({ cursor });
+  const contentDir = path.join(sb.vibeDir, 'content');
+  if (defaults !== undefined) {
+    mkdirSync(contentDir, { recursive: true });
+    writeFileSync(
+      path.join(contentDir, 'vibe.default.json'),
+      typeof defaults === 'string' ? defaults : `${JSON.stringify(defaults, null, 2)}\n`,
+    );
+  }
+  for (const [rel, body] of Object.entries(blocks)) {
+    const file = path.join(contentDir, 'blocks', rel);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, body);
+  }
+  for (const [rel, body] of Object.entries(userBlocks)) {
+    const file = path.join(sb.dir, '.vibe', 'blocks', rel);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, body);
+  }
+  if (project !== undefined) {
+    writeFileSync(
+      path.join(sb.dir, 'vibe.json'),
+      typeof project === 'string' ? project : `${JSON.stringify(project, null, 2)}\n`,
+    );
+  }
+  return { ...sb, ctx: { root: sb.dir, vibeDir: sb.vibeDir, skillsDir: sb.skillsDir } };
 }
 
 // ---------------------------------------------------------------------------

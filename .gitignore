@@ -13,6 +13,11 @@ flow/evidence/
 # Warnings relay log (runtime warn-first channel; surfaced by the inject hook then
 # truncated). Physical path through the .agents/skills/vibe -> flow symlink.
 flow/warnings.log
+# Injection edge-detection marker (records the cursor key the last inject
+# already carried the `edge` channels for; cursorChangedSince()/recordInject()
+# in flow/engine/content.mjs). Per-project runtime state, not memory — same
+# reason as the cursor and evidence dir above.
+.vibe/last-inject
 .serena/
 # Overnight run artifact (local morning report, not merged)
 REPORT.md

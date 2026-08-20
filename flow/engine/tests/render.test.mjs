@@ -57,7 +57,7 @@ test('render --list: names both config sources, the block count, and each channe
     assertIncludes(stdout, 'vibe.default.json');
     assertIncludes(stdout, '(absent — shipped defaults only)');
     assertIncludes(stdout, 'blocks:   1');
-    assertIncludes(stdout, 'doc (render=body, budget=40)');
+    assertIncludes(stdout, 'doc (render=body, trigger=level, budget=40)');
     assertIncludes(stdout, 'a.one');
   } finally {
     sb.cleanup();

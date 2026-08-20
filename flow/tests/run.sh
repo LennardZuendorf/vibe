@@ -430,11 +430,20 @@ assert_contains "flow-legibility/4" "doctrine names the two human gates" "$doc" 
 assert_contains "flow-legibility/4" "doctrine carries the durable/ephemeral framing" "$doc" "sessions are ephemeral"
 assert_contains "flow-legibility/4" "doctrine states the session-start reads" "$doc" ".spec/lessons.md"
 assert_contains "flow-legibility/4" "doctrine states the state.json write invariant" "$doc" ".agents/skills/vibe/state.json"
-assert_contains "flow-legibility/4" "doctrine prints a cursor summary (idle)" "$doc" "Cursor: idle."
-# cursor summary reflects the live cursor
+# inject-triggers/5 (R4): NO live state rides SessionStart output — Claude Code
+# replays that output verbatim on --resume, so a cursor line printed here is
+# stale by construction, and the per-turn level channel names the state anyway.
+# The four assertions above are the population floor for this negative: there IS
+# a payload, and it does not name a state.
+assert_not_contains "inject-triggers/5" "doctrine prints no cursor summary (idle)" "$doc" "Cursor:"
+# ... and still none when the live cursor is somewhere interesting. Discriminating:
+# before R4 this printed 'Cursor: feature.impl (feature=widget).'
 cp "$FLOW/state.example.json" "$STATE"; bash "$SCRIPTS/set-state.sh" feature.impl widget >/dev/null
 doc2="$(bash "$SCRIPTS/doctrine.sh")"
-assert_contains "flow-legibility/4" "doctrine cursor summary reflects feature.impl" "$doc2" "Cursor: feature.impl (feature=widget)."
+assert_contains "inject-triggers/5" "doctrine still emits the block with a live cursor set" "$doc2" "sessions are ephemeral"
+assert_not_contains "inject-triggers/5" "doctrine names no state, whatever the cursor says" "$doc2" "Cursor:"
+assert_not_contains "inject-triggers/5" "doctrine leaks no feature name either" "$doc2" "widget"
+assert_eq "inject-triggers/5" "doctrine output is a function of SKILL.md alone (cursor-independent)" "$doc2" "$doc"
 rm -f "$STATE"
 # jq/no-jq byte parity (mirrors orders.sh parity)
 pnojq4="$(mktemp -d)"
@@ -443,17 +452,18 @@ a4="$(bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
 b4="$(PATH="$pnojq4" "$BASH_BIN" "$SCRIPTS/doctrine.sh" 2>/dev/null)"
 assert_eq "flow-legibility/4" "doctrine.sh jq/no-jq byte-identical (idle)" "$b4" "$a4"
 rm -rf "$pnojq4"
-# Plugin-mode cursor: when the code lives outside the repo (per-user plugin) the
-# hook sets CLAUDE_PROJECT_DIR; doctrine.sh must read the PROJECT cursor there, not
-# the skill-co-located one. Seed a separate project dir with a distinct cursor and
-# assert the summary reflects IT (discriminating: without the redirect it reads the
-# sandbox cursor). The sandbox STATE is absent here (rm -f above), so a stale read
-# would print idle, not quick.triage.
+# Plugin mode: the hook sets CLAUDE_PROJECT_DIR when the code lives outside the
+# repo (per-user plugin). doctrine.sh used to read the PROJECT cursor through it;
+# since R4 it reads no cursor at all, so the env var is inert here. Seeded with a
+# distinct project cursor anyway — discriminating in the other direction now: a
+# doctrine.sh that still consulted it would print quick.triage.
 projd="$(mktemp -d)"
 mkdir -p "$projd/.agents/skills/vibe"
 printf '{"flow":"quick","phase":"triage","feature":"","updated":"x"}\n' > "$projd/.agents/skills/vibe/state.json"
 docp="$(CLAUDE_PROJECT_DIR="$projd" bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
-assert_contains "install-agnostic-paths" "doctrine reads the project cursor via CLAUDE_PROJECT_DIR" "$docp" "Cursor: quick.triage."
+assert_contains "inject-triggers/5" "doctrine still emits the block under CLAUDE_PROJECT_DIR" "$docp" "sessions are ephemeral"
+assert_not_contains "inject-triggers/5" "CLAUDE_PROJECT_DIR no longer selects a cursor to print" "$docp" "Cursor:"
+assert_not_contains "inject-triggers/5" "the project cursor's state does not leak either" "$docp" "quick.triage"
 rm -rf "$projd"
 # single-source parity, tied to the CODE: both prose texts must state the same
 # per-rule writable-state sets that detect-context.sh `decide` actually enforces.
@@ -461,6 +471,27 @@ rm -rf "$projd"
 # prose-vs-prose) catches a rule reassignment (moving a state between the lessons
 # and root rules) and a prose/code drift — the holes a union or two-substring check
 # leaves open.
+#
+# inject-triggers/2 briefly retired these and was WRONG to (review, Important 2):
+# a guard may only be retired once the surface it guards has stopped being
+# hand-authored. inject-triggers/6 retires HALF of them, one for one:
+#
+#   * the AGENTS.md TEMPLATE no longer enumerates any state. `flow.invariants`
+#     is composed into the shipped `agents-md` channel, so the states reach a
+#     target's AGENTS.md rendered from `content/policy.json` — the same data
+#     `decide` reads. The two template assertions are replaced below by the
+#     same per-rule comparison run against the RENDER, plus a floor proving the
+#     template really stopped enumerating (a deletion that is only a deletion
+#     would otherwise read as a pass).
+#   * the `vibe:doctrine` block in the vibe SKILL.md is STILL hand-authored —
+#     doctrine.sh emits that block verbatim and nothing generates it. Its two
+#     assertions therefore STAY. Retiring them would leave the SessionStart
+#     payload free to drift from the enforcer with nothing watching.
+#
+# The `decide` ground-truth pins added below are ADDITIVE, not a replacement:
+# they check the enforcer itself (once against the engine with node present, once
+# against the permanent bash branch in the no-node leg), where these four check
+# the shipped prose against it.
 tmpl="$(cat "$FLOW/reference/templates/AGENTS.md")"
 assert_contains "flow-legibility/4" "AGENTS.md template shares the gate line" "$tmpl" "plan → impl, and verify → ship"
 assert_contains "flow-legibility/4" "AGENTS.md template shares the ephemeral framing" "$tmpl" "sessions are ephemeral"
@@ -476,17 +507,89 @@ allowed_for() {
 }
 lessons_truth="$(allowed_for .spec/lessons.md)"
 root_truth="$(allowed_for .spec/product.md)"
+src_truth="$(allowed_for src/app.js)"
+features_truth="$(allowed_for .spec/features/x/plan.md)"
 assert_eq "flow-legibility/4" "decide lessons-rule set is the expected non-trivial set" "$lessons_truth" "feature.compound,quick.verify,setup.apply,strategy.spec"
-doc="$(bash "$SCRIPTS/doctrine.sh" | grep -v '^Cursor:')"
+assert_eq "inject-triggers/2" "decide root-spec rule set is the expected non-trivial set" "$root_truth" "feature.compound,setup.apply,strategy.spec"
+assert_eq "inject-triggers/2" "decide src/tests rule allows exactly the impl/fix states" "$src_truth" "feature.impl,quick.fix,setup.apply"
+# The features rule is the one whose allow band is the COMPLEMENT of a warn band —
+# every state except the two building ones — so it discriminates a rule whose
+# arms were inverted, which a same-shape "small allow set" pin cannot.
+assert_eq "inject-triggers/2" "decide features rule freezes exactly the two building states" "$features_truth" "feature.compound,feature.design,feature.plan,feature.verify,quick.triage,quick.verify,setup.apply,setup.detect,strategy.brainstorm,strategy.spec"
+# The cursor rule has no allow arm at all, so its ground truth is the EMPTY set —
+# which an `allowed_for` that examined nothing would produce just as happily. Pin
+# the POPULATION alongside the verdict: every one of the machine's states must
+# come back a block.
+cursor_blocked=0; cursor_seen=0
+while IFS= read -r s; do
+  [[ -z "$s" ]] && continue
+  cursor_seen=$((cursor_seen + 1))
+  [[ "$(bash "$SCRIPTS/detect-context.sh" decide .agents/skills/vibe/state.json "$s")" == block:* ]] \
+    && cursor_blocked=$((cursor_blocked + 1))
+done < <(jq -r '.states|keys[]' "$MACHINE")
+assert_eq "inject-triggers/2" "decide blocks a direct state.json edit in every machine state" "$cursor_blocked/$cursor_seen" "13/13"
+doc="$(bash "$SCRIPTS/doctrine.sh")"   # no Cursor: line to filter out since R4
 doc_lessons="$(printf '%s\n' "$doc" | tr ';' '\n' | grep 'lessons.md' | states_of)"
 doc_root="$(printf '%s\n' "$doc" | tr ';' '\n' | grep 'product,tech' | states_of)"
-tmpl_sec="$(awk '/^## Write invariants/{f=1;next} /^## /{f=0} f' "$FLOW/reference/templates/AGENTS.md")"
-tmpl_lessons="$(printf '%s\n' "$tmpl_sec" | awk '/^1\. /{f=1} /^2\. /{f=0} f' | states_of)"
-tmpl_root="$(printf '%s\n' "$tmpl_sec" | awk '/^2\. /{f=1} /^3\. /{f=0} f' | states_of)"
 assert_eq "flow-legibility/4" "doctrine lessons rule matches decide" "$doc_lessons" "$lessons_truth"
-assert_eq "flow-legibility/4" "AGENTS template lessons rule matches decide" "$tmpl_lessons" "$lessons_truth"
 assert_eq "flow-legibility/4" "doctrine root-spec rule matches decide" "$doc_root" "$root_truth"
-assert_eq "flow-legibility/4" "AGENTS template root-spec rule matches decide" "$tmpl_root" "$root_truth"
+# The template's replacement, in two halves.
+#
+# Half 1 — the template states no rule of its own any more. A bare
+# assert_not_contains would pass just as happily against a DELETED template, so
+# the negative carries a floor: the template is still there, still the
+# instructions block, and still names the enforcer command.
+# Structural, not phrase-matched: every `<flow>.<phase>` token in the template's
+# HAND-AUTHORED half — the whole file minus the generated `vibe:rules` region
+# (which the template now ships pre-rendered; see Important 2 below) — not just
+# the ones inside a section a rename could move out from under. Exactly one
+# survives, `setup.apply`, in the managed-marker comment that says when the
+# block is replaced. Any re-added rule enumeration by hand, in any section and
+# any wording, fails this; the generated block is checked for equality with the
+# render instead, which is a stronger property than "says nothing".
+tmpl_hand="$(awk '/^<!-- vibe:rules -->$/{skip=1} !skip{print} /^<!-- \/vibe:rules -->$/{skip=0}' "$FLOW/reference/templates/AGENTS.md")"
+tmpl_states="$(printf '%s\n' "$tmpl_hand" | states_of)"
+tmpl_state_lines="$(printf '%s\n' "$tmpl_hand" | grep -cE '(feature|strategy|setup|quick)\.[a-z]+')"
+assert_contains "inject-triggers/6" "floor: the template is present and is the instructions block" "$tmpl" "<!-- vibe:instructions:start -->"
+assert_contains "inject-triggers/6" "floor: the template still points at the enforcer" "$tmpl" "detect-context.sh decide <path>"
+assert_contains "inject-triggers/6" "floor: the hand-authored half is most of the template" "$tmpl_hand" "## Write policy"
+assert_eq "inject-triggers/6" "the template's hand-authored half names no flow state outside the marker comment" "$tmpl_states" "setup.apply"
+assert_eq "inject-triggers/6" "... and it does so on exactly one line (the marker comment)" "$tmpl_state_lines" "1"
+assert_contains "inject-triggers/6" "... which is the managed-marker comment, not a write rule" \
+  "$(printf '%s\n' "$tmpl_hand" | grep -E '(feature|strategy|setup|quick)\.[a-z]+')" "replaced on the next setup.apply"
+# Half 2 — the states a target now READS come from the render, and the render
+# agrees with `decide` per rule. Same comparison the two retired assertions
+# made, moved onto the generated text.
+if command -v node >/dev/null 2>&1; then
+  rend="$( cd "$REPO_ROOT" && node "$FLOW/engine/cli.mjs" render agents-md 2>/dev/null )"
+  rend_lessons="$(printf '%s\n' "$rend" | grep -F ".spec/lessons.md" | states_of)"
+  rend_root="$(printf '%s\n' "$rend" | grep -F ".spec/product.md" | states_of)"
+  assert_contains "inject-triggers/6" "floor: the agents-md render carries the invariants block" "$rend" "Write invariants"
+  assert_eq "inject-triggers/6" "floor: each rule is rendered on exactly one line" \
+    "$(printf '%s\n' "$rend" | grep -cF ".spec/lessons.md")/$(printf '%s\n' "$rend" | grep -cF ".spec/product.md")" "1/1"
+  assert_eq "inject-triggers/6" "rendered lessons rule matches decide" "$rend_lessons" "$lessons_truth"
+  assert_eq "inject-triggers/6" "rendered root-spec rule matches decide" "$rend_root" "$root_truth"
+  # Fix round 1, Important 2 — the template SHIPS a pre-rendered copy of this
+  # block, so a target with no node (a hookless host, where AGENTS.md is the
+  # only carrier there is) still receives the real enumerated rules instead of
+  # two sections pointing at a block that was never written. That copy is only
+  # safe while it cannot drift: it must equal, byte for byte, what
+  # `render agents-md` composes from content/policy.json — which is also what
+  # makes an install WITH node re-render it to "no change".
+  tmpl_rules="$(awk '/^<!-- vibe:rules -->$/{f=1;next} /^<!-- \/vibe:rules -->$/{f=0} f' "$FLOW/reference/templates/AGENTS.md")"
+  tmpl_rules_note="$(printf '%s\n' "$tmpl_rules" | head -n1)"
+  tmpl_rules_body="$(printf '%s\n' "$tmpl_rules" | sed '1,2d')"
+  assert_contains "inject-triggers/6" "the template ships a vibe:rules block with the managed-region note" \
+    "$tmpl_rules_note" "_Managed by vibe"
+  assert_eq "inject-triggers/6" "the template's shipped vibe:rules body IS the agents-md render (no drift possible)" \
+    "$tmpl_rules_body" "$rend"
+  # Floor for that equality: neither side is empty, and the body really carries
+  # the generated rules (an empty-vs-empty comparison would pass just as well).
+  assert_contains "inject-triggers/6" "floor: the shipped block carries the generated invariants" \
+    "$tmpl_rules_body" ".spec/lessons.md"
+else
+  echo "  SKIP [inject-triggers/6] rendered write invariants (node not on PATH)"
+fi
 
 echo ""
 echo "=== flow-legibility/6 — drift inference (detect-context.sh infer) ==="
@@ -991,17 +1094,21 @@ assert_contains "review-fix" "no-jq: quick.verify with no receipt blocks (exit 2
 assert_contains "review-fix" "no-jq: quick block still names evidence/quick.md" "$out" "evidence/quick.md"
 rm -rf "$s"
 
-# DELIBERATE DIVERGENCE (js-core/7 review round 1, Finding 3): the old bash
-# gate resolved NEXT via detect-context.sh's jq-gated snapshot, so without
-# jq it left NEXT="" and predicate 3 (the stuck-phase nudge) silently never
-# fired. The ported gate resolves NEXT via loadMachine()/stateOf() — pure
-# JS, jq-independent by construction — so it now fires predicate 3 even
-# without jq. Warn-only, cannot block, and arguably more correct; pinned
-# here (not "fixed") so the divergence cannot go unnoticed.
+# inject-triggers/5 (R6): predicate 3 (the stuck-phase nudge) is DELETED. It
+# said what the per-turn level channel now says on every turn, and it queued a
+# relay line on every Stop to say it. What used to be pinned here was the
+# jq-dependence of that nudge; what is pinned here now is its absence — with a
+# control, so "no nudge" cannot be satisfied by a gate that stopped running.
 s="$(mk_gate_sbx feature impl widget git)"
 out="$(run_gate_nojq "$s" '{}')"
-assert_contains "review-fix" "no-jq: predicate 3 (stuck-phase nudge) now fires without jq (deliberate divergence)" "$out" "still in feature.impl"
-assert_contains "review-fix" "no-jq: predicate 3 nudge is warn-only (exit 0)" "$out" "rc=0"
+assert_not_contains "inject-triggers/5" "no-jq: no stuck-phase nudge in a non-idle state" "$out" "still in"
+assert_contains "inject-triggers/5" "no-jq: a non-idle state exits 0" "$out" "rc=0"
+rm -rf "$s"
+# CONTROL: the same no-jq gate DOES still speak when it has something to say —
+# feature.verify with no receipt is the one blocking tooth.
+s="$(mk_gate_sbx feature verify widget git)"
+out="$(run_gate_nojq "$s" '{}')"
+assert_contains "inject-triggers/5" "no-jq control: the evidence tooth still blocks (exit 2)" "$out" "rc=2"
 rm -rf "$s"
 rm -rf "$gnojq"
 

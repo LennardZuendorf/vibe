@@ -25,12 +25,19 @@ import { extractBlock, stripBlock } from './blocks.mjs';
 import { readJson as readJsonFile } from './json.mjs';
 import { readCursor } from './cursor.mjs';
 import { loadMachine, stateOf } from './machine.mjs';
+import { loadPolicy, renderInvariants } from './policy.mjs';
 import { runOrders } from './commands/orders.mjs';
 
 export const CONFIG_BASENAME = 'vibe.json';
 export const DEFAULT_CONFIG_RELPATH = path.join('content', 'vibe.default.json');
 export const SHIPPED_BLOCKS_RELPATH = path.join('content', 'blocks');
-export const USER_BLOCKS_RELPATH = path.join('.vibe', 'blocks');
+// The project-local vibe directory: a project's own authored blocks live under
+// it, and so does the edge-detection marker written every inject (see
+// LAST_INJECT_RELPATH below). Exported as a name, not respelled by callers —
+// the stop gate has to recognize this directory to keep its own runtime writes
+// out of the receipt-staleness scan.
+export const VIBE_DIR_RELPATH = '.vibe';
+export const USER_BLOCKS_RELPATH = path.join(VIBE_DIR_RELPATH, 'blocks');
 export const SUMMARY_BLOCK_ID = 'vibe:summary';
 
 // Render modes. `summary` is for prompt channels — terse lines, no headings,
@@ -38,6 +45,30 @@ export const SUMMARY_BLOCK_ID = 'vibe:summary';
 // `## <title>` heading and a blank line between blocks.
 const MODES = ['summary', 'body'];
 const DEFAULT_MODE = 'summary';
+
+// Trigger classes a channel by injection cadence: `level` renders every turn
+// (the per-turn style rules today), `edge` only when the flow cursor moved
+// since the last inject (the full orders), `event` only when something
+// happened this turn (the warn/drift relay). A channel with no declared
+// trigger — including every channel shipped before this field existed —
+// defaults to `level`, the safest direction: nothing silently stops being
+// injected because of a missing or misspelled value.
+const TRIGGERS = ['level', 'edge', 'event'];
+const DEFAULT_TRIGGER = 'level';
+
+// channelTrigger(channel) — the one place a channel's trigger class is read.
+// Accepts any channel-shaped object (a merged channel, or a bare {trigger}
+// probe) and always returns one of TRIGGERS: an absent or unrecognized value
+// degrades to the default rather than throwing or returning undefined, so a
+// caller (this module's mergeChannel, and the inject hook the next unit
+// wires up) never has to re-check the value's shape itself. Reporting an
+// unrecognized value is mergeChannel's job, mirroring how `render` is
+// validated below — this function's contract is just "give back a definite
+// class".
+export function channelTrigger(channel) {
+  const value = channel && typeof channel === 'object' ? channel.trigger : undefined;
+  return TRIGGERS.includes(value) ? value : DEFAULT_TRIGGER;
+}
 
 // ---------------------------------------------------------------------------
 // Small file helpers — every one of them fails soft.
@@ -283,11 +314,16 @@ function mergeChannel(base = {}, over = {}, name, errors) {
   if (!MODES.includes(mode)) {
     errors.push(`channels.${name}.render: expected one of ${MODES.join(' | ')}, got '${mode}'`);
   }
+  const declaredTrigger = over.trigger ?? base.trigger;
+  if (declaredTrigger !== undefined && !TRIGGERS.includes(declaredTrigger)) {
+    errors.push(`channels.${name}.trigger: expected one of ${TRIGGERS.join(' | ')}, got '${declaredTrigger}'`);
+  }
   const budget = Number.isInteger(over.budget) ? over.budget : Number.isInteger(base.budget) ? base.budget : 0;
   return {
     name,
     blocks: ids,
     render: MODES.includes(mode) ? mode : DEFAULT_MODE,
+    trigger: channelTrigger({ trigger: declaredTrigger }),
     budget, // 0 = unbudgeted
     headings: over.headings ?? base.headings ?? undefined,
     // {file, block} — the document + managed block `vibe render <c> --write`
@@ -388,6 +424,10 @@ function joinList(value) {
 // its lessons elsewhere only edits vibe.json.
 function lessonsFor(root, relPath, tag) {
   if (typeof relPath !== 'string' || !relPath) return '';
+  // No tag selects NOTHING, never everything: an indirect tag that resolved to
+  // nothing (a cursor with no feature, say) must not turn into a wildcard that
+  // matches a lessons file's own trailing empty tag field.
+  if (typeof tag !== 'string' || !tag) return '';
   const text = readText(path.resolve(root ?? '.', relPath));
   if (text === undefined) return '';
   const wanted = String(tag).toLowerCase();
@@ -425,16 +465,45 @@ export function buildResolver(ctx, content) {
     return info;
   }
 
+  function machine() {
+    if (cache.has('#machine')) return cache.get('#machine');
+    let value;
+    try {
+      value = loadMachine(vibeDir);
+    } catch {
+      value = undefined;
+    }
+    cache.set('#machine', value);
+    return value;
+  }
+
   function machineState() {
     if (cache.has('#state')) return cache.get('#state');
     let value;
     try {
-      value = stateOf(loadMachine(vibeDir), cursorInfo().state);
+      value = stateOf(machine(), cursorInfo().state);
     } catch {
       value = undefined;
     }
     cache.set('#state', value);
     return value;
+  }
+
+  // The command that crosses ONE edge. A gated edge is one the human must
+  // approve, so it renders as the `/flow … confirm` form; every other edge is
+  // the plain writer. The gates are DATA — the machine's own `gates` map, keyed
+  // `<current>><target>` — read through loadMachine (machine.mjs is the only
+  // machine reader; this module never opens a second one). hasOwnProperty, not
+  // a bare lookup: the key is built from cursor + machine strings, and a bare
+  // `gates['constructor>x']`-shaped probe would resolve an inherited member as
+  // if it were a gate.
+  function transitionCommand(from, to) {
+    const gates = machine()?.gates;
+    const gated =
+      gates && typeof gates === 'object'
+        ? Object.prototype.hasOwnProperty.call(gates, `${from}>${to}`)
+        : false;
+    return gated ? `/flow ${to} confirm` : `set-state.sh ${to}`;
   }
 
   const builtins = {
@@ -443,11 +512,39 @@ export function buildResolver(ctx, content) {
     phase: () => cursorInfo().state.split('.').slice(1).join('.') || cursorInfo().state,
     feature: () => cursorInfo().feature || '<feature>',
     next: () => joinList(machineState()?.next),
+    // `{{transition}}` — `{{next}}`'s imperative twin: the state names turned
+    // into the commands that actually cross those edges. One legal next
+    // renders as that one command; several render as the list of them, in the
+    // machine's own order. A state with no legal next (or an unreadable
+    // machine) renders '' rather than undefined — an empty transition is a
+    // fact about the cursor, not an authoring typo, so it must not surface as
+    // an unresolved-placeholder error.
+    transition: () => {
+      const from = cursorInfo().state;
+      const next = Array.isArray(machineState()?.next) ? machineState().next : [];
+      return next
+        .filter((to) => typeof to === 'string' && to)
+        .map((to) => transitionCommand(from, to))
+        .join(' | ');
+    },
     writes: () => joinList(machineState()?.writes),
     reads: () => joinList(machineState()?.reads),
     delegates: () => joinList(machineState()?.delegates),
     exit: () => machineState()?.exit ?? '',
     orders: () => (runOrders(vibeDir, skillsDir, []).stdout || '').trim(),
+    // The write invariants as prose, generated from the SAME rules the
+    // enforcer decides against (content/policy.json). Hand-authored copies of
+    // this text used to be kept in step with the code by a test that could
+    // only notice disagreement after the fact; generated text cannot disagree.
+    // Degrades to '' — an absent or malformed policy contributes no sentence,
+    // it never breaks the turn.
+    invariants: () => {
+      try {
+        return renderInvariants({ rules: loadPolicy(vibeDir).rules }).trim();
+      } catch {
+        return '';
+      }
+    },
     doctrine: () => {
       const text = readText(path.join(skillsDir ?? '', 'vibe', 'SKILL.md'));
       if (text === undefined) return '';
@@ -455,17 +552,33 @@ export function buildResolver(ctx, content) {
     },
   };
 
-  return function resolve(name) {
+  function resolve(name) {
     if (cache.has(name)) return cache.get(name);
     let value;
     const lessonsMatch = /^lessons:(.+)$/.exec(name);
-    if (lessonsMatch) value = lessonsFor(root, content.sources.lessons, lessonsMatch[1]);
+    if (lessonsMatch) value = lessonsFor(root, content.sources.lessons, resolveTag(lessonsMatch[1]));
     else if (Object.prototype.hasOwnProperty.call(builtins, name)) value = builtins[name]();
     else if (typeof content.placeholders[name] === 'string') value = content.placeholders[name];
     else value = undefined;
     cache.set(name, value);
     return value;
-  };
+  }
+
+  // `{{lessons:TAG}}` takes a LITERAL tag. `{{lessons:.NAME}}` — a leading dot
+  // — takes an INDIRECT one: NAME is resolved as a placeholder first and its
+  // value becomes the tag, so a block can ask for "the lessons of whatever
+  // state the cursor is in" (`{{lessons:.state}}`) without inventing a second
+  // placeholder grammar or nesting braces the one regex cannot parse. Literal
+  // tags are words and never begin with a dot, so the two forms cannot
+  // collide; an indirect name that resolves to nothing yields no tag, and
+  // lessonsFor answers '' for that, exactly as it does for an unknown tag.
+  function resolveTag(raw) {
+    if (!raw.startsWith('.')) return raw;
+    const value = resolve(raw.slice(1));
+    return typeof value === 'string' ? value : '';
+  }
+
+  return resolve;
 }
 
 const PLACEHOLDER_RE = /\{\{([A-Za-z0-9_.:-]+)\}\}/g;
@@ -551,6 +664,32 @@ export function renderChannelSafe(name, ctx) {
 // Lints (`vibe render --check`) — the CI tooth for authored content.
 // ---------------------------------------------------------------------------
 
+// The lint half of the hook's own take-over rule (fix round 1, Critical). The
+// inject hook stops emitting the per-turn orders only when an edge-classed
+// channel actually delivers them; it decides that from the COMPOSED TEXT, at
+// inject time, because config can promise what a tree does not contain. This
+// check is the same rule stated at CONFIG time, where an author can still act
+// on it: a channel that claims the edge cadence and composes blocks must have
+// `{{orders}}` in at least one of them.
+//
+// Source-level on purpose. Whether the orders RESOLVE depends on the cursor and
+// the machine of whoever runs the lint; whether the channel ASKS for them is a
+// property of the content tree itself, which is what is being linted. An
+// edge-classed channel with no blocks claims nothing and is exempt.
+const ORDERS_PLACEHOLDER = '{{orders}}';
+
+function carriesOrders(channel, content) {
+  if (!channel || channelTrigger(channel) !== 'edge') return true;
+  const ids = Array.isArray(channel.blocks) ? channel.blocks : [];
+  if (ids.length === 0) return true;
+  return ids.some((id) => {
+    const block = content.blocks.get(id);
+    if (!block || !block.enabled) return false;
+    const raw = channel.render === 'body' ? block.body : block.summary;
+    return typeof raw === 'string' && raw.includes(ORDERS_PLACEHOLDER);
+  });
+}
+
 export function checkContent(ctx, content = loadContent(ctx.root, ctx.vibeDir)) {
   const errors = [...content.errors];
   const warnings = [];
@@ -561,6 +700,14 @@ export function checkContent(ctx, content = loadContent(ctx.root, ctx.vibeDir)) 
     const result = renderChannel(name, ctx, content);
     errors.push(...result.errors);
     warnings.push(...result.warnings);
+    if (!carriesOrders(channel, content)) {
+      errors.push(
+        `channels.${name}: an edge-classed channel with blocks MUST carry ${ORDERS_PLACEHOLDER} — ` +
+          'the inject hook suppresses the per-turn orders only when this channel delivers them, ' +
+          `so a channel that composes [${(channel.blocks ?? []).join(', ')}] without them silently drops ` +
+          'the turn imperative (remove the blocks, or change the trigger)',
+      );
+    }
     for (const id of Array.isArray(channel.blocks) ? channel.blocks : []) {
       const block = content.blocks.get(id);
       if (!block) continue; // renderChannel already errored
@@ -589,4 +736,108 @@ export function checkContent(ctx, content = loadContent(ctx.root, ctx.vibeDir)) 
   }
 
   return { errors, warnings, blockCount: content.blocks.size };
+}
+
+// ---------------------------------------------------------------------------
+// Edge detection — `.vibe/last-inject`, the per-project record of which
+// cursor state the last inject already carried the `edge` channels for.
+//
+// The KEY a caller passes in is the cursor state plus feature, one line —
+// `${state} ${feature}` — built from readCursor()'s own fields (cursor.mjs is
+// the only cursor reader; this module never re-derives one). Building that
+// string is the hook's job (it already holds a live cursor read for the
+// `orders` placeholder); these two functions only compare and persist it.
+//
+// Fail-open is the DELIBERATE INVERSE of the write-guard's fail-closed
+// contract: a guard that cannot read its policy must block, because silence
+// there hides a bypass. Here silence hides nothing — the worst case of
+// treating an unreadable marker as "the cursor moved" is one extra turn of
+// the full `edge` payload, which is exactly what a first inject after
+// install must carry anyway. So MISSING, UNREADABLE, EMPTY, or CORRUPT state
+// all return true, and an unwritable `.vibe/` must never throw: the next
+// turn simply finds no stored key and re-emits the edge payload again.
+// ---------------------------------------------------------------------------
+
+export const LAST_INJECT_RELPATH = path.join(VIBE_DIR_RELPATH, 'last-inject');
+
+// A bad root (not a non-empty string) has no directory to touch at all — NOT
+// '.', which would silently redirect the read/write onto the process's own
+// CWD (fix round 1, Minor: `recordInject(undefined, key)` was writing
+// `./.vibe/last-inject` into whatever directory happened to be current).
+// Returns undefined for a bad root; callers below treat that as "there is no
+// file", never as "look in '.'".
+function lastInjectPath(root) {
+  return typeof root === 'string' && root ? path.join(root, LAST_INJECT_RELPATH) : undefined;
+}
+
+// The ONE producer of the canonical key form, run identically by the writer
+// and the reader — never trust two call sites to independently agree on how
+// to normalize a string.
+//
+// Fix round 1, Critical: the documented key shape (above) is
+// `${state} ${feature ?? ''}`, so a feature-less cursor (idle, quick.*,
+// setup.*, strategy.* — every state with no feature) produces a key with a
+// TRAILING SPACE, e.g. `"idle "`. recordInject wrote that key verbatim while
+// cursorChangedSince trimmed only the STORED half at the comparison site —
+// two independent, silently-diverging normalizations of the same value. A
+// feature-less cursor's key could then never match its own just-recorded
+// write, so the `edge` channel would have re-fired the full orders payload
+// on every turn in exactly those states — the per-turn budget blow-up this
+// feature exists to prevent. Routing both the write and the compare through
+// this single function closes that at the root: there is now exactly one
+// place that decides what "the same key" means, so the two sides cannot
+// drift apart again.
+function canonicalizeKey(key) {
+  return typeof key === 'string' ? key.trim() : '';
+}
+
+// cursorChangedSince(root, key) -> boolean. True unless the last recorded
+// key CANONICALIZES to the same value as `key` — any other outcome,
+// including a read that fails outright or a root with nowhere to read from,
+// is the fail-open `true`.
+export function cursorChangedSince(root, key) {
+  const filePath = lastInjectPath(root);
+  if (!filePath) return true; // no usable root — fail open, nothing to read
+  let raw;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return true; // absent, unreadable, or any other fs error — fail open
+  }
+  const stored = canonicalizeKey(raw.split('\n', 1)[0]);
+  if (!stored) return true; // empty or whitespace-only file — fail open
+  return stored !== canonicalizeKey(key);
+}
+
+// recordInject(root, key) — writes the CANONICALIZED `key` to
+// `.vibe/last-inject` atomically (temp file in the same directory, then
+// rename — the pattern json.mjs's writeJsonAtomic uses; this is plain text,
+// one line, not JSON, so it does not route through that JSON-specific
+// writer). Creates `.vibe/` if needed. Every failure — a root with nowhere
+// to write, an unwritable directory, a `.vibe` path blocked by a
+// pre-existing non-directory file, a full disk — is swallowed: this function
+// NEVER throws. Losing one recorded inject is recoverable (the next turn's
+// cursorChangedSince just fails open again); a hook that throws here would
+// wedge the turn instead.
+export function recordInject(root, key) {
+  const filePath = lastInjectPath(root);
+  if (!filePath) return; // no usable root — no-op, never touches the CWD
+  const dir = path.dirname(filePath);
+  let tmpPath;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    tmpPath = path.join(dir, `.last-inject.${process.pid}.${Date.now()}.tmp`);
+    fs.writeFileSync(tmpPath, `${canonicalizeKey(key)}\n`, 'utf8');
+    fs.renameSync(tmpPath, filePath);
+  } catch {
+    if (tmpPath) {
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch {
+        // nothing to clean up, or the filesystem is already unusable — either
+        // way this is best-effort and must not surface its own error
+      }
+    }
+    // swallow: recordInject never throws (see contract above)
+  }
 }

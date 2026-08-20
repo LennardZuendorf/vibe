@@ -65,34 +65,85 @@ assert_contains "agent-instructions/2" "adapters.json lists WARP.md" "$out" "WAR
 
 echo ""
 echo "=== agent-instructions/3 — merge-agents.sh ==="
+# inject-triggers/6 fix round 2 — STDERR IS ASSERTED, not discarded.
+#
+# Of the 17 $MERGE invocations in this file, 8 discarded stderr and the one that
+# captured it only asserted a warning was PRESENT. A `tmp: unbound variable`
+# regression (a RETURN trap firing a second time with its locals out of scope)
+# therefore printed on every single run while this suite reported 184 passed,
+# 0 failed — the script "worked", noisily, and nothing could tell.
+#
+# merge_run runs merge-agents.sh with stdout and stderr captured SEPARATELY,
+# leaves stdout in $MERGE_STDOUT for the caller, and asserts stderr is exactly
+# empty. The divergent-append path is the one case that must warn; it keeps
+# using a plain call with 2>&1 and asserts the warning's presence.
+MERGE_STDOUT=""
+merge_run() {
+  local desc="$1"; shift
+  local errf rc
+  errf="$(mktmp)/stderr"
+  MERGE_STDOUT="$(bash "$MERGE" "$@" 2>"$errf")"
+  rc=$?
+  local errtxt; errtxt="$(cat "$errf")"; rm -f "$errf"
+  if [[ -z "$errtxt" ]]; then
+    pass "inject-triggers/6" "stderr clean: $desc"
+  else
+    fail "inject-triggers/6" "stderr clean: $desc"
+    echo "        stderr: $errtxt"
+  fi
+  return $rc
+}
 # create
-d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
+d="$(mktmp)"; merge_run "merge case 1 (create from template)" "$d"
+merge_run "merge case 1 re-run (create -> no-op)" "$d"
 grep -qF '<!-- vibe:instructions:start -->' "$d/AGENTS.md" && pass "agent-instructions/3" "missing -> create from template" || fail "agent-instructions/3" "create"
 # preserve preamble + replace inner + idempotent
 d="$(mktmp)"; { echo "## Our Team"; echo "keep me"; echo ""; cat "$TEMPLATE"; } > "$d/AGENTS.md"
-bash "$MERGE" "$d" >/dev/null
+merge_run "merge case 2 (replace the instructions block)" "$d"
 grep -qF "keep me" "$d/AGENTS.md" && pass "agent-instructions/3" "user preamble preserved (R2)" || fail "agent-instructions/3" "preamble"
-out="$(bash "$MERGE" "$d")"; assert_contains "agent-instructions/3" "re-run is a no-op" "$out" "no-op"
+merge_run "merge case 2 re-run (no-op)" "$d"
+assert_contains "agent-instructions/3" "re-run is a no-op" "$MERGE_STDOUT" "no-op"
 # constitution migration
 d="$(mktmp)"; printf '# R\n\n<!-- vibe:constitution:start -->\nold\n<!-- vibe:constitution:end -->\n' > "$d/AGENTS.md"
-bash "$MERGE" "$d" >/dev/null
+merge_run "merge case 3 (constitution -> instructions migration)" "$d"
+merge_run "merge case 3 re-run (no-op)" "$d"
 grep -qF '<!-- vibe:instructions:start -->' "$d/AGENTS.md" && ! grep -qF 'vibe:constitution' "$d/AGENTS.md" \
   && pass "agent-instructions/3" "constitution -> instructions migration" || fail "agent-instructions/3" "migration"
-# divergent -> append + warn, preserve content
+# merge case 4 — no markers, but the body IS the template's instructions body:
+# wrap it in markers instead of appending a second copy. Built with the same
+# marker/comment stripping merge's own `tcore` does, since `normalize()` only
+# compares blank-squeezed text.
+d="$(mktmp)"
+awk '/vibe:instructions:start/{f=1;next} /vibe:instructions:end/{f=0} f' "$TEMPLATE" \
+  | awk '/^<!-- Managed by vibe/{c=1} c&&/-->$/{c=0;next} !c' > "$d/AGENTS.md"
+merge_run "merge case 4 (wrap an unmarked-equivalent body)" "$d"
+assert_contains "agent-instructions/3" "unmarked-equivalent body is WRAPPED, not appended twice" "$MERGE_STDOUT" "wrapped"
+assert_eq "agent-instructions/3" "wrap does not duplicate the body" \
+  "$(grep -c '^## Working model' "$d/AGENTS.md")" "1"
+merge_run "merge case 4 re-run (no-op)" "$d"
+rm -rf "$d"
+# merge case 5 — divergent -> append + warn, preserve content. THE ONE PATH THAT
+# IS SUPPOSED TO WRITE TO STDERR, so it is asserted by content rather than by
+# emptiness: exactly the two merge-agents WARN lines, nothing else. Anything
+# unexpected on stderr here (a `tmp: unbound variable`, a stray tool error) fails
+# this the same way it fails the merge_run cases above.
 d="$(mktmp)"; printf '# Different\n\nmine\n' > "$d/AGENTS.md"
-out="$(bash "$MERGE" "$d" 2>&1)"
+errf="$(mktmp)/err"; out="$(bash "$MERGE" "$d" 2>"$errf")"
 { grep -qF "mine" "$d/AGENTS.md" && grep -qF '<!-- vibe:instructions:start -->' "$d/AGENTS.md"; } \
   && assert_contains "agent-instructions/3" "divergent appends + warns" "$out" "append" \
   || fail "agent-instructions/3" "divergent append"
+assert_eq "inject-triggers/6" "divergent path writes exactly 2 stderr lines, both merge-agents WARNs" \
+  "$(wc -l < "$errf" | tr -d ' ')/$(grep -c '^merge-agents: WARN — ' "$errf")" "2/2"
 # reversed markers must be refused, not silently mangled (content-safety invariant)
 d="$(mktmp)"; printf '# R\n<!-- vibe:instructions:end -->\nmid\n<!-- vibe:instructions:start -->\ntail\n' > "$d/AGENTS.md"
 rmbefore="$(cat "$d/AGENTS.md")"
 if bash "$MERGE" "$d" >/dev/null 2>&1; then fail "agent-instructions/3" "reversed markers must be refused"; else pass "agent-instructions/3" "reversed markers refused (content safety)"; fi
 assert_eq "agent-instructions/3" "reversed-marker file left untouched" "$(cat "$d/AGENTS.md")" "$rmbefore"
 # link: skip correct, block real file
-d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
-bash "$MERGE" link CLAUDE.md "$d" >/dev/null
-out="$(bash "$MERGE" link CLAUDE.md "$d")"; assert_contains "agent-instructions/5" "symlink idempotent skip" "$out" "skip"
+d="$(mktmp)"; merge_run "merge before link (create)" "$d"
+merge_run "link CLAUDE.md" link CLAUDE.md "$d"
+merge_run "link CLAUDE.md re-run (idempotent skip)" link CLAUDE.md "$d"
+assert_contains "agent-instructions/5" "symlink idempotent skip" "$MERGE_STDOUT" "skip"
 [[ -L "$d/CLAUDE.md" && "$(readlink "$d/CLAUDE.md")" == "AGENTS.md" ]] && pass "agent-instructions/5" "relative symlink to AGENTS.md" || fail "agent-instructions/5" "symlink target"
 printf 'real\n' > "$d/WARP.md"
 if bash "$MERGE" link WARP.md "$d" >/dev/null 2>&1; then fail "agent-instructions/5" "real file must not be clobbered"; else pass "agent-instructions/5" "real file blocked (R5)"; fi
@@ -100,7 +151,7 @@ if bash "$MERGE" link WARP.md "$d" >/dev/null 2>&1; then fail "agent-instruction
 # unmerge path still strips BOTH managed blocks. Discriminating — the old awk
 # marker lookup exits 127 under set -e and leaves the block intact.
 NOAWK="$(mkshim awk)"
-d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
+d="$(mktmp)"; merge_run "merge before awk-less unmerge (create)" "$d"
 printf '\n## My Team\nkeep this prose\n' >> "$d/AGENTS.md"   # user prose => not a pure stub
 PATH="$NOAWK" "$NOAWK/bash" "$MERGE" unmerge "$d" >/dev/null 2>&1
 { ! grep -qF 'vibe:instructions:start' "$d/AGENTS.md" && ! grep -qF 'vibe:active-rules:start' "$d/AGENTS.md" && grep -qF 'keep this prose' "$d/AGENTS.md"; } \
@@ -117,9 +168,9 @@ rm -rf "$NOAWK" "$d"
 # regenerated block makes the file diverge from the pristine stub, so the stub
 # short-circuit does not fire; stripping the blocks strands the title. Removing it
 # leaves only whitespace, so the vibe-created file is deleted (no orphan title).
-d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
+d="$(mktmp)"; merge_run "merge before active-rules regen (create)" "$d"
 sed 's/_No lessons recorded yet\._/- do the thing/' "$d/AGENTS.md" > "$d/AGENTS.md.n" && mv "$d/AGENTS.md.n" "$d/AGENTS.md"
-bash "$MERGE" unmerge "$d" >/dev/null 2>&1
+merge_run "unmerge (regen case)" unmerge "$d"
 [[ ! -e "$d/AGENTS.md" ]] \
   && pass "agent-instructions/3" "unmerge deletes the file when only the branded title would remain (regen case)" \
   || fail "agent-instructions/3" "unmerge deletes the file when only the branded title would remain (regen case)"
@@ -128,10 +179,10 @@ rm -rf "$d"
 # the vibe title still gets the orphaned title removed on unmerge — the strip is by
 # FIRST exact match, wherever it sits, not line 1 only. Discriminating: the old
 # head -n1 check sees the user's heading on line 1 and leaves a mid-file title.
-d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null
+d="$(mktmp)"; merge_run "merge before mid-file-title unmerge (create)" "$d"
 { printf '## Top\nkeep top\n\n'; cat "$d/AGENTS.md"; printf '\n## Footer\nkeep bottom\n'; } > "$d/AGENTS.md.n" && mv "$d/AGENTS.md.n" "$d/AGENTS.md"
 grep -qF '# AGENTS.md — vibe Engineering Guide' "$d/AGENTS.md" || fail "agent-instructions/3" "precondition: mid-file title present before unmerge"
-bash "$MERGE" unmerge "$d" >/dev/null 2>&1
+merge_run "unmerge (mid-file title)" unmerge "$d"
 { ! grep -qF 'vibe Engineering Guide' "$d/AGENTS.md" && grep -qF 'keep top' "$d/AGENTS.md" && grep -qF 'keep bottom' "$d/AGENTS.md"; } \
   && pass "agent-instructions/3" "unmerge strips a MID-FILE vibe title (prose above it), keeps user prose" \
   || fail "agent-instructions/3" "unmerge strips a MID-FILE vibe title (prose above it), keeps user prose"
@@ -141,7 +192,7 @@ rm -rf "$d"
 # Discriminating: an unconditional 'sed 1d' would eat the user's first line.
 d="$(mktmp)"
 { printf '## User Heading\nsome prose\n\n'; sed -n '/vibe:instructions:start/,/vibe:active-rules:end/p' "$TEMPLATE"; } > "$d/AGENTS.md"
-bash "$MERGE" unmerge "$d" >/dev/null 2>&1
+merge_run "unmerge (no title present)" unmerge "$d"
 { [[ "$(head -n1 "$d/AGENTS.md")" == "## User Heading" ]] && grep -qF 'some prose' "$d/AGENTS.md" \
   && ! grep -qF 'vibe:instructions:start' "$d/AGENTS.md"; } \
   && pass "agent-instructions/3" "unmerge leaves a no-title file's line 1 intact (title strip no-op)" \
@@ -156,7 +207,7 @@ echo "=== agent-instructions — repo AGENTS.md block == shipped template (parit
 REPO_AGENTS="$REPO_ROOT/AGENTS.md"
 d="$(mktmp)"; cp "$REPO_AGENTS" "$d/AGENTS.md"
 before="$(cksum < "$d/AGENTS.md")"
-bash "$MERGE" "$d" >/dev/null 2>&1
+merge_run "merge into the repo's own AGENTS.md (parity no-op)" "$d"
 after="$(cksum < "$d/AGENTS.md")"
 assert_eq "agent-instructions/2" "repo AGENTS.md block is byte-identical to the shipped template (no drift)" "$after" "$before"
 # Discriminating: drop a line from INSIDE the managed block; merge must repair it
@@ -164,7 +215,7 @@ assert_eq "agent-instructions/2" "repo AGENTS.md block is byte-identical to the 
 # moment the template gains (or loses) a line the repo block does not mirror.
 d="$(mktmp)"; sed '/^## Degrade$/d' "$REPO_AGENTS" > "$d/AGENTS.md"
 cmp -s "$d/AGENTS.md" "$REPO_AGENTS" && fail "agent-instructions/2" "precondition: corrupted block differs from pristine" || true
-bash "$MERGE" "$d" >/dev/null 2>&1
+merge_run "merge repairs a drifted repo block" "$d"
 cmp -s "$d/AGENTS.md" "$REPO_AGENTS" \
   && pass "agent-instructions/2" "merge repairs a drifted repo block back to the template (parity is enforced)" \
   || fail "agent-instructions/2" "merge repairs a drifted repo block back to the template (parity is enforced)"
@@ -242,10 +293,15 @@ SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 # install wires SessionStart to the doctrine hook.
 sscmd="$(jq -r '.hooks.SessionStart[]?.hooks[]?.command // empty' "$SB/.claude/settings.json" 2>/dev/null)"
 assert_contains "flow-legibility/5" "install wires SessionStart -> session-start-doctrine.sh" "$sscmd" "session-start-doctrine.sh"
-# the hook emits the doctrine (durable/ephemeral framing) + a cursor summary.
+# the hook emits the doctrine (durable/ephemeral framing) and NO live state:
+# SessionStart output is REPLAYED verbatim on --resume, so a cursor printed here
+# goes stale the moment the cursor moves (inject-triggers/5, R4). The
+# doctrine assertion is this negative's population floor — there is a payload,
+# and it names no state. Discriminating: before R4 this hook printed
+# "Cursor: idle." on the line after the block.
 ssout="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/session-start-doctrine.sh" </dev/null 2>/dev/null)"
 assert_contains "flow-legibility/5" "SessionStart hook emits the doctrine" "$ssout" "sessions are ephemeral"
-assert_contains "flow-legibility/5" "SessionStart hook emits a cursor summary" "$ssout" "Cursor:"
+assert_not_contains "inject-triggers/5" "SessionStart hook emits no cursor summary" "$ssout" "Cursor:"
 # doctor reports instruction coverage ok on a fresh install (block + hook wired).
 docout="$(bash "$SB/.agents/skills/vibe/scripts/doctor.sh" "$SB" 2>&1)"
 assert_contains "flow-legibility/5" "doctor reports instruction.coverage ok" "$docout" "ok   instruction.coverage"
@@ -274,14 +330,24 @@ rm -f "$SB/.agents/skills/vibe/state.json"      # idle cursor
 mkdir -p "$SB/src"; printf 'x\n' > "$SB/src/app.sh"
 inj="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" </dev/null 2>/dev/null)"
 first="$(printf '%s\n' "$inj" | head -n1)"
+# The orders are identified by a phrase ONLY they carry (inject-triggers/4 fix
+# round 1, Important). `state=idle` no longer discriminates: the level line
+# deliberately opens `state=<state>`, so an assertion on that substring passes
+# even with the orders permanently deleted — it was reading the level line and
+# reporting on the orders.
+IDLE_ORDERS="no active flow"
 assert_contains "flow-legibility/6" "inject prepends the drift nudge as line 1 (idle + src edit)" "$first" "vibe-drift:"
-assert_contains "flow-legibility/6" "inject still emits the orders after the drift line" "$inj" "state=idle"
-# clean tree -> no drift line; orders stay the first content (byte-stable path)
+assert_contains "flow-legibility/6" "inject still emits the orders after the drift line" "$inj" "$IDLE_ORDERS"
+# clean tree -> no drift line; the level line is the first content. The orders
+# are EDGE-cadence now: the turn above was the first inject after install (an
+# edge by definition), this one is a quiet turn in a cursor that has not moved,
+# so the full payload is deliberately absent.
 rm -f "$SB/src/app.sh"
 inj2="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" </dev/null 2>/dev/null)"
 first2="$(printf '%s\n' "$inj2" | head -n1)"
 assert_not_contains "flow-legibility/6" "no drift line when no src/tests change" "$inj2" "vibe-drift:"
-assert_contains "flow-legibility/6" "orders are the first line when no drift" "$first2" "state=idle"
+assert_contains "flow-legibility/6" "the cursor line is the first content when no drift" "$first2" "state=idle · transition:"
+assert_not_contains "flow-legibility/6" "the edge payload does not repeat on a settled cursor" "$inj2" "$IDLE_ORDERS"
 rm -rf "$SB"
 
 echo ""
@@ -293,13 +359,27 @@ WLOG="$SB/.agents/skills/vibe/warnings.log"
 # inject — behavioral: it emits the CURRENT cursor state's orders to stdout (the
 # model-visible stream), not a fixed string. Asserting rc=0 from a hook that
 # always exits 0 proves nothing, so pin the actual routed content instead.
+# Each state's orders are pinned by a phrase unique to THEM, never by the
+# `state=<state>` prefix the level line also carries (inject-triggers/4 fix
+# round 1, Important).
+IDLE_ORDERS="no active flow"
+IMPL_ORDERS="skill=vibe · delegate executing-plans"
 bash "$SS" idle >/dev/null
 out="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>/dev/null)"
-assert_contains "platform-adapters/1" "inject emits idle orders for an idle cursor" "$out" "state=idle"
+assert_contains "platform-adapters/1" "inject emits idle orders for an idle cursor" "$out" "$IDLE_ORDERS"
 bash "$SS" feature.impl demo >/dev/null
 out="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>/dev/null)"
-assert_contains "platform-adapters/1" "inject emits the cursor state's orders (feature.impl)" "$out" "executing-plans"
-assert_not_contains "platform-adapters/1" "inject does not emit a foreign state's orders" "$out" "state=idle"
+assert_contains "platform-adapters/1" "inject emits the cursor state's orders (feature.impl)" "$out" "$IMPL_ORDERS"
+assert_not_contains "platform-adapters/1" "inject does not emit a foreign state's orders" "$out" "$IDLE_ORDERS"
+# inject-triggers/4 — the cadence contract, end to end on a real install: the
+# orders ride the turn AFTER the cursor moves and not again, and two settled
+# turns are byte-identical (what keeps the prompt cache warm). The turn above
+# was the transition turn; these two are the settled ones.
+quiet1="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>/dev/null)"
+quiet2="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>/dev/null)"
+assert_not_contains "inject-triggers/4" "the edge payload rides the move once, not every turn" "$quiet1" "$IMPL_ORDERS"
+assert_contains "inject-triggers/4" "the cursor line still rides every turn" "$quiet1" "state=feature.impl · transition:"
+assert_eq "inject-triggers/4" "two settled turns are byte-identical" "$quiet1" "$quiet2"
 # guard: block lessons.md outside compound
 out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".spec/lessons.md"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
 assert_contains "platform-adapters/2" "guard blocks lessons.md (exit 2)" "$out" "rc=2"
@@ -356,16 +436,28 @@ printf '{"tool_name":"NotebookEdit","tool_input":{"notebook_path":"nb.ipynb"}}' 
   | PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
 assert_eq "platform-adapters/2" "guard allows a normal notebook_path without jq (exit 0)" "$rc" "0"
 rm -rf "$NOJQ_BIN"
-# gate: warn-only in a non-verify state -> exit 0, warn queued to the relay (not
-# lost to stderr). No git changes in the temp install, so predicate 3 fires.
+# gate: a non-verify state is SILENT since inject-triggers/5 (R6) deleted
+# predicate 3 — the stuck-phase nudge said what the per-turn level channel now
+# says every turn, and queued a relay line per Stop to say it. Discriminating:
+# before R6 this queued 'gate: still in feature.impl ...'.
 bash "$SS" feature.impl demo >/dev/null
 : > "$WLOG" 2>/dev/null || true
 rc=0
 printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" >/dev/null 2>&1 || rc=$?
 assert_eq "platform-adapters/3" "gate exits 0 in a non-verify state" "$rc" "0"
 grep -q '^gate:' "$WLOG" 2>/dev/null \
-  && pass "platform-adapters/3" "gate queues a warn-only smell to the relay log" \
-  || fail "platform-adapters/3" "gate queues a warn-only smell to the relay log"
+  && fail "inject-triggers/5" "gate queues no stuck-phase nudge (predicate 3 deleted)" \
+  || pass "inject-triggers/5" "gate queues no stuck-phase nudge (predicate 3 deleted)"
+# CONTROL for that negative: the gate can still reach the relay from this very
+# install. feature.verify with no feature named is the surviving warn-only path.
+bash "$SS" idle >/dev/null; bash "$SS" feature.verify >/dev/null 2>&1
+: > "$WLOG" 2>/dev/null || true
+rc=0
+printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" >/dev/null 2>&1 || rc=$?
+assert_eq "platform-adapters/3" "gate exits 0 when it cannot resolve a receipt path" "$rc" "0"
+grep -q '^gate:' "$WLOG" 2>/dev/null \
+  && pass "platform-adapters/3" "control: the gate still queues a warn-only smell to the relay log" \
+  || fail "platform-adapters/3" "control: the gate still queues a warn-only smell to the relay log"
 # flow-mvp/9 — the one promoted tooth: a *.verify state requires a fresh evidence
 # receipt. Against a real install (not a git repo -> existence-only staleness).
 bash "$SS" feature.verify demo >/dev/null
@@ -376,6 +468,69 @@ mkdir -p "$SB/.agents/skills/vibe/evidence"
 printf 'commands + observed output per unit\n' > "$SB/.agents/skills/vibe/evidence/feature-demo.md"
 out="$(printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
 assert_contains "flow-mvp/9" "gate passes feature.verify with a fresh receipt (exit 0)" "$out" "rc=0"
+
+# inject-triggers/6 — the harness must not wedge itself. In a real GIT repo the
+# staleness scan runs for real, and the inject hook's own edge-detection marker
+# (.vibe/last-inject) used to end up in `git status --porcelain` as the
+# collapsed `?? .vibe/` line, which the gate read as "changed after the receipt
+# was written" and BLOCKED — every *.verify state, on a path the human never
+# touched. Belt (install gitignores it) and braces (the scan skips vibe's own
+# runtime writes) are both exercised here, end to end, against a real install.
+SBG="$(mktmp)"
+if git -C "$SBG" init -q >/dev/null 2>&1 \
+   && git -C "$SBG" config user.email t@t >/dev/null 2>&1 \
+   && git -C "$SBG" config user.name t >/dev/null 2>&1; then
+  bash "$INSTALL" "$SBG" >/dev/null 2>&1
+  grep -qxF '.vibe/last-inject' "$SBG/.gitignore" \
+    && pass "inject-triggers/6" "install gitignores the inject edge-detection marker" \
+    || fail "inject-triggers/6" "install gitignores the inject edge-detection marker"
+  git -C "$SBG" add -A >/dev/null 2>&1; git -C "$SBG" commit -qm install >/dev/null 2>&1
+  CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.agents/skills/vibe/scripts/set-state.sh" quick.verify >/dev/null 2>&1
+  mkdir -p "$SBG/.agents/skills/vibe/evidence"
+  printf 'commands + observed output\n' > "$SBG/.agents/skills/vibe/evidence/quick.md"
+  sleep 1
+  # One inject turn — this is what writes .vibe/last-inject.
+  printf '{}' | CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.claude/hooks/user-prompt-submit-inject.sh" >/dev/null 2>&1
+  [[ -f "$SBG/.vibe/last-inject" ]] \
+    && pass "inject-triggers/6" "one inject turn writes the marker (population floor for the two checks below)" \
+    || fail "inject-triggers/6" "one inject turn writes the marker (population floor for the two checks below)"
+  assert_eq "inject-triggers/6" "the marker is invisible to git after install (belt)" \
+    "$(git -C "$SBG" status --porcelain)" ""
+  out="$(printf '{}' | CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+  assert_contains "inject-triggers/6" "gate passes quick.verify after an inject turn (fresh receipt)" "$out" "rc=0"
+  # Braces: strip the ignore line (a target installed before the marker existed)
+  # so git reports the collapsed `?? .vibe/` — the exact wedge, now excluded by
+  # the scan itself.
+  grep -vxF '.vibe/last-inject' "$SBG/.gitignore" > "$SBG/.gi" && mv "$SBG/.gi" "$SBG/.gitignore"
+  # Commit that edit: an uncommitted .gitignore is itself newer than the receipt
+  # and would block for its own, unrelated reason — leaving `?? .vibe/` as the
+  # ONLY thing the scan has to judge, which is the point of this leg.
+  git -C "$SBG" add .gitignore >/dev/null 2>&1; git -C "$SBG" commit -qm legacy >/dev/null 2>&1
+  # Asserted with the SAME argv the gate itself runs (`-uall`): the marker is one
+  # enumerated row, not the collapsed `?? .vibe/` directory a plain --porcelain
+  # would report. That enumeration is what lets the exclusion name the marker
+  # without swallowing whatever else lives under .vibe/ (fix round 1).
+  assert_eq "inject-triggers/6" "control: with the ignore line stripped git enumerates the marker itself" \
+    "$(git -C "$SBG" status --porcelain -uall)" "?? .vibe/last-inject"
+  out="$(printf '{}' | CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+  assert_contains "inject-triggers/6" "gate still passes with the marker VISIBLE to git (braces)" "$out" "rc=0"
+  # ... and an authored block beside the marker, in that same untracked
+  # directory, DOES stale the receipt: it changes what every later turn injects.
+  sleep 1; mkdir -p "$SBG/.vibe/blocks"; printf 'authored\n' > "$SBG/.vibe/blocks/team.md"
+  out="$(printf '{}' | CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+  assert_contains "inject-triggers/6" "an authored .vibe/blocks file newer than the receipt BLOCKS" "$out" "rc=2"
+  assert_contains "inject-triggers/6" "the block names the authored file, not the directory" "$out" ".vibe/blocks/team.md"
+  rm -rf "$SBG/.vibe/blocks"
+  # ... and the tooth is undamaged: a real source file touched after the receipt
+  # still blocks, from this same install, this same turn.
+  sleep 1; printf 'edited\n' > "$SBG/src.txt"
+  out="$(printf '{}' | CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+  assert_contains "inject-triggers/6" "control: a real source file newer than the receipt still BLOCKS" "$out" "rc=2"
+  assert_contains "inject-triggers/6" "the block names the real changed path, not vibe runtime state" "$out" "src.txt"
+else
+  fail "inject-triggers/6" "could not init a git repo for the receipt-staleness fixture"
+fi
+rm -rf "$SBG"
 
 # js-core/7 review round 1, Finding 1 (Important): R4 had zero regression
 # coverage — the brief's own test-first steps ("with node shimmed away, each
@@ -421,6 +576,35 @@ out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vi
 assert_eq "js-core/7" "engine-absent: guard exits 0, not a crash and not exit 2" "$out" "rc=0"
 mv "$SB/.agents/skills/vibe/engine.bak" "$SB/.agents/skills/vibe/engine"
 trap - EXIT
+
+
+# inject-triggers/6 fix round 1, Important 2 — a NODE-LESS install must still
+# receive the write rules. They are no longer restated by hand in the
+# instructions block (they render from content/policy.json), and
+# `render agents-md --write` needs node; on a hookless host AGENTS.md is the
+# only carrier there is, so a missing block would be a straight regression.
+# merge-agents.sh seeds the template's pre-rendered copy, and the template's
+# copy is byte-identical to the render (flow/tests/run.sh proves that), so the
+# same target re-installed WITH node re-renders to "no change".
+SBNN="$(mktmp)"
+PATH="$NONODE_BIN" "$NONODE_BIN/bash" "$INSTALL" "$SBNN" --only flow >/dev/null 2>&1
+grep -qxF '<!-- vibe:rules -->' "$SBNN/AGENTS.md" \
+  && pass "inject-triggers/6" "node-absent install still ships the vibe:rules block" \
+  || fail "inject-triggers/6" "node-absent install still ships the vibe:rules block"
+grep -qF 'writable only during feature.compound' "$SBNN/AGENTS.md" \
+  && pass "inject-triggers/6" "node-absent install carries the real enumerated write rules" \
+  || fail "inject-triggers/6" "node-absent install carries the real enumerated write rules"
+grep -qF 'Delegating to sub-agents' "$SBNN/AGENTS.md" \
+  && pass "inject-triggers/6" "node-absent install carries the rest of the agents-md channel too" \
+  || fail "inject-triggers/6" "node-absent install carries the rest of the agents-md channel too"
+if command -v node >/dev/null 2>&1; then
+  out="$( cd "$SBNN" && node "$SBNN/.agents/skills/vibe/engine/cli.mjs" render agents-md --write 2>&1 )"
+  assert_contains "inject-triggers/6" "re-rendering that target with node is a NO-OP (the shipped copy is the render)" \
+    "$out" "no change"
+else
+  echo "  SKIP [inject-triggers/6] re-render idempotence (node not on PATH)"
+fi
+rm -rf "$SBNN"
 
 unset CLAUDE_PROJECT_DIR
 rm -rf "$SB"
@@ -729,7 +913,14 @@ SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 bash "$SB/.agents/skills/vibe/scripts/set-state.sh" feature.impl widget >/dev/null 2>&1
 mkdir -p "$SB/.agents/skills/vibe/evidence"
 printf 'receipt: tests run\n' > "$SB/.agents/skills/vibe/evidence/feature-widget.md"
+# The inject marker is runtime state like the cursor — seeded here so the
+# --yes assertions below have a population to examine, and so the no---yes
+# leg proves preservation rather than absence.
+mkdir -p "$SB/.vibe"; printf 'feature.impl widget\n' > "$SB/.vibe/last-inject"
 bash "$INSTALL" "$SB" --uninstall >/dev/null 2>&1
+[[ -f "$SB/.vibe/last-inject" ]] \
+  && pass "inject-triggers/6" "inject marker survives uninstall without --yes" \
+  || fail "inject-triggers/6" "inject marker survives uninstall without --yes"
 if [[ -f "$SB/.agents/skills/vibe/state.json" ]] && grep -qF widget "$SB/.agents/skills/vibe/state.json"; then
   pass "install-tooling/3" "live cursor survives uninstall without --yes"
 else
@@ -748,6 +939,15 @@ if [[ -f "$SB/.gitignore" ]] && grep -qF "evidence" "$SB/.gitignore"; then
 else
   pass "flow-mvp/9" "--yes strips the evidence gitignore stanza"
 fi
+# ... including the inject marker stanza, and the marker file itself.
+if [[ -f "$SB/.gitignore" ]] && grep -qF ".vibe/last-inject" "$SB/.gitignore"; then
+  fail "inject-triggers/6" "--yes strips the inject-marker gitignore stanza"
+else
+  pass "inject-triggers/6" "--yes strips the inject-marker gitignore stanza"
+fi
+[[ ! -e "$SB/.vibe/last-inject" ]] \
+  && pass "inject-triggers/6" "--yes removes the inject marker (runtime state, like the cursor)" \
+  || fail "inject-triggers/6" "--yes removes the inject marker (runtime state, like the cursor)"
 rm -rf "$SB"
 # Reversed-marker AGENTS.md -> uninstall refuses to touch it (marker lesson regression).
 SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1

@@ -277,12 +277,24 @@ or off and adds your own:
 ```
 
 ```bash
-vibe render --list     # what each channel composes, and from where
+vibe render --list     # what each channel composes, its trigger, and from where
 vibe render --check    # lint: unknown ids, line budgets, unresolved placeholders
 vibe render agents-md --write   # re-sync the AGENTS.md rules block
 ```
 
-Full reference: [`flow/README.md` § Injection config](flow/README.md#injection-config-vibejson).
+Each channel is classed by a **trigger**, so the transcript does not pay for the
+same lines every turn: `level` fires every turn (two byte-stable lines naming the
+state and its transition command), `edge` only on the turn after the cursor moves
+(the full orders — an edge-classed channel must carry `{{orders}}`, and
+`render --check` errors when it does not), and `event` only when something
+actually happened. The **write invariants are data** too:
+[`flow/content/policy.json`](flow/content/policy.json) is read both by the guard
+that enforces them (`detect-context.sh decide`, or `vibe policy decide <path>`)
+and by the `{{invariants}}` placeholder that renders them into `AGENTS.md` — so
+what you read and what blocks you cannot disagree.
+
+Full reference: [`flow/README.md` § Injection config](flow/README.md#injection-config-vibejson)
+and [§ Write invariants](flow/README.md#write-invariants-contentpolicyjson).
 
 ## Dependencies
 
