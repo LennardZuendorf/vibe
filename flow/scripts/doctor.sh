@@ -119,7 +119,7 @@ _hook_scripts=(
   stop-gate.sh
 )
 _all_scripts_present=1
-for _hs in "${_hook_scripts[@]}"; do
+for _hs in ${_hook_scripts[@]+"${_hook_scripts[@]}"}; do
   if [[ -f "$CLAUDE_HOOKS_DIR/$_hs" ]]; then
     ok "adapter.script.$_hs" ".claude/hooks/$_hs present"
   else
@@ -130,13 +130,13 @@ done
 
 if [[ -f "$SETTINGS" ]]; then
   _unwired=()
-  for _hs in "${_hook_scripts[@]}"; do
+  for _hs in ${_hook_scripts[@]+"${_hook_scripts[@]}"}; do
     grep -qF "$_hs" "$SETTINGS" || _unwired+=("$_hs")
   done
   if [[ ${#_unwired[@]} -eq 0 ]]; then
     ok adapter.activation "all ${#_hook_scripts[@]} vibe hooks wired in .claude/settings.json"
   else
-    warn adapter.activation "hooks present but NOT wired in .claude/settings.json (issue #12 gap: ${_unwired[*]}) — re-run install.sh"
+    warn adapter.activation "hooks present but NOT wired in .claude/settings.json (issue #12 gap: ${_unwired[*]:-}) — re-run install.sh"
   fi
 else
   if [[ "$_all_scripts_present" -eq 1 ]]; then

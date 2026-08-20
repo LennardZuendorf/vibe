@@ -28,6 +28,16 @@ _find_repo_root() {
 }
 SRC_ROOT="$(_find_repo_root)" || { echo "cannot locate repo root (.spec/.git)" >&2; exit 1; }
 
+# Hermeticity: scrub the ambient CLAUDE_PROJECT_DIR before any fixture runs.
+# doctrine.sh and detect-context.sh honour it BY DESIGN (the plugin-mode
+# contract), so inheriting it points them at the developer's real repo and its
+# live cursor instead of the sandbox below. Every Claude Code session exports
+# it, which is why local runs and CI diverged: two doctrine fixtures failed for
+# anyone running the suite from an agent session while CI, which sets nothing,
+# stayed green. Fixtures that WANT the variable set it per invocation
+# (`CLAUDE_PROJECT_DIR="$projd" bash …`), so nothing here needs it inherited.
+unset CLAUDE_PROJECT_DIR
+
 # One hermetic sandbox for the whole suite. It mirrors the real flow/ so every
 # self-locating script resolves its state.json, machine, and orders INTO the
 # sandbox — the live cursor is never touched. The layout preserves the
@@ -405,6 +415,15 @@ assert_contains "flow-legibility/3" "SKILL.md carries the subagent model-tier po
 
 echo ""
 echo "=== flow-legibility/4 — doctrine block + resolver ==="
+# Hermeticity precondition for everything below. doctrine.sh (and detect-context.sh)
+# honour CLAUDE_PROJECT_DIR by design — that is the plugin-mode contract asserted a
+# few lines down. Every Claude Code session exports it, so a suite that inherits it
+# reads the DEVELOPER'S live cursor instead of the sandbox's and two fixtures fail
+# locally while CI, which sets nothing, stays green. (Pre-existing since 8c97eff:
+# `CLAUDE_PROJECT_DIR=/home/user/vibe bash flow/tests/run.sh` -> 226 passed, 2 failed.)
+# The suite scrubs it at the top and every fixture that WANTS it sets it per-call.
+assert_eq "flow-legibility/4" "suite is hermetic: no ambient CLAUDE_PROJECT_DIR reaches the fixtures" \
+  "${CLAUDE_PROJECT_DIR-<unset>}" "<unset>"
 rm -f "$STATE"
 doc="$(bash "$SCRIPTS/doctrine.sh")"
 assert_contains "flow-legibility/4" "doctrine names the two human gates" "$doc" "plan → impl, and verify → ship"
@@ -1081,6 +1100,559 @@ for f in "$SRC_ROOT"/flow/*.md; do
   fi
 done
 assert_eq "install-agnostic-paths" "flow phase files reference the validator portably" "$flow_validator_bad" "0"
+
+echo ""
+echo "=== js-core/8 — tests/run.sh dispatches sub-suites on ITS OWN interpreter ==="
+# The macOS CI leg exists to run everything under stock /bin/bash 3.2. That is
+# only true if the aggregator hands its OWN interpreter down: dispatching through
+# a PATH-resolved `bash` lets a Homebrew bash 5 on the runner silently execute
+# the three bash suites (and every nested `bash script` inside them), so a
+# bash-3.2 regression stays invisible on the one leg built to catch it.
+#
+# The probe is a miniature repo whose four suite scripts are stubs, run with a
+# DECOY `bash` earlier on PATH than the real one. The decoy is a working shell —
+# it just announces itself before exec'ing the real binary — so the tree keeps
+# running either way; the only signal is whether its marker appears.
+AGG_INTERP="${BASH:-$(command -v bash)}"
+PROBE="$(mktemp -d)"
+mkdir -p "$PROBE/.spec" "$PROBE/tests" "$PROBE/spec/tests" "$PROBE/flow/tests/adapters" \
+         "$PROBE/flow/engine/tests" "$PROBE/decoy" "$PROBE/realbin"
+# Invoke through a symlink alias of the same binary: the PATH-resolved `bash`
+# and the aggregator's own $BASH then differ as STRINGS while staying the same
+# shell, so the assertion discriminates on any machine — no second bash needed.
+ALIAS="$PROBE/realbin/bash"
+ln -s "$AGG_INTERP" "$ALIAS"
+cp "$SRC_ROOT/tests/run.sh" "$PROBE/tests/run.sh"
+for s in spec/tests/run.sh flow/tests/run.sh flow/tests/adapters/run.sh; do
+  # The stub's own body is data, not code to expand here — $BASH must reach the
+  # file literally so the STUB reports which shell executed it.
+  # shellcheck disable=SC2016
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'echo "DISPATCHED-ON=$BASH"'
+    # nested invocation: the suites run install.sh / the hooks this way ~200x
+    echo 'bash -c ":"'
+  } > "$PROBE/$s"
+  chmod +x "$PROBE/$s"
+done
+printf 'process.stdout.write("stub-engine\\n");\n' > "$PROBE/flow/engine/tests/run.mjs"
+{
+  echo '#!/bin/sh'
+  echo 'echo "DECOY-BASH-USED" >&2'
+  echo "exec $AGG_INTERP \"\$@\""
+} > "$PROBE/decoy/bash"
+chmod +x "$PROBE/decoy/bash"
+probe_out="$(PATH="$PROBE/decoy:$PATH" "$ALIAS" "$PROBE/tests/run.sh" 2>&1 || true)"
+assert_not_contains "js-core/8" "no suite (or nested call) resolves bash through PATH" "$probe_out" "DECOY-BASH-USED"
+probe_dispatched="$(printf '%s\n' "$probe_out" | grep -c "DISPATCHED-ON=$ALIAS" || true)"
+assert_eq "js-core/8" "all three bash suites run on the aggregator's own interpreter" "$probe_dispatched" "3"
+rm -rf "$PROBE"
+
+echo ""
+echo "=== js-core/8 — bash-3.2 portability lint (stock macOS /bin/bash) ==="
+# Stock macOS ships /bin/bash 3.2.57 (Apple froze it at the last GPLv2 release) and
+# every tracked script here runs under `set -u`. bash < 4.4 raises
+# `arr[@]: unbound variable` and ABORTS when an EMPTY array is expanded through an
+# unguarded [@] / [*] slice. That is exactly how the shipped `install.sh --uninstall`
+# died on every macOS machine: it aborted mid-way, silently skipping hook removal,
+# the CLAUDE.md/WARP.md symlink loop and the AGENTS.md unmerge. The 3.2-safe
+# spellings are ${arr[@]+"..."} in list context and ${arr[*]:-} in string context;
+# ${#arr[@]} is already safe. Five more bash-4-only constructs are banned alongside,
+# so the next one cannot land silently either.
+#
+# Patterns are written with one-character classes ([A] for A) so this file's own
+# source cannot match itself while it is scanned, and the two guarded array
+# spellings are stripped from each line before the bare-slice pattern runs (the
+# fix idiom nests a literal slice inside its own guard).
+B32_BARE_SLICE='\$\{[A-Za-z_][A-Za-z0-9_]*\[[@*]\]\}'
+B32_BANNED='(declare|local|typeset)[[:space:]]+-[a-zA-Z]*[An]|(map[f]ile|read[a]rray)[[:space:]]|glob[s]tar|&>[>]|\$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?(,,|,|\^\^|\^)\}|\$\{[A-Za-z_][A-Za-z0-9_]*@[A-Za-z]\}'
+b32_bad=0
+b32_broken=0
+B32_SCANNED=""
+B32_ROOT="$SRC_ROOT"
+# One spelling of the report label, reused by the assertions below. They match
+# `<label> <path>:<line>`, never a bare path: `sed: can't read <path>` also
+# contains the path, so a path-only substring test would pass on exactly the
+# broken-enumeration geometry it exists to catch.
+B32_LABEL="unguarded array slice under set -u:"
+b32_scan() {
+  local file="$1" label="$2" pattern="$3" hits
+  hits="$(sed -e 's/^[[:space:]]*#.*$//' \
+              -e 's/\${[A-Za-z_][A-Za-z0-9_]*\[[@*]\][-+][^}]*}//g' \
+              -e 's/\${[A-Za-z_][A-Za-z0-9_]*\[[@*]\]:[-+][^}]*}//g' "$file" \
+          | grep -nE "$pattern" || true)"
+  [[ -n "$hits" ]] || return 0
+  while IFS= read -r h; do
+    [[ -n "$h" ]] || continue
+    b32_bad=$((b32_bad + 1))
+    echo "        $label ${file#"$B32_ROOT"/}:${h%%:*}"
+  done <<< "$hits"
+}
+# Enumerate the files a lint owns, null-delimited (paths may contain spaces).
+# GLOB defaults to '*.sh'; the .mjs path-derivation lint at the bottom of this
+# file passes '*.mjs' rather than keeping its own raw `find` walk (js-core/8 final
+# review, M6) — one enumerator, so a gitignored tree cannot be honest for one lint
+# and invisible to the other.
+#
+# `git ls-files` is what makes the assertion's word "tracked" literally true: a
+# filesystem walk also picks up gitignored trees, whose offenders nobody can fix.
+# Index order is already sorted, so the report stays deterministic. Non-git install
+# targets (this tool ships into repos with no .git) degrade to a find(1) walk that
+# still asks `git check-ignore` per file whenever git can answer.
+#
+# PRECISELY what "warn-first" means here, because the comment used to overstate it
+# (js-core/8 final review, M7): it is a property of the ENUMERATION, not of the
+# verdict. When git cannot answer whether a path is ignored, that path is SCANNED
+# rather than silently skipped — the lint never narrows itself into vacuity. An
+# offender found that way still counts toward `b32_bad`, and the caller's
+# assertion still fails. So on a source tarball with no `.git` at all and a
+# leftover ignored worktree present, this lint reports offenders nobody can fix.
+# That is a known, accepted cost: the alternative — a hardcoded skip list, or a
+# fallback that degrades to silence — is exactly the vacuity fix round 3 closed,
+# and .spec/lessons.md forbids the hand-maintained list. Recorded rather than
+# papered over.
+#
+# Two spellings here are load-bearing, both from the re-review's Finding 3:
+#   * NO `--full-name`. That flag prints paths relative to the REPOSITORY root,
+#     which is not $root whenever this source is vendored into a subdirectory of
+#     a larger repo (`tools/vibe/`, where the marker search stops at
+#     `tools/vibe/.spec` but git's root is the monorepo). Joined back onto $root
+#     they became `$root/tools/vibe/…` — twelve paths that do not exist, sed
+#     could not open one of them, and the lint reported a clean tree. `git -C`
+#     already makes $root the cwd, so plain output is relative to $root.
+#   * `--cached --others --exclude-standard`, not bare `ls-files`. Bare means
+#     "in the index", so a fresh clone-and-init, or a new script not yet
+#     `git add`ed, enumerated nothing (or missed the one file that mattered)
+#     while still reporting success. --others adds untracked-but-not-ignored
+#     files; --exclude-standard keeps the gitignore honesty that made this
+#     rewrite necessary in the first place.
+b32_list_scripts() {
+  local root="$1" glob="${2:-*.sh}" rel f
+  if command -v git >/dev/null 2>&1 &&
+     git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    while IFS= read -r -d '' rel; do
+      printf '%s\0' "$root/$rel"
+    done < <(git -C "$root" ls-files -z --cached --others --exclude-standard -- "$glob" 2>/dev/null)
+    return 0
+  fi
+  while IFS= read -r -d '' f; do
+    git -C "$root" check-ignore -q -- "$f" 2>/dev/null && continue
+    printf '%s\0' "$f"
+  done < <(find "$root" -name "$glob" -not -path '*/.git/*' -print0)
+}
+# COVERAGE cross-check (js-core/8 fix round 3; re-review round 2, Important 4).
+#
+# `b32_broken` above is a CARDINALITY floor: it sees "scanned zero" and
+# "scanned nothing readable". It cannot see PARTIAL enumeration, which is the
+# geometry a real install has — one unrelated `.sh` anywhere is enough to hold
+# it at 0 while every script that mattered went unscanned. Three ways that
+# happens, none of them exotic: this source vendored under a directory the host
+# repo gitignores (`git ls-files --others --exclude-standard` skips it), this
+# source inside a git SUBMODULE (`ls-files` reports a gitlink, never contents),
+# and any geometry nobody has enumerated yet.
+#
+# So the two enumeration mechanisms already in this file — the git listing and
+# the find(1) walk — are CROSS-CHECKED instead of used as alternatives: every
+# `.sh` the walk finds must either have been scanned or be a path git itself
+# calls ignored. That subsumes the enumerated geometries and the ones nobody
+# thought of, because it never asks WHY a file was omitted, only whether the
+# omission is explained.
+#
+# `check-ignore --stdin` is one invocation for the whole list rather than one
+# per file: this walk crosses gitignored worktrees and node_modules on a
+# developer machine, and a per-file fork there is seconds, not milliseconds.
+b32_coverage_check() {
+  local root="$1" f rel walk="" ignored=""
+  while IFS= read -r -d '' f; do
+    rel="${f#"$root"/}"
+    printf '%s\n' "$B32_SCANNED" | grep -qxF "$rel" && continue
+    walk="$walk$rel"$'\n'
+  done < <(find "$root" -name '*.sh' -not -path '*/.git/*' -print0 2>/dev/null)
+  [[ -n "$walk" ]] || return 0
+  if command -v git >/dev/null 2>&1 &&
+     git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    ignored="$(printf '%s' "$walk" | git -C "$root" check-ignore --stdin 2>/dev/null || true)"
+  fi
+  while IFS= read -r rel; do
+    [[ -n "$rel" ]] || continue
+    printf '%s\n' "$ignored" | grep -qxF "$rel" && continue
+    b32_broken=$((b32_broken + 1))
+    echo "        enumeration omits a shell script the walk found, and git does not call it ignored: $rel"
+  done <<< "$walk"
+}
+# A guard that scans nothing must fail loudly, never report success. `b32_bad`
+# counts OFFENDERS and cannot distinguish "clean tree" from "no tree"; the
+# enumeration faults get their own counter so the difference is visible:
+#   * an empty file list,
+#   * a listed path that cannot be opened (the wrong-root join above), and
+#   * a file the walk found that the enumeration dropped without explanation.
+# B32_SCANNED carries the root-relative paths actually read, for the structural
+# floors the caller asserts against.
+b32_lint() {
+  local root="$1" f n=0 missing=0
+  B32_ROOT="$root"
+  B32_SCANNED=""
+  while IFS= read -r -d '' f; do
+    n=$((n + 1))
+    if [[ ! -r "$f" ]]; then
+      missing=$((missing + 1))
+      echo "        enumerated path is not readable (enumeration is rooted wrong): ${f#"$root"/}"
+      continue
+    fi
+    B32_SCANNED="$B32_SCANNED${f#"$root"/}"$'\n'
+    b32_scan "$f" "$B32_LABEL" "$B32_BARE_SLICE"
+    b32_scan "$f" "bash-4-only construct:" "$B32_BANNED"
+  done < <(b32_list_scripts "$root")
+  if [[ "$n" -eq 0 ]]; then
+    b32_broken=$((b32_broken + 1))
+    echo "        enumerated no shell scripts under $root — the lint scanned NOTHING"
+  fi
+  if [[ "$missing" -gt 0 ]]; then
+    b32_broken=$((b32_broken + 1))
+    echo "        $missing of $n enumerated paths are unreadable — the lint scanned almost NOTHING"
+  fi
+  b32_coverage_check "$root"
+}
+b32_lint "$SRC_ROOT"
+assert_eq "js-core/8" "no bash-3.2-hostile constructs in tracked or new shell scripts" "$b32_bad" "0"
+# A guard that scanned nothing must not read as a clean tree. `b32_broken` counts
+# enumeration faults (empty list, or a listed path that cannot be opened) — kept
+# on its own axis so "no offenders" and "no files" can never be confused.
+assert_eq "js-core/8" "bash-3.2 lint enumeration is sound (non-empty, every path readable)" "$b32_broken" "0"
+# SELF-COVERAGE floor (js-core/8 fix round 3; re-review round 2, Important 4).
+#
+# The strongest floor available costs one line and cannot rot: the lint must
+# have read THE VERY FILE MAKING THIS ASSERTION. It needs no list, no count and
+# no sibling file, and it goes red in exactly the geometries the cardinality
+# floor misses — this source vendored under a gitignored directory, or inside a
+# submodule, where `b32_bad` and `b32_broken` both stay 0 because the host tree
+# supplied enough unrelated scripts to look like a successful scan.
+#
+# `pwd -P` resolves the physical path, so an invocation through the shipped
+# `.agents/skills/vibe -> flow` symlink converges on the same relative path
+# SRC_ROOT is expressed in (.spec/lessons.md: self-locate by resolving, do not
+# count hops).
+b32_self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+b32_self_abs="$b32_self_dir/$(basename "${BASH_SOURCE[0]}")"
+b32_self_rel="${b32_self_abs#"$SRC_ROOT"/}"
+assert_eq "js-core/8" "bash-3.2 lint scanned the very file asserting it (self-coverage floor)" \
+  "$(printf '%s\n' "$B32_SCANNED" | grep -qxF "$b32_self_rel" && echo scanned || echo "NOT SCANNED: $b32_self_rel")" \
+  "scanned"
+
+# Structural floor rather than a pinned count: whatever bash suites tests/run.sh
+# dispatches MUST be inside the set this lint scanned. Derived from the
+# aggregator at runtime, so adding a suite widens the floor automatically and a
+# hand-maintained number cannot rot (.spec/lessons.md: hand-written counts rot
+# silently). flow/tests/run.sh — this file — is one of them, so the floor is
+# also self-referential: the lint must always find the tree it is scanning from.
+b32_floor_missing=""
+b32_floor_n=0
+b32_floor_list="$(sed -n '/^SUITE_SCRIPTS=(/,/^)/p' "$SRC_ROOT/tests/run.sh" 2>/dev/null | grep -oE '"[^"]+\.sh"' | tr -d '"')"
+while IFS= read -r b32_rel; do
+  [[ -n "$b32_rel" ]] || continue
+  b32_floor_n=$((b32_floor_n + 1))
+  printf '%s\n' "$B32_SCANNED" | grep -qxF "$b32_rel" || b32_floor_missing="$b32_floor_missing $b32_rel"
+done <<< "$b32_floor_list"
+assert_eq "js-core/8" "bash-3.2 lint scanned every bash suite the aggregator dispatches" "$b32_floor_missing" ""
+# ...and the scrape it is derived FROM must not be empty, which is how this
+# floor passed VACUOUSLY (js-core/8 fix round 3; re-review round 2, Important 4):
+# an absent $SRC_ROOT/tests/run.sh — a fresh install target has none — or a
+# SUITE_SCRIPTS array ever written without double quotes yields no entries at
+# all, the loop body never executes, and the assertion above succeeds having
+# compared nothing. This is a floor on the MECHANISM (did the scrape parse
+# anything?), deliberately not on this file's own name: coupling it to
+# "$b32_self_rel is one of the entries" would also fail for any legitimate
+# rename or copy of this suite, which is a different claim than the one being
+# made here.
+[[ "$b32_floor_n" -gt 0 ]] || echo "        SUITE_SCRIPTS scrape of $SRC_ROOT/tests/run.sh produced NO entries"
+assert_eq "js-core/8" "bash-3.2 lint suite floor scraped a non-empty aggregator list" \
+  "$([[ "$b32_floor_n" -gt 0 ]] && echo ok || echo "scraped nothing")" "ok"
+
+# Enumeration teeth, pinned in BOTH directions. A filesystem walk used to report
+# offenders inside gitignored trees — a leftover subagent worktree under
+# .claude/worktrees/ (this repo spawns them), or node_modules/. Those files are
+# pinned at another commit and nobody can fix them, so the lint went red for every
+# developer using worktrees while CI (a fresh checkout, no worktrees) stayed green:
+# a guard that cries wolf is a guard people learn to ignore. The cure must not be a
+# scan narrowed until it finds nothing, so the tracked direction is pinned too.
+# The probe's offender lives in a directory with a space to hold the null-delimited
+# enumeration honest.
+B32PROBE="$(mktemp -d)"
+mkdir -p "$B32PROBE/ignored" "$B32PROBE/tracked dir"
+printf 'ignored/\n' > "$B32PROBE/.gitignore"
+# The hostile spelling is split across two literals so this file's own source
+# cannot match the scan it is feeding, same reason as the [A]-class patterns above.
+# The slice must reach the probe file unexpanded — it is data, not an expansion.
+# shellcheck disable=SC2016
+b32_hostile='printf "%s\n" "${'"arr[@]"'}"'
+for d in ignored "tracked dir"; do
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'set -euo pipefail'
+    echo 'arr=()'
+    echo "$b32_hostile"
+  } > "$B32PROBE/$d/bad.sh"
+done
+git -C "$B32PROBE" init -q >/dev/null 2>&1 || true
+git -C "$B32PROBE" add -A >/dev/null 2>&1 || true
+b32_probe_out="$(b32_bad=0; b32_lint "$B32PROBE" 2>&1)"
+assert_not_contains "js-core/8" "bash-3.2 lint ignores gitignored trees (worktrees, node_modules)" \
+  "$b32_probe_out" "ignored/bad.sh"
+assert_contains "js-core/8" "bash-3.2 lint still flags a tracked script (path with spaces)" \
+  "$b32_probe_out" "$B32_LABEL tracked dir/bad.sh:4"
+# Install targets can have no .git at all (the stranger-eval lesson). The fallback
+# walk must still find offenders there — an enumeration that degrades to silence
+# would make the lint vacuous on every target that is not this repo.
+rm -rf "$B32PROBE/.git"
+b32_nogit_out="$(b32_bad=0; b32_lint "$B32PROBE" 2>&1)"
+assert_contains "js-core/8" "bash-3.2 lint degrades to a find walk with no .git" \
+  "$b32_nogit_out" "$B32_LABEL tracked dir/bad.sh:4"
+rm -rf "$B32PROBE"
+
+# Enumeration soundness, the OTHER direction: a guard that scans NOTHING must
+# fail loudly, never report success. Two geometries produced an empty or bogus
+# file list while `b32_bad` stayed 0 and the assertion PASSED (js-core/8 fix
+# round 1 re-review, Finding 3):
+#   A. a git work tree whose index is empty        -> `git ls-files` prints nothing
+#   B. $SRC_ROOT is a SUBDIRECTORY of a git repo   -> `--full-name` prints paths
+#      relative to the REPOSITORY root, which joined to $SRC_ROOT do not exist
+# B is reachable by vendoring this source into a monorepo (`tools/vibe/`), where
+# the marker search stops at `tools/vibe/.spec` while git's root is the monorepo.
+# Both are pinned end-to-end below with the real `install.sh` defect spelling.
+B32GEO="$(mktemp -d)"
+mkdir -p "$B32GEO/repo/vendor/vibe/scripts" "$B32GEO/repo/unrelated"
+{
+  echo '#!/usr/bin/env bash'
+  echo 'set -euo pipefail'
+  echo 'arr=()'
+  echo "$b32_hostile"
+} > "$B32GEO/repo/vendor/vibe/scripts/bad.sh"
+echo 'echo fine' > "$B32GEO/repo/unrelated/ok.sh"
+git -C "$B32GEO/repo" init -q >/dev/null 2>&1 || true
+git -C "$B32GEO/repo" add -A >/dev/null 2>&1 || true
+
+# Case B — root is a repo subdirectory. Assertions match the lint's OWN report
+# line, never a bare path: `sed: can't read <path>` on an unopenable file also
+# contains the path, so a substring test on the path alone passes on exactly the
+# broken geometry it is meant to catch.
+b32_sub_out="$(b32_bad=0; b32_broken=0; b32_lint "$B32GEO/repo/vendor/vibe" 2>&1; echo "broken=$b32_broken")"
+assert_contains "js-core/8" "bash-3.2 lint finds offenders when the root is a repo subdirectory" \
+  "$b32_sub_out" "$B32_LABEL scripts/bad.sh:4"
+assert_eq "js-core/8" "bash-3.2 lint enumerates no unreadable paths from a subdirectory" \
+  "$(printf '%s\n' "$b32_sub_out" | grep -c "can't read" || true)|${b32_sub_out##*broken=}" "0|0"
+# and it must not reach outside its own root
+assert_not_contains "js-core/8" "bash-3.2 lint from a subdirectory stays inside that subdirectory" \
+  "$b32_sub_out" "unrelated/ok.sh"
+
+# Case A — a git work tree that enumerates nothing at all. Silence here is the
+# failure: the lint must name the reason and be counted, not report success.
+B32VOID="$(mktemp -d)"
+git -C "$B32VOID" init -q >/dev/null 2>&1 || true
+b32_void_out="$(b32_bad=0; b32_broken=0; b32_lint "$B32VOID" 2>&1; echo "broken=$b32_broken")"
+assert_contains "js-core/8" "bash-3.2 lint names the reason when it enumerates nothing" \
+  "$b32_void_out" "enumerated no shell scripts"
+assert_contains "js-core/8" "bash-3.2 lint counts an empty enumeration as a failure" \
+  "$b32_void_out" "broken=1"
+rm -rf "$B32VOID"
+
+# The OTHER enumeration fault, pinned positively rather than only by its absence
+# above. Case B's assertions say "no unreadable paths" — true of the fixed
+# enumeration, and equally true of a build with the unreadable-path counter
+# deleted, so on their own they pin nothing. This drives the branch directly by
+# substituting the enumerator inside a subshell: one bogus path, nothing
+# readable, and the report must name it and raise b32_broken.
+B32UNREADABLE="$(mktemp -d)"
+b32_unreadable_out="$(
+  b32_bad=0; b32_broken=0
+  b32_list_scripts() { printf '%s\0' "$1/nowhere/rooted-wrong.sh"; }
+  b32_lint "$B32UNREADABLE" 2>&1
+  echo "broken=$b32_broken"
+)"
+assert_contains "js-core/8" "bash-3.2 lint names an enumerated path it cannot read" \
+  "$b32_unreadable_out" "not readable (enumeration is rooted wrong): nowhere/rooted-wrong.sh"
+assert_contains "js-core/8" "bash-3.2 lint counts unreadable enumerated paths as a failure" \
+  "$b32_unreadable_out" "broken=1"
+# and an unreadable path must never be counted as scanned
+assert_not_contains "js-core/8" "bash-3.2 lint does not record an unreadable path as scanned" \
+  "$b32_unreadable_out" "enumerated no shell scripts"
+rm -rf "$B32UNREADABLE"
+
+# PARTIAL enumeration, the fault the cardinality floors above cannot see
+# (js-core/8 fix round 3; re-review round 2, Important 4). All three fixtures
+# below keep `b32_bad` and the empty/unreadable counters at 0 — the tree looks
+# scanned — while the scripts that mattered were never read.
+
+# (a) The coverage cross-check, driven directly: substitute the enumerator with
+# one that returns a strict SUBSET, exactly as a narrowed `git ls-files` does.
+# Both the report line and the counter are pinned; without the counter the
+# report alone would leave the suite green.
+B32PARTIAL="$(mktemp -d)"
+mkdir -p "$B32PARTIAL/a" "$B32PARTIAL/b"
+echo 'echo fine' > "$B32PARTIAL/a/seen.sh"
+echo 'echo fine' > "$B32PARTIAL/b/unseen.sh"
+b32_partial_out="$(
+  b32_bad=0; b32_broken=0
+  b32_list_scripts() { printf '%s\0' "$1/a/seen.sh"; }
+  b32_lint "$B32PARTIAL" 2>&1
+  echo "bad=$b32_bad broken=$b32_broken"
+)"
+assert_contains "js-core/8" "bash-3.2 lint names a script the enumeration dropped without explanation" \
+  "$b32_partial_out" "enumeration omits a shell script the walk found, and git does not call it ignored: b/unseen.sh"
+assert_contains "js-core/8" "bash-3.2 lint counts a partial enumeration as a failure (offenders stay 0)" \
+  "$b32_partial_out" "bad=0 broken=1"
+rm -rf "$B32PARTIAL"
+
+# (b) A git SUBMODULE / nested repo. `git ls-files` reports it as a gitlink and
+# never its contents, so the offender inside is invisible to the enumeration
+# while the host tree supplies enough scripts to keep every count at 0.
+B32SUB="$(mktemp -d)"
+mkdir -p "$B32SUB/host/nested"
+echo 'echo fine' > "$B32SUB/host/top.sh"
+{
+  echo '#!/usr/bin/env bash'
+  echo 'set -euo pipefail'
+  echo 'arr=()'
+  echo "$b32_hostile"
+} > "$B32SUB/host/nested/bad.sh"
+git -C "$B32SUB/host" init -q >/dev/null 2>&1 || true
+git -C "$B32SUB/host/nested" init -q >/dev/null 2>&1 || true
+git -C "$B32SUB/host/nested" add -A >/dev/null 2>&1 || true
+git -C "$B32SUB/host/nested" -c user.email=t@t -c user.name=t commit -qm x >/dev/null 2>&1 || true
+git -C "$B32SUB/host" add -A >/dev/null 2>&1 || true
+b32_sub2_out="$(b32_bad=0; b32_broken=0; b32_lint "$B32SUB/host" 2>&1; echo "bad=$b32_bad broken=$b32_broken")"
+assert_contains "js-core/8" "bash-3.2 lint reports a nested-repo script its git enumeration cannot see" \
+  "$b32_sub2_out" "enumeration omits a shell script the walk found"
+assert_contains "js-core/8" "bash-3.2 lint counts the nested-repo blind spot (offenders still 0)" \
+  "$b32_sub2_out" "bad=0 broken=1"
+rm -rf "$B32SUB"
+
+# (c) This source VENDORED under a directory the host repo gitignores — the
+# geometry install.sh targets. `_find_repo_root` can stop at the HOST root, git
+# then reports the host's own scripts and none of vibe's, and every counter
+# stays 0 because one unrelated host script is enough to look like a scan. The
+# gitignore genuinely explains the omission, so the coverage check above is
+# silent here BY DESIGN — this is what the SELF-COVERAGE floor is for, and the
+# assertions below drive that floor's own expression against the fixture
+# rather than restating it in prose.
+B32VENDOR="$(mktemp -d)"
+mkdir -p "$B32VENDOR/host/.agents/skills/vibe/flow/tests"
+printf '.agents/\n' > "$B32VENDOR/host/.gitignore"
+echo 'echo fine' > "$B32VENDOR/host/unrelated.sh"
+echo 'echo fine' > "$B32VENDOR/host/.agents/skills/vibe/flow/tests/run.sh"
+git -C "$B32VENDOR/host" init -q >/dev/null 2>&1 || true
+git -C "$B32VENDOR/host" add -A >/dev/null 2>&1 || true
+b32_vendor_out="$(b32_bad=0; b32_broken=0; b32_lint "$B32VENDOR/host" >/dev/null 2>&1; echo "bad=$b32_bad broken=$b32_broken"; printf '%s' "$B32_SCANNED")"
+assert_contains "js-core/8" "vendored-under-gitignore: the cardinality floors stay silent (this is the hole)" \
+  "$b32_vendor_out" "bad=0 broken=0"
+assert_contains "js-core/8" "vendored-under-gitignore: the host's own scripts ARE scanned" \
+  "$b32_vendor_out" "unrelated.sh"
+assert_not_contains "js-core/8" "vendored-under-gitignore: none of the vendored tree is scanned" \
+  "$b32_vendor_out" ".agents/skills/vibe/flow/tests/run.sh"
+# The self-coverage floor's own expression, run against that scanned set: the
+# file asserting the lint ran is missing from it, so the floor goes red.
+b32_vendor_scanned="$(b32_bad=0; b32_broken=0; b32_lint "$B32VENDOR/host" >/dev/null 2>&1; printf '%s' "$B32_SCANNED")"
+assert_eq "js-core/8" "self-coverage floor goes red when the lint's own tree is unscanned" \
+  "$(printf '%s\n' "$b32_vendor_scanned" | grep -qxF ".agents/skills/vibe/flow/tests/run.sh" && echo scanned || echo "NOT SCANNED")" \
+  "NOT SCANNED"
+rm -rf "$B32VENDOR"
+
+# A file that exists but was never `git add`ed is still this lint's business —
+# "tracked" must not silently narrow to "staged". Same tree as Case A, one
+# uncommitted, unstaged offender.
+B32NEW="$(mktemp -d)"
+git -C "$B32NEW" init -q >/dev/null 2>&1 || true
+{
+  echo '#!/usr/bin/env bash'
+  echo 'set -euo pipefail'
+  echo 'arr=()'
+  echo "$b32_hostile"
+} > "$B32NEW/fresh.sh"
+b32_new_out="$(b32_bad=0; b32_broken=0; b32_lint "$B32NEW" 2>&1)"
+assert_contains "js-core/8" "bash-3.2 lint flags an unstaged new script (tracked != staged)" \
+  "$b32_new_out" "$B32_LABEL fresh.sh:4"
+rm -rf "$B32NEW"
+
+# End-to-end: the real `install.sh:99` defect spelling must be caught in EVERY
+# invocation geometry, not just the one the repo happens to have. Same offender
+# file, four roots: repo root, repo subdirectory, empty-index tree, no .git.
+b32_e2e_modes=0
+b32_e2e_caught=0
+b32_e2e_check() {
+  b32_e2e_modes=$((b32_e2e_modes + 1))
+  case "$1" in *"$B32_LABEL $2:4"*) b32_e2e_caught=$((b32_e2e_caught + 1)) ;; esac
+}
+b32_e2e_check "$(b32_bad=0; b32_broken=0; b32_lint "$B32GEO/repo" 2>&1)" "vendor/vibe/scripts/bad.sh"
+b32_e2e_check "$(b32_bad=0; b32_broken=0; b32_lint "$B32GEO/repo/vendor/vibe" 2>&1)" "scripts/bad.sh"
+git -C "$B32GEO/repo" rm -r --cached -q . >/dev/null 2>&1 || true
+b32_e2e_check "$(b32_bad=0; b32_broken=0; b32_lint "$B32GEO/repo" 2>&1)" "vendor/vibe/scripts/bad.sh"
+rm -rf "$B32GEO/repo/.git"
+b32_e2e_check "$(b32_bad=0; b32_broken=0; b32_lint "$B32GEO/repo" 2>&1)" "vendor/vibe/scripts/bad.sh"
+assert_eq "js-core/8" "bash-3.2 lint catches the install.sh defect in every invocation geometry" \
+  "$b32_e2e_caught" "$b32_e2e_modes"
+rm -rf "$B32GEO"
+
+echo ""
+echo "=== js-core/8 — every .mjs derives its own path via fileURLToPath ==="
+# `new URL(import.meta.url).pathname` keeps percent-encoding, so a checkout under
+# `…/with space/vibe` yields `…/with%20space/…` and the module crashes at import.
+# The sweep to fileURLToPath is complete and mutation-proved load-bearing; this
+# grep is what stops a reintroduction, together with CI's spaced-path leg.
+#
+# Enumeration is b32_list_scripts with a '*.mjs' glob, NOT a raw `find` walk
+# (js-core/8 final review, M6). The sibling bash-3.2 lint was rewritten onto
+# `git ls-files --cached --others --exclude-standard` (with a `check-ignore`
+# fallback) precisely because a filesystem walk reports offenders inside
+# gitignored trees that nobody can fix — this repo spawns subagent worktrees
+# under .claude/worktrees/, and a `flow/node_modules/` would trip it identically.
+# Two enumerators meant one lint was honest about gitignore and the other was not.
+url_pathname_bad=0
+url_scanned=0
+url_scanned_list=""
+while IFS= read -r -d '' f; do
+  url_scanned=$((url_scanned + 1))
+  url_scanned_list="$url_scanned_list${f#"$SRC_ROOT"/}"$'\n'
+  if grep -qE 'new URL\(import\.meta\.url\)' "$f"; then
+    url_pathname_bad=$((url_pathname_bad + 1)); echo "        offender: ${f#"$SRC_ROOT"/}"
+  fi
+done < <(b32_list_scripts "$SRC_ROOT/flow" '*.mjs')
+assert_eq "js-core/8" "no .mjs re-derives its path from new URL(import.meta.url)" "$url_pathname_bad" "0"
+# Same "scanned nothing" reasoning as the bash lint above (js-core/8 fix round 1
+# re-review, Finding 3), but asserted against the SCANNED SET rather than
+# alongside it. The previous spelling was `url_scanned -gt 0 && -f .../cli.mjs`:
+# the walk is `find "$SRC_ROOT/flow" -name '*.mjs'`, so whenever cli.mjs exists
+# the walk is non-empty BY CONSTRUCTION and the two conditions could not
+# disagree — a tautology presented as a floor (re-review round 2, Minor 3). This
+# asserts what it always read as: the engine's entry point was actually READ.
+[[ "$url_scanned" -gt 0 ]] || echo "        .mjs lint enumerated no files under $SRC_ROOT/flow"
+assert_eq "js-core/8" ".mjs path-derivation lint actually read the engine entry point" \
+  "$(printf '%s\n' "$url_scanned_list" | grep -qxF "flow/engine/cli.mjs" && echo ok || echo "flow/engine/cli.mjs was not in the scanned set")" \
+  "ok"
+# Enumeration teeth in BOTH directions, same shape the bash lint's own probe uses
+# (js-core/8 final review, M6). Without this the switch off `find` is an
+# unverified claim: a pathspec that silently matched nothing would leave the
+# scanned set empty and only the self-coverage floor above would notice, and only
+# for one file.
+MJSPROBE="$(mktemp -d)"
+mkdir -p "$MJSPROBE/ignored" "$MJSPROBE/tracked dir/nested"
+printf 'ignored/\n' > "$MJSPROBE/.gitignore"
+for d in ignored "tracked dir/nested"; do
+  echo 'const p = new URL(import.meta.url).pathname;' > "$MJSPROBE/$d/probe.mjs"
+done
+git -C "$MJSPROBE" init -q >/dev/null 2>&1 || true
+git -C "$MJSPROBE" add -A >/dev/null 2>&1 || true
+mjs_probe_list=""
+while IFS= read -r -d '' f; do mjs_probe_list="$mjs_probe_list${f#"$MJSPROBE"/}"$'\n'; done < <(b32_list_scripts "$MJSPROBE" '*.mjs')
+assert_eq "js-core/8" ".mjs enumeration finds a NESTED tracked file (pathspec is recursive)" \
+  "$(printf '%s\n' "$mjs_probe_list" | grep -qxF "tracked dir/nested/probe.mjs" && echo found || echo "MISSED")" "found"
+assert_eq "js-core/8" ".mjs enumeration skips gitignored trees (worktrees, node_modules)" \
+  "$(printf '%s\n' "$mjs_probe_list" | grep -qxF "ignored/probe.mjs" && echo "LEAKED" || echo skipped)" "skipped"
+# Install targets can have no .git at all: the fallback walk must still find it.
+rm -rf "$MJSPROBE/.git"
+mjs_nogit_list=""
+while IFS= read -r -d '' f; do mjs_nogit_list="$mjs_nogit_list${f#"$MJSPROBE"/}"$'\n'; done < <(b32_list_scripts "$MJSPROBE" '*.mjs')
+assert_eq "js-core/8" ".mjs enumeration degrades to a find walk with no .git" \
+  "$(printf '%s\n' "$mjs_nogit_list" | grep -qxF "tracked dir/nested/probe.mjs" && echo found || echo "MISSED")" "found"
+rm -rf "$MJSPROBE"
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

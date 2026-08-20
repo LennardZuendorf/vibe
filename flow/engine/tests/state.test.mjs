@@ -19,11 +19,12 @@
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test, assert, assertEqual, assertMatch, makeSandbox, runCommand } from './run.mjs';
 import { runSet, runGet } from '../commands/state.mjs';
 import { readCursor } from '../cursor.mjs';
 
-const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..', '..');
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const ORACLE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'set-state.sh');
 
 // ---------------------------------------------------------------------------
@@ -267,6 +268,20 @@ test('adversarial: corrupt (unparseable) cursor recovers on both sides — write
     assertEqual(engineCursor.flow, 'feature');
     assertEqual(oracleCursor.phase, 'impl');
     assertEqual(engineCursor.phase, 'impl');
+
+    // js-core/8: upgraded from field-by-field assertions (above, kept as
+    // named-failure documentation) to full normalized byte parity — the
+    // same comparison the FIXTURES matrix above already applies to every
+    // well-formed transition, now covering the recovery path too so a
+    // regression in key order/indent/trailing-newline on this specific
+    // path cannot slip through just because the individual fields matched.
+    const oracleBytes = readFileSync(oracle.cursorPath, 'utf8');
+    const engineBytes = readFileSync(engine.cursorPath, 'utf8');
+    assertEqual(
+      normalizeCursorBytes(engineBytes),
+      normalizeCursorBytes(oracleBytes),
+      `recovered cursor bytes diverge from the oracle\noracle:\n${oracleBytes}\nengine:\n${engineBytes}`,
+    );
   } finally {
     oracle.cleanup();
     engine.cleanup();

@@ -105,8 +105,9 @@ test('extractBlock: a duplicated id returns the first block cleanly (deliberate 
 test('extractBlock: pulls a real, non-trivial block out of flow/SKILL.md', async () => {
   const { readFileSync } = await import('node:fs');
   const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
   const skillMd = readFileSync(
-    path.join(path.dirname(new URL(import.meta.url).pathname), '..', '..', 'SKILL.md'),
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'SKILL.md'),
     'utf8',
   );
   const block = extractBlock(skillMd, 'vibe:doctrine');

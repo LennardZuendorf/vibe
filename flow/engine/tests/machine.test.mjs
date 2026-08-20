@@ -3,10 +3,11 @@
 import { mkdtempSync, copyFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test, assert, assertEqual, makeSandbox } from './run.mjs';
 import { loadMachine, stateOf } from '../machine.mjs';
 
-const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..', '..');
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 test('loadMachine: returns the contract shape from the real state-machine.json', () => {
   const sandbox = makeSandbox();

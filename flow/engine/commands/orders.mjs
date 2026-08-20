@@ -76,9 +76,20 @@ function cursorStateAndFeature(vibeDir) {
 // `-r` prints a raw string as-is; anything else (numbers, booleans,
 // objects, arrays) prints as normal jq JSON output, which for non-scalars
 // is PRETTY (2-space indent) by default, not compact — reproduced with
-// `JSON.stringify(value, null, 2)`. Reachable only via a hand-edited
-// cursor (readCursor/writeCursor never produce a non-string/non-null
-// feature), but a real divergence once it is.
+// `JSON.stringify(value, null, 2)`.
+//
+// SCOPE — what this does NOT reproduce (js-core/5 re-review; the earlier
+// claim of exact jq reproduction was an overclaim). It reproduces jq's `//`
+// truthiness and its 2-space pretty-print, not the oracle's full capture
+// pipeline. JSON.stringify RE-SERIALIZES numbers, so `1.0` prints as `1`,
+// `1e2` as `100`, `-0` as `0`, and integers beyond 2^53 lose precision, where
+// jq's own number handling differs; integer-like OBJECT KEYS are reordered to
+// the front by JS property ordering, where jq preserves document order; and a
+// string `feature` ending in newlines keeps them here, where bash `$(...)`
+// would strip them. All of these are pre-existing or improved relative to the
+// pre-fix behaviour, and all are reachable only via a hand-edited cursor
+// (readCursor/writeCursor never produce a non-string/non-null feature) — but
+// they are divergences, not reproductions, and should be named as such.
 function jqAltRaw(value) {
   if (value === null || value === undefined || value === false) return '';
   return typeof value === 'string' ? value : JSON.stringify(value, null, 2);

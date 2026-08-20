@@ -33,7 +33,6 @@
 // PATH via a symlink farm, never hand-copied).
 
 import {
-  mkdtempSync,
   mkdirSync,
   writeFileSync,
   readFileSync,
@@ -44,12 +43,12 @@ import {
   chmodSync,
   cpSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { test, assert, assertEqual, assertMatch, runCommand, skip } from './run.mjs';
+import { fileURLToPath } from 'node:url';
+import { test, assert, assertEqual, assertMatch, runCommand, skip, mkTempRoot } from './run.mjs';
 import { runDoctor } from '../commands/doctor.mjs';
 
-const REPO_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..', '..');
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const ORACLE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'doctor.sh');
 const VALIDATE_STATE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'validate-state.sh');
 const REAL_MACHINE = readFileSync(path.join(REPO_ROOT, 'flow', 'state-machine.json'), 'utf8');
@@ -81,7 +80,7 @@ function noJqPath() {
     cachedNoJqPath = process.env.PATH ?? '';
     return cachedNoJqPath;
   }
-  const shimDir = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-nojq-bin-'));
+  const shimDir = mkTempRoot('vibe-doctor-nojq-bin-');
   const dirs = (process.env.PATH ?? '').split(':').filter(Boolean);
   for (const dir of dirs) {
     let entries;
@@ -110,7 +109,7 @@ function noJqPath() {
 // ---------------------------------------------------------------------------
 
 function makeBaseSandbox() {
-  const dir = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-test-'));
+  const dir = mkTempRoot('vibe-doctor-test-');
   mkdirSync(path.join(dir, '.spec'), { recursive: true }); // marker for find_root()
 
   const scriptsDir = path.join(dir, 'flow', 'scripts');
@@ -214,7 +213,7 @@ function makeHealthySandbox() {
 }
 
 function makeHomeFixture({ skills = [], plugins = [] } = {}) {
-  const home = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-home-'));
+  const home = mkTempRoot('vibe-doctor-home-');
   for (const name of skills) {
     mkdirSync(path.join(home, '.claude', 'skills', name), { recursive: true });
   }
@@ -298,7 +297,7 @@ for (const mode of ['realdir', 'symlink', 'broken-symlink', 'absent']) {
 }
 
 test('parity: core.vibe absent — cascades to machine/cursor/deps all reporting missing, never throws', () => {
-  const dir = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-novibe-'));
+  const dir = mkTempRoot('vibe-doctor-novibe-');
   mkdirSync(path.join(dir, '.spec'), { recursive: true });
   const scriptsDir = path.join(dir, 'flow', 'scripts');
   mkdirSync(scriptsDir, { recursive: true });
@@ -642,7 +641,7 @@ test('parity: instruction.coverage — SessionStart wired only (no doctrine bloc
 
 test('parity: instruction.coverage — per-user plugin only, discovered via a case-insensitive nested plugin.json', () => {
   const sandbox = makeHealthySandbox();
-  const home = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-home-plugin-'));
+  const home = mkTempRoot('vibe-doctor-home-plugin-');
   try {
     addSkillMd(sandbox, '# vibe skill\n\nno doctrine marker here\n');
     rmSync(path.join(sandbox.dir, '.claude'), { recursive: true, force: true });
@@ -662,7 +661,7 @@ test('parity: instruction.coverage — per-user plugin only, discovered via a ca
 
 test('parity: instruction.coverage — all three carriers combine in the listed order', () => {
   const sandbox = makeHealthySandbox();
-  const home = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-home-allcarriers-'));
+  const home = mkTempRoot('vibe-doctor-home-allcarriers-');
   try {
     const pluginDir = path.join(home, '.claude', 'plugins', 'vibe-plugin');
     mkdirSync(pluginDir, { recursive: true });
@@ -688,7 +687,7 @@ test('parity: instruction.coverage — all three carriers combine in the listed 
 // to 4 (or any off-by-one) fails one of this pair.
 test('parity: instruction.coverage — plugin.json exactly at the maxdepth-6 boundary is found', () => {
   const sandbox = makeHealthySandbox();
-  const home = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-home-plugin-depth6-'));
+  const home = mkTempRoot('vibe-doctor-home-plugin-depth6-');
   try {
     addSkillMd(sandbox, '# vibe skill\n\nno doctrine marker here\n');
     rmSync(path.join(sandbox.dir, '.claude'), { recursive: true, force: true });
@@ -710,7 +709,7 @@ test('parity: instruction.coverage — plugin.json exactly at the maxdepth-6 bou
 
 test('parity: instruction.coverage — plugin.json one level past maxdepth 6 is NOT found', () => {
   const sandbox = makeHealthySandbox();
-  const home = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-home-plugin-depth7-'));
+  const home = mkTempRoot('vibe-doctor-home-plugin-depth7-');
   try {
     addSkillMd(sandbox, '# vibe skill\n\nno doctrine marker here\n');
     rmSync(path.join(sandbox.dir, '.claude'), { recursive: true, force: true });
@@ -735,8 +734,8 @@ test('parity: instruction.coverage — plugin.json one level past maxdepth 6 is 
 // find matches through the symlink.
 test('parity: instruction.coverage — a symlinked $HOME/.claude/plugins is never descended into', () => {
   const sandbox = makeHealthySandbox();
-  const home = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-home-pluginsymlink-'));
-  const realPlugins = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-realplugins-'));
+  const home = mkTempRoot('vibe-doctor-home-pluginsymlink-');
+  const realPlugins = mkTempRoot('vibe-doctor-realplugins-');
   try {
     addSkillMd(sandbox, '# vibe skill\n\nno doctrine marker here\n');
     rmSync(path.join(sandbox.dir, '.claude'), { recursive: true, force: true });
@@ -760,8 +759,8 @@ test('parity: instruction.coverage — a symlinked $HOME/.claude/plugins is neve
 test('parity: deps — a dependency reachable only through a symlinked $HOME/.claude/plugins is NOT found', () => {
   if (!JQ_PRESENT) skip('requires jq on PATH');
   const sandbox = makeHealthySandbox();
-  const home = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-home-depsymlink-'));
-  const realPlugins = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-realplugins-deps-'));
+  const home = mkTempRoot('vibe-doctor-home-depsymlink-');
+  const realPlugins = mkTempRoot('vibe-doctor-realplugins-deps-');
   try {
     mkdirSync(path.join(realPlugins, 'superpowers'), { recursive: true });
     mkdirSync(path.join(home, '.claude'), { recursive: true });
@@ -1043,7 +1042,7 @@ test('runDoctor never throws: everything malformed at once (kitchen sink), still
 // ---------------------------------------------------------------------------
 
 test('CLI: `vibe doctor` on a fresh non-git install-layout fixture exits 0 and reports the install', () => {
-  const installRoot = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-cli-fresh-'));
+  const installRoot = mkTempRoot('vibe-doctor-cli-fresh-');
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
@@ -1057,7 +1056,7 @@ test('CLI: `vibe doctor` on a fresh non-git install-layout fixture exits 0 and r
   // .agents/skills/spec — the "stranger eval" shape: absence must degrade
   // to warns/idle-ok, never a crash.
 
-  const unrelatedCwd = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-cli-fresh-cwd-'));
+  const unrelatedCwd = mkTempRoot('vibe-doctor-cli-fresh-cwd-');
   const prevEnv = process.env.CLAUDE_PROJECT_DIR;
   delete process.env.CLAUDE_PROJECT_DIR;
 
@@ -1104,7 +1103,7 @@ test('CLI: `vibe doctor` with CLAUDE_PROJECT_DIR set to this repo matches the re
 // inconsistent report. Pinned here so a regression back to bare
 // resolveRoot(opts) fails loudly.
 test('CLI: a vendored install ignores a mismatched CLAUDE_PROJECT_DIR for the root-based report lines', () => {
-  const installRoot = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-cli-vendored-'));
+  const installRoot = mkTempRoot('vibe-doctor-cli-vendored-');
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
@@ -1116,8 +1115,8 @@ test('CLI: a vendored install ignores a mismatched CLAUDE_PROJECT_DIR for the ro
   copyFileSync(path.join(REPO_ROOT, 'flow', 'state-machine.json'), path.join(vibeDir, 'state-machine.json'));
   mkdirSync(path.join(installRoot, '.agents', 'skills', 'spec'), { recursive: true });
 
-  const otherProject = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-cli-otherproject-'));
-  const unrelatedCwd = mkdtempSync(path.join(tmpdir(), 'vibe-doctor-cli-vendored-cwd-'));
+  const otherProject = mkTempRoot('vibe-doctor-cli-otherproject-');
+  const unrelatedCwd = mkTempRoot('vibe-doctor-cli-vendored-cwd-');
   const prevEnv = process.env.CLAUDE_PROJECT_DIR;
 
   try {

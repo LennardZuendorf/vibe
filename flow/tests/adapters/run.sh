@@ -37,7 +37,11 @@ fail() { echo "  FAIL [$1] $2"; FAIL=$((FAIL + 1)); }
 assert_contains()     { if [[ "$3" == *"$4"* ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        want contains: $4"; echo "        got: $3"; fi; }
 assert_not_contains() { if [[ "$3" != *"$4"* ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        want NOT contains: $4"; fi; }
 assert_eq()           { if [[ "$3" == "$4" ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        want: $4"; echo "        got: $3"; fi; }
-mktmp() { mktemp -d "${TMPDIR:-/tmp}/vibe-adapt.XXXXXX"; }
+# macOS sets $TMPDIR WITH a trailing slash, so the naive template yields a
+# literal `…/T//vibe-adapt.XXXXXX` that BSD mktemp hands back verbatim — while
+# install.sh normalizes its target through `cd … && pwd`, which collapses the
+# `//`. Same directory, different string, two spurious failures. Strip it once.
+mktmp() { local t="${TMPDIR:-/tmp}"; mktemp -d "${t%/}/vibe-adapt.XXXXXX"; }
 # mkshim TOOL... — a PATH dir symlinking a broad toolset MINUS the named tools, to
 # exercise graceful-degrade when an optional executor (jq / awk) is unavailable on
 # a target. Prints the dir path.
@@ -395,6 +399,18 @@ assert_eq "js-core/7" "node-absent: guard degrades to exit 0, NEVER inverts a bl
 # a moved/broken symlink) must degrade the same way, not crash with a raw
 # Node MODULE_NOT_FOUND stack trace. Move the engine aside, not delete —
 # restore it immediately after so the rest of the suite is unaffected.
+#
+# js-core/8: trap-protected. Without this, a future assertion helper that
+# hard-exits (or a stray `set -e` creeping into this section) could abort
+# the script between the mv-aside and the mv-back below, leaving $SB
+# permanently engine-less for any LATER section that reuses this trick —
+# and silently, since nothing downstream would notice engine.bak sitting
+# there instead of engine. The EXIT trap makes the restore unconditional;
+# `trap - EXIT` immediately after the normal mv-back disarms it so it never
+# double-fires (harmless either way — the second mv would just no-op via
+# `|| true` once engine.bak is already gone) and never lingers to interact
+# with any EXIT trap a later section might legitimately want to install.
+trap 'mv -f "$SB/.agents/skills/vibe/engine.bak" "$SB/.agents/skills/vibe/engine" 2>/dev/null || true' EXIT
 mv "$SB/.agents/skills/vibe/engine" "$SB/.agents/skills/vibe/engine.bak"
 for h in session-start-doctrine user-prompt-submit-inject stop-gate; do
   out="$(printf '{}' | bash "$SB/.claude/hooks/$h.sh" 2>&1; echo "rc=$?")"
@@ -404,6 +420,7 @@ out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vi
   | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
 assert_eq "js-core/7" "engine-absent: guard exits 0, not a crash and not exit 2" "$out" "rc=0"
 mv "$SB/.agents/skills/vibe/engine.bak" "$SB/.agents/skills/vibe/engine"
+trap - EXIT
 
 unset CLAUDE_PROJECT_DIR
 rm -rf "$SB"
@@ -735,6 +752,54 @@ bash "$INSTALL" "$SB" --uninstall --only spec --yes >/dev/null 2>&1
   || fail "install-tooling/3" "--uninstall --only spec removes just the spec half"
 rm -rf "$SB"
 
+echo ""
+echo "=== js-core/8 — source-only artifacts never reach an install target ==="
+# Final review, I1: the scrub named `$TARGET/.agents/skills/vibe/tests` LITERALLY,
+# so js-core's `flow/engine/tests` — one level deeper — shipped 17 files / 396K of
+# oracle-spawning test code into every user repo. That contradicted the comment
+# directly above it AND falsified the premise the R1 primitive scan's one `tests/`
+# exemption is argued on ("install.sh scrubs tests/").
+#
+# STRUCTURAL, deliberately not a list of the two directory names that exist today:
+# any file under any directory named `tests`, and any file NAMED like a test,
+# anywhere in the target, is a leak. A third co-located suite would be caught
+# without editing this block.
+SBt="$(mktmp)"; bash "$INSTALL" "$SBt" >/dev/null 2>&1
+# Precondition, so an empty `find` below can never read as a vacuous pass: the
+# engine really is in the target, i.e. there was something to leak FROM.
+[[ -f "$SBt/.agents/skills/vibe/engine/cli.mjs" ]] \
+  && pass "js-core/8" "precondition: the install target really carries the engine" \
+  || fail "js-core/8" "precondition: the install target really carries the engine"
+leak_dirs="$(cd "$SBt" && find . -type d -name tests | sed 's#^\./##' | sort | tr '\n' ' ')"
+assert_eq "js-core/8" "no directory named tests reaches an install target" "$leak_dirs" ""
+leak_files="$(cd "$SBt" && find . -type f -path '*/tests/*' | sed 's#^\./##' | sort | tr '\n' ' ')"
+assert_eq "js-core/8" "no file under a tests/ directory reaches an install target" "$leak_files" ""
+leak_named="$(cd "$SBt" && find . -type f \( -name '*.test.*' -o -name 'test_*' -o -name '*_test.*' \) | sed 's#^\./##' | sort | tr '\n' ' ')"
+assert_eq "js-core/8" "no test-NAMED file reaches an install target (wherever it sits)" "$leak_named" ""
+# The scrub is source-enumerated, so a user's own file inside the skill tree at a
+# path the SOURCE does not have must survive a re-install untouched.
+echo 'mine' > "$SBt/.agents/skills/vibe/engine/user-note.txt"
+bash "$INSTALL" "$SBt" >/dev/null 2>&1
+[[ -f "$SBt/.agents/skills/vibe/engine/user-note.txt" ]] \
+  && pass "js-core/8" "re-install's scrub never touches a user file the source does not have" \
+  || fail "js-core/8" "re-install's scrub never touches a user file the source does not have"
+rm -rf "$SBt"
+# LEGACY cleanup, the other leg of the same family: a target installed BEFORE the
+# scrub was fixed already carries engine/tests. --uninstall must still remove it —
+# remove_shipped's exclude list is top-level-only precisely so those files are
+# cleaned up rather than stranded.
+SBl="$(mktmp)"; bash "$INSTALL" "$SBl" >/dev/null 2>&1
+mkdir -p "$SBl/.agents/skills/vibe/engine/tests"
+cp "$REPO_ROOT/flow/engine/tests/json.test.mjs" "$SBl/.agents/skills/vibe/engine/tests/json.test.mjs"
+[[ -f "$SBl/.agents/skills/vibe/engine/tests/json.test.mjs" ]] \
+  && pass "js-core/8" "precondition: legacy-shaped target carries engine/tests" \
+  || fail "js-core/8" "precondition: legacy-shaped target carries engine/tests"
+bash "$INSTALL" "$SBl" --uninstall --yes >/dev/null 2>&1
+legacy_left="$(cd "$SBl" && find . -type f -path '*/tests/*' 2>/dev/null | sed 's#^\./##' | sort | tr '\n' ' ')"
+assert_eq "js-core/8" "--uninstall cleans up a legacy target's shipped engine/tests" "$legacy_left" ""
+rm -rf "$SBl"
+
+echo ""
 echo "=== install.sh — single-command modes ==="
 # --help renders the new two-mode usage (the help prints the leading comment block).
 assert_contains "install-modes" "--help documents the two modes" "$(bash "$INSTALL" --help 2>&1)" "One command, two modes"

@@ -33,7 +33,7 @@ fi
 UNCLOSED=0
 results=()
 
-for f in "${target_files[@]}"; do
+for f in ${target_files[@]+"${target_files[@]}"}; do
   [[ -f "$f" ]] || continue
   feat="$(basename "$(dirname "$f")")"
   lineno=0
@@ -78,7 +78,7 @@ case "$FORMAT" in
   json)
     printf '['
     first=1
-    for r in "${results[@]}"; do
+    for r in ${results[@]+"${results[@]}"}; do
       IFS='|' read -r feat file start end preview <<< "$r"
       [[ $first -eq 0 ]] && printf ','
       printf '{"feature":"%s","file":"%s","start":%s,"end":%s,"preview":"%s"}' \
@@ -88,7 +88,7 @@ case "$FORMAT" in
     printf ']\n'
     ;;
   plain)
-    for r in "${results[@]}"; do
+    for r in ${results[@]+"${results[@]}"}; do
       IFS='|' read -r feat file start end preview <<< "$r"
       echo "${file}:${start}-${end}: ${preview}"
     done
@@ -96,7 +96,7 @@ case "$FORMAT" in
   *)
     printf '%-25s %-45s %-12s %s\n' "feature" "file" "lines" "preview"
     printf '%-25s %-45s %-12s %s\n' "-------" "----" "-----" "-------"
-    for r in "${results[@]}"; do
+    for r in ${results[@]+"${results[@]}"}; do
       IFS='|' read -r feat file start end preview <<< "$r"
       printf '%-25s %-45s %-12s %s\n' "$feat" "$file" "${start}-${end}" "${preview}"
     done
