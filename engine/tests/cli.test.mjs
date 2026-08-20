@@ -1,14 +1,9 @@
 // engine/tests/cli.test.mjs — dispatch, --help, and error-taxonomy coverage
 // for engine/cli.mjs (js-core/1).
 
-import { test, assert, assertEqual, assertIncludes, runCli } from './run.mjs';
+import { test, assert, assertEqual, assertIncludes, runCli, runCommand, makeCliWithPlaceholderCommand } from './run.mjs';
 
 const COMMANDS = ['state', 'orders', 'doctrine', 'doctor'];
-
-// Commands land one unit at a time (js-core/3-6). Each ported command drops
-// out of this list — its own *.test.mjs covers real behaviour instead. Only
-// the still-unimplemented ones should hit the "not implemented yet" path.
-const NOT_YET_IMPLEMENTED = ['doctor'];
 
 test('--help lists the four commands', () => {
   const result = runCli(['--help']);
@@ -37,10 +32,21 @@ test('unknown subcommand exits non-zero and names itself', () => {
 });
 
 test('known-but-unimplemented subcommand exits non-zero, not-implemented message', () => {
-  for (const name of NOT_YET_IMPLEMENTED) {
-    const result = runCli([name]);
-    assert(result.code !== 0, `expected '${name}' to exit non-zero before it is implemented`);
-    assertIncludes(result.stderr.toLowerCase(), 'not implemented', `stderr for '${name}' should say not implemented`);
+  // All four real commands are implemented as of js-core/6 — there is no
+  // longer a genuinely unimplemented name in cli.mjs's own COMMANDS array.
+  // Exercise the same dispatch path against a synthetic placeholder command
+  // instead (see makeCliWithPlaceholderCommand's own header).
+  const cli = makeCliWithPlaceholderCommand();
+  try {
+    const result = runCommand(process.execPath, [cli.cliPath, cli.placeholder]);
+    assert(result.code !== 0, `expected '${cli.placeholder}' to exit non-zero when its module is missing`);
+    assertIncludes(
+      result.stderr.toLowerCase(),
+      'not implemented',
+      `stderr for '${cli.placeholder}' should say not implemented`,
+    );
+  } finally {
+    cli.cleanup();
   }
 });
 

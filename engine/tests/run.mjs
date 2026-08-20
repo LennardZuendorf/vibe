@@ -19,6 +19,7 @@
 import { strict as nodeAssert } from 'node:assert';
 import {
   readdirSync,
+  readFileSync,
   mkdtempSync,
   mkdirSync,
   writeFileSync,
@@ -66,6 +67,22 @@ export function assertIncludes(haystack, needle, msg) {
   );
 }
 
+// A test calls `skip(reason)` to opt out of an unmet precondition (e.g. no
+// jq on PATH) — it must show up in the summary as a SKIP, never silently
+// count as a pass. A plain early `return` inside a passing test body is
+// indistinguishable from "ran and asserted nothing was wrong"; the CI leg
+// that strips jq from PATH needs to see how many assertions actually ran.
+export class Skipped extends Error {
+  constructor(reason = 'skipped') {
+    super(reason);
+    this.name = 'Skipped';
+  }
+}
+
+export function skip(reason) {
+  throw new Skipped(reason);
+}
+
 export async function assertThrows(fn, msg) {
   let threw = false;
   try {
@@ -100,6 +117,36 @@ export function runCommand(cmd, args = [], opts = {}) {
 // Convenience wrapper for invoking the vibe CLI under test.
 export function runCli(args = [], opts = {}) {
   return runCommand(process.execPath, [CLI_PATH, ...args], opts);
+}
+
+// Builds a throwaway copy of cli.mjs whose COMMANDS array carries one extra
+// placeholder name, alongside an empty commands/ dir for it to resolve
+// against. All four real commands (state/orders/doctrine/doctor) are
+// implemented as of js-core/6, so cli.mjs's dispatch-error paths ("module
+// genuinely missing" vs "module exists but its own import is broken") have
+// no real unimplemented command left to exercise them against — this gives
+// dispatch-error.test.mjs / cli.test.mjs a synthetic one without touching
+// the real, shipped COMMANDS array. Returns {cliPath, commandsDir,
+// placeholder, cleanup()}.
+export function makeCliWithPlaceholderCommand(placeholder = 'zzz-test-placeholder') {
+  const dir = mkdtempSync(path.join(tmpdir(), 'vibe-cli-placeholder-'));
+  const src = readFileSync(CLI_PATH, 'utf8');
+  const marker = "const COMMANDS = ['state', 'orders', 'doctrine', 'doctor'];";
+  assert(src.includes(marker), 'cli.mjs COMMANDS array literal has changed shape — update this test helper');
+  const patched = src.replace(marker, `const COMMANDS = ['state', 'orders', 'doctrine', 'doctor', '${placeholder}'];`);
+  const cliPath = path.join(dir, 'cli.mjs');
+  writeFileSync(cliPath, patched);
+  const commandsDir = path.join(dir, 'commands');
+  mkdirSync(commandsDir, { recursive: true });
+
+  let cleaned = false;
+  function cleanup() {
+    if (cleaned) return;
+    cleaned = true;
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  return { cliPath, commandsDir, placeholder, cleanup };
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +251,7 @@ async function main() {
 
   let pass = 0;
   let fail = 0;
+  let skipped = 0;
 
   for (const { file, name, fn } of selected) {
     try {
@@ -211,6 +259,11 @@ async function main() {
       pass += 1;
       console.log(`  ok    ${file} :: ${name}`);
     } catch (err) {
+      if (err instanceof Skipped) {
+        skipped += 1;
+        console.log(`  skip  ${file} :: ${name} (${err.message})`);
+        continue;
+      }
       fail += 1;
       console.log(`  FAIL  ${file} :: ${name}`);
       console.log(`        ${err && err.stack ? err.stack : err}`);
@@ -218,7 +271,7 @@ async function main() {
   }
 
   console.log('');
-  console.log(`${pass} passed, ${fail} failed, ${selected.length} total`);
+  console.log(`${pass} passed, ${fail} failed, ${skipped} skipped, ${selected.length} total`);
 
   process.exitCode = fail > 0 ? 1 : 0;
 }
