@@ -197,7 +197,9 @@ export async function assertThrows(fn, msg) {
 // ---------------------------------------------------------------------------
 
 // Spawns any command synchronously and normalizes the result shape. Never
-// throws on a non-zero exit — callers assert on `.code`.
+// throws on a non-zero exit — callers assert on `.code`. It DOES throw when the
+// command could not be run at all; see the throw below for why that is not an
+// ordinary exit.
 //
 // `opts.unsetEnv` is a list of variable names DELETED from the child's
 // environment. Not naming a variable in `opts.env` is not the same as the child
@@ -225,9 +227,30 @@ export function runCommand(cmd, args = [], opts = {}) {
     env,
     input: opts.input,
     encoding: 'utf8',
+    // Undefined leaves Node's own default in place. A caller that expects more
+    // output than that must say how much: overrunning the ceiling is an
+    // ENOBUFS `error`, which the throw below now refuses to hide behind a
+    // truncated stdout.
+    maxBuffer: opts.maxBuffer,
   });
+  // A null `status` is NOT an ordinary exit. spawnSync reports "the command
+  // never ran" (ENOENT, EACCES, a bad cwd) in `error` and leaves `status` null,
+  // and `null !== 0` — so every `assert(result.code !== 0)` in this suite would
+  // read a missing bash/git/node/jq as the failure it was hoping for and report
+  // green having exercised nothing. That is active rule 1's vacuous green.
+  // Throw instead, naming the command and its arguments so the red build says
+  // what to install. Pinned in harness.test.mjs.
+  if (result.error) {
+    throw new Error(
+      `runCommand: could not run \`${[cmd, ...args].join(' ')}\`: ${result.error.message}`,
+    );
+  }
   return {
-    code: result.status,
+    // The other null-status case: a child killed by a signal. It DID run, so it
+    // is not a spawn error, but it did not exit cleanly either — reporting the
+    // signal by name keeps it distinguishable from both a clean exit and a
+    // numeric failure, instead of collapsing into the same misleading null.
+    code: result.signal ? `signal:${result.signal}` : result.status,
     stdout: result.stdout ?? '',
     stderr: result.stderr ?? '',
     error: result.error ?? null,
@@ -359,9 +382,21 @@ export function makeHookSandbox({ cursor, includeDetect = true, gitInit = false 
   mkdirSync(path.join(dir, '.spec'), { recursive: true });
 
   if (gitInit) {
-    runCommand('git', ['init', '-q'], { cwd: dir });
-    runCommand('git', ['-C', dir, 'config', 'user.email', 't@t'], { cwd: dir });
-    runCommand('git', ['-C', dir, 'config', 'user.name', 't'], { cwd: dir });
+    // Ignoring these exit codes handed callers a sandbox that is not a
+    // repository while `gitInit: true` said it was — every git-shaped assertion
+    // against it would then be about the failure to initialise, not about the
+    // code. Surface the failure here, where it names the command that failed.
+    for (const gitArgs of [
+      ['init', '-q'],
+      ['-C', dir, 'config', 'user.email', 't@t'],
+      ['-C', dir, 'config', 'user.name', 't'],
+    ]) {
+      const r = runCommand('git', gitArgs, { cwd: dir });
+      assert(
+        r.code === 0,
+        `makeHookSandbox({gitInit:true}): \`git ${gitArgs.join(' ')}\` exited ${r.code}: ${r.stderr}`,
+      );
+    }
   }
 
   const skillsDir = path.join(dir, '.agents', 'skills');

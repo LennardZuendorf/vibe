@@ -46,8 +46,18 @@ function errMsg(err) {
 // without wrapping it in their own try/catch. Every failure path below
 // (missing/corrupt machine, corrupt cursor, a failed write) converts to a
 // returned result instead of propagating.
+//
+// "Never throws" has to survive the ARGUMENTS too, or the claim is only about
+// the happy shape: destructuring `args` threw a TypeError on null and on any
+// non-iterable before a single failure path could run, so a shim calling
+// straight through got the crash the comment promised it would not. Anything
+// that is not an array is no arguments at all, and a target that is not a
+// string is no target — which also keeps splitTarget() (string-only) off a
+// non-string. Pinned in state.test.mjs.
 export function runSet(vibeDir, args) {
-  const [target, newFeature] = args;
+  const list = Array.isArray(args) ? args : [];
+  const [rawTarget, newFeature] = list;
+  const target = typeof rawTarget === 'string' ? rawTarget : '';
 
   if (!target) {
     return {
@@ -155,7 +165,9 @@ export function runGet(vibeDir) {
 }
 
 export default async function run(argv, opts = {}) {
-  const [sub, ...rest] = argv;
+  // Same reason as runSet's: this destructuring sits OUTSIDE the try below, so
+  // a non-array argv threw past the named-error result instead of producing it.
+  const [sub, ...rest] = Array.isArray(argv) ? argv : [];
   const vibeDir = resolveVibeDir(opts);
 
   let result;

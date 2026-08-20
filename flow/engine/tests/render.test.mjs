@@ -121,6 +121,33 @@ test('render <channel>: composes to stdout; an unknown channel exits 1', () => {
   }
 });
 
+// Both spellings of help, in one case, on purpose: `--help` is the control that
+// proves the help branch is reachable at all, so a red `-h` leg is about `-h`
+// and not about the branch having moved. `-h` used to fall through to the
+// channel lookup and exit 1 with `unknown channel '-h'`, because only `--`
+// arguments were collected as flags.
+test('render: -h and --help both print usage and exit 0', () => {
+  const sb = makeRenderSandbox({ defaults: DOC_DEFAULTS });
+  try {
+    const long = runRender(sb.ctx, ['--help']);
+    assertEqual(long.code, 0, `--help: ${long.stderr}`);
+    assertIncludes(long.stdout, 'usage: vibe render');
+
+    const short = runRender(sb.ctx, ['-h']);
+    assertEqual(short.code, 0, `-h: ${short.stderr}`);
+    assertIncludes(short.stdout, 'usage: vibe render');
+    assertEqual(short.stdout, long.stdout, '-h and --help must print the same usage text');
+
+    // `-h` is the ONLY short flag that changed classification: a lone `-x` is
+    // still an ordinary positional, so this fix cannot have swallowed anyone
+    // else's argument.
+    assertEqual(runRender(sb.ctx, ['-x']).code, 1, "a non-help short argument is still looked up as a channel");
+    assertIncludes(runRender(sb.ctx, ['-x']).stderr, "unknown channel '-x'");
+  } finally {
+    sb.cleanup();
+  }
+});
+
 test('render: no channel and no flag prints usage and exits 1', () => {
   const sb = makeRenderSandbox({ defaults: DOC_DEFAULTS });
   try {

@@ -1147,6 +1147,10 @@ function makeStalenessFixture(receiptEpoch, fileEpoch) {
   const want = Math.round((fileEpoch - receiptEpoch) * 1000);
   const got = Math.round(statSync(changed).mtimeMs - statSync(receipt).mtimeMs);
   if (got !== want) {
+    // The caller's `finally` frees this sandbox, and it never receives one on
+    // this path — so the fixture frees it before unwinding, or every skipped
+    // case leaves a temp tree behind.
+    sb.cleanup();
     skip(`filesystem mtime granularity cannot express a ${want} ms delta (observed ${got} ms) — this fixture would test the runner, not the gate`);
   }
   return sb;
@@ -1274,9 +1278,16 @@ function makeRealGitFixture({ gitignore } = {}) {
   return sb;
 }
 
-// What the gate itself will see: the same argv gitPorcelain() runs.
+// What the gate itself will see: the same argv gitPorcelain() runs, under the
+// same 32 MiB ceiling. The buffer is part of "what the gate sees": at Node's
+// 1 MiB default this measurement overran on the >1 MiB fixture below and
+// reported the truncation point rather than the tree's real size — a floor that
+// could not tell a 1.1 MiB tree from a 50 MiB one.
 function realPorcelain(sb) {
-  return runCommand('git', ['-C', sb.dir, 'status', '--porcelain', '-uall'], { cwd: sb.dir }).stdout;
+  return runCommand('git', ['-C', sb.dir, 'status', '--porcelain', '-uall'], {
+    cwd: sb.dir,
+    maxBuffer: 32 * 1024 * 1024,
+  }).stdout;
 }
 
 // No injected spawnGit — the real binary, on the real repo.

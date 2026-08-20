@@ -73,8 +73,14 @@ function writeTarget(channel, root) {
 
 export function runRender(ctx, args) {
   const argv = Array.isArray(args) ? args : [];
-  const flags = new Set(argv.filter((a) => a.startsWith('--')));
-  const positional = argv.filter((a) => !a.startsWith('--'));
+  // `-h` is the one short flag this command answers to; everything else is
+  // classified by the `--` prefix exactly as before. Collecting only `--`
+  // arguments left `-h` in `positional`, which made the `flags.has('-h')` test
+  // below dead code and sent `vibe render -h` into the channel lookup to exit 1
+  // with `unknown channel '-h'`.
+  const isFlag = (a) => a.startsWith('--') || a === '-h';
+  const flags = new Set(argv.filter(isFlag));
+  const positional = argv.filter((a) => !isFlag(a));
 
   if (flags.has('--help') || flags.has('-h')) return { code: 0, stdout: `${USAGE}\n`, stderr: '' };
 

@@ -20,8 +20,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSy
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, assert, assertEqual, assertMatch, makeSandbox, runCommand } from './run.mjs';
-import { runSet, runGet } from '../commands/state.mjs';
+import { test, assert, assertEqual, assertMatch, makeSandbox, mkTempRoot, runCommand } from './run.mjs';
+import runState, { runSet, runGet } from '../commands/state.mjs';
 import { readCursor } from '../cursor.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -358,6 +358,75 @@ test('runSet: no target given is a named, non-zero error; cursor untouched', () 
     assertEqual(readFileSync(sandbox.cursorPath, 'utf8'), before);
   } finally {
     sandbox.cleanup();
+  }
+});
+
+// runSet's header promises it NEVER throws, so unit 7's hook shims may call it
+// straight through without a try/catch of their own. Destructuring `args` broke
+// that promise before any of the failure paths below it could run: a shim
+// handed a null/objecty argument list got a TypeError, not a named result.
+// Every hostile shape here must come back as the ordinary no-target error.
+test('runSet: a non-array or non-string argument list is a named error, never a throw', () => {
+  const sandbox = makeSandbox();
+  try {
+    const before = readFileSync(sandbox.cursorPath, 'utf8');
+    const hostile = [
+      ['null', null],
+      ['undefined', undefined],
+      ['a plain object', {}],
+      ['a string', 'feature.impl'],
+      ['a number', 7],
+      ['an array holding a non-string target', [123]],
+      ['an array holding an object target', [{ flow: 'feature' }]],
+    ];
+    // Floor: the loop must actually have cases, or this test asserts nothing.
+    assert(hostile.length === 7, `expected 7 hostile shapes, got ${hostile.length}`);
+    for (const [label, args] of hostile) {
+      let result;
+      try {
+        result = runSet(sandbox.flowDir, args);
+      } catch (err) {
+        assert(false, `${label}: runSet threw instead of returning a result: ${err && err.message}`);
+      }
+      assertEqual(result.code, 1, `${label}: must be a non-zero named error`);
+      assertMatch(result.stderr, /no target state given/, `${label}: and it is the no-target error`);
+    }
+    assertEqual(readFileSync(sandbox.cursorPath, 'utf8'), before, 'no hostile shape may touch the cursor');
+
+    // Control: the SAME call shape with a real target still works, so the
+    // normalization above rejects bad arguments rather than all arguments.
+    assertEqual(runSet(sandbox.flowDir, ['feature.impl', 'demo']).code, 0);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('state run(): a non-array argv is the named unknown-subcommand error, not a TypeError', async () => {
+  const bareCwd = mkTempRoot('vibe-state-argv-');
+  const prevEnv = process.env.CLAUDE_PROJECT_DIR;
+  process.env.CLAUDE_PROJECT_DIR = bareCwd;
+  const realWrite = process.stderr.write.bind(process.stderr);
+  let captured = '';
+  process.stderr.write = (chunk) => {
+    captured += chunk;
+    return true;
+  };
+  try {
+    // The destructuring sits outside run()'s own try/catch, so this used to
+    // throw past the result it is supposed to return.
+    const codes = [];
+    for (const argv of [null, undefined, {}, 'get']) {
+      codes.push(await runState(argv, { root: bareCwd }));
+    }
+    process.stderr.write = realWrite;
+    assertEqual(codes.length, 4, 'floor: all four hostile argv shapes must have been called');
+    for (const code of codes) assertEqual(code, 1, 'every hostile argv is exit 1');
+    assertMatch(captured, /unknown subcommand/);
+  } finally {
+    process.stderr.write = realWrite;
+    if (prevEnv === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = prevEnv;
+    rmSync(bareCwd, { recursive: true, force: true });
   }
 });
 
