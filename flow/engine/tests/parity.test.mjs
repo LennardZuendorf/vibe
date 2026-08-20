@@ -719,6 +719,36 @@ const FRESH_TS = new Date('2030-01-01T00:00:00Z');
 const PRED3_RE = /^vibe-gate: still in .*\(warn-only\)\n/m;
 const PRED3_LOG_RE = /^gate: still in .*\(warn-only\)\n/m;
 
+// ---------------------------------------------------------------------------
+// PLATFORM DIALECT PROBE — does the local `sed` implement GNU BRE alternation?
+//
+// The oracle's no-jq leg reads the re-entry token with
+// `s/..."stop_hook_active"...\(true\|false\).*/\1/p`. `\|` is a GNU extension:
+// BSD sed (stock macOS) reads it as a LITERAL `|`, the expression matches
+// nothing, and the oracle runs the gate on an invocation it was explicitly told
+// had already fired. See the BSD-sed KNOWN DIVERGENCE pin below for the full
+// direction and reasoning.
+//
+// Detected by CAPABILITY, never by `uname`: the property that matters is the sed
+// DIALECT, not the OS — a GNU sed on macOS (Homebrew) and a BSD sed on Linux
+// must each land on the correct branch. The probe resolves `sed` through this
+// process's PATH, which is the same binary the no-jq leg gets: mkshim() builds
+// its shim dir by symlinking `command -v sed`.
+// ---------------------------------------------------------------------------
+const SED_HAS_BRE_ALTERNATION = (() => {
+  const probe = runCommand('bash', ['-c', "printf 'zbz' | sed -n 's/.*\\(a\\|b\\).*/\\1/p'"]);
+  return probe.code === 0 && probe.stdout.trim() === 'b';
+})();
+
+// The one gate stdin shape whose re-entry token the oracle's sed leg can only
+// read on a GNU sed: a bare `true`. (`false`/`null`/absent all resolve to "not a
+// re-entry" on BOTH dialects, so they stay in the byte-for-byte comparison.)
+const REENTRY_TRUE_SHAPE = 'stop_hook_active true (boolean)';
+
+const BSD_SED_WHY =
+  "ENGINE RIGHT / ORACLE WRONG ON THIS PLATFORM: this sed has no GNU BRE alternation, so the oracle's no-jq " +
+  're-entry read (\\(true\\|false\\)) matches nothing and it runs the gate on a Stop it was told had already fired';
+
 function buildGateSandbox(fixture) {
   const sb = makeHookSandbox({ cursor: fixture.cursor, gitInit: true });
   if (fixture.absent) rmSync(sb.cursorPath, { force: true });
@@ -781,6 +811,7 @@ for (const fixture of GATE_FIXTURES) {
       const spawns = modeSpawn(mode, sb.root);
       const divergences = [];
       let pred3StrippedAtLeastOnce = false;
+      let bsdSedOracleDivergedAtLeastOnce = false;
       try {
         for (const receiptState of RECEIPT_STATES) {
           applyReceiptState(sb, receiptState);
@@ -794,6 +825,24 @@ for (const fixture of GATE_FIXTURES) {
             resetWarnLog(sb);
             const e = runGateHook(sb.root, sb.vibeDir, stdin, { spawnGit: spawns.spawnGit });
             const engineRun = { code: e.code, stdout: e.stdout, stderr: e.stderr, log: readWarnLog(sb) };
+
+            // KNOWN DIVERGENCE (PLATFORM), full statement in the pin below this
+            // loop. On a sed without GNU BRE alternation the oracle's no-jq leg
+            // cannot read a bare `true` re-entry token, so it runs the gate. NOT
+            // a blanket skip: the case still runs and the ENGINE's behaviour is
+            // still asserted, against the fail-safe contract (return early, rc 0,
+            // no output, nothing queued to the relay) instead of against a leg
+            // this platform cannot execute. If the engine ever starts blocking on
+            // `stop_hook_active: true`, these assertions go red on BSD sed
+            // exactly as the byte comparison does on GNU sed.
+            if (mode === 'no-jq' && !SED_HAS_BRE_ALTERNATION && shapeName === REENTRY_TRUE_SHAPE) {
+              assertEqual(engineRun.code, 0, `${label}: ${BSD_SED_WHY}. The engine must return early — a Stop gate that blocks its own re-invocation is a block loop`);
+              assertEqual(engineRun.stdout, '', `${label}: ${BSD_SED_WHY}. A re-entrant Stop must emit nothing on stdout`);
+              assertEqual(engineRun.stderr, '', `${label}: ${BSD_SED_WHY}. A re-entrant Stop must emit nothing on stderr`);
+              assertEqual(engineRun.log, '', `${label}: ${BSD_SED_WHY}. A re-entrant Stop must queue nothing to the warnings relay`);
+              if (compareHook(label, oracleRun, engineRun) !== null) bsdSedOracleDivergedAtLeastOnce = true;
+              continue;
+            }
 
             if (mode === 'no-jq') {
               const hadPred3 = PRED3_RE.test(engineRun.stderr);
@@ -826,6 +875,19 @@ for (const fixture of GATE_FIXTURES) {
             pred3StrippedAtLeastOnce,
             'no-jq: predicate 3 never fired in the engine for a non-idle state — the declared divergence has vanished',
           );
+          // Same anti-inertness bar for the platform carve-out: on a BSD sed
+          // every non-idle fixture has at least one receipt state where the
+          // oracle really does warn or block on a re-entrant Stop. If none of
+          // them diverged, this sed grew `\|` support (or the oracle changed)
+          // and the carve-out is now silently suppressing a real comparison.
+          if (!SED_HAS_BRE_ALTERNATION) {
+            assert(
+              bsdSedOracleDivergedAtLeastOnce,
+              `BSD-sed carve-out is INERT for ${fixture.name}: the oracle agreed with the engine on every ` +
+                `'${REENTRY_TRUE_SHAPE}' case, so it is no longer standing in for a divergence — delete the ` +
+                'carve-out and let the byte comparison run',
+            );
+          }
         }
       } finally {
         sb.cleanup();
@@ -833,6 +895,77 @@ for (const fixture of GATE_FIXTURES) {
     });
   }
 }
+
+// ---------------------------------------------------------------------------
+// KNOWN DIVERGENCE (PLATFORM) — `stop_hook_active: true` on a sed WITHOUT GNU
+// BRE alternation. Direction, stated once: THE ENGINE IS RIGHT. THE ORACLE'S
+// no-jq SED LEG IS WRONG ON THIS PLATFORM.
+//
+// The frozen oracle reads the re-entry token without jq as
+//   sed -n 's/.*"stop_hook_active"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p'
+// `\|` (alternation inside a BRE) is a GNU sed extension. BSD sed — stock on
+// macOS — treats it as a LITERAL `|`, so the expression matches nothing,
+// STOP_ACTIVE comes back empty, the oracle concludes "not a re-entry" and RUNS
+// THE GATE: warning, or exiting 2, on the one invocation whose entire purpose is
+// to not fire twice. hook.mjs parses the JSON and returns early, correctly. This
+// is what turned the macOS CI leg red while ubuntu stayed green (5 of 466).
+//
+// The engine must NEVER be "fixed" to match: returning early on
+// stop_hook_active IS the re-entry guard. Reproducing the BSD sed leg would make
+// the Stop hook block its own re-invocation — a block loop and a wedged session,
+// which is precisely the failure the STRING pins below already resolved in the
+// other direction.
+//
+// The oracle stays BYTE-FROZEN. It is a verbatim historical copy and its whole
+// evidentiary value is that it is unedited — so what this records is that the
+// historical bash hook genuinely WAS broken on a jq-less macOS, and the port
+// fixed it. Nothing user-facing is affected: the shipped
+// .claude/hooks/stop-gate.sh is a three-line `exec node` shim with no sed in it.
+//
+// Runs on BOTH dialects, with dialect-conditional expectations — never skipped:
+// the engine half of the contract is asserted everywhere, and the oracle half
+// asserts the dialect really does behave as claimed, so the pin cannot rot.
+// ---------------------------------------------------------------------------
+
+test("KNOWN DIVERGENCE (BSD sed): stop_hook_active true — the ENGINE returns early (right); the ORACLE's no-jq sed leg misses the token because \\| is GNU-only", () => {
+  const sb = buildGateSandbox({
+    name: 'quick.verify',
+    cursor: { flow: 'quick', phase: 'verify', feature: null, updated: FIXED_TS },
+  });
+  try {
+    applyReceiptState(sb, 'none'); // receipt-less: the gate BLOCKS if it ever runs
+    const stdin = '{"stop_hook_active":true}';
+    const o = runOracleScript(GATE_ORACLE, [], 'no-jq', oracleEnv(sb), { cwd: sb.root, input: stdin });
+    const e = runGateHook(sb.root, sb.vibeDir, stdin, { spawnGit: modeSpawn('no-jq', sb.root).spawnGit });
+
+    // The ENGINE's contract, asserted on every platform — this is the fail-safe
+    // behaviour and the thing that must never regress.
+    assertEqual(e.code, 0, 'the engine must return early on a re-entrant Stop — a gate that blocks its own re-invocation is a block loop');
+    assertEqual(e.stdout, '', 'a re-entrant Stop must emit nothing on stdout');
+    assertEqual(e.stderr, '', 'a re-entrant Stop must emit nothing on stderr');
+
+    // Discriminating control: SAME sandbox, re-entry field absent -> it really
+    // does block, so the exit 0 above is the guard firing and not a fixture that
+    // happens to satisfy the gate.
+    const control = runGateHook(sb.root, sb.vibeDir, '{}', { spawnGit: modeSpawn('no-jq', sb.root).spawnGit });
+    assertEqual(control.code, 2, 'control: without the re-entry field this fixture blocks');
+
+    if (SED_HAS_BRE_ALTERNATION) {
+      assertEqual(o.code, 0, "GNU sed: the oracle's sed leg DOES read the token, so both sides short-circuit and there is no divergence to pin here");
+      assertEqual(o.stderr, '', 'GNU sed: the oracle short-circuits silently, exactly like the engine');
+    } else {
+      assertEqual(
+        o.code,
+        2,
+        `BSD sed — ${BSD_SED_WHY}. The oracle falls through into the blocking tooth. If this ever reads 0, this ` +
+          'platform grew `\\|` support (or the oracle was edited) and the pin should be re-derived, not deleted silently',
+      );
+      assertMatch(o.stderr, /BLOCKED/, 'BSD sed: the oracle blocks a Stop it was explicitly told had already fired');
+    }
+  } finally {
+    sb.cleanup();
+  }
+});
 
 // ---------------------------------------------------------------------------
 // KNOWN DIVERGENCE — `stop_hook_active` as the STRING "true" (js-core/8 final
@@ -1203,7 +1336,10 @@ test('parity oracles: the differential\'s input tables have not been trimmed to 
 
   // Likewise for the stdin shapes that decide whether the gate runs at all.
   const gateShapeNames = GATE_STDIN_SHAPES.map(([n]) => n);
-  for (const required of ['empty stdin', 'unparseable stdin', 'stop_hook_active true (boolean)']) {
+  // REENTRY_TRUE_SHAPE by reference, not by re-spelling: the BSD-sed carve-out
+  // above selects its case by matching that exact name, so a rename that missed
+  // one of the two would silently disarm the carve-out AND this floor together.
+  for (const required of ['empty stdin', 'unparseable stdin', REENTRY_TRUE_SHAPE]) {
     assert(
       gateShapeNames.includes(required),
       `the gate differential lost its '${required}' shape — that is a re-entry/degrade path, not a filler case`,
