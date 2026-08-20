@@ -29,6 +29,10 @@ REPORT.md
 # defaults — see .spec/product.md Design Principle 5.
 docs/superpowers/
 
+# subagent-driven-development workspace: ledgers, briefs, reports, review
+# packages for an in-flight plan. Scratch by contract — git log is the record.
+.superpowers/
+
 # js-core engine: zero runtime dependencies by contract — this should never
 # populate, but ignore it defensively rather than trust that convention.
 node_modules/
