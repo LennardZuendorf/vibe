@@ -30,7 +30,7 @@
 # the engine consumes it, so a fallback spawned afterwards would otherwise see
 # an empty payload.
 
-set -uo pipefail
+set -euo pipefail
 
 HOOK_NAME="${1:-}"
 FALLBACK="${2:-}"
@@ -76,7 +76,7 @@ case "$rc" in
   0|2)
     if [[ -n "$OUT" ]]; then printf '%s\n' "$OUT"; fi
     relay_stderr
-    [[ -n "$ERRFILE" ]] && rm -f "$ERRFILE"
+    if [[ -n "$ERRFILE" ]]; then rm -f "$ERRFILE"; fi
     exit "$rc"
     ;;
 esac
@@ -84,7 +84,7 @@ esac
 # Unexpected exit code: the engine crashed rather than answered. Its stack trace
 # is deliberately NOT relayed when it could be buffered — one line is enough to
 # diagnose, and a trace on every turn is noise the user cannot act on.
-[[ -n "$ERRFILE" ]] && rm -f "$ERRFILE"
+if [[ -n "$ERRFILE" ]]; then rm -f "$ERRFILE"; fi
 if [[ -n "$FALLBACK" && -f "$FALLBACK" ]]; then
   echo "vibe: engine failed (exit $rc) for hook '$HOOK_NAME' — using the bash fallback" >&2
 else

@@ -182,7 +182,7 @@ A scope edit is not a state: edit within the current write surface and stay put.
 | Hook | Does | Without Node |
 |---|---|---|
 | `SessionStart` | Re-injects the working-model doctrine each session (and on `compact`). | quiet |
-| `UserPromptSubmit` | Injects the current state's orders — naming the literal transition command to run when the job is done — plus a `vibe-drift:` nudge when the working tree contradicts the cursor. | quiet |
+| `UserPromptSubmit` | Every turn, two byte-stable lines naming the state and its transition command. The full orders only on the turn after the cursor moves, plus a `vibe-drift:` nudge when the working tree contradicts the cursor. | quiet |
 | `PreToolUse` | Guards the write invariants. | **still blocks**, via `flow/hooks-fallback/` |
 | `Stop` | Warn-first exit checks; blocks in `*.verify` without a fresh evidence receipt. | **still blocks**, via `flow/hooks-fallback/` |
 

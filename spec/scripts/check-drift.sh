@@ -86,14 +86,27 @@ if [[ -f "$PLAN" ]]; then
     row="$(grep -F "| $feat |" "$PLAN" 2>/dev/null | head -n1 || true)"
     [[ -n "$row" ]] || row="$(grep -F "**$feat**" "$PLAN" 2>/dev/null | head -n1 || true)"
     if [[ -z "$row" ]]; then
-      echo "check-drift: note: feature '$feat' is named in the plan but has no Feature Sequence row." >&2
+      echo "check-drift: note: feature '$feat' has no Feature Sequence row in .spec/plan.md." >&2
       continue
     fi
+    # Read the status FIELD, not the row text. Two ways to get this wrong, and the
+    # first spelling managed both: matching the literal `| DONE |` missed
+    # `| **DONE** |` or `| DONE ✅ |`, so the ERROR below could never fire (a check
+    # that examines nothing); matching a bare `DONE` anywhere in the row would hit
+    # the "Starts when" cell, which legitimately reads `js-core DONE`. So: split on
+    # `|`, reduce each cell to its letters, and require the WHOLE cell to be the
+    # status word.
     status="NOT STARTED"
-    case "$row" in
-      *"| DONE |"*) status=DONE ;;
-      *"| IN PROGRESS |"*) status="IN PROGRESS" ;;
-    esac
+    rest="$row"
+    while [[ "$rest" == *"|"* ]]; do
+      cell="${rest%%|*}"
+      rest="${rest#*|}"
+      letters="$(printf '%s' "$cell" | tr -cd 'A-Za-z')"
+      case "$letters" in
+        DONE) status=DONE; break ;;
+        INPROGRESS) status="IN PROGRESS" ;;
+      esac
+    done
     echo "check-drift: live feature '$feat' — root plan says: $status" >&2
     if [[ "$status" == "DONE" ]]; then
       err "feature '$feat' is DONE in .spec/plan.md but .spec/features/$feat/ still exists — compound promotes AND archives; move it to .spec/archive/"

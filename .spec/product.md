@@ -107,7 +107,9 @@ At a project level, vibe must:
 13. **Deterministic machinery runs on one engine.** State transitions, content
     resolution, merges, validation, and health checks are one JS engine with a
     single cursor reader, one root resolver, and one marker grammar. Hooks are
-    shims that `exec` it and exit 0 cleanly when Node is absent.
+    shims over it. Losing the engine costs guidance, never enforcement: a hook
+    that only injects text exits 0 cleanly without Node, while the two hard
+    blocks fall back to their frozen bash implementations.
 14. **Enforce in code; explain in prose; never both.** A rule the guard enforces
     is stated in the guard's verdict at the moment of violation, not preloaded
     into always-on context. Prose covers only what the model must *decide*.

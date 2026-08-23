@@ -7,6 +7,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 export function readJson(filePath) {
   const raw = fs.readFileSync(filePath, 'utf8');
@@ -24,7 +25,10 @@ export function readJson(filePath) {
 export function writeJsonAtomic(filePath, data) {
   const dir = path.dirname(filePath);
   const base = path.basename(filePath);
-  const tmpPath = path.join(dir, `.${base}.${process.pid}.${Date.now()}.tmp`);
+  // randomUUID, not pid+timestamp alone: worker threads share a pid and can land
+  // in the same millisecond, and two writers colliding on the temp name make one
+  // renameSync fail with ENOENT after the other has already moved it.
+  const tmpPath = path.join(dir, `.${base}.${process.pid}.${randomUUID()}.tmp`);
   const body = `${JSON.stringify(data, null, 2)}\n`;
   try {
     // mode 0600 — set-state.sh writes through `mktemp` + `mv -f`, which lands

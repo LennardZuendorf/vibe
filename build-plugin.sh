@@ -38,8 +38,15 @@ read_version() {
     sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pj" | head -n1
   fi
 }
-VERSION="$(read_version)"
-[[ -n "$VERSION" ]] || VERSION="0.0.0"
+# `|| true`: under `set -e` a command substitution's non-zero status aborts the
+# script, so a malformed package.json killed the build with jq's parse error and
+# the 0.0.0 fallback below was unreachable. Scripts here degrade with a warning,
+# never hard-fail.
+VERSION="$(read_version || true)"
+if [[ -z "$VERSION" ]]; then
+  echo "build-plugin: WARN — could not read .version from package.json; using 0.0.0" >&2
+  VERSION="0.0.0"
+fi
 
 MODE="build"
 case "${1:-}" in

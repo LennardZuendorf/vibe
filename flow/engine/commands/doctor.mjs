@@ -196,8 +196,22 @@ function nodeStatus(opts) {
   return detectNode();
 }
 
+// package.json declares engines.node >= 18, so "present" is not the whole
+// question: a v16 that runs every hook until it hits modern syntax reports the
+// same "ok" as a v22 and tells the user nothing.
+function nodeMajor(version) {
+  const m = /^v?(\d+)\./.exec(typeof version === 'string' ? version : '');
+  return m ? Number(m[1]) : undefined;
+}
+
 function checkToolNode(node) {
-  if (node.present) return ok('tool.node', `node present (${node.version})`);
+  if (node.present) {
+    const major = nodeMajor(node.version);
+    if (major !== undefined && major < 18) {
+      return warn('tool.node', `node ${node.version} is older than the engine's minimum (18) — the hooks may fail and fall back to flow/hooks-fallback (guard + Stop gate) or no-op (inject + doctrine)`);
+    }
+    return ok('tool.node', `node present (${node.version})`);
+  }
   return warn('tool.node', "node not installed — the four .claude/hooks are the flow's enforcement, and without node they fall back to flow/hooks-fallback (guard + Stop gate) or no-op (inject + doctrine)");
 }
 

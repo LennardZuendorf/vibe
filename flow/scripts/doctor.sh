@@ -83,7 +83,17 @@ else warn tool.jq "jq not installed (recommended, not required) — set-state wr
 # node — every hook is node-first now, so its absence changes what the install
 # actually enforces. Reporting only jq (which is genuinely optional) while saying
 # nothing about node let a node-less install read as fully healthy.
-if command -v node >/dev/null 2>&1; then ok tool.node "node present ($(node --version 2>/dev/null))"
+# package.json declares engines.node >= 18, so presence alone is not the whole
+# question: a v16 reports the same "ok" as a v22 and tells the user nothing.
+if command -v node >/dev/null 2>&1; then
+  _nv="$(node --version 2>/dev/null)"
+  _nmaj="${_nv#v}"; _nmaj="${_nmaj%%.*}"
+  case "$_nmaj" in
+    ''|*[!0-9]*) ok tool.node "node present ($_nv)" ;;
+    *) if [ "$_nmaj" -lt 18 ]; then
+         warn tool.node "node $_nv is older than the engine's minimum (18) — the hooks may fail and fall back to flow/hooks-fallback (guard + Stop gate) or no-op (inject + doctrine)"
+       else ok tool.node "node present ($_nv)"; fi ;;
+  esac
 else warn tool.node "node not installed — the four .claude/hooks are the flow's enforcement, and without node they fall back to flow/hooks-fallback (guard + Stop gate) or no-op (inject + doctrine)"; fi
 
 # core skills present + integrity.

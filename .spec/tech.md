@@ -309,10 +309,16 @@ the `vibe` skill.
 
 ### Claude Code plugin & hooks
 
-The plugin is the runtime carrier. `plugin.json` declares `skills`, `commands`,
-and `agents`; `hooks/hooks.json` auto-loads and is **not** declared in the
-manifest. Hook commands are three-line shims that `exec` the engine and exit 0
-when Node is absent. `CLAUDE_PROJECT_DIR` is exported to plugin hooks, so a
+**Target.** The plugin is the runtime carrier: `plugin.json` declares `skills`,
+`commands`, and `agents`; `hooks/hooks.json` auto-loads and is **not** declared in
+the manifest. **Shipped today** the runtime installs per repo instead — the
+plugin carries skills plus the doctrine hook, and `install.sh` writes the engine,
+`/flow`, and the four hook shims into the target (`plugin-runtime`, plan row 16,
+moves them). Hook commands are shims over the engine, and what happens without
+Node depends on what the hook carries: a hook that only injects text exits 0,
+while Guard and Stop — the two hard blocks — run the frozen bash implementation
+in `flow/hooks-fallback/` instead. Enforcement degrades to bash, never to
+nothing. `CLAUDE_PROJECT_DIR` is exported to plugin hooks, so a
 per-user plugin resolves per-repo state correctly — which is what retires the
 "one shared cursor" objection that previously kept the stateful flow out of the
 plugin.

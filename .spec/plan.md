@@ -138,9 +138,12 @@ multi-lens review, `/spec research` wiring, and the manual gh repo metadata uplo
   memory (`.spec/**`, the `AGENTS.md` block, `.vibe/` overrides), committed and
   runtime-free. `vibe vendor` is the explicit opt-in for in-repo runtime.
 - **D14 — One JS engine.** Deterministic machinery is one Node engine with a
-  single cursor reader, root resolver, and marker grammar; hooks are shims that
-  `exec` it and exit 0 without it. Reverses the "bash scripts, no runtime"
-  non-goal; the scope discipline it protected is kept as a non-goal in its own right.
+  single cursor reader, root resolver, and marker grammar; hooks are shims over
+  it. Without Node a text-injecting hook exits 0, but the two carrying a HARD
+  BLOCK (Guard, Stop) fall back to the frozen bash implementations in
+  `flow/hooks-fallback/` — an enforcement tooth may not depend on a runtime being
+  installed. Reverses the "bash scripts, no runtime" non-goal; the scope
+  discipline it protected is kept as a non-goal in its own right.
 - **D15 — Content is data.** Every injected sentence is a block authored once
   (`id`/`channels`/`summary`), composed per channel, with typed placeholders
   interpolating machine fields. `policy.json` is the sole write-invariant source,
