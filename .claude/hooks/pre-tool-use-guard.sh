@@ -1,38 +1,25 @@
 #!/usr/bin/env bash
-# pre-tool-use-guard.sh — vibe flow guard hook (js-core/7).
+# pre-tool-use-guard.sh — vibe flow guard hook.
 #
-# Event: PreToolUse, matcher Edit|Write|NotebookEdit|Bash. Node-first: execs
-# into the JS engine's `hook pre-tool-use-guard` command, which reproduces
-# this hook's prior behaviour (Bash write-shaped sniffer, warn-only; file
-# tools routed through bash detect-context.sh decide, verdict translated to
-# block/warn/allow) via engine/commands/hook.mjs. `exec` replaces the shell
-# so the engine's exit code (notably the block path's exit 2) propagates
-# unchanged.
+# Event: PreToolUse, matcher Edit|Write|NotebookEdit|Bash. Node-first: runs the
+# engine's `hook pre-tool-use-guard` (engine/commands/hook.mjs), which owns the
+# stdin parsing, the warn-only Bash write sniffer, the warnings relay, and the
+# exit-code translation. Path POLICY is not here and not in the engine either —
+# both ask content/policy.json through `detect-context.sh decide`.
 #
-# STILL DELEGATES POLICY TO BASH: detect-context.sh is NOT ported in this
-# feature (its policy becomes policy.json in content-layer; porting it twice
-# is waste) — the engine's guard handler shells out to the same
-# .agents/skills/vibe/scripts/detect-context.sh this hook always called for
-# its `decide` verdict. Only the orchestration around that call (stdin
-# parsing, the Bash sniffer, warnings relay, exit-code translation) moved to
-# JS.
-#
-# Graceful degrade (R4): no `node` on PATH -> exit 0 silently, NEVER exit 2.
-# Enforcement is lost, never inverted into a spurious block.
-
+# DEGRADE (no node, no engine, or an unexpected engine exit code):
+# `.agents/skills/vibe/hooks-fallback/pre-tool-use-guard.sh` — the frozen pre-port
+# implementation — answers instead. This hook carries a HARD BLOCK, so losing it
+# to a missing runtime is not acceptable: enforcement degrades to bash, never to
+# nothing. It still never inverts an allow into a spurious exit 2.
 set -euo pipefail
 
-command -v node >/dev/null 2>&1 || exit 0
-
+HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-ENGINE="${VIBE_ENGINE:-$ROOT/.agents/skills/vibe/engine}"
+FALLBACK_DIR="${VIBE_HOOKS_FALLBACK:-$ROOT/.agents/skills/vibe/hooks-fallback}"
 
-# Graceful degrade (R4, review round 1 Finding 2): every old per-command
-# resolver guarded its own script (`[[ -f "$DOCTRINE" ]] || exit 0` etc) --
-# the shim must guard the engine the same way, or a target installed before
-# the engine shipped (or a moved/broken symlink) gets a raw Node
-# MODULE_NOT_FOUND stack trace on every prompt/tool call instead of a silent
-# no-op.
-[[ -f "$ENGINE/cli.mjs" ]] || exit 0
-
-exec node "$ENGINE/cli.mjs" hook pre-tool-use-guard
+# `${BASH}` — the absolute path of the shell already running this script — not a
+# bare `bash`, which resolves through PATH. A no-jq/no-node test shim (and a
+# genuinely minimal PATH) can lack `bash` entirely, and then the hook dies with
+# `exec: bash: not found` and exit 127 instead of answering.
+exec "${BASH:-bash}" "$HOOKS_DIR/_engine-hook.sh" pre-tool-use-guard "$FALLBACK_DIR/pre-tool-use-guard.sh"

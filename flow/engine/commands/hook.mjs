@@ -657,7 +657,7 @@ function cursorStateFeature(vibeDir) {
 // `.vibe/blocks/team.md` blocks, on the porcelain git really emits.
 //
 // It also makes the engine STRICTER than the frozen bash oracle
-// (tests/oracles/stop-gate.sh), which has no `-uall` — a deliberate divergence
+// (flow/hooks-fallback/stop-gate.sh), which has no `-uall` — a deliberate divergence
 // in the fail-safe direction for a blocking tooth, pinned as an executable
 // KNOWN DIVERGENCE in parity.test.mjs (the `untracked directory` gate fixture)
 // alongside the tests named in isOwnRuntimeState()'s note.

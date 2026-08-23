@@ -66,11 +66,11 @@ const SET_STATE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'set-state.sh');
 const DOCTOR_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'doctor.sh');
 const VALIDATE_STATE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'validate-state.sh');
 const ADAPTERS_RUN_SH = path.join(REPO_ROOT, 'flow', 'tests', 'adapters', 'run.sh');
-// The two FROZEN pre-port bash hooks (tests/oracles/, restored verbatim from
+// The two FROZEN pre-port bash hooks (flow/hooks-fallback/, restored verbatim from
 // `main`) — the only oracles guard/gate have, because js-core/7 replaced the
 // real hooks with Node shims IN PLACE. See those files' own headers.
-const GUARD_ORACLE = path.join(REPO_ROOT, 'flow', 'engine', 'tests', 'oracles', 'pre-tool-use-guard.sh');
-const GATE_ORACLE = path.join(REPO_ROOT, 'flow', 'engine', 'tests', 'oracles', 'stop-gate.sh');
+const GUARD_ORACLE = path.join(REPO_ROOT, 'flow', 'hooks-fallback', 'pre-tool-use-guard.sh');
+const GATE_ORACLE = path.join(REPO_ROOT, 'flow', 'hooks-fallback', 'stop-gate.sh');
 const REAL_SKILL_MD = readFileSync(path.join(REPO_ROOT, 'flow', 'SKILL.md'), 'utf8');
 const REAL_MACHINE_SRC = path.join(REPO_ROOT, 'flow', 'state-machine.json');
 const REAL_DEPS_SRC = path.join(REPO_ROOT, 'flow', 'reference', 'deps.json');
@@ -555,7 +555,7 @@ for (const fixture of CURSOR_FIXTURES) {
 // merges `main` does not hold them either. The final review had to reconstruct
 // them from git history to run the differential once.
 //
-// tests/oracles/{pre-tool-use-guard,stop-gate}.sh are those bash originals,
+// flow/hooks-fallback/{pre-tool-use-guard,stop-gate}.sh are those bash originals,
 // restored verbatim and frozen. This section is the differential made
 // PERMANENT: every comparison below is regenerable by anyone, in the suite, on
 // every run — which is the property the branch was missing, not the parity.
@@ -1445,7 +1445,7 @@ test('parity matrix: every family covers every cursor fixture in BOTH jq modes',
     assert(
       families.has(required),
       `'${required}' is not in the parity matrix — the two hooks that can BLOCK a tool call or a turn must ` +
-        'always be compared against their frozen bash oracles (tests/oracles/), never trusted from a port review',
+        'always be compared against their frozen bash oracles (flow/hooks-fallback/), never trusted from a port review',
     );
   }
 
@@ -1515,7 +1515,7 @@ test('parity oracles: the differential\'s input tables have not been trimmed to 
 // each must carry the FROZEN banner, must still contain the load-bearing
 // spellings the port had to reproduce, and must contain no trace of the Node
 // shim that replaced it.
-test('parity oracles: tests/oracles/*.sh are the frozen bash originals, not shims', () => {
+test('parity oracles: flow/hooks-fallback/*.sh are the frozen bash originals, not shims', () => {
   const guard = readFileSync(GUARD_ORACLE, 'utf8');
   const gate = readFileSync(GATE_ORACLE, 'utf8');
   for (const [name, src] of [['pre-tool-use-guard.sh', guard], ['stop-gate.sh', gate]]) {

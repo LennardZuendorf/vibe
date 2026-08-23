@@ -541,13 +541,37 @@ rm -rf "$SBG"
 # real block into exit 2.
 NONODE_BIN="$(mkshim)"
 bash "$SS" feature.verify demo >/dev/null
-for h in session-start-doctrine user-prompt-submit-inject stop-gate; do
+for h in session-start-doctrine user-prompt-submit-inject; do
   out="$(printf '{}' | PATH="$NONODE_BIN" bash "$SB/.claude/hooks/$h.sh" 2>&1; echo "rc=$?")"
   assert_eq "js-core/7" "node-absent: $h exits 0 silently" "$out" "rc=0"
 done
+# The two HARD-BLOCK hooks must NOT lose their teeth without node. They fall back
+# to flow/hooks-fallback/*.sh — the frozen pre-port bash implementations, which
+# install ships into the target — so a node-less machine is still enforced.
+# `command -v node || exit 0` used to drop both blocks silently while
+# detect-context.sh's header still promised "a target without node must still be
+# enforced"; these two assertions are what keep that promise true.
 out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vibe/state.json"}}' \
   | PATH="$NONODE_BIN" bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
-assert_eq "js-core/7" "node-absent: guard degrades to exit 0, NEVER inverts a block to exit 2" "$out" "rc=0"
+assert_contains "js-core/7" "node-absent: guard still BLOCKS via the bash fallback" "$out" "rc=2"
+assert_contains "js-core/7" "node-absent: the block names the guarded path" "$out" "state.json"
+# …and an ALLOWED write is still allowed: the fallback must not block everything.
+out="$(printf '{"tool_name":"Write","tool_input":{"file_path":"README.md"}}' \
+  | PATH="$NONODE_BIN" bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
+assert_contains "js-core/7" "node-absent: guard still ALLOWS an unguarded path" "$out" "rc=0"
+# The Stop gate's evidence tooth, same story. Remove any receipt an earlier
+# section left behind first — the tooth fires on its ABSENCE, so a stale receipt
+# would make this assertion pass for the wrong reason.
+rm -f "$SB/.agents/skills/vibe/evidence/feature-demo.md"
+out="$(printf '{}' | PATH="$NONODE_BIN" bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+assert_contains "js-core/7" "node-absent: Stop gate still BLOCKS without a receipt" "$out" "rc=2"
+assert_contains "js-core/7" "node-absent: the Stop block names the expected receipt" "$out" "feature-demo.md"
+# …and with the receipt present it does NOT block — the fallback is a gate, not a wall.
+mkdir -p "$SB/.agents/skills/vibe/evidence"
+printf 'ran: bash tests/run.sh -> ALL SUITES PASSED\n' > "$SB/.agents/skills/vibe/evidence/feature-demo.md"
+out="$(printf '{}' | PATH="$NONODE_BIN" bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
+assert_contains "js-core/7" "node-absent: Stop gate passes once the receipt exists" "$out" "rc=0"
+rm -f "$SB/.agents/skills/vibe/evidence/feature-demo.md"
 
 # js-core/7 review round 1, Finding 2 (Important): node present but the
 # engine directory missing (a target installed before the engine shipped, or
@@ -567,13 +591,27 @@ assert_eq "js-core/7" "node-absent: guard degrades to exit 0, NEVER inverts a bl
 # with any EXIT trap a later section might legitimately want to install.
 trap 'mv -f "$SB/.agents/skills/vibe/engine.bak" "$SB/.agents/skills/vibe/engine" 2>/dev/null || true' EXIT
 mv "$SB/.agents/skills/vibe/engine" "$SB/.agents/skills/vibe/engine.bak"
-for h in session-start-doctrine user-prompt-submit-inject stop-gate; do
+for h in session-start-doctrine user-prompt-submit-inject; do
   out="$(printf '{}' | bash "$SB/.claude/hooks/$h.sh" 2>&1; echo "rc=$?")"
   assert_eq "js-core/7" "engine-absent: $h exits 0 silently (no MODULE_NOT_FOUND crash)" "$out" "rc=0"
 done
 out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vibe/state.json"}}' \
   | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
-assert_eq "js-core/7" "engine-absent: guard exits 0, not a crash and not exit 2" "$out" "rc=0"
+assert_contains "js-core/7" "engine-absent: guard still BLOCKS via the bash fallback" "$out" "rc=2"
+assert_not_contains "js-core/7" "engine-absent: guard prints no Node stack trace" "$out" "MODULE_NOT_FOUND"
+# A PRESENT but BROKEN engine is the case the old `[[ -f cli.mjs ]]` guard missed:
+# `exec node` printed a raw stack trace on every prompt and tool call, and the
+# guard failed open. Now the shim keeps only exit 0 and 2 as verdicts.
+mkdir -p "$SB/.agents/skills/vibe/engine"
+printf 'this is not valid javascript (((\n' > "$SB/.agents/skills/vibe/engine/cli.mjs"
+out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vibe/state.json"}}' \
+  | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
+assert_contains "js-core/7" "engine-broken: guard still BLOCKS via the bash fallback" "$out" "rc=2"
+assert_not_contains "js-core/7" "engine-broken: no raw Node stack trace reaches the user" "$out" "at compileSourceTextModule"
+out="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>&1; echo "rc=$?")"
+assert_contains "js-core/7" "engine-broken: inject exits 0, no stack trace" "$out" "rc=0"
+assert_not_contains "js-core/7" "engine-broken: inject prints no raw stack trace" "$out" "at compileSourceTextModule"
+rm -rf "$SB/.agents/skills/vibe/engine"
 mv "$SB/.agents/skills/vibe/engine.bak" "$SB/.agents/skills/vibe/engine"
 trap - EXIT
 

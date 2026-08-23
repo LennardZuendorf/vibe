@@ -1,30 +1,19 @@
 #!/usr/bin/env bash
-# session-start-doctrine.sh — vibe flow SessionStart hook (js-core/7).
+# session-start-doctrine.sh — vibe flow SessionStart hook.
 #
-# Event: SessionStart (all sources, incl. `compact` re-inject). Node-first:
-# execs into the JS engine's `hook session-start-doctrine` command, which
-# reproduces this hook's prior behaviour (emit the vibe doctrine block + a
-# live cursor summary) via engine/commands/doctrine.mjs. `exec` replaces the
-# shell so the engine's exit code and stdout propagate unchanged.
+# Event: SessionStart (all sources, incl. `compact` re-inject). Node-first: runs
+# the engine's `hook session-start-doctrine` (engine/commands/doctrine.mjs),
+# which emits the timeless doctrine block and the session-start channel.
 #
-# Graceful degrade (R4): no `node` on PATH -> exit 0 silently, inject
-# nothing. Enforcement/inject is lost, never inverted into a spurious block —
-# this hook's contract was already "never break the session" and stays that
-# way with Node absent.
-
+# DEGRADE (no node, no engine, or an unexpected engine exit code): exit 0
+# silently. This hook only injects text, so losing it costs guidance, not
+# enforcement. It never exits 2.
 set -euo pipefail
 
-command -v node >/dev/null 2>&1 || exit 0
+HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-ENGINE="${VIBE_ENGINE:-$ROOT/.agents/skills/vibe/engine}"
-
-# Graceful degrade (R4, review round 1 Finding 2): every old per-command
-# resolver guarded its own script (`[[ -f "$DOCTRINE" ]] || exit 0` etc) --
-# the shim must guard the engine the same way, or a target installed before
-# the engine shipped (or a moved/broken symlink) gets a raw Node
-# MODULE_NOT_FOUND stack trace on every prompt/tool call instead of a silent
-# no-op.
-[[ -f "$ENGINE/cli.mjs" ]] || exit 0
-
-exec node "$ENGINE/cli.mjs" hook session-start-doctrine
+# `${BASH}` — the absolute path of the shell already running this script — not a
+# bare `bash`, which resolves through PATH. A no-jq/no-node test shim (and a
+# genuinely minimal PATH) can lack `bash` entirely, and then the hook dies with
+# `exec: bash: not found` and exit 127 instead of answering.
+exec "${BASH:-bash}" "$HOOKS_DIR/_engine-hook.sh" session-start-doctrine ""

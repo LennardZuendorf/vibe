@@ -1,30 +1,20 @@
 #!/usr/bin/env bash
-# user-prompt-submit-inject.sh — vibe flow inject hook (js-core/7).
+# user-prompt-submit-inject.sh — vibe flow per-turn inject hook.
 #
-# Event: UserPromptSubmit. Node-first: execs into the JS engine's
-# `hook user-prompt-submit-inject` command, which reproduces this hook's
-# prior behaviour (drift-first nudge via bash detect-context.sh infer, then
-# the cursor state's orders via engine/commands/orders.mjs, then the
-# warnings-relay drain+truncate) via engine/commands/hook.mjs. `exec`
-# replaces the shell so the engine's exit code and stdout propagate
-# unchanged.
+# Event: UserPromptSubmit. Node-first: runs the engine's
+# `hook user-prompt-submit-inject` (engine/commands/hook.mjs), which composes the
+# level / edge / event channels — the current state and its transition command,
+# the full orders on a cursor change, and any drift nudge or queued warning.
 #
-# Graceful degrade (R4): no `node` on PATH -> exit 0 silently, inject
-# nothing. Enforcement/inject is lost, never inverted into a spurious block.
-
+# DEGRADE (no node, no engine, or an unexpected engine exit code): exit 0
+# silently. This hook only injects text, so losing it costs guidance, not
+# enforcement. It never exits 2.
 set -euo pipefail
 
-command -v node >/dev/null 2>&1 || exit 0
+HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-ENGINE="${VIBE_ENGINE:-$ROOT/.agents/skills/vibe/engine}"
-
-# Graceful degrade (R4, review round 1 Finding 2): every old per-command
-# resolver guarded its own script (`[[ -f "$DOCTRINE" ]] || exit 0` etc) --
-# the shim must guard the engine the same way, or a target installed before
-# the engine shipped (or a moved/broken symlink) gets a raw Node
-# MODULE_NOT_FOUND stack trace on every prompt/tool call instead of a silent
-# no-op.
-[[ -f "$ENGINE/cli.mjs" ]] || exit 0
-
-exec node "$ENGINE/cli.mjs" hook user-prompt-submit-inject
+# `${BASH}` — the absolute path of the shell already running this script — not a
+# bare `bash`, which resolves through PATH. A no-jq/no-node test shim (and a
+# genuinely minimal PATH) can lack `bash` entirely, and then the hook dies with
+# `exec: bash: not found` and exit 127 instead of answering.
+exec "${BASH:-bash}" "$HOOKS_DIR/_engine-hook.sh" user-prompt-submit-inject ""

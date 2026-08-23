@@ -355,7 +355,7 @@ export function makeSandbox({ cursor } = {}) {
 //
 // Shared here rather than owned by hook.test.mjs (js-core/8 final review, I3):
 // parity.test.mjs's guard/gate oracle differential spawns the FROZEN bash hooks
-// in tests/oracles/, which self-locate through exactly this layout
+// in flow/hooks-fallback/, which self-locate through exactly this layout
 // ($ROOT/.agents/skills/vibe/scripts/detect-context.sh, and detect-context.sh's
 // own SKILL_DIR=scripts/..). A second, hand-copied fixture in the parity file
 // could drift from the one hook.test.mjs asserts against, and then the two

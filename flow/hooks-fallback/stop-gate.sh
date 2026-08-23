@@ -1,27 +1,29 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# FROZEN PARITY ORACLE — NOT SHIPPED, NOT WIRED, DO NOT EDIT TO MATCH THE PORT.
+# FROZEN PARITY ORACLE — AND THE SHIPPED no-node FALLBACK. DO NOT EDIT TO MATCH
+# THE PORT.
 #
-# This is the pre-port bash implementation of .claude/hooks/stop-gate.sh,
-# restored verbatim from git `main` (blob f5ded4a723d372da7fab1f10c37380382d1d484f).
-# js-core/7 replaced the real hook with a Node shim IN PLACE, which deleted the
-# only thing `hook.mjs`'s guard/gate reimplementation could be compared against:
-# after this branch merges, `main` no longer holds it either. The final review
-# had to reconstruct it from git history to run the differential at all.
+# This is the pre-port bash implementation of .claude/hooks/stop-gate.sh, restored
+# verbatim from git `main` (blob f5ded4a723d372da7fab1f10c37380382d1d484f). js-core/7 replaced the real hook with a
+# Node shim IN PLACE, which deleted the only thing `hook.mjs`'s guard/gate
+# reimplementation could be compared against.
 #
-# It lives here so that comparison is REGENERABLE and runs in the suite —
-# flow/engine/tests/parity.test.mjs spawns this file as the oracle for
-# runGuardHook()/runGateHook(), exactly as the other parity legs spawn
-# flow/scripts/{orders,doctrine,doctor,set-state}.sh.
+# It has TWO jobs, and one file does both so they can never drift:
 #
-# Rules: this file is FROZEN at the behaviour the port must reproduce. If the
-# engine and this file ever disagree, either the engine has a bug or the
-# divergence is deliberate — in which case pin it as a KNOWN DIVERGENCE in
-# parity.test.mjs with a stated reason. Never "fix" this file to agree.
+#  1. PARITY ORACLE. flow/engine/tests/parity.test.mjs spawns this file as the
+#     oracle for runGuardHook()/runGateHook(), exactly as the other parity legs
+#     spawn flow/scripts/{orders,doctrine,doctor,set-state}.sh.
+#  2. SHIPPED FALLBACK. `.claude/hooks/stop-gate.sh` execs it when node is absent, the
+#     engine is missing, or the engine exits an unexpected code. Before that, a
+#     node-less target lost the guard's hard block and the Stop gate's evidence
+#     tooth outright — `command -v node || exit 0` — while detect-context.sh's own
+#     header still promised "a target without node must still be enforced".
+#     Enforcement now degrades to this file, never to nothing.
 #
-# It sits under tests/, so install.sh's source-only scrub keeps it out of every
-# install target (adapters suite, "source-only artifacts never reach an install
-# target").
+# Rules: FROZEN at the behaviour the port must reproduce. If the engine and this
+# file ever disagree, either the engine has a bug or the divergence is deliberate
+# — in which case pin it as a KNOWN DIVERGENCE in parity.test.mjs with a stated
+# reason. Never "fix" this file to agree.
 # ─────────────────────────────────────────────────────────────────────────────
 # stop-gate.sh — vibe flow gate hook (platform-adapters/3 + flow-mvp/9).
 #
