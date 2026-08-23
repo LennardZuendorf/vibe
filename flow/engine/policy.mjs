@@ -158,6 +158,18 @@ export function loadPolicy(vibeDir) {
 // Matching
 // ---------------------------------------------------------------------------
 
+const LEADING_DOT_SLASH_RE = /^(?:\.\/)+/;
+
+// path.posix.normalize, minus the caller's leading-`./` convention, and never
+// turning '' into a bare dot (callers pass repo-relative paths). A regex, not a
+// dot-slash STRING literal: the duplicate-primitive scan treats any dot-slash
+// string in a shipped module as a module specifier reaching outside the engine
+// tree, and it is right to over-approximate there.
+function posixNormalize(p) {
+  const normalized = path.posix.normalize(p).replace(LEADING_DOT_SLASH_RE, '');
+  return normalized === '.' ? '' : normalized;
+}
+
 const GLOB_CHAR_RE = /[*?]/;
 
 function hasGlobChars(pattern) {
@@ -170,7 +182,12 @@ const REGEXP_ESCAPE_RE = /[.+^${}()|[\]\\]/g;
 // `/` — see the header. Every other character is matched literally.
 function globToRegExp(pattern) {
   let body = '';
-  for (const c of pattern) {
+  // Collapse runs of `*` first. `**` translated naively to `.*.*` is
+  // catastrophic backtracking on a non-matching path, and this compiles onto the
+  // in-process PreToolUse path, which — unlike the bash branch — has no `timeout`
+  // around it. `*` already spans `/`, so a run of them means exactly what one
+  // does; the collapse is semantics-preserving.
+  for (const c of pattern.replace(/\*+/g, '*')) {
     if (c === '*') body += '.*';
     else if (c === '?') body += '.';
     else body += c.replace(REGEXP_ESCAPE_RE, '\\$&');
@@ -272,12 +289,22 @@ export function decide(policy, relPath, state) {
   const rules = policy && Array.isArray(policy.rules) ? policy.rules : [];
   if (rules.length === 0) return ALLOW_UNMATCHED;
 
-  const normalizedPath = typeof relPath === 'string' ? relPath : '';
+  // Normalize before matching: `.spec/./lessons.md` and `.spec//lessons.md` name
+  // the same file as `.spec/lessons.md`, and a hard block any of those spellings
+  // walks around is not a block.
+  const rawPath = typeof relPath === 'string' ? relPath : '';
+  const normalizedPath = rawPath ? posixNormalize(rawPath) : '';
   const stateKey = typeof state === 'string' && state ? state : 'idle';
   const suffixes = pathBoundarySuffixes(normalizedPath);
 
   // Exact matches, across EVERY rule, before any glob match — a narrow exact
-  // rule always outranks a broader glob rule irrespective of file order.
+  // rule always outranks a broader glob rule irrespective of file order. This is
+  // a DELIBERATE divergence from the bash oracle's top-to-bottom `case` read: a
+  // path matching two rules takes the exact rule's verdict here and the
+  // first-listed rule's verdict there. The engine is stricter on every derived
+  // cross-rule path, never looser, and that property is pinned by its own control
+  // test — see policy.test.mjs's "known divergence" case, which fails if the
+  // divergence ever disappears silently.
   for (const rule of rules) {
     if (ruleMatchesExact(rule, suffixes)) return ruleVerdict(rule, stateKey);
   }

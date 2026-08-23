@@ -148,7 +148,8 @@ durable memory; sessions are ephemeral. Read the specs before you write code.
 
 ## Session start
 
-1. Read `.spec/lessons.md` and `.spec/plan.md`.
+1. Read `.spec/lessons.md` and `.spec/plan.md`. (The spec half owns `.spec/`; a
+   flow-only install has no tree — the flow still runs, the specs are just absent.)
 2. Identify the feature you are working on and load its specs:
    `.spec/features/<name>/{product,tech,plan}.md`.
 3. If `.agents/skills/vibe/state.json` exists and you are continuing a flow session,
@@ -213,7 +214,7 @@ never by editing the block, which is regenerated.
 ## Commands
 
 ```bash
-# Spec validation — run before claiming done
+# Spec validation — run before claiming done (spec half; absent on --only flow)
 bash .agents/skills/spec/scripts/validate.sh
 # Write policy for a path (works without state.json)
 bash .agents/skills/vibe/scripts/detect-context.sh decide <path>

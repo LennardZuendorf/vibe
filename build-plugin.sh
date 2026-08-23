@@ -26,7 +26,20 @@
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="0.2.0"
+# Single source: package.json. A hardcoded literal drifted to 0.2.0 while the
+# package said 0.3.0-dev, and --check pinned the stale value so CI enforced the
+# drift. jq when present, a portable sed otherwise.
+read_version() {
+  local pj="$SRC/package.json"
+  [[ -f "$pj" ]] || { echo "0.0.0"; return; }
+  if command -v jq >/dev/null 2>&1; then
+    jq -r '.version // "0.0.0"' "$pj"
+  else
+    sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pj" | head -n1
+  fi
+}
+VERSION="$(read_version)"
+[[ -n "$VERSION" ]] || VERSION="0.0.0"
 
 MODE="build"
 case "${1:-}" in
@@ -141,7 +154,17 @@ if [[ "$MODE" == "check" ]]; then
   exit 0
 fi
 
-rm -rf "$SRC/plugin" "$SRC/.claude-plugin"
+# Surgical clean, not `rm -rf plugin/ .claude-plugin/`: both are SHARED dirs a
+# user or another tool may also write into, and this repo's own uninstall lesson
+# forbids blanket-removing one. Delete exactly the generated set (already
+# enumerated for --check) plus the two skill symlinks, then prune what that
+# emptied.
+for f in ${GEN_FILES[@]+"${GEN_FILES[@]}"}; do
+  rm -f "${SRC:?}/$f"
+done
+rm -f "$SRC/plugin/skills/spec" "$SRC/plugin/skills/vibe"
+find "$SRC/plugin" "$SRC/.claude-plugin" -type d -empty -delete 2>/dev/null || true
+
 emit_files "$SRC"
 mkdir -p "$SRC/plugin/skills"
 ln -s ../../spec "$SRC/plugin/skills/spec"

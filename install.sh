@@ -73,7 +73,10 @@ if [[ -z "${SRC:-}" || ! -f "$SRC/flow/state-machine.json" || ! -f "$SRC/spec/SK
     exit 1
   fi
   boot_rc=0
-  bash "$boot_src/install.sh" "$@" || boot_rc=$?
+  # The re-exec must know it runs from a throwaway tree: the trap above deletes
+  # $boot_tmp on exit, so --global cannot register a marketplace at "$SRC".
+  VIBE_BOOTSTRAPPED=1 VIBE_REPO="$VIBE_REPO" VIBE_REF="$VIBE_REF" \
+    bash "$boot_src/install.sh" "$@" || boot_rc=$?
   exit "$boot_rc"
 fi
 
@@ -142,6 +145,11 @@ scrub_source_only() {
   done
   [[ -f "$src/AGENTS.md" ]] && rm -f "$dst/AGENTS.md"
   [[ -d "$src/evidence" ]] && rm -rf "${dst:?}/evidence"
+  # warnings.log is the SOURCE checkout's own runtime relay spool (this repo
+  # dogfoods the flow, so a dirty tree has one). Shipping it makes a fresh target
+  # drain warnings about work nobody did there, and remove_shipped excludes the
+  # path, so an uninstall could never clear it again.
+  [[ -f "$src/warnings.log" ]] && rm -f "$dst/warnings.log"
   return 0
 }
 
@@ -240,13 +248,19 @@ install_global() {
     err "       Install Claude Code, or run a per-repo install: ./install.sh <repo> --local"
     exit 1
   fi
-  say "add the vibe marketplace ($SRC) at user scope"
+  # Marketplace source: the local checkout normally, the GitHub slug when this
+  # tree came from the curl bootstrap — that tree is a temp dir the bootstrap's
+  # EXIT trap removes, so registering it would point a marketplace at nothing
+  # (and `curl … | bash -s -- --global` is a documented path).
+  local market="$SRC"
+  if [[ "${VIBE_BOOTSTRAPPED:-0}" == "1" ]]; then market="$VIBE_REPO"; fi
+  say "add the vibe marketplace ($market) at user scope"
   say "install plugin vibe@vibe at user scope (applies across all your repos)"
   if [[ "$DRY_RUN" -eq 1 && "$have_claude" -eq 0 ]]; then
     note "(dry-run) note: the 'claude' CLI is not on PATH — a real --global run needs it."
   fi
   if [[ "$DRY_RUN" -eq 0 ]]; then
-    claude plugin marketplace add "$SRC" --scope user >/dev/null 2>&1 \
+    claude plugin marketplace add "$market" --scope user >/dev/null 2>&1 \
       || err "WARN: could not add the vibe marketplace (already added?); continuing."
     if claude plugin install vibe@vibe --scope user >/dev/null 2>&1; then
       note "installed vibe@vibe (user scope)"
@@ -257,7 +271,7 @@ install_global() {
   # Per-repo home for the spec framework: seed .spec/ in the current repo if it is a
   # git repo without one (the plugin carries the skills; each repo still needs its
   # own .spec/ memory). The full stateful flow is a separate --local install.
-  if [[ -d "$TARGET/.git" && ! -d "$TARGET/.spec" ]]; then
+  if [[ -e "$TARGET/.git" && ! -d "$TARGET/.spec" ]]; then
     say "seed .spec/ in $TARGET (spec framework home for this repo)"
     if [[ "$DRY_RUN" -eq 0 && -f "$SRC/spec/scripts/setup.sh" ]]; then
       ( cd "$TARGET" && bash "$SRC/spec/scripts/setup.sh" ) >/dev/null 2>&1 \
@@ -299,6 +313,10 @@ prompt_mode() {
 DRY_RUN=0
 WANT_SPEC=1
 WANT_FLOW=1
+# --only is LAST-WINS, resolved once after parsing. Clearing the other half
+# inside the parse loop meant `--only spec --only flow` cleared BOTH and
+# installed nothing while still printing a success banner.
+ONLY=""
 UNINSTALL=0
 ASSUME_YES=0
 MODE=""
@@ -320,15 +338,13 @@ while [[ $# -gt 0 ]]; do
     --with-plugins) WITH_PLUGINS=1; shift ;;
     --only)
       case "${2:-}" in
-        spec) WANT_FLOW=0 ;;
-        flow) WANT_SPEC=0 ;;
+        spec|flow) ONLY="$2" ;;
         *) err "ERROR: --only takes 'spec' or 'flow' (got '${2:-}')"; exit 1 ;;
       esac
       shift 2 ;;
     --only=*)
       case "${1#*=}" in
-        spec) WANT_FLOW=0 ;;
-        flow) WANT_SPEC=0 ;;
+        spec|flow) ONLY="${1#*=}" ;;
         *) err "ERROR: --only takes 'spec' or 'flow' (got '${1#*=}')"; exit 1 ;;
       esac
       shift ;;
@@ -337,6 +353,11 @@ while [[ $# -gt 0 ]]; do
     *) TARGET="$1"; TARGET_GIVEN=1; shift ;;
   esac
 done
+
+case "$ONLY" in
+  spec) WANT_FLOW=0 ;;
+  flow) WANT_SPEC=0 ;;
+esac
 
 # Single-command resolution. A bare run (no target) defaults to THIS directory; an
 # explicit target behaves exactly as before. Mode: --local/--global win; else a bare
@@ -600,7 +621,13 @@ fi
 # warns + skips). Registration follows the half that was installed.
 if [[ "$WANT_SPEC" -eq 1 ]]; then
   say "register spec skill at .claude/skills/spec -> ../../.agents/skills/spec"
-  [[ "$DRY_RUN" -eq 1 ]] || register_skill spec
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    register_skill spec
+    # Belongs to the spec half, not the adapter step: --only spec must still get
+    # runnable scripts if the source ever loses its exec bits
+    # (core.fileMode=false, a zip download).
+    chmod +x "$TARGET"/.agents/skills/spec/scripts/*.sh 2>/dev/null || true
+  fi
 fi
 if [[ "$WANT_FLOW" -eq 1 ]]; then
   say "register vibe skill at .claude/skills/vibe -> ../../.agents/skills/vibe"
@@ -621,7 +648,6 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
     rm -f "$TARGET/.claude-plugin/plugin.json" "$TARGET/.claude/hooks/hooks.json"
     rmdir "$TARGET/.claude-plugin" 2>/dev/null || true
     chmod +x "$TARGET"/.claude/hooks/*.sh \
-             "$TARGET"/.agents/skills/spec/scripts/*.sh \
              "$TARGET"/.agents/skills/vibe/scripts/*.sh 2>/dev/null || true
   fi
 fi
@@ -630,14 +656,25 @@ fi
 # entries, idempotently, never clobbering user settings. Graceful-degrade if the
 # helper is missing or jq is absent (it prints the snippet to paste). Flow half.
 MERGE_SETTINGS="$SRC/.agents/skills/vibe/scripts/merge-settings.sh"
+# 0 = not wired, 1 = wired. Step 8 reads this instead of claiming success
+# unconditionally: a jq-less target gets a pasteable snippet and a banner saying
+# the hooks are NOT live, rather than "the flow hooks fire on every turn" over an
+# absent settings.json.
+HOOKS_WIRED=0
 if [[ "$WANT_FLOW" -eq 1 ]]; then
   say "wire flow hooks into .claude/settings.json"
   if [[ "$DRY_RUN" -eq 0 ]]; then
     if [[ -f "$MERGE_SETTINGS" ]]; then
-      bash "$MERGE_SETTINGS" merge "$TARGET" || err "WARN: settings.json not wired (see message above)."
+      if bash "$MERGE_SETTINGS" merge "$TARGET"; then
+        HOOKS_WIRED=1
+      else
+        err "WARN: settings.json not wired (see message above)."
+      fi
     else
       err "WARN: merge-settings.sh not found; hooks not wired into settings.json."
     fi
+  else
+    HOOKS_WIRED=1
   fi
 fi
 
@@ -747,15 +784,40 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   exit 0
 fi
 if [[ "$WANT_FLOW" -eq 1 ]]; then
-  cat <<EOF
+  if [[ "$HOOKS_WIRED" -eq 1 ]]; then
+    cat <<EOF
 install: done. The Claude Code hooks are wired automatically via
 install:   .claude/settings.json — no plugin to register. Reload the project (or
 install:   restart Claude Code) and the flow hooks fire on every turn; /flow works
 install:   as a native project command from .claude/commands.
 install:   Hook scripts self-resolve this project's flow state under
 install:   \${CLAUDE_PROJECT_DIR}/.agents/skills/vibe.
-install: the spec + vibe skills are installed as project files under .agents/skills/.
 EOF
+  else
+    cat <<EOF
+install: done, BUT the flow hooks are NOT live: .claude/settings.json could not be
+install:   wired (see the warning above — usually a missing jq, or a settings.json
+install:   that is not valid JSON). /flow and the skills work; the inject, guard,
+install:   and Stop teeth do nothing until the printed snippet is merged in.
+EOF
+  fi
+  if [[ "$WANT_SPEC" -eq 1 ]]; then
+    echo "install: the spec + vibe skills are installed as project files under .agents/skills/."
+    # A local install deliberately creates NO project content — .spec/ is yours,
+    # and orders.sh's self-location is regression-tested against a target with no
+    # .git/.spec marker at all. But AGENTS.md opens by telling the agent to read
+    # .spec/lessons.md, so name the one command that makes that true.
+    if [[ ! -d "$TARGET/.spec" ]]; then
+      echo "install: next: seed your .spec/ tree —"
+      echo "install:   bash .agents/skills/spec/scripts/setup.sh   (or /flow setup.detect)"
+    fi
+  else
+    cat <<EOF
+install: the vibe (flow) skill is installed under .agents/skills/vibe.
+install: no spec framework was installed (--only flow) — the .spec/ authoring
+install:   commands and spec/scripts/validate.sh are absent in this target.
+EOF
+  fi
 else
   cat <<EOF
 install: done (spec framework only).

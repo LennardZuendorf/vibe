@@ -76,12 +76,16 @@ jq_free_snippet() {
 EOF
 }
 
+# Exit 3 = DEGRADED: nothing was wired and the caller must say so. Returning 0
+# here made install.sh's `|| err "WARN: settings.json not wired"` unreachable, so
+# a jq-less target was told "the flow hooks fire on every turn" with no
+# settings.json at all — every enforcement tooth inert, the user told otherwise.
 do_merge() {
   local target="$1" settings="$1/.claude/settings.json" tmp
   if ! command -v jq >/dev/null 2>&1; then
     warn "jq not found — cannot auto-wire hooks."
     print_snippet "$target"
-    return 0
+    return 3
   fi
   mkdir -p "$target/.claude"
   [[ -f "$settings" ]] || echo '{}' >"$settings"
@@ -99,7 +103,7 @@ do_merge() {
     rm -f "$tmp"
     warn "existing $settings is not valid JSON — left untouched."
     print_snippet "$target"
-    return 0
+    return 3
   fi
   mv -f "$tmp" "$settings"
 }

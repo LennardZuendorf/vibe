@@ -1,7 +1,7 @@
 {
   "name": "vibe",
   "description": "Spec-first workflow harness: the spec + vibe skills and a self-detecting working-model doctrine hook.",
-  "version": "0.2.0",
+  "version": "0.3.0-dev",
   "author": { "name": "Lennard Zuendorf", "url": "https://github.com/LennardZuendorf" },
   "homepage": "https://github.com/LennardZuendorf/vibe",
   "repository": "https://github.com/LennardZuendorf/vibe",

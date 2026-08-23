@@ -1104,11 +1104,31 @@ fi
 { [[ -L "$REPO_ROOT/plugin/skills/spec" && -L "$REPO_ROOT/plugin/skills/vibe" \
      && -f "$REPO_ROOT/plugin/skills/spec/SKILL.md" && -f "$REPO_ROOT/plugin/skills/vibe/SKILL.md" ]] \
   && pass "vibe-plugin" "spec + vibe skills are symlinks resolving to SKILL.md"; } || fail "vibe-plugin" "skills not symlinked/resolvable"
-# No per-project runtime state may ship in the plugin. `find` does not descend the
-# skill symlinks, so tests/ and gitignored runtime state under spec/ + flow/ are not
-# counted here (a clean marketplace fetch has no runtime state committed anyway).
-strays="$(find "$REPO_ROOT/plugin" \( -name state.json -o -name warnings.log -o -name '*.verify' -o -name evidence -o -name tests \) 2>/dev/null | wc -l | tr -d ' ')"
-assert_eq "vibe-plugin" "plugin payload carries no runtime state" "$strays" "0"
+# No per-project runtime state may ship in the plugin. TWO checks, because the
+# plugin's skills are symlinks and the two halves of "the payload" differ:
+#
+#  (1) the GENERATED scaffold — plain `find`, which stops at the symlinks. That is
+#      the half build-plugin.sh writes itself.
+#  (2) what a marketplace fetch actually delivers — `claude plugin install`
+#      DEREFERENCES the skill symlinks, so the real payload is the committed
+#      content of spec/ + flow/. Asked with plain `find` that was vacuously true
+#      (it never descended), which is how runtime state could have shipped
+#      unnoticed. Ask git instead: it answers for the tree a fetch gets, and stays
+#      stable on a developer's dirty checkout, where flow/warnings.log legitimately
+#      exists and is gitignored.
+#
+# Co-located tests/ ARE part of the dereferenced payload — an accepted, documented
+# consequence of the symlink design (build-plugin.sh's header); install.sh's
+# scrub_source_only is what keeps them out of a per-repo install.
+strays="$(find "$REPO_ROOT/plugin" \( -name state.json -o -name warnings.log -o -name '*.verify' -o -name evidence \) 2>/dev/null | wc -l | tr -d ' ')"
+assert_eq "vibe-plugin" "generated plugin scaffold carries no runtime state" "$strays" "0"
+if git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  tracked_state="$(git -C "$REPO_ROOT" ls-files spec flow 2>/dev/null \
+    | grep -Ec '(^|/)(state\.json|warnings\.log|evidence/)' || true)"
+  assert_eq "vibe-plugin" "dereferenced payload (spec/ + flow/) commits no runtime state" "$tracked_state" "0"
+else
+  pass "vibe-plugin" "dereferenced-payload check skipped (not a git checkout)"
+fi
 # Drift guard: the committed tree must equal a fresh build from spec/ + flow/, so a
 # skill edit without a rebuild cannot silently ship a stale plugin.
 if [[ -f "$BUILD_PLUGIN" ]] && bash "$BUILD_PLUGIN" --check >/dev/null 2>&1; then
