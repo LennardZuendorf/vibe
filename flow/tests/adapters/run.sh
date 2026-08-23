@@ -63,6 +63,44 @@ out="$(jq -r '.adapters[].file' "$ADAPTERS_JSON" 2>/dev/null | tr '\n' ' ')"
 assert_contains "agent-instructions/2" "adapters.json lists CLAUDE.md and WARP.md" "$out" "CLAUDE.md"
 assert_contains "agent-instructions/2" "adapters.json lists WARP.md" "$out" "WARP.md"
 
+# The catalogue is DATA, and this is what makes that true rather than aspirational.
+# adapters.json says of itself "Extend this list to add runtimes without editing
+# skill prose" while install.sh hardcoded `case claude) … warp)` and uninstall
+# hardcoded `for adapter in CLAUDE.md WARP.md`, so a third entry changed nothing.
+# Discriminating by construction: this plants an adapter that appears in NO
+# source file, so it can only work by being read from the manifest.
+if command -v jq >/dev/null 2>&1; then
+  SBA="$(mktmp)"; SRCA="$(mktmp)"
+  # A source tree with one extra adapter. Copy (not symlink) so the real
+  # manifest is never touched.
+  tar -cf - --exclude=.git -C "$REPO_ROOT" . 2>/dev/null | tar -xf - -C "$SRCA"
+  jq '.adapters += [{"file":"ZZTEST.md","target":"AGENTS.md","runtime":"zztest","default":false}]' \
+     "$REPO_ROOT/flow/reference/adapters.json" > "$SRCA/flow/reference/adapters.json"
+  bash "$SRCA/install.sh" "$SBA" --adapters zztest >/dev/null 2>&1
+  { [[ -L "$SBA/ZZTEST.md" && "$(readlink "$SBA/ZZTEST.md")" == "AGENTS.md" ]]; } \
+    && pass "agent-instructions/2" "a manifest-only adapter is linked by install (catalogue is live data)" \
+    || fail "agent-instructions/2" "a manifest-only adapter is linked by install (catalogue is live data)"
+  bash "$SRCA/install.sh" "$SBA" --uninstall --yes >/dev/null 2>&1
+  [[ ! -e "$SBA/ZZTEST.md" ]] \
+    && pass "agent-instructions/2" "uninstall removes a manifest-only adapter from the same data" \
+    || fail "agent-instructions/2" "uninstall removes a manifest-only adapter from the same data"
+  # An unknown name reports the manifest's own key list, not a hardcoded one.
+  outa="$(bash "$SRCA/install.sh" "$SBA" --adapters nope 2>&1 || true)"
+  assert_contains "agent-instructions/2" "an unknown adapter lists the manifest's keys" "$outa" "zztest"
+  rm -rf "$SBA" "$SRCA"
+else
+  pass "agent-instructions/2" "manifest-driven adapter checks skipped (no jq)"
+fi
+
+# …and without jq the catalogue degrades to the two shipped pairs rather than to
+# nothing: --adapters claude must still link.
+SBJ="$(mktmp)"; NOJQ_A="$(mkshim jq)"
+PATH="$NOJQ_A" "$NOJQ_A/bash" "$INSTALL" "$SBJ" --adapters claude >/dev/null 2>&1
+{ [[ -L "$SBJ/CLAUDE.md" && "$(readlink "$SBJ/CLAUDE.md")" == "AGENTS.md" ]]; } \
+  && pass "agent-instructions/2" "jq-less: --adapters claude still links via the fallback pairs" \
+  || fail "agent-instructions/2" "jq-less: --adapters claude still links via the fallback pairs"
+rm -rf "$SBJ" "$NOJQ_A"
+
 echo ""
 echo "=== agent-instructions/3 — merge-agents.sh ==="
 # inject-triggers/6 fix round 2 — STDERR IS ASSERTED, not discarded.

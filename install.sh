@@ -86,6 +86,34 @@ note() { echo "install: $1"; }
 # never performed, so the plan reads the same whether or not it is applied.
 say() { if [[ "$DRY_RUN" -eq 1 ]]; then echo "install: [dry-run] would $1"; else echo "install: $1"; fi; }
 
+# adapter_rows — one "<key>\t<file>\t<target>" line per adapter, read from the
+# adapter catalogue. flow/reference/adapters.json says of itself "Extend this list
+# to add runtimes without editing skill prose", and flow/setup.md calls it data —
+# but install and uninstall both hardcoded `case claude) … warp)` and
+# `for adapter in CLAUDE.md WARP.md`, so a third entry changed nothing. It is data
+# now.
+#
+# The KEY is derived from the filename (CLAUDE.md -> claude), which is exactly the
+# vocabulary `--adapters` already takes, so the manifest needs no new field.
+# jq-less (and empty-manifest) targets fall back to the two shipped pairs, so the
+# behaviour never silently reduces to nothing.
+adapter_rows() {
+  local manifest="$SRC/flow/reference/adapters.json" rows=""
+  if command -v jq >/dev/null 2>&1 && [[ -f "$manifest" ]]; then
+    rows="$(jq -r '
+      (.canonical // "AGENTS.md") as $c
+      | .adapters[]?
+      | select(.file != null)
+      | [(.file | ascii_downcase | sub("\\.md$"; "")), .file, (.target // $c)]
+      | @tsv' "$manifest" 2>/dev/null || true)"
+  fi
+  if [[ -z "$rows" ]]; then
+    printf 'claude\tCLAUDE.md\tAGENTS.md\nwarp\tWARP.md\tAGENTS.md\n'
+    return 0
+  fi
+  printf '%s\n' "$rows"
+}
+
 # remove_shipped SRC_DIR DST_DIR [EXCLUDE_REL...] — delete from DST_DIR only the
 # files that exist in SRC_DIR (the precise inverse of a copy), skipping any whose
 # relative path equals or sits under an EXCLUDE_REL prefix (the artifacts install
@@ -530,13 +558,14 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     # Remove the opt-in adapter symlinks vibe created — but ONLY when they are
     # symlinks that point at AGENTS.md. A user's real file of the same name (or a
     # symlink they aimed elsewhere) is left untouched.
-    for adapter in CLAUDE.md WARP.md; do
-      link="$TARGET/$adapter"
-      if [[ -L "$link" && "$(readlink "$link")" == "AGENTS.md" ]]; then
-        say "remove adapter symlink $adapter -> AGENTS.md"
+    while IFS=$'\t' read -r _akey afile atarget; do
+      [[ -n "$afile" ]] || continue
+      link="$TARGET/$afile"
+      if [[ -L "$link" && "$(readlink "$link")" == "$atarget" ]]; then
+        say "remove adapter symlink $afile -> $atarget"
         [[ "$DRY_RUN" -eq 1 ]] || rm -f "$link"
       fi
-    done
+    done <<< "$(adapter_rows)"
     if [[ -f "$TARGET/AGENTS.md" ]]; then
       say "remove the managed vibe blocks from AGENTS.md (user prose preserved; a vibe-only stub is deleted)"
       [[ "$DRY_RUN" -eq 1 ]] || bash "$SRC_MERGE" unmerge "$TARGET" \
@@ -760,14 +789,22 @@ if [[ -n "$ADAPTERS" ]]; then
     err "WARN: --adapters is skipped under --only spec (adapter symlinks need the flow half's AGENTS.md)."
   else
     IFS=',' read -r -a chosen <<< "$ADAPTERS"
+    rows="$(adapter_rows)"
+    known=""
+    while IFS=$'\t' read -r akey _af _at; do
+      [[ -n "$akey" ]] && known="${known:+$known, }$akey"
+    done <<< "$rows"
     for a in ${chosen[@]+"${chosen[@]}"}; do
-      case "$a" in
-        claude) say "symlink CLAUDE.md -> AGENTS.md"
-                [[ "$DRY_RUN" -eq 1 ]] || bash "$MERGE" link "CLAUDE.md" "$TARGET" || err "WARN: CLAUDE.md not linked (real file?)." ;;
-        warp)   say "symlink WARP.md -> AGENTS.md"
-                [[ "$DRY_RUN" -eq 1 ]] || bash "$MERGE" link "WARP.md" "$TARGET" || err "WARN: WARP.md not linked (real file?)." ;;
-        *)      err "WARN: unknown adapter '$a' (known: claude, warp)." ;;
-      esac
+      afile=""
+      while IFS=$'\t' read -r akey af _at; do
+        if [[ "$akey" == "$a" ]]; then afile="$af"; break; fi
+      done <<< "$rows"
+      if [[ -z "$afile" ]]; then
+        err "WARN: unknown adapter '$a' (known: $known)."
+        continue
+      fi
+      say "symlink $afile -> AGENTS.md"
+      [[ "$DRY_RUN" -eq 1 ]] || bash "$MERGE" link "$afile" "$TARGET" || err "WARN: $afile not linked (real file?)."
     done
   fi
 fi
