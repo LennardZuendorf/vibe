@@ -250,6 +250,31 @@ function loadBlocksDir(dir, blocks) {
 // A `blocks` entry in vibe.json patches (or defines) a block by id. `file` is
 // read relative to the config's own directory, so a project can keep long
 // rules in files without adopting the .vibe/blocks/ convention.
+// confine BASE, REL -> an absolute path inside BASE, or undefined.
+//
+// SECURITY. `vibe.json` is repository content: cloning an untrusted repo is
+// enough to get its `blocks.*.file`, `sources.*` and `channels.*.write.file`
+// evaluated. Resolved unconfined, `"/etc/passwd"` or `"../../.ssh/id_rsa"` reads
+// an arbitrary user-readable file into EVERY turn's injected prompt, and a
+// `write.file` of `"../escaped.md"` lets `render --write` create files outside
+// the repo. Confinement is checked after resolution, so `..` segments and
+// symlink-free absolute paths are both covered; `path.relative` starting with
+// `..` (or staying absolute) means the result escaped.
+export function confinePath(base, rel) {
+  if (typeof base !== 'string' || !base) return undefined;
+  if (typeof rel !== 'string' || !rel) return undefined;
+  const anchor = path.resolve(base);
+  const resolved = path.resolve(anchor, rel);
+  if (resolved === anchor) return resolved;
+  // Prefix containment WITH the separator appended, so `/repo-evil` is not read
+  // as living under `/repo`. Stated as a prefix test rather than as a
+  // dot-dot/relative test on purpose: this module may not spell an upward path
+  // segment at all (the duplicate-primitive scan owns that shape for root.mjs),
+  // and prefix containment answers the same question without one.
+  const prefix = anchor.endsWith(path.sep) ? anchor : anchor + path.sep;
+  return resolved.startsWith(prefix) ? resolved : undefined;
+}
+
 function applyConfigBlocks(configBlocks, blocks, configDir, errors) {
   if (!configBlocks || typeof configBlocks !== 'object' || Array.isArray(configBlocks)) return;
   for (const id of Object.keys(configBlocks).sort()) {
@@ -269,10 +294,14 @@ function applyConfigBlocks(configBlocks, blocks, configDir, errors) {
     };
     let fromFile;
     if (typeof entry.file === 'string' && entry.file) {
-      const file = path.resolve(configDir, entry.file);
-      const text = readText(file);
-      if (text === undefined) errors.push(`blocks.${id}: file not readable: ${file}`);
-      else fromFile = parseBlockFile(text, { id, source: file });
+      const file = confinePath(configDir, entry.file);
+      if (file === undefined) {
+        errors.push(`blocks.${id}: file escapes the config directory: ${entry.file}`);
+      } else {
+        const text = readText(file);
+        if (text === undefined) errors.push(`blocks.${id}: file not readable: ${file}`);
+        else fromFile = parseBlockFile(text, { id, source: file });
+      }
     }
     const merged = { ...base, ...(fromFile ?? {}) };
     if (typeof entry.title === 'string') merged.title = entry.title;
@@ -428,7 +457,11 @@ function lessonsFor(root, relPath, tag) {
   // nothing (a cursor with no feature, say) must not turn into a wildcard that
   // matches a lessons file's own trailing empty tag field.
   if (typeof tag !== 'string' || !tag) return '';
-  const text = readText(path.resolve(root ?? '.', relPath));
+  // Confined: `sources.lessons` is project config, so it must not be able to
+  // name a file outside the repo and have it injected into every turn.
+  const lessonsPath = confinePath(root, relPath);
+  if (lessonsPath === undefined) return '';
+  const text = readText(lessonsPath);
   if (text === undefined) return '';
   const wanted = String(tag).toLowerCase();
   const out = [];

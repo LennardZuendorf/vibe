@@ -39,6 +39,7 @@ import {
   channelTrigger,
   cursorChangedSince,
   recordInject,
+  confinePath,
 } from '../content.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -1161,6 +1162,128 @@ test('hooks: a doctrine call with NO content tree is byte-identical to the porte
       runDoctrineHook(sb.vibeDir, sb.skillsDir, sb.dir).stdout,
       runDoctrine(sb.skillsDir).stdout,
     );
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Path confinement — vibe.json is repository content, so a cloned repo must not
+// be able to read arbitrary files into the prompt or write outside the tree.
+// ---------------------------------------------------------------------------
+
+test('security: confinePath admits paths inside the base and refuses every escape', () => {
+  const base = path.join(path.sep, 'repo');
+  assertEqual(confinePath(base, 'a/b.md'), path.join(base, 'a', 'b.md'));
+  assertEqual(confinePath(base, '.'), base);
+  for (const rel of [
+    path.join('..', 'outside.txt'),
+    path.join('..', '..', '.ssh', 'id_rsa'),
+    path.join('a', '..', '..', 'outside.txt'),
+    path.join(path.sep, 'etc', 'passwd'),
+  ]) {
+    assertEqual(confinePath(base, rel), undefined, `escape not refused: ${rel}`);
+  }
+  // A sibling whose name merely starts with the base is NOT inside it.
+  assertEqual(confinePath(base, path.join('..', 'repo-evil', 'x.md')), undefined);
+  assertEqual(confinePath('', 'a.md'), undefined);
+  assertEqual(confinePath(base, ''), undefined);
+});
+
+test('security: a vibe.json block file outside the repo is reported, never injected', () => {
+  const sb = makeContentSandbox({
+    defaults: { version: 1, channels: { 'user-prompt': { render: 'summary', blocks: [] } } },
+  });
+  const outside = path.join(path.dirname(sb.dir), `vibe-outside-secret-${path.basename(sb.dir)}.md`);
+  try {
+    writeFileSync(outside, '---\nid: evil\n---\n\nSECRET-CONTENT-42\n');
+
+    // Control: the SAME file inside the repo IS injected, so the miss below is
+    // confinement refusing it and not the block simply failing to compose.
+    const inside = path.join(sb.dir, 'inside-block.md');
+    writeFileSync(inside, '---\nid: evil\n---\n\nSECRET-CONTENT-42\n');
+    const cfg = (file) => `${JSON.stringify({
+      version: 1,
+      blocks: { evil: { title: 'E', channels: ['user-prompt'], file } },
+      channels: { 'user-prompt': { add: ['evil'] } },
+    }, null, 2)}\n`;
+    writeFileSync(path.join(sb.dir, 'vibe.json'), cfg('inside-block.md'));
+    assertIncludes(renderChannel('user-prompt', sb.ctx).text, 'SECRET-CONTENT-42');
+
+    writeFileSync(path.join(sb.dir, 'vibe.json'), cfg(path.join('..', path.basename(outside))));
+    const content = loadContent(sb.dir, sb.vibeDir);
+    assert(
+      content.errors.some((e) => /escapes the config directory/.test(e)),
+      `the escape must be reported, got: ${JSON.stringify(content.errors)}`,
+    );
+    assert(
+      !/SECRET-CONTENT-42/.test(renderChannel('user-prompt', sb.ctx).text),
+      'file content from outside the repo reached the prompt',
+    );
+  } finally {
+    rmSync(outside, { force: true });
+    sb.cleanup();
+  }
+});
+
+test('security: a lessons source pointing outside the repo resolves to nothing', () => {
+  const sb = makeContentSandbox({
+    defaults: {
+      version: 1,
+      sources: { lessons: '.spec/lessons.md' },
+      channels: { 'user-prompt': { render: 'summary', blocks: ['a.one'] } },
+    },
+    blocks: { 'a/one.md': BLOCK('a.one', '{{lessons:inject}}') },
+  });
+  const outside = path.join(path.dirname(sb.dir), `vibe-outside-lessons-${path.basename(sb.dir)}.md`);
+  try {
+    const entry = '### SECRET-CONTENT-42\n**Tags:** inject\n';
+    writeFileSync(path.join(sb.dir, '.spec', 'lessons.md'), entry);
+    writeFileSync(outside, entry);
+
+    // Control: the in-repo lessons file resolves.
+    assertIncludes(renderChannel('user-prompt', sb.ctx).text, 'SECRET-CONTENT-42');
+
+    writeFileSync(
+      path.join(sb.dir, 'vibe.json'),
+      `${JSON.stringify({ version: 1, sources: { lessons: path.join('..', path.basename(outside)) } }, null, 2)}\n`,
+    );
+    assert(
+      !/SECRET-CONTENT-42/.test(renderChannel('user-prompt', sb.ctx).text),
+      'a lessons file outside the repo reached the prompt',
+    );
+  } finally {
+    rmSync(outside, { force: true });
+    sb.cleanup();
+  }
+});
+
+test('security: `render <channel> --write` refuses a write target outside the repo', async () => {
+  const { runRender } = await import('../commands/render.mjs');
+  const sb = makeContentSandbox({
+    defaults: { version: 1, channels: { 'user-prompt': { render: 'summary', blocks: ['a.one'] } } },
+    blocks: { 'a/one.md': BLOCK('a.one', 'A summary') },
+  });
+  try {
+    const outside = path.join(path.dirname(sb.dir), `vibe-escaped-write-${path.basename(sb.dir)}.md`);
+    rmSync(outside, { force: true });
+    writeFileSync(
+      path.join(sb.dir, 'vibe.json'),
+      `${JSON.stringify({
+        version: 1,
+        channels: {
+          escape: {
+            render: 'summary',
+            blocks: ['a.one'],
+            write: { file: path.join('..', path.basename(outside)), block: 'vibe:rules' },
+          },
+        },
+      }, null, 2)}\n`,
+    );
+    const result = runRender(sb.ctx, ['escape', '--write']);
+    assertEqual(result.code, 1);
+    assertIncludes(result.stderr, 'resolves outside the repo');
+    assert(!existsSync(outside), 'render --write created a file outside the repo');
   } finally {
     sb.cleanup();
   }

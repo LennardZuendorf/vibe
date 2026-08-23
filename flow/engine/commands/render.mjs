@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { resolveRoot, resolveVibeDir, resolveSkillsDir } from '../root.mjs';
 import { upsertBlock } from '../blocks.mjs';
-import { loadContent, renderChannel, checkContent } from '../content.mjs';
+import { loadContent, renderChannel, checkContent, confinePath } from '../content.mjs';
 
 const USAGE = [
   'usage: vibe render <channel> [--write] | --list | --check',
@@ -64,8 +64,13 @@ function writeTarget(channel, root) {
   if (!spec || typeof spec !== 'object') return undefined;
   if (typeof spec.file !== 'string' || !spec.file) return undefined;
   if (typeof spec.block !== 'string' || !spec.block) return undefined;
+  // Confined to the repo: `write.file` is project config, and `--write` creates
+  // the file it names. Unconfined, a `vibe.json` shipped in a cloned repo could
+  // write anywhere the user can.
+  const file = confinePath(root, spec.file);
+  if (file === undefined) return { escaped: spec.file };
   return {
-    file: path.resolve(root, spec.file),
+    file,
     block: spec.block,
     note: typeof spec.note === 'string' ? spec.note : '',
   };
@@ -111,6 +116,13 @@ export function runRender(ctx, args) {
   if (!flags.has('--write')) return { code: result.errors.length ? 1 : 0, stdout: result.text, stderr };
 
   const target = writeTarget(channel, ctx.root);
+  if (target && target.escaped !== undefined) {
+    return {
+      code: 1,
+      stdout: '',
+      stderr: `${stderr}render: ERROR — channel '${name}' write target '${target.escaped}' resolves outside the repo; refusing to write\n`,
+    };
+  }
   if (!target) {
     return {
       code: 1,
