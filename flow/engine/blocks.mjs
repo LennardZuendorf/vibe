@@ -71,8 +71,28 @@ export function stripBlock(text, id) {
 // A whole managed block: opener, body, symmetric closer. No trailing newline —
 // the caller owns how it joins its surroundings.
 export function renderBlock(id, body) {
-  const inner = String(body).replace(/\n+$/, '');
+  const inner = neutralizeMarkers(id, String(body).replace(/\n+$/, ''));
   return `${openerLine(id)}\n${inner}\n<!-- /${id} -->`;
+}
+
+// A body line that IS this block's closer (or opener) ends the managed region
+// early: everything after it becomes ordinary document content, permanently.
+// The escaped text then survives the next `--write` — which replaces only up to
+// the injected closer — and sits outside what unmerge's marker pairing removes.
+// Block bodies come from vibe.json and from block files, so this is reachable
+// from repository content, not just from a typo.
+//
+// Neutralized rather than rejected: the render must still produce a block, and a
+// zero-width space inside the comment leaves the line readable while making it
+// no longer equal to any marker the reader matches on.
+function neutralizeMarkers(id, body) {
+  if (!body) return body;
+  const markers = new Set([openerLine(id), ...closerCandidates(id)]);
+  if (![...markers].some((m) => body.includes(m))) return body;
+  return body
+    .split('\n')
+    .map((l) => (markers.has(l) ? l.replace('<!--', '<!\u200b--') : l))
+    .join('\n');
 }
 
 // Replace the block in place, or append it when absent. Returns the new text

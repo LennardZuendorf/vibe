@@ -128,6 +128,27 @@ normalize() {
     | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
 }
 
+# same_normalized A B — do two files match once normalized?
+#
+# `diff -q <(normalize A) <(normalize B)` looks equivalent and is not: -q makes
+# diff STOP READING at the first difference, which SIGPIPEs whichever normalize
+# pipeline is still writing. That surfaced as an intermittent
+# `sed: couldn't write 84 items to stdout: Broken pipe` on stderr — a real CI
+# failure of the "unmerge leaves stderr clean" assertions, and a race, so it
+# reproduced roughly one run in two. Materialize both sides first and compare the
+# finished files; nothing can close a pipe early because there is no pipe.
+same_normalized() {
+  local a b rc
+  a="$(mktemp "${TMPDIR:-/tmp}/vibe-norm.XXXXXX")" || return 1
+  b="$(mktemp "${TMPDIR:-/tmp}/vibe-norm.XXXXXX")" || { rm -f "$a"; return 1; }
+  normalize "$1" > "$a" 2>/dev/null
+  normalize "$2" > "$b" 2>/dev/null
+  cmp -s "$a" "$b"
+  rc=$?
+  rm -f "$a" "$b"
+  return "$rc"
+}
+
 # ── adapter symlink mode ───────────────────────────────────────────────────────
 link_adapter() {
   local adapter="${1:-}" root="${2:-.}"
@@ -243,7 +264,7 @@ merge_instructions() {
     ins && skipc && $0 ~ /-->$/ { skipc = 0; next }
     ins && !skipc { print }
   ' "$TEMPLATE" > "$tcore"
-  if diff -q <(normalize "$tcore") <(normalize "$target") >/dev/null 2>&1; then
+  if same_normalized "$tcore" "$target"; then
     cp "$TEMPLATE" "$tmp" && mv -f "$tmp" "$target"
     note "wrapped unmarked-equivalent $target in vibe:instructions markers (no duplicate body)"
     return 0
@@ -285,7 +306,7 @@ unmerge() {
   # user content added around the managed blocks — including the template's own
   # title line, which sits above the markers. This is the "target had none" case:
   # remove it wholesale, the clean inverse of the fresh install that created it.
-  if [[ -f "$TEMPLATE" ]] && diff -q <(normalize "$target") <(normalize "$TEMPLATE") >/dev/null 2>&1; then
+  if [[ -f "$TEMPLATE" ]] && same_normalized "$target" "$TEMPLATE"; then
     rm -f "$target"
     note "removed vibe-created AGENTS.md stub at $target (untouched template — target had none)"
     return 0

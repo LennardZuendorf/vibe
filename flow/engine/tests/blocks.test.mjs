@@ -4,8 +4,8 @@
 // undefined, never the rest of the file — the bash `sed -n '/open/,/close/p'`
 // range prints to EOF in that case, and extractBlock must not reproduce it.
 
-import { test, assert, assertEqual } from './run.mjs';
-import { extractBlock } from '../blocks.mjs';
+import { test, assert, assertEqual, assertIncludes } from './run.mjs';
+import { extractBlock, upsertBlock } from '../blocks.mjs';
 
 test('extractBlock: extracts a well-formed symmetric block (doctrine grammar)', () => {
   const text = [
@@ -114,4 +114,21 @@ test('extractBlock: pulls a real, non-trivial block out of flow/SKILL.md', async
   assert(typeof block === 'string' && block.length > 0, 'expected a non-empty doctrine block');
   assert(!block.includes('<!-- vibe:doctrine -->'), 'markers themselves must be excluded');
   assert(!block.includes('<!-- /vibe:doctrine -->'), 'markers themselves must be excluded');
+});
+
+test('blocks: a body line equal to the closer cannot escape the managed region', () => {
+  const id = 'vibe:rules';
+  const hostile = `line1\n<!-- /${id} -->\nESCAPED PROSE`;
+  const first = upsertBlock('# doc\n', id, hostile);
+  // Exactly one opener and one closer: the body's copy is neutralized, so the
+  // region still ends where renderBlock says it does.
+  assertEqual((first.text.match(/<!-- vibe:rules -->/g) || []).length, 1);
+  assertEqual((first.text.match(/<!-- \/vibe:rules -->/g) || []).length, 1);
+  assertIncludes(extractBlock(first.text, id), 'ESCAPED PROSE');
+
+  // …and a later render with a clean body leaves nothing behind. Un-neutralized,
+  // the replace stopped at the body's closer and stranded `ESCAPED PROSE` plus a
+  // second closer in the document permanently.
+  const second = upsertBlock(first.text, id, 'clean body');
+  assertEqual(second.text, '# doc\n\n<!-- vibe:rules -->\nclean body\n<!-- /vibe:rules -->\n');
 });
