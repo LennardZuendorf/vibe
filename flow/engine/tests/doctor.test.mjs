@@ -45,7 +45,7 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, assert, assertEqual, assertMatch, runCommand, skip, mkTempRoot } from './run.mjs';
+import { test, assert, assertEqual, assertIncludes, assertMatch, runCommand, runCli, makeHookSandbox, skip, mkTempRoot } from './run.mjs';
 import { runDoctor } from '../commands/doctor.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -1146,17 +1146,26 @@ test('CLI: a vendored install ignores a mismatched CLAUDE_PROJECT_DIR for the ro
 // explicit CLI argument cannot be honoured without re-deriving the
 // `.agents/skills/vibe` join. Documented here as intended behaviour, not
 // left silent.
-test('CLI: a positional root argument is silently ignored — the self-resolved root wins', () => {
+// CONTRACT CHANGED (review): a positional root used to be SILENTLY IGNORED, and
+// this test pinned that. doctor.sh takes `doctor.sh [<repo-root>]`, so
+// `vibe doctor /some/other/root` printed a clean report about the self-located
+// tree and exited 0 — an answer that looked like it was about the path given.
+// The port still does not SUPPORT the argument (that would mean re-deriving the
+// `.agents/skills/vibe` join, which root.mjs owns); it refuses it instead. The
+// no-report half of the old assertion is what carried the value, and it is kept.
+test('CLI: a positional root argument is REFUSED, never answered for a different tree', () => {
   const prevEnv = process.env.CLAUDE_PROJECT_DIR;
   delete process.env.CLAUDE_PROJECT_DIR;
   try {
     const result = runCommand(process.execPath, [path.join(REPO_ROOT, 'flow', 'engine', 'cli.mjs'), 'doctor', '/some/other/root'], {
       cwd: REPO_ROOT,
     });
-    assertEqual(result.code, 0, `stderr: ${result.stderr}`);
-    assertMatch(result.stdout, new RegExp(`^# vibe doctor — ${REPO_ROOT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\n`));
-    assert(!result.stdout.includes('/some/other/root'), 'the positional argument must not appear anywhere in the report');
+    assertEqual(result.code, 1, `stderr: ${result.stderr}`);
+    assertEqual(result.stdout, '', 'a refusal prints no report at all');
+    assertIncludes(result.stderr, 'takes no arguments');
+    assert(!result.stdout.includes('/some/other/root'), 'the positional argument must not appear in a report');
   } finally {
     if (prevEnv !== undefined) process.env.CLAUDE_PROJECT_DIR = prevEnv;
   }
 });
+

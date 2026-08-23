@@ -575,6 +575,20 @@ function rootForReport(skillsDir, opts) {
 }
 
 export default async function run(argv, opts = {}) {
+  // REFUSE a positional root rather than ignoring it. doctor.sh accepts
+  // `doctor.sh [<repo-root>]`; this port deliberately does not (see the header —
+  // reproducing it means re-deriving the `.agents/skills/vibe` join, which
+  // root.mjs owns). Swallowing the argument was worse than not supporting it:
+  // `vibe doctor /some/other/repo` printed a clean report about the SELF-LOCATED
+  // tree and exited 0, so the answer looked like it was about the path given.
+  const positional = Array.isArray(argv) ? argv.filter((a) => typeof a === 'string' && a !== '') : [];
+  if (positional.length > 0) {
+    process.stderr.write(
+      `vibe doctor: takes no arguments (got '${positional[0]}'). It reports on the install it resolves from its own location; run it from inside the target repo instead.\n`,
+    );
+    return 1;
+  }
+
   const vibeDir = resolveVibeDir(opts);
   const skillsDir = resolveSkillsDir(opts);
   const root = rootForReport(skillsDir, opts);
