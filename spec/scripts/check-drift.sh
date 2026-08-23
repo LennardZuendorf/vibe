@@ -11,6 +11,11 @@
 #       .spec/plan.md            -> ERROR when missing (merged feature not recorded)
 #   (b) any "NOT STARTED" unit in .spec/features/*/plan.md
 #                                -> WARN, listed (a live feature plan that lags reality)
+#   (d) a live feature folder whose root-plan row already says DONE
+#                                -> ERROR (compound promoted the facts but never
+#                                   archived the folder — half a compound), and
+#                                   every live feature's row status is PRINTED so
+#                                   a row that lags reality is visible in CI
 #   (c) hand-written assertion counts in README.md or .spec/** (never the frozen
 #       archive)                 -> ERROR (counts must come from the test runner,
 #                                   not be typed by hand — they rot silently)
@@ -62,6 +67,38 @@ if [[ -f "$PLAN" ]]; then
   done
 else
   warn "root plan .spec/plan.md not found; skipping plan-row check."
+fi
+
+# (d) status of each live feature's row in the root plan.
+#
+# Check (a) only asks that the NAME appears somewhere in plan.md, which a stale
+# `NOT STARTED` row satisfies just as well as a correct one — that is how two
+# fully shipped, fully tested features (content-layer, inject-triggers) passed
+# this gate while misreporting themselves. A script cannot know "shipped", but it
+# CAN catch the other half of the same mistake and make the first half visible:
+# a DONE row with the folder still present is a compound that promoted the facts
+# and forgot to archive, and printing every live row's status puts a lagging one
+# in front of a human on every run.
+if [[ -f "$PLAN" ]]; then
+  for dir in "$SPEC_DIR"/features/*/; do
+    [[ -d "$dir" ]] || continue
+    feat="$(basename "$dir")"
+    row="$(grep -F "| $feat |" "$PLAN" 2>/dev/null | head -n1 || true)"
+    [[ -n "$row" ]] || row="$(grep -F "**$feat**" "$PLAN" 2>/dev/null | head -n1 || true)"
+    if [[ -z "$row" ]]; then
+      echo "check-drift: note: feature '$feat' is named in the plan but has no Feature Sequence row." >&2
+      continue
+    fi
+    status="NOT STARTED"
+    case "$row" in
+      *"| DONE |"*) status=DONE ;;
+      *"| IN PROGRESS |"*) status="IN PROGRESS" ;;
+    esac
+    echo "check-drift: live feature '$feat' — root plan says: $status" >&2
+    if [[ "$status" == "DONE" ]]; then
+      err "feature '$feat' is DONE in .spec/plan.md but .spec/features/$feat/ still exists — compound promotes AND archives; move it to .spec/archive/"
+    fi
+  done
 fi
 
 # (b) NOT STARTED units left in a live feature plan (archive is excluded — it is

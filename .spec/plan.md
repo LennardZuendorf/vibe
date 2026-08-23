@@ -75,8 +75,8 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 10 | flow-legibility | self-carrying orders (transition command in every inject), SessionStart doctrine hook (+compact re-inject), loop edges (design↔research, spec→brainstorm, plan→design), drift-first nudges, model-tier pins in delegation contracts | `flow/tests/run.sh` | DONE | — |
 | 11 | install-distribution | one-command `install.sh` (local default / `--global` per-user plugin / interactive), `--with-plugins` companion set (superpowers + feature-dev slot), self-hosting plugin + marketplace (`build-plugin.sh`, self-detecting doctrine hook), curl bootstrap, `doctor` instruction-coverage, caveman doctrine note, skill-relative path sweep + CI guard | `flow/tests/adapters/run.sh` + `spec/tests/run.sh` | DONE | flow-legibility DONE |
 | 12 | js-core | `engine/` skeleton + `vibe` CLI dispatch; the ONE cursor reader, root resolver, machine loader, marker grammar; `state` (writer only), `orders`, `doctrine`, `doctor` ported off bash with byte-identical output; JS test harness; hook shims `exec` node and exit 0 without it; duplicate-primitive scan; guard/gate bash oracles frozen for parity | `engine/tests/` + existing suites green against the shim | DONE | — |
-| 13 | **content-layer** | `content/policy.json` (invariants as data, read by guard *and* renderer), `content/blocks/**` with `id`/`channels`/`summary` frontmatter, `content/compose.json` channels, typed placeholders (`{{state}} {{next}} {{writes}} {{delegates}} {{lessons:TAG}}`), `.vibe/` user override layer, `vibe render` with budget + positive-framing + duplication + ancestor-CLAUDE.md lints | `engine/tests/` (channel budgets, override precedence, lint discrimination) | NOT STARTED | js-core DONE |
-| 14 | **inject-triggers** | level/edge/event trigger classes; `.vibe/last-inject` edge detection; cursor line moves off `SessionStart` (stale on `--resume`); `Stop` predicate 3 deleted; warn relay bounded + deduped; lessons-by-state-tag wired into the edge channel | `engine/tests/` + `flow/tests/adapters/run.sh` | NOT STARTED | content-layer DONE |
+| 13 | content-layer | `content/blocks/**` with `id`/`channels`/`summary` frontmatter, `content/vibe.default.json` channels, typed placeholders (`{{state}} {{next}} {{writes}} {{delegates}} {{orders}} {{doctrine}} {{invariants}} {{lessons:TAG}}`), a root `vibe.json` override layer install never rewrites, `vibe render --list/--check/<channel> --write` with per-channel budgets and lints | `engine/tests/` (channel budgets, override precedence, lint discrimination) | DONE | js-core DONE |
+| 14 | inject-triggers | level/edge/event trigger classes; `.vibe/last-inject` edge detection; `content/policy.json` (invariants as data, read by the guard *and* by `{{invariants}}`); cursor line moved off `SessionStart`; `Stop` predicate 3 deleted; warn relay bounded + deduped | `engine/tests/` + `flow/tests/adapters/run.sh` | DONE | content-layer DONE |
 | 15 | **machine-teeth** | `vibe state set` enforces `next` membership and refuses gated edges without `--confirm`; phase-file link into `state-machine.json`; dead fields removed; orders interpolate instead of restate; guard covers the physical cursor path | `flow/tests/run.sh` (illegal edge refused, gated edge refused, confirm accepted) | NOT STARTED | content-layer DONE |
 | 16 | **plugin-runtime** | plugin carries skills + `/flow` command + 4 spec subagents + 5 hooks + engine + content; `vibe init` / `vibe vendor`; version stamp + install manifest; retire `install.sh`, `merge-settings.sh`, `.claude/hooks/*`; fix the seven install bugs; macOS + bash-3.2 CI leg | `flow/tests/adapters/run.sh` + a fresh non-git target | NOT STARTED | machine-teeth DONE |
 | 17 | **spec-js** | port validate/drift/promote/list/scan/lessons-for into the engine; fix substring validators (R-ID prefix collision, RFC-2119 word boundary, Scope section scoping, zero-requirement short-circuit); register the four subagents through the plugin manifest | `spec/tests/run.sh` | NOT STARTED | js-core DONE |
@@ -105,8 +105,14 @@ this is possible: a plugin may carry `skills/`, `commands/`, `agents/`, and
 per-user plugin resolves per-repo state.
 
 Sequence is rows 12–20; each gets its own `.spec/features/<name>/` spec at
-`feature.design` time. js-core (row 12) is first and lands while the shell still
-runs — scripts cut over one at a time. Still deferred from earlier arcs:
+`feature.design` time. Rows 12–14 (js-core, content-layer, inject-triggers) are
+`DONE` and compounded: the engine runs the flow, every injected sentence is an
+authored block, and the write invariants are data read by both the guard and the
+prose documenting it. The bash scripts stay as the parity oracles the engine is
+tested against — and two of them (`flow/hooks-fallback/`) are also the shipped
+no-node fallback for the guard and the Stop gate. Row 15 (`machine-teeth`) is
+next; until it lands the cursor writer validates the state *name* only, and edge
+legality stays `/flow` convention. Still deferred from earlier arcs:
 earn-the-teeth promotions beyond the verify tooth, `vibe-flow/4` `feature.deepen`,
 multi-lens review, `/spec research` wiring, and the manual gh repo metadata upload.
 
@@ -191,7 +197,7 @@ Cleansed notes for shipped work — detail lives in live surfaces, not this plan
 - **spec skill bundle — DONE.** Four-layer model, warn-first `validate.sh`, strict
   templates, feature-authoring flow, skill discovery/routing; `spec/tests/run.sh`
   green. `.spec/features/spec-framework/` deleted (truth = skill bundle + tests).
-- **vibe-flow — DONE.** 15-state machine, six scripts (`set-state`, `validate-state`,
+- **vibe-flow — DONE.** 13-state machine, six scripts (`set-state`, `validate-state`,
   `detect-context`, `regen-active-rules`, `orders`, `check-skills`), originally seven
   `vibe-*` skills. D12 orders sourced from each skill via `orders.sh`; D8–D11 in place.
   `flow/tests/run.sh` green. Specs kept as living architecture docs (root entrypoints

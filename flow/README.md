@@ -7,10 +7,14 @@ The **vibe flow** is a state-machine workflow for **Claude Code**. It turns a
 loose "coding with an agent" session into a disciplined arc: it routes each phase
 (strategy / feature / quick) to the right skills and subagents, injects per-turn
 "orders" so the agent always knows the one job for the current state, and guards
-its own write invariants with hooks. It is bash, Markdown, and JSON — no runtime.
+its own write invariants with hooks. It is Markdown and JSON, driven by bash hook
+shims over a zero-dependency Node engine ([engine/](engine)) — Node ≥18, no
+dependencies, no build step. Without node the two hooks that carry a hard block
+fall back to the frozen bash implementations in
+[hooks-fallback/](hooks-fallback); the two that only inject text no-op.
 
-It is one of two halves. The other is [the spec framework](../spec/README.md),
-which the flow drives for its authoring phases; the [root README](../README.md)
+It is one of two halves. The other is [the spec framework](https://github.com/LennardZuendorf/vibe/blob/main/spec/README.md),
+which the flow drives for its authoring phases; the [root README](https://github.com/LennardZuendorf/vibe#readme)
 explains the split. This half needs Claude Code for the hooks to fire.
 
 ## Quickstart
@@ -368,6 +372,6 @@ The flow half. Addressed at runtime under `.agents/skills/vibe/`.
 
 ## More
 
-- [`../README.md`](../README.md) — the umbrella: the spec/flow split and install.
-- [`../spec/README.md`](../spec/README.md) — the other half: the spec framework.
+- [the root README](https://github.com/LennardZuendorf/vibe#readme) — the umbrella: the spec/flow split and install.
+- [`spec/README.md`](https://github.com/LennardZuendorf/vibe/blob/main/spec/README.md) — the other half: the spec framework.
 - [SKILL.md](SKILL.md) — the router agents actually follow.

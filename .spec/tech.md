@@ -177,16 +177,16 @@ link**, delegates, allowed write surfaces, exit predicate, and legal `next` set;
 edge-keyed `gates` name the two human approvals. Every field is read by code —
 a field nothing reads is deleted, not carried.
 
-`vibe state set <target>` is the only sanctioned writer **and the gate**:
+`vibe state set <target>` is the only sanctioned writer. It validates the target
+state *name*, writes atomically (0600, matching `set-state.sh`'s mktemp + mv), and
+preserves `feature` carry-forward.
 
-- rejects a target outside the current state's `next`,
-- rejects a gated edge without an explicit `--confirm`,
-- writes atomically, preserving `feature` carry-forward.
-
-This is the correction to the previous design, where `gates` was read by no code
-and every orders block instructed the model to call the writer directly — making
-the documented happy path the gate bypass. Approval is now enforced at the
-writer, so prose cannot route around it.
+**Planned — `machine-teeth`, plan row 15:** the writer also becomes the gate,
+rejecting a target outside the current state's `next` and a gated edge with no
+explicit `--confirm`. It does neither today: `gates` is read by `/flow` convention,
+not by the writer, so the documented happy path is still the gate bypass. Until
+row 15 lands, treat approval as prose, not as a mechanism — `state.test.mjs` pins
+that explicitly ("gate enforcement is explicitly out of scope").
 
 Orders **interpolate** machine fields (`{{writes}}`, `{{next}}`, `{{delegates}}`,
 `{{gate}}`) instead of restating them, so renaming a state is a one-file change.
@@ -202,9 +202,30 @@ parity is by construction rather than by test. Because `UserPromptSubmit` output
 persists in the transcript, channels are trigger-classed (level / edge / event)
 with per-channel line budgets linted in CI.
 
-Full contract — block format, the `.vibe/` override layer, the channel table and
-its budgets, and the authoring lints — lives in
-[tech-content.md](tech-content.md).
+**D15 realized — content is data.** Every injected sentence is a block authored
+once (`id` / `title` / `channels`, summary + body), composed per channel by
+`vibe render`, with typed placeholders interpolating machine fields. The project
+layer is a single root `vibe.json` that install never writes, so a target's
+injection policy survives every upgrade. The marker grammar stays owned by
+`blocks.mjs` (`stripBlock` / `renderBlock` / `upsertBlock`), so `content.mjs` and
+`render.mjs` never spell a marker — the duplicate-primitive scan enforces that,
+and `upsertBlock` reporting `changed: false` is what makes `--write` idempotent.
+Every path a project's config can name is confined to the repo before it is read
+or written: `vibe.json` is repository content, so an unconfined `blocks.*.file`
+would inject an arbitrary file into every turn.
+
+**D16 realized — injection is trigger-classed and budgeted.** Prompt payload
+splits level / edge / event: two byte-stable lines every turn, the full orders
+only on a cursor change (tracked in `.vibe/last-inject`), and event text only when
+an event occurred. An edge-classed channel must carry `{{orders}}`;
+`render --check` errors when it does not. The relay drains at most 10 lines per
+turn, collapsing duplicates to `<line> (xN)`.
+
+Both hooks compose through `renderChannelSafe`, so a target with no content tree
+emits byte-identical output to the pre-content-layer hooks.
+
+Full contract — block format, the override layer, the channel table and its
+budgets, and the authoring lints — lives in [tech-content.md](tech-content.md).
 
 
 ---
@@ -302,10 +323,14 @@ plugin.
 | Guard | `PreToolUse` (`Edit\|Write\|NotebookEdit\|Bash`) | Evaluate `policy.json`; block with a rendered verdict, warn elsewhere. |
 | Gate | `Stop` | The evidence-receipt tooth in `*.verify`. Note the platform ends the turn after 8 consecutive blocks — the tooth is finite, not absolute. |
 | Doctrine | `SessionStart` (+ `compact`) | Timeless doctrine only. Carries **no cursor line**: resumed sessions replay saved hook output, which would make live state stale. |
-| Redirect | `PostToolUse` (`Skill`) | On delegate-skill load, inject the artifact redirect (`redirects.json`, `{{feature}}` interpolated) so superpowers keeps its method but writes into `.spec/**`. |
+| Redirect *(planned — `delegation-redirect`, plan row 18)* | `PostToolUse` (`Skill`) | On delegate-skill load, inject the artifact redirect (`redirects.json`, `{{feature}}` interpolated) so superpowers keeps its method but writes into `.spec/**`. |
 
-Every hook is a shim over the engine; the allow/warn/block policy lives once in
-`policy.json` and is never duplicated. Hooks are earned warn-first and degrade
+Four hooks ship today — Inject, Guard, Gate, Doctrine — wired through
+`.claude/settings.json`; Redirect is designed, not built. Every hook is a shim
+over the engine, and the two carrying a hard block fall back to the frozen bash
+implementation in `flow/hooks-fallback/` when node is absent or the engine fails,
+so enforcement degrades to bash rather than to nothing. The allow/warn/block
+policy lives once in `policy.json` and is never duplicated. Hooks are earned warn-first and degrade
 gracefully (exit 0 on any missing keystone). Delivery history lives in
 [plan.md](plan.md), not here.
 

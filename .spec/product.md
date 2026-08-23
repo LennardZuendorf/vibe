@@ -15,11 +15,16 @@ Codex, any agent, or none.
 **One-liner:** durable specs plus agent skills plus flow state, composed into a
 strict personal coding workflow.
 
-**Carrier split (v0.3):** the *runtime* — engine, hooks, skills, `/flow`,
-subagents, content — ships in the plugin, versioned and installed once. The
-*memory* — `.spec/**`, the `AGENTS.md` managed block, `.vibe/` content overrides
-— is committed per repo and needs no runtime. `vibe vendor` writes the runtime
-into a repo as an explicit opt-in for teams and CI.
+**Carrier split (target, v0.3):** the *runtime* — engine, hooks, skills,
+`/flow`, subagents, content — ships in the plugin, versioned and installed once.
+The *memory* — `.spec/**`, the `AGENTS.md` managed block, `vibe.json` content
+overrides — is committed per repo and needs no runtime. `vibe vendor` writes the
+runtime into a repo as an explicit opt-in for teams and CI.
+
+> **Shipped today:** the runtime installs per repo through `install.sh` (both
+> halves, or `--only spec|flow`); the plugin carries the stateless surface only —
+> the two skills plus the doctrine hook. Moving the engine, `/flow`, and the
+> guard hooks into the plugin is `plugin-runtime` (plan row 16).
 
 ---
 
@@ -84,8 +89,8 @@ At a project level, vibe must:
     whole stack; `/vibe init` seeds a repo from inside a session, so npm is
     optional. The `vibe` engine also publishes to npm for non-Claude runtimes.
     Companion plugins (superpowers, feature-dev slot) install opt-in and degrade
-    gracefully when absent. The caveman preference ships as a one-line doctrine
-    note, not a plugin.
+    gracefully when absent. The `style.ste100` output rule (brief technical
+    English) ships as a content block, not a plugin.
 11. **Instructions are injection-first and budgeted.** Doctrine reaches the
     agent through hooks, so the `AGENTS.md` managed block is an optional adapter
     for non-Claude runtimes. Because `UserPromptSubmit` output persists in the
