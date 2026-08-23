@@ -324,7 +324,17 @@ function applyConfigBlocks(configBlocks, blocks, configDir, errors) {
 // edits it (`add` / `remove`) — the two compose in that order, so
 // `{"blocks": [...], "add": [...]}` is meaningful rather than ambiguous.
 
-function mergeChannel(base = {}, over = {}, name, errors) {
+function mergeChannel(baseIn = {}, overIn = {}, name, errors) {
+  // A non-object entry (`"user-prompt": null`) reached here and threw on
+  // `.blocks`, breaking this module's "never throws" contract: the inject hook's
+  // catch then swallowed it and EVERY channel silently vanished for one bad key,
+  // with no diagnostic. Report and carry on, the way applyConfigBlocks already
+  // does for the same shape.
+  const base = baseIn && typeof baseIn === 'object' ? baseIn : {};
+  const over = overIn && typeof overIn === 'object' ? overIn : {};
+  if (overIn !== undefined && (!overIn || typeof overIn !== 'object')) {
+    errors.push(`channels.${name}: expected an object, ignoring`);
+  }
   let ids = Array.isArray(over.blocks)
     ? [...over.blocks]
     : Array.isArray(base.blocks)

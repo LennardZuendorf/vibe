@@ -81,7 +81,10 @@ export function runSet(vibeDir, args) {
   }
 
   if (!stateOf(machine, target)) {
-    const legal = Object.keys(machine.states ?? {}).join(', ');
+    // Sorted, matching the oracle's `jq -r '.states | keys'` (jq sorts object
+    // keys). Document order made the same error list read differently on each
+    // side for no reason, and an alphabetical list is easier to scan anyway.
+    const legal = Object.keys(machine.states ?? {}).sort().join(', ');
     return {
       code: 1,
       stdout: '',

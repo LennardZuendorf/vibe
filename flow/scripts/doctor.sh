@@ -80,6 +80,12 @@ note_header
 if have_jq; then ok tool.jq "jq present ($(jq --version 2>/dev/null))"
 else warn tool.jq "jq not installed (recommended, not required) — set-state writes the cursor via printf, the guard extracts paths via sed, state reads degrade to idle; cursor + manifest checks unverified"; fi
 
+# node — every hook is node-first now, so its absence changes what the install
+# actually enforces. Reporting only jq (which is genuinely optional) while saying
+# nothing about node let a node-less install read as fully healthy.
+if command -v node >/dev/null 2>&1; then ok tool.node "node present ($(node --version 2>/dev/null))"
+else warn tool.node "node not installed — the four .claude/hooks are the flow's enforcement, and without node they fall back to flow/hooks-fallback (guard + Stop gate) or no-op (inject + doctrine)"; fi
+
 # core skills present + integrity.
 check_link_or_dir core.spec "$SPEC_SKILL"
 check_link_or_dir core.vibe "$VIBE_SKILL"

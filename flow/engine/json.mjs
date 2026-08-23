@@ -27,7 +27,10 @@ export function writeJsonAtomic(filePath, data) {
   const tmpPath = path.join(dir, `.${base}.${process.pid}.${Date.now()}.tmp`);
   const body = `${JSON.stringify(data, null, 2)}\n`;
   try {
-    fs.writeFileSync(tmpPath, body, 'utf8');
+    // mode 0600 — set-state.sh writes through `mktemp` + `mv -f`, which lands
+    // the cursor at 0600; the default here (0666 & ~umask) landed it at 0644.
+    // The bytes matched, the permissions did not.
+    fs.writeFileSync(tmpPath, body, { encoding: 'utf8', mode: 0o600 });
     fs.renameSync(tmpPath, filePath);
   } catch (err) {
     try {

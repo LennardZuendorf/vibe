@@ -470,7 +470,17 @@ for (const fixture of CURSOR_FIXTURES) {
         // forced `jqPresent: true` with no version text would wrongly
         // report "jq present ()" instead of the real version string.
         const engineOpts = { home: DOCTOR_HOME };
-        if (mode === 'no-jq') engineOpts.jqPresent = false;
+        if (mode === 'no-jq') {
+          engineOpts.jqPresent = false;
+          // The no-jq shim is built from the adapters suite's mkshim(), whose
+          // tool list carries no `node` — deliberately, because the adapters
+          // suite reuses it as its NODE-ABSENT shim. So the ORACLE leg genuinely
+          // runs without node and reports `warn tool.node`, while the engine runs
+          // in-process under the real node. Tell it what the oracle saw, exactly
+          // as jqPresent already does; adding node to mkshim() instead would
+          // disarm the adapters suite's node-absent degrade tests.
+          engineOpts.nodePresent = false;
+        }
         const engineResult = runDoctor(sandbox.root, sandbox.vibeDir, sandbox.skillsDir, engineOpts);
         assertEqual(oracleResult.code, 0, `oracle failed (${mode}): ${oracleResult.stderr}`);
         assertEqual(engineResult.code, 0);

@@ -41,7 +41,6 @@ import {
   channelTrigger,
   cursorChangedSince,
   recordInject,
-  VIBE_DIR_RELPATH,
   LAST_INJECT_RELPATH,
 } from '../content.mjs';
 
@@ -571,8 +570,13 @@ export function runGuardHook(root, stdinText, opts = {}) {
     } catch {
       res = undefined;
     }
-    verdict =
-      res && !res.error && typeof res.stdout === 'string' && res.stdout.trim() ? res.stdout.trim() : 'allow';
+    const out = res && !res.error && typeof res.stdout === 'string' ? res.stdout.trim() : '';
+    // SHAPE-GATED, not "any non-empty stdout". detect-context.sh carries an
+    // is_verdict() for exactly this reason: the hooks read anything that is not
+    // `block:`/`warn:` as an allow, so forwarding whatever the script happened to
+    // print would turn a diagnostic, a warning banner, or a partial line into a
+    // silent allow — and a stray line BEFORE a real `block:` would downgrade it.
+    verdict = isVerdict(out) ? out : 'allow';
   }
 
   if (verdict.startsWith('block:')) {
@@ -828,6 +832,14 @@ function evidenceReceiptCheck(root, state, feature, tree, warn) {
   return undefined;
 }
 
+// A verdict is ONE line reading exactly `allow`, or `warn:<reason>`, or
+// `block:<reason>` — the contract detect-context.sh's is_verdict() states.
+function isVerdict(text) {
+  if (typeof text !== 'string' || text.includes('\n')) return false;
+  if (text === 'allow') return true;
+  return /^(?:warn|block):.+$/.test(text);
+}
+
 export function runGateHook(root, vibeDir, stdinText, opts = {}) {
   if (readStopHookActive(stdinText)) return { code: 0, stdout: '', stderr: '' };
 
@@ -835,7 +847,24 @@ export function runGateHook(root, vibeDir, stdinText, opts = {}) {
   if (!fs.existsSync(detectPath)) return { code: 0, stdout: '', stderr: '' };
 
   const { state, feature } = cursorStateFeature(vibeDir);
-  const tree = gitPorcelain(root, opts);
+
+  // Only two predicates consult the working tree: the TDD nudge (feature.impl /
+  // quick.fix) and the receipt-staleness half of the evidence gate (*.verify).
+  // Calling gitPorcelain() unconditionally ran `git status --porcelain -uall` on
+  // EVERY Stop, in every state — the oracle calls git only inside the predicates
+  // that need it, so an idle Stop does no git work at all. `-uall` lists one row
+  // per untracked file plus a statSync per row, and the Stop hook has a 10s
+  // timeout: on a large un-ignored tree that timeout kills the hook, and a killed
+  // Stop hook does not block — reopening from outside the process exactly the
+  // "I could not look" hole the fail-closed logic below was written to close.
+  const treeNeeded =
+    state === 'feature.impl'
+    || state === 'quick.fix'
+    || state === 'feature.verify'
+    || state === 'quick.verify';
+  // The not-needed value is never consulted: predicateTdd() no-ops outside
+  // impl/fix and evidenceReceiptCheck() returns early outside *.verify.
+  const tree = treeNeeded ? gitPorcelain(root, opts) : { determined: false, text: '' };
 
   let stderr = '';
   const warn = (msg) => {
@@ -895,7 +924,9 @@ export default async function run(argv, opts = {}) {
       result = runGateHook(root, vibeDir, readStdinSync(), opts);
       break;
     default:
-      readStdinSync();
+      // Deliberately does NOT read stdin: an unknown hook name is a typo or a
+      // `--help`, and readFileSync(0) from a terminal blocks until EOF. The four
+      // real arms above each read it themselves.
       result = { code: 0, stdout: '', stderr: '' };
       break;
   }

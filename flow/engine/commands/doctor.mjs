@@ -181,6 +181,26 @@ function jqStatus(opts) {
   return detectJq();
 }
 
+// tool.node — node is NOT optional the way jq is: all four hooks are node-first.
+// Detected the same way as jq (actually running it), and overridable for tests.
+function detectNode() {
+  const res = spawnSync('node', ['--version'], { encoding: 'utf8' });
+  if (!res || res.error || res.status !== 0) return { present: false, version: '' };
+  return { present: true, version: (res.stdout || '').trim() };
+}
+
+function nodeStatus(opts) {
+  if (opts && typeof opts.nodePresent === 'boolean') {
+    return { present: opts.nodePresent, version: typeof opts.nodeVersion === 'string' ? opts.nodeVersion : '' };
+  }
+  return detectNode();
+}
+
+function checkToolNode(node) {
+  if (node.present) return ok('tool.node', `node present (${node.version})`);
+  return warn('tool.node', "node not installed — the four .claude/hooks are the flow's enforcement, and without node they fall back to flow/hooks-fallback (guard + Stop gate) or no-op (inject + doctrine)");
+}
+
 function checkToolJq(jq) {
   if (jq.present) {
     return ok('tool.jq', `jq present (${jq.version})`);
@@ -513,6 +533,7 @@ export function runDoctor(root, vibeDir, skillsDir, opts = {}) {
 
   let stdout = `# vibe doctor — ${root}\n`;
   stdout += checkToolJq(jq);
+  stdout += checkToolNode(nodeStatus(opts));
   stdout += checkLinkOrDir('core.spec', joinMaybe(skillsDir, 'spec'));
   stdout += checkLinkOrDir('core.vibe', vibeDir);
   stdout += checkMachine(vibeDir, jq.present);
