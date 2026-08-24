@@ -34,7 +34,19 @@ find_repo_root() {
   done
   return 1
 }
-REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")" || REPO_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
+# Self-relative first, marker walk second. In an installed target the skill sits
+# at <root>/.agents/skills/vibe, so the skills dir is the skill's own parent and
+# the root is two levels above it — knowable with no marker at all. The old order
+# asked for a .spec/.git marker first and fell back to "$SKILL_DIR/.." on a target
+# that has neither, which resolves to .agents/skills: every path below then
+# pointed at .agents/skills/{.spec,AGENTS.md,CLAUDE.md}, so the digest silently
+# regenerated nothing while exiting 0. Same shape as orders.sh / doctrine.sh.
+SKILL_PARENT="$(cd "$SKILL_DIR/.." && pwd)"
+if [[ -f "$SKILL_PARENT/vibe/SKILL.md" ]]; then
+  REPO_ROOT="$(cd "$SKILL_PARENT/../.." && pwd)"
+else
+  REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")" || REPO_ROOT="$SKILL_PARENT"
+fi
 
 LESSONS="$REPO_ROOT/.spec/lessons.md"
 TARGETS=("$REPO_ROOT/CLAUDE.md" "$REPO_ROOT/AGENTS.md")
@@ -142,7 +154,7 @@ $END"
 
 DIGEST="$(build_digest)"
 seen=""
-for t in "${TARGETS[@]}"; do
+for t in ${TARGETS[@]+"${TARGETS[@]}"}; do
   resolved="$t"
   if command -v realpath >/dev/null 2>&1; then
     resolved="$(realpath "$t" 2>/dev/null || echo "$t")"

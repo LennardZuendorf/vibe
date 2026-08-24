@@ -13,6 +13,32 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Added
 
+- **A Node engine under the flow half** — `flow/engine/`, zero runtime
+  dependencies, Node ≥18, exposed as the `vibe` CLI (`state`, `orders`,
+  `doctrine`, `doctor`, `render`, `policy`, `hook`). Five bash scripts were
+  ported to it with byte-identical output across the full matrix (5 cursor
+  states x jq present/absent), and the bash originals stay as the parity oracles
+  the port is tested against. The four `.claude/hooks/*.sh` are now shims over
+  it, sharing one degrade policy in `.claude/hooks/_engine-hook.sh`: only exit 0
+  and 2 count as verdicts, and the two hooks carrying a HARD BLOCK fall back to
+  the frozen bash implementations in `flow/hooks-fallback/` rather than
+  disappearing when node is absent or the engine fails.
+- **Content layer (`vibe.json`)** — every injected sentence is a block authored
+  once and composed into a channel, configured as data. Shipped defaults in
+  `flow/content/`; a root `vibe.json` that install never rewrites overrides any
+  of it. `vibe render --list` shows the resolved result, `--check` lints it, and
+  `render agents-md --write` syncs the managed rules block. Every path the config
+  names is confined to the repo before it is read or written.
+- **Trigger-classed injection** — channels declare `level` (every turn), `edge`
+  (the turn after the cursor moves) or `event` (only when something happened), so
+  the transcript stops paying for the full orders on every turn. Edge detection
+  is a gitignored `.vibe/last-inject` marker.
+- **Write invariants as data** — `flow/content/policy.json` is read both by the
+  guard that enforces them and by the `{{invariants}}` placeholder that renders
+  them into `AGENTS.md`, so the prose and the enforcer cannot disagree.
+- **`doctor` reports node** — `tool.node`, in both the bash and JS
+  implementations. Every hook is node-first now, so its absence changes what an
+  install actually enforces.
 - **Single-command installer with local/global modes** — bare `bash install.sh`
   defaults to the current repo and, on a TTY, asks **local** (full per-repo install)
   vs **global** (per-user plugin). New `--local` / `--global` / `--with-plugins`
@@ -28,9 +54,11 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 - **Companion-plugin install** — `install.sh --with-plugins` installs superpowers
   (a feature-dev slot is ready to fill in) at user scope via the `claude` CLI,
   degrading gracefully when the CLI is absent.
-- **Caveman-style output note** — injected into the single-sourced working-model
-  doctrine (emitted every session by `doctrine.sh` / the SessionStart hook), not a
-  plugin dependency.
+- **Brief-technical-English output rule** — ASD-STE100: answer first, one idea per
+  sentence, active voice, no filler. Ships as the `style.ste100` content block
+  injected every turn, and is restated in the single-sourced working-model doctrine
+  (emitted every session by `doctrine.sh` / the SessionStart hook). Not a plugin
+  dependency.
 - **doctor instruction-coverage** now counts the per-user plugin as a third doctrine
   carrier (alongside the AGENTS.md block and a wired SessionStart hook).
 - **Compound-enforcement gate** — `spec/scripts/check-drift.sh` (CI-wired after
@@ -67,6 +95,10 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Simplified
 
+- **"Caveman" retired as the name of the style** — the shipped doctrine, the
+  `AGENTS.md` template, the README, and the installer now name the ASD-STE100 rule
+  directly. A suite guard pins every shipped style surface against the word
+  returning.
 - **Caveman levels → one style note** — the per-state `caveman` levels
   (`lite`/`full`/`ultra`), the `caveman_levels`/`safety_carveouts` machine blocks,
   and the `check-skills.sh caveman` fallback are gone. A single top-level `style`
@@ -89,6 +121,52 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Fixed
 
+- **The hard blocks survive a node-less target** — the hook shims were
+  `command -v node || exit 0`, so a machine without node silently lost the
+  PreToolUse write guard and the Stop evidence gate, while the docs still called
+  both hard blocks. They now fall back to `flow/hooks-fallback/`. A
+  present-but-broken engine used to print a raw Node stack trace on every prompt
+  and tool call while the guard failed open; only exit 0 and 2 are treated as
+  verdicts now.
+- **install.sh tells the truth about what it did** — `merge-settings.sh` returned
+  0 on its jq-less degrade, so the "hooks are wired" banner printed over a target
+  with no `settings.json` and every enforcement tooth inert. It exits 3 now and
+  the banner reads it. A flow-only install also no longer claims the spec half it
+  did not install.
+- **`--only spec --only flow` installed nothing** behind a success banner; the
+  flag is last-wins now.
+- **`--global` via `curl | bash`** registered the plugin marketplace at the
+  bootstrap temp directory that install.sh's own EXIT trap then deleted.
+- **`regen-active-rules.sh` self-locates** like its sibling scripts. On a target
+  with no `.git`/`.spec` its fallback resolved to `.agents/skills`, so it warned
+  about three absent files and regenerated nothing while exiting 0.
+- **Config paths are confined to the repo** — `vibe.json` is repository content,
+  and an unconfined `blocks.*.file`, `sources.*` or `write.file` could read any
+  user-readable file into every turn's prompt, or write outside the tree.
+- **A `**` in a policy pattern no longer hangs the guard** — consecutive
+  wildcards compiled to catastrophic backtracking on the in-process PreToolUse
+  path, which has no timeout. Paths are also normalized first, so
+  `.spec/./lessons.md` cannot walk around a hard block.
+- **The Stop gate stops shelling out to git on every Stop** — `git status
+  --porcelain -uall` ran in every state, though only two predicates read the
+  tree; on a large un-ignored tree that could exceed the hook's 10s timeout, and
+  a killed Stop hook does not block.
+- **`renderBlock` neutralizes a body line that is its own marker**, which
+  otherwise ended the managed region early and stranded the rest as permanent
+  document content.
+- **The plugin's stray-artifact guard was vacuous** — plain `find` never descends
+  the skill symlinks that `claude plugin install` dereferences; it now asks git
+  what a marketplace fetch actually delivers. `build-plugin.sh` also reads its
+  version from `package.json` (it had drifted to 0.2.0 against 0.3.0-dev, and
+  `--check` pinned the stale value) and deletes exactly what it generated instead
+  of `rm -rf`-ing two shared directories.
+- **`scrub_source_only` drops `warnings.log`** — a dirty source checkout shipped
+  its own runtime relay spool into every target, where uninstall could never
+  remove it.
+- **The unmerge path has no early-exit reader left** — `diff -q` on two
+  process substitutions could SIGPIPE the `normalize()` pipeline, which surfaced
+  as an intermittent `sed: … Broken pipe` CI failure of the "stderr clean"
+  assertions.
 - **Install-model-agnostic skill paths** — skill files referenced the validator as
   a hard-coded `.agents/skills/spec/scripts/validate.sh` (plus a `~/.agents/…` global
   enumeration), which only resolves in the vendored install and breaks under a

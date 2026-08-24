@@ -1,8 +1,8 @@
 ---
 type: entrypoint
 scope: technical
-children: []
-updated: 2026-07-19
+children: [tech-content.md]
+updated: 2026-08-10
 ---
 
 # vibe — Technical Architecture
@@ -16,17 +16,25 @@ harness. Feature-level implementation detail lives under `.spec/features/<name>/
 
 1. **File-based contracts.** Specs, flow state, skills, and adapter instructions
    are ordinary files that agents can inspect and tools can validate.
-2. **Separation of durability.** `.spec/` is durable project memory;
-   `.agents/skills/vibe/` is runtime workflow state.
+2. **Separation of durability.** `.spec/` is durable project memory committed to
+   the repo; the cursor and receipts are runtime state, gitignored.
 3. **One skill, many phases.** `vibe` is a first-class agent skill — a router
    `SKILL.md` plus per-phase files (setup/strategy/feature/quick/verify/compound),
-   with shared scripts and references.
-4. **Platform-neutral core.** Claude Code and Codex files are adapters that read
-   `.agents/skills/vibe` and invoke the `vibe` skill.
+   with shared machinery.
+4. **Memory is portable; runtime is not.** `.spec/` and the `AGENTS.md` block
+   are readable by any agent or none. Enforcement is a Claude Code plugin,
+   because hooks are a Claude Code mechanism — an honest boundary, not a gap.
 5. **Delegation with constraints.** `vibe` phases call `spec`, `superpowers:*`,
    and subagents with explicit path instructions.
-6. **Scripts for deterministic machinery.** State reads/writes, validation, and
-   adapter installation use bash scripts rather than repeated prose.
+6. **One engine for deterministic machinery.** State reads/writes, content
+   resolution, merges, validation, and health checks are one JS engine — a single
+   cursor reader, one root resolver, one marker grammar. Hooks are shims.
+7. **Injection is budgeted and trigger-classed.** `UserPromptSubmit` output
+   persists in the conversation, so per-turn payload is minimized and heavy
+   payload fires on cursor change. Live state never rides `SessionStart`, whose
+   output replays stale on `--resume`.
+8. **Enforced rules are not also prose.** An invariant the guard blocks is
+   rendered in the guard's verdict, not preloaded into always-on context.
 
 ---
 
@@ -34,67 +42,68 @@ harness. Feature-level implementation detail lives under `.spec/features/<name>/
 
 ```mermaid
 flowchart TD
-  U["User intent"] --> A["Adapter: Codex / Claude Code"]
-  A --> K["vibe skill (phase file)"]
-  K --> F[".agents/skills/vibe/state.json"]
-  K --> M[".agents/skills/vibe/state-machine.json"]
-  K --> D["Delegated skills with injected paths"]
-  D --> S["spec skill"]
-  D --> P["superpowers:*"]
-  D --> G["subagents / review agents"]
-  S --> SPEC[".spec/**"]
-  P --> SPEC
-  G --> SRC["workspace edits"]
-  K --> V["verification / compound"]
+  H["hook shim"] --> E["engine"]
+  E --> C["cursor + state-machine.json"]
+  E --> N["content: policy.json · compose.json · blocks"]
+  N -. overridden by .-> O[".vibe/"]
+  E --> INJ["channels: session-start · level · edge · event · verdict"]
+  E --> K["vibe skill phase file"]
+  K --> D["delegates: spec · superpowers:* · subagents"]
+  D --> SPEC[".spec/**"]
+  D --> SRC["src/** · tests/**"]
 ```
 
 ---
 
 ## Layers
 
-| Layer | Files | Role |
-|---|---|---|
-| Spec framework | `.agents/skills/spec/` (→ `spec/`), `.spec/**` | Durable project planning and validation. |
-| Vibe flow core | `.agents/skills/vibe/**` (→ `flow/`) | Platform-neutral flow state, state machine, transition + health scripts. |
-| Vibe skill | `.agents/skills/vibe/` | One agent skill — router `SKILL.md` + per-phase files — that delegates to real skills. |
-| Install tooling | `install.sh`, `flow/scripts/doctor.sh`, `flow/reference/deps.json` | Copy/merge provisioning, partial/dry-run/uninstall, health report, dep manifest. |
-| Platform adapters | `AGENTS.md`, `CLAUDE.md`, `.claude/**` (`commands/`, `hooks/`, `settings.json`) | Runtime-specific integration over the same core, incl. the Claude Code `/flow` command + hooks wired via `settings.json`. |
+| Layer | Files | Role | Carrier |
+|---|---|---|---|
+| Memory | `.spec/**`, `AGENTS.md` block, `.vibe/**` | Durable project planning; user content overrides. Runtime-free. | repo, committed |
+| Spec framework | `spec/` | Templates, validation, authoring flow. | plugin |
+| Vibe flow core | `flow/` | State machine, phase files, the `vibe` skill. | plugin |
+| Content set | `flow/content/**` | `policy.json` invariants, `compose.json` channels, authored blocks — every injected sentence, authored once. | plugin (overridable from `.vibe/`) |
+| Engine | `engine/` | `vibe` CLI: cursor, content resolution, merges, validation, health. | plugin + npm |
+| Carriers | `plugin/**`, `.claude-plugin/`, hook shims | Manifest, marketplace, `exec`-to-engine shims. | — |
 
 ---
 
 ## File Layout
 
 ```text
-vibe/
-├── AGENTS.md
-├── CLAUDE.md
-├── README.md
-├── install.sh
-├── spec/                               # symlink → .agents/skills/spec
-├── flow/                               # symlink → .agents/skills/vibe
-├── .agents/
-│   └── skills/
-│       ├── spec/                       # spec skill (symlink target)
-│       └── vibe/                       # workflow skill (SKILL.md + phase files + state machine + scripts)
-├── .claude/
-│   ├── settings.json                   # event → hook-script wiring (installer-written)
-│   ├── commands/flow.md                # Claude adapter, reads .agents/skills/vibe
-│   └── hooks/
-│       ├── user-prompt-submit-inject.sh  # inject linked skill's orders each turn
-│       ├── pre-tool-use-guard.sh         # allow/warn/block via detect-context.sh
-│       └── stop-gate.sh                  # end-of-turn exit-predicate checks
-└── .spec/
-    ├── product.md
-    ├── tech.md
-    ├── design.md
-    ├── plan.md
-    ├── lessons.md
+vibe/                                   # the source repo
+├── AGENTS.md · CLAUDE.md → AGENTS.md · README.md
+├── engine/                             # the JS engine (vibe CLI)
+│   ├── cli.mjs                         # command dispatch
+│   ├── cursor.mjs · machine.mjs        # the ONE cursor reader / machine loader
+│   ├── content.mjs                     # blocks, channels, placeholders, one marker grammar
+│   ├── policy.mjs                      # reads content/policy.json — the enforcer
+│   └── commands/                       # init, state, orders, doctrine, render,
+│                                       # doctor, validate, drift, promote, vendor
+├── spec/                               # spec skill (canonical)
+├── flow/                               # flow engine data + skill (canonical)
+│   ├── SKILL.md · {setup,strategy,feature,quick,verify,compound}.md
+│   ├── state-machine.json              # states, phase link, next, gates
+│   └── content/
+│       ├── policy.json                 # write invariants AS DATA
+│       ├── compose.json                # channel → ordered block ids
+│       └── blocks/**.md                # id + channels + summary frontmatter
+├── plugin/                             # generated payload (build-plugin)
+│   ├── .claude-plugin/plugin.json      # version = the upgrade lock
+│   ├── skills/{spec,vibe} · commands/ · agents/
+│   └── hooks/{hooks.json, *.sh}        # shims: exec node → engine
+├── .claude-plugin/marketplace.json
+├── .agents/skills/{spec,vibe}          # compat symlinks → ../../spec, ../../flow
+└── .spec/                              # this repo's own memory
+    ├── product.md · tech.md · design.md · plan.md · lessons.md
     ├── features/<name>/
     └── archive/<name>/
 ```
 
-Target projects receive the same `.agents/skills` core, plus
-adapter files for the agent runtimes they use.
+A **target repo** receives only memory — `.spec/**`, the `AGENTS.md` managed
+block, `.vibe/` overrides, and a gitignored cursor. The runtime lives in the
+plugin. `vibe vendor` is the opt-in that also writes the engine, hook shims, and
+`.claude/settings.json` into a target for teams and CI.
 
 ---
 
@@ -128,38 +137,20 @@ under `.spec/`.
 
 ### Bundled skill layout
 
-```text
-.agents/skills/spec/
-├── SKILL.md
-├── strategy.md
-├── feature.md              # 6-step feature authoring interview flow (SF16)
-├── scripts/
-│   ├── setup.sh            # bootstrap root entrypoints + lessons.md (**Tags:**)
-│   ├── validate.sh         # warn-first structural checks (SF8–SF12)
-│   └── list-specs.sh       # root + feature doc inventory
-└── reference/
-    ├── product.md, tech.md, plan.md, design.md
-    └── templates/          # hard-floor root + feature templates (SF5–SF7)
-
-spec/tests/run.sh           # repo-root behaviour tests (SF0–SF19)
-tests/run.sh                # combined runner: spec + flow + adapters (run bash tests/run.sh)
-```
-
-`setup.sh` resolves templates relative to its script directory (vendored or
-`~/.agents/skills/spec`).
+`spec/` carries `SKILL.md`, `strategy.md`, `feature.md` (the 6-step authoring
+interview), `agents/` (four subagents, registered through the plugin manifest),
+`reference/` authoring guides and templates, and `tests/`. Spec machinery —
+setup, validate, drift, promote, list, scan, lessons-for — moves into the engine
+as `vibe` subcommands; the skill prose names them by command, never by an
+install-specific script path.
 
 ### Validation
 
-- Root entrypoints: `product.md`, `tech.md`, `design.md`, `plan.md`.
-- Feature folders: require `product.md` + `tech.md`; optional docs need frontmatter.
-- **Warn-first** structural checks (SF8–SF12): Scope table, frontmatter, Requirement+
-  Scenario (RFC-2119 + Given/When/Then), plan units, ID traceability. Promote to
-  errors after live specs migrate.
-- **Design tokens (SF3):** local empty-group check (offline floor).
-- **External linter (SF4, OPEN-5):** opt-in `VIBE_DESIGN_LINT=1` →
-  `npx @google/design.md lint`; skips when offline or unset.
-- **Lessons (D8):** format owned here (`**Tags:**` per entry); vibe-flow owns
-  read-on-entry; the `compound` phase writes + `regen-active-rules.sh` digest.
+Root entrypoints are required; feature folders require `product.md` + `tech.md`.
+Structural checks ship **warn-first** and are promoted to errors only after live
+specs migrate. The check inventory (SF-numbers, what each asserts) is owned by
+the spec skill and its suite — not restated here. D8 stands: the lesson *format*
+belongs to the spec half, read-on-entry to the flow half.
 
 Feature specs are ephemeral: design → plan → impl → verify → compound →
 `archive/<feature>/`. Cross-cutting decisions promote into root specs; feature-only
@@ -181,16 +172,61 @@ keys; the cursor carries only the moving parts and no turn-varying fields:
 }
 ```
 
-`state-machine.json` defines each `<flow>.<phase>` state with its linked `vibe`
-phase, allowed write surfaces, and exit predicate; a single top-level `style` note
-governs output density for every state. The `skill` field
-**links** the state to the `vibe` skill; under D12 the per-turn orders are sourced
-from that linked skill's phase block rather than a hand-written `inject` string. A single inject
-owner (the `UserPromptSubmit` hook) pulls the current state's orders from its
-linked skill and injects them once per turn,
-keeping the inject byte-stable and prompt-cache-safe. `set-state.sh` is the only
-sanctioned writer. The full per-state mapping is the data in
-`.agents/skills/vibe/state-machine.json` itself.
+`state-machine.json` defines each `<flow>.<phase>` state with its **phase-file
+link**, delegates, allowed write surfaces, exit predicate, and legal `next` set;
+edge-keyed `gates` name the two human approvals. Every field is read by code —
+a field nothing reads is deleted, not carried.
+
+`vibe state set <target>` is the only sanctioned writer. It validates the target
+state *name*, writes atomically (0600, matching `set-state.sh`'s mktemp + mv), and
+preserves `feature` carry-forward.
+
+**Planned — `machine-teeth`, plan row 15:** the writer also becomes the gate,
+rejecting a target outside the current state's `next` and a gated edge with no
+explicit `--confirm`. It does neither today: `gates` is read by `/flow` convention,
+not by the writer, so the documented happy path is still the gate bypass. Until
+row 15 lands, treat approval as prose, not as a mechanism — `state.test.mjs` pins
+that explicitly ("gate enforcement is explicitly out of scope").
+
+Orders **interpolate** machine fields (`{{writes}}`, `{{next}}`, `{{delegates}}`,
+`{{gate}}`) instead of restating them, so renaming a state is a one-file change.
+
+---
+
+## Content & Injection Contract
+
+Every injected sentence is authored once as a **block** and composed into a
+**channel**, under one marker grammar and one resolver. `policy.json` is the sole
+write-invariant source — the guard evaluates it, the renderer prints it, so
+parity is by construction rather than by test. Because `UserPromptSubmit` output
+persists in the transcript, channels are trigger-classed (level / edge / event)
+with per-channel line budgets linted in CI.
+
+**D15 realized — content is data.** Every injected sentence is a block authored
+once (`id` / `title` / `channels`, summary + body), composed per channel by
+`vibe render`, with typed placeholders interpolating machine fields. The project
+layer is a single root `vibe.json` that install never writes, so a target's
+injection policy survives every upgrade. The marker grammar stays owned by
+`blocks.mjs` (`stripBlock` / `renderBlock` / `upsertBlock`), so `content.mjs` and
+`render.mjs` never spell a marker — the duplicate-primitive scan enforces that,
+and `upsertBlock` reporting `changed: false` is what makes `--write` idempotent.
+Every path a project's config can name is confined to the repo before it is read
+or written: `vibe.json` is repository content, so an unconfined `blocks.*.file`
+would inject an arbitrary file into every turn.
+
+**D16 realized — injection is trigger-classed and budgeted.** Prompt payload
+splits level / edge / event: two byte-stable lines every turn, the full orders
+only on a cursor change (tracked in `.vibe/last-inject`), and event text only when
+an event occurred. An edge-classed channel must carry `{{orders}}`;
+`render --check` errors when it does not. The relay drains at most 10 lines per
+turn, collapsing duplicates to `<line> (xN)`.
+
+Both hooks compose through `renderChannelSafe`, so a target with no content tree
+emits byte-identical output to the pre-content-layer hooks.
+
+Full contract — block format, the override layer, the channel table and its
+budgets, and the authoring lints — lives in [tech-content.md](tech-content.md).
+
 
 ---
 
@@ -218,13 +254,44 @@ Each phase body must stay small and procedural:
 4. Validate the expected files or verification evidence.
 5. Report the next legal transition.
 
-Example delegation:
+Delegation names the executor, the injected scope, and the redirect target;
+the `PostToolUse` redirect hook enforces the destination so the instruction is
+not the only thing standing between a delegate and its default doc folder.
 
-```text
-Use superpowers:brainstorming to clarify strategy. Then use the spec skill to
-write only .spec/product.md, .spec/tech.md, .spec/design.md, and .spec/plan.md.
-Do not use the delegated skill's default documentation path.
-```
+---
+
+## Engine Module Boundaries
+
+The engine's primitives are singular by contract, not by convention: one root
+resolver, one cursor reader/writer, one machine loader, one block extractor,
+one atomic JSON writer. Commands are pure functions over
+`{root, cursor, machine}` resolved once at dispatch. A duplicate-primitive scan
+in the suite fails the build when a command re-derives any of them.
+
+The scan states two mechanical clauses, both stronger than "don't duplicate":
+
+1. **No module obtains a primitive's *location* by any means** unless allowlisted
+   — banned as *ingredients* (filename literals, layout constants,
+   `CLAUDE_PROJECT_DIR`, `import.meta`, `process.cwd`, path-helper identifiers),
+   matched over the whole comment-stripped file so wrapping cannot split a token
+   pair. Allowlist entries pin exact lines *and* occurrence counts; re-export
+   laundering is unwaivable.
+2. **No module reaches outside the scanned source set.** Every specifier-shaped
+   literal must resolve inside that set, closing it under module resolution by
+   induction — so `import`, `import()`, `require`, and `createRequire` are all
+   covered without being named, and the test tree is not a back door.
+
+The residual gap needs an AST plus constant folding, which R5 forbids; those
+cases are pinned as tests asserting they *do* evade, so the documented limit is
+the measured one.
+
+Root resolution order is `CLAUDE_PROJECT_DIR` → self-relative → upward marker
+search → cwd — self-relative first because install targets often have neither
+marker. The order is pinned by test; swapping the legs fails the suite.
+
+Co-located tests are source-only: `install.sh` scrubs every `tests/` directory
+at any depth, and the adapter suite asserts structurally that no test artifact
+reaches an install target.
 
 ---
 
@@ -235,66 +302,43 @@ the `vibe` skill.
 
 | Adapter | Owns | Does Not Own |
 |---|---|---|
-| Codex | `AGENTS.md` instructions, optional desktop/thread affordances | Flow state, spec layout |
-| Claude Code | `CLAUDE.md`, `.claude/settings.json`, `.claude/commands/*`, `.claude/hooks/*` | Canonical skills, state machine, the allow/warn/block policy (that lives in `detect-context.sh`) |
-| Installer | Copy core `.agents` files + Claude adapter, merge `AGENTS.md`, seed+gitignore the cursor; `--only`/`--dry-run`/`--uninstall`; `doctor.sh` health; write `.claude/settings.json` hook wiring | Project-specific product decisions |
+| Codex / any AGENTS.md reader | The `agents-md` channel output; reads `.spec/` directly | Flow state, enforcement (no hook mechanism exists) |
+| Claude Code plugin | Hook registration, `/flow`, skill + subagent registration, the engine payload, version | Canonical content (that is `flow/content/`), the policy (that is `policy.json`) |
+| `vibe init` | Seed `.spec/`, cursor, `.vibe/`, `.gitignore`, merge the `AGENTS.md` block | Runtime installation — the plugin owns that |
+| `vibe vendor` | Opt-in in-repo runtime: engine, hook shims, `.claude/settings.json` | Default behaviour; it is never implicit |
 
-### Claude Code adapter & hooks
+### Claude Code plugin & hooks
 
-The Claude Code adapter wires the `/flow` command and the flow **hooks** through
-`.claude/settings.json` (installer-written); the hook scripts resolve their data
-via `$CLAUDE_PROJECT_DIR`. The earlier plugin packaging
-(`.claude-plugin/plugin.json` + `hooks.json`) was **retired**: a plugin cannot
-carry skills outside its own `skills/` dir (see the "plugin cannot bundle skills"
-lesson), so the `spec` + `vibe` skills always had to ship as project files
-through `install.sh` — the `settings.json` wiring drops the plugin without losing
-anything. The hooks are the Stage 2 enforcement layer — what makes the flow fire
-every turn rather than only when the agent remembers:
+**Target.** The plugin is the runtime carrier: `plugin.json` declares `skills`,
+`commands`, and `agents`; `hooks/hooks.json` auto-loads and is **not** declared in
+the manifest. **Shipped today** the runtime installs per repo instead — the
+plugin carries skills plus the doctrine hook, and `install.sh` writes the engine,
+`/flow`, and the four hook shims into the target (`plugin-runtime`, plan row 16,
+moves them). Hook commands are shims over the engine, and what happens without
+Node depends on what the hook carries: a hook that only injects text exits 0,
+while Guard and Stop — the two hard blocks — run the frozen bash implementation
+in `flow/hooks-fallback/` instead. Enforcement degrades to bash, never to
+nothing. `CLAUDE_PROJECT_DIR` is exported to plugin hooks, so a
+per-user plugin resolves per-repo state correctly — which is what retires the
+"one shared cursor" objection that previously kept the stateful flow out of the
+plugin.
 
 | Hook | Event | Role |
 |---|---|---|
-| Inject | `UserPromptSubmit` | Pull the current state's orders from its linked `vibe` phase and inject them every turn (D12). |
-| Guard | `PreToolUse` (`Edit\|Write\|NotebookEdit`) | Hard-block the three invariants, warn elsewhere, via `detect-context.sh decide`. |
-| Gate | `Stop` | Warn-first exit-predicate checks (stuck phase, impl-without-tests, forgotten `set-state.sh`). |
-| Doctrine | `SessionStart` (+ `compact` matcher) | Deliver the working-model doctrine (session-start reads, write invariants, two gates, "you drive the flow" contract) + cursor summary each session; re-inject on `compact`. Single-sourced from the `<!-- vibe:doctrine -->` block via `doctrine.sh` — shared with the AGENTS.md template, making that block optional. |
-| Redirect *(rework, planned)* | `PostToolUse` (`Skill`) | On delegate-skill load, inject the artifact redirect (`redirects.json`, `{feature}` interpolated) so superpowers keeps its method but writes into `.spec/**`. |
+| Inject | `UserPromptSubmit` | Emit the level channel every turn; the edge channel only when the cursor changed; the event channel only when there is drift or a queued warning. |
+| Guard | `PreToolUse` (`Edit\|Write\|NotebookEdit\|Bash`) | Evaluate `policy.json`; block with a rendered verdict, warn elsewhere. |
+| Gate | `Stop` | The evidence-receipt tooth in `*.verify`. Note the platform ends the turn after 8 consecutive blocks — the tooth is finite, not absolute. |
+| Doctrine | `SessionStart` (+ `compact`) | Timeless doctrine only. Carries **no cursor line**: resumed sessions replay saved hook output, which would make live state stale. |
+| Redirect *(planned — `delegation-redirect`, plan row 18)* | `PostToolUse` (`Skill`) | On delegate-skill load, inject the artifact redirect (`redirects.json`, `{{feature}}` interpolated) so superpowers keeps its method but writes into `.spec/**`. |
 
-**2026-07-18 rework.**
-**Delivered by flow-legibility:** orders are self-carrying (imperative, the
-transition command included every turn); the `SessionStart` doctrine hook above;
-the machine's loop edges (design↔research, `strategy.spec→brainstorm`,
-`plan→design`); drift-first nudges (drift warnings surface as the first inject
-line); and model-tier pins in every delegation contract (mechanical→sonnet,
-review/architecture→opus). **Delivered by install-distribution:** the per-user
-plugin + self-hosting marketplace and the one-command installer (the leaner
-successor to the old vibe-plugin/stack-installer sketches; full
-stateful-flow-via-plugin deferred). **Still forward-looking:** the
-`PostToolUse`/`Skill` redirect hook + superpowers-native plan format
-(delegation-redirect) and the header-keyed spec-delta promotion engine (spec-delta).
-
-Each hook is a thin shell over `.agents/skills/vibe/scripts/`; the allow/warn/block
-policy lives once in `detect-context.sh` and is never duplicated. Hooks are
-earned warn-first and degrade gracefully (exit 0 on any missing keystone). The
-live wiring is `.claude/settings.json` (installer-written) + `.claude/hooks/`.
-
----
-
-## Build Sequence
-
-Historical construction order. The seven `vibe-*` skills below were later
-consolidated into one `vibe` skill (router + per-phase files); the split at
-build time does not reflect the current layout.
-
-| Order | Component | Feature |
-|---|---|---|
-| 1 | Update `spec` skill for product/tech/design/plan model | `spec` skill bundle (M0 done) |
-| 2 | Create `.agents/skills/vibe/state-machine.json` and state scripts | vibe-flow |
-| 3 | Create `vibe-strategy`, `vibe-feature`, `vibe-quick` skills | vibe-flow |
-| 4 | Create `vibe-verify`, `vibe-compound`, `vibe-amend` skills | vibe-flow |
-| 5 | Update `AGENTS.md` and `CLAUDE.md` as thin adapters | platform-adapters |
-| 6 | Add the `/flow` command adapter that reads `.agents/skills/vibe` | platform-adapters |
-| 7 | Wire the three hooks (inject / guard / gate), each a thin shell over `.agents/skills/vibe/scripts/`, into Claude Code — originally via a `.claude-plugin/plugin.json` + `hooks/hooks.json`, **later retired** for direct `.claude/settings.json` wiring | platform-adapters |
-| 8 | Add installer/setup flow for target projects (writes `.claude/settings.json`) | platform-adapters |
+Four hooks ship today — Inject, Guard, Gate, Doctrine — wired through
+`.claude/settings.json`; Redirect is designed, not built. Every hook is a shim
+over the engine, and the two carrying a hard block fall back to the frozen bash
+implementation in `flow/hooks-fallback/` when node is absent or the engine fails,
+so enforcement degrades to bash rather than to nothing. The allow/warn/block
+policy lives once in `policy.json` and is never duplicated. Hooks are earned warn-first and degrade
+gracefully (exit 0 on any missing keystone). Delivery history lives in
+[plan.md](plan.md), not here.
 
 ---
 
@@ -302,26 +346,19 @@ build time does not reflect the current layout.
 
 | Risk | Mitigation |
 |---|---|
-| Dual state systems return | Remove `.spec/.phase` and `.claude/state.json` as canonical concepts; document `.agents/skills/vibe` only. |
-| The `vibe` skill becomes a mega-skill | Keep state data in JSON/scripts; keep each flow in its own per-phase file under one skill (resolved by the seven-shim → one-skill consolidation). |
-| Delegated skills write to wrong paths | Every `vibe` phase injects explicit `.spec/` paths before delegating. |
-| Mutable state creates git noise | Version static definitions; gitignore target-project cursors/caches. |
-| Adapter leakage | Root specs name `.agents/skills/vibe` and `.agents/skills` as canonical; `.claude` is adapter-only. |
+| Node absent on a target | Hook shims `exec` the engine and `exit 0` cleanly when it is missing; `vibe doctor` reports it. The flow degrades to unenforced, never to a broken session. |
+| Plugin-only enforcement leaves teammates and CI bare | `vibe vendor` writes the runtime in-repo as an explicit opt-in; `.spec/` and the `AGENTS.md` block are committed regardless, so the *memory* always travels. |
+| Big-bang rewrite strands the harness mid-flight | The engine lands first while the shell still runs; scripts cut over one at a time, each with its suite green before the shell copy is deleted. |
+| Version skew between plugin and a repo's `.spec/` | `plugin.json` `version` is the lock; `vibe doctor` compares it against a stamp written by `init`. |
+| Injection creeps back over budget | Per-channel line budgets are linted by `vibe render` and asserted in CI, not left to discipline. |
+| Delegated skills write to wrong paths | Static orders plus the `PostToolUse` redirect hook; the redirect is mechanical, not a request. |
+| Mutable state creates git noise | Version static definitions; gitignore target cursors, receipts, and the inject marker. |
+| Plugin payload symlinks break on Windows | Symlinks resolving inside the marketplace are dereferenced at install; `build-plugin --check` asserts the payload shape. |
 
 ---
 
 ## Features
 
-All delivered; branch specs were compounded into these root docs and the feature
-folders removed (see [plan.md](plan.md)).
-
-| Feature | Covers | Lives in |
-|---|---|---|
-| **spec framework** | Spec skill, templates, validation, authoring flow. | [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) |
-| **vibe-flow** | `.agents/skills/vibe/` state machine, scripts, the one `vibe` skill's contracts. | `flow/`, `flow/state-machine.json` |
-| **agent-instructions** | `AGENTS.md` template + `merge-agents.sh` marker merge + adapter symlinks. | `flow/reference/templates/AGENTS.md`, `flow/scripts/merge-agents.sh` |
-| **platform-adapters** | Claude adapter (`/flow` + three hooks via `.claude/settings.json`), `install.sh` core provisioning. | `.claude/**`, `install.sh` |
-| **install-tooling** | `install.sh` flags + curl bootstrap, `doctor.sh`, `deps.json`. | `install.sh`, `flow/scripts/doctor.sh`, `flow/reference/deps.json` |
-| **install-distribution** | `install.sh` local/global/`--with-plugins` + curl bootstrap; `build-plugin.sh` generates the marketplace plugin (symlinked skills, self-detecting `session-start.sh` doctrine hook); `doctor.sh` instruction-coverage. Tests: install modes + plugin-packaging integrity in `flow/tests/adapters/run.sh`, portable validator paths in `spec/tests/run.sh`. | `install.sh`, `build-plugin.sh`, `.claude-plugin/marketplace.json`, `plugin/**`, `flow/scripts/doctrine.sh` |
-| **release-docs** | READMEs, rails (LICENSE/CHANGELOG/CI/runner), logo. | `README.md`, `spec/README.md`, `flow/README.md` |
-| **flow-mvp** | Operating-layer MVP: precedence + contract-block delegation, hybrid plan grammar, `gates` on edges, a quick-flow compound state, evidence-receipt Stop tooth, output-density demoted to frozen vocabulary. | `flow/`, `flow/state-machine.json` |
+Feature inventory and delivery status are owned by [plan.md](plan.md)'s Feature
+Sequence — the single place cross-feature order is stated. This document
+describes the architecture those features build, not their status.

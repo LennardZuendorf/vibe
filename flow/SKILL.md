@@ -84,7 +84,7 @@ Two human gates — stop and get explicit approval before crossing: plan → imp
 
 Write invariants (`detect-context.sh decide`; default idle when `state.json` is absent): `.spec/lessons.md` only in feature.compound, setup.apply, strategy.spec, quick.verify; root `.spec/{product,tech,design,plan}.md` only in strategy.spec, feature.compound, setup.apply; `.agents/skills/vibe/state.json` only via `set-state.sh`.
 
-Output: caveman style — terse and high-signal, no filler or hedging; compress receipts and subagent summaries. Never compress security warnings, irreversible-action confirmations, or code/paths/commands — those stay full and byte-exact.
+Output: brief technical English (ASD-STE100) — answer first, one idea per sentence, active voice, no filler or hedging; compress receipts and subagent summaries. Never compress security warnings, irreversible-action confirmations, or code/paths/commands — those stay full and byte-exact.
 <!-- /vibe:doctrine -->
 
 ## Orders (D12)

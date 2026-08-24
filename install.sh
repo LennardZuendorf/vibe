@@ -73,7 +73,10 @@ if [[ -z "${SRC:-}" || ! -f "$SRC/flow/state-machine.json" || ! -f "$SRC/spec/SK
     exit 1
   fi
   boot_rc=0
-  bash "$boot_src/install.sh" "$@" || boot_rc=$?
+  # The re-exec must know it runs from a throwaway tree: the trap above deletes
+  # $boot_tmp on exit, so --global cannot register a marketplace at "$SRC".
+  VIBE_BOOTSTRAPPED=1 VIBE_REPO="$VIBE_REPO" VIBE_REF="$VIBE_REF" \
+    bash "$boot_src/install.sh" "$@" || boot_rc=$?
   exit "$boot_rc"
 fi
 
@@ -82,6 +85,34 @@ note() { echo "install: $1"; }
 # say — announce a mutating action. In dry-run every action is described but
 # never performed, so the plan reads the same whether or not it is applied.
 say() { if [[ "$DRY_RUN" -eq 1 ]]; then echo "install: [dry-run] would $1"; else echo "install: $1"; fi; }
+
+# adapter_rows — one "<key>\t<file>\t<target>" line per adapter, read from the
+# adapter catalogue. flow/reference/adapters.json says of itself "Extend this list
+# to add runtimes without editing skill prose", and flow/setup.md calls it data —
+# but install and uninstall both hardcoded `case claude) … warp)` and
+# `for adapter in CLAUDE.md WARP.md`, so a third entry changed nothing. It is data
+# now.
+#
+# The KEY is derived from the filename (CLAUDE.md -> claude), which is exactly the
+# vocabulary `--adapters` already takes, so the manifest needs no new field.
+# jq-less (and empty-manifest) targets fall back to the two shipped pairs, so the
+# behaviour never silently reduces to nothing.
+adapter_rows() {
+  local manifest="$SRC/flow/reference/adapters.json" rows=""
+  if command -v jq >/dev/null 2>&1 && [[ -f "$manifest" ]]; then
+    rows="$(jq -r '
+      (.canonical // "AGENTS.md") as $c
+      | .adapters[]?
+      | select(.file != null)
+      | [(.file | ascii_downcase | sub("\\.md$"; "")), .file, (.target // $c)]
+      | @tsv' "$manifest" 2>/dev/null || true)"
+  fi
+  if [[ -z "$rows" ]]; then
+    printf 'claude\tCLAUDE.md\tAGENTS.md\nwarp\tWARP.md\tAGENTS.md\n'
+    return 0
+  fi
+  printf '%s\n' "$rows"
+}
 
 # remove_shipped SRC_DIR DST_DIR [EXCLUDE_REL...] — delete from DST_DIR only the
 # files that exist in SRC_DIR (the precise inverse of a copy), skipping any whose
@@ -96,13 +127,58 @@ remove_shipped() {
   while IFS= read -r f; do
     rel="${f#"$src"/}"
     skip=0
-    for ex in "${excludes[@]}"; do
+    for ex in ${excludes[@]+"${excludes[@]}"}; do
       if [[ "$rel" == "$ex" || "$rel" == "$ex"/* ]]; then skip=1; break; fi
     done
     [[ "$skip" -eq 1 ]] && continue
     rm -f "$dst/$rel"
   done < <(find -L "$src" -type f)
   find "$dst" -type d -empty -delete 2>/dev/null || true
+}
+
+# scrub_source_only SRC_DIR DST_DIR — remove from a freshly copied skill tree the
+# artifacts that exist in the source but must never reach a target: every
+# co-located `tests` directory AT ANY DEPTH, the contributor AGENTS.md, and any
+# source-side evidence receipts.
+#
+# Enumerated from SRC_DIR rather than hardcoded, because a hardcoded list is
+# exactly what failed: the previous spelling scrubbed `$TARGET/.../vibe/tests`
+# only, so js-core's `flow/engine/tests` — one level deeper — shipped 17 files
+# and 396K of oracle-spawning test code into every user repo, contradicting the
+# comment above it and falsifying the premise the R1 primitive scan's `tests/`
+# exemption is argued on. A new co-located tests dir at any depth is now covered
+# without editing anything here.
+#
+# Source-enumerated also means DST-safe in the same way remove_shipped is: a
+# path the SOURCE does not have is never touched in the target, so a user's own
+# file dropped into the skill dir survives — AGENTS.md and evidence/ are each
+# removed only when SRC_DIR carries that same path. The vibe-skill call site
+# (install.sh's copy-vibe step) saves the target's evidence/ before this call
+# and restores it after, so scrubbing a source-side evidence/ here never loses
+# a target's own receipts.
+scrub_source_only() {
+  local src="$1" dst="$2" rel d
+  local dirs=()
+  [[ -d "$src" && -d "$dst" ]] || return 0
+  # -prune: never descend into a tests dir (a nested one is removed with its
+  # parent anyway), so the list is stable while the removals below run.
+  while IFS= read -r d; do
+    rel="${d#"$src"/}"
+    [[ -n "$rel" && "$rel" != "$d" ]] || continue
+    dirs+=("$rel")
+  done < <(find -L "$src" -type d -name tests -prune -print 2>/dev/null)
+  # ${var:?} on both halves: an empty $rel would make this `rm -rf "$dst/"`.
+  for rel in ${dirs[@]+"${dirs[@]}"}; do
+    rm -rf "${dst:?}/${rel:?}"
+  done
+  [[ -f "$src/AGENTS.md" ]] && rm -f "$dst/AGENTS.md"
+  [[ -d "$src/evidence" ]] && rm -rf "${dst:?}/evidence"
+  # warnings.log is the SOURCE checkout's own runtime relay spool (this repo
+  # dogfoods the flow, so a dirty tree has one). Shipping it makes a fresh target
+  # drain warnings about work nobody did there, and remove_shipped excludes the
+  # path, so an uninstall could never clear it again.
+  [[ -f "$src/warnings.log" ]] && rm -f "$dst/warnings.log"
+  return 0
 }
 
 # gi_append FILE LINE... — append the given lines to a .gitignore, separating them
@@ -154,8 +230,9 @@ unregister_skill() {
 # ── companion plugins (opt-in --with-plugins) ──────────────────────────────────
 # superpowers is verified against the live marketplace. feature-dev has no stable
 # public marketplace id, so it ships as a documented slot — fill it in when known.
-# caveman is intentionally absent: it is an injected "caveman style" doctrine note,
-# not a plugin. Each entry: "name@marketplace|marketplace-source".
+# Response style is intentionally absent: brief technical English ships as the
+# injected `style.ste100` content block, not a plugin. Each entry:
+# "name@marketplace|marketplace-source".
 VIBE_COMPANIONS=(
   "superpowers@superpowers-marketplace|obra/superpowers-marketplace"
   # "feature-dev@<marketplace>|<owner/repo>"   # add when its marketplace id is known
@@ -167,7 +244,7 @@ install_companion_plugins() {
     return 0
   fi
   local entry id src name
-  for entry in "${VIBE_COMPANIONS[@]}"; do
+  for entry in ${VIBE_COMPANIONS[@]+"${VIBE_COMPANIONS[@]}"}; do
     id="${entry%%|*}"; src="${entry#*|}"; name="${id%%@*}"
     if claude plugin list 2>/dev/null | grep -q "$name@"; then
       note "companion '$name' already installed — skipping"; continue
@@ -199,13 +276,19 @@ install_global() {
     err "       Install Claude Code, or run a per-repo install: ./install.sh <repo> --local"
     exit 1
   fi
-  say "add the vibe marketplace ($SRC) at user scope"
+  # Marketplace source: the local checkout normally, the GitHub slug when this
+  # tree came from the curl bootstrap — that tree is a temp dir the bootstrap's
+  # EXIT trap removes, so registering it would point a marketplace at nothing
+  # (and `curl … | bash -s -- --global` is a documented path).
+  local market="$SRC"
+  if [[ "${VIBE_BOOTSTRAPPED:-0}" == "1" ]]; then market="$VIBE_REPO"; fi
+  say "add the vibe marketplace ($market) at user scope"
   say "install plugin vibe@vibe at user scope (applies across all your repos)"
   if [[ "$DRY_RUN" -eq 1 && "$have_claude" -eq 0 ]]; then
     note "(dry-run) note: the 'claude' CLI is not on PATH — a real --global run needs it."
   fi
   if [[ "$DRY_RUN" -eq 0 ]]; then
-    claude plugin marketplace add "$SRC" --scope user >/dev/null 2>&1 \
+    claude plugin marketplace add "$market" --scope user >/dev/null 2>&1 \
       || err "WARN: could not add the vibe marketplace (already added?); continuing."
     if claude plugin install vibe@vibe --scope user >/dev/null 2>&1; then
       note "installed vibe@vibe (user scope)"
@@ -216,7 +299,7 @@ install_global() {
   # Per-repo home for the spec framework: seed .spec/ in the current repo if it is a
   # git repo without one (the plugin carries the skills; each repo still needs its
   # own .spec/ memory). The full stateful flow is a separate --local install.
-  if [[ -d "$TARGET/.git" && ! -d "$TARGET/.spec" ]]; then
+  if [[ -e "$TARGET/.git" && ! -d "$TARGET/.spec" ]]; then
     say "seed .spec/ in $TARGET (spec framework home for this repo)"
     if [[ "$DRY_RUN" -eq 0 && -f "$SRC/spec/scripts/setup.sh" ]]; then
       ( cd "$TARGET" && bash "$SRC/spec/scripts/setup.sh" ) >/dev/null 2>&1 \
@@ -258,6 +341,10 @@ prompt_mode() {
 DRY_RUN=0
 WANT_SPEC=1
 WANT_FLOW=1
+# --only is LAST-WINS, resolved once after parsing. Clearing the other half
+# inside the parse loop meant `--only spec --only flow` cleared BOTH and
+# installed nothing while still printing a success banner.
+ONLY=""
 UNINSTALL=0
 ASSUME_YES=0
 MODE=""
@@ -279,15 +366,13 @@ while [[ $# -gt 0 ]]; do
     --with-plugins) WITH_PLUGINS=1; shift ;;
     --only)
       case "${2:-}" in
-        spec) WANT_FLOW=0 ;;
-        flow) WANT_SPEC=0 ;;
+        spec|flow) ONLY="$2" ;;
         *) err "ERROR: --only takes 'spec' or 'flow' (got '${2:-}')"; exit 1 ;;
       esac
       shift 2 ;;
     --only=*)
       case "${1#*=}" in
-        spec) WANT_FLOW=0 ;;
-        flow) WANT_SPEC=0 ;;
+        spec|flow) ONLY="${1#*=}" ;;
         *) err "ERROR: --only takes 'spec' or 'flow' (got '${1#*=}')"; exit 1 ;;
       esac
       shift ;;
@@ -296,6 +381,11 @@ while [[ $# -gt 0 ]]; do
     *) TARGET="$1"; TARGET_GIVEN=1; shift ;;
   esac
 done
+
+case "$ONLY" in
+  spec) WANT_FLOW=0 ;;
+  flow) WANT_SPEC=0 ;;
+esac
 
 # Single-command resolution. A bare run (no target) defaults to THIS directory; an
 # explicit target behaves exactly as before. Mode: --local/--global win; else a bare
@@ -372,6 +462,14 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   # relative paths the source bundle ships — minus the artifacts install scrubs
   # before shipping (tests/, contributor AGENTS.md) — and prune emptied dirs.
   # A user file dropped into either shared skills dir is never touched.
+  #
+  # The exclude lists below are deliberately TOP-LEVEL-ONLY, and are NOT the
+  # mirror image of scrub_source_only()'s any-depth walk. A deeper source-only
+  # artifact that a PREVIOUS version of this installer shipped (js-core's
+  # `engine/tests`, 17 files) is still in the source bundle, so remove_shipped
+  # names it and cleans it up; excluding it here would strand 396K of dead test
+  # code in every target that was installed before the scrub was fixed. Both
+  # legs are exercised by the adapters suite, on a legacy-shaped target.
   if [[ "$WANT_SPEC" -eq 1 && -e "$TARGET/.agents/skills/spec" ]]; then
     say "remove the shipped files under .agents/skills/spec (user files preserved)"
     [[ "$DRY_RUN" -eq 1 ]] || remove_shipped \
@@ -388,10 +486,13 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     say "unregister .claude/skills/vibe (only the vibe symlink; a user entry is kept)"
     [[ "$DRY_RUN" -eq 1 ]] || unregister_skill vibe
     if [[ -e "$TARGET/.agents/skills/vibe" ]]; then
-      # Exclude the same artifacts install scrubs (tests/, AGENTS.md, evidence/)
-      # plus the per-project runtime state install never ships (state.json,
-      # warnings.log): remove_shipped therefore leaves the cursor + receipts
-      # intact by construction. --yes then removes those runtime files too.
+      # Exclude the top-level artifacts install scrubs (tests/, AGENTS.md,
+      # evidence/) plus the per-project runtime state install never ships
+      # (state.json, warnings.log): remove_shipped therefore leaves the cursor +
+      # receipts intact by construction. --yes then removes those runtime files
+      # too. Deeper source-only artifacts are intentionally left OUT of this list
+      # so a legacy target's shipped `engine/tests` is cleaned up — see the
+      # header note above remove_shipped's first call site.
       if [[ "$ASSUME_YES" -eq 0 ]]; then
         say "remove the shipped files under .agents/skills/vibe (preserving the flow cursor and evidence receipts; re-run with --yes to remove them)"
       else
@@ -405,6 +506,11 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
                 "$TARGET/.agents/skills/vibe/warnings.log"
           rm -rf "$TARGET/.agents/skills/vibe/evidence"
           find "$TARGET/.agents/skills/vibe" -type d -empty -delete 2>/dev/null || true
+          # The inject marker is runtime state like the cursor. Remove the FILE
+          # only, then the directory if that emptied it — `.vibe/blocks/**` is
+          # the project's own authored content and is never install's to delete.
+          rm -f "$TARGET/.vibe/last-inject"
+          rmdir "$TARGET/.vibe" 2>/dev/null || true
         fi
       fi
     fi
@@ -420,7 +526,9 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
           -e '# vibe evidence receipts (runtime verification output, not memory)' \
           -e '.agents/skills/vibe/evidence/' \
           -e '# vibe warnings relay (runtime warn-first channel; surfaced then truncated)' \
-          -e '.agents/skills/vibe/warnings.log' "$GI" 2>/dev/null \
+          -e '.agents/skills/vibe/warnings.log' \
+          -e '# vibe inject edge-detection marker (runtime; records the cursor the last inject saw)' \
+          -e '.vibe/last-inject' "$GI" 2>/dev/null \
           | awk 'NF{last=NR} {line[NR]=$0} END{for(i=1;i<=last;i++) print line[i]}' >"$GI_TMP" || true
         if [[ -s "$GI_TMP" ]]; then mv -f "$GI_TMP" "$GI"; else rm -f "$GI_TMP" "$GI"; fi
       fi
@@ -450,13 +558,14 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     # Remove the opt-in adapter symlinks vibe created — but ONLY when they are
     # symlinks that point at AGENTS.md. A user's real file of the same name (or a
     # symlink they aimed elsewhere) is left untouched.
-    for adapter in CLAUDE.md WARP.md; do
-      link="$TARGET/$adapter"
-      if [[ -L "$link" && "$(readlink "$link")" == "AGENTS.md" ]]; then
-        say "remove adapter symlink $adapter -> AGENTS.md"
+    while IFS=$'\t' read -r _akey afile atarget; do
+      [[ -n "$afile" ]] || continue
+      link="$TARGET/$afile"
+      if [[ -L "$link" && "$(readlink "$link")" == "$atarget" ]]; then
+        say "remove adapter symlink $afile -> $atarget"
         [[ "$DRY_RUN" -eq 1 ]] || rm -f "$link"
       fi
-    done
+    done <<< "$(adapter_rows)"
     if [[ -f "$TARGET/AGENTS.md" ]]; then
       say "remove the managed vibe blocks from AGENTS.md (user prose preserved; a vibe-only stub is deleted)"
       [[ "$DRY_RUN" -eq 1 ]] || bash "$SRC_MERGE" unmerge "$TARGET" \
@@ -493,8 +602,9 @@ if [[ "$WANT_SPEC" -eq 1 ]]; then
   say "copy spec skill -> $TARGET/.agents/skills/spec"
   if [[ "$DRY_RUN" -eq 0 ]]; then
     cp -RL "$SRC/.agents/skills/spec" "$TARGET/.agents/skills/"
-    # Source-only artifacts (co-located tests, contributor AGENTS.md) never ship.
-    rm -rf "$TARGET/.agents/skills/spec/tests" "$TARGET/.agents/skills/spec/AGENTS.md"
+    # Source-only artifacts (co-located tests at ANY depth, contributor
+    # AGENTS.md) never ship — enumerated from the source, not hardcoded.
+    scrub_source_only "$SRC/.agents/skills/spec" "$TARGET/.agents/skills/spec"
   fi
 fi
 if [[ "$WANT_FLOW" -eq 1 ]]; then
@@ -515,11 +625,10 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
       cp -R "$TARGET/.agents/skills/vibe/evidence/." "$SAVED_EVID/" 2>/dev/null || true
     fi
     cp -RL "$SRC/.agents/skills/vibe" "$TARGET/.agents/skills/"
-    # Source-only artifacts (co-located tests, contributor AGENTS.md) and any
-    # source-side evidence receipts never ship.
-    rm -rf "$TARGET/.agents/skills/vibe/tests" \
-           "$TARGET/.agents/skills/vibe/AGENTS.md" \
-           "$TARGET/.agents/skills/vibe/evidence"
+    # Source-only artifacts (co-located tests at ANY depth — flow/tests AND
+    # flow/engine/tests — contributor AGENTS.md) and any source-side evidence
+    # receipts never ship. Enumerated from the source, not hardcoded.
+    scrub_source_only "$SRC/.agents/skills/vibe" "$TARGET/.agents/skills/vibe"
     if [[ -n "$SAVED_CURSOR" ]]; then
       mv -f "$SAVED_CURSOR" "$TARGET/.agents/skills/vibe/state.json"
       note "preserved existing flow cursor across re-install"
@@ -541,7 +650,13 @@ fi
 # warns + skips). Registration follows the half that was installed.
 if [[ "$WANT_SPEC" -eq 1 ]]; then
   say "register spec skill at .claude/skills/spec -> ../../.agents/skills/spec"
-  [[ "$DRY_RUN" -eq 1 ]] || register_skill spec
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    register_skill spec
+    # Belongs to the spec half, not the adapter step: --only spec must still get
+    # runnable scripts if the source ever loses its exec bits
+    # (core.fileMode=false, a zip download).
+    chmod +x "$TARGET"/.agents/skills/spec/scripts/*.sh 2>/dev/null || true
+  fi
 fi
 if [[ "$WANT_FLOW" -eq 1 ]]; then
   say "register vibe skill at .claude/skills/vibe -> ../../.agents/skills/vibe"
@@ -562,7 +677,6 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
     rm -f "$TARGET/.claude-plugin/plugin.json" "$TARGET/.claude/hooks/hooks.json"
     rmdir "$TARGET/.claude-plugin" 2>/dev/null || true
     chmod +x "$TARGET"/.claude/hooks/*.sh \
-             "$TARGET"/.agents/skills/spec/scripts/*.sh \
              "$TARGET"/.agents/skills/vibe/scripts/*.sh 2>/dev/null || true
   fi
 fi
@@ -571,14 +685,25 @@ fi
 # entries, idempotently, never clobbering user settings. Graceful-degrade if the
 # helper is missing or jq is absent (it prints the snippet to paste). Flow half.
 MERGE_SETTINGS="$SRC/.agents/skills/vibe/scripts/merge-settings.sh"
+# 0 = not wired, 1 = wired. Step 8 reads this instead of claiming success
+# unconditionally: a jq-less target gets a pasteable snippet and a banner saying
+# the hooks are NOT live, rather than "the flow hooks fire on every turn" over an
+# absent settings.json.
+HOOKS_WIRED=0
 if [[ "$WANT_FLOW" -eq 1 ]]; then
   say "wire flow hooks into .claude/settings.json"
   if [[ "$DRY_RUN" -eq 0 ]]; then
     if [[ -f "$MERGE_SETTINGS" ]]; then
-      bash "$MERGE_SETTINGS" merge "$TARGET" || err "WARN: settings.json not wired (see message above)."
+      if bash "$MERGE_SETTINGS" merge "$TARGET"; then
+        HOOKS_WIRED=1
+      else
+        err "WARN: settings.json not wired (see message above)."
+      fi
     else
       err "WARN: merge-settings.sh not found; hooks not wired into settings.json."
     fi
+  else
+    HOOKS_WIRED=1
   fi
 fi
 
@@ -614,6 +739,19 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
       "# vibe warnings relay (runtime warn-first channel; surfaced then truncated)" \
       ".agents/skills/vibe/warnings.log"
   fi
+  # The inject hook's edge-detection marker (content.mjs recordInject). NOT
+  # optional tidiness: left untracked, git reports the collapsed `?? .vibe/`
+  # directory on every turn after the first inject, and the Stop gate's
+  # receipt-staleness scan reads that as "changed after the receipt was
+  # written" — blocking every *.verify state over a path nobody touched.
+  # `.vibe/blocks/**` (a project's own authored content blocks) stays tracked:
+  # only the marker file is ignored.
+  if ! { [[ -f "$GI" ]] && grep -qF ".vibe/last-inject" "$GI"; }; then
+    say "add .vibe/last-inject to .gitignore"
+    [[ "$DRY_RUN" -eq 1 ]] || gi_append "$GI" \
+      "# vibe inject edge-detection marker (runtime; records the cursor the last inject saw)" \
+      ".vibe/last-inject"
+  fi
 fi
 
 # 6. Merge AGENTS.md via the copied merge script (agent-instructions). The merge
@@ -628,6 +766,19 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
   else
     err "WARN: merge-agents.sh not found; skipping AGENTS.md merge."
   fi
+
+  # 6b. Content layer: render the `agents-md` channel into AGENTS.md's managed
+  # vibe:rules block. Needs node (the engine); without it the instructions block
+  # above is still complete, so this degrades to a note, never a failure.
+  ENGINE_CLI="$TARGET/.agents/skills/vibe/engine/cli.mjs"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    say "render the agents-md content channel into AGENTS.md (vibe:rules block)"
+  elif [[ -f "$ENGINE_CLI" ]] && command -v node >/dev/null 2>&1; then
+    ( cd "$TARGET" && node "$ENGINE_CLI" render agents-md --write ) \
+      || err "WARN: agents-md channel not rendered (run 'node .agents/skills/vibe/engine/cli.mjs render agents-md --write')."
+  else
+    err "WARN: node not found; skipping the agents-md content render (AGENTS.md instructions block is still installed)."
+  fi
 fi
 
 # 7. Opt-in adapter symlinks. These point at AGENTS.md, which only the flow half
@@ -638,14 +789,22 @@ if [[ -n "$ADAPTERS" ]]; then
     err "WARN: --adapters is skipped under --only spec (adapter symlinks need the flow half's AGENTS.md)."
   else
     IFS=',' read -r -a chosen <<< "$ADAPTERS"
-    for a in "${chosen[@]}"; do
-      case "$a" in
-        claude) say "symlink CLAUDE.md -> AGENTS.md"
-                [[ "$DRY_RUN" -eq 1 ]] || bash "$MERGE" link "CLAUDE.md" "$TARGET" || err "WARN: CLAUDE.md not linked (real file?)." ;;
-        warp)   say "symlink WARP.md -> AGENTS.md"
-                [[ "$DRY_RUN" -eq 1 ]] || bash "$MERGE" link "WARP.md" "$TARGET" || err "WARN: WARP.md not linked (real file?)." ;;
-        *)      err "WARN: unknown adapter '$a' (known: claude, warp)." ;;
-      esac
+    rows="$(adapter_rows)"
+    known=""
+    while IFS=$'\t' read -r akey _af _at; do
+      [[ -n "$akey" ]] && known="${known:+$known, }$akey"
+    done <<< "$rows"
+    for a in ${chosen[@]+"${chosen[@]}"}; do
+      afile=""
+      while IFS=$'\t' read -r akey af _at; do
+        if [[ "$akey" == "$a" ]]; then afile="$af"; break; fi
+      done <<< "$rows"
+      if [[ -z "$afile" ]]; then
+        err "WARN: unknown adapter '$a' (known: $known)."
+        continue
+      fi
+      say "symlink $afile -> AGENTS.md"
+      [[ "$DRY_RUN" -eq 1 ]] || bash "$MERGE" link "$afile" "$TARGET" || err "WARN: $afile not linked (real file?)."
     done
   fi
 fi
@@ -662,15 +821,40 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   exit 0
 fi
 if [[ "$WANT_FLOW" -eq 1 ]]; then
-  cat <<EOF
+  if [[ "$HOOKS_WIRED" -eq 1 ]]; then
+    cat <<EOF
 install: done. The Claude Code hooks are wired automatically via
 install:   .claude/settings.json — no plugin to register. Reload the project (or
 install:   restart Claude Code) and the flow hooks fire on every turn; /flow works
 install:   as a native project command from .claude/commands.
 install:   Hook scripts self-resolve this project's flow state under
 install:   \${CLAUDE_PROJECT_DIR}/.agents/skills/vibe.
-install: the spec + vibe skills are installed as project files under .agents/skills/.
 EOF
+  else
+    cat <<EOF
+install: done, BUT the flow hooks are NOT live: .claude/settings.json could not be
+install:   wired (see the warning above — usually a missing jq, or a settings.json
+install:   that is not valid JSON). /flow and the skills work; the inject, guard,
+install:   and Stop teeth do nothing until the printed snippet is merged in.
+EOF
+  fi
+  if [[ "$WANT_SPEC" -eq 1 ]]; then
+    echo "install: the spec + vibe skills are installed as project files under .agents/skills/."
+    # A local install deliberately creates NO project content — .spec/ is yours,
+    # and orders.sh's self-location is regression-tested against a target with no
+    # .git/.spec marker at all. But AGENTS.md opens by telling the agent to read
+    # .spec/lessons.md, so name the one command that makes that true.
+    if [[ ! -d "$TARGET/.spec" ]]; then
+      echo "install: next: seed your .spec/ tree —"
+      echo "install:   bash .agents/skills/spec/scripts/setup.sh   (or /flow setup.detect)"
+    fi
+  else
+    cat <<EOF
+install: the vibe (flow) skill is installed under .agents/skills/vibe.
+install: no spec framework was installed (--only flow) — the .spec/ authoring
+install:   commands and spec/scripts/validate.sh are absent in this target.
+EOF
+  fi
 else
   cat <<EOF
 install: done (spec framework only).

@@ -1,0 +1,55 @@
+{
+  "$comment": "vibe shipped injection defaults. A project overrides ANY of this from a root vibe.json — same shape, merged over these values (channels.<c>.blocks replaces, .add/.remove edit, blocks.<id> patches or defines a block, blocks.<id>.enabled=false silences one). Never edit this file in an install; it is replaced on upgrade.",
+  "version": 1,
+  "sources": {
+    "lessons": ".spec/lessons.md"
+  },
+  "channels": {
+    "user-prompt.level": {
+      "$comment": "LEVEL cadence — every turn, byte-stable by construction. Two lines is the ceiling: this is the only payload that pays prompt-cache rent on every single turn, so it carries the cursor and its transition command and nothing else.",
+      "render": "summary",
+      "trigger": "level",
+      "budget": 2,
+      "blocks": ["flow.level"]
+    },
+    "user-prompt.edge": {
+      "$comment": "EDGE cadence — only on the turn after the flow cursor moves (tracked in .vibe/last-inject). This channel CARRIES the orders: when it is configured the inject hook stops emitting them separately, which is the whole point of classing the payload.",
+      "render": "summary",
+      "trigger": "edge",
+      "budget": 15,
+      "blocks": ["flow.edge"]
+    },
+    "user-prompt.event": {
+      "$comment": "EVENT cadence — only on a turn that carried an event (a drift nudge or queued warnings). Empty by default: add blocks here that are worth saying WHEN something happened and worth nothing when nothing did.",
+      "render": "summary",
+      "trigger": "event",
+      "budget": 10,
+      "blocks": []
+    },
+    "user-prompt": {
+      "$comment": "Standing rules, LEVEL cadence (the default for any channel that declares no trigger): injected on EVERY turn (UserPromptSubmit), after the flow's own level and edge channels. Keep it byte-stable and tiny — it lands in the transcript once per turn and pays prompt-cache rent forever.",
+      "render": "summary",
+      "budget": 6,
+      "blocks": ["style.ste100"]
+    },
+    "session-start": {
+      "$comment": "Injected once per session (SessionStart, +compact), after the flow doctrine. Timeless rules only — this output replays stale on --resume, so nothing live belongs here.",
+      "render": "summary",
+      "budget": 15,
+      "blocks": []
+    },
+    "agents-md": {
+      "$comment": "Rendered into the AGENTS.md managed rules block by `vibe render agents-md --write`. Prose the model must DECIDE with, that no hook can enforce — plus `flow.invariants`, the ONE surface where the write rules are stated for a reader: it renders {{invariants}} straight from content/policy.json, the same data detect-context.sh decides against, so the shipped text cannot drift from the enforcer. The AGENTS.md instructions template deliberately no longer restates them.",
+      "render": "body",
+      "budget": 80,
+      "blocks": ["flow.invariants", "delegation.subagents", "delegation.workflows"],
+      "write": {
+        "file": "AGENTS.md",
+        "block": "vibe:rules",
+        "note": "_Managed by vibe — rendered from the `agents-md` channel by `vibe render agents-md --write`. Edit the blocks or `vibe.json`, not this region._"
+      }
+    }
+  },
+  "blocks": {},
+  "placeholders": {}
+}

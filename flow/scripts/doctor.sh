@@ -80,6 +80,22 @@ note_header
 if have_jq; then ok tool.jq "jq present ($(jq --version 2>/dev/null))"
 else warn tool.jq "jq not installed (recommended, not required) — set-state writes the cursor via printf, the guard extracts paths via sed, state reads degrade to idle; cursor + manifest checks unverified"; fi
 
+# node — every hook is node-first now, so its absence changes what the install
+# actually enforces. Reporting only jq (which is genuinely optional) while saying
+# nothing about node let a node-less install read as fully healthy.
+# package.json declares engines.node >= 18, so presence alone is not the whole
+# question: a v16 reports the same "ok" as a v22 and tells the user nothing.
+if command -v node >/dev/null 2>&1; then
+  _nv="$(node --version 2>/dev/null)"
+  _nmaj="${_nv#v}"; _nmaj="${_nmaj%%.*}"
+  case "$_nmaj" in
+    ''|*[!0-9]*) ok tool.node "node present ($_nv)" ;;
+    *) if [ "$_nmaj" -lt 18 ]; then
+         warn tool.node "node $_nv is older than the engine's minimum (18) — the hooks may fail and fall back to flow/hooks-fallback (guard + Stop gate) or no-op (inject + doctrine)"
+       else ok tool.node "node present ($_nv)"; fi ;;
+  esac
+else warn tool.node "node not installed — the four .claude/hooks are the flow's enforcement, and without node they fall back to flow/hooks-fallback (guard + Stop gate) or no-op (inject + doctrine)"; fi
+
 # core skills present + integrity.
 check_link_or_dir core.spec "$SPEC_SKILL"
 check_link_or_dir core.vibe "$VIBE_SKILL"
@@ -119,7 +135,7 @@ _hook_scripts=(
   stop-gate.sh
 )
 _all_scripts_present=1
-for _hs in "${_hook_scripts[@]}"; do
+for _hs in ${_hook_scripts[@]+"${_hook_scripts[@]}"}; do
   if [[ -f "$CLAUDE_HOOKS_DIR/$_hs" ]]; then
     ok "adapter.script.$_hs" ".claude/hooks/$_hs present"
   else
@@ -130,13 +146,13 @@ done
 
 if [[ -f "$SETTINGS" ]]; then
   _unwired=()
-  for _hs in "${_hook_scripts[@]}"; do
+  for _hs in ${_hook_scripts[@]+"${_hook_scripts[@]}"}; do
     grep -qF "$_hs" "$SETTINGS" || _unwired+=("$_hs")
   done
   if [[ ${#_unwired[@]} -eq 0 ]]; then
     ok adapter.activation "all ${#_hook_scripts[@]} vibe hooks wired in .claude/settings.json"
   else
-    warn adapter.activation "hooks present but NOT wired in .claude/settings.json (issue #12 gap: ${_unwired[*]}) — re-run install.sh"
+    warn adapter.activation "hooks present but NOT wired in .claude/settings.json (issue #12 gap: ${_unwired[*]:-}) — re-run install.sh"
   fi
 else
   if [[ "$_all_scripts_present" -eq 1 ]]; then

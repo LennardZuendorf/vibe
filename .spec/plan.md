@@ -3,7 +3,7 @@ type: entrypoint
 scope: implementation
 covers: feature sequence, binary gates, validation criteria, open decisions
 children: []
-updated: 2026-07-18
+updated: 2026-08-10
 ---
 
 # vibe — Implementation Plan
@@ -36,22 +36,22 @@ whole-feature gate (Feature Sequence), never a unit-to-unit edge.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│  spec skill bundle  .spec/ tree, spec skill, validate, tests │
+│  memory      .spec/ tree, AGENTS.md block, .vibe/ overrides  │  repo
 ├─────────────────────────────────────────────────────────────┤
-│  vibe-flow          .agents/skills/vibe/, vibe skill, D9–D12      │
-├─────────────────────────────────────────────────────────────┤
-│  agent-instructions AGENTS.md template, adapter symlinks     │
-├─────────────────────────────────────────────────────────────┤
-│  platform-adapters  hooks, /flow, install.sh (settings.json) │
+│  content     policy.json, compose.json, blocks/**            │  ┐
+├─────────────────────────────────────────────────────────────┤  │
+│  engine      vibe CLI: cursor, content, merges, validation   │  ├ plugin
+├─────────────────────────────────────────────────────────────┤  │
+│  carriers    manifest, marketplace, 5 hook shims, /flow      │  ┘
 └─────────────────────────────────────────────────────────────┘
 ```
 
 | Layer | Owns | Does not own |
 |---|---|---|
-| **`spec` skill bundle** | `.spec/` docs, templates, `validate.sh`, lesson format, `spec/tests/run.sh` | Flow state, adapters, runtime lesson read |
-| **vibe-flow** | State machine, `vibe` skill phases, transitions, D8 read-on-entry, **D12 orders-in-skills** | `AGENTS.md` content, hooks |
-| **agent-instructions** | `AGENTS.md` merge, `CLAUDE.md`/`WARP.md` symlinks | Hook wiring, `.claude/hooks/` |
-| **platform-adapters** | `settings.json` wiring, three hooks, `install.sh` | Instruction file templates, skill bodies |
+| **memory** | `.spec/` docs, lesson format, the merged `AGENTS.md` block, `.vibe/` user overrides | Any runtime; it must read correctly with no engine present |
+| **content** | `policy.json` invariants, `compose.json` channels, every authored block | Enforcement — it supplies the words, the engine supplies the verdict |
+| **engine** | Cursor read/write **and the gate**, content resolution, merges, validation, drift, health | Prose; it renders content, never embeds it |
+| **carriers** | Plugin manifest + version, marketplace, hook registration, `/flow`, subagent registration | Policy, content, and state — all of which it only transports |
 
 ---
 
@@ -73,26 +73,48 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 8 | release-docs | READMEs + rails + logo + examples + stranger eval + PR | CI + eval report | DONE | install-tooling DONE |
 | 9 | flow-mvp | precedence + contract blocks, hybrid plan grammar, auto-advance + two gates, a quick-flow compound state, evidence-receipt verify tooth, output-density demoted to frozen vocabulary | `flow/tests/run.sh` (hermetic sandbox, machine⊆prose, gate↔orders, evidence-gate block/pass) | DONE | — |
 | 10 | flow-legibility | self-carrying orders (transition command in every inject), SessionStart doctrine hook (+compact re-inject), loop edges (design↔research, spec→brainstorm, plan→design), drift-first nudges, model-tier pins in delegation contracts | `flow/tests/run.sh` | DONE | — |
-| 11 | delegation-redirect | `PostToolUse`/`Skill` redirect hook + `redirects.json` data map (per-repo overridable); plan format goes superpowers-native in `.spec/features/<f>/plan.md`; SDD ledger accepted as verify evidence | `flow/tests/adapters/run.sh` | NOT STARTED | flow-legibility DONE |
-| 12 | spec-delta | header-keyed ADDED/MODIFIED/REMOVED promotion engine (supersedes EOF-append `promote.sh`), implement documented `requirements:`/`units:` validators, unify R-ID shape, GWT structure + `updated:` freshness + backlink checks (warn-first), coherent `update` route | `spec/tests/run.sh` | NOT STARTED | — |
-| 13 | install-distribution | one-command `install.sh` (local default / `--global` per-user plugin / interactive), `--with-plugins` companion set (superpowers + feature-dev slot), self-hosting plugin + marketplace (`build-plugin.sh`, self-detecting doctrine hook), curl bootstrap, `doctor` instruction-coverage, caveman doctrine note, skill-relative path sweep + CI guard | `flow/tests/adapters/run.sh` + `spec/tests/run.sh` | DONE | flow-legibility DONE |
+| 11 | install-distribution | one-command `install.sh` (local default / `--global` per-user plugin / interactive), `--with-plugins` companion set (superpowers + feature-dev slot), self-hosting plugin + marketplace (`build-plugin.sh`, self-detecting doctrine hook), curl bootstrap, `doctor` instruction-coverage, caveman doctrine note, skill-relative path sweep + CI guard | `flow/tests/adapters/run.sh` + `spec/tests/run.sh` | DONE | flow-legibility DONE |
+| 12 | js-core | `engine/` skeleton + `vibe` CLI dispatch; the ONE cursor reader, root resolver, machine loader, marker grammar; `state` (writer only), `orders`, `doctrine`, `doctor` ported off bash with byte-identical output; JS test harness; hook shims `exec` node and exit 0 without it; duplicate-primitive scan; guard/gate bash oracles frozen for parity | `engine/tests/` + existing suites green against the shim | DONE | — |
+| 13 | content-layer | `content/blocks/**` with `id`/`channels`/`summary` frontmatter, `content/vibe.default.json` channels, typed placeholders (`{{state}} {{next}} {{writes}} {{delegates}} {{orders}} {{doctrine}} {{invariants}} {{lessons:TAG}}`), a root `vibe.json` override layer install never rewrites, `vibe render --list/--check/<channel> --write` with per-channel budgets and lints | `engine/tests/` (channel budgets, override precedence, lint discrimination) | DONE | js-core DONE |
+| 14 | inject-triggers | level/edge/event trigger classes; `.vibe/last-inject` edge detection; `content/policy.json` (invariants as data, read by the guard *and* by `{{invariants}}`); cursor line moved off `SessionStart`; `Stop` predicate 3 deleted; warn relay bounded + deduped | `engine/tests/` + `flow/tests/adapters/run.sh` | DONE | content-layer DONE |
+| 15 | **machine-teeth** | `vibe state set` enforces `next` membership and refuses gated edges without `--confirm`; phase-file link into `state-machine.json`; dead fields removed; orders interpolate instead of restate; guard covers the physical cursor path | `flow/tests/run.sh` (illegal edge refused, gated edge refused, confirm accepted) | NOT STARTED | content-layer DONE |
+| 16 | **plugin-runtime** | plugin carries skills + `/flow` command + 4 spec subagents + 5 hooks + engine + content; `vibe init` / `vibe vendor`; version stamp + install manifest; retire `install.sh`, `merge-settings.sh`, `.claude/hooks/*`; fix the seven install bugs; macOS + bash-3.2 CI leg | `flow/tests/adapters/run.sh` + a fresh non-git target | NOT STARTED | machine-teeth DONE |
+| 17 | **spec-js** | port validate/drift/promote/list/scan/lessons-for into the engine; fix substring validators (R-ID prefix collision, RFC-2119 word boundary, Scope section scoping, zero-requirement short-circuit); register the four subagents through the plugin manifest | `spec/tests/run.sh` | NOT STARTED | js-core DONE |
+| 18 | delegation-redirect | `PostToolUse`/`Skill` redirect hook + `redirects.json` data map (per-repo overridable); plan format goes superpowers-native in `.spec/features/<f>/plan.md`; SDD ledger accepted as verify evidence | `flow/tests/adapters/run.sh` | NOT STARTED | plugin-runtime DONE |
+| 19 | spec-delta | header-keyed ADDED/MODIFIED/REMOVED promotion engine (supersedes EOF-append `promote.sh`), implement documented `requirements:`/`units:` validators, unify R-ID shape, GWT structure + `updated:` freshness + backlink checks (warn-first), coherent `update` route | `spec/tests/run.sh` | NOT STARTED | spec-js DONE |
+| 20 | doc-truth | reconcile R8↔R10 plugin narrative, hook count, symlink direction, obsolete lesson 3, 15-vs-13 state count; prune root `AGENTS.md` to the ≤40-line managed block; ancestor-CLAUDE.md duplication check | `spec/scripts/check-drift.sh` + render lints | NOT STARTED | plugin-runtime DONE |
 
-**Active focus:** the 2026-07 rework (`claude/vibe-framework-rework-hy1xp5`,
-direction settled 2026-07-18).
-Theme: vibe keeps the strategic/product spec layer and the enforcement pattern
-(cursor + hooks + injection) but stops owning build *method* — superpowers
-v6 runs brainstorm/plan/execution in its native format, redirected into
-`.spec/**`; instructions become injection-first so team repos need no AGENTS.md
-control; distribution collapses to a per-user plugin + one-command installer.
-flow-legibility (row 10) and install-distribution (row 13) are **delivered** —
-the injection-first legibility layer and the one-command installer + self-hosting
-plugin now ship (install-distribution folded in the old vibe-plugin/stack-installer
-sketches; full stateful-flow-via-plugin is deferred). The remaining rework sequence
-is delegation-redirect and spec-delta (rows 11–12); each gets its own
-`.spec/features/<name>/` spec at `feature.design` time. Still deferred from earlier
-arcs: earn-the-teeth promotions beyond the verify tooth, `vibe-flow/4`
-`feature.deepen`, multi-lens review, `/spec research` wiring, and the manual gh repo
-metadata upload.
+**Active focus:** the **2026-08 toolkit arc** (`claude/vibe-toolkit-review-ky9ici`,
+direction settled 2026-08-10 after a five-lens architecture review).
+
+Theme: vibe becomes a **toolkit** rather than a repo template. Three findings
+drove it. (1) The state machine was decorative — `gates` was read by no code,
+`next` was never enforced, and six fields were read by nothing, so both human
+gates were honour-system. (2) Doctrine prose had no home: the write invariants
+were stated in seven places across three marker grammars and four parsers, with
+no user override surviving a reinstall. (3) Two distribution channels fought
+each other, with no version stamp and no install manifest.
+
+The answer is a carrier split — **plugin carries the runtime, repo carries the
+memory** — on a single JS engine, with every injected sentence authored once as
+a content block and composed per channel under an explicit line budget.
+
+Two constraints that shaped the old design are now obsolete and are the reason
+this is possible: a plugin may carry `skills/`, `commands/`, `agents/`, and
+`hooks/` together, and `CLAUDE_PROJECT_DIR` is exported to plugin hooks, so a
+per-user plugin resolves per-repo state.
+
+Sequence is rows 12–20; each gets its own `.spec/features/<name>/` spec at
+`feature.design` time. Rows 12–14 (js-core, content-layer, inject-triggers) are
+`DONE` and compounded: the engine runs the flow, every injected sentence is an
+authored block, and the write invariants are data read by both the guard and the
+prose documenting it. The bash scripts stay as the parity oracles the engine is
+tested against — and two of them (`flow/hooks-fallback/`) are also the shipped
+no-node fallback for the guard and the Stop gate. Row 15 (`machine-teeth`) is
+next; until it lands the cursor writer validates the state *name* only, and edge
+legality stays `/flow` convention. Still deferred from earlier arcs:
+earn-the-teeth promotions beyond the verify tooth, `vibe-flow/4` `feature.deepen`,
+multi-lens review, `/spec research` wiring, and the manual gh repo metadata upload.
 
 ---
 
@@ -111,6 +133,27 @@ metadata upload.
 - **D12 owned by vibe-flow.** Orders live in the `vibe` skill phase files; `inject: null` on skill states; platform-adapters consumes the frozen skill.
 - **Repo stores canonical halves at `spec/` + `flow/`.** `.agents/skills/{spec,vibe}` are compat symlinks — the portable runtime interface; installs materialize real dirs (`cp -RL`). `monorepo-split/1`.
 - **Binary feature gates.** Features couple as whole boxes; no cross-feature unit edges.
+- **D13 — Carrier split.** The plugin carries the runtime (engine, hooks, skills,
+  `/flow`, subagents, content), versioned by `plugin.json`. The repo carries the
+  memory (`.spec/**`, the `AGENTS.md` block, `.vibe/` overrides), committed and
+  runtime-free. `vibe vendor` is the explicit opt-in for in-repo runtime.
+- **D14 — One JS engine.** Deterministic machinery is one Node engine with a
+  single cursor reader, root resolver, and marker grammar; hooks are shims over
+  it. Without Node a text-injecting hook exits 0, but the two carrying a HARD
+  BLOCK (Guard, Stop) fall back to the frozen bash implementations in
+  `flow/hooks-fallback/` — an enforcement tooth may not depend on a runtime being
+  installed. Reverses the "bash scripts, no runtime" non-goal; the scope
+  discipline it protected is kept as a non-goal in its own right.
+- **D15 — Content is data.** Every injected sentence is a block authored once
+  (`id`/`channels`/`summary`), composed per channel, with typed placeholders
+  interpolating machine fields. `policy.json` is the sole write-invariant source,
+  read by both the guard and the renderer — parity by construction, not by test.
+- **D16 — Injection is trigger-classed and budgeted.** `UserPromptSubmit` output
+  persists in the transcript, so payload is split level / edge / event, with
+  per-channel line budgets linted in CI. Live state never rides `SessionStart`,
+  whose output replays stale on `--resume`.
+- **D17 — The gate lives in the writer.** `vibe state set` refuses targets outside
+  `next` and gated edges without `--confirm`. Approval stops being prose.
 
 ### Resolved
 
@@ -157,7 +200,7 @@ Cleansed notes for shipped work — detail lives in live surfaces, not this plan
 - **spec skill bundle — DONE.** Four-layer model, warn-first `validate.sh`, strict
   templates, feature-authoring flow, skill discovery/routing; `spec/tests/run.sh`
   green. `.spec/features/spec-framework/` deleted (truth = skill bundle + tests).
-- **vibe-flow — DONE.** 15-state machine, six scripts (`set-state`, `validate-state`,
+- **vibe-flow — DONE.** 13-state machine, six scripts (`set-state`, `validate-state`,
   `detect-context`, `regen-active-rules`, `orders`, `check-skills`), originally seven
   `vibe-*` skills. D12 orders sourced from each skill via `orders.sh`; D8–D11 in place.
   `flow/tests/run.sh` green. Specs kept as living architecture docs (root entrypoints

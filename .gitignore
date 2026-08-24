@@ -13,6 +13,26 @@ flow/evidence/
 # Warnings relay log (runtime warn-first channel; surfaced by the inject hook then
 # truncated). Physical path through the .agents/skills/vibe -> flow symlink.
 flow/warnings.log
+# Injection edge-detection marker (records the cursor key the last inject
+# already carried the `edge` channels for; cursorChangedSince()/recordInject()
+# in flow/engine/content.mjs). Per-project runtime state, not memory — same
+# reason as the cursor and evidence dir above.
+.vibe/last-inject
 .serena/
 # Overnight run artifact (local morning report, not merged)
 REPORT.md
+
+# Delegated-skill default output paths. superpowers writes its design docs and
+# plans here by default; vibe redirects those artifacts into .spec/** (the
+# `skip:` lines in flow/{feature,strategy}.md). Ignored so a delegate that
+# writes here anyway cannot land it in the repo. Canonical paths beat skill
+# defaults — see .spec/product.md Design Principle 5.
+docs/superpowers/
+
+# subagent-driven-development workspace: ledgers, briefs, reports, review
+# packages for an in-flight plan. Scratch by contract — git log is the record.
+.superpowers/
+
+# js-core engine: zero runtime dependencies by contract — this should never
+# populate, but ignore it defensively rather than trust that convention.
+node_modules/

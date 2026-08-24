@@ -586,7 +586,7 @@ test_sf17_templates() {
     feature-product.md feature-tech.md feature-plan.md feature-design.md
   )
   local t
-  for t in "${expected[@]}"; do
+  for t in ${expected[@]+"${expected[@]}"}; do
     if [[ -f "$SPEC_SKILL/reference/templates/$t" ]]; then
       pass SF17 "template exists: $t"
     else
@@ -982,6 +982,47 @@ test_scan_merges_unclosed_exits_nonzero() {
   (cd "$d" && bash "$SPEC_SKILL/scripts/scan-merges.sh" feat) >/dev/null 2>&1 || rc=$?
   if [[ $rc -ne 0 ]]; then pass "spec-skill-improvements/10" "unclosed marker exits non-zero"
   else fail "spec-skill-improvements/10" "unclosed marker exits non-zero"; fi
+  rm -rf "$d"
+}
+
+# js-core/8 fix round 2 (re-review Minor 1). The fix above — `${results[@]+…}`
+# instead of a bare `"${results[@]}"` — is a real bash-3.2 defect fix: under
+# `set -u`, bash < 4.4 ABORTS on an empty-array slice, and the ONLY finding
+# being an unclosed marker leaves `results` empty. But the fixture that was
+# meant to pin it asserts only `rc != 0`, and the ABORTED script also exits 1.
+# It cannot tell "aborted mid-output" from "reported the finding".
+#
+# The visible damage is the OUTPUT, so assert that: `--format json` emitted a
+# bare `[` (invalid JSON, truncated by the abort) before the fix and `[]` after,
+# while stderr carries the diagnosis either way. Note the discrimination domain
+# honestly: on bash >= 4.4 the construct is simply not broken, so no fixture can
+# separate the two spellings there — this goes red on the macOS CI leg (stock
+# /bin/bash 3.2, which runs every suite through `$BASH` dispatch) and on any
+# other 3.2 target, which is exactly where the defect lives.
+test_scan_merges_unclosed_emits_valid_json() {
+  local d; d="$(mktmp)"; mkdir -p "$d/.spec/features/feat"
+  printf '<!-- merge -->\n## unclosed block\n' > "$d/.spec/features/feat/tech.md"
+  local out err rc=0
+  err="$d/err.txt"
+  # $BASH, not PATH's `bash`: the defect only exists on bash < 4.4, and the
+  # macOS leg exercises it by starting the aggregator on /bin/bash 3.2. A
+  # PATH-resolved `bash` would hand this fixture whatever else is installed
+  # (GitHub's macOS images also carry Homebrew bash 5) and the pin would go
+  # vacuous on the only leg that can see the bug — the same failure the
+  # aggregator's own $BASH dispatch was added to fix.
+  out="$( (cd "$d" && "${BASH:-bash}" "$SPEC_SKILL/scripts/scan-merges.sh" --format json feat) 2>"$err" )" || rc=$?
+  if [[ "$out" == "[]" ]]; then
+    pass "spec-skill-improvements/10" "unclosed marker still emits complete JSON (not a truncated '[')"
+  else
+    fail "spec-skill-improvements/10" "unclosed marker still emits complete JSON (not a truncated '[')"
+    echo "        expected: []"
+    echo "        got:      $out"
+  fi
+  local errbody; errbody="$(cat "$err" 2>/dev/null || true)"
+  assert_contains "spec-skill-improvements/10" "unclosed marker reports the finding on stderr" \
+    "$errbody" "unclosed <!-- merge --> block"
+  if [[ $rc -ne 0 ]]; then pass "spec-skill-improvements/10" "unclosed marker exits non-zero (json format)"
+  else fail "spec-skill-improvements/10" "unclosed marker exits non-zero (json format)"; fi
   rm -rf "$d"
 }
 
@@ -1411,6 +1452,7 @@ test_setup_config_preserved
 test_branch_doc_templates_exist
 test_scan_merges_finds_blocks
 test_scan_merges_unclosed_exits_nonzero
+test_scan_merges_unclosed_emits_valid_json
 test_scan_merges_empty_feature
 test_openspec_docs_present
 test_spec_tracer_read_only
@@ -1442,7 +1484,7 @@ test_skill_validator_paths_relative() {
     "$REPO_ROOT/spec/agents/spec-health/SKILL.md"
   )
   local f bad=0
-  for f in "${docs[@]}"; do
+  for f in ${docs[@]+"${docs[@]}"}; do
     [[ -f "$f" ]] || continue
     # The literal ~ is the offender pattern we search for, not a path to expand.
     # shellcheck disable=SC2088

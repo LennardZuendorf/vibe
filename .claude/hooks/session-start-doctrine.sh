@@ -1,28 +1,19 @@
 #!/usr/bin/env bash
-# session-start-doctrine.sh — vibe flow SessionStart hook (flow-legibility/5).
+# session-start-doctrine.sh — vibe flow SessionStart hook.
 #
-# Event: SessionStart (all sources, incl. `compact` re-inject). Emits the vibe
-# working-model doctrine + a live cursor summary so the agent gets the flow
-# contract every session — making the AGENTS.md managed block an optional adapter
-# rather than the only carrier of the doctrine.
+# Event: SessionStart (all sources, incl. `compact` re-inject). Node-first: runs
+# the engine's `hook session-start-doctrine` (engine/commands/doctrine.mjs),
+# which emits the timeless doctrine block and the session-start channel.
 #
-# Thin shell: all content lives in .agents/skills/vibe/scripts/doctrine.sh, which
-# single-sources the doctrine from the vibe skill's SKILL.md. stdout on exit 0 is
-# added to the session context.
-#
-# Graceful degrade: missing project dir / resolver -> exit 0, inject nothing,
-# never break the session.
-
+# DEGRADE (no node, no engine, or an unexpected engine exit code): exit 0
+# silently. This hook only injects text, so losing it costs guidance, not
+# enforcement. It never exits 2.
 set -euo pipefail
 
-cat >/dev/null 2>&1 || true   # consume stdin; we don't need it
+HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-DOCTRINE="$ROOT/.agents/skills/vibe/scripts/doctrine.sh"
-
-[[ -f "$DOCTRINE" ]] || exit 0
-
-# doctrine.sh always exits 0 and self-degrades; guard anyway.
-bash "$DOCTRINE" 2>/dev/null || true
-
-exit 0
+# `${BASH}` — the absolute path of the shell already running this script — not a
+# bare `bash`, which resolves through PATH. A no-jq/no-node test shim (and a
+# genuinely minimal PATH) can lack `bash` entirely, and then the hook dies with
+# `exec: bash: not found` and exit 127 instead of answering.
+exec "${BASH:-bash}" "$HOOKS_DIR/_engine-hook.sh" session-start-doctrine ""

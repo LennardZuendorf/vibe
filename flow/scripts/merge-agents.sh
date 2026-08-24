@@ -35,6 +35,13 @@ C_START="<!-- vibe:constitution:start -->"
 C_END="<!-- vibe:constitution:end -->"
 AR_START="<!-- vibe:active-rules:start -->"
 AR_END="<!-- vibe:active-rules:end -->"
+# The content layer's rendered rules block (`vibe render agents-md --write`).
+# The engine OWNS it: merge never edits an existing one, and re-rendering
+# replaces it byte-for-byte. merge only SEEDS it, from the copy the template
+# ships, when the target has none — see seed_rules_block(). unmerge removes it,
+# or uninstall would leave vibe-authored prose behind.
+R_START="<!-- vibe:rules -->"
+R_END="<!-- /vibe:rules -->"
 # The template's branded title line, above the managed markers. vibe writes it
 # when it creates the file; unmerge removes it when nothing else vibe-owned keeps
 # the file alive. Exact-match only — a user's own heading is never touched.
@@ -121,6 +128,27 @@ normalize() {
     | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
 }
 
+# same_normalized A B — do two files match once normalized?
+#
+# `diff -q <(normalize A) <(normalize B)` looks equivalent and is not: -q makes
+# diff STOP READING at the first difference, which SIGPIPEs whichever normalize
+# pipeline is still writing. That surfaced as an intermittent
+# `sed: couldn't write 84 items to stdout: Broken pipe` on stderr — a real CI
+# failure of the "unmerge leaves stderr clean" assertions, and a race, so it
+# reproduced roughly one run in two. Materialize both sides first and compare the
+# finished files; nothing can close a pipe early because there is no pipe.
+same_normalized() {
+  local a b rc
+  a="$(mktemp "${TMPDIR:-/tmp}/vibe-norm.XXXXXX")" || return 1
+  b="$(mktemp "${TMPDIR:-/tmp}/vibe-norm.XXXXXX")" || { rm -f "$a"; return 1; }
+  normalize "$1" > "$a" 2>/dev/null
+  normalize "$2" > "$b" 2>/dev/null
+  cmp -s "$a" "$b"
+  rc=$?
+  rm -f "$a" "$b"
+  return "$rc"
+}
+
 # ── adapter symlink mode ───────────────────────────────────────────────────────
 link_adapter() {
   local adapter="${1:-}" root="${2:-.}"
@@ -144,7 +172,50 @@ link_adapter() {
 }
 
 # ── merge mode ─────────────────────────────────────────────────────────────────
+# seed_rules_block TARGET — give a target that has NO vibe:rules block the copy
+# the template ships, and never touch one that already exists.
+#
+# Why merge does this at all (inject-triggers/6 fix round 1, Important 2): the
+# write rules are no longer restated by hand inside the instructions block —
+# they are rendered from content/policy.json. `vibe render agents-md --write`
+# does that rendering and needs node. A target WITHOUT node (and a hookless host
+# like Codex or Warp, where AGENTS.md is the only carrier there is) would
+# otherwise end up with two sections pointing at a block that does not exist and
+# no rules at all — a regression against what shipped before. The template's
+# copy is byte-identical to the render (a test in flow/tests/run.sh fails if it
+# drifts), so a later install WITH node re-renders it to exactly the same bytes
+# and reports "no change".
+#
+# Never overwrites: an existing block may be a project's own composition
+# (vibe.json can add, remove or reorder blocks), which is the engine's to
+# manage, not this script's.
+seed_rules_block() {
+  local target="$1"
+  [[ -f "$target" ]] || return 0
+  grep -qxF "$R_START" "$target" && return 0
+  local block; block="$(mktemp "${target}.rules.XXXXXX")"
+  extract_region "$TEMPLATE" "$R_START" "$R_END" > "$block"
+  if [[ -s "$block" ]]; then
+    { printf '\n'; cat "$block"; } >> "$target"
+    note "seeded the vibe:rules block in $target from the template"
+  fi
+  rm -f "$block"
+}
+
+# merge_instructions runs in a SUBSHELL: it installs a `trap ... RETURN` to
+# clean its temp files, and a RETURN trap set inside a function stays armed for
+# the enclosing scope — so calling it plainly from here fires that trap a second
+# time when merge() itself returns, with its `$tmp` locals long out of scope
+# (`tmp: unbound variable` under `set -u`). The subshell scopes the trap to the
+# call. Every write it makes is a file write, so nothing is lost, and `set -e`
+# still propagates a `die`.
 merge() {
+  local root="${1:-.}"
+  ( merge_instructions "$root" )
+  seed_rules_block "$root/AGENTS.md"
+}
+
+merge_instructions() {
   local root="${1:-.}"
   local target="$root/AGENTS.md"
   [[ -f "$TEMPLATE" ]] || die "template not found at $TEMPLATE"
@@ -193,7 +264,7 @@ merge() {
     ins && skipc && $0 ~ /-->$/ { skipc = 0; next }
     ins && !skipc { print }
   ' "$TEMPLATE" > "$tcore"
-  if diff -q <(normalize "$tcore") <(normalize "$target") >/dev/null 2>&1; then
+  if same_normalized "$tcore" "$target"; then
     cp "$TEMPLATE" "$tmp" && mv -f "$tmp" "$target"
     note "wrapped unmarked-equivalent $target in vibe:instructions markers (no duplicate body)"
     return 0
@@ -217,23 +288,25 @@ unmerge() {
   local target="$root/AGENTS.md"
   [[ -f "$target" ]] || { note "no AGENTS.md at $target — nothing to remove"; return 0; }
 
-  local had_i=0 had_ar=0
+  local had_i=0 had_ar=0 had_r=0
   grep -qF "$I_START"  "$target" && grep -qF "$I_END"  "$target" && had_i=1
   grep -qF "$AR_START" "$target" && grep -qF "$AR_END" "$target" && had_ar=1
-  if [[ "$had_i" -eq 0 && "$had_ar" -eq 0 ]]; then
+  grep -qF "$R_START"  "$target" && grep -qF "$R_END"  "$target" && had_r=1
+  if [[ "$had_i" -eq 0 && "$had_ar" -eq 0 && "$had_r" -eq 0 ]]; then
     note "no vibe managed blocks in $target — left untouched"; return 0
   fi
 
-  # Pre-flight both blocks BEFORE mutating, so a reversed-marker refusal (die)
+  # Pre-flight every block BEFORE mutating, so a reversed-marker refusal (die)
   # leaves the file untouched rather than half-stripped.
   assert_not_reversed "$target" "$I_START"  "$I_END"
   assert_not_reversed "$target" "$AR_START" "$AR_END"
+  assert_not_reversed "$target" "$R_START"  "$R_END"
 
   # Pure stub: the file is (normalized) the template vibe would create, with no
   # user content added around the managed blocks — including the template's own
   # title line, which sits above the markers. This is the "target had none" case:
   # remove it wholesale, the clean inverse of the fresh install that created it.
-  if [[ -f "$TEMPLATE" ]] && diff -q <(normalize "$target") <(normalize "$TEMPLATE") >/dev/null 2>&1; then
+  if [[ -f "$TEMPLATE" ]] && same_normalized "$target" "$TEMPLATE"; then
     rm -f "$target"
     note "removed vibe-created AGENTS.md stub at $target (untouched template — target had none)"
     return 0
@@ -241,6 +314,7 @@ unmerge() {
 
   strip_managed_block "$target" "$I_START"  "$I_END"
   strip_managed_block "$target" "$AR_START" "$AR_END"
+  strip_managed_block "$target" "$R_START"  "$R_END"
 
   # Stripping the blocks can strand the vibe-branded title line vibe wrote above
   # them (user added prose outside the markers, or the active-rules block was

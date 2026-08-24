@@ -148,7 +148,8 @@ durable memory; sessions are ephemeral. Read the specs before you write code.
 
 ## Session start
 
-1. Read `.spec/lessons.md` and `.spec/plan.md`.
+1. Read `.spec/lessons.md` and `.spec/plan.md`. (The spec half owns `.spec/`; a
+   flow-only install has no tree — the flow still runs, the specs are just absent.)
 2. Identify the feature you are working on and load its specs:
    `.spec/features/<name>/{product,tech,plan}.md`.
 3. If `.agents/skills/vibe/state.json` exists and you are continuing a flow session,
@@ -177,22 +178,19 @@ Most transitions auto-advance. Two edges are **human gates** — stop and get ex
 approval before crossing: plan → impl, and verify → ship. Everything else flows without
 pausing to ask.
 
-**Output: caveman style** — terse and high-signal, no filler or hedging; compress
-receipts and subagent summaries. Never compress security warnings, irreversible-action
-confirmations, or code/paths/commands — those stay full and byte-exact.
+**Output: brief technical English** — answer first, then the detail. One idea per
+sentence, active voice, no filler or hedging; compress receipts and subagent
+summaries. Never compress security warnings, irreversible-action confirmations, or
+code/paths/commands — those stay full and byte-exact.
 
-## Write invariants
+## Write policy
 
-Policy lives in `detect-context.sh decide` (defaults to `idle` when `state.json` is absent):
-
-1. `.spec/lessons.md` — writable only in `feature.compound`, `setup.apply`, `strategy.spec`,
-   or `quick.verify` (the flow-end states that carry the lesson step; or when explicitly
-   recording a lesson with user approval).
-2. Root `.spec/{product,tech,design,plan}.md` — only in `strategy.spec`, `feature.compound`,
-   or `setup.apply`.
-3. `.agents/skills/vibe/state.json` — only via `set-state.sh`.
-
-Everything else is allow/warn. Check before writing:
+Which paths this harness restricts, and in which states, is **data**:
+`content/policy.json`, read by `detect-context.sh decide` (which defaults to `idle`
+when `state.json` is absent). The rules are rendered rule-by-rule into the
+`vibe:rules` block below — this section states no state list of its own, because a
+second hand-written copy is a copy that can disagree with the enforcer. Check any
+path before writing it:
 
 ```bash
 bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
@@ -206,15 +204,27 @@ state's orders win: write to the state's surface, transition only via `set-state
 edits are not a state — edit within the current state's write surface and stay put.
 `set-state.sh idle` is always legal: abort ends any flow.
 
+## Injected rules
+
+Standing rules are authored as content blocks and composed into channels: the
+per-turn prompt, session start, and the `vibe:rules` block below. Configure them in
+this repo's root `vibe.json` — add, remove, reorder, disable, or define your own —
+never by editing the block, which is regenerated.
+
 ## Commands
 
 ```bash
-# Spec validation — run before claiming done
+# Spec validation — run before claiming done (spec half; absent on --only flow)
 bash .agents/skills/spec/scripts/validate.sh
 # Write policy for a path (works without state.json)
 bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
 # Health-check the harness wiring (hooks, cursor, machine)
 bash .agents/skills/vibe/scripts/doctor.sh
+# Injection config: what each channel composes, and lint it
+node .agents/skills/vibe/engine/cli.mjs render --list
+node .agents/skills/vibe/engine/cli.mjs render --check
+# Re-render the AGENTS.md rules block after editing vibe.json
+node .agents/skills/vibe/engine/cli.mjs render agents-md --write
 ```
 
 ## Enforcement is partial — do not trust it blindly
@@ -240,9 +250,67 @@ and prefer warn over hard-fail.
 
 ### Active Rules
 
-- **A single-source parity test must pin prose to the code, not to a sibling doc** — Any doc that restates a code-enforced policy must be parity-tested against the CODE, per rule, not against a sibling doc. Extract each rule's allow-set from the enforcer (`detect-context.sh decide`) and assert the prose's per-rule state set matches it exactly — a set-equality check, not a name-union. A prose↔prose test only catches copy-paste rot; it silently permits rule-reassignment drift, which is the failure that actually misleads an agent.
-- **Compound is where drift is born — enforce it mechanically** — Compound must be mechanically enforced, not trusted to discipline. A drift check (`spec/scripts/check-drift.sh`, CI-wired after `validate.sh`) fails when a directory under `.spec/features/` has no row in the root `.spec/plan.md`, and flags any `NOT STARTED` unit left in a feature `plan.md`. Hand-written assertion counts are errored the same way — they rot silently. A green suite is not a compounded feature; make the missing-compound state impossible to merge past.
-- **Script self-location: search for markers, don't count hops** — Scripts reachable through compat symlinks must locate the repo root by upward marker search (`.spec`/`.git`), never fixed hop counts; pin with path-parity tests asserting byte-identical output via both real and symlinked invocation.
-- **The dogfood repo is a privileged target — eval on a fresh, non-git install** — A tool that will be *installed elsewhere* must be tested from a representative fresh target (a bare `mktemp -d`, no `.git`, no `.spec`), not just the source/dogfood repo. Prefer self-location relative to the script's own path over repo-root markers the target may lack. Run a periodic "stranger" eval (fresh agent, docs-only, throwaway sandbox) as a release gate — it exercises the install-target reality the in-repo suites cannot.
-- **Uninstall must surgically invert the install into shared dirs, and the test must discriminate** — An uninstaller must delete only the paths the installer created (per-file inverse of the copy), never blanket-remove a shared directory; pruning *emptied* dirs is fine. Pair every preservation guarantee with a **discriminating** test — one that fails if the safety code is replaced by the naïve destructive version (drop a user file into each shared dir, run uninstall, assert it survives *and* the shipped file is gone). Reuse the tested marker-pairing guard for the managed instruction block; never re-implement it.
+- **A check that examines nothing must fail loudly, never pass quietly** — Every guard must assert its own population — a floor on what it examined, and that the things it examined exist. Absence of findings is only evidence when presence of *input* is proven. Extend this to your own verification: after planting a mutant, confirm it actually landed (`git diff --numstat`) before believing the result, and prefer structural floors over hand-written counts, which rot. A green that cannot distinguish "checked and clean" from "checked nothing" is not a green.
+- **A comment asserting a safety property becomes load-bearing — test it or delete it** — Treat a comment that asserts a safety or scope property as an untested claim, and either give it a test or delete it. When a fix proves a comment wrong, correct the comment in the same commit — a stale comment is worse than none, because the next reader (and the next reviewer's reasoning) will rely on it. Prefer assertions that are structural over lists of names: scrub every `tests/` directory at any depth and assert *no test artifact anywhere* reaches a target, rather than naming two directories that the next co-located suite will silently escape.
+- **A control case that depends on an unset variable must delete it, not merely not set it** — A test whose meaning is "variable X is not set" must **delete** X from the child environment, not rely on the parent not having it — and the deletion belongs on the shared spawn helper so every call site can use it. Then run the suite under each ambient variable it reads, in both states, as its own leg. Related: run every CI leg locally, byte-exact, before pushing — the round that shipped this bug ran none of them, and the round that fixed it ran all ten.
+- **A guard is only as strong as the capability it bans, not the spelling it matches** — When a guard is evaded, do not add a pattern for the evasion — that buys exactly one round. Close the *capability*: state the invariant as "no module may obtain X by any means unless allowlisted", then find the mechanical property that makes it true regardless of syntax. Match against the whole comment-stripped file, never per line. Close the scanned set under whatever relation the attacker can traverse (here, module resolution — which covers static `import`, `import()`, `require`, and `createRequire` without naming any of them). Pin exemptions by exact line *and occurrence count*, never by file. And require the implementer to produce the list of evasions it tried against its **own** fix, including the ones that failed — the round that finally held was the first to produce that artifact.
+- **Porting a script destroys the oracle that proves the port — freeze it first** — When replacing an implementation, copy its predecessor into the test tree as a frozen oracle **before** the first line of the replacement is written, and make differential comparison part of the suite. Prioritise by blast radius: anything that can block, delete, or halt gets its oracle frozen first. Where an oracle disagrees with *itself* across its own code paths, follow the fail-safe branch and pin the divergence with a control — losing one turn of enforcement is recoverable, wedging a session is not.
 <!-- vibe:active-rules:end -->
+
+<!-- vibe:rules -->
+_Managed by vibe — rendered from the `agents-md` channel by `vibe render agents-md --write`. Edit the blocks or `vibe.json`, not this region._
+
+## Write invariants
+
+Every write this harness restricts is one rule in `content/policy.json`. The
+list below is RENDERED from that file — the same data
+`detect-context.sh decide` enforces — so the prose and the enforcer cannot
+disagree. Edit the rules, never this text.
+
+- `.agents/skills/vibe/state.json` — otherwise: block — state.json is written only via set-state.sh, never by direct edit
+- `.spec/lessons.md` — `feature.compound`, `setup.apply`, `strategy.spec`, `quick.verify`: allow; otherwise: block — .spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: the current state)
+- `.spec/product.md`, `.spec/tech.md`, `.spec/design.md`, `.spec/plan.md` — `strategy.spec`, `feature.compound`, `setup.apply`: allow; otherwise: block — root .spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: the current state)
+- `.spec/features/*` — `feature.impl`, `quick.fix`: warn — .spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: the current state); otherwise: allow
+- `CLAUDE.md`, `AGENTS.md` — otherwise: warn — CLAUDE.md/AGENTS.md active-rules block is generated by regen-active-rules.sh; edits inside the markers are overwritten next compound
+- `src/*`, `tests/*` — `feature.verify`: warn — verify writes no src — route findings back to impl (set-state.sh feature.impl); `quick.verify`: warn — verify writes no src — route findings back to fix (set-state.sh quick.fix); `feature.impl`, `quick.fix`, `setup.apply`: allow; otherwise: warn — source/test edits outside an impl/fix state (current: the current state)
+
+Check a path before writing it:
+
+```bash
+bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
+```
+
+## Delegating to sub-agents
+
+Model tiers for ANY delegated work — Agent-tool calls and Workflow-script `agent()`
+calls alike. Set the `model` parameter explicitly on every call; never omit it
+(omission silently inherits the session model):
+
+- `haiku` — mechanical bulk work: renames, boilerplate, format conversion, log triage.
+- `sonnet` — default for well-specified implementation with clear acceptance criteria.
+- `opus` — genuinely tricky work: concurrency, subtle algorithms, adversarial
+  verify/judge panels, gnarly debugging.
+- `fable` — rare; only when independence from your context is the point (e.g.
+  adversarial review of your own plan or a large diff). If the complexity of the task
+  warrants a Fable sub-agent, ALWAYS check with me first — never spawn one unprompted.
+
+When unsure between tiers, pick the cheaper and escalate on failure.
+
+## Dynamic workflows (Workflow tool)
+
+Applies to ALL sessions, any model. Dynamic workflows do not need to be avoided —
+reach for the Workflow tool when a task has 3+ independent parallelizable subtasks or
+would benefit from a pipeline/judge panel.
+
+Standing rule on opt-in: if ultracode is NOT on for the session (no "ultracode"
+keyword, no toggle, no orchestration request in my own words), plan first — propose
+the workflow in one or two sentences with the rough shape and cost, and wait for my
+reply; my "yes" is the opt-in. If ultracode IS on, invoke directly.
+
+**Agent models inside workflow scripts:** every `agent()` call MUST set the `model`
+parameter explicitly, chosen per "Delegating to sub-agents" above — with one
+tightening: NEVER use `fable` agents in a dynamic workflow, not even with approval.
+Only `haiku`, `sonnet`, or `opus`. If a Fable review is warranted, it happens AFTER
+the workflow completes, as a standalone Agent-tool call (ask first, per above) —
+never as a workflow stage.
+<!-- /vibe:rules -->

@@ -10,8 +10,8 @@ interaction language (design), and the order of work (plan). It ships as one
 bundled skill, `spec`, plus a validator. It needs only `bash` — no runtime, no
 build step — and works with **any** agent, or none.
 
-It is one of two halves. The other is [the vibe flow](../flow/README.md); the
-[root README](../README.md) explains the split. This half stands entirely alone.
+It is one of two halves. The other is [the vibe flow](https://github.com/LennardZuendorf/vibe/blob/main/flow/README.md); the
+[root README](https://github.com/LennardZuendorf/vibe#readme) explains the split. This half stands entirely alone.
 
 ## Quickstart
 
@@ -90,7 +90,7 @@ documents. They enhance; they never gate.
 ## With or without the flow
 
 The spec skill is self-sufficient. Drive it directly with `/spec …` on any host,
-or let [the vibe flow](../flow/README.md) drive its authoring phases
+or let [the vibe flow](https://github.com/LennardZuendorf/vibe/blob/main/flow/README.md) drive its authoring phases
 (`strategy.spec`, `feature.design`, `feature.plan`, the compound promotions). When
 the flow is present, `.spec/.config.yaml` can set `vibe-flow: true` so output
 density follows the flow's single `style` note; absent that, the skill uses its own
@@ -127,6 +127,6 @@ Everything below is the `spec` skill, addressed at runtime under
 
 ## More
 
-- [`../README.md`](../README.md) — the umbrella: the spec/flow split and install.
-- [`../flow/README.md`](../flow/README.md) — the other half: the state-machine flow.
+- [the root README](https://github.com/LennardZuendorf/vibe#readme) — the umbrella: the spec/flow split and install.
+- [`flow/README.md`](https://github.com/LennardZuendorf/vibe/blob/main/flow/README.md) — the other half: the state-machine flow.
 - [SKILL.md](SKILL.md) — the canonical rules agents follow.

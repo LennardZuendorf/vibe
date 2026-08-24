@@ -55,14 +55,14 @@ if [ ${#specs[@]} -eq 0 ] && { [ ! -d ".spec/features" ] || [ ${#feature_dirs[@]
   exit 0
 fi
 
-for f in "${specs[@]}"; do
+for f in ${specs[@]+"${specs[@]}"}; do
   format_spec "$f" "$(basename "$f")"
 done
 
 if [ -d ".spec/features" ] && [ ${#feature_dirs[@]} -gt 0 ]; then
   echo ""
   echo "## Features"
-  for dir in "${feature_dirs[@]}"; do
+  for dir in ${feature_dirs[@]+"${feature_dirs[@]}"}; do
     [ -d "$dir" ] || continue
     feature_name=$(basename "$dir")
     echo ""
@@ -72,7 +72,7 @@ if [ -d ".spec/features" ] && [ ${#feature_dirs[@]} -gt 0 ]; then
       echo "- (no docs)"
       continue
     fi
-    for f in "${feature_specs[@]}"; do
+    for f in ${feature_specs[@]+"${feature_specs[@]}"}; do
       format_spec "$f" "${f#.spec/}"
     done
   done

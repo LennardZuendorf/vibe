@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # doctrine.sh — emit the vibe working-model doctrine for the SessionStart hook.
 #
-#   doctrine.sh    # prints the doctrine block + a one-line cursor summary
+#   doctrine.sh    # prints the doctrine block, and nothing else
 #
 # The doctrine is single-sourced from the vibe skill's SKILL.md, between the
 #   <!-- vibe:doctrine -->
@@ -11,9 +11,18 @@
 # the SessionStart hook stays a thin shell and the AGENTS.md managed block becomes
 # an optional adapter rather than the only carrier of the doctrine.
 #
+# NO LIVE STATE RIDES THIS OUTPUT (inject-triggers, R4). This script used to
+# append a one-line `Cursor: <state>[ (feature=<f>)].` summary. Claude Code
+# REPLAYS a SessionStart hook's saved output verbatim on `--resume` instead of
+# re-running the hook, so that line went stale the moment the cursor moved in a
+# resumed session — and the per-turn `user-prompt.level` channel now names the
+# state every turn anyway. Deleted here and in the engine port
+# (flow/engine/commands/doctrine.mjs) together, so the byte-parity matrix keeps
+# comparing two implementations of the same contract. With the cursor read gone
+# this script no longer reads state.json, CLAUDE_PROJECT_DIR, or jq at all.
+#
 # Read-only. Always exits 0: a missing block / skill / SKILL.md degrades to no
-# output — never a session-ending failure. jq is recommended, not required; the
-# cursor read falls back to sed and is byte-identical to the jq path.
+# output — never a session-ending failure.
 
 set -euo pipefail
 
@@ -39,45 +48,6 @@ else
 fi
 SKILL_MD="$SKILLS_DIR/vibe/SKILL.md"
 
-# The cursor is per-project runtime state. When a hook sets CLAUDE_PROJECT_DIR
-# (e.g. a per-user plugin whose code lives OUTSIDE the repo under
-# ${CLAUDE_PLUGIN_ROOT}), read the project's cursor there so the summary reflects
-# THIS repo, not the shared plugin dir. Otherwise the cursor sits next to this
-# skill (the vendored install). Only redirect when the project cursor exists, so a
-# vendored/dogfood run is byte-for-byte unchanged.
-if [[ -n "${CLAUDE_PROJECT_DIR:-}" && -f "$CLAUDE_PROJECT_DIR/.agents/skills/vibe/state.json" ]]; then
-  STATE="$CLAUDE_PROJECT_DIR/.agents/skills/vibe/state.json"
-else
-  STATE="$SKILL_DIR/state.json"
-fi
-
-have_jq() { command -v jq >/dev/null 2>&1; }
-
-# Cursor reads mirror orders.sh exactly (jq path, else sed over the flat cursor) so
-# the summary line is byte-identical with or without jq.
-current_state() {
-  local flow="" phase=""
-  if have_jq && [[ -f "$STATE" ]] && jq -e . "$STATE" >/dev/null 2>&1; then
-    flow=$(jq -r '.flow // "idle"' "$STATE")
-    phase=$(jq -r '.phase // "idle"' "$STATE")
-  elif ! have_jq && [[ -f "$STATE" ]]; then
-    flow=$(sed -n 's/.*"flow"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$STATE" | head -n1)
-    phase=$(sed -n 's/.*"phase"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$STATE" | head -n1)
-  fi
-  [[ -n "$flow" && "$flow" != "null" ]] || flow="idle"
-  [[ -n "$phase" && "$phase" != "null" ]] || phase="idle"
-  if [[ "$flow" == "$phase" ]]; then echo "$flow"; else echo "$flow.$phase"; fi
-}
-
-current_feature() {
-  [[ -f "$STATE" ]] || return 0
-  if have_jq; then
-    jq -r '.feature // empty' "$STATE" 2>/dev/null || true
-  else
-    sed -n 's/^[[:space:]]*"feature"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$STATE" | head -n1 || true
-  fi
-}
-
 # Extract the doctrine block (marker lines excluded). Pure sed — no jq, no awk — so
 # the no-jq degrade path is byte-identical, matching orders.sh's extract_block.
 extract_doctrine() {
@@ -90,12 +60,4 @@ DOCTRINE="$(extract_doctrine || true)"
 [[ -n "$DOCTRINE" ]] || exit 0
 
 printf '%s\n' "$DOCTRINE"
-
-ST="$(current_state)"
-FT="$(current_feature)"
-if [[ -n "$FT" ]]; then
-  printf 'Cursor: %s (feature=%s).\n' "$ST" "$FT"
-else
-  printf 'Cursor: %s.\n' "$ST"
-fi
 exit 0

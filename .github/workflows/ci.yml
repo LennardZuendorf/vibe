@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   check:
     name: shellcheck + suites + validate
@@ -11,6 +14,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # js-core/8: the engine suite (flow/engine/tests/run.mjs, wired into
+      # tests/run.sh below) needs Node 18+ — pin it explicitly rather than
+      # relying on whatever ships preinstalled.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: No runtime dependencies (zero-dep engine contract)
+        run: |
+          if [ -d node_modules ]; then
+            echo "node_modules exists — the engine must have zero runtime deps" >&2
+            exit 1
+          fi
 
       # shellcheck is preinstalled on ubuntu-latest runners; the fallback below
       # installs it only if that ever changes.
@@ -24,7 +44,68 @@ jobs:
       - name: Shellcheck (all tracked *.sh)
         run: git ls-files '*.sh' | xargs shellcheck
 
+      # js-core/8 fix round 2 (re-review Finding 5): this leg is the one that is
+      # SUPPOSED to have jq — the whole jq half of the parity matrix (30 legs
+      # plus the KNOWN DIVERGENCE pin) skips without it, and a skip-everything
+      # run still exits 0 on its own. Assert rather than install: if the
+      # ubuntu-latest image ever drops preinstalled jq we want to hear about it
+      # loudly, not paper over it and keep believing the matrix ran. (The macOS
+      # job installs instead, because jq is genuinely not on every macOS image.)
+      - name: jq is present (this leg must run the jq half of the parity matrix)
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "jq is not on PATH — the jq half of the parity matrix cannot run on this leg" >&2
+            exit 1
+          fi
+          jq --version
+
+      # Runs all four suites (spec, flow, adapters, engine) via the combined
+      # aggregator — see tests/run.sh.
       - name: Test suites
+        run: bash tests/run.sh
+
+      - name: Engine suite standalone (with jq stripped from PATH)
+        # The combined run above exercises the engine suite with this
+        # runner's normal PATH (jq present). Re-run it standalone with jq
+        # unreachable so the no-jq divergence/degrade paths threaded through
+        # every *.test.mjs file (and parity.test.mjs's own no-jq leg) are
+        # exercised for real, not just reasoned about — mirrors what the
+        # bash suites already do for their own no-jq legs.
+        #
+        # VIBE_NO_JQ=1 declares that skipping the jq half here is DELIBERATE.
+        # Without it the harness's jq-half gate fails the run, which is what
+        # makes an accidentally jq-less runner distinguishable from this leg
+        # (js-core/8 fix round 2, re-review Finding 5). The gate is also
+        # bidirectional: if this strip ever stopped working, the jq legs would
+        # execute despite the opt-in and the gate fails the step for that too.
+        run: |
+          NOJQ_BIN="$(mktemp -d)"
+          for t in bash sh mkdir dirname basename date mktemp mv cp rm rmdir sed grep head tail cat env awk find readlink ln chmod cmp diff sort cksum node git; do
+            p="$(command -v "$t" 2>/dev/null)" && ln -s "$p" "$NOJQ_BIN/$t"
+          done
+          PATH="$NOJQ_BIN" VIBE_NO_JQ=1 node flow/engine/tests/run.mjs
+
+      # js-core/8 fix round 1 (review Minor 7): every *.mjs derives its own path
+      # via fileURLToPath, never `new URL(import.meta.url).pathname`, because the
+      # latter keeps percent-encoding and breaks on any path with a space. That
+      # sweep is load-bearing but no other leg checks out into such a path, so a
+      # reintroduction would ship green. This leg is the guard.
+      - name: Engine suite from a path containing a space
+        run: |
+          SPACED="$(mktemp -d)/with space/vibe"
+          mkdir -p "$SPACED"
+          tar -cf - --exclude=.git . | tar -xf - -C "$SPACED"
+          cd "$SPACED" && node flow/engine/tests/run.mjs
+
+      # js-core/8 fix round 2 (re-review Minor 5, PRE-EXISTING since 8c97eff):
+      # every Claude Code session exports CLAUDE_PROJECT_DIR, and the flow
+      # suite's doctrine fixtures inherited it — reading the developer's live
+      # cursor instead of the sandbox's, so the suite failed locally and passed
+      # in CI, which sets nothing. The suite now scrubs it; this leg is what
+      # keeps that true, because no other leg runs with the variable set.
+      - name: Test suites under an ambient CLAUDE_PROJECT_DIR (hermeticity)
+        env:
+          CLAUDE_PROJECT_DIR: ${{ github.workspace }}
         run: bash tests/run.sh
 
       - name: Spec validation
@@ -32,3 +113,42 @@ jobs:
 
       - name: Drift gate (compound + doc drift)
         run: bash spec/scripts/check-drift.sh
+
+  macos:
+    # js-core/8: stock macOS ships bash 3.2 (Apple freezes it at the last
+    # GPLv2 release) — the only way to know tests/run.sh's bash-3.2 fix
+    # (parallel indexed arrays, no `declare -A`) actually works there, not
+    # just that it was reasoned about. Runs the same aggregator as the
+    # ubuntu job, invoked via the SYSTEM /bin/bash explicitly (not whatever
+    # `bash` resolves to on PATH — GitHub's macOS runners also carry a
+    # Homebrew bash 5+ that would silently mask a bash-3.2 regression).
+    name: macOS (bash 3.2) — suites
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: System bash is really 3.2 (sanity — this job is pointless otherwise)
+        # Asserts, not just prints: if Apple or the runner image ever ships a
+        # newer /bin/bash this job silently stops testing what it claims while
+        # staying green. Fail loudly instead and let a human retarget it.
+        run: |
+          v="$(/bin/bash --version | head -1)"
+          echo "$v"
+          case "$v" in
+            *"version 3.2"*) ;;
+            *) echo "/bin/bash is no longer 3.2 — this job no longer tests bash 3.2" >&2; exit 1 ;;
+          esac
+
+      - name: Ensure jq (not preinstalled on every macOS image)
+        run: command -v jq >/dev/null 2>&1 || brew install jq
+
+      - name: Test suites (via the real macOS /bin/bash, not Homebrew's)
+        run: /bin/bash tests/run.sh

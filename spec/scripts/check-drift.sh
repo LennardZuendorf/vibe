@@ -11,6 +11,11 @@
 #       .spec/plan.md            -> ERROR when missing (merged feature not recorded)
 #   (b) any "NOT STARTED" unit in .spec/features/*/plan.md
 #                                -> WARN, listed (a live feature plan that lags reality)
+#   (d) a live feature folder whose root-plan row already says DONE
+#                                -> ERROR (compound promoted the facts but never
+#                                   archived the folder — half a compound), and
+#                                   every live feature's row status is PRINTED so
+#                                   a row that lags reality is visible in CI
 #   (c) hand-written assertion counts in README.md or .spec/** (never the frozen
 #       archive)                 -> ERROR (counts must come from the test runner,
 #                                   not be typed by hand — they rot silently)
@@ -64,6 +69,51 @@ else
   warn "root plan .spec/plan.md not found; skipping plan-row check."
 fi
 
+# (d) status of each live feature's row in the root plan.
+#
+# Check (a) only asks that the NAME appears somewhere in plan.md, which a stale
+# `NOT STARTED` row satisfies just as well as a correct one — that is how two
+# fully shipped, fully tested features (content-layer, inject-triggers) passed
+# this gate while misreporting themselves. A script cannot know "shipped", but it
+# CAN catch the other half of the same mistake and make the first half visible:
+# a DONE row with the folder still present is a compound that promoted the facts
+# and forgot to archive, and printing every live row's status puts a lagging one
+# in front of a human on every run.
+if [[ -f "$PLAN" ]]; then
+  for dir in "$SPEC_DIR"/features/*/; do
+    [[ -d "$dir" ]] || continue
+    feat="$(basename "$dir")"
+    row="$(grep -F "| $feat |" "$PLAN" 2>/dev/null | head -n1 || true)"
+    [[ -n "$row" ]] || row="$(grep -F "**$feat**" "$PLAN" 2>/dev/null | head -n1 || true)"
+    if [[ -z "$row" ]]; then
+      echo "check-drift: note: feature '$feat' has no Feature Sequence row in .spec/plan.md." >&2
+      continue
+    fi
+    # Read the status FIELD, not the row text. Two ways to get this wrong, and the
+    # first spelling managed both: matching the literal `| DONE |` missed
+    # `| **DONE** |` or `| DONE ✅ |`, so the ERROR below could never fire (a check
+    # that examines nothing); matching a bare `DONE` anywhere in the row would hit
+    # the "Starts when" cell, which legitimately reads `js-core DONE`. So: split on
+    # `|`, reduce each cell to its letters, and require the WHOLE cell to be the
+    # status word.
+    status="NOT STARTED"
+    rest="$row"
+    while [[ "$rest" == *"|"* ]]; do
+      cell="${rest%%|*}"
+      rest="${rest#*|}"
+      letters="$(printf '%s' "$cell" | tr -cd 'A-Za-z')"
+      case "$letters" in
+        DONE) status=DONE; break ;;
+        INPROGRESS) status="IN PROGRESS" ;;
+      esac
+    done
+    echo "check-drift: live feature '$feat' — root plan says: $status" >&2
+    if [[ "$status" == "DONE" ]]; then
+      err "feature '$feat' is DONE in .spec/plan.md but .spec/features/$feat/ still exists — compound promotes AND archives; move it to .spec/archive/"
+    fi
+  done
+fi
+
 # (b) NOT STARTED units left in a live feature plan (archive is excluded — it is
 # not under features/).
 for dir in "$SPEC_DIR"/features/*/; do
@@ -86,7 +136,7 @@ while IFS= read -r f; do
 done < <(find "$SPEC_DIR" -type f -name '*.md' -not -path "$SPEC_DIR/archive/*" 2>/dev/null | sort)
 
 if [[ ${#scan_targets[@]} -gt 0 ]]; then
-  for f in "${scan_targets[@]}"; do
+  for f in ${scan_targets[@]+"${scan_targets[@]}"}; do
     while IFS= read -r hit; do
       [[ -n "$hit" ]] || continue
       err "hand-written test count in ${f#"$REPO_ROOT"/}:$hit"
