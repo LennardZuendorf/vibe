@@ -11,6 +11,13 @@ A hardening wave after a full audit of the harness: verified bug fixes, mechanic
 compound enforcement, a warnings relay, an honest-docs truth sweep, and a
 fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk targets.
 
+### Changed
+
+- **Direction: v0.4 re-architecture** — three independent tools (spec, flow,
+  instruct) as static Rust binaries, Claude Code + OpenCode plugins, contracts
+  as the only coupling; root specs rewritten, roadmap F1–F24 authored as an
+  issue set under `docs/roadmap/` (posted to GitHub once Issues are enabled).
+
 ### Added
 
 - **A Node engine under the flow half** — `flow/engine/`, zero runtime
