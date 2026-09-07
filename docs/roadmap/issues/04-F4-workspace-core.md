@@ -1,11 +1,14 @@
 ---
 title: "F4 [all] workspace-core: Cargo workspace + vibe-core (root, atomic write, markers, config)"
 id: F4
+hold: architecture
 tool: all
 phase: 0
 depends_on: [F2]
 parent: epic
 ---
+
+> **Held.** This feature is under architecture design in the originating thread; no GitHub issue yet.
 
 ## Deliverable
 Cargo workspace `crates/{vibe-core,vibe-spec,vibe-flow,vibe-instruct,vibe-signals,vibe-parity}`. `vibe-core` (`publish = false`, internal-only): root resolution (walk-up + marker search), atomic writes (tmp+rename), marker grammar v1, layered JSON config, hook-input parsing (Claude stdin JSON / OpenCode args), peer probe, contract types, ledger primitive. No tool crate depends on another — asserted by a `cargo metadata` graph test in CI. Deps allowlist via `cargo-deny`: `clap`, `serde`, `serde_json` only; `ratatui`+`crossterm` gated behind flow's `tui` feature. JSON is the only config format. MSRV pinned to 1.88 (ratatui floor) in `rust-toolchain.toml`. CI: `check`/`test` on 3 OS × stable + MSRV.

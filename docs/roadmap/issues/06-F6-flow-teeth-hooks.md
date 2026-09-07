@@ -1,6 +1,7 @@
 ---
 title: "F6 [flow] flow-teeth-hooks: Rust guard+stop hooks, hook.sh shim, 5-tier discovery"
 id: F6
+issue: 26
 tool: flow
 phase: 1
 depends_on: [F5]

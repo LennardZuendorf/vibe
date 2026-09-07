@@ -1,6 +1,7 @@
 ---
 title: "F18 [spec] spec-delta: ADDED/MODIFIED/REMOVED promotion engine + OpenSpec import/export"
 id: F18
+issue: 35
 tool: spec
 phase: 3
 depends_on: [F17]

@@ -1,6 +1,7 @@
 ---
 title: "F17 [spec] spec-validators: strictness ratchet, grammar checks, adherence checks, trace"
 id: F17
+issue: 34
 tool: spec
 phase: 3
 depends_on: [F16]

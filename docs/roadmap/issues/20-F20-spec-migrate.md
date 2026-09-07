@@ -1,6 +1,7 @@
 ---
 title: "F20 [spec] spec-migrate: migrate command + this repo's move to docs/spec/"
 id: F20
+issue: 37
 tool: spec
 phase: 3
 depends_on: [F17, F19]

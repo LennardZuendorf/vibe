@@ -1,6 +1,7 @@
 ---
 title: "F22 [all] release-install: cargo-dist 5 targets, per-tool tags, install.sh lifecycle"
 id: F22
+issue: 39
 tool: all
 phase: 4
 depends_on: [F21]

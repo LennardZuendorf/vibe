@@ -1,6 +1,7 @@
 ---
 title: "F24 [all] doc-truth: READMEs, CHANGELOG, root spec truth sweep across 3 tools"
 id: F24
+issue: 41
 tool: all
 phase: 4
 depends_on: [F23]

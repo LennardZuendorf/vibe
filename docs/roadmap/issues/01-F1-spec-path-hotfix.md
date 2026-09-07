@@ -1,6 +1,7 @@
 ---
 title: "F1 [spec] spec-path-hotfix: fix hardcoded script paths breaking plugin installs"
 id: F1
+issue: 23
 tool: spec
 phase: 0
 depends_on: []

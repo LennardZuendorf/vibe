@@ -1,11 +1,14 @@
 ---
 title: "F2 [all] contracts: versioned schemas + goldens for payload, markers, spec JSON"
 id: F2
+hold: architecture
 tool: all
 phase: 0
 depends_on: []
 parent: epic
 ---
+
+> **Held.** This feature is under architecture design in the originating thread; no GitHub issue yet.
 
 ## Deliverable
 `contracts/` directory: JSON Schemas + golden fixtures for the four cross-tool contracts — provider payload v1, marker grammar v1, spec JSON v1, provider manifest v1 — plus `contracts/run.sh`, callable by every tool's CI, byte-exact against the goldens. Establishes the rule that a tool never imports a peer: cross-tool traffic is files under `.vibe/` plus one soft exec.

@@ -1,6 +1,7 @@
 ---
 title: "F19 [spec] spec-hooks-agents: Claude/OpenCode auto-validate hooks + 4 registered agents"
 id: F19
+issue: 36
 tool: spec
 phase: 3
 depends_on: [F16]

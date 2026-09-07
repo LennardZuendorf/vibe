@@ -1,6 +1,7 @@
 ---
 title: "F7 [flow] machine-teeth: state set enforces next/gate, ledger append, /flow wrapper"
 id: F7
+issue: 27
 tool: flow
 phase: 1
 depends_on: [F6]

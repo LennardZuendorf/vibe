@@ -1,11 +1,14 @@
 ---
 title: "F11 [instruct] instruct-core: port 4-tier layering, block/channel render, marker writer"
 id: F11
+hold: architecture
 tool: instruct
 phase: 2
 depends_on: [F4]
 parent: epic
 ---
+
+> **Held.** This feature is under architecture design in the originating thread; no GitHub issue yet.
 
 ## Deliverable
 `instruct.json` config schema, 4-tier discovery (global < repo-shared < repo-local < session-runtime, later wins per block `id`), path confinement. Port `blocks/*.md` frontmatter parsing and channel composition, differential against today's `cli.mjs render` output for this repo. Marker writer v1 (`<!-- vibe:<owner>:begin v=1 hash=<sha256:12> -->` … `<!-- vibe:<owner>:end -->`): idempotent rewrite, malformed/nested/duplicate → exit 2 no write, ancestor-AGENTS.md refusal, `--check` exit 1 on drift. Lints/budgets: `user-prompt.level` 2 lines, `.edge` 15, `.event` 10, `session-start` 15, `agents-md` 80, per-turn total ≤20.

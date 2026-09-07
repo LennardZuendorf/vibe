@@ -1,6 +1,7 @@
 ---
 title: "F3 [flow] oracles-parity: freeze JS/bash oracles, build differential parity harness"
 id: F3
+issue: 24
 tool: flow
 phase: 0
 depends_on: []

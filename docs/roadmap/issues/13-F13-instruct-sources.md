@@ -1,6 +1,7 @@
 ---
 title: "F13 [instruct] instruct-sources: dir/git/https sources, pins, cache, TTL, lockfile, sync"
 id: F13
+issue: 30
 tool: instruct
 phase: 2
 depends_on: [F11]

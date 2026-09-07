@@ -1,6 +1,7 @@
 ---
 title: "F15 [instruct] instruct-migration: split Active-Rules block into committed vs global blocks"
 id: F15
+issue: 32
 tool: instruct
 phase: 2
 depends_on: [F14]

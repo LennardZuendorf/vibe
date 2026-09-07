@@ -1,6 +1,7 @@
 ---
 title: "F16 [spec] spec-core: vibe-spec crate: root discovery, port validate/list/lessons"
 id: F16
+issue: 33
 tool: spec
 phase: 3
 depends_on: [F3, F4]

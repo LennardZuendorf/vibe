@@ -1,6 +1,7 @@
 ---
 title: "F5 [flow] flow-core: port machine/policy/cursor to Rust at .vibe/run/flow/state.json"
 id: F5
+issue: 25
 tool: flow
 phase: 1
 depends_on: [F3, F4]

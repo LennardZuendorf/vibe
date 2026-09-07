@@ -1,6 +1,7 @@
 ---
 title: "F14 [instruct] instruct-adapters: Claude + OpenCode adapters, .claude/rules emitter, doctor"
 id: F14
+issue: 31
 tool: instruct
 phase: 2
 depends_on: [F12, F13]

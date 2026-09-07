@@ -1,6 +1,7 @@
 ---
 title: "F8 [flow] flow-orders-payload: port orders/doctrine/doctor, write inject payload+manifest"
 id: F8
+issue: 28
 tool: flow
 phase: 1
 depends_on: [F7]

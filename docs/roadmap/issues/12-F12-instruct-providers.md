@@ -1,6 +1,7 @@
 ---
 title: "F12 [instruct] instruct-providers: payload reader, session ledger, manifest/command providers"
 id: F12
+issue: 29
 tool: instruct
 phase: 2
 depends_on: [F8, F11]
