@@ -3,7 +3,7 @@ type: entrypoint
 scope: implementation
 covers: feature sequence, binary gates, validation criteria, open decisions
 children: []
-updated: 2026-08-10
+updated: 2026-09-28
 ---
 
 # vibe — Implementation Plan
@@ -83,6 +83,7 @@ hooks consume frozen skills rather than reaching across a boundary.)
 | 18 | delegation-redirect | `PostToolUse`/`Skill` redirect hook + `redirects.json` data map (per-repo overridable); plan format goes superpowers-native in `.spec/features/<f>/plan.md`; SDD ledger accepted as verify evidence | `flow/tests/adapters/run.sh` | NOT STARTED | plugin-runtime DONE |
 | 19 | spec-delta | header-keyed ADDED/MODIFIED/REMOVED promotion engine (supersedes EOF-append `promote.sh`), implement documented `requirements:`/`units:` validators, unify R-ID shape, GWT structure + `updated:` freshness + backlink checks (warn-first), coherent `update` route | `spec/tests/run.sh` | NOT STARTED | spec-js DONE |
 | 20 | doc-truth | reconcile R8↔R10 plugin narrative, hook count, symlink direction, obsolete lesson 3, 15-vs-13 state count; prune root `AGENTS.md` to the ≤40-line managed block; ancestor-CLAUDE.md duplication check | `spec/scripts/check-drift.sh` + render lints | NOT STARTED | plugin-runtime DONE |
+| 21 | space-setup | `space/` half: shared prompt source + canonical MCP template (`${ENV}` placeholders) + plugin declarations + per-runtime adapters (opencode, droid, claude, codex) + `space/apply.sh`/`doctor.sh` + `install.sh --space`; hand-built opencode plugins move in; droid gains teeth | `space/tests/run.sh` + `flow/tests/adapters/run.sh` | NOT STARTED | install-distribution DONE |
 
 **Active focus:** the **2026-08 toolkit arc** (`claude/vibe-toolkit-review-ky9ici`,
 direction settled 2026-08-10 after a five-lens architecture review).
