@@ -1,8 +1,8 @@
 ---
 type: entrypoint
 scope: technical
-children: [tech-contracts.md, tech-rust.md, tech-instruct.md, tech-spec.md]
-updated: 2026-09-04
+children: [tech-contracts.md, tech-rust.md, tech-instruct.md, tech-spec.md, tech-cli.md]
+updated: 2026-09-26
 ---
 
 # vibe — Technical Architecture
@@ -14,7 +14,9 @@ file-based contracts, never through imports. One repo, one installer, three
 release trains. **Shipped today:** one Node engine (`flow/engine/`) plus bash
 oracles drive all machinery, hooks run through `.claude/settings.json`, and
 the cursor lives at `.agents/skills/vibe/state.json`. This document describes
-the v0.4 target unless a callout says otherwise.
+the v0.4 target unless a callout says otherwise; the queued v0.5 arc adds one
+front door — the `vibe` CLI — plus worktree lifecycle and a global spec space
+over the same three tools ([tech-cli.md](tech-cli.md)).
 
 ---
 
@@ -26,7 +28,9 @@ the v0.4 target unless a callout says otherwise.
    cursor, ledger, and injection payload are runtime state, gitignored under
    `.vibe/run/`.
 3. **Independence over convenience.** Each tool installs and works alone.
-   Anti-bundling is a design value, not a phase: no umbrella binary, ever.
+   Anti-bundling is a design value, not a phase: no tool ever requires
+   another. (v0.5's `vibe` CLI is a front door over independent tools, not a
+   bundle of them.)
 4. **One core crate, three binaries.** `vibe-core` holds every primitive a
    tool needs — root resolution, atomic writes, marker grammar, hook-input
    parsing. No tool crate depends on another.
@@ -56,6 +60,10 @@ flowchart TD
   SP --> CORE["vibe-core"]
   FL --> CORE
   IN --> CORE
+  CLI["vibe (v0.5)"] --> CORE
+  CLI -.exec.-> SP
+  CLI -.exec.-> FL
+  CLI -.exec.-> IN
   FL --> RUN[".vibe/run/ — cursor, ledger, inject payload"]
   IN -.reads.-> RUN
   IN -.reads.-> PROV[".vibe/providers/*.json"]
@@ -63,6 +71,7 @@ flowchart TD
   SP --> MD["AGENTS.md managed blocks"]
   FL --> MD
   IN -->|recomposes| MD
+  CLI -.reads.-> GLOB["~/.config/vibe/ — registry, global lessons, global blocks"]
 ```
 
 ---
@@ -78,6 +87,7 @@ flowchart TD
 | Core | root resolution, atomic writes, marker grammar, hook parsing | crate (`vibe-core`, internal) |
 | Contracts | payload v1, marker grammar v1, spec JSON v1, provider manifest v1 | `contracts/` schemas + goldens |
 | Carriers | hook shims, plugin manifests, `install.sh` | `bin/hook.sh`, `.claude-plugin/` |
+| Front door (v0.5) | tool dispatch, worktree lifecycle, global spec space, global blocks | crate (`vibe`, plugin `vibe/`) |
 
 ---
 
@@ -85,10 +95,11 @@ flowchart TD
 
 ```text
 vibe/
-├── crates/{vibe-core,vibe-spec,vibe-flow,vibe-instruct,vibe-signals,vibe-parity}/
+├── crates/{vibe-core,vibe,vibe-spec,vibe-flow,vibe-instruct,vibe-signals,vibe-parity}/
 ├── spec/        # plugin: .claude-plugin/ skills/spec/ commands/ agents/ hooks/ bin/ opencode/ reference/
 ├── flow/        # plugin: … + state-machine.json policy.json bin/fallback/
 ├── instruct/    # plugin: … + blocks/ (shipped defaults)
+├── vibe/        # plugin (v0.5): front-door command surface only — no hooks
 ├── contracts/   # schemas + goldens + run.sh
 ├── oracles/{js,bash}/ + MANIFEST.sha256
 ├── tests/parity/ (corpus, GREEN.hard)   tests/run.sh
@@ -185,10 +196,22 @@ tested byte-exact by every tool's CI:
 - **Marker grammar v1** — `<!-- vibe:<owner>:begin v=1 hash=<sha256:12> -->`
   … `<!-- vibe:<owner>:end -->`, owners spec/flow/instruct.
 - **Spec JSON v1** — `root`, `lessons-for`, `plan`, `feature` queries,
-  exit 3 on no tree.
+  exit 3 on no tree. v0.5 adds an additive `global: true` flag on
+  `lessons-for`.
 
 Full schemas, examples, and the exit-code contract:
 [tech-contracts.md](tech-contracts.md).
+
+---
+
+## Front Door (v0.5)
+
+The queued v0.5 arc adds `vibe` — one CLI that dispatches to the three tool
+binaries and owns the cross-tool capabilities: worktree lifecycle, global
+lessons, cross-repo visibility, and global blocks. The three tools stay
+independently installable; the CLI is a convenience front door, never a
+requirement. Dispatcher discovery, the repo registry, worktree contracts,
+global-spec merge semantics, and degrade rules: [tech-cli.md](tech-cli.md).
 
 ---
 
@@ -237,6 +260,8 @@ corpus, and the deletion gate: [tech-rust.md](tech-rust.md).
 | A strictness bump breaks an install overnight | Every check ships `warn`; promotion to `error` happens only in the compound that migrated the last live spec. |
 | `docs/spec` rename breaks a live repo | `migrate` asserts population (before ≥1, after ==0, files ≥ floor) and inserts allow markers before any check can fire. |
 | Windows lacks symlinks and `~/.config` | `@AGENTS.md` import instead of symlink; `%APPDATA%\vibe\` global tier; cargo-dist ships an msvc target. |
+| Registry points at moved/deleted repos (v0.5) | `space list` warns on stale entries and keeps them; repair is re-init or `--uninstall`, never a destructive guess. |
+| Worktree remove drops a mid-flow feature's state (v0.5) | `remove` refuses a mid-flow cursor; the only hard refusal in the lifecycle, pinned by a discriminating test. |
 
 ---
 
@@ -248,6 +273,7 @@ corpus, and the deletion gate: [tech-rust.md](tech-rust.md).
 | [tech-rust.md](tech-rust.md) | Workspace, crates, shim discovery, oracles and parity, TUI, signals, distribution, CI. |
 | [tech-instruct.md](tech-instruct.md) | Tiers, budgets, block format, lints, sources and sync, platform file targets. |
 | [tech-spec.md](tech-spec.md) | Root discovery, migration, OpenSpec interchange, strictness, subagents, hooks. |
+| [tech-cli.md](tech-cli.md) | The `vibe` front door (v0.5): dispatcher, repo registry, worktree lifecycle, global spec space, global blocks. |
 
 ---
 

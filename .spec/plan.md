@@ -3,14 +3,14 @@ type: entrypoint
 scope: implementation
 covers: feature sequence, binary gates, validation criteria, open decisions
 children: []
-updated: 2026-09-04
+updated: 2026-09-26
 ---
 
 # vibe — Implementation Plan
 
-Single-purpose repo: build the self-hosting vibe workflow harness. This plan is current-only — delivered work collapses to notes, no long-horizon backlog. The active arc is v0.4: three tools, one language, no bundle — `spec`, `flow`, and `instruct` rewritten as independent static Rust binaries, sequenced as binary-gated features F1–F24 below.
+Single-purpose repo: build the self-hosting vibe workflow harness. This plan is current-only — delivered work collapses to notes, no long-horizon backlog. The active arc is v0.4: three tools, one language, no bundle — `spec`, `flow`, and `instruct` rewritten as independent static Rust binaries, sequenced as binary-gated features F1–F24 below. The queued arc is v0.5: the `vibe` CLI front door — worktree lifecycle, global spec management, global blocks (C1–C6, own section below).
 
-**Parent specs:** [product.md](product.md), [tech.md](tech.md), [design.md](design.md). Architecture detail, including the v0.4 branch docs, lives in tech.md → `tech-contracts.md`, `tech-rust.md`, `tech-instruct.md`, `tech-spec.md`.
+**Parent specs:** [product.md](product.md), [tech.md](tech.md), [design.md](design.md). Architecture detail, including the v0.4 branch docs and the v0.5 CLI doc, lives in tech.md → `tech-contracts.md`, `tech-rust.md`, `tech-instruct.md`, `tech-spec.md`, `tech-cli.md`.
 
 **Delivered features** — all compounded into the root docs; branch spec folders removed (history in the Delivered section below). Truth is the code + tests:
 
@@ -70,16 +70,16 @@ Whole-feature delivery order with **binary** gates — a feature starts only whe
 | Order | Feature | Tool | Deliverable | Test | Status | Starts when |
 |---:|---|---|---|---|---|---|
 | F1 | spec-path-hotfix | spec | Skill-relative path fix in `validate.sh`/`list-specs.sh`/`lessons-for.sh`/`scan-merges.sh`; upward marker search; widened path-guard test | `spec/tests/run.sh` green from a subdirectory and a bare tmp dir | NOT STARTED | — |
-| F2 | contracts | all | `contracts/` schemas + goldens (payload, provider manifest, marker grammar, spec JSON) + `run.sh` | Green on empty tools; wired into CI | NOT STARTED | — |
+| F2 | contracts | all | `contracts/` schemas + goldens (payload, provider manifest, marker grammar, spec JSON) + `run.sh` | Green on empty tools; wired into CI | NOT STARTED (held) | — |
 | F3 | oracles-parity | flow | Frozen `oracles/js`+`oracles/bash`, corpus generator with floors, `vibe-parity` differential harness | Oracle byte change reddens CI; planted mutant confirmed via `git diff --numstat` also reddens it | NOT STARTED | — |
-| F4 | workspace-core | all | Cargo workspace + `vibe-core` (root, atomic write, markers, config, hook parsing, peer probe, ledger); MSRV; `cargo-deny` | Green matrix (3 OS × stable+MSRV); `cargo metadata` graph assertion | NOT STARTED | F2 |
+| F4 | workspace-core | all | Cargo workspace + `vibe-core` (root, atomic write, markers, config, hook parsing, peer probe, ledger); MSRV; `cargo-deny` | Green matrix (3 OS × stable+MSRV); `cargo metadata` graph assertion | NOT STARTED (held) | F2 |
 | F5 | flow-core | flow | Machine/policy in core; cursor at `.vibe/run/flow/state.json`; `state get`/`policy check` | Parity on `state get`/`policy decide` incl. mutated policies | NOT STARTED | F3, F4 |
 | F6 | flow-teeth-hooks | flow | Guard + Stop gate in Rust; `hook.sh` + `hooks.json` + frozen fallback; five-tier discovery | Parity on guard corpus + receipt×git corpus; tier matrix with deleted env | NOT STARTED | F5 |
 | F7 | machine-teeth | flow | `state set` enforces `next` + `--confirm`; ledger append; `/flow` a thin wrapper | Non-`next` refused, unconfirmed gate refused; parity on legal edges | NOT STARTED | F6 |
 | F8 | flow-orders-payload | flow | `orders`/`doctrine`/`doctor` ported; `.vibe/run/inject/flow.json` payload writer; standalone AGENTS.md block | Parity per command; golden payload after transition; PATH-less spec probe degrades | NOT STARTED | F7 |
-| F9 | flow-signals-hooks | flow | `vibe-signals` + `RulesProvider`; `PostToolUse(Task)`/`SubagentStop`/`SessionEnd` ledger events | `cargo metadata` proves core has no signals dependency; transcript fixtures → expected signals | NOT STARTED | F8 |
-| F10 | flow-tui | flow | `vibe-flow tui` v1 (live pane, transitions, recording); `flows list\|use` | `TestBackend` snapshots; recorded flow round-trips; gated prompts | NOT STARTED | F7, F9 |
-| F11 | instruct-core | instruct | Config + four-tier layering; block/channel port; marker writer v1; lints/budgets | Fixture tree renders expected winners; corrupted markers exit 2 | NOT STARTED | F4 |
+| F9 | flow-signals-hooks | flow | `vibe-signals` + `RulesProvider`; `PostToolUse(Task)`/`SubagentStop`/`SessionEnd` ledger events | `cargo metadata` proves core has no signals dependency; transcript fixtures → expected signals | NOT STARTED (held) | F8 |
+| F10 | flow-tui | flow | `vibe-flow tui` v1 (live pane, transitions, recording); `flows list\|use` | `TestBackend` snapshots; recorded flow round-trips; gated prompts | NOT STARTED (held) | F7, F9 |
+| F11 | instruct-core | instruct | Config + four-tier layering; block/channel port; marker writer v1; lints/budgets | Fixture tree renders expected winners; corrupted markers exit 2 | NOT STARTED (held) | F4 |
 | F12 | instruct-providers | instruct | Payload reader + session ledger; manifest/command providers; recompose + drift event | Turn-one edge; unchanged seq level-only; standalone == composed bytes | NOT STARTED | F8, F11 |
 | F13 | instruct-sources | instruct | dir/git/https sources, pins, cache, lockfile, `sync`, offline path | Unpinned repo-scope refused; offline sync exits 0 | NOT STARTED | F11 |
 | F14 | instruct-adapters | instruct | Claude + OpenCode adapters; generated local files; `.claude/rules` emitter; `init`/`doctor` | Hook stdin fixtures → expected stdout; resume re-emits staleness only | NOT STARTED | F12, F13 |
@@ -96,9 +96,39 @@ Whole-feature delivery order with **binary** gates — a feature starts only whe
 
 Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8), spec (F16→F20). F1 is a same-week hotfix on the current bash tree, independent of the Rust arc.
 
+**Issue catalog (GitHub).** The F-rows and issues are 1:1; held rows have no issue yet (their architecture design is in flight and files its own issues). #22 is the v0.4 tracking issue; #18 (repo/branch-scoped cursor) is absorbed by this arc — the cursor path lands in F5, the plugin-carried runtime in F21; #12 (plugin never registered, closed) is fixed by design in F21/F22.
+
+| Row | Issue | Row | Issue |
+|---|---|---|---|
+| F1 | #23 | F13 | #30 |
+| F3 | #24 | F14 | #31 |
+| F5 | #25 | F15 | #32 |
+| F6 | #26 | F16 | #33 |
+| F7 | #27 | F17 | #34 |
+| F8 | #28 | F18 | #35 |
+| F12 | #29 | F19 | #36 |
+| F2, F4, F9, F10, F11 | held — no issue yet | F20 | #37 |
+
 **Superseded rows.** Rows 15–20 of the pre-v0.4 sequence never started; F1–F24 above absorbs them: machine-teeth → F7, plugin-runtime → F21/F22, spec-js → F16/F17, delegation-redirect → F9, spec-delta → F18, doc-truth → F24.
 
-**Active focus.** F1 (spec-path-hotfix) ships this week on the current bash tree — it is not part of the Rust arc. F2 (contracts), F3 (oracles-parity), and F4 (workspace-core) run in parallel; every other feature waits on F4, and F12 additionally waits on F8.
+**Active focus.** F1 (spec-path-hotfix) ships this week on the current bash tree — it is not part of the Rust arc. F2 (contracts), F3 (oracles-parity), and F4 (workspace-core) run in parallel; every other feature waits on F4, and F12 additionally waits on F8. The v0.5 arc (C1–C6 below) starts only when F22 is DONE; its tracking issue and children mirror v0.4's filing.
+
+---
+
+## v0.5 — the vibe CLI arc (queued)
+
+The follow-on arc: one `vibe` CLI front door over the three tools, plus the cross-tool capabilities no single tool can own — worktree lifecycle, global spec management, global blocks. Architecture: [tech-cli.md](tech-cli.md). Decisions: D40–D43 below. Nothing starts before F22 is DONE; C4 additionally waits on F16, C5 on F14.
+
+**Issue catalog.** #42 tracks this arc; C1–C6 are #43–#48, filed as its sub-issues (2026-09-26).
+
+| Order | Feature | Deliverable | Test | Status | Starts when |
+|---:|---|---|---|---|---|
+| C1 | cli-core | `crates/vibe`: `spec\|flow\|instruct` dispatch via the shim's discovery tiers; `~/.config/vibe/repos.json` registry; `space list`; `doctor` peer + registry checks | Dispatch matrix with each tier's env deleted (both legs); missing-peer advice lines; registry floor test | NOT STARTED | F22 |
+| C2 | worktree-lifecycle | `worktree create/list/remove`: git worktree + isolated `.vibe/run/`; mid-flow remove refusal; deregistration | Refusal discriminates vs naive removal; cursor isolation per worktree; fresh non-git target exits 1 with one line | NOT STARTED | C1 |
+| C3 | worktree-bootstrap | Bootstrap on create: `.vibe/spec.json` root pointer, each tool's `init`, AGENTS.md blocks; staleness in `list` | Byte-parity of bootstrapped files vs `install.sh --local` on the same tree; bootstrap idempotent on re-run | NOT STARTED | C2 |
+| C4 | global-lessons | Global library at `~/.config/vibe/spec/lessons.md`; `lessons-for` global source (repo wins on tag conflict); `space lessons edit/promote` | Merged-answer goldens (repo-only, global-only, conflict); promote drops repo-pattern prose; absence is clean, not warned | NOT STARTED | F16, C1 |
+| C5 | space-blocks | `space blocks` list/edit global tier + pin a personal git source; sync via `vibe-instruct sync` | Pinned-source refuse-when-unpinned; offline sync path; no fetch code in `crates/vibe` (structural assertion) | NOT STARTED | F14, C1 |
+| C6 | worktree-archive | `archive`: uncommitted `features/<name>/` residue moved to the main checkout, then remove; registry updates | Residue golden (before ≥1, after ==0, files ≥ floor); committed-edits-travel-by-merge control | NOT STARTED | C2, C4 |
 
 ---
 
@@ -113,7 +143,7 @@ Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8
 - **D15 — Content is data.** Every injected sentence is an authored block; `policy.json` is the sole write-invariant source.
 - **D16 — Injection is trigger-classed.** Payload splits level/edge/event with per-channel line budgets linted in CI.
 - **D17 — The gate lives in the writer.** `vibe state set` refuses illegal and unconfirmed gated edges.
-- **D18 — Three tools, no umbrella.** `vibe-spec`, `vibe-flow`, `vibe-instruct`; no umbrella binary — the installer is the umbrella. Supersedes D13.
+- **D18 — Three tools, no umbrella.** `vibe-spec`, `vibe-flow`, `vibe-instruct`; no umbrella binary — the installer is the umbrella. (Independence half survives; "no umbrella binary" superseded by D40 at v0.5.)
 - **D19 — Rust, static, zero runtime deps.** Cargo workspace with `vibe-core` shared internals; no tool crate depends on another; deps allowlisted. Supersedes D14.
 - **D20 — Contracts are the only coupling.** Versioned schemas + goldens in `contracts/`; tools exchange files under `.vibe/` plus one soft probe call, never imports.
 - **D21 — `.vibe/` is the per-repo directory.** Committed config and blocks, git-excluded `local/`, gitignored `run/` (cursor, ledger, payloads); global tier under `~/.config/vibe/`.
@@ -135,6 +165,10 @@ Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8
 - **D37 — Packaging: the tool directory is the plugin.** Each of `spec/`, `flow/`, `instruct/` is a complete plugin; no build step, no generated payload.
 - **D38 — One installer, three release trains.** `install.sh` detects the platform, fetches signed per-tool binaries from GitHub Releases, falls back to `cargo install`.
 - **D39 — Doctrine stays.** Enforce in code, explain in prose, never both; data over prose; degrade gracefully; committed memory readable by any agent or none.
+- **D40 — The vibe CLI is the front door (v0.5).** One `vibe` binary dispatches to the three tool binaries and owns the cross-tool capabilities (worktree, space, global blocks). The three tools stay independent and alone-installable; "no umbrella ever" retires, "no mandatory bundle" replaces it. Supersedes D18's umbrella clause.
+- **D41 — Worktree lifecycle (v0.5).** `vibe worktree create/list/remove/archive` provisions git worktrees with isolated runtime state and a bootstrapped harness; the only hard refusal is `remove` on a mid-flow cursor; everything else advises.
+- **D42 — Global spec space (v0.5).** A global lessons library at `~/.config/vibe/spec/lessons.md` merges into `lessons-for` answers (repo wins on tag conflict); `~/.config/vibe/repos.json` is the only cross-repo discovery — never disk scans.
+- **D43 — Instructions sharing via the global tier (v0.5).** Global blocks live in instruct's existing global tier with a pinned personal git source; sync is `vibe-instruct sync`. `vibe space blocks` registers and edits — no second sync engine.
 
 ### Resolved
 
@@ -148,6 +182,8 @@ Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8
 ## Spec vs Implementation
 
 The whole v0.4 arc — F1 through F24 — is spec-ahead-of-code: nothing below has started. The tree is still v0.3: rows 12–14 (js-core, content-layer, inject-triggers) are delivered, and the old rows 15–20 (machine-teeth, plugin-runtime, spec-js, delegation-redirect, spec-delta, doc-truth) were never started before this rewrite superseded them. The reproduced spec-path bug (F1) is live in the tree today — `validate.sh`, the spec subagents, and `feature.md` hardcode `.agents/skills/spec/scripts/*.sh`, so a plugin install or any cwd other than the repo root breaks them.
+
+The v0.5 arc (C1–C6) is likewise spec-ahead — planned, not started. It gates on F22 (installer/release surface), with C4 after F16 and C5 after F14.
 
 ---
 

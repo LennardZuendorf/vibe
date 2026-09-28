@@ -2,7 +2,7 @@
 type: entrypoint
 scope: product
 children: []
-updated: 2026-09-04
+updated: 2026-09-26
 ---
 
 # vibe — Product
@@ -26,6 +26,12 @@ the three tools exchange as files under `.vibe/`; no tool imports another. One
 shared `install.sh` and one marketplace list all three; each keeps its own
 release train and version.
 
+**Front door (v0.5 target).** One `vibe` CLI ships all three tools together and
+adds the cross-tool capabilities no single tool can own — worktree lifecycle
+(`vibe worktree`), global spec management (`vibe space`), and global
+instruction sharing — while each tool stays independently installable; the CLI
+is the convenience, never the requirement.
+
 > **Shipped today:** vibe is still one repo running a Node engine (`flow/engine/`), with `install.sh` copying `.agents/skills/{spec,vibe}` and `.claude/**` into a target repo. The cursor lives at `.agents/skills/vibe/state.json`; specs live in `.spec/`. Everything three-binary and Rust above is the v0.4 target — build order and gates are in [plan.md](plan.md).
 
 ---
@@ -36,13 +42,15 @@ vibe started as one kit: a Node engine, two skills, a plugin that carried only p
 
 v0.4 splits vibe into three small, independent tools — `spec`, `flow`, and `instruct` — each a static Rust binary with zero runtime dependency, each useful with the other two absent. The state-machine writer becomes the gate itself: `vibe-flow state set` refuses an illegal target and a gated edge without `--confirm`, in Rust, with no Node in the path. Instruction injection moves from one hand-rolled content layer into `instruct`'s four-tier system, budgeted per trigger class at the same line counts vibe already proved. Coupling between the three tools moves from shared code to versioned file contracts under `.vibe/`. When it ships, installing one tool or all three is the same command, and losing any one of them degrades the others gracefully instead of breaking them.
 
+v0.5 adds the front door: one `vibe` CLI that ships all three tools and owns what no single tool can — creating isolated feature workspaces (git worktrees, each with its own harness state and a bootstrapped spec/instruct setup), a global lessons library that follows one developer across every repo, and cross-repo visibility into what every vibe-managed project is doing. The three tools never require it; it requires exactly the contracts they already publish.
+
 ---
 
 ## Requirements
 
 At a project level, vibe must:
 
-1. **Three independent tools.** Each installable alone, useful alone; no umbrella binary — anti-bundling is a design value.
+1. **Three independent tools.** Each installable alone, useful alone; no tool ever requires another — anti-bundling is a design value.
 2. **Static binaries, no runtime.** Rust, zero runtime deps; a missing binary degrades to the frozen bash fallbacks for the two hard blocks and to silence elsewhere.
 3. **Two platforms from one source.** Claude Code and OpenCode plugins per tool; Codex and other agents read the committed memory.
 4. **Committed memory is portable.** The spec tree and each tool's `AGENTS.md` block are Markdown, readable by any agent or none.
@@ -57,6 +65,9 @@ At a project level, vibe must:
 13. **Strictness ratchets.** Every check ships warn-first; it becomes an error only after migration.
 14. **Signals never gate.** Progress signals are advisory by construction.
 15. **Ported code proves itself.** Frozen oracles, differential parity, and blast-radius order — highest-risk units port first.
+16. **One front door (v0.5).** The `vibe` CLI dispatches to installed tools and owns the cross-tool capabilities; a missing peer degrades to one advice line, never a failure.
+17. **Isolated feature workspaces (v0.5).** `vibe worktree` provisions a git worktree per feature with its own runtime state, a bootstrapped harness, and compound-time cleanup.
+18. **Personal memory travels (v0.5).** A global lessons library and global instruction blocks follow the user across repos and machines; repo-owned memory always wins on conflict.
 
 ---
 
@@ -93,6 +104,7 @@ style rather than a broad marketplace audience.
 | `flow` | State machine, cursor, guard/stop hooks, ledger, advisory signals, the TUI | `flow/` |
 | `instruct` | Instruction tiers, blocks, channels, budgets, providers, sync | `instruct/` |
 | `contracts` | Versioned schemas + golden fixtures every tool's CI runs against | `contracts/` |
+| `vibe` CLI (v0.5) | Front door: tool dispatch, worktree lifecycle, global spec space, global blocks | `crates/vibe`, plugin `vibe/` |
 | installer | One POSIX `install.sh`: subsets, platforms, dry-run, uninstall | `install.sh` |
 
 Each of the three tools also ships as its own Claude Code plugin and its own
@@ -170,11 +182,12 @@ Output density is governed by one machine-level `style` note carried in `flow`'s
 
 ## Non-Goals
 
-- **Not an umbrella binary.** No `vibe` binary ties the three tools together at runtime; the installer is the only umbrella.
+- **Not a mandatory bundle.** No tool ever requires another, and nothing requires the `vibe` CLI; the CLI (v0.5) is an optional front door over independently installable tools.
 - **Not the OpenSpec layout or CLI.** `spec` adopts OpenSpec's requirement/scenario grammar for interchange; it keeps its own root, document model, and commands.
 - **Not a model-enforced gate.** Progress signals, including any future embedded model, are advisory; only the state-machine writer and the guard refuse a transition.
 - **Not Claude-only or Codex-only.** Each tool ships a Claude Code plugin and an OpenCode plugin; committed memory reads plain for any agent or none.
 - **Not a second context budget.** Injected text stays inside its trigger-class line budget so vibe never crowds out the work it serves.
+- **Not a disk scanner.** Cross-repo visibility (v0.5) reads one registry of registered repos, never a filesystem sweep.
 - **Not Mojo.** Rejected for no CLI/TUI ecosystem and no native Windows target.
 - **Not a general-purpose framework.** The repo is three Rust binaries, Markdown memory, and file contracts — not a platform for arbitrary agent tooling.
 
@@ -188,8 +201,9 @@ Output density is governed by one machine-level `style` note carried in `flow`'s
 4. **Hook strictness.** Shipped warn-first; only the guard's hard blocks deny, every `Stop` predicate is warn-only.
 5. **Skill count (v0.4).** Supersedes #2 — three skills, one per tool (`spec`, `flow`, `instruct`), each shipped by its own plugin.
 6. **Engine language.** Rust, static binaries, zero runtime deps — supersedes the Node engine.
-7. **Spec root.** Default `docs/spec/`, legacy `.spec/` still resolves; configurable via `.vibe/spec.json` or `$VIBE_SPEC_ROOT`.
+7. **Spec root.** Default `docs/spec/`, `.spec/` legacy still resolves; configurable via `.vibe/spec.json` or `$VIBE_SPEC_ROOT`.
 8. **OpenSpec.** Adopt the Requirement/Scenario grammar for interchange; keep vibe's own root and layout — grammar, not layout.
+9. **Umbrella (v0.5).** The `vibe` CLI becomes the front door that ships all three tools plus worktree and global-spec capabilities. D18's core survives — the three tools stay independent and alone-installable — but "no umbrella ever" retires at v0.5.
 
 ---
 
@@ -200,5 +214,6 @@ Output density is governed by one machine-level `style` note carried in `flow`'s
 | **spec** | Durable planning memory: spec tree, templates, validators, OpenSpec interchange, four subagents. | [`spec/`](../spec/README.md) |
 | **flow** | State-machine workflow with real teeth: cursor, guard/stop hooks, ledger, signals, TUI. | [`flow/`](../flow/README.md) |
 | **instruct** | Layered, budgeted instruction injection: tiers, blocks, channels, providers, sync. | `instruct/` |
+| **vibe CLI** (v0.5) | Front door + cross-tool capabilities: worktree lifecycle, global lessons, cross-repo visibility, global blocks. | `crates/vibe`, plugin `vibe/` |
 
-Build order and status: see the F1–F24 feature sequence in [plan.md](plan.md).
+Build order and status: see the F1–F24 feature sequence and the queued v0.5 C1–C6 arc in [plan.md](plan.md).
