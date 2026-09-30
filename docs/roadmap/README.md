@@ -59,29 +59,22 @@ carries `issue: <number>` linking it to the GitHub issue it became.
 **Prerequisite:** GitHub Issues enabled — repo Settings → General → Features
 → "Issues" checked.
 
-Then, either:
+**Agent:** ask Claude to post them via the GitHub MCP `issue_write` tool (or
+`gh issue create`), same content, same order.
 
-1. **Script:** `bash docs/roadmap/create-issues.sh --dry-run` to preview
-   (needs no `gh`), then `bash docs/roadmap/create-issues.sh` to create
-   whatever isn't posted yet. Requires `gh` on PATH and `gh auth status`
-   clean. Bash 3.2 compatible, shellcheck-clean.
-2. **Agent:** ask Claude to post them via the GitHub MCP `issue_write` tool,
-   same content, same order.
-
-**Idempotent:** the script (and an agent following this doc) skips any file
-whose frontmatter already has `issue:` set (already posted) or `hold:` set
-(held for architecture design), printing one line per skip. Running it again
-today reports 19 already posted, 5 held, 0 to create — safe to re-run any
-time, including once the held features gain their own issue files.
+**Idempotent:** an agent following this doc skips any file whose frontmatter
+already has `issue:` set (already posted) or `hold:` set (held for
+architecture design). Today: 19 already posted, 5 held, 0 to create — safe
+to re-run any time, including once the held features gain their own issue
+files.
 
 ## Bringing a held feature online
 
 When a held feature's architecture is settled: remove its `hold:` line and
 the `> **Held.**` notice from the file, fill in its real `## Depends on`
 section (the five held features' real dependents already reference them —
-update those bodies too once the new issue number exists), and run the
-script or ask the agent to post it. It will pick up only that one file; the
-rest stay untouched.
+update those bodies too once the new issue number exists), and ask the agent
+to post it. It will pick up only that one file; the rest stay untouched.
 
 ## Source of truth
 
