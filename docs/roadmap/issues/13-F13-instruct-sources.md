@@ -10,7 +10,7 @@ parent: epic
 ---
 
 ## Deliverable
-`sources: [{type: dir|git|https, path|url, ref, commit?, sha256?, ttl, scope: global|repo}]`. Repo-scope sources must pin (`commit` or `sha256`) or the loader refuses. Cache under `~/.cache/vibe/instruct/`. `vibe-instruct sync`: fetch, verify pins, update `instruct.lock.json`, rewrite generated files. Offline: keep cache, one warning line, exit 0. Session-start staleness check: no network, no subprocess, ≤200 ms, emits one line or nothing.
+`sources: [{type: dir|git|https, path|url, ref, commit?, sha256?, ttl, scope: global|repo}]`. Repo-scope sources must pin (`commit` or `sha256`) or the loader refuses. Cache under `$XDG_CACHE_HOME/vibe/instruct/` (`~/.cache/…`; Windows `%LOCALAPPDATA%\vibe\instruct\cache\`). `vibe-instruct sync`: fetch, verify pins, update `instruct.lock.json`, rewrite generated files. Offline: keep cache, one warning line, exit 0. Session-start staleness check: no network, no subprocess, ≤200 ms, emits one line or nothing.
 
 ## Scope
 **Owns:** source fetch/cache/pin/TTL/lockfile, `sync`, the staleness check.

@@ -189,7 +189,7 @@ name. Full contract, tiers, sources, and lints:
 Four versioned contracts under `contracts/`, additive within a major,
 tested byte-exact by every tool's CI:
 
-- **Payload v1** — `.vibe/run/inject/<provider>.json`: `level`/`edge`/`event`
+- **Payload v1** — `.vibe/run/inject/<provider>.json`: `level`/`edge`/`events`
   fields plus `session` doctrine lines and `seq` for edge detection.
 - **Provider manifest v1** — `.vibe/providers/<id>.json`: command or file
   source, channel, trigger, budget, timeout.

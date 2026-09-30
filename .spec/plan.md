@@ -111,7 +111,7 @@ Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8
 
 **Superseded rows.** Rows 15–20 of the pre-v0.4 sequence never started; F1–F24 above absorbs them: machine-teeth → F7, plugin-runtime → F21/F22, spec-js → F16/F17, delegation-redirect → F9, spec-delta → F18, doc-truth → F24.
 
-**Active focus.** F1 (spec-path-hotfix) ships this week on the current bash tree — it is not part of the Rust arc. F2 (contracts), F3 (oracles-parity), and F4 (workspace-core) run in parallel; every other feature waits on F4, and F12 additionally waits on F8. The v0.5 arc (C1–C6 below) starts only when F22 is DONE; its tracking issue and children mirror v0.4's filing.
+**Active focus.** F1 (spec-path-hotfix) ships this week on the current bash tree — it is not part of the Rust arc. F2 (contracts) and F3 (oracles-parity) run in parallel; F4 (workspace-core) starts once F2 is done. Every other feature waits on F4, and F12 additionally waits on F8. The v0.5 arc (C1–C6 below) starts only when F22 is DONE; its tracking issue and children mirror v0.4's filing.
 
 ---
 

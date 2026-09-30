@@ -20,6 +20,7 @@ Payload reader for `.vibe/run/inject/<provider>.json`. Per-session ledger `.vibe
 - [ ] turn-one edge injection on a fresh session (no prior ledger) — verified by fixture, not assumed
 - [ ] unchanged `seq` across turns injects `level` only, never re-injects `edge`
 - [ ] slow, failing, and over-budget stub providers each yield exactly one event line, not a crash or silent drop
+- [ ] a repo-tier manifest's `command` never executes without explicit user approval or a match against a user-configured allowlist — a repo-tier manifest alone must not grant execution trust (global-tier manifests run without this gate)
 - [ ] standalone-block bytes == composed bytes (uninstalling instruct changes nothing for flow/spec)
 - [ ] `bash tests/run.sh` green, `cargo test --workspace` green
 

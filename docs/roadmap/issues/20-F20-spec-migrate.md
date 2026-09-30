@@ -10,7 +10,7 @@ parent: epic
 ---
 
 ## Deliverable
-`vibe-spec migrate --to docs/spec [--dry-run]`: `git mv`, write `root` into `.vibe/spec.json`, rewrite `.spec/` literals in an explicit file set (new root, `content/policy.json`, `.claude/**`, `.agents/**`, `tests/**`, root `*.md`, `flow/reference/templates/**`) with a population assertion (literals-before ≥1, literals-after ==0, files-scanned ≥ floor — else revert and abort), and insert `<!-- vibe-spec: allow SF-nn -->` markers so no warning appears that cannot be acted on today. This repo migrates from `.spec/` to `docs/spec/` in one commit using the tool it ships.
+`vibe-spec migrate --to docs/spec [--dry-run]`: `git mv`, write `root` into `.vibe/spec.json`, rewrite `.spec/` literals in an explicit file set (new root, `.vibe/*.json`, `content/policy.json`, `.claude/**`, `.agents/**`, `tests/**`, root `*.md`, `flow/reference/templates/**`) with a population assertion (literals-before ≥1, literals-after ==0, files-scanned ≥ floor — else revert and abort), and insert `<!-- vibe-spec: allow SF-nn -->` markers so no warning appears that cannot be acted on today. This repo migrates from `.spec/` to `docs/spec/` in one commit using the tool it ships.
 
 ## Scope
 **Owns:** the `migrate` command and this repo's one-commit migration.

@@ -12,14 +12,14 @@ parent: epic
 > **Held.** This feature is under architecture design in the originating thread; no GitHub issue yet.
 
 ## Deliverable
-`instruct.json` config schema, 4-tier discovery (global < repo-shared < repo-local < session-runtime, later wins per block `id`), path confinement. Port `blocks/*.md` frontmatter parsing and channel composition, differential against today's `cli.mjs render` output for this repo. Marker writer v1 (`<!-- vibe:<owner>:begin v=1 hash=<sha256:12> -->` … `<!-- vibe:<owner>:end -->`): idempotent rewrite, malformed/nested/duplicate → exit 2 no write, ancestor-AGENTS.md refusal, `--check` exit 1 on drift. Lints/budgets: `user-prompt.level` 2 lines, `.edge` 15, `.event` 10, `session-start` 15, `agents-md` 80, per-turn total ≤20.
+`instruct.json` config schema, 3-tier block discovery (global < repo-shared < repo-local, later wins per block `id`), path confinement. session-runtime is provider-payload text only — no blocks of its own, composed separately from block-tier precedence (F12). Port `blocks/*.md` frontmatter parsing and channel composition, differential against today's `cli.mjs render` output for this repo. Marker writer v1 (`<!-- vibe:<owner>:begin v=1 hash=<sha256:12> -->` … `<!-- vibe:<owner>:end -->`): idempotent rewrite, malformed/nested/duplicate → exit 2 no write, ancestor-AGENTS.md refusal, `--check` exit 1 on drift. Lints/budgets: `user-prompt.level` 2 lines, `.edge` 15, `.event` 10, `session-start` 15, `agents-md` 80, per-turn total ≤20.
 
 ## Scope
 **Owns:** tier layering, block/channel rendering, marker grammar (lives once in `vibe-core`, instruct is primary caller), lints/budgets.
 **Does not own:** provider execution (F12); sources/sync (F13); platform hook wiring (F14); any provider's content.
 
 ## Acceptance (evidence, not intent)
-- [ ] fixture tree with all 4 tiers renders the expected winners per block `id`
+- [ ] fixture tree with all 3 block tiers (global, repo-shared, repo-local) renders the expected winners per block `id`
 - [ ] byte-identical rewrite on a second `render agents-md --write` run (idempotency)
 - [ ] corrupted-marker fixtures (unpaired/nested/duplicate) exit 2 with no write — each malformation gets its own fixture
 - [ ] one fixture per lint rule fails when violated, passes when clean

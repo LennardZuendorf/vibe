@@ -18,6 +18,7 @@ cargo-dist targets: `{x86_64,aarch64}-unknown-linux-musl`, `{x86_64,aarch64}-app
 
 ## Acceptance (evidence, not intent)
 - [ ] a `flow-v0.4.0-rc` tag yields 5 verified artifacts (SHA256 matches)
+- [ ] `install.sh` verifies each release archive's signature against a trusted release key before installing, in addition to the `SHA256SUMS` check (D38 — signed per-tool binaries)
 - [ ] containerised matrix: 7 subsets (`--only` combinations) × 3 platforms, install then verify wiring
 - [ ] `--uninstall` restores the pre-install state exactly (diffed against `installed.json`'s recorded actions, nothing beyond them)
 - [ ] `bash tests/run.sh` green, `cargo test --workspace` green

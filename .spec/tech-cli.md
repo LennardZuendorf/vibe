@@ -89,7 +89,7 @@ gitignored `.vibe/run/`:
 ## Global blocks
 
 `vibe space blocks` — list/edit the instruct global tier
-(`~/.config/vibe/blocks/`) and pin a personal git source for it. Sync is
+(`~/.config/vibe/instruct/`) and pin a personal git source for it. Sync is
 `vibe-instruct sync` over the registered source (D32 unchanged); `vibe space`
 only registers and edits — it never grows a second sync engine, asserted by
 a `cargo metadata` test that `crates/vibe` pulls no network or fetch crate.

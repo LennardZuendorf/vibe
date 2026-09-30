@@ -76,7 +76,9 @@ carries `issue: <number>` linking it to the GitHub issue it became.
 → "Issues" checked.
 
 **Agent:** ask Claude to post them via the GitHub MCP `issue_write` tool (or
-`gh issue create`), same content, same order.
+`gh issue create`), same content, same order. After each successful post,
+write the returned issue number into that file's `issue:` frontmatter before
+continuing to the next file.
 
 **Idempotent:** an agent following this doc skips any file whose frontmatter
 already has `issue:` set (already posted) or `hold:` set (held for

@@ -3,7 +3,7 @@ type: tech-topic
 parent: tech.md
 scope: cross-tool contracts
 covers: provider payload, marker grammar, spec JSON, provider manifests, exit codes, versioning
-updated: 2026-09-04
+updated: 2026-09-30
 ---
 
 # Cross-Tool Contracts — Tech
@@ -85,13 +85,23 @@ fetched source:
 }
 ```
 
-`command` XOR `file` (a static payload path as fallback source). `vibe-flow
-init` writes this manifest pointing at `["vibe-flow", "emit"]` with the
-payload file itself as a fallback, so per-turn drift nudges keep working
-even if instruct cannot resolve the command. Ordering: instruct's own
-blocks render first, then providers in manifest order. Dedupe: instruct
-keeps an exact-line set per session across all providers and the
-`session-start` render; a duplicate line is dropped, not repeated.
+`command` and `file` (a static payload path) may both be present: `command`
+is tried first; `file` is the fallback source, used only when the command
+is absent, fails, times out, or is unresolvable. `vibe-flow init` writes
+this manifest pointing at `["vibe-flow", "emit"]` with the payload file
+itself as a fallback, so per-turn drift nudges keep working even if
+instruct cannot resolve the command. Ordering: instruct's own blocks
+render first, then providers in manifest order. Dedupe: instruct keeps an
+exact-line set per session across all providers and the `session-start`
+render; a duplicate line is dropped, not repeated.
+
+Repo-tier manifests are committed content — a cloned or forked repo
+carries them in before any human has reviewed them. Before executing a
+`command` from a repo-tier manifest, instruct requires explicit user
+approval or a match against a user-configured allowlist; a repo-tier
+manifest does not grant execution trust by itself. Global-tier manifests
+live outside the repo (`~/.config/vibe/`) as personal config the user
+already controls, and run without this gate.
 
 ## Marker grammar v1
 
