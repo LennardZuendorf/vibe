@@ -1,5 +1,8 @@
 # The spec framework
 
+> **Roadmap:** this half becomes the standalone `vibe-spec` Rust binary and
+> plugin in v0.4 — see the root [README](../README.md) and [.spec/plan.md](../.spec/plan.md). Everything below describes what ships today.
+
 > **For humans.** This README is the standalone guide to the spec half of vibe kit.
 > Agents read [SKILL.md](SKILL.md) instead — it is the router they route through.
 

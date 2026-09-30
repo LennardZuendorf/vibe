@@ -1,5 +1,8 @@
 # The vibe flow
 
+> **Roadmap:** this half becomes the standalone `vibe-flow` Rust binary and
+> plugin in v0.4 — see the root [README](../README.md) and [.spec/plan.md](../.spec/plan.md). Everything below describes what ships today.
+
 > **For humans.** This README is the standalone guide to the flow half of vibe kit.
 > Agents route through [SKILL.md](SKILL.md) — the `vibe` skill router — instead.
 
