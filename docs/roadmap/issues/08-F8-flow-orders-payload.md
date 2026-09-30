@@ -4,6 +4,7 @@ id: F8
 issue: 28
 tool: flow
 phase: 1
+milestone: "v0.4 Phase 1 — flow"
 depends_on: [F7]
 parent: epic
 ---

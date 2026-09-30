@@ -4,6 +4,7 @@ id: F9
 hold: architecture
 tool: flow
 phase: 1
+milestone: "v0.4 Phase 1 — flow"
 depends_on: [F8]
 parent: epic
 ---

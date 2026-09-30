@@ -96,7 +96,7 @@ Whole-feature delivery order with **binary** gates — a feature starts only whe
 
 Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8), spec (F16→F20). F1 is a same-week hotfix on the current bash tree, independent of the Rust arc.
 
-**Issue catalog (GitHub).** The F-rows and issues are 1:1; held rows have no issue yet (their architecture design is in flight and files its own issues). #22 is the v0.4 tracking issue; #18 (repo/branch-scoped cursor) is absorbed by this arc — the cursor path lands in F5, the plugin-carried runtime in F21; #12 (plugin never registered, closed) is fixed by design in F21/F22.
+**Issue catalog (GitHub).** The F-rows and issues are 1:1; held rows have no issue yet (their architecture design is in flight and files its own issues). #22 is the v0.4 tracking issue; #18 (repo/branch-scoped cursor) is absorbed by this arc — the cursor path lands in F5, the plugin-carried runtime in F21; #12 (plugin never registered, closed) is fixed by design in F21/F22. Each phase above is a GitHub Milestone (`v0.4 Phase 0–4`, see [docs/roadmap/README.md](../docs/roadmap/README.md#milestones)); #22 itself carries no milestone since it spans all five.
 
 | Row | Issue | Row | Issue |
 |---|---|---|---|
@@ -119,7 +119,7 @@ Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8
 
 The follow-on arc: one `vibe` CLI front door over the three tools, plus the cross-tool capabilities no single tool can own — worktree lifecycle, global spec management, global blocks. Architecture: [tech-cli.md](tech-cli.md). Decisions: D40–D43 below. Nothing starts before F22 is DONE; C4 additionally waits on F16, C5 on F14.
 
-**Issue catalog.** #42 tracks this arc; C1–C6 are #43–#48, filed as its sub-issues (2026-09-26).
+**Issue catalog.** #42 tracks this arc; C1–C6 are #43–#48, filed as its sub-issues (2026-09-26), all six on the `v0.5 — CLI front door` milestone; #42 itself carries none.
 
 | Order | Feature | Deliverable | Test | Status | Starts when |
 |---:|---|---|---|---|---|

@@ -4,6 +4,7 @@ id: F2
 hold: architecture
 tool: all
 phase: 0
+milestone: "v0.4 Phase 0 — foundations"
 depends_on: []
 parent: epic
 ---

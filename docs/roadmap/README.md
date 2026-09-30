@@ -47,6 +47,22 @@ F2, F4, F9, F10, and F11 are held for architecture design in-thread — each
 file carries `hold: architecture` in its frontmatter and a `> **Held.**`
 notice under the title until an issue is opened for it.
 
+## Milestones
+
+Each phase is a GitHub Milestone, assigned to every posted issue in that
+phase (held features carry the matching `milestone:` in frontmatter, ready
+to apply the moment they're posted). The tracking epics (#22, #42) carry no
+milestone — each spans every phase in its arc.
+
+| Milestone | Phase | Issues |
+|---|---|---|
+| [v0.4 Phase 0 — foundations](https://github.com/LennardZuendorf/vibe/milestone/1) | F1–F4 | #23, #24 (F2, F4 held) |
+| [v0.4 Phase 1 — flow](https://github.com/LennardZuendorf/vibe/milestone/2) | F5–F10 | #25–#28 (F9, F10 held) |
+| [v0.4 Phase 2 — instruct](https://github.com/LennardZuendorf/vibe/milestone/3) | F11–F15 | #29–#32 (F11 held) |
+| [v0.4 Phase 3 — spec](https://github.com/LennardZuendorf/vibe/milestone/4) | F16–F20 | #33–#37 |
+| [v0.4 Phase 4 — distribution + retirement](https://github.com/LennardZuendorf/vibe/milestone/5) | F21–F24 | #38–#41 |
+| [v0.5 — CLI front door](https://github.com/LennardZuendorf/vibe/milestone/6) | C1–C6 | #43–#48 |
+
 ## Why files instead of issues
 
 These Markdown files remain the source of truth even after posting: they are

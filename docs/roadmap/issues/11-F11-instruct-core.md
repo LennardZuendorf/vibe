@@ -4,6 +4,7 @@ id: F11
 hold: architecture
 tool: instruct
 phase: 2
+milestone: "v0.4 Phase 2 — instruct"
 depends_on: [F4]
 parent: epic
 ---

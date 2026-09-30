@@ -4,6 +4,7 @@ id: F13
 issue: 30
 tool: instruct
 phase: 2
+milestone: "v0.4 Phase 2 — instruct"
 depends_on: [F11]
 parent: epic
 ---

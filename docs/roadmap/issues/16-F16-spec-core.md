@@ -4,6 +4,7 @@ id: F16
 issue: 33
 tool: spec
 phase: 3
+milestone: "v0.4 Phase 3 — spec"
 depends_on: [F3, F4]
 parent: epic
 ---

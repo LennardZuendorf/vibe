@@ -4,6 +4,7 @@ id: F3
 issue: 24
 tool: flow
 phase: 0
+milestone: "v0.4 Phase 0 — foundations"
 depends_on: []
 parent: epic
 ---

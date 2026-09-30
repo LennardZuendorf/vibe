@@ -4,6 +4,7 @@ id: F21
 issue: 38
 tool: all
 phase: 4
+milestone: "v0.4 Phase 4 — distribution + retirement"
 depends_on: [F8, F14, F19]
 parent: epic
 ---
