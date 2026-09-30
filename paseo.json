@@ -1,0 +1,5 @@
+{
+  "worktree": {
+    "setup": "curl -fsSL https://raw.githubusercontent.com/LennardZuendorf/vibe/main/install.sh | bash"
+  }
+}
