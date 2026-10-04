@@ -1214,5 +1214,227 @@ else
 fi
 
 echo ""
+echo "=== host-support/1 — native host packages: skills + invocation surfaces ==="
+# The supported host surface matrix is DATA: flow/reference/host-surfaces.json
+# enumerates the four hosts x their documented project skill paths x their one
+# user-invoked entry mechanism. Consuming it here is what makes "the supported
+# host surface matrix is complete" an assertion about data rather than prose: a
+# new or removed host, or a moved skill/command path, must be declared there or
+# these legs fail. tech.md's Host surface contract is the authority for each
+# pinned path; each host entry records the live doc URL it was verified against.
+SURFACES="$REPO_ROOT/flow/reference/host-surfaces.json"
+OC_CMD="$REPO_ROOT/.opencode/commands/flow.md"
+DROID_CMD="$REPO_ROOT/factory-plugin/commands/flow.md"
+CLAUDE_CMD="$REPO_ROOT/.claude/commands/flow.md"
+CODEX_PKG="$REPO_ROOT/plugins/vibe"
+DROID_PKG="$REPO_ROOT/factory-plugin"
+
+# jq-free legs first: these run on every machine, so this section is never vacuous.
+hp_missing=""
+for f in "$SURFACES" "$OC_CMD" "$DROID_CMD" \
+         "$CODEX_PKG/plugin.json" "$REPO_ROOT/.agents/plugins/marketplace.json" \
+         "$DROID_PKG/.factory-plugin/plugin.json" "$REPO_ROOT/.factory-plugin/marketplace.json"; do
+  [[ -e "$f" ]] || hp_missing="$hp_missing ${f#"$REPO_ROOT/"}"
+done
+assert_eq "host-support/1" "every host package file this unit ships exists" "$hp_missing" ""
+
+# One thin wrapper per host that has a distinct command surface, byte-identical
+# bodies: the procedure itself stays single-copy in the `vibe` skill, and the
+# wrapper only DELEGATES. A copy-paste fork of Claude's step list fails below.
+if [[ -f "$OC_CMD" && -f "$DROID_CMD" ]]; then
+  cmp -s "$OC_CMD" "$DROID_CMD" \
+    && pass "host-support/1" "OpenCode + Factory /flow wrappers are byte-identical (single delegated body)" \
+    || fail "host-support/1" "OpenCode + Factory /flow wrappers are byte-identical (single delegated body)"
+  hp_wrap="$(cat "$OC_CMD")"
+  for tok in ".agents/skills/vibe/SKILL.md" ".agents/skills/vibe/state-machine.json" ".agents/skills/vibe/scripts/set-state.sh"; do
+    assert_contains "host-support/1" "host /flow wrapper delegates to the shared $tok" "$hp_wrap" "$tok"
+  done
+  # Discriminating against a restated procedure: these step labels exist ONLY in
+  # Claude's full command file; a wrapper that duplicates the workflow gains them.
+  assert_not_contains "host-support/1" "host /flow wrapper does not restate Claude's procedure ('Gate teeth')" "$hp_wrap" "Gate teeth"
+  assert_not_contains "host-support/1" "host /flow wrapper does not restate Claude's procedure ('Membership')" "$hp_wrap" "Membership."
+else
+  fail "host-support/1" "host /flow command files exist for OpenCode and Factory"
+fi
+
+# Claude keeps the surfaces it already shipped: the full procedure in its command
+# file (asserted by content below, not by byte-compare) and the four hook scripts
+# still on disk — this unit adds no hook integration anywhere and changes none.
+assert_contains "host-support/1" "Claude /flow command still carries the transition procedure" \
+  "$(cat "$CLAUDE_CMD" 2>/dev/null)" "set-state.sh <target> [feature]"
+# …and points at the SAME shared artifacts as the host wrappers, so every entry
+# point provably reaches one writer/machine pair.
+for tok in "state-machine.json" "set-state.sh"; do
+  assert_contains "host-support/1" "Claude /flow still uses the shared $tok path" "$(cat "$CLAUDE_CMD" 2>/dev/null)" "$tok"
+done
+hp_hooks=1
+for h in session-start-doctrine user-prompt-submit-inject pre-tool-use-guard stop-gate; do
+  [[ -f "$REPO_ROOT/.claude/hooks/$h.sh" ]] || { hp_hooks=0; echo "        missing Claude hook: $h.sh"; }
+done
+assert_eq "host-support/1" "existing Claude Code hook scripts are intact" "$hp_hooks" "1"
+
+# Codex: skill invocation WITHOUT a fabricated slash command (tech.md + the Codex
+# skills doc: repo skills at .agents/skills, invoked via the picker/$-mention).
+[[ ! -e "$CODEX_PKG/commands" ]] \
+  && pass "host-support/1" "Codex package ships no fabricated slash-command dir" \
+  || fail "host-support/1" "Codex package ships no fabricated slash-command dir"
+# Open Question 1: the Codex package LINKS the canonical halves instead of
+# carrying a plugin-local copy, so a divergent workflow body is impossible.
+hp_links=1
+for pair in "spec:../../../spec" "vibe:../../../flow"; do
+  name="${pair%%:*}"; want="${pair#*:}"
+  if [[ -L "$CODEX_PKG/skills/$name" && "$(readlink "$CODEX_PKG/skills/$name")" == "$want" && -f "$CODEX_PKG/skills/$name/SKILL.md" ]]; then
+    : # resolves to the canonical SKILL.md
+  else
+    hp_links=0; echo "        Codex skills/$name is not a symlink -> $want resolving to SKILL.md"
+  fi
+done
+assert_eq "host-support/1" "Codex package links both skills to the canonical halves (no copy)" "$hp_links" "1"
+# Factory package: same linked-not-copied shape for its native plugin skills.
+hp_dlinks=1
+for pair in "spec:../../spec" "vibe:../../flow"; do
+  name="${pair%%:*}"; want="${pair#*:}"
+  if [[ -L "$DROID_PKG/skills/$name" && "$(readlink "$DROID_PKG/skills/$name")" == "$want" && -f "$DROID_PKG/skills/$name/SKILL.md" ]]; then
+    : # resolves to the canonical SKILL.md
+  else
+    hp_dlinks=0; echo "        Factory skills/$name is not a symlink -> $want resolving to SKILL.md"
+  fi
+done
+assert_eq "host-support/1" "Factory package links both skills to the canonical halves (no copy)" "$hp_dlinks" "1"
+
+# The spec workflow stays skill-invoked on EVERY host — no /spec command exists.
+hp_specmd=0
+for d in "$REPO_ROOT/.opencode/commands" "$DROID_PKG/commands" "$REPO_ROOT/.claude/commands"; do
+  [[ -e "$d/spec.md" ]] && hp_specmd=1
+done
+assert_eq "host-support/1" "no /spec command file exists on any host" "$hp_specmd" "0"
+
+# Structural negative over the NEW host surfaces: no hook integration and no
+# native agent/droid registration ships for OpenCode, Codex, or Factory Droid.
+# Population floor first, so an empty find cannot read as a clean pass.
+hp_dirs=""
+for d in "$REPO_ROOT/.opencode" "$REPO_ROOT/plugins" "$REPO_ROOT/factory-plugin" "$REPO_ROOT/.agents/plugins" "$REPO_ROOT/.factory-plugin"; do
+  [[ -d "$d" ]] && hp_dirs="$hp_dirs $d"
+done
+hp_pop=0
+for d in $hp_dirs; do hp_pop=$((hp_pop + 1)); done
+assert_eq "host-support/1" "population floor: all five new host surface dirs exist" "$hp_pop" "5"
+hp_files=0
+for d in $hp_dirs; do hp_files=$((hp_files + $(find "$d" -type f 2>/dev/null | wc -l | tr -d ' '))); done
+[[ "$hp_files" -ge 6 ]] \
+  && pass "host-support/1" "population floor: new host dirs carry package files (examined $hp_files files)" \
+  || fail "host-support/1" "population floor: new host dirs carry package files (examined $hp_files files)"
+if [[ "$hp_pop" -eq 5 ]]; then
+  hp_badreg=""
+  for d in $hp_dirs; do
+    m="$(find "$d" \( -path '*/hooks/*' -o -name 'hooks.json' -o -name droids -o -name agents \) -print 2>/dev/null)"
+    [[ -n "$m" ]] && hp_badreg="$hp_badreg $m"
+  done
+  assert_eq "host-support/1" "no hook integration or agent/droid registration in the new host packages" "$hp_badreg" ""
+else
+  # Never scan a default path when the intended roots are absent: `find` with an
+  # empty word-split list searches `.` and would "prove" something about the repo.
+  fail "host-support/1" "no hook integration or agent/droid registration in the new host packages (roots absent — not scanned)"
+fi
+
+if command -v jq >/dev/null 2>&1; then
+  # --- matrix completeness, asserted against the data file.
+  jq -e . "$SURFACES" >/dev/null 2>&1 \
+    && pass "host-support/1" "host surface matrix is valid JSON" \
+    || fail "host-support/1" "host surface matrix is valid JSON"
+  assert_eq "host-support/1" "matrix declares the four supported hosts" \
+    "$(jq -r '.hosts | length' "$SURFACES" 2>/dev/null)" "4"
+  assert_eq "host-support/1" "matrix host ids are exactly claude/opencode/codex/droid" \
+    "$(jq -r '.hosts[].id' "$SURFACES" 2>/dev/null | sort | tr '\n' ',')" "claude,codex,droid,opencode,"
+  assert_eq "host-support/1" "matrix declares exactly the two shared workflows" \
+    "$(jq -r '.workflow.skills | sort | join(",")' "$SURFACES" 2>/dev/null)" "spec,vibe"
+  # Every declared skill path resolves to a real SKILL.md, for BOTH workflows —
+  # the "each host discovers both shared workflows" scenario, per host, from data.
+  # The population floor is data-derived, not a hand-written count: every host
+  # declares at least one skill path, and the workflow declares exactly the two
+  # shared skills, so fewer than hosts x 2 examined paths means the matrix (or
+  # this loop) lost rows — folded into the verdict so an empty iteration can never
+  # read as "checked and clean".
+  hp_hosts="$(jq -r '.hosts | length' "$SURFACES" 2>/dev/null)"
+  [[ "$hp_hosts" =~ ^[0-9]+$ ]] || hp_hosts=0
+  hp_skillmiss=""; hp_skilln=0
+  while IFS= read -r tpl; do
+    for s in spec vibe; do
+      hp_skilln=$((hp_skilln + 1))
+      p="${tpl//\{name\}/$s}"
+      [[ -f "$REPO_ROOT/$p/SKILL.md" ]] || hp_skillmiss="$hp_skillmiss $p"
+    done
+  done < <(jq -r '.hosts[].skills[]' "$SURFACES" 2>/dev/null)
+  [[ "$hp_skilln" -lt $((hp_hosts * 2)) ]] && hp_skillmiss="$hp_skillmiss (floor: $hp_skilln paths examined < $hp_hosts hosts x 2 skills)"
+  assert_eq "host-support/1" "every declared host skill path resolves to SKILL.md (floor = hosts x 2)" "$hp_skillmiss" ""
+  # Every declared native command file exists.
+  hp_cmdmiss=""; hp_cmdn=0
+  while IFS= read -r p; do
+    [[ -z "$p" ]] && continue
+    hp_cmdn=$((hp_cmdn + 1))
+    [[ -f "$REPO_ROOT/$p" ]] || hp_cmdmiss="$hp_cmdmiss $p"
+  done < <(jq -r '.hosts[].entry | select(.kind == "command") | .path' "$SURFACES" 2>/dev/null)
+  [[ "$hp_cmdn" -ne 3 ]] && hp_cmdmiss="$hp_cmdmiss (floor: $hp_cmdn command-surface hosts examined, want 3)"
+  assert_eq "host-support/1" "every declared native command file exists (floor 3)" "$hp_cmdmiss" ""
+  # Codex invokes the skill, never a synthetic slash command.
+  assert_eq "host-support/1" "Codex entry mechanism is skill invocation" \
+    "$(jq -r '.hosts[] | select(.id == "codex") | .entry.kind' "$SURFACES" 2>/dev/null)" "skill"
+  assert_eq "host-support/1" "no Codex command path is declared" \
+    "$(jq -r '[.hosts[] | select(.id == "codex") | .entry.path | select(. != null)] | length' "$SURFACES" 2>/dev/null)" "0"
+  assert_eq "host-support/1" "Codex invocation is a skill token, not a slash command" \
+    "$(jq -r '.hosts[] | select(.id == "codex") | .entry.invocation' "$SURFACES" 2>/dev/null | cut -c1)" "\$"
+  # Data-driven "each host exposes the documented invocation mechanism": a command
+  # surface must be a slash command, a skill surface must be a skill token, and any
+  # other kind is unknown-and-therefore-failed (no silently new mechanism).
+  hp_invbad=""; hp_invn=0
+  while IFS=$'\t' read -r kind inv; do
+    [[ -z "$kind" ]] && continue
+    hp_invn=$((hp_invn + 1))
+    case "$kind" in
+      command) [[ "$inv" == /* ]] || hp_invbad="$hp_invbad command:$inv" ;;
+      skill)   [[ "$inv" == \$* ]] || hp_invbad="$hp_invbad skill:$inv" ;;
+      *)       hp_invbad="$hp_invbad unknown-kind:$kind" ;;
+    esac
+  done < <(jq -r '.hosts[] | [.entry.kind, .entry.invocation] | @tsv' "$SURFACES" 2>/dev/null)
+  [[ "$hp_invn" -ne 4 ]] && hp_invbad="$hp_invbad (floor: $hp_invn entries examined, want 4)"
+  assert_eq "host-support/1" "every host declares a matching invocation mechanism (command=/x, skill=\$x)" "$hp_invbad" ""
+  # Package manifests + marketplaces: valid JSON, named plugin, source resolves.
+  hp_pkgn=0
+  while IFS= read -r m; do
+    [[ -z "$m" ]] && continue
+    hp_pkgn=$((hp_pkgn + 1))
+    jq -e '.name == "vibe"' "$REPO_ROOT/$m" >/dev/null 2>&1 \
+      && pass "host-support/1" "package manifest $m is valid JSON naming the vibe plugin" \
+      || fail "host-support/1" "package manifest $m is valid JSON naming the vibe plugin"
+  done < <(jq -r '.hosts[] | .package?.manifest // empty' "$SURFACES" 2>/dev/null)
+  assert_eq "host-support/1" "exactly the three plugin-carrier hosts declare a manifest" "$hp_pkgn" "3"
+  # Codex's manifest is the portable Agent Plugins manifest (tech.md), not an overlay.
+  jq -e 'has("$schema")' "$CODEX_PKG/plugin.json" >/dev/null 2>&1 \
+    && pass "host-support/1" "Codex package uses the portable Agent Plugins manifest" \
+    || fail "host-support/1" "Codex package uses the portable Agent Plugins manifest"
+  hp_mktmiss=""; hp_mktn=0
+  while IFS= read -r m; do
+    [[ -z "$m" ]] && continue
+    hp_mktn=$((hp_mktn + 1))
+    if ! jq -e . "$REPO_ROOT/$m" >/dev/null 2>&1; then
+      hp_mktmiss="$hp_mktmiss $m(invalid-json)"; continue
+    fi
+    src="$(jq -r '.plugins[0].source | if type == "object" then .path else . end' "$REPO_ROOT/$m" 2>/dev/null)"
+    [[ -n "$src" && -e "$REPO_ROOT/${src#./}" ]] || hp_mktmiss="$hp_mktmiss $m($src)"
+  done < <(jq -r '.hosts[] | .package?.marketplace // empty' "$SURFACES" 2>/dev/null)
+  [[ "$hp_mktn" -ne 3 ]] && hp_mktmiss="$hp_mktmiss (floor: $hp_mktn marketplaces examined, want 3)"
+  assert_eq "host-support/1" "every marketplace lists a plugin whose source path resolves (floor 3)" "$hp_mktmiss" ""
+  # No hook/agent surface is declared anywhere in the matrix.
+  assert_eq "host-support/1" "the matrix declares no hook or agent/droid surface" \
+    "$(jq -r '[.hosts[] | paths | map(tostring) | join(".")] | map(select(test("hook|subagent|droids"))) | length' "$SURFACES" 2>/dev/null)" "0"
+  # Population floor for the negative above: the matrix really carries the
+  # surface keys it claims to have checked.
+  assert_eq "host-support/1" "population floor: each host declares skills + entry" \
+    "$(jq -r '[.hosts[] | select((.skills | length) > 0 and (.entry.kind | length) > 0)] | length' "$SURFACES" 2>/dev/null)" "4"
+else
+  echo "  SKIP [host-support/1] host surface matrix JSON legs (jq not on PATH)"
+fi
+
+echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]
