@@ -34,7 +34,7 @@
       "id": "codex",
       "host": "Codex",
       "cli": "codex",
-      "skills": [".agents/skills/{name}"],
+      "skills": [".agents/skills/{name}", "plugins/vibe/skills/{name}"],
       "entry": { "kind": "skill", "skill": "vibe", "invocation": "$vibe", "picker": "/skills" },
       "package": { "manifest": "plugins/vibe/plugin.json", "marketplace": ".agents/plugins/marketplace.json" },
       "docs": "https://developers.openai.com/codex/skills, https://developers.openai.com/plugins/build/plugins"

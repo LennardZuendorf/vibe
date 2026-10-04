@@ -274,6 +274,14 @@ PLATFORMS=""
 resolve_platforms() {
   local raw="$1" tok h any=0 out=""
   local toks
+  # An EMPTY raw value is a usage error, exactly like an empty token inside a
+  # list: `IFS=',' read -a` on "" iterates zero tokens, so without this the
+  # `--platform=` form (and `--platform="$VAR"` with VAR unset) silently
+  # degraded to host-neutral instead of failing loudly.
+  if [[ -z "$raw" ]]; then
+    err "ERROR: --platform has an empty value (claude, opencode, codex, droid, or none)"
+    return 1
+  fi
   IFS=',' read -r -a toks <<< "$raw"
   for tok in ${toks[@]+"${toks[@]}"}; do
     case "$tok" in
@@ -346,29 +354,30 @@ record_action() {
 
 manifest_path() { printf '%s' "$TARGET/.vibe/install-manifest.json"; }
 
-# write_manifest — render $ACTIONS as JSON, sorted for a byte-stable file.
+# PRESERVE_HOSTS — the selected hosts whose deployment THIS run SKIPPED (a
+# `--only spec` pass installs no host entry point). Their artifacts were not
+# re-created, so their existing manifest records are still the truth and must
+# survive the rewrite below; dropping them strands those files at uninstall (the
+# uninstall would take the manifest pass — which some other host's records keep
+# alive — and never fall back to the shipped-source inverse).
 #
-# MERGE, not replace: an install refreshes the records for the hosts it SELECTED
-# (it just re-created their artifacts) and PRESERVES the records for every other
-# host — those artifacts are still on disk, still vibe-owned, and a later
-# uninstall must still be able to remove them. Without the merge, installing
-# `--platform codex` after `--platform claude` would erase the Claude records and
-# strand those files; without the refresh, the file would go stale. The same
-# selection twice is byte-identical, which is what makes "idempotent" checkable.
-write_manifest() {
-  local m tmp body ahost akind apath atarget first=1
+# Keyed on the DEPLOY-SKIP, deliberately not on "produced no actions": a
+# collision refusal also records nothing, and preserving that host's stale
+# records would make a later uninstall delete a USER's file.
+PRESERVE_HOSTS=""
+deploy_skipped() {
+  case ",$PRESERVE_HOSTS," in *",$1,"*) return 0 ;; esac
+  return 1
+}
+
+# render_manifest BODY_TSV — write the manifest JSON for the given action body
+# (TSV, sorted for a byte-stable file: the same selection twice is byte-identical,
+# which is what makes "idempotent" checkable). Shared by write_manifest (install)
+# and prune_manifest_dead (an uninstall pass that leaves the manifest in place).
+render_manifest() {
+  local body="$1" m tmp first=1 ahost akind apath atarget
   m="$(manifest_path)"
   tmp="$(mktemp)"
-  body="$(mktemp)"
-  mkdir -p "$TARGET/.vibe"
-  printf '%s' "$ACTIONS" > "$body"
-  if [[ -f "$m" ]]; then
-    while IFS=$'\t' read -r ahost akind apath atarget; do
-      [[ -n "$ahost" ]] || continue
-      host_selected "$ahost" && continue
-      printf '%s\t%s\t%s\t%s\n' "$ahost" "$akind" "$apath" "$atarget" >> "$body"
-    done <<< "$(manifest_actions)"
-  fi
   {
     printf '{\n'
     printf '  "version": 1,\n'
@@ -386,8 +395,55 @@ write_manifest() {
     done <<< "$(LC_ALL=C sort "$body")"
     printf '\n  ]\n}\n'
   } > "$tmp"
-  rm -f "$body"
   mv -f "$tmp" "$m"
+}
+
+# write_manifest — render $ACTIONS as JSON, sorted for a byte-stable file.
+#
+# MERGE, not replace: an install refreshes the records for the hosts it SELECTED
+# (it just re-created their artifacts) and PRESERVES the records for every other
+# host — those artifacts are still on disk, still vibe-owned, and a later
+# uninstall must still be able to remove them. Without the merge, installing
+# `--platform codex` after `--platform claude` would erase the Claude records and
+# strand those files. A selected host whose deployment was SKIPPED this run
+# (`deploy_skipped`) is preserved too, and for the same reason: nothing was
+# re-created for it, so its old records are still the account of what is on disk.
+write_manifest() {
+  local m body ahost akind apath atarget
+  m="$(manifest_path)"
+  body="$(mktemp)"
+  mkdir -p "$TARGET/.vibe"
+  printf '%s' "$ACTIONS" > "$body"
+  if [[ -f "$m" ]]; then
+    while IFS=$'\t' read -r ahost akind apath atarget; do
+      [[ -n "$ahost" ]] || continue
+      host_selected "$ahost" && ! deploy_skipped "$ahost" && continue
+      printf '%s\t%s\t%s\t%s\n' "$ahost" "$akind" "$apath" "$atarget" >> "$body"
+    done <<< "$(manifest_actions)"
+  fi
+  render_manifest "$body"
+  rm -f "$body"
+}
+
+# prune_manifest_dead — rewrite the manifest keeping only the records whose
+# recorded path still exists on disk. An uninstall pass that LEAVES the manifest
+# in place (--only spec removes one half) must not keep a record claiming a path
+# it just deleted: a stale record is a false ownership claim. Records for paths
+# that survive (the flow half's host artifacts) stay, so a later full uninstall
+# can still remove them.
+prune_manifest_dead() {
+  local m body ahost akind apath atarget
+  m="$(manifest_path)"
+  [[ -f "$m" ]] || return 0
+  body="$(mktemp)"
+  while IFS=$'\t' read -r ahost akind apath atarget; do
+    [[ -n "$ahost" ]] || continue
+    if [[ -e "$TARGET/$apath" || -L "$TARGET/$apath" ]]; then
+      printf '%s\t%s\t%s\t%s\n' "$ahost" "$akind" "$apath" "$atarget" >> "$body"
+    fi
+  done <<< "$(manifest_actions)"
+  render_manifest "$body"
+  rm -f "$body"
 }
 
 # manifest_actions — print the recorded actions as TSV (host, kind, path,
@@ -421,26 +477,33 @@ manifest_actions() {
 }
 
 # deploy_file HOST SRC_FILE REL — copy one managed file into the target and record
-# it. In dry-run it reports the exact planned path instead. An existing entry that
-# DIFFERS from the package is user-owned: report it with a recovery path and leave
-# it (design: report a collision, never silently replace). An identical file is
-# refreshed — that is the idempotent re-install.
+# it. An existing entry that DIFFERS from the package is user-owned: report it
+# with a recovery path and leave it (design: report a collision, never silently
+# replace). An identical file is refreshed — that is the idempotent re-install.
+# The collision check runs FIRST, in BOTH modes: a dry-run has to plan what a real
+# run would DO, and a real run refuses to overwrite a user's differing entry — so
+# checking after the dry-run branch made the plan claim a deploy the run refuses.
 deploy_file() {
-  local host="$1" srcf="$2" rel="$3" dst="$TARGET/$3"
+  local host="$1" srcf="$2" rel="$3" dst="$TARGET/$3" reason=""
   if [[ ! -f "$srcf" ]]; then
     err "WARN: $rel is missing from the source package — skipping it."
     return 0
   fi
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    say "deploy $rel -> $dst"
-    return 0
-  fi
   if [[ -L "$dst" ]]; then
-    err "WARN: $rel already exists as a symlink — leaving it untouched (move it aside and re-run to install vibe's copy)."
+    reason="exists as a symlink"
+  elif [[ -e "$dst" ]] && ! cmp -s "$srcf" "$dst"; then
+    reason="exists and differs from the vibe package"
+  fi
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    if [[ -n "$reason" ]]; then
+      say "skip $rel ($reason — would leave untouched)"
+    else
+      say "deploy $rel -> $dst"
+    fi
     return 0
   fi
-  if [[ -e "$dst" ]] && ! cmp -s "$srcf" "$dst"; then
-    err "WARN: $rel already exists and differs from the vibe package — leaving it untouched (move it aside and re-run to install vibe's copy)."
+  if [[ -n "$reason" ]]; then
+    err "WARN: $rel already $reason — leaving it untouched (move it aside and re-run to install vibe's copy)."
     return 0
   fi
   mkdir -p "$(dirname "$dst")"
@@ -448,15 +511,32 @@ deploy_file() {
   record_action "$host" file "$rel"
 }
 
+# skill_present NAME — is the shared skill NAME available in this target's core,
+# or (in a dry-run) would this run put it there? A dry-run writes nothing, so
+# answering from the filesystem alone would report EVERY package link as skipped
+# — the opposite of what the real run does. The selection is the honest oracle
+# there: WANT_SPEC/WANT_FLOW say which halves this run installs, and a real run
+# has already copied them into $TARGET/.agents/skills before any host package is
+# deployed, so both clauses agree in that mode.
+skill_present() {
+  [[ -e "$TARGET/.agents/skills/$1" ]] && return 0
+  case "$1" in
+    spec) [[ "$WANT_SPEC" -eq 1 ]] && return 0 ;;
+    vibe) [[ "$WANT_FLOW" -eq 1 ]] && return 0 ;;
+  esac
+  return 1
+}
+
 # deploy_package HOST PKG — copy a host package directory into the target,
 # REWRITING every skill symlink inside it so it resolves against the target's own
 # core (.agents/skills/<name>) instead of the source checkout's top-level spec/ +
-# flow/ — which a target does not have, so a verbatim copy would dangle. Records
-# one action per created file and per created link; in dry-run it reports each
-# planned path instead. Enumerated WITHOUT following symlinks, so the rewrite
-# never walks into the real skill tree.
+# flow/ — which a target does not have, so a verbatim copy would dangle. A link
+# whose skill was not installed at all (--only flow has no spec half) is skipped
+# rather than deployed dangling. Records one action per created file and per
+# created link; in dry-run it reports each planned path instead. Enumerated
+# WITHOUT following symlinks, so the rewrite never walks into the real skill tree.
 deploy_package() {
-  local host="$1" pkg="$2" src="$SRC/$2" f l rel dst name d want
+  local host="$1" pkg="$2" src="$SRC/$2" f l rel dst name d want reason
   if [[ ! -d "$src" ]]; then
     err "WARN: host package $pkg is missing from the source — skipping it."
     return 0
@@ -471,23 +551,57 @@ deploy_package() {
     d="$(dirname "$pkg/$rel")"
     want="$(rel_up "$(count_components "$d")").agents/skills/$name"
     dst="$TARGET/$pkg/$rel"
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-      say "link $pkg/$rel -> $want"
+    # A package skill link is only useful while the skill it POINTS AT exists in
+    # this target. The link target is the target's own core, so under --only flow
+    # the spec half was never copied and `skills/spec` would resolve to nothing —
+    # a dangling link that advertises a skill the target does not have (the mirror
+    # of the --only spec case, which deploys no host entry point at all). Skip it
+    # and leave the SLOT FREE: nothing occupies it, so a later install that does
+    # carry the half creates the link here.
+    if ! skill_present "$name"; then
+      if [[ "$name" == "spec" && "$WANT_SPEC" -eq 0 ]]; then
+        reason="the spec skill is not installed (--only flow installs no spec half)"
+      else
+        reason="the $name skill is not installed under .agents/skills/"
+      fi
+      if [[ "$DRY_RUN" -eq 1 ]]; then
+        say "skip $pkg/$rel ($reason)"
+      else
+        err "WARN: $pkg/$rel not linked — $reason."
+      fi
       continue
     fi
-    mkdir -p "$(dirname "$dst")"
+    # Collision next, in both modes — same reason as deploy_file: a slot the user
+    # owns (a symlink they aimed elsewhere, or a real file/dir of their own) is
+    # reported and left alone by a real run, so the dry-run plan must say so
+    # rather than claim a link it would refuse to create.
     if [[ -L "$dst" ]]; then
       if [[ "$(readlink "$dst")" == "$want" ]]; then
-        record_action "$host" symlink "$pkg/$rel" "$want"
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+          say "link $pkg/$rel -> $want"
+        else
+          record_action "$host" symlink "$pkg/$rel" "$want"
+        fi
+      elif [[ "$DRY_RUN" -eq 1 ]]; then
+        say "skip $pkg/$rel (symlink to $(readlink "$dst") — would leave untouched)"
       else
         err "WARN: $pkg/$rel is a symlink to $(readlink "$dst") — leaving it untouched."
       fi
       continue
     fi
     if [[ -e "$dst" ]]; then
-      err "WARN: $pkg/$rel already exists (not a vibe symlink) — leaving it untouched."
+      if [[ "$DRY_RUN" -eq 1 ]]; then
+        say "skip $pkg/$rel (exists — would leave untouched)"
+      else
+        err "WARN: $pkg/$rel already exists (not a vibe symlink) — leaving it untouched."
+      fi
       continue
     fi
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      say "link $pkg/$rel -> $want"
+      continue
+    fi
+    mkdir -p "$(dirname "$dst")"
     ln -s "$want" "$dst"
     record_action "$host" symlink "$pkg/$rel" "$want"
   done < <(find "$src" -type l 2>/dev/null)
@@ -498,15 +612,40 @@ deploy_package() {
 # package (or the manifest) proves were vibe's.
 remove_host_file() { rm -f "$TARGET/$1"; }
 
+# dry_remove_rel REL — the dry-run half of a removal pass: print the exact target
+# path that would be removed, and only when the path is really there (`-L` too,
+# so a dangling symlink we would delete still appears). The plan therefore names
+# concrete project paths and never invents one.
+dry_remove_rel() {
+  local p="$TARGET/$1"
+  [[ -e "$p" || -L "$p" ]] || return 0
+  say "remove $1"
+}
+
 # remove_host_package PKG — the per-file inverse of deploy_package. Removes the
 # files the SOURCE package ships (never a path the source lacks, which is how a
 # user's co-located file survives), and removes a skill link only while it is a
 # symlink still pointing at the rewrite deploy_package created — a user's real
 # directory, or a link they aimed elsewhere, is never touched. Then prunes dirs
-# this emptied.
+# this emptied. In dry-run it removes nothing and prints the paths it would.
 remove_host_package() {
   local pkg="$1" src="$SRC/$1" rel l f name d want dst
-  [[ -d "$src" && -d "$TARGET/$pkg" ]] || return 0
+  [[ -d "$src" ]] || return 0
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    while IFS= read -r f; do
+      dry_remove_rel "${f#"$SRC"/}"
+    done < <(find "$src" -type f 2>/dev/null)
+    while IFS= read -r l; do
+      rel="${l#"$src"/}"
+      name="$(basename "$rel")"
+      d="$(dirname "$pkg/$rel")"
+      want="$(rel_up "$(count_components "$d")").agents/skills/$name"
+      dst="$TARGET/$pkg/$rel"
+      if [[ -L "$dst" && "$(readlink "$dst")" == "$want" ]]; then dry_remove_rel "$pkg/$rel"; fi
+    done < <(find "$src" -type l 2>/dev/null)
+    return 0
+  fi
+  [[ -d "$TARGET/$pkg" ]] || return 0
   while IFS= read -r f; do
     rel="${f#"$src"/}"
     rm -f "$TARGET/$pkg/$rel"
@@ -935,18 +1074,18 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     fi
     if [[ "$HAVE_MANIFEST" -eq 1 ]]; then
       say "remove the host artifacts recorded in the install manifest (user files preserved)"
+      while IFS=$'\t' read -r mhost mkind mpath mtarget; do
+        [[ -n "$mhost" ]] || continue
+        [[ "$mhost" == "claude" ]] && continue
+        case "$mkind" in
+          file)    if [[ "$DRY_RUN" -eq 1 ]]; then dry_remove_rel "$mpath"; else remove_host_file "$mpath"; fi ;;
+          symlink) if [[ -L "$TARGET/$mpath" && "$(readlink "$TARGET/$mpath")" == "$mtarget" ]]; then
+                     if [[ "$DRY_RUN" -eq 1 ]]; then dry_remove_rel "$mpath"; else rm -f "$TARGET/$mpath"; fi
+                   fi ;;
+          merge)   : ;;
+        esac
+      done <<< "$MAN_ACTIONS"
       if [[ "$DRY_RUN" -eq 0 ]]; then
-        while IFS=$'\t' read -r mhost mkind mpath mtarget; do
-          [[ -n "$mhost" ]] || continue
-          [[ "$mhost" == "claude" ]] && continue
-          case "$mkind" in
-            file)    remove_host_file "$mpath" ;;
-            symlink) if [[ -L "$TARGET/$mpath" && "$(readlink "$TARGET/$mpath")" == "$mtarget" ]]; then
-                       rm -f "$TARGET/$mpath"
-                     fi ;;
-            merge)   : ;;
-          esac
-        done <<< "$MAN_ACTIONS"
         # Prune the directories that removal emptied — a co-located user file
         # keeps its directory alive. `plugins/` is only ever the PARENT of our
         # package, so it is not a root above; prune it here too, and only here (a
@@ -959,12 +1098,16 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     else
       note "no usable install manifest — falling back to the shipped-source inverse for host surfaces."
       say "remove the vibe-owned host surfaces shipped by the source (user files preserved)"
+      # Both modes: remove_host_package prints the concrete paths it would take
+      # in dry-run, so --uninstall --dry-run shows the exact project paths.
+      remove_host_package ".opencode"
+      remove_host_package "plugins/vibe"
+      remove_host_package "factory-plugin"
+      for mp in ".agents/plugins/marketplace.json" ".factory-plugin/marketplace.json"; do
+        [[ -f "$SRC/$mp" ]] || continue
+        if [[ "$DRY_RUN" -eq 1 ]]; then dry_remove_rel "$mp"; else rm -f "$TARGET/$mp"; fi
+      done
       if [[ "$DRY_RUN" -eq 0 ]]; then
-        remove_host_package ".opencode"
-        remove_host_package "plugins/vibe"
-        remove_host_package "factory-plugin"
-        [[ -f "$SRC/.agents/plugins/marketplace.json" ]] && rm -f "$TARGET/.agents/plugins/marketplace.json"
-        [[ -f "$SRC/.factory-plugin/marketplace.json" ]] && rm -f "$TARGET/.factory-plugin/marketplace.json"
         rmdir "$TARGET/.agents/plugins" "$TARGET/.factory-plugin" "$TARGET/plugins" 2>/dev/null || true
       fi
     fi
@@ -975,6 +1118,15 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
       rm -f "$MANIFEST"
       rmdir "$TARGET/.vibe" 2>/dev/null || true
     fi
+  fi
+
+  # A half-uninstall that LEAVES the manifest in place (--only spec removes the
+  # spec half only) must not leave records naming paths this pass deleted: a stale
+  # record is a false claim of vibe ownership. Records whose path survives (the
+  # flow half's host artifacts) stay, so a later full uninstall still removes them.
+  if [[ "$WANT_FLOW" -eq 0 && -f "$(manifest_path)" ]]; then
+    say "prune the install manifest of records for paths this pass removed"
+    [[ "$DRY_RUN" -eq 1 ]] || prune_manifest_dead
   fi
 
   if [[ "$DRY_RUN" -eq 0 ]]; then
@@ -1129,6 +1281,10 @@ if [[ -n "$PLATFORMS" ]]; then
       claude) : ;;  # steps 1b–3; recorded in 3c
       opencode|codex|droid)
         if [[ "$WANT_FLOW" -eq 0 ]]; then
+          # Nothing is deployed for this host, so write_manifest must keep its
+          # existing records instead of refreshing them to nothing (they are still
+          # the account of the files on disk).
+          PRESERVE_HOSTS="${PRESERVE_HOSTS:+$PRESERVE_HOSTS,}$_h"
           note "host surface '$_h' skipped: --only spec installs no host entry points."
           continue
         fi
@@ -1284,14 +1440,30 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   exit 0
 fi
 
+# entry_recorded HOST PATH — did THIS run record PATH for HOST? The report may
+# only claim a surface that actually deployed, and the manifest record is the
+# proof of it: a colliding entry (a user file we refused to overwrite) records
+# nothing, and neither does a package missing from the source.
+entry_recorded() {
+  local h="$1" p="$2" ahost akind apath atarget
+  while IFS=$'\t' read -r ahost akind apath atarget; do
+    [[ "$ahost" == "$h" && "$apath" == "$p" ]] && return 0
+  done <<< "$ACTIONS"
+  return 1
+}
+
 # report_hosts — the capability report (R5): one line per CONFIGURED host, with
 # the entry mechanism read from the shipped surface matrix, so the report cannot
 # drift from the data that declares the surfaces. Hooks are credited to Claude
 # Code only, and only when their wiring actually installed; no other host is ever
 # credited with hooks or with native agent/droid registration (this feature adds
 # none), and the line for each host says only what it got.
+#
+# R5 also means the claims follow DEPLOYMENT REALITY, not the selection alone: a
+# host whose entry surface was not created this run (a --only spec pass deploys
+# none; a collision is refused) is reported as not installed rather than named.
 report_hosts() {
-  local _rh _rinv _rskills _rlabel
+  local _rh _rinv _rskills _rlabel _rentry _rcl
   if [[ -z "$PLATFORMS" ]]; then
     if [[ "$PLATFORM_GIVEN" -eq 1 ]]; then
       echo "install: hosts: none (--platform none) — no native host surface; host-neutral files only."
@@ -1309,22 +1481,53 @@ EOF
   IFS=',' read -r -a _rep <<< "$PLATFORMS"
   for _rh in ${_rep[@]+"${_rep[@]}"}; do
     host_entry "$_rh"
+    # R5 again: name only the skills that ARE installed. --only flow installs no
+    # spec half, and the completion banner directly above says so — a skills claim
+    # of `{spec,vibe}` contradicted it.
     _rskills=".agents/skills/{spec,vibe}"
+    _rcl=".claude/skills/{spec,vibe}"
+    if [[ "$WANT_SPEC" -eq 0 ]]; then
+      _rskills=".agents/skills/{vibe}"
+      _rcl=".claude/skills/vibe"
+    fi
     case "$_rh" in
-      claude)   _rlabel="claude    "; _rskills="$_rskills + .claude/skills/{spec,vibe}" ;;
+      claude)   _rlabel="claude    "; _rskills="$_rskills + $_rcl" ;;
       opencode) _rlabel="opencode  " ;;
       codex)    _rlabel="codex     "; _rskills="$_rskills + plugins/vibe/skills" ;;
       droid)    _rlabel="droid     "; _rskills="$_rskills + factory-plugin/skills" ;;
       *)        _rlabel="$_rh " ;;
     esac
+    # --only spec deploys no host entry point at all (step 3b skips them), so name
+    # no surface: the previous line named /flow, .claude/skills, and a hooks state
+    # for steps that never ran.
+    if [[ "$WANT_FLOW" -eq 0 ]]; then
+      echo "install:   $_rlabel— not deployed (--only spec installs no host entry point)"
+      continue
+    fi
     _rinv="$HOST_INV"
     if [[ "$HOST_KIND" == "skill" ]]; then
       _rinv="$HOST_INV (skill picker; no synthetic slash command)"
     elif [[ -n "$HOST_PATH" ]]; then
       _rinv="$HOST_INV ($HOST_PATH)"
     fi
+    # The one path each host's deployment really creates: its entry point, or (for
+    # Codex) the package skill link that IS its entry mechanism.
+    case "$_rh" in
+      claude)   _rentry=".claude/commands/flow.md" ;;
+      opencode) _rentry=".opencode/commands/flow.md" ;;
+      codex)    _rentry="plugins/vibe/skills/vibe" ;;
+      droid)    _rentry="factory-plugin/commands/flow.md" ;;
+      *)        _rentry="" ;;
+    esac
+    if [[ -n "$_rentry" ]] && ! entry_recorded "$_rh" "$_rentry"; then
+      # Name no invocation: this host's entry surface is NOT there (the colliding
+      # path is the user's), so claiming /flow here would be the R5 drift again.
+      echo "install:   $_rlabel— NOT installed (collision — see the warning above; your file was left untouched)"
+      continue
+    fi
     if [[ "$_rh" == "claude" ]]; then
-      # Hooks are credited ONLY when their wiring installed (R5).
+      # Hooks are credited ONLY when their wiring installed (R5). Reaching here
+      # means the wiring step ran, so a NOT-wired line points at a real warning.
       if [[ "$HOOKS_WIRED" -eq 1 ]]; then
         echo "install:   $_rlabel$_rinv · skills $_rskills · hooks wired via .claude/settings.json"
       else

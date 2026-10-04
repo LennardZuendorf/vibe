@@ -1388,6 +1388,13 @@ if command -v jq >/dev/null 2>&1; then
   done < <(jq -r '.hosts[].skills[]' "$SURFACES" 2>/dev/null)
   [[ "$hp_skilln" -lt $((hp_hosts * 2)) ]] && hp_skillmiss="$hp_skillmiss (floor: $hp_skilln paths examined < $hp_hosts hosts x 2 skills)"
   assert_eq "host-support/1" "every declared host skill path resolves to SKILL.md (floor = hosts x 2)" "$hp_skillmiss" ""
+  # The matrix must declare EVERY surface the deploy really creates, not a subset:
+  # install deploys plugins/vibe/skills/{spec,vibe} for Codex, so a matrix listing
+  # only .agents/skills/{name} was a data/doc/report three-way drift — the report
+  # and both READMEs named the package surface, the matrix did not.
+  assert_contains "host-support/1" "the matrix's codex skills include the deployed package surface" \
+    "$(jq -r '.hosts[] | select(.id == "codex") | .skills | join(",")' "$SURFACES" 2>/dev/null)" \
+    "plugins/vibe/skills/{name}"
   # Every declared native command file exists.
   hp_cmdmiss=""; hp_cmdn=0
   while IFS= read -r p; do
@@ -1473,6 +1480,13 @@ for v in claude opencode codex droid none; do
 done
 pout="$(bash "$INSTALL" "$SBpg" --platform "" 2>&1; echo "rc=$?")"
 assert_contains "host-support/2" "--platform with an empty value is a usage error" "$pout" "rc=1"
+# …and the `--platform=` spelling must be rejected the same way. `IFS=',' read -a`
+# on an empty string iterates ZERO tokens, so the `--platform=` form (or
+# --platform="$VAR" with VAR unset) used to be accepted as an empty selection —
+# silently degrading an unset variable to "host-neutral" instead of failing.
+pout="$(bash "$INSTALL" "$SBpg" --platform= 2>&1; echo "rc=$?")"
+assert_contains "host-support/2" "--platform= (empty --platform= form) is a usage error" "$pout" "rc=1"
+assert_contains "host-support/2" "--platform= names the valid values, like --platform ''" "$pout" "none"
 pout="$(bash "$INSTALL" "$SBpg" --platform claude,none 2>&1; echo "rc=$?")"
 assert_contains "host-support/2" "--platform none cannot be combined with a host" "$pout" "rc=1"
 [[ ! -e "$SBpg/.agents" && ! -e "$SBpg/.claude" && ! -e "$SBpg/.vibe" ]] \
@@ -1674,6 +1688,37 @@ assert_not_contains "host-support/2" "the codex dry-run plan excludes another ho
   && pass "host-support/2" "the composed dry-run created nothing" \
   || fail "host-support/2" "the composed dry-run created files"
 rm -rf "$SBdc"
+# --dry-run must plan what a REAL run would do. With a colliding user entry the
+# real run refuses to overwrite (WARN + skip), but deploy_file returned from its
+# dry-run branch BEFORE the collision checks, so the plan claimed a deploy that
+# the real run refuses — a plan that lies about the one case the user cares about.
+SBc6="$(mktmp)"
+mkdir -p "$SBc6/.opencode/commands"
+printf 'USER flow command, not vibe\n' > "$SBc6/.opencode/commands/flow.md"
+before6="$(tree_fp "$SBc6")"
+c6out="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBc6" --dry-run --platform opencode 2>&1)"
+assert_contains "host-support/2" "dry-run plans the colliding entry as skipped, not deployed" \
+  "$c6out" "skip .opencode/commands/flow.md"
+assert_not_contains "host-support/2" "dry-run does not claim to deploy the colliding entry" \
+  "$c6out" "deploy .opencode/commands/flow.md"
+assert_eq "host-support/2" "dry-run with a colliding entry writes nothing" "$before6" "$(tree_fp "$SBc6")"
+# …and the real run does exactly what the plan foretold: WARN, leave the user's
+# file byte-identical, install the rest of the package.
+c6real="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBc6" --platform opencode 2>&1)"
+assert_contains "host-support/2" "the real run reports the collision the plan predicted" "$c6real" "move it aside and re-run"
+grep -qF 'USER flow command, not vibe' "$SBc6/.opencode/commands/flow.md" \
+  && pass "host-support/2" "the collided entry survives the real run byte-for-byte" \
+  || fail "host-support/2" "the collided entry was overwritten by the real run"
+rm -rf "$SBc6"
+# …and the same for a user-owned slot inside a host PACKAGE (the link loop).
+SBl6="$(mktmp)"; mkdir -p "$SBl6/plugins/vibe/skills"
+ln -s ../../../my-own-spec "$SBl6/plugins/vibe/skills/spec"
+l6out="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBl6" --dry-run --platform codex 2>&1)"
+assert_contains "host-support/2" "dry-run plans a user-retargeted package link as skipped" \
+  "$l6out" "skip plugins/vibe/skills/spec"
+assert_not_contains "host-support/2" "dry-run does not claim to create the user-retargeted package link" \
+  "$l6out" "link plugins/vibe/skills/spec"
+rm -rf "$SBl6"
 # --only spec is a PURE spec install: host entry points are flow-half carriers, so
 # none is deployed — which is also what stops a dangling skill link to a skill
 # that is not installed. Control: the same selection with both halves does deploy.
@@ -1688,6 +1733,79 @@ PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBos" --platform codex >/dev/nu
   && pass "host-support/2" "control: the same selection with both halves deploys the host package" \
   || fail "host-support/2" "control: the host package was not deployed with both halves"
 rm -rf "$SBos"
+# --only flow is the MIRROR of that case: the spec half is absent, so a package
+# link to .agents/skills/spec resolves to NOTHING. A dangling link is worse than an
+# absent one — it advertises a skill the target does not have, which is exactly the
+# property the --only spec leg above pins from the other side.
+for h in codex droid; do
+  case "$h" in codex) hpkg=plugins/vibe ;; droid) hpkg=factory-plugin ;; esac
+  SBfo1="$(mktmp)"
+  fo1out="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBfo1" --only flow --platform "$h" 2>&1)"
+  [[ ! -e "$SBfo1/.agents/skills/spec" && -f "$SBfo1/.agents/skills/vibe/SKILL.md" ]] \
+    && pass "host-support/2" "only-flow fixture ($h): the spec half is absent and vibe is present (population floor)" \
+    || fail "host-support/2" "only-flow fixture ($h): the spec half is absent and vibe is present (population floor)"
+  [[ ! -e "$SBfo1/$hpkg/skills/spec" && ! -L "$SBfo1/$hpkg/skills/spec" ]] \
+    && pass "host-support/2" "--only flow --platform $h deploys no skills/spec link (no dangling link)" \
+    || fail "host-support/2" "--only flow --platform $h deployed a skills/spec link"
+  # Structural negative over the WHOLE deployed package, with a floor so an empty
+  # find cannot read as a clean pass: every link that IS there must resolve.
+  fo1dangle=""; fo1n=0
+  while IFS= read -r l; do
+    fo1n=$((fo1n + 1))
+    [[ -e "$l" ]] || fo1dangle="$fo1dangle ${l#"$SBfo1/"}"
+  done < <(find "$SBfo1/$hpkg" -type l 2>/dev/null)
+  [[ "$fo1n" -ge 1 ]] || fo1dangle="$fo1dangle (floor: $fo1n links examined under $hpkg, want >=1)"
+  assert_eq "host-support/2" "no dangling link anywhere under the --only flow $h package (examined $fo1n)" "$fo1dangle" ""
+  { [[ -L "$SBfo1/$hpkg/skills/vibe" && -f "$SBfo1/$hpkg/skills/vibe/SKILL.md" ]]; } \
+    && pass "host-support/2" "--only flow --platform $h still deploys the vibe link, and it resolves" \
+    || fail "host-support/2" "--only flow --platform $h did not deploy a resolving vibe link"
+  assert_contains "host-support/2" "--only flow --platform $h warns which skill link it skipped" "$fo1out" "$hpkg/skills/spec"
+  assert_contains "host-support/2" "--only flow --platform $h says why (the spec half is not installed)" "$fo1out" "spec skill is not installed"
+  # …and a later install WITH the missing half ADDS the skipped link: the slot was
+  # left free (not occupied by a stub), so deploy_package creates it and records it.
+  PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBfo1" --platform "$h" >/dev/null 2>&1
+  { [[ -L "$SBfo1/$hpkg/skills/spec" && -f "$SBfo1/$hpkg/skills/spec/SKILL.md" ]]; } \
+    && pass "host-support/2" "a later full install adds the previously skipped $h skills/spec link (resolves)" \
+    || fail "host-support/2" "a later full install did not add the previously skipped $h skills/spec link"
+  grep -qF "$hpkg/skills/spec" "$SBfo1/.vibe/install-manifest.json" 2>/dev/null \
+    && pass "host-support/2" "…and records it as vibe-owned, so uninstall can still remove it" \
+    || fail "host-support/2" "…and records it as vibe-owned, so uninstall can still remove it"
+  rm -rf "$SBfo1"
+done
+# Control: the same selections with BOTH halves deploy both links, and both resolve.
+for h in codex droid; do
+  case "$h" in codex) hpkg=plugins/vibe ;; droid) hpkg=factory-plugin ;; esac
+  SBfo2="$(mktmp)"
+  PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBfo2" --platform "$h" >/dev/null 2>&1
+  { [[ -f "$SBfo2/$hpkg/skills/spec/SKILL.md" && -f "$SBfo2/$hpkg/skills/vibe/SKILL.md" ]]; } \
+    && pass "host-support/2" "control: both halves deploy both $h skill links, both resolving" \
+    || fail "host-support/2" "control: both halves did not deploy both resolving $h skill links"
+  rm -rf "$SBfo2"
+done
+# The dry-run plan mirrors it: plan the link only where it would resolve, and name
+# the skipped one — a plan that promises a dangling link is the same lie as a plan
+# that promises a deploy the real run refuses.
+SBfo3="$(mktmp)"
+fo3out="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBfo3" --only flow --platform codex --dry-run 2>&1)"
+assert_contains "host-support/2" "the --only flow dry-run plans the vibe link" "$fo3out" "link plugins/vibe/skills/vibe"
+assert_not_contains "host-support/2" "the --only flow dry-run does not plan the dangling spec link" "$fo3out" "link plugins/vibe/skills/spec"
+assert_contains "host-support/2" "the --only flow dry-run names the skipped spec link" "$fo3out" "skip plugins/vibe/skills/spec"
+rm -rf "$SBfo3"
+# The skip is keyed on whether the link would RESOLVE, not on the selection flag
+# alone: a target that already carries the spec half (a previous --only spec
+# install) gets a real, resolving link even under --only flow. This is the control
+# that fails if the guard is narrowed to `WANT_SPEC -eq 1` and starts skipping a
+# link that would have been perfectly good.
+SBfo4="$(mktmp)"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBfo4" --only spec --platform none >/dev/null 2>&1
+[[ -f "$SBfo4/.agents/skills/spec/SKILL.md" ]] \
+  && pass "host-support/2" "pre-existing-half fixture: the spec skill really is there first (population floor)" \
+  || fail "host-support/2" "pre-existing-half fixture: the spec skill really is there first (population floor)"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBfo4" --only flow --platform codex >/dev/null 2>&1
+{ [[ -f "$SBfo4/plugins/vibe/skills/spec/SKILL.md" && -f "$SBfo4/plugins/vibe/skills/vibe/SKILL.md" ]]; } \
+  && pass "host-support/2" "a target already carrying the spec half gets a resolving codex spec link under --only flow" \
+  || fail "host-support/2" "a target already carrying the spec half gets a resolving codex spec link under --only flow"
+rm -rf "$SBfo4"
 # --adapters is orthogonal to host selection: those symlinks point at AGENTS.md,
 # a host-neutral artifact, so they must work under `none` too.
 SBad="$(mktmp)"
@@ -1753,6 +1871,55 @@ assert_eq "host-support/2" "uninstall preserves user files in every new shared d
   && pass "host-support/2" "uninstall prunes a host package subdir it emptied" \
   || fail "host-support/2" "uninstall left an emptied host package subdir behind"
 rm -rf "$SBd"
+# --uninstall --dry-run must show the EXACT project paths (design.md says the
+# dry-run shows the exact project paths), not one summary line per pass: the
+# manifest pass and the shipped-source fallback each name every path they would
+# remove — and still write nothing.
+SBd5="$(mktmp)"
+PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBd5" >/dev/null 2>&1
+d5before="$(tree_fp "$SBd5")"
+d5out="$(PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBd5" --uninstall --dry-run 2>&1)"
+assert_eq "host-support/2" "--uninstall --dry-run writes nothing" "$d5before" "$(tree_fp "$SBd5")"
+for p in .opencode/commands/flow.md plugins/vibe/plugin.json plugins/vibe/skills/spec \
+         .agents/plugins/marketplace.json factory-plugin/commands/flow.md .factory-plugin/marketplace.json; do
+  assert_contains "host-support/2" "--uninstall --dry-run names the concrete manifest path $p" "$d5out" "$p"
+done
+# …and the same concreteness on the shipped-source fallback (no usable manifest).
+rm -f "$SBd5/.vibe/install-manifest.json"
+d5before="$(tree_fp "$SBd5")"
+d5out2="$(PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBd5" --uninstall --dry-run 2>&1)"
+assert_contains "host-support/2" "the dry-run fallback reports the shipped-source inverse" "$d5out2" "falling back to the shipped-source inverse"
+assert_eq "host-support/2" "--uninstall --dry-run (legacy fallback) writes nothing" "$d5before" "$(tree_fp "$SBd5")"
+for p in .opencode/commands/flow.md plugins/vibe/plugin.json factory-plugin/commands/flow.md; do
+  assert_contains "host-support/2" "--uninstall --dry-run fallback names the concrete path $p" "$d5out2" "$p"
+done
+rm -rf "$SBd5"
+# --uninstall --only spec removes the spec half and LEAVES the manifest (the flow
+# half's host records must stay, or a later full uninstall could not remove those
+# artifacts). The records of the paths THIS pass deleted must go with it: a record
+# naming a path that no longer exists is a false ownership claim.
+SBp7="$(mktmp)"
+PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBp7" >/dev/null 2>&1
+MAN="$SBp7/.vibe/install-manifest.json"
+grep -qF '.claude/skills/spec' "$MAN" \
+  && pass "host-support/2" "only-spec-prune fixture: the spec registration record is there first (population floor)" \
+  || fail "host-support/2" "only-spec-prune fixture: the spec registration record is there first (population floor)"
+PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBp7" --uninstall --only spec --yes >/dev/null 2>&1
+[[ ! -e "$SBp7/.agents/skills/spec" ]] \
+  && pass "host-support/2" "only-spec-prune fixture: the spec half really went (population floor)" \
+  || fail "host-support/2" "only-spec-prune fixture: the spec half really went (population floor)"
+assert_eq "host-support/2" "an --only spec uninstall prunes the records of the paths it removed" \
+  "$(grep -c '\.claude/skills/spec' "$MAN" 2>/dev/null || true)" "0"
+assert_eq "host-support/2" "…and keeps the surviving flow-half records (still removable later)" \
+  "$([[ "$(man_n opencode)" -ge 1 && "$(man_n codex)" -ge 1 ]] && echo yes || echo no)" "yes"
+PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBp7" --uninstall --yes >/dev/null 2>&1
+left7=""
+for p in .opencode/commands/flow.md plugins/vibe/plugin.json .factory-plugin/marketplace.json \
+         .claude/commands/flow.md .claude/skills/vibe .claude/skills/spec; do
+  [[ -e "$SBp7/$p" || -L "$SBp7/$p" ]] && left7="$left7 $p"
+done
+assert_eq "host-support/2" "a later full uninstall after an --only spec pass leaves nothing behind" "$left7" ""
+rm -rf "$SBp7"
 # The manifest must be CONSULTED, not merely written. Discriminating fixture: a
 # copy of this repo installs, then the COPY loses the Codex marketplace, so the
 # shipped-source inverse can no longer name it — only a manifest-driven removal
@@ -1787,6 +1954,85 @@ for p in .claude/commands/flow.md .opencode/commands/flow.md factory-plugin/comm
 done
 assert_eq "host-support/2" "uninstall removes the preserved hosts' artifacts too (no stranding)" "$str" "1"
 rm -rf "$SBmerge"
+# …and a --only spec re-install must not CLOBBER a selected host's records either.
+# The spec half deploys NO host surface (step 3b skips the selected host), so that
+# host's files stay on disk and its existing records stay the truth: dropping them
+# left codex's package, its two skill links, and its marketplace recorded nowhere,
+# while the surviving opencode records kept the manifest "usable" — so the later
+# uninstall took the manifest pass and never fell back, stranding all of them.
+SBf1="$(mktmp)"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBf1" --platform opencode,codex >/dev/null 2>&1
+MAN="$SBf1/.vibe/install-manifest.json"
+[[ "$(man_n codex)" -ge 1 && "$(man_n opencode)" -ge 1 ]] \
+  && pass "host-support/2" "spec-reskip fixture: both selected hosts are recorded first (population floor)" \
+  || fail "host-support/2" "spec-reskip fixture: both selected hosts are recorded first (population floor)"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBf1" --only spec --platform codex >/dev/null 2>&1
+[[ -e "$SBf1/plugins/vibe/plugin.json" && -e "$SBf1/.agents/plugins/marketplace.json" ]] \
+  && pass "host-support/2" "spec-reskip fixture: the codex surfaces are still on disk after the spec re-install (floor)" \
+  || fail "host-support/2" "spec-reskip fixture: the codex surfaces are still on disk after the spec re-install (floor)"
+assert_eq "host-support/2" "a --only spec re-install keeps the SKIPPED host's manifest records (codex)" \
+  "$([[ "$(man_n codex)" -ge 1 ]] && echo yes || echo no)" "yes"
+assert_eq "host-support/2" "…and keeps the unselected host's records (opencode)" \
+  "$([[ "$(man_n opencode)" -ge 1 ]] && echo yes || echo no)" "yes"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBf1" --uninstall --yes >/dev/null 2>&1
+stranded1=""
+for p in plugins/vibe/plugin.json plugins/vibe/skills/spec plugins/vibe/skills/vibe \
+         .agents/plugins/marketplace.json .opencode/commands/flow.md; do
+  [[ -e "$SBf1/$p" || -L "$SBf1/$p" ]] && stranded1="$stranded1 $p"
+done
+assert_eq "host-support/2" "a later uninstall strands nothing after a --only spec re-install" "$stranded1" ""
+rm -rf "$SBf1"
+# …and the same protection under DETECTION-default (no --platform at all): a plain
+# `--only spec` on a machine where host CLIs are detected is the other clobber path
+# the same skip branch has to cover.
+SBf1d="$(mktmp)"
+PATH="$FARM_CO" "$FARM_CO/bash" "$INSTALL" "$SBf1d" >/dev/null 2>&1
+MAN="$SBf1d/.vibe/install-manifest.json"
+[[ "$(man_n codex)" -ge 1 && "$(man_n opencode)" -ge 1 ]] \
+  && pass "host-support/2" "detected-host fixture: both detected hosts are recorded first (population floor)" \
+  || fail "host-support/2" "detected-host fixture: both detected hosts are recorded first (population floor)"
+PATH="$FARM_CO" "$FARM_CO/bash" "$INSTALL" "$SBf1d" --only spec >/dev/null 2>&1
+assert_eq "host-support/2" "a detection-default --only spec re-install keeps the detected hosts' records" \
+  "$([[ "$(man_n codex)" -ge 1 && "$(man_n opencode)" -ge 1 ]] && echo yes || echo no)" "yes"
+rm -rf "$SBf1d"
+# The jq-less manifest_actions fallback parser needs coverage where it MATTERS:
+# every merge/removal leg above runs with jq present, so the pure-bash reader was
+# never exercised on a real manifest (jq is recommended, not required).
+NOJQ8="$(mkshim jq)"
+# (a) MERGE: install two hosts with jq, then re-install ONE host without jq — the
+# other host's records must survive the fallback parser's read of the manifest.
+SBj8="$(mktmp)"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBj8" --platform opencode,codex >/dev/null 2>&1
+MAN="$SBj8/.vibe/install-manifest.json"
+[[ "$(man_n codex)" -ge 1 && "$(man_n opencode)" -ge 1 ]] \
+  && pass "host-support/2" "jq-less merge fixture: both hosts are recorded first (population floor)" \
+  || fail "host-support/2" "jq-less merge fixture: both hosts are recorded first (population floor)"
+PATH="$NOJQ8" "$NOJQ8/bash" "$INSTALL" "$SBj8" --platform codex >/dev/null 2>&1
+assert_eq "host-support/2" "the jq-less merge parser preserves another host's records" \
+  "$([[ "$(man_n opencode)" -ge 1 ]] && echo yes || echo no)" "yes"
+assert_eq "host-support/2" "the jq-less merge parser still refreshes the selected host's records" \
+  "$([[ "$(man_n codex)" -ge 1 ]] && echo yes || echo no)" "yes"
+rm -rf "$SBj8"
+# (b) REMOVAL: a manifest-recorded artifact the SOURCE no longer ships can only be
+# removed if the jq-less removal pass READ the manifest — the shipped-source
+# inverse cannot name a file its source lacks. A co-located user file stays.
+FS8="$(mktmp)"
+tar -cf - --exclude=.git -C "$REPO_ROOT" . 2>/dev/null | tar -xf - -C "$FS8"
+SBj8b="$(mktmp)"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$FS8/install.sh" "$SBj8b" --platform opencode >/dev/null 2>&1
+printf 'mine\n' > "$SBj8b/.opencode/commands/mine.md"
+[[ -f "$SBj8b/.opencode/commands/flow.md" ]] \
+  && pass "host-support/2" "jq-less removal fixture: the recorded artifact exists before uninstall (population floor)" \
+  || fail "host-support/2" "jq-less removal fixture: the recorded artifact exists before uninstall (population floor)"
+rm -f "$FS8/.opencode/commands/flow.md"
+PATH="$NOJQ8" "$NOJQ8/bash" "$FS8/install.sh" "$SBj8b" --uninstall --yes >/dev/null 2>&1
+[[ ! -e "$SBj8b/.opencode/commands/flow.md" ]] \
+  && pass "host-support/2" "a jq-less uninstall removes a manifest-recorded artifact the source no longer ships" \
+  || fail "host-support/2" "a jq-less uninstall removes a manifest-recorded artifact the source no longer ships"
+[[ -f "$SBj8b/.opencode/commands/mine.md" ]] \
+  && pass "host-support/2" "…and the jq-less removal pass preserves a co-located user file" \
+  || fail "host-support/2" "…and the jq-less removal pass preserves a co-located user file"
+rm -rf "$SBj8b" "$FS8" "$NOJQ8"
 # LEGACY fallback: a target with no usable manifest (installed before the manifest
 # existed) is still fully inverted, by the shipped-source inverse.
 SBl="$(mktmp)"
@@ -1876,6 +2122,14 @@ inv="$(jq -r '.hosts[] | select(.id == "codex") | .entry.invocation' "$SURFACES"
 [[ -n "$inv" ]] && pass "host-support/2" "population floor: the matrix declares the codex invocation" \
   || fail "host-support/2" "population floor: the matrix declares the codex invocation"
 assert_contains "host-support/2" "the report's codex entry mechanism matches the shipped surface matrix" "$sout" "$inv"
+# …and its skills claim too: the report names plugins/vibe/skills for codex, so
+# the token it prints must come from the matrix (the matrix was the outlier that
+# omitted the package surface, which is exactly the drift this pins).
+cskdir="$(jq -r '.hosts[] | select(.id == "codex") | .skills[] | select(endswith("plugins/vibe/skills/{name}")) | rtrimstr("/{name}")' "$SURFACES" 2>/dev/null)"
+[[ -n "$cskdir" ]] \
+  && pass "host-support/2" "population floor: the matrix declares the codex package skill surface" \
+  || fail "host-support/2" "population floor: the matrix declares the codex package skill surface"
+assert_contains "host-support/2" "the report's codex skills claim matches the matrix's package surface" "$sout" "$cskdir"
 assert_not_contains "host-support/2" "a codex-only report claims no hook support" "$sout" "hook"
 assert_not_contains "host-support/2" "a codex-only report claims no native agent/droid registration" "$sout" "subagent"
 rm -rf "$SBs"
@@ -1905,6 +2159,45 @@ assert_contains "host-support/2" "the opencode line names its /flow entry point"
 assert_not_contains "host-support/2" "the opencode line claims no hooks (R5)" "$oline" "hook"
 assert_not_contains "host-support/2" "the opencode line claims no native agent registration" "$oline" "subagent"
 rm -rf "$SBmix"
+# R5 means the claims follow DEPLOYMENT REALITY, not the selection alone. Under
+# --only spec NO host entry point is deployed (step 3b skips every host), so the
+# claude line used to name /flow, the .claude/skills registration, and a hooks
+# state — for steps that never ran, with no warning printed to point at.
+SBsp="$(mktmp)"
+spout="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBsp" --only spec --platform claude 2>&1)"
+[[ ! -e "$SBsp/.claude/commands" ]] \
+  && pass "host-support/2" "only-spec-report fixture: no .claude/commands was deployed (population floor)" \
+  || fail "host-support/2" "only-spec-report fixture: no .claude/commands was deployed (population floor)"
+assert_not_contains "host-support/2" "a --only spec report claims no /flow entry point" "$spout" ".claude/commands/flow.md"
+assert_not_contains "host-support/2" "a --only spec report claims no hook state (the wiring step never ran)" "$spout" "hooks NOT wired"
+assert_not_contains "host-support/2" "a --only spec report claims no .claude/skills registration" "$spout" ".claude/skills/{spec,vibe}"
+assert_contains "host-support/2" "a --only spec report says the host was not deployed" "$spout" "not deployed (--only spec"
+rm -rf "$SBsp"
+SBsp2="$(mktmp)"
+spout2="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBsp2" --only spec --platform codex 2>&1)"
+assert_not_contains "host-support/2" "a --only spec codex report claims no package skill surface" "$spout2" "plugins/vibe/skills"
+rm -rf "$SBsp2"
+# A colliding entry point is the user's, so the report says NOT installed — the
+# old report named `opencode /flow (.opencode/commands/flow.md)` regardless of the
+# WARN that deploy_file printed and the file it left untouched.
+SBcolr="$(mktmp)"; mkdir -p "$SBcolr/.opencode/commands"
+printf 'USER flow command, not vibe\n' > "$SBcolr/.opencode/commands/flow.md"
+colrout="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBcolr" --platform opencode 2>&1)"
+assert_contains "host-support/2" "the report says the collided entry point was NOT installed" "$colrout" "NOT installed (collision"
+assert_not_contains "host-support/2" "the report does not claim a colliding /flow entry point" "$colrout" "/flow (.opencode/commands/flow.md)"
+rm -rf "$SBcolr"
+# R5 covers the other half too: --only flow installs no spec skill, and the
+# completion banner right above the report says so — a skills claim of
+# `{spec,vibe}` contradicted the banner.
+SBfo="$(mktmp)"
+foout="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBfo" --only flow --platform claude 2>&1)"
+[[ ! -e "$SBfo/.agents/skills/spec" ]] \
+  && pass "host-support/2" "only-flow-report fixture: no spec half was installed (population floor)" \
+  || fail "host-support/2" "only-flow-report fixture: no spec half was installed (population floor)"
+assert_not_contains "host-support/2" "a --only flow report claims no spec skill it did not install" "$foout" ".agents/skills/{spec,vibe}"
+assert_not_contains "host-support/2" "a --only flow claude report claims no spec registration it did not make" "$foout" ".claude/skills/{spec,vibe}"
+assert_contains "host-support/2" "a --only flow report still names the vibe skill it did install" "$foout" ".agents/skills/{vibe}"
+rm -rf "$SBfo"
 rm -rf "$FARM_NONE" "$FARM_ALL" "$FARM_CO"
 
 echo ""
