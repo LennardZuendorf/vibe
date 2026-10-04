@@ -54,6 +54,27 @@ mkshim() {
   done
   printf '%s\n' "$dir"
 }
+# mkhosts HOST... — a HERMETIC PATH farm for host-DETECTION legs: mkshim's broad
+# toolset (which contains none of the four host CLIs, so a bare mkshim PATH is an
+# inherent no-detect farm) plus executable stub CLIs for the named hosts. A
+# detection leg must never read the ambient PATH — this sandbox has all four
+# CLIs installed, CI need not, and a leg that passes only because the runner
+# happens to have a CLI proves nothing about detection.
+mkhosts() {
+  local dir; dir="$(mkshim)"
+  local h
+  for h in "$@"; do
+    printf '#!/bin/sh\nexit 0\n' > "$dir/$h"
+    chmod +x "$dir/$h"
+  done
+  printf '%s\n' "$dir"
+}
+# The historical install invocation, pinned. Before host-support/2 the installer
+# always laid down the Claude adapter; under detection-default a machine without
+# a `claude` CLI installs host-neutral only, so every legacy leg states the
+# explicit selection it always implicitly had. The migration only ADDS a flag —
+# it weakens and deletes no assertion. Detection and explicit-selection legs
+# (host-support/2) call $INSTALL directly, on a hermetic farm.
 
 echo "=== agent-instructions/2 — template + manifest ==="
 grep -qF '<!-- vibe:instructions:start -->' "$TEMPLATE" && grep -qF '<!-- vibe:active-rules:start -->' "$TEMPLATE" \
@@ -76,16 +97,16 @@ if command -v jq >/dev/null 2>&1; then
   tar -cf - --exclude=.git -C "$REPO_ROOT" . 2>/dev/null | tar -xf - -C "$SRCA"
   jq '.adapters += [{"file":"ZZTEST.md","target":"AGENTS.md","runtime":"zztest","default":false}]' \
      "$REPO_ROOT/flow/reference/adapters.json" > "$SRCA/flow/reference/adapters.json"
-  bash "$SRCA/install.sh" "$SBA" --adapters zztest >/dev/null 2>&1
+  bash "$SRCA/install.sh" "$SBA" --platform claude --adapters zztest >/dev/null 2>&1
   { [[ -L "$SBA/ZZTEST.md" && "$(readlink "$SBA/ZZTEST.md")" == "AGENTS.md" ]]; } \
     && pass "agent-instructions/2" "a manifest-only adapter is linked by install (catalogue is live data)" \
     || fail "agent-instructions/2" "a manifest-only adapter is linked by install (catalogue is live data)"
-  bash "$SRCA/install.sh" "$SBA" --uninstall --yes >/dev/null 2>&1
+  bash "$SRCA/install.sh" "$SBA" --platform claude --uninstall --yes >/dev/null 2>&1
   [[ ! -e "$SBA/ZZTEST.md" ]] \
     && pass "agent-instructions/2" "uninstall removes a manifest-only adapter from the same data" \
     || fail "agent-instructions/2" "uninstall removes a manifest-only adapter from the same data"
   # An unknown name reports the manifest's own key list, not a hardcoded one.
-  outa="$(bash "$SRCA/install.sh" "$SBA" --adapters nope 2>&1 || true)"
+  outa="$(bash "$SRCA/install.sh" "$SBA" --platform claude --adapters nope 2>&1 || true)"
   assert_contains "agent-instructions/2" "an unknown adapter lists the manifest's keys" "$outa" "zztest"
   rm -rf "$SBA" "$SRCA"
 else
@@ -95,7 +116,7 @@ fi
 # …and without jq the catalogue degrades to the two shipped pairs rather than to
 # nothing: --adapters claude must still link.
 SBJ="$(mktmp)"; NOJQ_A="$(mkshim jq)"
-PATH="$NOJQ_A" "$NOJQ_A/bash" "$INSTALL" "$SBJ" --adapters claude >/dev/null 2>&1
+PATH="$NOJQ_A" "$NOJQ_A/bash" "$INSTALL" "$SBJ" --platform claude --adapters claude >/dev/null 2>&1
 { [[ -L "$SBJ/CLAUDE.md" && "$(readlink "$SBJ/CLAUDE.md")" == "AGENTS.md" ]]; } \
   && pass "agent-instructions/2" "jq-less: --adapters claude still links via the fallback pairs" \
   || fail "agent-instructions/2" "jq-less: --adapters claude still links via the fallback pairs"
@@ -263,7 +284,7 @@ echo ""
 echo "=== platform-adapters/4,5 — settings.json hook wiring (auto-wired, no plugin) ==="
 # A fresh install wires the three hooks into the target's .claude/settings.json —
 # no plugin manifest, no hooks.json (issue #12: settings.json is the single path).
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 SETTINGS="$SB/.claude/settings.json"
 jq -e . "$SETTINGS" >/dev/null 2>&1 && pass "platform-adapters/4" "install writes a valid settings.json" || fail "platform-adapters/4" "settings.json JSON"
 # each event is wired to its script, via a $CLAUDE_PROJECT_DIR-relative command.
@@ -287,7 +308,7 @@ assert_eq "platform-adapters/4" "all wired hook scripts exist + executable in th
 [[ ! -e "$SB/.claude-plugin/plugin.json" ]] && pass "platform-adapters/5" "install ships no plugin.json (auto-wired via settings.json)" || fail "platform-adapters/5" "plugin.json must not be shipped"
 [[ ! -e "$SB/.claude/hooks/hooks.json" ]] && pass "platform-adapters/5" "install ships no hooks.json manifest" || fail "platform-adapters/5" "hooks.json must not be shipped"
 # idempotent: a second install leaves exactly one vibe group per event.
-bash "$INSTALL" "$SB" >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 dupok=1
 for ev in SessionStart UserPromptSubmit PreToolUse Stop; do
   n="$(jq --arg e "$ev" --arg m "$VIBE_HOOK_RE" '[.hooks[$e][]? | select([.hooks[]?.command // empty] | any(test($m)))] | length' "$SETTINGS")"
@@ -296,10 +317,10 @@ done
 assert_eq "platform-adapters/4" "re-install does not duplicate vibe hook groups" "$dupok" "1"
 rm -rf "$SB"
 # --uninstall strips vibe's hook entries but preserves unrelated user settings.
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 SETTINGS="$SB/.claude/settings.json"
 jq '. + {permissions:{allow:["Bash(git status:*)"]}}' "$SETTINGS" > "$SETTINGS.tmp" && mv "$SETTINGS.tmp" "$SETTINGS"
-bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude --uninstall --yes >/dev/null 2>&1
 if [[ -f "$SETTINGS" ]]; then
   wired="$(jq -r --arg m "$VIBE_HOOK_RE" '[.. | .command? // empty] | map(select(test($m))) | length' "$SETTINGS")"
   assert_eq "platform-adapters/5" "uninstall removes vibe hook entries from settings.json" "$wired" "0"
@@ -313,7 +334,7 @@ rm -rf "$SB"
 # unwire cannot complete, so the hook scripts it references must be LEFT in place
 # (deleting them would strand dead references). Discriminating — fails if uninstall
 # deletes the hooks before/regardless of the failed unwire.
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 NOJQ="$(mkshim jq)"
 PATH="$NOJQ" "$NOJQ/bash" "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
 stillwired=0; grep -qF 'stop-gate.sh' "$SB/.claude/settings.json" 2>/dev/null && stillwired=1
@@ -327,7 +348,7 @@ rm -rf "$SB" "$NOJQ"
 
 echo ""
 echo "=== flow-legibility/5 — SessionStart doctrine hook + wiring + doctor coverage ==="
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 # install wires SessionStart to the doctrine hook.
 sscmd="$(jq -r '.hooks.SessionStart[]?.hooks[]?.command // empty' "$SB/.claude/settings.json" 2>/dev/null)"
 assert_contains "flow-legibility/5" "install wires SessionStart -> session-start-doctrine.sh" "$sscmd" "session-start-doctrine.sh"
@@ -353,7 +374,7 @@ rm -rf "$SB"
 # now: its real resolver is the vibe skill's SKILL.md (engine/commands/
 # doctrine.mjs reads it directly, no bash script involved), not doctrine.sh —
 # remove both so the degrade fires regardless of which implementation runs.
-SBD="$(mktmp)"; bash "$INSTALL" "$SBD" >/dev/null 2>&1
+SBD="$(mktmp)"; bash "$INSTALL" "$SBD" --platform claude >/dev/null 2>&1
 rm -f "$SBD/.agents/skills/vibe/scripts/doctrine.sh" "$SBD/.agents/skills/vibe/SKILL.md"
 ss_rc=0; ssdeg="$(CLAUDE_PROJECT_DIR="$SBD" bash "$SBD/.claude/hooks/session-start-doctrine.sh" </dev/null 2>/dev/null)" || ss_rc=$?
 assert_eq "flow-legibility/5" "SessionStart hook exits 0 when the resolver is absent" "$ss_rc" "0"
@@ -362,7 +383,7 @@ rm -rf "$SBD"
 
 echo ""
 echo "=== flow-legibility/6 — drift-first nudge in the inject hook ==="
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 git init -q "$SB" 2>/dev/null && git -C "$SB" config user.email t@t 2>/dev/null && git -C "$SB" config user.name t 2>/dev/null
 rm -f "$SB/.agents/skills/vibe/state.json"      # idle cursor
 mkdir -p "$SB/src"; printf 'x\n' > "$SB/src/app.sh"
@@ -390,7 +411,7 @@ rm -rf "$SB"
 
 echo ""
 echo "=== platform-adapters/1,2,3 — hooks against a real install ==="
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 export CLAUDE_PROJECT_DIR="$SB"
 SS="$SB/.agents/skills/vibe/scripts/set-state.sh"
 WLOG="$SB/.agents/skills/vibe/warnings.log"
@@ -518,7 +539,7 @@ SBG="$(mktmp)"
 if git -C "$SBG" init -q >/dev/null 2>&1 \
    && git -C "$SBG" config user.email t@t >/dev/null 2>&1 \
    && git -C "$SBG" config user.name t >/dev/null 2>&1; then
-  bash "$INSTALL" "$SBG" >/dev/null 2>&1
+  bash "$INSTALL" "$SBG" --platform claude >/dev/null 2>&1
   grep -qxF '.vibe/last-inject' "$SBG/.gitignore" \
     && pass "inject-triggers/6" "install gitignores the inject edge-detection marker" \
     || fail "inject-triggers/6" "install gitignores the inject edge-detection marker"
@@ -663,7 +684,7 @@ trap - EXIT
 # copy is byte-identical to the render (flow/tests/run.sh proves that), so the
 # same target re-installed WITH node re-renders to "no change".
 SBNN="$(mktmp)"
-PATH="$NONODE_BIN" "$NONODE_BIN/bash" "$INSTALL" "$SBNN" --only flow >/dev/null 2>&1
+PATH="$NONODE_BIN" "$NONODE_BIN/bash" "$INSTALL" "$SBNN" --platform claude --only flow >/dev/null 2>&1
 grep -qxF '<!-- vibe:rules -->' "$SBNN/AGENTS.md" \
   && pass "inject-triggers/6" "node-absent install still ships the vibe:rules block" \
   || fail "inject-triggers/6" "node-absent install still ships the vibe:rules block"
@@ -691,7 +712,7 @@ echo "=== flow-mvp — set-state.sh jq-optional parity ==="
 # (via printf) and the output must be byte-identical to the jq path on the same
 # transition. Run both against a fresh install with a jq-free PATH; normalize only
 # the turn-varying `updated` timestamp before comparing.
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 SS="$SB/.agents/skills/vibe/scripts/set-state.sh"
 CUR="$SB/.agents/skills/vibe/state.json"
 NOJQ_BIN="$(mktmp)"
@@ -733,18 +754,18 @@ rm -rf "$NOJQ_BIN" "$SB"
 
 echo ""
 echo "=== platform-adapters/6 — installer ==="
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 ok=1
 for p in .agents/skills/vibe/scripts/orders.sh .agents/skills/vibe/SKILL.md .claude/hooks/stop-gate.sh .claude/settings.json AGENTS.md .agents/skills/vibe/state.json; do
   [[ -e "$SB/$p" ]] || { ok=0; echo "        missing $p"; }
 done
 assert_eq "platform-adapters/6" "install lays down core + adapter + cursor" "$ok" "1"
 grep -qF '.agents/skills/vibe/state.json' "$SB/.gitignore" && pass "platform-adapters/6" "install gitignores the cursor" || fail "platform-adapters/6" "gitignore"
-before="$(cat "$SB/AGENTS.md")"; bash "$INSTALL" "$SB" >/dev/null 2>&1; after="$(cat "$SB/AGENTS.md")"
+before="$(cat "$SB/AGENTS.md")"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1; after="$(cat "$SB/AGENTS.md")"
 assert_eq "platform-adapters/6" "re-install is idempotent (AGENTS.md unchanged)" "$before" "$after"
 # a live cursor must survive a re-install — idempotency may not clobber flow state
 bash "$SB/.agents/skills/vibe/scripts/set-state.sh" feature.impl widget >/dev/null
-before_cur="$(cat "$SB/.agents/skills/vibe/state.json")"; bash "$INSTALL" "$SB" >/dev/null 2>&1; after_cur="$(cat "$SB/.agents/skills/vibe/state.json")"
+before_cur="$(cat "$SB/.agents/skills/vibe/state.json")"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1; after_cur="$(cat "$SB/.agents/skills/vibe/state.json")"
 assert_eq "platform-adapters/6" "re-install preserves a live cursor (feature.impl widget)" "$before_cur" "$after_cur"
 [[ ! -e "$SB/.agents/flow" ]] && pass "platform-adapters/6" ".agents/flow does not exist after install" || fail "platform-adapters/6" ".agents/flow must not exist after install"
 [[ -d "$SB/.agents/skills/vibe" && ! -L "$SB/.agents/skills/vibe" ]] && pass "platform-adapters/6" "skills/vibe is a real directory (not a symlink)" || fail "platform-adapters/6" "skills/vibe is a real directory (not a symlink)"
@@ -779,14 +800,14 @@ cp -RL "$REPO_ROOT/.claude/commands" "$FS/.claude/commands"
 cp -RL "$REPO_ROOT/.claude/hooks" "$FS/.claude/hooks"
 mkdir -p "$FS/.agents/skills/vibe/evidence"
 printf 'LEAKED source receipt\n' > "$FS/.agents/skills/vibe/evidence/feature-demo.md"
-SB="$(mktmp)"; bash "$FS/install.sh" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$FS/install.sh" "$SB" --platform claude >/dev/null 2>&1
 [[ ! -e "$SB/.agents/skills/vibe/evidence/feature-demo.md" ]] \
   && pass "platform-adapters/6" "source-side evidence receipt does not ship to the target" \
   || fail "platform-adapters/6" "source-side evidence receipt leaked into the target (gate bypass)"
 # ...but the target's OWN receipts survive a re-install (runtime-state lesson).
 mkdir -p "$SB/.agents/skills/vibe/evidence"
 printf 'TARGET own receipt\n' > "$SB/.agents/skills/vibe/evidence/feature-widget.md"
-bash "$FS/install.sh" "$SB" >/dev/null 2>&1
+bash "$FS/install.sh" "$SB" --platform claude >/dev/null 2>&1
 { [[ -f "$SB/.agents/skills/vibe/evidence/feature-widget.md" ]] \
   && [[ ! -e "$SB/.agents/skills/vibe/evidence/feature-demo.md" ]]; } \
   && pass "platform-adapters/6" "target evidence survives re-install; source evidence still excluded" \
@@ -809,18 +830,18 @@ ln -s ../../spec "$FS2/.agents/skills/spec"
 cp -RL "$REPO_ROOT/.claude/commands" "$FS2/.claude/commands"
 cp -RL "$REPO_ROOT/.claude/hooks" "$FS2/.claude/hooks"
 rm -f "$FS2/flow/AGENTS.md"
-SB="$(mktmp)"; bash "$FS2/install.sh" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$FS2/install.sh" "$SB" --platform claude >/dev/null 2>&1
 printf 'mine, not the contributor guide\n' > "$SB/.agents/skills/vibe/AGENTS.md"
 [[ -f "$SB/.agents/skills/vibe/AGENTS.md" ]] \
   && pass "platform-adapters/6" "fixture: target-owned AGENTS.md exists before re-install (population floor)" \
   || fail "platform-adapters/6" "fixture: target-owned AGENTS.md exists before re-install (population floor)"
-bash "$FS2/install.sh" "$SB" >/dev/null 2>&1
+bash "$FS2/install.sh" "$SB" --platform claude >/dev/null 2>&1
 [[ -f "$SB/.agents/skills/vibe/AGENTS.md" ]] \
   && pass "platform-adapters/6" "target-owned AGENTS.md survives a re-install once source stops shipping one" \
   || fail "platform-adapters/6" "target-owned AGENTS.md must survive a re-install once source stops shipping one"
 rm -rf "$SB" "$FS2"
 # gitignore nitpick: a freshly created .gitignore must NOT start with a blank line.
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 [[ -n "$(head -n1 "$SB/.gitignore")" ]] \
   && pass "platform-adapters/6" "fresh .gitignore has no leading blank line" \
   || fail "platform-adapters/6" "fresh .gitignore starts with a blank line"
@@ -833,7 +854,7 @@ echo ""
 echo "=== platform-adapters/6 — skill registration under .claude/skills ==="
 # Install registers /spec and the vibe skill where the docs say they live: relative
 # symlinks under .claude/skills that resolve to the copied core (a real SKILL.md).
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 { [[ -L "$SB/.claude/skills/spec" ]] && [[ "$(readlink "$SB/.claude/skills/spec")" == "../../.agents/skills/spec" ]] \
   && [[ -f "$SB/.claude/skills/spec/SKILL.md" ]]; } \
   && pass "platform-adapters/6" "install registers /spec at .claude/skills/spec (resolves)" \
@@ -846,7 +867,7 @@ SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
 # uninstall, while EXACTLY the two vibe symlinks are removed (matched by target).
 # Fails if uninstall blanket-removes .claude/skills or leaves the vibe links behind.
 mkdir -p "$SB/.claude/skills/myskill"; printf 'mine\n' > "$SB/.claude/skills/myskill/SKILL.md"
-bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude --uninstall --yes >/dev/null 2>&1
 { [[ -f "$SB/.claude/skills/myskill/SKILL.md" ]] \
   && [[ ! -L "$SB/.claude/skills/spec" && ! -e "$SB/.claude/skills/spec" ]] \
   && [[ ! -L "$SB/.claude/skills/vibe" && ! -e "$SB/.claude/skills/vibe" ]]; } \
@@ -855,7 +876,7 @@ bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
 rm -rf "$SB"
 # a user's REAL .claude/skills/spec directory must NOT be clobbered by registration.
 SB="$(mktmp)"; mkdir -p "$SB/.claude/skills/spec"; printf 'USER real spec\n' > "$SB/.claude/skills/spec/SKILL.md"
-bash "$INSTALL" "$SB" >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 { [[ ! -L "$SB/.claude/skills/spec" ]] && grep -qF 'USER real spec' "$SB/.claude/skills/spec/SKILL.md" \
   && [[ -L "$SB/.claude/skills/vibe" ]]; } \
   && pass "platform-adapters/6" "registration never clobbers a user's real .claude/skills/spec" \
@@ -870,7 +891,7 @@ tree_fp() { find "$1" -type f -exec cksum {} + 2>/dev/null | LC_ALL=C sort; }
 # --dry-run against a fresh (empty) target: non-empty plan, zero writes.
 SB="$(mktmp)"
 before="$(tree_fp "$SB")"
-out="$(bash "$INSTALL" "$SB" --dry-run 2>&1; echo "rc=$?")"
+out="$(bash "$INSTALL" "$SB" --platform claude --dry-run 2>&1; echo "rc=$?")"
 after="$(tree_fp "$SB")"
 assert_contains "install-tooling/1" "dry-run exits 0" "$out" "rc=0"
 assert_contains "install-tooling/1" "dry-run prints an action plan" "$out" "[dry-run] would"
@@ -879,13 +900,13 @@ assert_eq "install-tooling/1" "dry-run on a fresh target writes nothing" "$befor
   && pass "install-tooling/1" "dry-run creates no managed files" \
   || fail "install-tooling/1" "dry-run creates no managed files"
 # --dry-run against an already-installed target is also byte-identical.
-bash "$INSTALL" "$SB" >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 before="$(tree_fp "$SB")"
-bash "$INSTALL" "$SB" --dry-run >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude --dry-run >/dev/null 2>&1
 after="$(tree_fp "$SB")"
 assert_eq "install-tooling/1" "dry-run on an installed target is byte-identical" "$before" "$after"
 # unknown option is rejected, not treated as the target.
-out="$(bash "$INSTALL" "$SB" --bogus 2>&1; echo "rc=$?")"
+out="$(bash "$INSTALL" "$SB" --platform claude --bogus 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/1" "unknown option exits non-zero" "$out" "rc=1"
 assert_contains "install-tooling/1" "unknown option names itself" "$out" "unknown option"
 rm -rf "$SB"
@@ -893,7 +914,7 @@ rm -rf "$SB"
 echo ""
 echo "=== install-tooling/2 — --only spec|flow ==="
 # --only spec: spec skill only, no flow/adapter/plugin trace.
-SB="$(mktmp)"; bash "$INSTALL" "$SB" --only spec >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude --only spec >/dev/null 2>&1
 ok=1
 [[ -d "$SB/.agents/skills/spec" ]] || { ok=0; echo "        missing spec skill"; }
 [[ ! -e "$SB/.agents/skills/vibe" ]] || { ok=0; echo "        vibe present under --only spec"; }
@@ -902,7 +923,7 @@ ok=1
 assert_eq "install-tooling/2" "--only spec installs the spec half alone" "$ok" "1"
 rm -rf "$SB"
 # --only flow: flow + adapter present, no spec skill.
-SB="$(mktmp)"; bash "$INSTALL" "$SB" --only flow >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude --only flow >/dev/null 2>&1
 ok=1
 [[ -d "$SB/.agents/skills/vibe" ]] || { ok=0; echo "        missing vibe skill"; }
 [[ -e "$SB/.claude/hooks/stop-gate.sh" ]] || { ok=0; echo "        missing adapter hook scripts"; }
@@ -913,13 +934,13 @@ assert_eq "install-tooling/2" "--only flow installs flow + adapter alone" "$ok" 
 rm -rf "$SB"
 # --only bogus: usage error, exit 1.
 SB="$(mktmp)"
-out="$(bash "$INSTALL" "$SB" --only bogus 2>&1; echo "rc=$?")"
+out="$(bash "$INSTALL" "$SB" --platform claude --only bogus 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/2" "--only bogus exits 1" "$out" "rc=1"
 assert_contains "install-tooling/2" "--only bogus names the valid values" "$out" "spec"
 rm -rf "$SB"
 # --only composes with --dry-run (still writes nothing).
 SB="$(mktmp)"; before="$(tree_fp "$SB")"
-bash "$INSTALL" "$SB" --only spec --dry-run >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude --only spec --dry-run >/dev/null 2>&1
 after="$(tree_fp "$SB")"
 assert_eq "install-tooling/2" "--only spec --dry-run writes nothing" "$before" "$after"
 rm -rf "$SB"
@@ -927,7 +948,7 @@ rm -rf "$SB"
 echo ""
 echo "=== install-tooling/3 — --uninstall ==="
 # Install, add user content, then uninstall: managed files gone, user content kept.
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 mkdir -p "$SB/.spec"; printf 'user spec\n' > "$SB/.spec/product.md"
 # user-authored files co-located in the SHARED adapter dirs must survive (the
 # whole point of remove_shipped: surgical per-file removal, not rm -rf the dir).
@@ -952,7 +973,7 @@ if command -v node >/dev/null 2>&1; then
 else
   echo "  SKIP [content-layer] agents-md render (node not on PATH)"
 fi
-bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude --uninstall --yes >/dev/null 2>&1
 ok=1
 # Check the shipped payload is gone (the dirs themselves survive here because the
 # test seeds user files into them — that survival is asserted separately below).
@@ -989,9 +1010,9 @@ rm -rf "$SB"
 # uninstall inverse (fix): adapter symlinks + vibe-created stub AGENTS.md.
 # Fresh install with --adapters, nothing customized -> uninstall removes the
 # CLAUDE.md/WARP.md symlinks AND the untouched-stub AGENTS.md (target had none).
-SB="$(mktmp)"; bash "$INSTALL" "$SB" --adapters claude,warp >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude --adapters claude,warp >/dev/null 2>&1
 [[ -L "$SB/CLAUDE.md" && -L "$SB/WARP.md" ]] || fail "install-tooling/3" "precondition: adapters symlinked"
-bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude --uninstall --yes >/dev/null 2>&1
 # -L not -e: the stub AGENTS.md is also deleted, so an un-removed symlink would
 # merely DANGLE (-e false, -L true). Checking -L discriminates the real removal.
 { [[ ! -L "$SB/CLAUDE.md" && ! -e "$SB/CLAUDE.md" ]] && [[ ! -L "$SB/WARP.md" && ! -e "$SB/WARP.md" ]]; } \
@@ -1004,15 +1025,15 @@ rm -rf "$SB"
 # discriminating: a user's REAL CLAUDE.md file (not a vibe symlink) must SURVIVE —
 # uninstall may only remove a symlink that points at AGENTS.md.
 SB="$(mktmp)"; printf 'my real claude guide\n' > "$SB/CLAUDE.md"
-bash "$INSTALL" "$SB" >/dev/null 2>&1
-bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude --uninstall --yes >/dev/null 2>&1
 { [[ -f "$SB/CLAUDE.md" && ! -L "$SB/CLAUDE.md" ]] && grep -qF "my real claude guide" "$SB/CLAUDE.md"; } \
   && pass "install-tooling/3" "a user's real CLAUDE.md file survives uninstall" \
   || fail "install-tooling/3" "uninstall clobbered a user's real CLAUDE.md file"
 rm -rf "$SB"
 # Live cursor + evidence receipt + no --yes -> both survive (flow-mvp verify fixes:
 # discriminating test — fails if preservation is swapped for naive rm -rf).
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 bash "$SB/.agents/skills/vibe/scripts/set-state.sh" feature.impl widget >/dev/null 2>&1
 mkdir -p "$SB/.agents/skills/vibe/evidence"
 printf 'receipt: tests run\n' > "$SB/.agents/skills/vibe/evidence/feature-widget.md"
@@ -1020,7 +1041,7 @@ printf 'receipt: tests run\n' > "$SB/.agents/skills/vibe/evidence/feature-widget
 # --yes assertions below have a population to examine, and so the no---yes
 # leg proves preservation rather than absence.
 mkdir -p "$SB/.vibe"; printf 'feature.impl widget\n' > "$SB/.vibe/last-inject"
-bash "$INSTALL" "$SB" --uninstall >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude --uninstall >/dev/null 2>&1
 [[ -f "$SB/.vibe/last-inject" ]] \
   && pass "inject-triggers/6" "inject marker survives uninstall without --yes" \
   || fail "inject-triggers/6" "inject marker survives uninstall without --yes"
@@ -1035,7 +1056,7 @@ else
   fail "flow-mvp/9" "evidence receipt survives uninstall without --yes"
 fi
 # ... and --yes removes both and fully inverts the gitignore stanzas.
-bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude --uninstall --yes >/dev/null 2>&1
 [[ ! -e "$SB/.agents/skills/vibe/state.json" ]] && pass "install-tooling/3" "--yes removes the cursor too" || fail "install-tooling/3" "--yes removes the cursor"
 if [[ -f "$SB/.gitignore" ]] && grep -qF "evidence" "$SB/.gitignore"; then
   fail "flow-mvp/9" "--yes strips the evidence gitignore stanza"
@@ -1053,19 +1074,19 @@ fi
   || fail "inject-triggers/6" "--yes removes the inject marker (runtime state, like the cursor)"
 rm -rf "$SB"
 # Reversed-marker AGENTS.md -> uninstall refuses to touch it (marker lesson regression).
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 printf '# R\n<!-- vibe:instructions:end -->\nmid\n<!-- vibe:instructions:start -->\ntail\n' > "$SB/AGENTS.md"
 rmbefore="$(cat "$SB/AGENTS.md")"
-bash "$INSTALL" "$SB" --uninstall --yes >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude --uninstall --yes >/dev/null 2>&1
 assert_eq "install-tooling/3" "reversed-marker AGENTS.md left byte-untouched by uninstall" "$(cat "$SB/AGENTS.md")" "$rmbefore"
 rm -rf "$SB"
 # --uninstall composes with --dry-run (writes nothing) and --only (one half).
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 before="$(tree_fp "$SB")"
-bash "$INSTALL" "$SB" --uninstall --dry-run >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude --uninstall --dry-run >/dev/null 2>&1
 after="$(tree_fp "$SB")"
 assert_eq "install-tooling/3" "--uninstall --dry-run writes nothing" "$before" "$after"
-bash "$INSTALL" "$SB" --uninstall --only spec --yes >/dev/null 2>&1
+bash "$INSTALL" "$SB" --platform claude --uninstall --only spec --yes >/dev/null 2>&1
 [[ ! -e "$SB/.agents/skills/spec" && -e "$SB/.agents/skills/vibe/SKILL.md" ]] \
   && pass "install-tooling/3" "--uninstall --only spec removes just the spec half" \
   || fail "install-tooling/3" "--uninstall --only spec removes just the spec half"
@@ -1083,7 +1104,7 @@ echo "=== js-core/8 — source-only artifacts never reach an install target ==="
 # any file under any directory named `tests`, and any file NAMED like a test,
 # anywhere in the target, is a leak. A third co-located suite would be caught
 # without editing this block.
-SBt="$(mktmp)"; bash "$INSTALL" "$SBt" >/dev/null 2>&1
+SBt="$(mktmp)"; bash "$INSTALL" "$SBt" --platform claude >/dev/null 2>&1
 # Precondition, so an empty `find` below can never read as a vacuous pass: the
 # engine really is in the target, i.e. there was something to leak FROM.
 [[ -f "$SBt/.agents/skills/vibe/engine/cli.mjs" ]] \
@@ -1098,7 +1119,7 @@ assert_eq "js-core/8" "no test-NAMED file reaches an install target (wherever it
 # The scrub is source-enumerated, so a user's own file inside the skill tree at a
 # path the SOURCE does not have must survive a re-install untouched.
 echo 'mine' > "$SBt/.agents/skills/vibe/engine/user-note.txt"
-bash "$INSTALL" "$SBt" >/dev/null 2>&1
+bash "$INSTALL" "$SBt" --platform claude >/dev/null 2>&1
 [[ -f "$SBt/.agents/skills/vibe/engine/user-note.txt" ]] \
   && pass "js-core/8" "re-install's scrub never touches a user file the source does not have" \
   || fail "js-core/8" "re-install's scrub never touches a user file the source does not have"
@@ -1107,13 +1128,13 @@ rm -rf "$SBt"
 # scrub was fixed already carries engine/tests. --uninstall must still remove it —
 # remove_shipped's exclude list is top-level-only precisely so those files are
 # cleaned up rather than stranded.
-SBl="$(mktmp)"; bash "$INSTALL" "$SBl" >/dev/null 2>&1
+SBl="$(mktmp)"; bash "$INSTALL" "$SBl" --platform claude >/dev/null 2>&1
 mkdir -p "$SBl/.agents/skills/vibe/engine/tests"
 cp "$REPO_ROOT/flow/engine/tests/json.test.mjs" "$SBl/.agents/skills/vibe/engine/tests/json.test.mjs"
 [[ -f "$SBl/.agents/skills/vibe/engine/tests/json.test.mjs" ]] \
   && pass "js-core/8" "precondition: legacy-shaped target carries engine/tests" \
   || fail "js-core/8" "precondition: legacy-shaped target carries engine/tests"
-bash "$INSTALL" "$SBl" --uninstall --yes >/dev/null 2>&1
+bash "$INSTALL" "$SBl" --platform claude --uninstall --yes >/dev/null 2>&1
 legacy_left="$(cd "$SBl" && find . -type f -path '*/tests/*' 2>/dev/null | sed 's#^\./##' | sort | tr '\n' ' ')"
 assert_eq "js-core/8" "--uninstall cleans up a legacy target's shipped engine/tests" "$legacy_left" ""
 rm -rf "$SBl"
@@ -1124,13 +1145,13 @@ echo "=== install.sh — single-command modes ==="
 assert_contains "install-modes" "--help documents the two modes" "$(bash "$INSTALL" --help 2>&1)" "One command, two modes"
 # Bare run (no target) defaults to the current directory — the single-command path.
 SBc="$(mktmp)"; git -C "$SBc" init -q >/dev/null 2>&1
-bare_out="$( cd "$SBc" && bash "$INSTALL" --dry-run --local 2>&1 )"
+bare_out="$( cd "$SBc" && bash "$INSTALL" --dry-run --local --platform none 2>&1 )"
 assert_contains "install-modes" "bare run targets the current directory" "$bare_out" "$SBc/.agents/skills"
 rm -rf "$SBc"
 # Bare run from a SUBDIRECTORY targets the ENCLOSING repo root by marker search, not
 # the subdir (review: install.sh must not naively default to $PWD from a subdir).
 SBsub="$(mktmp)"; git -C "$SBsub" init -q >/dev/null 2>&1; mkdir -p "$SBsub/pkg/src"
-subout="$( cd "$SBsub/pkg/src" && bash "$INSTALL" --dry-run --local 2>&1 )"
+subout="$( cd "$SBsub/pkg/src" && bash "$INSTALL" --dry-run --local --platform none 2>&1 )"
 assert_contains "install-modes" "bare run from a subdir targets the repo root" "$subout" "$SBsub/.agents/skills"
 assert_not_contains "install-modes" "bare run from a subdir skips the subdir" "$subout" "pkg/src/.agents"
 rm -rf "$SBsub"
@@ -1434,6 +1455,457 @@ if command -v jq >/dev/null 2>&1; then
 else
   echo "  SKIP [host-support/1] host surface matrix JSON legs (jq not on PATH)"
 fi
+
+echo ""
+echo "=== host-support/2 — installer lifecycle: selection, roots, manifest, removal ==="
+# The unit's contract in five parts: (1) --platform grammar, (2) hermetic
+# detection + explicit override, (3) root resolution from nested repo / worktree /
+# plain dirs, (4) the install manifest as the ownership floor, (5) dry-run,
+# idempotent re-install, surgical uninstall, and the capability report.
+HOST_DIRS=".claude .opencode plugins factory-plugin .factory-plugin"
+
+# --- (1) --platform grammar -------------------------------------------------
+SBpg="$(mktmp)"
+pout="$(bash "$INSTALL" "$SBpg" --platform bogus 2>&1; echo "rc=$?")"
+assert_contains "host-support/2" "--platform rejects an unknown host token (usage error)" "$pout" "rc=1"
+for v in claude opencode codex droid none; do
+  assert_contains "host-support/2" "--platform usage error names the valid value '$v'" "$pout" "$v"
+done
+pout="$(bash "$INSTALL" "$SBpg" --platform "" 2>&1; echo "rc=$?")"
+assert_contains "host-support/2" "--platform with an empty value is a usage error" "$pout" "rc=1"
+pout="$(bash "$INSTALL" "$SBpg" --platform claude,none 2>&1; echo "rc=$?")"
+assert_contains "host-support/2" "--platform none cannot be combined with a host" "$pout" "rc=1"
+[[ ! -e "$SBpg/.agents" && ! -e "$SBpg/.claude" && ! -e "$SBpg/.vibe" ]] \
+  && pass "host-support/2" "a rejected --platform writes nothing" \
+  || fail "host-support/2" "a rejected --platform wrote files"
+rm -rf "$SBpg"
+# --help prints the leading comment block, so the new selector must be documented
+# there with its valid values.
+helpout="$(bash "$INSTALL" --help 2>&1)"
+assert_contains "host-support/2" "--help documents --platform" "$helpout" "--platform LIST"
+assert_contains "host-support/2" "--help names the --platform valid values" "$helpout" "claude, opencode, codex, droid, none"
+
+# --- (2) detection is hermetic, presence-only, and overridable --------------
+# mkshim's toolset contains NONE of the four host CLIs, so a bare mkshim PATH is
+# an inherent no-detect farm; mkhosts adds stubs for the named hosts. Neither
+# reads the ambient PATH, which is what makes these legs evidence on any runner.
+FARM_NONE="$(mkshim)"
+FARM_ALL="$(mkhosts claude opencode codex droid)"
+SBno="$(mktmp)"
+outno="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBno" 2>&1)"
+nn=1
+for p in .agents/skills/spec/SKILL.md .agents/skills/vibe/SKILL.md AGENTS.md .gitignore .agents/skills/vibe/state.json; do
+  [[ -e "$SBno/$p" ]] || { nn=0; echo "        missing host-neutral $p"; }
+done
+assert_eq "host-support/2" "no host CLI detected: the host-neutral core still installs" "$nn" "1"
+nohost=1
+for p in $HOST_DIRS; do
+  [[ -e "$SBno/$p" ]] && { nohost=0; echo "        configured $p with no host CLI on PATH"; }
+done
+assert_eq "host-support/2" "no host CLI detected: no native host surface is configured" "$nohost" "1"
+assert_contains "host-support/2" "no host CLI detected: the summary says so" "$outno" "no supported host CLI detected"
+assert_contains "host-support/2" "no host CLI detected: the summary prints the --platform selection syntax" "$outno" "--platform claude,codex"
+rm -rf "$SBno"
+
+# Only the CLIs present are configured, and nothing else is.
+FARM_CO="$(mkhosts codex opencode)"
+SBco="$(mktmp)"
+outco="$(PATH="$FARM_CO" "$FARM_CO/bash" "$INSTALL" "$SBco" 2>&1)"
+det=1
+[[ -e "$SBco/.opencode/commands/flow.md" ]] || { det=0; echo "        opencode detected but not configured"; }
+[[ -e "$SBco/plugins/vibe/plugin.json" ]] || { det=0; echo "        codex detected but not configured"; }
+[[ -e "$SBco/.agents/plugins/marketplace.json" ]] || { det=0; echo "        codex marketplace not configured"; }
+assert_eq "host-support/2" "detection configures the detected hosts (opencode + codex)" "$det" "1"
+det_only=1
+for p in .claude factory-plugin .factory-plugin; do
+  [[ -e "$SBco/$p" ]] && { det_only=0; echo "        configured undetected $p"; }
+done
+assert_eq "host-support/2" "detection configures ONLY the detected hosts" "$det_only" "1"
+assert_contains "host-support/2" "the summary names the detected host opencode" "$outco" "opencode"
+assert_contains "host-support/2" "the summary names the detected host codex" "$outco" "codex"
+assert_not_contains "host-support/2" "the summary names no undetected host surface" "$outco" ".claude/commands/flow.md"
+assert_not_contains "host-support/2" "a non-Claude install claims no hook support (R5)" "$outco" "hook"
+rm -rf "$SBco"
+
+# An explicit --platform overrides detection entirely: with every CLI present…
+SBsel="$(mktmp)"
+PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBsel" --platform codex >/dev/null 2>&1
+ex=1
+[[ -e "$SBsel/plugins/vibe/plugin.json" ]] || { ex=0; echo "        codex not configured"; }
+for p in .claude .opencode factory-plugin .factory-plugin; do
+  [[ -e "$SBsel/$p" ]] && { ex=0; echo "        configured $p despite --platform codex"; }
+done
+assert_eq "host-support/2" "explicit --platform wins with every host CLI present" "$ex" "1"
+# …and with NO CLI present.
+SBabs="$(mktmp)"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBabs" --platform droid >/dev/null 2>&1
+ab=1
+[[ -e "$SBabs/factory-plugin/.factory-plugin/plugin.json" ]] || { ab=0; echo "        droid not configured"; }
+[[ -e "$SBabs/.factory-plugin/marketplace.json" ]] || { ab=0; echo "        droid marketplace not configured"; }
+for p in .claude .opencode plugins; do
+  [[ -e "$SBabs/$p" ]] && { ab=0; echo "        configured $p despite --platform droid"; }
+done
+assert_eq "host-support/2" "explicit --platform wins with no host CLI present" "$ab" "1"
+# `none` = host-neutral only, even with all four CLIs present.
+SBnon="$(mktmp)"
+outnon="$(PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBnon" --platform none 2>&1)"
+non=1
+for p in $HOST_DIRS; do
+  [[ -e "$SBnon/$p" ]] && { non=0; echo "        --platform none configured $p"; }
+done
+assert_eq "host-support/2" "--platform none configures no host surface with all CLIs present" "$non" "1"
+[[ -e "$SBnon/.agents/skills/vibe/SKILL.md" ]] \
+  && pass "host-support/2" "--platform none still installs the host-neutral core" \
+  || fail "host-support/2" "--platform none still installs the host-neutral core"
+assert_not_contains "host-support/2" "--platform none claims no hooks" "$outnon" "hook"
+# last-wins, like --only.
+SBwin="$(mktmp)"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBwin" --platform claude --platform opencode >/dev/null 2>&1
+{ [[ -e "$SBwin/.opencode/commands/flow.md" && ! -e "$SBwin/.claude" ]]; } \
+  && pass "host-support/2" "--platform is last-wins (claude then opencode -> opencode only)" \
+  || fail "host-support/2" "--platform is last-wins (claude then opencode -> opencode only)"
+rm -rf "$SBsel" "$SBabs" "$SBnon" "$SBwin"
+
+# --- (3) root resolution ----------------------------------------------------
+SBroot="$(mktmp)"; git -C "$SBroot" init -q >/dev/null 2>&1; mkdir -p "$SBroot/pkg/src"
+rout="$( cd "$SBroot/pkg/src" && bash "$INSTALL" --dry-run --local --platform claude 2>&1 )"
+assert_contains "host-support/2" "a nested repository path resolves to the repository root" "$rout" "$SBroot/.agents/skills"
+assert_not_contains "host-support/2" "a nested repository path does not target the subdirectory" "$rout" "pkg/src/.agents"
+( cd "$SBroot/pkg/src" && bash "$INSTALL" --platform codex >/dev/null 2>&1 )
+{ [[ -e "$SBroot/plugins/vibe/plugin.json" && ! -e "$SBroot/pkg/src/plugins" ]]; } \
+  && pass "host-support/2" "a real install from a nested path lands host surfaces at the repository root" \
+  || fail "host-support/2" "a real install from a nested path lands host surfaces at the repository root"
+rm -rf "$SBroot"
+# A worktree: `.git` is a FILE there (the `-e` marker catches it), so the search
+# must not walk past it to the main repository.
+WT="$(mktmp)"; git -C "$WT" init -q >/dev/null 2>&1
+printf 'seed\n' > "$WT/seed.txt"
+git -C "$WT" add -A >/dev/null 2>&1
+git -C "$WT" -c user.email=t@t -c user.name=t commit -qm seed >/dev/null 2>&1
+WT2="$(mktmp)"; rmdir "$WT2" 2>/dev/null || true
+if git -C "$WT" worktree add -q "$WT2" -b vibe-wt >/dev/null 2>&1; then
+  [[ -f "$WT2/.git" && ! -d "$WT2/.git" ]] \
+    && pass "host-support/2" "worktree fixture: .git is a FILE there (population floor)" \
+    || fail "host-support/2" "worktree fixture: .git is a FILE there (population floor)"
+  mkdir -p "$WT2/deep/nested"
+  wout="$( cd "$WT2/deep/nested" && bash "$INSTALL" --dry-run --local --platform claude 2>&1 )"
+  assert_contains "host-support/2" "a nested worktree directory resolves to the worktree root" "$wout" "$WT2/.agents/skills"
+  assert_not_contains "host-support/2" "a nested worktree directory does not resolve to the main repo" "$wout" "$WT/.agents/skills"
+else
+  fail "host-support/2" "worktree fixture: git worktree add"
+fi
+rm -rf "$WT" "$WT2"
+# A plain workspace: no Git ancestor, so the current directory IS the root. The
+# fixture asserts its own cleanliness, so an unsuitable TMPDIR fails loudly
+# instead of silently passing for the wrong reason.
+SBpl="$(mktmp)"; mkdir -p "$SBpl/ws"
+anc=0; _pd="$SBpl/ws"
+while [[ "$_pd" != "/" ]]; do
+  [[ -d "$_pd/.spec" || -e "$_pd/.git" ]] && anc=1
+  _pd="$(dirname "$_pd")"
+done
+assert_eq "host-support/2" "plain-workspace fixture: no Git/.spec ancestor (population floor)" "$anc" "0"
+plout="$( cd "$SBpl/ws" && bash "$INSTALL" --dry-run --local --platform none 2>&1 )"
+assert_contains "host-support/2" "a plain workspace with no Git ancestor targets the current directory" "$plout" "$SBpl/ws/.agents/skills"
+( cd "$SBpl/ws" && bash "$INSTALL" --platform none >/dev/null 2>&1 )
+[[ -e "$SBpl/ws/AGENTS.md" ]] \
+  && pass "host-support/2" "a real install in a plain workspace writes into the current directory" \
+  || fail "host-support/2" "a real install in a plain workspace writes into the current directory"
+rm -rf "$SBpl"
+
+# --- (4) the install manifest (ownership floor) -----------------------------
+SBm="$(mktmp)"
+PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBm" >/dev/null 2>&1
+MAN="$SBm/.vibe/install-manifest.json"
+[[ -f "$MAN" ]] && pass "host-support/2" "install writes an install manifest" || fail "host-support/2" "install writes an install manifest"
+if command -v jq >/dev/null 2>&1; then
+  jq -e . "$MAN" >/dev/null 2>&1 && pass "host-support/2" "the install manifest is valid JSON" || fail "host-support/2" "the install manifest is valid JSON"
+else
+  grep -qF '"actions": [' "$MAN" && pass "host-support/2" "the install manifest carries an actions array (no jq)" || fail "host-support/2" "the install manifest carries an actions array (no jq)"
+fi
+grep -qF 'install-manifest.json' "$SBm/.gitignore" 2>/dev/null \
+  && fail "host-support/2" "the install manifest must NOT be gitignored (a fresh clone must still uninstall)" \
+  || pass "host-support/2" "the install manifest is not gitignored (a fresh clone must still uninstall)"
+# FLOOR — asserted BEFORE any uninstall leg runs, and read with sed (not jq) so it
+# holds on a jq-less runner too: at least one managed action per selected host.
+man_n() { sed -n "/^ *{\"host\": \"$1\"/p" "$MAN" | wc -l | tr -d ' '; }
+for h in claude opencode codex droid; do
+  n="$(man_n "$h")"
+  [[ "$n" -ge 1 ]] && pass "host-support/2" "manifest floor: >=1 managed action for $h (got $n)" \
+    || fail "host-support/2" "manifest floor: >=1 managed action for $h (got $n)"
+done
+# …and the manifest reflects the SELECTION, not "everything that could exist".
+SBoc="$(mktmp)"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBoc" --platform opencode >/dev/null 2>&1
+MAN="$SBoc/.vibe/install-manifest.json"
+assert_eq "host-support/2" "the manifest records nothing for an unselected host" \
+  "$(man_n claude)$(man_n codex)$(man_n droid)" "000"
+assert_eq "host-support/2" "the manifest records the selected host" \
+  "$([[ "$(man_n opencode)" -ge 1 ]] && echo yes || echo no)" "yes"
+rm -rf "$SBoc"
+MAN="$SBm/.vibe/install-manifest.json"
+man_before="$(cat "$MAN")"
+PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBm" >/dev/null 2>&1
+assert_eq "host-support/2" "a re-install leaves the manifest byte-identical (preserved, not re-stamped)" \
+  "$(cat "$MAN")" "$man_before"
+
+# --- (5) dry-run, re-install, uninstall, capability report ------------------
+SBd="$(mktmp)"; before="$(tree_fp "$SBd")"
+dout="$(PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBd" --dry-run 2>&1; echo "rc=$?")"
+after="$(tree_fp "$SBd")"
+assert_contains "host-support/2" "dry-run exits 0" "$dout" "rc=0"
+for want in ".opencode/commands/flow.md" "plugins/vibe" ".agents/plugins/marketplace.json" \
+            "factory-plugin/commands/flow.md" ".factory-plugin/marketplace.json" ".vibe/install-manifest.json"; do
+  assert_contains "host-support/2" "dry-run reports the planned host path $want" "$dout" "$want"
+done
+assert_eq "host-support/2" "dry-run on a fresh target writes nothing (host surfaces included)" "$before" "$after"
+PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBd" >/dev/null 2>&1
+before="$(tree_fp "$SBd")"
+PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBd" --dry-run >/dev/null 2>&1
+after="$(tree_fp "$SBd")"
+assert_eq "host-support/2" "dry-run on an installed target is byte-identical" "$before" "$after"
+# …and composes with an explicit selection: the plan names exactly that host's
+# surfaces and nothing else.
+SBdc="$(mktmp)"
+dcout="$(PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBdc" --dry-run --platform codex 2>&1)"
+assert_contains "host-support/2" "dry-run composes with --platform (codex plan names its package file)" "$dcout" "plugins/vibe/plugin.json"
+assert_not_contains "host-support/2" "the codex dry-run plan excludes another host's surface" "$dcout" ".opencode/commands/flow.md"
+[[ ! -e "$SBdc/plugins" && ! -e "$SBdc/.opencode" ]] \
+  && pass "host-support/2" "the composed dry-run created nothing" \
+  || fail "host-support/2" "the composed dry-run created files"
+rm -rf "$SBdc"
+# --only spec is a PURE spec install: host entry points are flow-half carriers, so
+# none is deployed — which is also what stops a dangling skill link to a skill
+# that is not installed. Control: the same selection with both halves does deploy.
+SBos="$(mktmp)"
+osout="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBos" --only spec --platform codex 2>&1)"
+[[ ! -e "$SBos/plugins" ]] \
+  && pass "host-support/2" "--only spec installs no host entry point (no dangling skill link)" \
+  || fail "host-support/2" "--only spec installed a host entry point"
+assert_contains "host-support/2" "--only spec reports the skipped host surface" "$osout" "host surface 'codex' skipped"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBos" --platform codex >/dev/null 2>&1
+[[ -e "$SBos/plugins/vibe/plugin.json" ]] \
+  && pass "host-support/2" "control: the same selection with both halves deploys the host package" \
+  || fail "host-support/2" "control: the host package was not deployed with both halves"
+rm -rf "$SBos"
+# --adapters is orthogonal to host selection: those symlinks point at AGENTS.md,
+# a host-neutral artifact, so they must work under `none` too.
+SBad="$(mktmp)"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBad" --platform none --adapters claude >/dev/null 2>&1
+{ [[ -L "$SBad/CLAUDE.md" && "$(readlink "$SBad/CLAUDE.md")" == "AGENTS.md" && ! -e "$SBad/.claude" ]]; } \
+  && pass "host-support/2" "--adapters stays orthogonal to --platform (host-neutral AGENTS.md link)" \
+  || fail "host-support/2" "--adapters is not orthogonal to --platform"
+rm -rf "$SBad"
+# Re-install: byte-stable managed files, no duplicated registrations.
+before="$(tree_fp "$SBd")"
+PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBd" >/dev/null 2>&1
+after="$(tree_fp "$SBd")"
+assert_eq "host-support/2" "re-install is byte-stable across every managed host file" "$before" "$after"
+# The package skill links must RESOLVE in a real target — the whole point of the
+# rewrite: the source's ../../../spec target does not exist in a target, so a
+# verbatim copy would dangle.
+links=1
+for pair in "plugins/vibe/skills/spec:../../../.agents/skills/spec" \
+            "plugins/vibe/skills/vibe:../../../.agents/skills/vibe" \
+            "factory-plugin/skills/spec:../../.agents/skills/spec" \
+            "factory-plugin/skills/vibe:../../.agents/skills/vibe"; do
+  lp="${pair%%:*}"; want="${pair#*:}"
+  if [[ -L "$SBd/$lp" && "$(readlink "$SBd/$lp")" == "$want" && -f "$SBd/$lp/SKILL.md" ]]; then
+    : # rewritten AND resolves
+  else
+    links=0; echo "        $lp is not a link to $want resolving to SKILL.md"
+  fi
+done
+assert_eq "host-support/2" "every deployed host skill link is rewritten AND resolves in the target" "$links" "1"
+dupn=0
+for d in plugins/vibe/skills factory-plugin/skills; do
+  dupn=$((dupn + $(find "$SBd/$d" -type l | wc -l | tr -d ' ')))
+done
+assert_eq "host-support/2" "re-install does not duplicate the host skill registrations" "$dupn" "4"
+# Uninstall: user files in EVERY new shared dir, then a full removal. The
+# co-located files are what make "remove only what we created" discriminating on
+# BOTH removal paths (the manifest pass here, and the shipped-source fallback in
+# the legacy leg below).
+printf 'mine\n' > "$SBd/.opencode/commands/mine.md"
+mkdir -p "$SBd/plugins/other"; printf 'mine\n' > "$SBd/plugins/other/plugin.json"
+printf 'mine\n' > "$SBd/plugins/vibe/mine.txt"
+printf 'mine\n' > "$SBd/factory-plugin/mine.txt"
+printf 'mine\n' > "$SBd/.factory-plugin/mine.json"
+printf 'mine\n' > "$SBd/.agents/plugins/mine.json"
+printf 'mine\n' > "$SBd/.claude/commands/mine.md"
+PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBd" --uninstall --yes >/dev/null 2>&1
+gone=1
+for p in .opencode/commands/flow.md plugins/vibe/plugin.json .agents/plugins/marketplace.json \
+         factory-plugin/commands/flow.md factory-plugin/.factory-plugin/plugin.json \
+         .factory-plugin/marketplace.json .claude/commands/flow.md .claude/hooks/stop-gate.sh \
+         .claude/skills/spec .claude/skills/vibe .vibe/install-manifest.json; do
+  if [[ -e "$SBd/$p" || -L "$SBd/$p" ]]; then gone=0; echo "        survived uninstall: $p"; fi
+done
+assert_eq "host-support/2" "uninstall removes the recorded vibe artifacts of every host" "$gone" "1"
+kept=1
+for p in .opencode/commands/mine.md plugins/other/plugin.json plugins/vibe/mine.txt \
+         factory-plugin/mine.txt .factory-plugin/mine.json .agents/plugins/mine.json \
+         .claude/commands/mine.md; do
+  [[ -f "$SBd/$p" ]] || { kept=0; echo "        lost user file: $p"; }
+done
+assert_eq "host-support/2" "uninstall preserves user files in every new shared dir byte-for-byte" "$kept" "1"
+[[ ! -e "$SBd/plugins/vibe/skills" ]] \
+  && pass "host-support/2" "uninstall prunes a host package subdir it emptied" \
+  || fail "host-support/2" "uninstall left an emptied host package subdir behind"
+rm -rf "$SBd"
+# The manifest must be CONSULTED, not merely written. Discriminating fixture: a
+# copy of this repo installs, then the COPY loses the Codex marketplace, so the
+# shipped-source inverse can no longer name it — only a manifest-driven removal
+# can take it out of the target.
+FS3="$(mktmp)"
+tar -cf - --exclude=.git -C "$REPO_ROOT" . 2>/dev/null | tar -xf - -C "$FS3"
+SBf="$(mktmp)"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$FS3/install.sh" "$SBf" --platform codex >/dev/null 2>&1
+[[ -f "$SBf/.agents/plugins/marketplace.json" ]] \
+  && pass "host-support/2" "manifest-leg fixture: the artifact exists before uninstall (population floor)" \
+  || fail "host-support/2" "manifest-leg fixture: the artifact exists before uninstall (population floor)"
+rm -f "$FS3/.agents/plugins/marketplace.json"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$FS3/install.sh" "$SBf" --uninstall --yes >/dev/null 2>&1
+[[ ! -e "$SBf/.agents/plugins/marketplace.json" ]] \
+  && pass "host-support/2" "uninstall removes a manifest-recorded artifact the source no longer ships (manifest consulted)" \
+  || fail "host-support/2" "uninstall removes a manifest-recorded artifact the source no longer ships (manifest consulted)"
+rm -rf "$SBf" "$FS3"
+# MERGE, not replace: installing for ONE host must not erase the ownership records
+# of the hosts already installed here — their files are still on disk and would be
+# stranded at uninstall.
+SBmerge="$(mktmp)"
+PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBmerge" >/dev/null 2>&1
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBmerge" --platform codex >/dev/null 2>&1
+MAN="$SBmerge/.vibe/install-manifest.json"
+assert_eq "host-support/2" "a later one-host install preserves the other hosts' manifest records" \
+  "$([[ "$(man_n claude)" -ge 1 && "$(man_n opencode)" -ge 1 && "$(man_n droid)" -ge 1 ]] && echo yes || echo no)" "yes"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBmerge" --uninstall --yes >/dev/null 2>&1
+str=1
+for p in .claude/commands/flow.md .opencode/commands/flow.md factory-plugin/commands/flow.md \
+         .factory-plugin/marketplace.json; do
+  [[ -e "$SBmerge/$p" || -L "$SBmerge/$p" ]] && { str=0; echo "        stranded after uninstall: $p"; }
+done
+assert_eq "host-support/2" "uninstall removes the preserved hosts' artifacts too (no stranding)" "$str" "1"
+rm -rf "$SBmerge"
+# LEGACY fallback: a target with no usable manifest (installed before the manifest
+# existed) is still fully inverted, by the shipped-source inverse.
+SBl="$(mktmp)"
+PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBl" >/dev/null 2>&1
+rm -f "$SBl/.vibe/install-manifest.json"
+# …and co-located user files here too, so the FALLBACK path is held to the same
+# per-file inverse as the manifest path (a blanket rm -rf of the package dir must
+# fail this leg, not merely the manifest one).
+printf 'mine\n' > "$SBl/.opencode/commands/mine.md"
+printf 'mine\n' > "$SBl/factory-plugin/mine.txt"
+mkdir -p "$SBl/plugins/other"; printf 'mine\n' > "$SBl/plugins/other/plugin.json"
+lout="$(PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBl" --uninstall --yes 2>&1)"
+assert_contains "host-support/2" "a manifest-less target reports the shipped-source fallback" "$lout" "falling back to the shipped-source inverse"
+leg=1
+for p in .opencode/commands/flow.md plugins/vibe/plugin.json .agents/plugins/marketplace.json \
+         factory-plugin/commands/flow.md factory-plugin/.factory-plugin/plugin.json \
+         .factory-plugin/marketplace.json; do
+  [[ -e "$SBl/$p" || -L "$SBl/$p" ]] && { leg=0; echo "        legacy target kept: $p"; }
+done
+assert_eq "host-support/2" "a manifest-less (legacy) target is fully inverted by the shipped-source inverse" "$leg" "1"
+lkept=1
+for p in .opencode/commands/mine.md factory-plugin/mine.txt plugins/other/plugin.json; do
+  [[ -f "$SBl/$p" ]] || { lkept=0; echo "        legacy uninstall lost user file: $p"; }
+done
+assert_eq "host-support/2" "the shipped-source fallback is per-file too (user files survive)" "$lkept" "1"
+rm -rf "$SBl"
+# COLLISION: a user-owned entry at a packaged path is reported with a recovery
+# path, left byte-identical, NOT recorded as vibe-owned, and therefore survives
+# the uninstall (ownership is what the manifest proves).
+SBcol="$(mktmp)"
+mkdir -p "$SBcol/.agents/plugins"
+printf 'USER marketplace, not vibe\n' > "$SBcol/.agents/plugins/marketplace.json"
+colout="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBcol" --platform codex 2>&1)"
+grep -qF 'USER marketplace, not vibe' "$SBcol/.agents/plugins/marketplace.json" \
+  && pass "host-support/2" "a colliding user file is preserved, not silently replaced" \
+  || fail "host-support/2" "a colliding user file is preserved, not silently replaced"
+assert_contains "host-support/2" "the collision is reported with a recovery path" "$colout" "move it aside and re-run"
+[[ -e "$SBcol/plugins/vibe/plugin.json" ]] \
+  && pass "host-support/2" "a collision does not abort the rest of the host package" \
+  || fail "host-support/2" "a collision does not abort the rest of the host package"
+MAN="$SBcol/.vibe/install-manifest.json"
+assert_eq "host-support/2" "a colliding user file is NOT recorded as vibe-owned" \
+  "$(grep -c 'marketplace' "$MAN" 2>/dev/null || true)" "0"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBcol" --uninstall --yes >/dev/null 2>&1
+grep -qF 'USER marketplace, not vibe' "$SBcol/.agents/plugins/marketplace.json" \
+  && pass "host-support/2" "the collided user file survives uninstall (ownership is manifest-proven)" \
+  || fail "host-support/2" "the collided user file survives uninstall (ownership is manifest-proven)"
+rm -rf "$SBcol"
+# A RETARGETED host skill link is the user's: the manifest records the target we
+# created, not merely the path, so uninstall must leave their link alone.
+SBrt="$(mktmp)"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBrt" --platform codex >/dev/null 2>&1
+rm -f "$SBrt/plugins/vibe/skills/spec"
+ln -s ../../../my-own-spec "$SBrt/plugins/vibe/skills/spec"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBrt" --uninstall --yes >/dev/null 2>&1
+{ [[ -L "$SBrt/plugins/vibe/skills/spec" && "$(readlink "$SBrt/plugins/vibe/skills/spec")" == "../../../my-own-spec" ]]; } \
+  && pass "host-support/2" "uninstall leaves a user-retargeted host skill link alone (target, not path)" \
+  || fail "host-support/2" "uninstall removed a user-retargeted host skill link"
+rm -rf "$SBrt"
+# A codex-only target: the removal pass must prune the directories it emptied even
+# though the other hosts' package dirs never existed (the prune names five roots,
+# not all of which exist on every target).
+SBone="$(mktmp)"
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBone" --platform codex >/dev/null 2>&1
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBone" --uninstall --yes >/dev/null 2>&1
+{ [[ ! -e "$SBone/plugins" && ! -e "$SBone/.agents/plugins" ]]; } \
+  && pass "host-support/2" "uninstall prunes every emptied host dir, even roots absent on that target" \
+  || fail "host-support/2" "uninstall left an emptied host dir behind on a codex-only target"
+rm -rf "$SBone"
+# --uninstall is NOT narrowed by --platform: removing vibe removes it from every
+# host it was installed into, which is what a user asking for removal means.
+SBup="$(mktmp)"
+PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBup" >/dev/null 2>&1
+PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBup" --uninstall --yes --platform codex >/dev/null 2>&1
+up=1
+for p in .claude/commands/flow.md .opencode/commands/flow.md factory-plugin/commands/flow.md; do
+  [[ -e "$SBup/$p" || -L "$SBup/$p" ]] && { up=0; echo "        --platform narrowed the uninstall: $p"; }
+done
+assert_eq "host-support/2" "--uninstall is not narrowed by --platform (every host is inverted)" "$up" "1"
+rm -rf "$SBup"
+# Capability report (R5). codex-only is the sharpest case: nothing may be said
+# about hooks, and the entry mechanism must come from the shipped surface matrix.
+SBs="$(mktmp)"
+sout="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBs" --platform codex 2>&1)"
+assert_contains "host-support/2" "the capability report names the configured host" "$sout" "codex"
+inv="$(jq -r '.hosts[] | select(.id == "codex") | .entry.invocation' "$SURFACES" 2>/dev/null)"
+[[ -n "$inv" ]] && pass "host-support/2" "population floor: the matrix declares the codex invocation" \
+  || fail "host-support/2" "population floor: the matrix declares the codex invocation"
+assert_contains "host-support/2" "the report's codex entry mechanism matches the shipped surface matrix" "$sout" "$inv"
+assert_not_contains "host-support/2" "a codex-only report claims no hook support" "$sout" "hook"
+assert_not_contains "host-support/2" "a codex-only report claims no native agent/droid registration" "$sout" "subagent"
+rm -rf "$SBs"
+# The jq-less report must agree with the matrix too: the fallback map is not a
+# second source of truth that may drift from the data.
+NOJQ3="$(mkshim jq)"
+SBx="$(mktmp)"
+xout="$(PATH="$NOJQ3" "$NOJQ3/bash" "$INSTALL" "$SBx" --platform codex 2>&1)"
+assert_contains "host-support/2" "the jq-less report matches the matrix's declared invocation" "$xout" "$inv"
+rm -rf "$SBx" "$NOJQ3"
+# Claude hooks are reported only when their wiring actually installed.
+SBc2="$(mktmp)"
+cout="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBc2" --platform claude 2>&1)"
+assert_contains "host-support/2" "a wired Claude install reports the hooks as wired" "$cout" "hooks wired via .claude/settings.json"
+rm -rf "$SBc2"
+NOJQ4="$(mkshim jq)"
+SBc3="$(mktmp)"
+cout3="$(PATH="$NOJQ4" "$NOJQ4/bash" "$INSTALL" "$SBc3" --platform claude 2>&1)"
+assert_contains "host-support/2" "an unwired Claude install reports the hooks as NOT wired" "$cout3" "hooks NOT wired"
+assert_not_contains "host-support/2" "an unwired Claude install never claims the hooks are live" "$cout3" "hooks are wired automatically"
+rm -rf "$SBc3" "$NOJQ4"
+# Every host line credits only that host.
+SBmix="$(mktmp)"
+mout="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBmix" --platform claude,opencode 2>&1)"
+oline="$(printf '%s\n' "$mout" | grep -m1 '^install:   opencode' || true)"
+assert_contains "host-support/2" "the opencode line names its /flow entry point" "$oline" "/flow (.opencode/commands/flow.md)"
+assert_not_contains "host-support/2" "the opencode line claims no hooks (R5)" "$oline" "hook"
+assert_not_contains "host-support/2" "the opencode line claims no native agent registration" "$oline" "subagent"
+rm -rf "$SBmix"
+rm -rf "$FARM_NONE" "$FARM_ALL" "$FARM_CO"
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

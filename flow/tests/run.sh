@@ -835,7 +835,7 @@ echo ""
 echo "=== install-tooling/4 — doctor adapter.activation (settings.json wiring) ==="
 # A full install wires the three hooks into settings.json — doctor reports ok.
 SBA="$(mktemp -d)"
-bash "$SRC_ROOT/install.sh" "$SBA" >/dev/null 2>&1
+bash "$SRC_ROOT/install.sh" "$SBA" --platform claude >/dev/null 2>&1
 out="$(bash "$DOCTOR" "$SBA" 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/4" "doctor reports adapter.activation ok when settings.json wires the hooks" "$out" "ok   adapter.activation"
 assert_contains "install-tooling/4" "doctor exits 0 on a wired install" "$out" "rc=0"
@@ -950,7 +950,7 @@ echo "=== orders.sh on a fresh non-git install (stranger-eval regression) ==="
 # resolve the linked skill's block by self-locating the skills dir from its own
 # path — not degrade to 'state=unknown' for want of a repo-root marker.
 SBI="$(mktemp -d)"
-bash "$SRC_ROOT/install.sh" "$SBI" >/dev/null 2>&1
+bash "$SRC_ROOT/install.sh" "$SBI" --platform none >/dev/null 2>&1
 [[ ! -e "$SBI/.git" && ! -e "$SBI/.spec" ]] \
   && pass "orders-fresh" "fresh install has no .git/.spec marker (precondition)" \
   || fail "orders-fresh" "precondition: fresh install unexpectedly has a marker"
