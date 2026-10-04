@@ -30,6 +30,7 @@ Single-purpose repo: build the self-hosting vibe workflow harness. This plan is 
 | js-core | `engine/` + `vibe` CLI dispatch; one cursor reader, root resolver, marker grammar | `engine/tests/` + existing suites |
 | content-layer | `content/blocks/**`, typed placeholders, `vibe.json` override layer, `vibe render` | `engine/tests/` |
 | inject-triggers | Level/edge/event trigger classes, `content/policy.json`, `Stop` predicate cut | `engine/tests/` + `flow/tests/adapters/run.sh` |
+| host-support | Four-host native skill/command packages (`flow/reference/host-surfaces.json` matrix) + `install.sh` `--platform` selection, CLI detection, ownership manifest, surgical uninstall | `flow/tests/adapters/run.sh` |
 
 ---
 
@@ -110,6 +111,8 @@ Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8
 | F2, F4, F9, F10, F11 | held — no issue yet | F20 | #37 |
 
 **Superseded rows.** Rows 15–20 of the pre-v0.4 sequence never started; F1–F24 above absorbs them: machine-teeth → F7, plugin-runtime → F21/F22, spec-js → F16/F17, delegation-redirect → F9, spec-delta → F18, doc-truth → F24.
+
+**Delivered ahead of the arc.** `host-support` (2026-10-02, on the v0.3 bash tree): the four-host project skill/command packages — Claude Code, OpenCode, Codex (skill invocation only), Factory Droid — plus the installer's `--platform claude,opencode,codex,droid,none` selection, CLI detection default, per-target ownership manifest, and surgical uninstall. That is a slice of F21/F22 scope with different carriers; both rows above keep their Rust-era acceptance and stay open, and their issue docs carry the landed-ahead notes.
 
 **Active focus.** F1 (spec-path-hotfix) ships this week on the current bash tree — it is not part of the Rust arc. F2 (contracts) and F3 (oracles-parity) run in parallel; F4 (workspace-core) starts once F2 is done. Every other feature waits on F4, and F12 additionally waits on F8. The v0.5 arc (C1–C6 below) starts only when F22 is DONE; its tracking issue and children mirror v0.4's filing.
 

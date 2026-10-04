@@ -31,6 +31,7 @@ F8, F14, F19
 
 ## Notes
 - Degrade gracefully — a missing binary must never crash a hook; this is the same discovery-tier requirement as F6, now proven for all three tools' shims, not just flow's.
+- Landed ahead by `host-support` (2026-10-02, v0.3 tree): four-host project skill/command packages + marketplaces (`.opencode/`, `plugins/vibe/` + `.agents/plugins/marketplace.json`, `factory-plugin/` + `.factory-plugin/marketplace.json`, matrix `flow/reference/host-surfaces.json`), pinned by `flow/tests/adapters/run.sh`. This issue stays open for the Rust-era per-tool plugin dirs, `bin/hook.sh`, and doctor peer checks.
 
 Phase: 4 · Tool: all · Source: `.spec/plan.md` row F21
 
