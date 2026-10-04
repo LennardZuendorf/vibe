@@ -106,6 +106,12 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** js-core, install, comments, false-invariants, packaging
 **Date:** 2026-08-13
 
+### Refresh the checkout map after a branch change
+**Pattern:** After switching branches, I queried paths remembered from the previous tree; several had moved or no longer existed, so `rg` emitted avoidable path errors. The first branch switch also failed because this environment mounted `.git` read-only; the user-authorized retry needed an elevated Git write.
+**Rule:** After a branch change or fast-forward, confirm the active ref and enumerate the current paths before running branch-specific commands. If a Git operation is blocked by the sandbox, use an authorized Git-write context instead of retrying the same command unchanged.
+**Tags:** workflow, branches, sandbox, repo-navigation
+**Date:** 2026-10-01
+
 <!-- Format for each lesson:
 ### [Short description]
 **Pattern:** What went wrong and why
