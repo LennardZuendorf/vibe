@@ -1501,7 +1501,7 @@ EOF
     # no surface: the previous line named /flow, .claude/skills, and a hooks state
     # for steps that never ran.
     if [[ "$WANT_FLOW" -eq 0 ]]; then
-      echo "install:   $_rlabel— not deployed (--only spec installs no host entry point)"
+      echo "install:   ${_rlabel}— not deployed (--only spec installs no host entry point)"
       continue
     fi
     _rinv="$HOST_INV"
@@ -1522,7 +1522,7 @@ EOF
     if [[ -n "$_rentry" ]] && ! entry_recorded "$_rh" "$_rentry"; then
       # Name no invocation: this host's entry surface is NOT there (the colliding
       # path is the user's), so claiming /flow here would be the R5 drift again.
-      echo "install:   $_rlabel— NOT installed (collision — see the warning above; your file was left untouched)"
+      echo "install:   ${_rlabel}— NOT installed (collision — see the warning above; your file was left untouched)"
       continue
     fi
     if [[ "$_rh" == "claude" ]]; then
