@@ -58,7 +58,7 @@ At a project level, vibe must:
 6. **flow stands alone.** A standalone `AGENTS.md` block makes the agent drive the flow without instruct; instruct only strengthens adherence.
 7. **The writer is the gate.** Legal edges and human gates are enforced by the cursor writer, not by prose.
 8. **Injection is layered and budgeted.** Four tiers; trigger classes level/edge/event; line budgets linted; no live state at session start.
-9. **Enforce in code, explain in prose, never both.** Data over prose: anything the machine knows is interpolated, never restated in English.
+9. **Enforce in code, explain in prose.** Prose may route to a coded rule, never restate it. Data over prose: anything the machine knows is interpolated, never restated in English.
 10. **Degrade gracefully.** Missing peers, binaries, networks, or trees warn; sessions never break.
 11. **One installer, safe lifecycle.** Subsets, platforms, dry-run, and an uninstall that reverses only recorded actions.
 12. **spec is OpenSpec-grammar compatible and layout-native.** Interchange works both ways; vibe's own document model stays.
@@ -77,7 +77,7 @@ At a project level, vibe must:
 2. **Specs are memory, flow is runtime.** The spec tree records durable thinking; the flow cursor records the current agent state.
 3. **Agent skills are the command surface.** The recurring workflow is expressed as skills agents can invoke, not as loose markdown snippets.
 4. **Adapters stay thin.** Platform-specific files translate runtime events into tool invocations; they own no state of their own.
-5. **Canonical paths beat skill defaults.** Any delegated skill must write into the project's spec layout, not its own default doc folder.
+5. **Superpowers first, vibe as memory.** Feature design and plans use superpowers' own artifacts; vibe promotes their durable facts into the layered spec, then deletes them (D45, D46).
 6. **Small shims, shared machinery.** State transitions and deterministic checks belong in the core crate; each tool's surface stays concise.
 7. **Context is the scarce resource.** Every always-on line competes with the work. Prefer a hook (free) over prose; prefer edge-triggered over per-turn; prefer an on-demand skill over a preloaded block.
 8. **Say what to do, and why.** Injected text is positive and motivated — the desired action plus its reason — not a list of prohibitions. Prohibitions that matter belong in the guard, where they are enforced rather than hoped for.
@@ -202,7 +202,7 @@ Output density is governed by one machine-level `style` note carried in `flow`'s
 5. **Skill count (v0.4).** Supersedes #2 — three skills, one per tool (`spec`, `flow`, `instruct`), each shipped by its own plugin.
 6. **Engine language.** Rust, static binaries, zero runtime deps — supersedes the Node engine.
 7. **Spec root.** Default `docs/spec/`, `.spec/` legacy still resolves; configurable via `.vibe/spec.json` or `$VIBE_SPEC_ROOT`.
-8. **OpenSpec.** Adopt the Requirement/Scenario grammar for interchange; keep vibe's own root and layout — grammar, not layout.
+8. **OpenSpec.** Adopt the Requirement/Scenario grammar for interchange; the strategic layout is vibe's layered vault (D44), the feature layer is superpowers-first (D45).
 9. **Umbrella (v0.5).** The `vibe` CLI becomes the front door that ships all three tools plus worktree and global-spec capabilities. D18's core survives — the three tools stay independent and alone-installable — but "no umbrella ever" retires at v0.5.
 
 ---
