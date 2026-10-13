@@ -26,8 +26,8 @@ change.
    > - announce: "delegating to `superpowers:brainstorming` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
    > - inject: spec feature.md steps 1–4 as the dialogue format (RFC-2119 WHAT, GWT scenarios, Scope-table boundaries)
    > - inject: batch clarifying questions into ONE organized list per round (feature-dev Phase 3 pattern); take a SINGLE design approval at the end — no one-question-per-message, no per-section approvals; the flow's only gates are plan and ship
-   > - redirect: design doc → `.spec/features/<name>/{product,tech,design}.md` (design.md only at full rigor)
-   > - skip: its terminal write under `docs/superpowers/specs/`, its self-commit, its writing-plans handoff
+   > - output: superpowers' own design doc at `docs/superpowers/specs/YYYY-MM-DD-<name>-design.md` (topic = `<name>`); keep its self-commit; stop at its writing-plans handoff — `feature.plan` runs it
+   > - fallback → `.spec/features/<name>/` only when: superpowers absent, user says *self*, `.vibe/spec.json` `"featureLayer": "vibe"`, or OpenSpec interchange needed — write `{product,tech,design}.md` there (design.md only at full rigor)
 
    > **Delegate — code-explorer / code-architect**
    > - model: code-explorer → sonnet (mechanical/trace); code-architect → opus (architecture) — pin explicitly, never inherit the default
@@ -46,8 +46,9 @@ change.
    > **Delegate — superpowers:writing-plans**
    > - announce: "delegating to `superpowers:writing-plans` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
    > - inject: the hybrid plan template (`spec/reference/templates/feature-plan.md`); stable-ID rules (`<name>/n`, never renumber on reorder/split, same-feature deps only); the feature's `product.md` requirements
-   > - redirect: plan → `.spec/features/<name>/plan.md` (writing-plans' documented optional storage-location seam)
-   > - skip: its own `docs/superpowers/plans/` path; its "offer execution" handoff — the plan gate owns advancing to impl
+   > - output: superpowers' own plan at `docs/superpowers/plans/YYYY-MM-DD-<name>.md`; its `**Spec:**` line points at the design doc
+   > - its execution-choice question IS the plan gate: record the answer, then `/flow feature.impl <name> confirm`
+   > - fallback → `.spec/features/<name>/plan.md` with stable `<name>/n` unit IDs, same triggers as design
 
    `code-architect` may sketch the unit decomposition (text-only, same redirect).
    Write `.spec/features/<name>/plan.md` with **stable unit IDs**; IDs never change
@@ -87,7 +88,7 @@ change.
    > **Delegate — superpowers:subagent-driven-development**
    > - model: pin each impl subagent per task — mechanical units → sonnet, architecture-bearing units → opus (SDD mandates explicit choice; never inherit)
    > - announce: "delegating to `superpowers:subagent-driven-development` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
-   > - inject: the hybrid `.spec/features/<name>/plan.md`; work on the feature branch from the plan gate (worktree only if offered+accepted); runtime artifacts stay under `.superpowers/**` (gitignored runtime, not memory)
+   > - inject: the superpowers plan `docs/superpowers/plans/YYYY-MM-DD-<name>.md` (fallback: `.spec/features/<name>/plan.md`); work on the feature branch from the plan gate (worktree only if offered+accepted); runtime artifacts stay under `.superpowers/**` (gitignored runtime, not memory)
    > - redirect: write `src/**` and `tests/**` only; cite plan unit IDs (`<name>/n`) in commits. COPY these redirect/skip lines into every subagent (Task) prompt — subagents get no per-turn orders
    > - skip: its `finishing-a-development-branch` exit — stop after the final review; the flow advances to `feature.verify`, which audits regardless
 

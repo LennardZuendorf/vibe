@@ -151,7 +151,7 @@ durable memory; sessions are ephemeral. Read the specs before you write code.
 1. Read `.spec/lessons.md` and `.spec/plan.md`. (The spec half owns `.spec/`; a
    flow-only install has no tree — the flow still runs, the specs are just absent.)
 2. Identify the feature you are working on and load its specs:
-   `.spec/features/<name>/{product,tech,plan}.md`.
+   `docs/superpowers/specs/*-<name>-design.md` + `docs/superpowers/plans/*-<name>.md`, or the fallback `.spec/features/<name>/{product,tech,plan}.md`.
 3. If `.agents/skills/vibe/state.json` exists and you are continuing a flow session,
    read `{flow, phase, feature}` and resume the linked `vibe` skill. A missing cursor
    means `idle` — proceed with the specs; a missing cursor is not an error.

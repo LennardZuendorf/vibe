@@ -458,6 +458,14 @@ assert_contains "flow-legibility/3" "code-architect pinned to opus (feature.md)"
 assert_contains "flow-legibility/3" "code-reviewer pinned to opus (verify.md)" "$verify_body" "code-reviewer → opus"
 assert_contains "flow-legibility/3" "SKILL.md carries the subagent model-tier policy" "$skill_body" "mechanical/exploration → sonnet"
 
+feat_body="$(cat "$FLOW/feature.md")"
+assert_not_contains "spec-v04/F25" "feature.md no longer skips the superpowers spec write" "$feat_body" "skip: its terminal write under \`docs/superpowers/specs/\`"
+assert_not_contains "spec-v04/F25" "feature.md no longer skips the superpowers plan path" "$feat_body" "skip: its own \`docs/superpowers/plans/\` path"
+assert_contains "spec-v04/F25" "feature.md names the fallback triggers" "$feat_body" "fallback → \`.spec/features/<name>/\` only when"
+machine="$(cat "$FLOW/state-machine.json")"
+assert_contains "spec-v04/F25" "feature.design writes the superpowers spec" "$machine" "docs/superpowers/specs/*-<feature>-design.md"
+assert_contains "spec-v04/F25" "feature.plan writes the superpowers plan" "$machine" "docs/superpowers/plans/*-<feature>.md"
+
 echo ""
 echo "=== flow-legibility/4 — doctrine block + resolver ==="
 # Hermeticity precondition for everything below. doctrine.sh (and detect-context.sh)

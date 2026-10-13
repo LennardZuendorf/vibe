@@ -111,15 +111,15 @@ skill=vibe · delegate spec · WRITE root .spec/{product,tech,design,plan}.md ·
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.design -->
-skill=vibe · spec feature.md flow steps 1–4 (locate→interview WHAT→rigor gate→sketch HOW) · READ lessons.md + root product/tech · WRITE .spec/features/<feature>/{product,tech,design?,research?}.md ONLY · no source · done → set-state.sh feature.plan
+skill=vibe · delegate superpowers:brainstorming (topic=<feature>) · READ lessons.md + root product/tech · WRITE docs/superpowers/specs/*-<feature>-design.md (fallback: .spec/features/<feature>/{product,tech,design?,research?}.md) · no source · done → set-state.sh feature.plan
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.plan -->
-skill=vibe · spec feature.md step 5 (plan units) · WRITE .spec/features/<feature>/plan.md · STABLE unit IDs (<feature>/n) cite R-IDs · verification per unit · no source · HUMAN GATE before impl · gate: plan-approval+mode · on approval → /flow feature.impl confirm
+skill=vibe · delegate superpowers:writing-plans · WRITE docs/superpowers/plans/*-<feature>.md (fallback: .spec/features/<feature>/plan.md with STABLE unit IDs <feature>/n) · verification per task · no source · HUMAN GATE before impl · gate: plan-approval+mode · on approval → /flow feature.impl confirm
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.impl -->
-skill=vibe · delegate executing-plans (interactive, default) | subagent-driven-development (handover) + TDD + receiving-code-review on verify-routed re-entry · WRITE src/**, tests/** · do NOT edit .spec/** · cite plan unit IDs (<feature>/n) in tests/commits · done → set-state.sh feature.verify
+skill=vibe · delegate executing-plans (interactive, default) | subagent-driven-development (handover) + TDD + receiving-code-review on verify-routed re-entry · WRITE src/**, tests/** · do NOT edit .spec/** or docs/superpowers/specs/** · cite plan task numbers (fallback: unit IDs <feature>/n) in tests/commits · done → set-state.sh feature.verify
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.verify -->
@@ -127,7 +127,7 @@ skill=vibe · delegate verification-before-completion + requesting-code-review +
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.compound -->
-skill=vibe · WRITE tagged .spec/lessons.md, promote cross-cutting decisions to root specs, archive .spec/features/<feature> -> .spec/archive/<feature> · regen-active-rules.sh refreshes digest · prompt to delete archive after validation · delegate finishing-a-development-branch LAST (it merges) · done → set-state.sh idle
+skill=vibe · WRITE tagged .spec/lessons.md, promote durable facts from docs/superpowers/{specs,plans}/*-<feature>* into root specs, then git rm them, promote cross-cutting decisions to root specs, archive .spec/features/<feature> -> .spec/archive/<feature> · regen-active-rules.sh · offer archive delete · delegate finishing-a-development-branch LAST (it merges) · done → set-state.sh idle
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.triage -->

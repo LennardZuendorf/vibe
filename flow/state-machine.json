@@ -62,7 +62,7 @@
       "skill": "vibe",
       "delegates": ["superpowers:brainstorming", "code-explorer", "code-architect"],
       "reads": [".spec/lessons.md", ".spec/product.md", ".spec/tech.md"],
-      "writes": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/design.md", ".spec/features/<feature>/research.md"],
+      "writes": ["docs/superpowers/specs/*-<feature>-design.md", ".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/design.md", ".spec/features/<feature>/research.md"],
       "inject": null,
       "next": ["feature.plan", "idle"],
       "exit": "feature product.md + tech.md written; design.md when full rigor; approach chosen"
@@ -71,10 +71,10 @@
       "skill": "vibe",
       "delegates": ["superpowers:writing-plans", "code-architect"],
       "reads": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md"],
-      "writes": [".spec/features/<feature>/plan.md"],
+      "writes": ["docs/superpowers/plans/*-<feature>.md", ".spec/features/<feature>/plan.md"],
       "inject": null,
       "next": ["feature.impl", "feature.design", "idle"],
-      "exit": "plan.md has stable unit IDs; human approved moving to impl"
+      "exit": "superpowers plan (or fallback plan.md with stable unit IDs) written; human approved moving to impl"
     },
     "feature.impl": {
       "skill": "vibe",

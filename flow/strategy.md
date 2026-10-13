@@ -18,8 +18,8 @@ States: `strategy.brainstorm → strategy.spec → idle`, with an iteration back
    > **Delegate — superpowers:brainstorming**
    > - announce: "delegating to `superpowers:brainstorming` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
    > - inject: this state's scope — its DIALOGUE phases only (direction-shaping questions)
-   > - redirect: nothing written here; the direction artifact lands in the NEXT state (`strategy.spec` root docs)
-   > - skip: its terminal design-doc write (`docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`), its self-commit, its writing-plans handoff
+   > - output: nothing written here; the direction lands in the NEXT state (`strategy.spec`) as root spec edits
+   > - skip: its terminal design-doc write — strategy direction is recorded in the spec, not as a superpowers feature artifact
 
    Scratch only — no spec writes yet. When direction is clear, advance to
    `strategy.spec` and continue.
