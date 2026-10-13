@@ -1,8 +1,8 @@
 ---
-title: "F3 [flow] oracles-parity: freeze JS/bash oracles, build differential parity harness"
+title: "F3 [all] oracles-parity: freeze JS/bash oracles, build differential parity harness"
 id: F3
 issue: 24
-tool: flow
+tool: all
 phase: 0
 milestone: "v0.4 Phase 0 — foundations"
 depends_on: []
@@ -33,7 +33,7 @@ Freeze today's implementation as permanent oracles before any Rust line is writt
 - A check that examines nothing must fail loudly — corpus floors must be asserted, not just "no diffs found."
 - Bugs found in the JS oracle during parity become pinned `expected-divergence` cases fixed only in Rust, never by editing the oracle.
 
-Phase: 0 · Tool: flow · Source: `.spec/plan.md` row F3
+Phase: 0 · Tool: all · Source: `.spec/plan.md` row F3
 
 ## Amended 2026-10-13
 - Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.

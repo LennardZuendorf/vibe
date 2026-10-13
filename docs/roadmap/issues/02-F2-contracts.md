@@ -1,7 +1,7 @@
 ---
-title: "F2 [all] contracts: versioned schemas + goldens for payload, markers, spec JSON"
+title: "F2 [spec] contracts: Spec JSON v1 schema + goldens, exit-code contract"
 id: F2
-tool: all
+tool: spec
 phase: 0
 milestone: "v0.4 Phase 0 — foundations"
 depends_on: []
@@ -16,8 +16,8 @@ parent: epic
 **Does not own:** any tool's implementation of the contracts (each tool's own crate reads/writes them); readers' unknown-field tolerance is each tool's responsibility, contracts only pin the shape.
 
 ## Acceptance (evidence, not intent)
-- [ ] `contracts/run.sh` runs green with zero tool crates implemented yet (schemas + goldens validate standalone)
-- [ ] CI job wired and green
+- [ ] `contracts/run.sh` runs green with zero tool crates implemented yet (Spec JSON v1 schema + goldens for `root`, `lessons-for`, `plan`, `feature` validate standalone)
+- [ ] `contracts/run.sh` wired into CI and green
 - [ ] each schema documents additive-only-within-a-major and "readers ignore unknown fields"
 - [ ] `bash tests/run.sh` green
 
@@ -32,7 +32,7 @@ parent: epic
 ## Notes
 - A guard is only as strong as the capability it bans, not the spelling it matches — schemas must state the invariant (e.g. "additive within a major, unknown fields ignored") structurally, not just as prose committed once.
 
-Phase: 0 · Tool: all · Source: `.spec/plan.md` row F2
+Phase: 0 · Tool: spec · Source: `.spec/plan.md` row F2
 
 ## Amended 2026-10-13
 - Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.

@@ -1,5 +1,5 @@
 ---
-title: "F4 [all] workspace-core: Cargo workspace + vibe-core (root, atomic write, markers, config)"
+title: "F4 [all] workspace-core: Cargo workspace with vibe-core, vibe-spec, vibe-parity only"
 id: F4
 tool: all
 phase: 0
@@ -16,8 +16,8 @@ Cargo workspace with `vibe-core`, `vibe-spec`, `vibe-parity` only (flow/instruct
 **Does not own:** any tool-specific logic (state machine, spec validators, instruct channels) — core holds no state names, spec paths, or channel names.
 
 ## Acceptance (evidence, not intent)
-- [ ] green build/test matrix on 3 OS × {stable, MSRV 1.88}
-- [ ] `cargo metadata` graph test asserts no tool crate depends on another tool crate
+- [ ] green matrix (3 OS × stable + MSRV 1.88)
+- [ ] `cargo metadata` graph assertion: the workspace holds only `vibe-core`, `vibe-spec`, `vibe-parity`, and no tool crate depends on another tool crate
 - [ ] `cargo-deny` passes with the allowlist enforced (no toml/regex/tokio/tempfile)
 - [ ] `bash tests/run.sh` green (once workspace exists, `cargo test --workspace` too)
 
