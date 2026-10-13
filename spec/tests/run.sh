@@ -1565,6 +1565,19 @@ test_f1_git_boundary() {
 }
 test_f1_git_boundary
 
+# ── SF17/F25: description is trigger-first (superpowers style) and within budget ──
+test_sf17_description_budget() {
+  local desc chars
+  desc="$(awk '/^description:/{f=1; sub(/^description:[[:space:]]*\|?[[:space:]]*/,""); if(length) print; next} f && /^[a-z_-]+:/{exit} f{sub(/^[[:space:]]+/,""); print}' "$SPEC_SKILL/SKILL.md" | tr '\n' ' ')"
+  chars="${#desc}"
+  if [[ $chars -gt 20 && $chars -le 1024 ]] && grep -qE '^(You MUST use this|Use when)' <<<"$desc" && ! grep -qF 'Maintains' <<<"$desc"; then
+    pass SF17 "description is trigger-first and within budget ($chars chars)"
+  else
+    fail SF17 "description is trigger-first and within budget ($chars chars)"
+  fi
+}
+test_sf17_description_budget
+
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]
