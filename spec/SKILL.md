@@ -105,13 +105,10 @@ Do not write code, plans, or design docs until this skill has routed the
 work. Routing is not optional. A reply to the user is not routing.
 </HARD-GATE>
 
-The spec is this project's memory: what it does, how it is built, what was
-decided, what went wrong. Sessions end; the spec stays. Bypassed work is lost.
-
 ## The Rule
 
 1. Invoke this skill before you act on any change to behaviour, structure, or docs.
-2. Read `.spec/lessons.md` and the root doc of the area you touch.
+2. Read `.spec/lessons.md` and the root doc of the area you touch. No `.spec/` yet → run `/spec setup` first.
 3. Route the work by the table below. Announce the route in one line.
 4. Write only where the route says. Nowhere else.
 5. Finish: bump `updated:` on every spec you edited, then run `scripts/validate.sh`.
@@ -120,15 +117,20 @@ decided, what went wrong. Sessions end; the spec stays. Bypassed work is lost.
 
 | Work | Do this | Writes |
 |---|---|---|
-| Strategy: vision, areas, tech directives, decisions | Load [strategy.md](strategy.md). Edit the root spec yourself (dialogue via `superpowers:brainstorming` allowed) | `.spec/` root only |
+| Strategy: product direction, architecture, decisions, root `plan.md` sequence, `design.md`, branch docs | Load [strategy.md](strategy.md). Edit the root spec yourself (dialogue via `superpowers:brainstorming` allowed) | `.spec/` root only |
 | Feature, new or structural | Invoke `superpowers:brainstorming`, then `superpowers:writing-plans`. Topic = feature name. | `docs/superpowers/specs/`, `docs/superpowers/plans/` |
-| Feature, bounded | Invoke `superpowers:brainstorming` (bounded path) | nothing |
+| Feature, bounded | Invoke `superpowers:brainstorming` (bounded path) | code; root-doc lines the change makes false |
+| Bug or quick fix | Invoke `superpowers:systematic-debugging`; fix in place | code; root-doc lines the fix makes false |
+| Implementing an approved plan | Follow the plan task by task. The design doc is frozen. | code and tests |
+| Question or investigation | Answer from the spec and the code | nothing |
 | Feature wrap-up (compound) | Promote durable facts into root specs + `lessons.md`, then delete the feature's artifacts | root `.spec/`, `lessons.md` |
 | Fallback | Load [feature.md](feature.md) and run it | `.spec/features/<name>/` |
 
 Fallback only when: superpowers is not installed, the user says *self*,
-`.vibe/spec.json` sets `"featureLayer": "vibe"`, `.spec/.config.yaml` sets
-`suggest-superpowers: false`, or OpenSpec interchange is required.
+`.vibe/spec.json` sets `"featureLayer": "vibe"`, or OpenSpec interchange is
+required. No other trigger exists.
+
+One named buildable unit → feature. Spans every feature → strategy. Two rows fit → the heavier one.
 
 A wrapped-up feature (DONE in root `plan.md`) has no feature folder. Route to
 its live surface (code, tests, root docs). Never restore the folder.
@@ -140,7 +142,7 @@ its live surface (code, tests, root docs). Never restore the folder.
 | `strategy` | Load [strategy.md](strategy.md) |
 | `feature [<name>]` | Route as a feature (table above); fallback loads [feature.md](feature.md) + `.spec/features/<name>/` |
 | `interview [<name>]` | Fallback only: run the spec-interviewer role, steps 1–2 |
-| `promote <name>` | Run `scripts/promote.sh <name>` through the spec-promoter subagent |
+| `promote <name>` | Run `scripts/promote.sh <name>` through the spec-promoter subagent (fallback folders) |
 | `audit` | Run `scripts/validate.sh` |
 | `diff <name>` | Run `scripts/scan-merges.sh <name>` — pending merge blocks |
 | `health` | Run the spec-health subagent — structural assessment |
@@ -165,7 +167,7 @@ its live surface (code, tests, root docs). Never restore the folder.
 
 ## Layers
 
-Root layer — persistent, high level, current only (no backlog):
+Root layer — persistent, high level, current only. No spec holds a backlog; long-term ideas go to an external tracker.
 
 | Doc | Holds | Guide |
 |---|---|---|
@@ -187,8 +189,8 @@ Rules:
 2. Root specs stay high level. Feature detail lives in the feature layer.
 3. One concern per doc. Product docs hold no code. Tech docs hold no UX opinion.
 4. Bump `updated:` on every edit.
-5. Link parent ↔ child both ways. Load only what the task needs; follow the links.
-6. Compound order: promote durable facts → record lessons → mark the feature DONE in root `plan.md` with a link to its live surface → delete the feature artifacts. Fallback folders may sit in `archive/<name>/` until validation passes; delete them before merge.
+5. Link parent ↔ child both ways; list children in the entrypoint frontmatter. Load only what the task needs.
+6. Compound order: promote durable facts → record lessons → mark the feature DONE in root `plan.md` as a one-line note linking its live surface → delete the feature artifacts. A fallback folder moves to `archive/<name>/`; prompt the user to delete it once validation passes, before merge. Never read `archive/` for active work.
 
 ## Roles
 
@@ -199,16 +201,14 @@ Rules:
 | spec-interviewer | `superpowers:brainstorming` | fallback feature.design steps 1–2 | `feature.md § Interview for WHAT` |
 | spec-tracer | `code-explorer` + `code-architect` | fallback feature.design step 4 | `reference/tech.md` + feature-tech template |
 
-Subagents under [agents/](agents/); spec-interviewer and spec-tracer serve the fallback only.
+Subagents live under [agents/](agents/). spec-interviewer and spec-tracer serve the fallback only.
 
 ## Commands
 
-`scripts/` is this skill's own directory: `${CLAUDE_SKILL_DIR}/scripts/`, where
-`${CLAUDE_SKILL_DIR}` holds this file. Run scripts from anywhere in the project;
-they find `.spec/` by walking up to the git root. `validate.sh` (structure,
-links, frontmatter) · `list-specs.sh` · `lessons-for.sh <tag>` ·
-`scan-merges.sh <name>` (pending `<!-- merge -->` blocks) · `promote.sh <name>` ·
-`setup.sh` (entrypoints from templates).
+`scripts/` is this skill's own directory, `${CLAUDE_SKILL_DIR}/scripts/` (`${CLAUDE_SKILL_DIR}` holds
+this file). Run scripts from anywhere in the project; they walk up to the git root to find `.spec/`:
+`validate.sh` (structure, links, frontmatter) · `list-specs.sh` · `lessons-for.sh <tag>` ·
+`scan-merges.sh <name>` (pending `<!-- merge -->` blocks) · `promote.sh <name>` · `setup.sh`.
 
 ## Current Project State
 
@@ -221,8 +221,8 @@ Read `.spec/.config.yaml` before any route. A missing file or key means the defa
 | Key | Default | When set |
 |---|---|---|
 | `vibe-flow` | `false` | `true` → the vibe flow cursor owns phase routing and output density |
-| `suggest-superpowers` | `true` | `false` → fallback feature flow; self-execute every step |
-| `superpowers.<key>` | `true` | `false` → do not use that executor; self-execute that step |
+| `suggest-superpowers` | `true` | `false` → do not offer optional executors (code-explorer, code-architect); the feature layer is unchanged |
+| `superpowers.<key>` | `true` | `false` → that executor is unavailable; `brainstorming` or `writing-plans` false → fallback ("superpowers is not installed") |
 
 Output density follows the vibe flow's single `style` note: concise, no
 filler; security and irreversible-action warnings stay in full prose.
@@ -235,7 +235,7 @@ On `/spec setup`:
 2. Absent → ask three questions, conversationally:
    - **Q1 — Workflow orchestration:** driven by the vibe flow (`/flow`) or by `/spec` directly? → yes | no
    - **Q2 — Available superpowers:** `all`, `none`, or `custom` (per superpower)?
-   - **Q3 — Proactive suggestions:** use superpowers at each step, or self-execute? Default: yes.
+   - **Q3 — Proactive suggestions:** offer optional executors at each step, or stay quiet? Default: yes.
 3. Show the summary. Write nothing before the user confirms.
 4. On confirm: write `.spec/.config.yaml` (always, even with all defaults), then run `scripts/setup.sh`. Report what it created; next is `/spec strategy` or `/spec feature <name>`.
 
