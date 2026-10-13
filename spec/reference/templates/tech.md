@@ -63,7 +63,7 @@ updated: {YYYY-MM-DD}
 | Source | Approx. Lines | What |
 |---|---|---|
 | **{Upstream}** (inherited) | ~{N}k | {What it provides} |
-| **{New code}** (this project) | ~{N} | {What we actually write} |
+| **{New code}** (this project) | ~{N} | {What you write} |
 
 ---
 

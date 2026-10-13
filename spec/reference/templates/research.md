@@ -7,7 +7,7 @@ updated: 2026-06-29
 
 # <name> — Research
 
-Discovery artifacts for the feature. Deleted with the feature folder at wrapup — never promoted to root. If a finding should persist, extract it to a lesson (lessons.md) or root tech.md section.
+Discovery artifacts for the feature. Deleted with the feature folder at wrapup — never promoted to root. Extract a finding that must persist to a lesson (lessons.md) or root tech.md section.
 
 ## Question
 

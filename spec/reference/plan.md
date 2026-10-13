@@ -76,7 +76,7 @@ Feature specs are branch-scoped and the repo holds only what is live.
 | Scope changes mid-flight | Revise the relevant plan; add units, never renumber |
 | Compound | Promote cross-cutting sequencing into root `plan.md`; cleanse delivered detail to notes; archive then prompt to delete the feature folder |
 
-Human gate: the root feature sequence and feature unit tables should be approved before `impl`.
+Human gate: the root feature sequence and feature unit tables MUST be approved before `impl`.
 
 ---
 
@@ -97,7 +97,7 @@ Decide where a sub-piece goes:
 | Just implementation steps | `feature/n` units in the same plan |
 | Demoable alone, needs its own product/tech docs | A new **sibling** feature folder |
 
-Heuristic: once a feature exceeds ~5–8 units or wants more than one integration boundary, consider splitting it into siblings. Root plan then carries only whole-feature edges (`ai-input-suggest` depends on `ai-input`), never `ai-input-suggest/1` depends on `ai-input/3`.
+Heuristic: once a feature exceeds ~5–8 units or wants more than one integration boundary, split it into siblings. Root plan then carries only whole-feature edges (`ai-input-suggest` depends on `ai-input`), never `ai-input-suggest/1` depends on `ai-input/3`.
 
 ---
 
@@ -190,7 +190,7 @@ updated: YYYY-MM-DD
 ---
 ```
 
-List feature plans in root `children:` when you want validate to track them (optional but recommended).
+List feature plans in root `children:` so validate tracks them.
 
 ---
 
