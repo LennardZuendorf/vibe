@@ -3,7 +3,7 @@ type: tech-topic
 parent: tech.md
 scope: spec root, OpenSpec interchange, validation
 covers: root discovery, migrate, OpenSpec grammar, strictness, adherence checks, trace, subagents, hooks, commands
-updated: 2026-09-04
+updated: 2026-10-13
 ---
 
 # Spec Framework — Tech
@@ -167,13 +167,12 @@ malformed input; `.vibe/spec.json` `"tooth": "warn"` downgrades to warn.
 
 ## Shipped today
 
-The bash scripts self-locate inconsistently: `validate.sh` and
-`list-specs.sh` are cwd-only; `lessons-for.sh`/`scan-merges.sh` read
-`${SPEC_DIR:-.spec}`; only `check-drift.sh` does upward marker search.
-`spec/SKILL.md:319`, `spec/agents/spec-promoter/SKILL.md:16,19`,
-`spec/agents/spec-interviewer/SKILL.md:15`, and `spec/feature.md:105`
-hardcode `.agents/skills/spec/scripts/*.sh` — broken under a plugin
-install (no `.agents/` tree) and from any cwd other than the repo root.
-F1 (`spec-path-hotfix`, plan.md) fixes the four references to
-skill-relative paths and adds self-location plus upward marker search to
-every script, ahead of the Rust port.
+F1 (`spec-path-hotfix`, plan.md) is delivered. `validate.sh`,
+`list-specs.sh`, `lessons-for.sh`, and `scan-merges.sh` walk up from the
+cwd to the directory holding `.git`; a relative `SPEC_DIR` resolves
+against the root found. `promote.sh`, `setup.sh`, and `check-drift.sh`
+are unchanged (`check-drift.sh` already searched upward); run `promote.sh`
+and `setup.sh` from the project root. The skill, the spec subagents, and
+`feature.md` reference scripts by skill-relative path. F25
+(`spec-superpowers-default`) is in progress: the pressure baseline is
+pending. The Rust port replaces these scripts.
