@@ -35,6 +35,11 @@ if the binary is absent, a peer runs the same order via a vendored
 resolution routine, so the order exists in one place in code, never
 duplicated in prose.
 
+`docs/superpowers/` is a recognised artifact root (D33): `vibe-spec` reads
+`specs/YYYY-MM-DD-<topic>-design.md` and `plans/YYYY-MM-DD-<topic>.md`,
+binds them to a feature by topic slug, and deletes them only through
+`promote <feature> --done`.
+
 ## Migrate
 
 `vibe-spec migrate --to docs/spec [--dry-run]`: `git mv` the tree; write
@@ -47,6 +52,12 @@ reverts and aborts rather than leaving a half-migrated tree. Inserts
 `<!-- vibe-spec: allow SF-nn -->` markers for any newly-warn-eligible
 check so nothing appears that the owner cannot act on today. This repo
 migrates in one commit, late in the sequence (plan.md, F20).
+
+`--layout layered` runs after the move: `{tech,product,plan}-<topic>.md`
+→ `<kind>/<topic>.md`, each D-record → `decisions/dNN-<slug>.md`, hubs
+seeded from templates. Splitting oversized prose into kind notes is
+agent-led via the spec skill's restructure mode; the gate is
+`validate --strict` green.
 
 ## OpenSpec interchange
 
@@ -86,11 +97,14 @@ input is proven.
 
 ## Adherence checks
 
-All warn-first, one SF-number each: layout allowlist
-(`{product,tech,design,plan,lessons}.md`, `{product,tech,plan}-<topic>.md`,
-`features/<name>/{product,tech,design,plan,research}.md`,
-`archive/<name>/**`, `quick/<slug>.md`, `templates/**` — anything else
-fails); required feature files present; frontmatter
+All warn-first, one SF-number each: layout allowlist (root hubs + `README.md`/`AGENTS.md`/`lessons.md`,
+kind folders `areas|flows|concepts|platform|tech|decisions|questions`,
+`parts/<part>/` with the same kinds, `features/<name>/{product,tech,design,plan,research}.md`,
+`archive/<name>/**`, `quick/<slug>.md`, `templates/**`, and
+`docs/superpowers/{specs,plans}/*.md` — anything else fails); budgets
+(hub ≤80, note ≤60); link resolution; unique names; typed frontmatter
+with `code:` existence on areas and `applies:` on tech; every kind note
+reachable from a hub; required feature files present; frontmatter
 `type/scope/children/updated` complete and enum-valid; every `children:`
 path exists and every branch doc backlinks its parent; feature folder
 name matches its plan row, a row with no folder is drift; `updated:`
@@ -109,10 +123,12 @@ Code and OpenCode:
 
 | Agent | Model | Tools | Writes |
 |---|---|---|---|
-| spec-interviewer | sonnet | Read, Grep, Glob, Write | `features/<name>/product.md` only |
-| spec-tracer | sonnet | Read, Grep, Bash(`vibe-spec trace`, `git log`) | `features/<name>/plan.md` Requirements Trace |
-| spec-promoter | sonnet | Read, Bash(`vibe-spec promote`) | root docs, only through the engine |
+| spec-promoter | sonnet | Read, Edit, Bash(`vibe-spec promote`) | layered notes + lessons, only through the promote checklist |
 | spec-health | haiku | Read, Bash(`vibe-spec validate`, `check-drift`) | nothing — returns findings |
+
+`spec-interviewer` and `spec-tracer` are retired (D36): feature
+interviews and plans run through `superpowers:brainstorming` and
+`superpowers:writing-plans`.
 
 Each agent file ≤40 lines: frontmatter `name/description/tools/model`, an
 explicit write path under `$(vibe-spec root)`, and a fallback rule —
@@ -131,12 +147,23 @@ single-file checks only, 500 ms cap, exit 0. `vibe-spec setup
 --strict` — the only hook allowed to exit 1. OpenCode: the same
 predicate and command behind a `tool.execute.after` shim.
 
+Router and tooth (D47): `SessionStart` (`startup|clear|compact`, sync)
+runs `vibe-spec hook session-start`, which prints the `using-spec`
+router inside `<EXTREMELY_IMPORTANT>`. `PreToolUse` on
+`Edit|Write|MultiEdit|NotebookEdit` runs `vibe-spec hook guard`: exit 2
+when the target is under the spec root or `docs/superpowers/**` and the
+session transcript holds no load of the matching skill; exit 0 with one
+stderr line on unreadable transcript, missing binary, no spec root, or
+malformed input; `.vibe/spec.json` `"tooth": "warn"` downgrades to warn.
+
 ## Commands (v1)
 
 `root`, `init`, `validate [--changed|--file|--strict|--format text|json|hook]`,
-`check-drift`, `promote [--dry-run]`, `scan-merges`, `lessons-for <tags>`,
-`list-specs`, `trace`, `migrate`, `export|import --openspec`, `setup
-[--git-hooks|--claude|--opencode]`, `doctor`.
+`check-drift [--pre-merge]`, `promote <feature> [--dry-run|--done]`,
+`scan-merges`, `lessons-for <tags>`, `list-specs`, `trace`,
+`migrate --to docs/spec [--layout layered] [--dry-run]`,
+`export|import --openspec`, `hook {session-start,guard,validate}`,
+`setup [--git-hooks|--claude|--opencode]`, `doctor`.
 
 ## Shipped today
 

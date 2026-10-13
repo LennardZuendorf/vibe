@@ -27,6 +27,9 @@ crates/
 └── vibe-parity     # dev-only differential harness
 ```
 
+The spec program (F2–F4, F16–F20) creates `vibe-core`, `vibe-spec` and
+`vibe-parity` only; the flow, instruct and signals crates arrive with their rows.
+
 Each tool binary path-depends on `vibe-core` only; no tool crate depends on
 another (`cargo metadata` CI test). MSRV 1.88 (the `ratatui` floor), pinned
 in `rust-toolchain.toml` and `rust-version`, bumped only at a tagged

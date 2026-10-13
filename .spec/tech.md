@@ -121,14 +121,16 @@ regenerates both.
 
 ## Spec Framework Contract
 
-Default root `docs/spec/`; `.spec/` legacy. Layout unchanged from today:
+Default root `docs/spec/`; `.spec/` legacy. Layered layout (D44):
 
 ```text
 docs/spec/
-├── product.md · tech.md · design.md · plan.md · lessons.md
-├── {product,tech,plan}-<topic>.md
-├── features/<feature>/{product,tech,design,plan,research}.md
-└── archive/<feature>/
+├── README.md · AGENTS.md · product.md · tech.md · design.md · plan.md · lessons.md
+├── areas/ flows/ concepts/ platform/ tech/ decisions/ questions/   (on demand)
+├── parts/<part>/                                                   (optional)
+├── features/<feature>/{product,tech,design,plan,research}.md        (fallback, D45)
+└── archive/<feature>/                                              (fallback, transient)
+docs/superpowers/{specs,plans}/                                     (default feature layer, D45/D46)
 ```
 
 The marker grammar and every validation rule live once, in `vibe-spec`; the
