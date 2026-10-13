@@ -1500,6 +1500,53 @@ test_skill_validator_paths_relative() {
 }
 test_skill_validator_paths_relative
 
+# ── F1: spec scripts resolve the project root from cwd, never from their own path ──
+test_f1_subdir_invocation() {
+  local out rc
+  out="$(cd "$REPO_ROOT/flow" && bash ../spec/scripts/validate.sh 2>&1)"; rc=$?
+  if [[ $rc -eq 0 ]] && ! grep -qF "No .spec/ directory found" <<<"$out"; then
+    pass F1 "validate.sh from flow/ resolves the repo .spec/"
+  else
+    fail F1 "validate.sh from flow/ resolves the repo .spec/ (rc=$rc)"
+  fi
+}
+test_f1_subdir_invocation
+
+test_f1_plugin_cache_layout() {
+  local tmp proj cache s out rc bad=0
+  tmp="$(mktemp -d)"; proj="$tmp/proj"; cache="$tmp/cache/spec"
+  mkdir -p "$proj/src/deep" "$cache"
+  cp -R "$REPO_ROOT/spec/scripts" "$cache/scripts"
+  (cd "$proj" && git init -q . && bash "$cache/scripts/setup.sh" >/dev/null 2>&1) || true
+  [[ -d "$proj/.spec" ]] || mkdir -p "$proj/.spec"
+  printf '%s\n' '# Lessons' '' '### x' '**Tags:** alpha' >"$proj/.spec/lessons.md"
+  for s in validate list-specs lessons-for scan-merges; do
+    case "$s" in lessons-for) set -- alpha ;; *) set -- ;; esac
+    out="$(cd "$proj/src/deep" && bash "$cache/scripts/$s.sh" "$@" 2>&1)"; rc=$?
+    if [[ $rc -ne 0 && $rc -ne 1 ]] || grep -qF "No .spec/ directory found" <<<"$out"; then
+      bad=$((bad + 1)); echo "        offender: $s (rc=$rc)"
+    fi
+  done
+  rm -rf "$tmp"
+  [[ $bad -eq 0 ]] && pass F1 "4 scripts from a plugin-cache path + nested cwd find the project .spec/" \
+    || fail F1 "$bad script(s) failed to find the project .spec/ from a nested cwd"
+}
+test_f1_plugin_cache_layout
+
+test_f1_git_boundary() {
+  local tmp out
+  tmp="$(mktemp -d)"; mkdir -p "$tmp/outer/.spec" "$tmp/outer/inner/sub"
+  (cd "$tmp/outer/inner" && git init -q .)
+  out="$(cd "$tmp/outer/inner/sub" && bash "$REPO_ROOT/spec/scripts/list-specs.sh" 2>&1 || true)"
+  rm -rf "$tmp"
+  if grep -qF "No .spec/ directory found" <<<"$out"; then
+    pass F1 "root search stops at the .git boundary (outer .spec/ not used)"
+  else
+    fail F1 "root search crossed the .git boundary"
+  fi
+}
+test_f1_git_boundary
+
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

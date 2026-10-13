@@ -2,6 +2,19 @@
 # scripts/lessons-for.sh — extract lessons matching tags from lessons.md
 set -euo pipefail
 
+# Resolve the project's spec root from the caller's cwd (never from this
+# script's own path — under a plugin install the script lives in a cache).
+# Walk up to the directory holding .git, no further (D33).
+find_spec_root() {
+  local d; d="$(pwd -P)"
+  while :; do
+    if [[ -d "$d/.spec" ]]; then printf '%s\n' "$d"; return 0; fi
+    [[ -e "$d/.git" || "$d" == "/" ]] && return 1
+    d="$(dirname "$d")"
+  done
+}
+if SPEC_ROOT_DIR="$(find_spec_root)"; then cd "$SPEC_ROOT_DIR"; fi
+
 FORMAT="markdown"
 TAGS=()
 
