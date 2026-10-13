@@ -14,8 +14,8 @@
 // rather than a hand-copied sentence.
 //
 // Four things are under test:
-//   1. THE SHIPPED SIX ARMS — content/policy.json must model all six guarded
-//      arms of detect-context.sh's decide() (three block, three warn), each
+//   1. THE SHIPPED SEVEN RULES — content/policy.json must model all seven guarded
+//      arms of detect-context.sh's decide() (three block, four warn), each
 //      reproducing the oracle's own states AND reason string (including its
 //      `(current: $state)` suffix, interpolated) element for element.
 //   2. BASH-FAITHFUL MATCHING — a literal or glob pattern matches on any
@@ -87,7 +87,7 @@ const ALWAYS_RULE = (id, match, verdict, reason = `${id} always`) => ({
 const ARMS_RULE = (id, match, arms) => ({ id, match, arms });
 
 // ---------------------------------------------------------------------------
-// The shipped policy.json — all six guarded arms, byte-faithful to the oracle.
+// The shipped policy.json — all seven guarded arms, byte-faithful to the oracle.
 // ---------------------------------------------------------------------------
 
 test('shipped: content/policy.json loads with no errors and exactly seven rules', () => {
@@ -911,7 +911,8 @@ test('differential matrix: node absent changes nothing about the exit-code contr
 // the FIRST arm wins; the engine ranks every exact match above every glob
 // match irrespective of file order (policy.mjs, pinned by its own tests). The
 // two orders only ever disagree on a path that two rules both claim —
-// `.spec/features/AGENTS.md` is the only such shape the shipped six produce.
+// `.spec/features/AGENTS.md` and `docs/superpowers/specs/AGENTS.md` are the
+// two such shapes the shipped seven produce (the set is derived by `crossRulePaths`).
 //
 // This is pinned, not papered over, and the direction is what makes it
 // acceptable: the engine's verdict is never LESS strict than bash's. The
