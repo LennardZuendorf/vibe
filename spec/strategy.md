@@ -1,8 +1,8 @@
 # Strategy layer — global / long-living specs
 
-Root-layer files in `.spec/` are **persistent in role, current in content**. They describe the whole product and architecture at a level that does not dive into one feature's implementation detail. The files persist; their content is kept current — delivered work in `plan.md` cleanses to a one-line note, and no long-horizon backlog is hoarded (that lives in an external tracker). Feature-level detail lives under `.spec/features/<name>/` — see [feature.md](feature.md).
+Root-layer files in `.spec/` are **persistent in role, current in content**. They describe the whole product and architecture. They never hold one feature's implementation detail. The files persist. Keep their content current: reduce delivered work in `plan.md` to a one-line note, and keep no long-horizon backlog (an external tracker holds it). Feature-level detail lives in the feature layer: by default `docs/superpowers/specs/` and `docs/superpowers/plans/`; on a fallback trigger, `.spec/features/<name>/` ([feature.md](feature.md)).
 
-> **Config note:** If `.spec/.config.yaml` sets `suggest-superpowers: false`, skip all "Superpower tip" callouts in this file and self-execute each step directly. See [SKILL.md § Config](SKILL.md#config) for the full config reference.
+> **Config note:** If `.spec/.config.yaml` sets `suggest-superpowers: false`, skip every "Superpower tip" callout in this file. Run each step yourself. See [SKILL.md § Config](SKILL.md#config) for the full config reference.
 
 ## What lives at root
 
@@ -17,7 +17,7 @@ Root-layer files in `.spec/` are **persistent in role, current in content**. The
 | `tech-{topic}.md` | Cross-cutting tech (infra, observability, deployment) | Persistent |
 | `plan-{topic}.md` | Cross-cutting sub-plan when main `plan.md` grows large | Persistent |
 
-**Root `product.md` / `tech.md`:** stay high-level — see [SKILL.md](SKILL.md) § Strict Rules (rule 2) for the canonical boundary.
+**Root `product.md` / `tech.md`:** stay high-level. Boundary: [SKILL.md](SKILL.md) § Layers (Rule 2).
 
 ## Writing order
 
@@ -39,15 +39,15 @@ Step 3: Cross-cutting only — when a concern truly spans every feature:
 Step 4: plan.md        — feature table, Feature Sequence (binary gates), current focus
 ```
 
-**Order matters:** root entrypoints constrain everything; then feature folders; branch docs last and only when the cross-cutting concern is **real**, not anticipated.
+**Order matters.** Root entrypoints constrain everything. Feature work follows. Write branch docs last, and only for a **real** cross-cutting concern, never an anticipated one.
 
-> **Superpower tip (Step 1):** Before writing root specs, use `superpowers:brainstorming` to shape the product direction in dialogue with the user. Inject root `product.md` and `tech.md` templates as constraint context so the output lands in the right format. Tell the user: *"I can run a `superpowers:brainstorming` session to draw out the product story and architecture before we commit anything to `.spec/` — want to do that first?"*
+> **Superpower tip (Step 1):** Before writing root specs, shape the product direction with `superpowers:brainstorming`. Inject the root `product.md` and `tech.md` templates as constraint context so the output lands in the right format. Ask the user: *"I can run a `superpowers:brainstorming` session on the product story and architecture before we write to `.spec/`. Proceed?"*
 
 Templates: [product](reference/templates/product.md), [tech](reference/templates/tech.md), [plan](reference/templates/plan.md), [feature-plan](reference/templates/feature-plan.md).
 
 ## Branch doc vs feature folder
 
-When content doesn't fit in root entrypoints, use the two-layer decision in [SKILL.md](SKILL.md) § The Two-Layer Model and § Strategy vs Feature. Default to `features/<name>/`; extract to branch docs only when a concern truly spans every feature.
+When content does not fit in root entrypoints, apply the routing in [SKILL.md](SKILL.md) § Routing and the layer rules in § Layers. Put it in the feature layer. Extract to branch docs only when a concern spans every feature.
 
 ## Product vs Tech — the hard line
 
@@ -85,15 +85,15 @@ Full guides: [reference/product.md](reference/product.md), [reference/tech.md](r
 
 Unit IDs are `<name>/n` — assigned once, never renumbered on reorder (add a new `<name>/n` for new work). Cite in commits and tests during `impl`.
 
-`plan-{topic}.md` is for genuinely **cross-cutting** plans that don't belong to one feature (e.g. a migration touching every feature). Rare. Default to feature-scoped plans.
+`plan-{topic}.md` is for genuinely **cross-cutting** plans that don't belong to one feature (e.g. a migration touching every feature). Rare. Prefer feature-scoped plans.
 
 Guide: [reference/plan.md](reference/plan.md).
 
 ## Lessons
 
-`lessons.md` is the self-improvement log. Mistakes from implementation, captured so they aren't repeated. Append-only. Read at session start.
+`lessons.md` is the self-improvement log. It records implementation mistakes so they do not repeat. Append only. Read it at session start.
 
-**Never edit during implementation** — capture mid-flight thoughts elsewhere; promote to lessons during COMPOUND, when the lesson can be phrased as pattern + rule.
+**Never edit during implementation.** Capture mid-flight thoughts elsewhere. Promote them to lessons during COMPOUND, as pattern + rule.
 
 ### Format
 
@@ -106,19 +106,19 @@ Guide: [reference/plan.md](reference/plan.md).
 
 **Be specific.** "Be more careful" is not a lesson.
 
-**Prune when stale.** If a lesson references code that no longer exists, delete it.
+**Prune when stale.** Delete a lesson that references code that no longer exists.
 
 ## Promotion from feature layer (COMPOUND)
 
-During **COMPOUND**, cross-cutting decisions from `features/<name>/tech.md` merge into root `tech.md` (or a branch `tech-{topic}.md`). Feature-specific detail does **not** merge. Then move `features/<name>/` to `archive/` as a transient safety net; the agent prompts to delete it after validation, before the branch merges. CODE IS TRUTH — archive is never read for active work. See [SKILL.md](SKILL.md) § Wrapped-up features.
+During **COMPOUND**, cross-cutting decisions from `features/<name>/tech.md` merge into root `tech.md` (or a branch `tech-{topic}.md`). Feature-specific detail does **not** merge. Then move `features/<name>/` to `archive/<name>/`. After validation passes, prompt the user to delete the archive, before the branch merges. Never read `archive/` for active work (CODE IS TRUTH). Compound order: [SKILL.md](SKILL.md) § Layers (Rule 6).
 
-> **Compound note:** The compound sequence is spec-skill-owned — follow [SKILL.md § Wrapped-up features](SKILL.md). The spec skill has the full procedure: promote merge markers → record lesson in the `§ Lessons` format → update root `plan.md` DONE row → archive feature folder → run validate.sh → prompt to delete archive. `superpowers:finishing-a-development-branch` handles only the mechanical git cleanup (final commit, archive move) after the spec work is done — the flow's compound phase already wires it there correctly.
+> **Compound note:** The spec skill owns the compound sequence ([SKILL.md § Layers](SKILL.md), Rule 6): promote merge markers → record a lesson in the `§ Lessons` format → mark the root `plan.md` feature DONE → move the feature folder to `archive/<name>/` → run `validate.sh` → prompt the user to delete the archive. `superpowers:finishing-a-development-branch` handles only the mechanical git cleanup (final commit) after the spec work is done.
 
-**How to mark promotable blocks** in feature `tech.md`: wrap sections in `<!-- merge -->` ... `<!-- /merge -->`, or use frontmatter `merge: true` where your project's merge tooling expects it (see root `tech.md` for `merge-feature.sh` behavior if documented in your repo).
+**How to mark promotable blocks** in feature `tech.md`: wrap sections in `<!-- merge -->` ... `<!-- /merge -->`, or use frontmatter `merge: true` where your project's merge tooling expects it (see root `tech.md` for `merge-feature.sh` behavior, if documented).
 
-**What typically promotes:** invariants that every feature must respect (single routing contract, global state file format, "all hooks call keystone script"). **What stays archived:** file-specific exit codes, one hook's matcher list, feature-only file paths.
+**What typically promotes:** invariants that every feature must respect (single routing contract, global state file format, "all hooks call keystone script"). **What stays in the archive:** file-specific exit codes, one hook's matcher list, feature-only file paths.
 
-If you started writing something in a feature folder and it clearly applies to **every** future feature, stop — extract to a branch doc or root instead; see [feature.md](feature.md) ↔ [strategy.md](strategy.md) handoff.
+If content in a feature folder applies to **every** future feature, stop. Extract it to a branch doc or root (see the [feature.md](feature.md) ↔ [strategy.md](strategy.md) handoff).
 
 ## Deep dives and validation
 

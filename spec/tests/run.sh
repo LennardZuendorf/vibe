@@ -1578,6 +1578,19 @@ test_sf17_description_budget() {
 }
 test_sf17_description_budget
 
+test_f25_voice() {
+  local f hits=0 scanned=0
+  for f in "$SPEC_SKILL"/SKILL.md "$SPEC_SKILL"/feature.md "$SPEC_SKILL"/strategy.md "$SPEC_SKILL"/reference/*.md; do
+    [[ -f "$f" ]] || continue; scanned=$((scanned + 1))
+    hits=$((hits + $(grep -ciE '\b(you may want to|consider (using|adding)|it might be|feel free|optionally consider)\b' "$f" || true)))
+  done
+  grep -qxF 'Fallback feature flow. Run this only when the spec skill'"'"'s Routing table sends you here.' "$SPEC_SKILL/feature.md" || hits=$((hits + 1))
+  if [[ $scanned -lt 7 ]]; then fail F25 "voice check examined $scanned files (floor 7)"
+  elif [[ $hits -eq 0 ]]; then pass F25 "skill docs use imperative voice ($scanned files)"
+  else fail F25 "$hits hedge phrase(s) or missing fallback header"; fi
+}
+test_f25_voice
+
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

@@ -60,7 +60,7 @@ Units are `feature-slug/n` (e.g. `vibe-flow/1`, `agent-instructions/3`). The pat
 Feature specs are branch-scoped and the repo holds only what is live.
 
 - Lifecycle: **created in DESIGN → consumed in IMPL → wrapped up in the single `compound` phase** (record lessons + promote cross-cutting decisions to root product/tech/plan + move the folder to `archive/` + regen the digest).
-- **Archive is a transient safety net** (e.g. CI fails right after wrapup and the feature context is briefly useful). It is **never** a store for active work — **CODE IS TRUTH**. After validation passes, the agent **prompts the user to delete the archive**; the folder should be gone **before the branch merges**.
+- **Archive is a transient safety net** (e.g. CI fails right after wrapup). It is **never** a store for active work. Never read `archive/` for active work — **CODE IS TRUTH**. After validation passes, **prompt the user to delete the archive**. The folder is gone **before the branch merges**.
 - The **root plan is current-only** and **cleansed after delivery** — delivered features collapse to a one-line historical note; the plan reflects current focus.
 - **Backlog gate:** every plan entry is either work-ready with a clear dependency, or it does not belong in `.spec/`. Long-term / speculative work is tracked **outside** the repo (issue tracker) — a hint to humans, not a workflow artifact. No inline backlog; agents refuse to record speculative future work in specs.
 - **Repo-type split:** app repos cleanse aggressively; single-purpose / greenfield repos keep a longer-lived feature list and may commit to main, but still cleanse once the initial purpose is delivered — future additions get fresh specs when tackled.

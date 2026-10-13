@@ -8,7 +8,7 @@ There are three places product content goes. Pick the right one.
 
 ## 1. Root: `product.md`
 
-The mini PRD. **Stay high-level** — no feature-level detail (canonical: [SKILL.md](../SKILL.md) § Strict Rules).
+The mini PRD. **Stay high-level** — no feature-level detail (canonical: [SKILL.md](../SKILL.md) § Layers, Rule 2).
 
 Sections:
 - **Story** — the problem in one paragraph
@@ -139,7 +139,7 @@ This bridges WHAT to HOW so the reader can navigate.
 - **Create a feature** when scoping a new buildable unit of work
 - **Create a branch doc** only when a genuinely cross-cutting concern emerges
 - **Never** create a branch doc that's really about one feature — that's a feature
-- **Never** put feature-level detail in root `product.md` — canonical rule in [SKILL.md](../SKILL.md) § Strict Rules
+- **Never** put feature-level detail in root `product.md` — canonical rule in [SKILL.md](../SKILL.md) § Layers (Rule 2)
 
 ---
 

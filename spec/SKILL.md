@@ -122,7 +122,7 @@ work. Routing is not optional. A reply to the user is not routing.
 | Feature, bounded | Invoke `superpowers:brainstorming` (bounded path) | code; root-doc lines the change makes false |
 | Bug or quick fix | Invoke `superpowers:systematic-debugging`; fix in place | code; root-doc lines the fix makes false |
 | Implementing an approved plan | Follow the plan task by task. The design doc is frozen. | code and tests |
-| Question or investigation | Answer from the spec and the code | nothing |
+| Question or investigation (not design: "how should we build X" is a feature) | Answer from the spec and the code | nothing |
 | Feature wrap-up (compound) | Promote durable facts into root specs + `lessons.md`, then delete the feature's artifacts | root `.spec/`, `lessons.md` |
 | Fallback | Load [feature.md](feature.md) and run it | `.spec/features/<name>/` |
 
