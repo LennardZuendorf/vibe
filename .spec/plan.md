@@ -43,7 +43,7 @@ Each tool is a closed, deliverable, testable box. Cross-tool coupling is a whole
 ├─────────────────────────────────────────────────────────────┤
 │  contracts   schemas + golden fixtures, run.sh                │  shared
 ├─────────────────────────────────────────────────────────────┤
-│  spec        spec-root tooling, validators, 4 agents          │  ┐
+│  spec        spec-root tooling, validators, 2 agents          │  ┐
 ├─────────────────────────────────────────────────────────────┤  │
 │  flow        state machine, cursor, guard, TUI, ledger        │  ├ tools
 ├─────────────────────────────────────────────────────────────┤  │
@@ -55,7 +55,7 @@ Each tool is a closed, deliverable, testable box. Cross-tool coupling is a whole
 
 | Tool | Owns | Does not own | Reads from peers | Writes for peers |
 |---|---|---|---|---|
-| spec | Spec tree, templates, validate/drift/promote/scan/trace, OpenSpec interchange, 4 agents, its own hooks | Cursor, injection, block composition | Nothing | `--json` answers (`root`, `lessons-for`, `plan`, `feature`); its AGENTS.md block |
+| spec | Spec tree, templates, validate/drift/promote/scan/trace, OpenSpec interchange, 2 agents, its own hooks | Cursor, injection, block composition | Nothing | `--json` answers (`root`, `lessons-for`, `plan`, `feature`); its AGENTS.md block |
 | flow | `state-machine.json`, cursor, orders, `policy.json`, guard, sniffer, Stop tooth, evidence, ledger, signals, TUI | Spec content, prompt injection, block composition | spec via `vibe-spec … --json` (soft) | Payload `.vibe/run/inject/flow.json`; provider manifest; its AGENTS.md block |
 | instruct | Tiers, blocks, channels, budgets, lints, providers, sources/sync, managed-block composition, `SessionStart`/`UserPromptSubmit` | Any provider's content, the cursor, spec docs | `.vibe/run/inject/*.json`, `.vibe/providers/*.json` | Nothing |
 

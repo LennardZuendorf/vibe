@@ -216,4 +216,4 @@ Output density is governed by one machine-level `style` note carried in `flow`'s
 | **instruct** | Layered, budgeted instruction injection: tiers, blocks, channels, providers, sync. | `instruct/` |
 | **vibe CLI** (v0.5) | Front door + cross-tool capabilities: worktree lifecycle, global lessons, cross-repo visibility, global blocks. | `crates/vibe`, plugin `vibe/` |
 
-Build order and status: see the F1–F24 feature sequence and the queued v0.5 C1–C6 arc in [plan.md](plan.md).
+Build order and status: see the F1–F25 feature sequence and the queued v0.5 C1–C6 arc in [plan.md](plan.md).
