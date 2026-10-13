@@ -2,7 +2,7 @@
 type: entrypoint
 scope: technical
 children: [tech-contracts.md, tech-rust.md, tech-instruct.md, tech-spec.md, tech-cli.md]
-updated: 2026-09-26
+updated: 2026-10-13
 ---
 
 # vibe — Technical Architecture
@@ -221,7 +221,7 @@ global-spec merge semantics, and degrade rules: [tech-cli.md](tech-cli.md).
 
 | Platform | spec | flow | instruct |
 |---|---|---|---|
-| Claude Code | `Stop` (`validate --changed`), `PostToolUse` (`validate --file`) | `PreToolUse` guard, `PostToolUse` sniffer + Task redirect, `Stop` tooth, `SubagentStop`, `SessionEnd` | `SessionStart` (+compact/resume), `UserPromptSubmit`, `PreCompact` reset |
+| Claude Code | `SessionStart` router, `PreToolUse` guard (blocking tooth), `Stop` (`validate --changed`), `PostToolUse` (`validate --file`) | `PreToolUse` guard, `PostToolUse` sniffer + Task redirect, `Stop` tooth, `SubagentStop`, `SessionEnd` | `SessionStart` composition (+compact/resume), `UserPromptSubmit`, `PreCompact` reset |
 | OpenCode | `tool.execute.after` shim | `tool.execute.before/after`, `event` | `chat.message`, `system.transform`, `session.compacting`, `config` |
 | Codex / other AGENTS.md readers | reads committed spec tree | reads AGENTS.md flow block; no enforcement | reads committed AGENTS.md instruct block |
 

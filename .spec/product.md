@@ -2,7 +2,7 @@
 type: entrypoint
 scope: product
 children: []
-updated: 2026-09-26
+updated: 2026-10-13
 ---
 
 # vibe — Product

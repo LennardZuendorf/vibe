@@ -3,7 +3,7 @@ type: tech-topic
 parent: tech.md
 scope: rust workspace and distribution
 covers: crates, MSRV, dependency allowlist, shim discovery, oracles and parity, TUI, signals, distribution, CI matrix
-updated: 2026-09-04
+updated: 2026-10-13
 ---
 
 # Rust Workspace — Tech
