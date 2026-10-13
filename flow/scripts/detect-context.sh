@@ -235,6 +235,17 @@ decide_bash() {
       ;;
   esac
 
+  # Warning: superpowers design docs are frozen once implementation begins (D45).
+  case "$path" in
+    docs/superpowers/specs/*|*/docs/superpowers/specs/*)
+      case "$state" in
+        feature.impl|quick.fix) echo "warn:superpowers design docs are frozen during impl/fix — route back to feature.design to change scope (current: $state)" ;;
+        *) echo "allow" ;;
+      esac
+      return 0
+      ;;
+  esac
+
   # Warning (not a block): the managed active-rules block is generated output.
   case "$path" in
     CLAUDE.md|AGENTS.md|*/CLAUDE.md|*/AGENTS.md)

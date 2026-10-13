@@ -90,10 +90,10 @@ const ARMS_RULE = (id, match, arms) => ({ id, match, arms });
 // The shipped policy.json — all six guarded arms, byte-faithful to the oracle.
 // ---------------------------------------------------------------------------
 
-test('shipped: content/policy.json loads with no errors and exactly six rules', () => {
+test('shipped: content/policy.json loads with no errors and exactly seven rules', () => {
   const { rules, errors } = loadPolicy(REPO_VIBE_DIR);
   assertEqual(errors, []);
-  assertEqual(rules.length, 6, `expected 6 shipped rules, got ${rules.length}`);
+  assertEqual(rules.length, 7, `expected 7 shipped rules, got ${rules.length}`);
 });
 
 test('shipped: state.json always blocks — no state admits a direct edit', () => {
@@ -150,6 +150,23 @@ test('shipped: .spec/features/* warns during impl/fix (nested paths too), allows
     assertEqual(decide(policy, file, 'feature.design').verdict, 'allow');
     assertEqual(decide(policy, file, 'idle').verdict, 'allow');
   }
+});
+
+test('shipped: docs/superpowers/specs/* warns during impl/fix (nested too), allows otherwise', () => {
+  const { rules } = loadPolicy(REPO_VIBE_DIR);
+  const policy = { rules };
+  for (const file of ['docs/superpowers/specs/2026-10-13-x-design.md', 'docs/superpowers/specs/sub/y-design.md']) {
+    const warned = decide(policy, file, 'feature.impl');
+    assertEqual(warned.verdict, 'warn');
+    assertEqual(
+      warned.reason,
+      'superpowers design docs are frozen during impl/fix — route back to feature.design to change scope (current: feature.impl)',
+    );
+    assertEqual(decide(policy, file, 'quick.fix').verdict, 'warn');
+    assertEqual(decide(policy, file, 'feature.design').verdict, 'allow');
+    assertEqual(decide(policy, file, 'idle').verdict, 'allow');
+  }
+  assertEqual(decide(policy, 'docs/superpowers/plans/2026-10-13-x.md', 'feature.impl').verdict, 'allow');
 });
 
 test('shipped: CLAUDE.md/AGENTS.md warns unconditionally, in every state', () => {
@@ -477,10 +494,11 @@ test('renderInvariants: an empty policy renders an empty string', () => {
 test('shipped: renderInvariants on content/policy.json produces one line per rule, in order', () => {
   const { rules } = loadPolicy(REPO_VIBE_DIR);
   const lines = renderInvariants({ rules }).split('\n');
-  assertEqual(lines.length, 6);
+  assertEqual(lines.length, 7);
   assertIncludes(lines[0], 'state.json');
   assertIncludes(lines[1], 'lessons.md');
-  assertIncludes(lines[5], 'src/*');
+  assertIncludes(lines[4], 'docs/superpowers/specs/*');
+  assertIncludes(lines[6], 'src/*');
 });
 
 // ---------------------------------------------------------------------------
@@ -597,11 +615,11 @@ test('cli end-to-end: `vibe policy --help` exits 0 and shows usage', () => {
   assertIncludes(result.stdout, 'usage: vibe policy');
 });
 
-test('cli end-to-end: `vibe policy list` against the real repo prints six rules', () => {
+test('cli end-to-end: `vibe policy list` against the real repo prints seven rules', () => {
   const result = runCli(['policy', 'list']);
   assertEqual(result.code, 0, `stderr: ${result.stderr}`);
-  assertIncludes(result.stdout, '6 rule(s)');
-  for (const id of ['cursor', 'lessons', 'root-specs', 'features-frozen', 'generated-docs', 'src-tests']) {
+  assertIncludes(result.stdout, '7 rule(s)');
+  for (const id of ['cursor', 'lessons', 'root-specs', 'features-frozen', 'superpowers-frozen', 'generated-docs', 'src-tests']) {
     assertIncludes(result.stdout, id);
   }
 });

@@ -34,6 +34,14 @@
       ]
     },
     {
+      "id": "superpowers-frozen",
+      "match": "docs/superpowers/specs/*",
+      "arms": [
+        { "states": ["feature.impl", "quick.fix"], "verdict": "warn", "reason": "superpowers design docs are frozen during impl/fix — route back to feature.design to change scope (current: {state})" },
+        { "states": "*", "verdict": "allow", "reason": "" }
+      ]
+    },
+    {
       "id": "generated-docs",
       "match": ["CLAUDE.md", "AGENTS.md"],
       "arms": [
