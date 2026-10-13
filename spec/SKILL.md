@@ -24,11 +24,11 @@ metadata:
   version: 2.0
 
 context:
-  - .agents/skills/spec/feature.md
-  - .agents/skills/spec/strategy.md
-  - .agents/skills/spec/reference/product.md
-  - .agents/skills/spec/reference/tech.md
-  - .agents/skills/spec/reference/plan.md
+  - feature.md
+  - strategy.md
+  - reference/product.md
+  - reference/tech.md
+  - reference/plan.md
 
 agents:
   - name: spec-tracer
@@ -316,7 +316,7 @@ sections such as interaction conventions, information hierarchy, and agent tone.
 
 ## Current Project State
 
-!`bash .agents/skills/spec/scripts/list-specs.sh`
+!`bash "${CLAUDE_SKILL_DIR}/scripts/list-specs.sh"`
 
 ## Config
 

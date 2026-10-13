@@ -13,10 +13,10 @@ Compound-phase merge-marker extractor. Shows a structured diff before executing.
 
 ## Orders
 
-1. Run `bash .agents/skills/spec/scripts/scan-merges.sh <name>` — display the block count, line ranges, and preview to the user
+1. Run `bash scripts/scan-merges.sh <name>` (path relative to the spec skill) — display the block count, line ranges, and preview to the user
 2. Show output: "These blocks will promote to root `tech.md` — confirm? (yes/no)"
 3. **Wait for explicit confirmation before continuing**
-4. On yes: run `bash .agents/skills/spec/scripts/promote.sh <name>`
+4. On yes: run `bash scripts/promote.sh <name>` (path relative to the spec skill)
 5. Report: N blocks promoted, paths written
 
 ## Invariants

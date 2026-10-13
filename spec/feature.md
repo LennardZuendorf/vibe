@@ -102,7 +102,7 @@ before the branch merges — so this repo currently keeps none. The filled-in ro
 docs under [`.spec/`](../.spec) (product / tech / design / plan / lessons) are
 the standing worked example.
 
-- [`.agents/skills/spec/`](../.agents/skills/spec/SKILL.md) — spec framework (units `spec/n`, delivered — wrapped up; no feature folder)
+- [`spec/`](SKILL.md) — spec framework (units `spec/n`, delivered — wrapped up; no feature folder)
 
 ## Anatomy of `features/<name>/`
 

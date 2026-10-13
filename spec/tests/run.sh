@@ -1469,36 +1469,36 @@ test_config_section_present
 test_config_defaults_documented
 test_flow_mvp_4_template_hybrid_grammar
 
-# ── install-agnostic paths: skill files reference the validator skill-relative ──
-# Per agentskills.io, a SKILL.md references its bundled scripts relative to the
-# SKILL.md (e.g. `scripts/validate.sh`) so the reference is correct in EVERY install
-# model — vendored `.agents/skills/spec/`, `~/.agents/…` global, or a plugin cache.
-# A hard-coded `.agents/skills/spec/scripts/validate.sh` (or a `~/.agents/…`
-# enumeration) only resolves in one layout and silently breaks in the others.
-# Discriminating guard: fail if any spec skill doc reintroduces the absolute form.
-test_skill_validator_paths_relative() {
-  local docs=(
-    "$REPO_ROOT/spec/SKILL.md"
-    "$REPO_ROOT/spec/strategy.md"
-    "$REPO_ROOT/spec/feature.md"
-    "$REPO_ROOT/spec/agents/spec-health/SKILL.md"
-  )
-  local f bad=0
-  for f in ${docs[@]+"${docs[@]}"}; do
-    [[ -f "$f" ]] || continue
-    # The literal ~ is the offender pattern we search for, not a path to expand.
+# ── install-agnostic paths: skill files reference their scripts skill-relative ──
+# Per agentskills.io, skill docs reference bundled scripts/files relative to the skill
+# (`scripts/validate.sh`, or `${CLAUDE_SKILL_DIR}/scripts/…` in `!` commands), correct in
+# EVERY install model. Ban the capability (any install-layout path to the skill).
+# R1: spec/README.md and spec/AGENTS.md are human-facing install/layout docs, excluded by exact path.
+test_skill_script_paths_relative() {
+  local f rel bad=0 scanned=0 excluded=0 total floor names=()
+  local s; for s in "$REPO_ROOT"/spec/scripts/*.sh; do names+=("$(basename "$s")"); done
+  total="$(find "$REPO_ROOT/spec" -name '*.md' -not -path '*/tests/*' | wc -l | tr -d ' ')"
+  while IFS= read -r f; do
+    rel="${f#"$REPO_ROOT"/}"
+    case "$rel" in
+      spec/README.md|spec/AGENTS.md) excluded=$((excluded + 1)); continue ;;
+    esac
+    scanned=$((scanned + 1))
     # shellcheck disable=SC2088
-    if grep -qF '.agents/skills/spec/scripts/validate.sh' "$f" || grep -qF '~/.agents/skills/' "$f"; then
-      bad=$((bad + 1)); echo "        offender: ${f#"$REPO_ROOT"/}"
+    if grep -qF '.agents/skills/spec' "$f" || grep -qF '~/.agents/skills/' "$f"; then
+      bad=$((bad + 1)); echo "        offender: $rel"
     fi
-  done
-  if [[ "$bad" -eq 0 ]]; then
-    pass "install-agnostic-paths" "spec skill files reference validate.sh skill-relative (no install-absolute path)"
+  done < <(find "$REPO_ROOT/spec" -name '*.md' -not -path '*/tests/*')
+  floor=10
+  if [[ ${#names[@]} -lt 7 || $scanned -lt $floor || $((scanned + excluded)) -ne $total || $excluded -ne 2 ]]; then
+    fail "install-agnostic-paths" "guard examined too little (scanned=$scanned excluded=$excluded total=$total, scripts=${#names[@]})"
+  elif [[ $bad -eq 0 ]]; then
+    pass "install-agnostic-paths" "$scanned spec docs reference ${#names[@]} scripts skill-relative ($excluded install docs excluded)"
   else
-    fail "install-agnostic-paths" "spec skill files still hard-code an install-absolute validate.sh path"
+    fail "install-agnostic-paths" "$bad spec doc(s) hard-code an install-absolute script path"
   fi
 }
-test_skill_validator_paths_relative
+test_skill_script_paths_relative
 
 # ── F1: spec scripts resolve the project root from cwd, never from their own path ──
 test_f1_subdir_invocation() {

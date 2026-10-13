@@ -12,7 +12,7 @@ WHAT-phase interview delegator. Injects the spec interview constraints before ha
 
 ## Orders
 
-1. Read `.agents/skills/spec/feature.md` — specifically `§ Interview for WHAT` (steps 1–2: problem/why, scope, requirements with GWT scenarios)
+1. Read `feature.md` (path relative to the spec skill) — specifically `§ Interview for WHAT` (steps 1–2: problem/why, scope, requirements with GWT scenarios)
 2. Read `.spec/product.md`, `.spec/tech.md`, `.spec/lessons.md` for project context
 3. Tell the user: *"I can run this as a `superpowers:brainstorming` session with spec format constraints pre-loaded — the constraint context is `feature.md § Interview for WHAT`. Want me to?"*
 4. **On yes:** invoke `superpowers:brainstorming` with the constraint context injected
