@@ -1541,8 +1541,9 @@ test_f1_plugin_cache_layout() {
     fi
   done
   rm -rf "$tmp"
-  [[ $bad -eq 0 ]] && pass F1 "4 scripts from a plugin-cache path + nested cwd read the project .spec/ (positive markers)" \
-    || fail F1 "$bad script(s) failed to read the project .spec/ from a nested cwd"
+  if [[ $bad -eq 0 ]]; then pass F1 "4 scripts from a plugin-cache path + nested cwd read the project .spec/ (positive markers)"
+  else fail F1 "$bad script(s) failed to read the project .spec/ from a nested cwd"
+  fi
 }
 test_f1_plugin_cache_layout
 
@@ -1560,8 +1561,9 @@ test_f1_git_boundary() {
     esac
   done
   rm -rf "$tmp"
-  [[ $bad -eq 0 ]] && pass F1 "root search stops at the .git boundary for all 4 scripts" \
-    || fail F1 "root search crossed the .git boundary in $bad script(s)"
+  if [[ $bad -eq 0 ]]; then pass F1 "root search stops at the .git boundary for all 4 scripts"
+  else fail F1 "root search crossed the .git boundary in $bad script(s)"
+  fi
 }
 test_f1_git_boundary
 
