@@ -1472,7 +1472,7 @@ test_flow_mvp_4_template_hybrid_grammar
 # ── install-agnostic paths: skill files reference their scripts skill-relative ──
 # Per agentskills.io, skill docs reference bundled scripts/files relative to the skill
 # (`scripts/validate.sh`, or `${CLAUDE_SKILL_DIR}/scripts/…` in `!` commands), correct in
-# EVERY install model. Ban the capability (any install-layout path to the skill).
+# EVERY install model. Ban what the matcher catches: `.agents/skills/spec` and `~/.agents/skills/` paths.
 # R1: spec/README.md and spec/AGENTS.md are human-facing install/layout docs, excluded by exact path.
 test_skill_script_paths_relative() {
   local f rel bad=0 scanned=0 excluded=0 total floor names=()
