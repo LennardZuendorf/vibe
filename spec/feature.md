@@ -6,7 +6,7 @@ The fallback applies only when superpowers is not installed, the user says *self
 
 Give each **named** unit of work `.spec/features/<name>/`. These specs are **branch-scoped**. Create them in DESIGN. Read them in IMPL. Wrap them up in COMPOUND: promote cross-cutting decisions, then move the folder to `archive/<name>/`. Prompt the user to delete the archive once validation passes. The archive is gone **before the branch merges**. Never read `archive/` for active work — **CODE IS TRUTH**. Keep global, long-living rules in root files: [strategy.md](strategy.md). Compound order: [SKILL.md](SKILL.md) § Layers (Rule 6).
 
-> **Config note:** If `.spec/.config.yaml` sets `suggest-superpowers: false`, skip every "Superpower tip" callout in this file. Run each step yourself. See [SKILL.md § Config](SKILL.md#config) for the full config reference.
+> **Config note:** If `.spec/.config.yaml` sets `suggest-superpowers: false`, skip the "Superpower tip" callout in this file (optional executors only). Run that step yourself. See [SKILL.md § Config](SKILL.md#config) for the full config reference.
 
 ## Feature authoring flow
 
@@ -25,8 +25,6 @@ Run a dialogue, not a form fill. Cover:
 - **Requirements** — `### Requirement: <title>` with SHALL/MUST language; each requirement gets `#### Scenario:` blocks in Given/When/Then form
 
 Reject vague requirements. If the user cannot state observable behaviour, keep interviewing.
-
-> **Superpower tip:** Delegate the dialogue to `superpowers:brainstorming`. Before delegating, inject this section (`feature.md § Interview for WHAT`) as the constraint context so the dialogue stays on-format — RFC-2119 keywords, GWT scenarios, Scope table boundaries. Ask the user: *"I can use `superpowers:brainstorming` to run this dialogue and enforce spec format as we go. Proceed?"*
 
 Write to `product.md`. Follow [reference/product.md](reference/product.md) § feature product. Omit empty sections.
 
@@ -61,8 +59,6 @@ Write `plan.md` with stable `feature/n` unit IDs (`### <name>/1`, `### <name>/2`
   here: root `.spec/plan.md` is write-blocked during `feature.plan` under the
   flow's write invariants. Treat it as a compound-step obligation (see § Merged
   during COMPOUND below).
-
-> **Superpower tip:** Delegate plan decomposition to `superpowers:writing-plans`. Before delegating, inject [reference/plan.md](reference/plan.md) plus the stable-ID rules (`<name>/n`, never renumber, same-feature deps only) as constraint context, along with the feature's `product.md` requirements. Ask the user: *"I can hand this to `superpowers:writing-plans` to decompose the requirements into units. Proceed?"*
 
 **Human gate:** confirm units before implementation.
 
