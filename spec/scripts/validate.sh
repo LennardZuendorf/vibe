@@ -16,6 +16,7 @@ find_spec_root() {
     d="$(dirname "$d")"
   done
 }
+SELF_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if SPEC_ROOT_DIR="$(find_spec_root)"; then cd "$SPEC_ROOT_DIR"; fi
 
 SPEC_DIR=".spec"
@@ -434,7 +435,7 @@ echo "Validating $SPEC_DIR/..."
 echo ""
 
 if [[ ! -d "$SPEC_DIR" ]]; then
-  red "No .spec/ directory found. Run setup first: bash .agents/skills/spec/scripts/setup.sh"
+  red "No .spec/ directory found. Run setup first: bash $SELF_DIR/setup.sh"
   exit 1
 fi
 
