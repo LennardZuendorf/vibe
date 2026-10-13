@@ -39,6 +39,7 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Skills SHOULD proactively offer their optimal executor at each step — "I can use X for this, want me to?" — and MUST self-execute from their constraint documents if the user declines or the executor is unavailable. The order is always: offer first, self-suffice second. Never silently skip the offer; never block on the answer.
 **Tags:** spec, superpowers, subagents, skill-design, interoperability
 **Date:** 2026-06-21
+**Superseded:** 2026-10-13 by D45 — feature design/plans now default to superpowers; the spec skill routes, it does not offer.
 
 ### Script self-location: search for markers, don't count hops
 **Pattern:** `orders.sh` and `regen-active-rules.sh` resolved the repo root with a fixed number of `dirname` hops tuned to the old `.agents/skills` nesting; after the `flow/` move the same scripts silently hit generic fallbacks or overshot the root when invoked via their canonical path — the symlinked invocation still worked, masking the breakage.
@@ -113,3 +114,27 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** comma, separated, keywords
 **Date:** YYYY-MM-DD
 -->
+
+### Replace a table row by its table, never by its leading cell
+**Pattern:** A batched doc edit replaced plan row `| F3 | …` by matching the line prefix; the same prefix opened a row in the issue catalog table, which was overwritten with the 7-column plan row — two issue links lost and the table malformed. The check scripts only asserted the new text existed, so they passed.
+**Rule:** Anchor a row replacement to its table (header or section) and assert afterwards that every table kept its column count and that the old row text is gone only where intended. A post-edit check must also look for collateral damage, not only for the new text.
+**Tags:** spec, docs, plan, tables, batch-edit
+**Date:** 2026-10-13
+
+### A new shell script runs the umbrella suite, not just its own
+**Pattern:** The pressure-test harness passed shellcheck and its own honesty checks, then broke the flow suite's bash-3.2 portability lint (`"${arr[@]}"` on an empty array under `set -u`). The implementer and two reviewers ran only the spec checks; the defect surfaced two tasks later.
+**Rule:** Any change that adds or edits a tracked `*.sh` file — test scripts included — runs `bash tests/run.sh` (all suites) and `git ls-files '*.sh' | xargs shellcheck` (the CI command) before commit; a phase gate later found two SC2015 hits in `spec/tests/run.sh` the same way. Guard array expansions as `${arr[@]+"${arr[@]}"}` for stock macOS bash 3.2.
+**Tags:** bash, portability, bash32, testing, spec
+**Date:** 2026-10-13
+
+### Run wall-time budgets on a quiet machine before calling a regression
+**Pattern:** The engine's 150 ms performance-budget test failed repeatedly while several agents and suites ran in parallel; alone, the slowest command measured 85 ms and the suite went 674/674.
+**Rule:** Before treating a wall-time failure as a regression, rerun the suite alone and compare against its logged control. Never run timing suites concurrently with other suites in a gate.
+**Tags:** testing, performance, flaky, engine
+**Date:** 2026-10-13
+
+### Plan text must fit the tests that already constrain it
+**Pattern:** Two plan steps specified exact text that the repo's existing tests rejected: compound orders 435 bytes against a 400-byte per-block budget, and a fallback line that did not contain the plan's own assert string.
+**Rule:** When a plan dictates exact content, check it against every existing budget, pin and assert that covers that file before the plan is approved — and make the plan's own asserts match its own text.
+**Tags:** planning, orders, testing, superpowers
+**Date:** 2026-10-13
