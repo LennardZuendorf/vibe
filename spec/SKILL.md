@@ -119,8 +119,8 @@ work. Routing is not optional. A reply to the user is not routing.
 |---|---|---|
 | Strategy: product direction, architecture, decisions, root `plan.md` sequence, `design.md`, branch docs | Load [strategy.md](strategy.md). Edit the root spec yourself (dialogue via `superpowers:brainstorming` allowed) | `.spec/` root only |
 | Feature, new or structural | Invoke `superpowers:brainstorming`, then `superpowers:writing-plans`. Topic = feature name. | `docs/superpowers/specs/`, `docs/superpowers/plans/` |
-| Feature, bounded | Invoke `superpowers:brainstorming` (bounded path) | code; root-doc lines the change makes false |
-| Bug or quick fix | Invoke `superpowers:systematic-debugging`; fix in place | code; root-doc lines the fix makes false |
+| Feature, bounded | Invoke `superpowers:brainstorming` (bounded path) | code; root-doc drift is fixed via strategy.spec |
+| Bug or quick fix | Invoke `superpowers:systematic-debugging`; fix in place | code; root-doc drift is fixed via strategy.spec |
 | Implementing an approved plan | Follow the plan task by task. The design doc is frozen. | code and tests |
 | Question or investigation (not design: "how should we build X" is a feature) | Answer from the spec and the code | nothing |
 | Feature wrap-up (compound) | Promote durable facts into root specs + `lessons.md`, then delete the feature's artifacts | root `.spec/`, `lessons.md` |
@@ -206,9 +206,9 @@ Subagents live under [agents/](agents/). spec-interviewer and spec-tracer serve 
 ## Commands
 
 `scripts/` is this skill's own directory, `${CLAUDE_SKILL_DIR}/scripts/` (`${CLAUDE_SKILL_DIR}` holds
-this file). Run scripts from anywhere in the project; they walk up to the git root to find `.spec/`:
-`validate.sh` (structure, links, frontmatter) · `list-specs.sh` · `lessons-for.sh <tag>` ·
-`scan-merges.sh <name>` (pending `<!-- merge -->` blocks) · `promote.sh <name>` · `setup.sh`.
+this file). Run `validate.sh` (structure, links, frontmatter), `list-specs.sh`, `lessons-for.sh <tag>`,
+and `scan-merges.sh <name>` (pending `<!-- merge -->` blocks) from anywhere in the project; they walk
+up to the git root to find `.spec/`. Run `promote.sh <name>` and `setup.sh` from the project root.
 
 ## Current Project State
 
