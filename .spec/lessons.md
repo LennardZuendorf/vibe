@@ -140,3 +140,15 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** When a plan dictates exact content, check it against every existing budget, pin and assert that covers that file before the plan is approved — and make the plan's own asserts match its own text.
 **Tags:** planning, orders, testing, superpowers
 **Date:** 2026-10-13
+
+### Sweep for the meaning, not one spelling of it
+**Pattern:** A fix swept `flow/` for the literal `.spec/features/` to find every line that still made the fallback the default. Lines saying "follow the spec skill feature.md steps 1–4" and injecting "the feature's `product.md` requirements" carried the same meaning without the string and survived until the final review.
+**Rule:** When retiring a default, list every phrasing that expresses it (paths, file names, step references, template names) and grep for all of them; then pin the invariant with a test that fails on any unqualified reference, not just the one spelling.
+**Tags:** flow, spec, superpowers, grep, review
+**Date:** 2026-10-13
+
+### A finding marked must-fix is fixed in its own task
+**Pattern:** A task review found a stale safety comment, marked it "must-fix", and parked it as a deferred minor for the final wave. The final whole-branch review then reported it as the branch's only Critical.
+**Rule:** A finding that a binding rule makes mandatory (stale safety comment, test that asserts nothing) enters the task's fix loop; only genuinely optional polish is deferred to the final review.
+**Tags:** review, sdd, process, comments
+**Date:** 2026-10-13
