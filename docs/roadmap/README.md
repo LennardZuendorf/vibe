@@ -19,9 +19,9 @@ conversation, so no issue exists for them yet.
 | F | Title | Issue |
 |---|---|---|
 | F1  | spec-path-hotfix    | [#23](https://github.com/LennardZuendorf/vibe/issues/23) |
-| F2  | contracts           | held |
+| F2  | contracts           | to file |
 | F3  | oracles-parity      | [#24](https://github.com/LennardZuendorf/vibe/issues/24) |
-| F4  | workspace-core      | held |
+| F4  | workspace-core      | to file |
 | F5  | flow-core           | [#25](https://github.com/LennardZuendorf/vibe/issues/25) |
 | F6  | flow-teeth-hooks    | [#26](https://github.com/LennardZuendorf/vibe/issues/26) |
 | F7  | machine-teeth       | [#27](https://github.com/LennardZuendorf/vibe/issues/27) |
@@ -42,8 +42,9 @@ conversation, so no issue exists for them yet.
 | F22 | release-install     | [#39](https://github.com/LennardZuendorf/vibe/issues/39) |
 | F23 | retire-legacy       | [#40](https://github.com/LennardZuendorf/vibe/issues/40) |
 | F24 | doc-truth           | [#41](https://github.com/LennardZuendorf/vibe/issues/41) |
+| F25 | spec-superpowers-default | to file |
 
-F2, F4, F9, F10, and F11 are held for architecture design in-thread — each
+F9, F10, and F11 are held for architecture design in-thread — each
 file carries `hold: architecture` in its frontmatter and a `> **Held.**`
 notice under the title until an issue is opened for it.
 
@@ -56,7 +57,7 @@ milestone — each spans every phase in its arc.
 
 | Milestone | Phase | Issues |
 |---|---|---|
-| [v0.4 Phase 0 — foundations](https://github.com/LennardZuendorf/vibe/milestone/1) | F1–F4 | #23, #24 (F2, F4 held) |
+| [v0.4 Phase 0 — foundations](https://github.com/LennardZuendorf/vibe/milestone/1) | F1–F4 | #23, #24 (F2, F4 to file) |
 | [v0.4 Phase 1 — flow](https://github.com/LennardZuendorf/vibe/milestone/2) | F5–F10 | #25–#28 (F9, F10 held) |
 | [v0.4 Phase 2 — instruct](https://github.com/LennardZuendorf/vibe/milestone/3) | F11–F15 | #29–#32 (F11 held) |
 | [v0.4 Phase 3 — spec](https://github.com/LennardZuendorf/vibe/milestone/4) | F16–F20 | #33–#37 |
@@ -82,7 +83,7 @@ continuing to the next file.
 
 **Idempotent:** an agent following this doc skips any file whose frontmatter
 already has `issue:` set (already posted) or `hold:` set (held for
-architecture design). Today: 19 already posted, 5 held, 0 to create — safe
+architecture design). Today: 19 already posted, 3 held, 3 to create (F2, F4, F25) — safe
 to re-run any time, including once the held features gain their own issue
 files.
 
