@@ -47,7 +47,7 @@ run_one() { # id accept prompt sp
   d="$(mktemp -d)"; SANDBOX="$d"; make_sandbox "$d"
   args=(--plugin-dir "$d/plugin")
   [[ "$sp" == present ]] && args+=(--plugin-dir "$SP_DIR")
-  if ! first="$(cd "$d/proj" && claude_iso "$d/config" "${args[@]}" "$prompt" 2>/dev/null | node "$HERE/parse.mjs")"; then
+  if ! first="$(cd "$d/proj" && claude_iso "$d/config" ${args[@]+"${args[@]}"} "$prompt" 2>/dev/null | node "$HERE/parse.mjs")"; then
     echo "pressure: claude/parse failed for scenario $id ($sp); counting first-skill=none" >&2
     first="none"
   fi
@@ -59,7 +59,7 @@ run_one() { # id accept prompt sp
 sps=(present absent); [[ "$mode" != both ]] && sps=("$mode")
 while IFS=$'\t' read -r id accept prompt; do
   [[ "$id" == id ]] && continue
-  for sp in "${sps[@]}"; do run_one "$id" "$accept" "$prompt" "$sp"; done
+  for sp in ${sps[@]+"${sps[@]}"}; do run_one "$id" "$accept" "$prompt" "$sp"; done
 done <"$HERE/scenarios.tsv"
 [[ $total -ge 6 ]] || { echo "pressure: only $total scenarios ran (floor 6)"; exit 1; }
 echo "pressure: $pass/$total passed"
