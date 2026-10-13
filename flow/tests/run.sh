@@ -465,6 +465,11 @@ assert_contains "spec-v04/F25" "feature.md names the fallback triggers" "$feat_b
 machine="$(cat "$FLOW/state-machine.json")"
 assert_contains "spec-v04/F25" "feature.design writes the superpowers spec" "$machine" "docs/superpowers/specs/*-<feature>-design.md"
 assert_contains "spec-v04/F25" "feature.plan writes the superpowers plan" "$machine" "docs/superpowers/plans/*-<feature>.md"
+assert_not_contains "spec-v04/F25" "feature.md has no unqualified .spec/features write rule" "$feat_body" "Write **only** \`.spec/features/"
+assert_contains "spec-v04/F25" "feature.impl orders forbid editing the superpowers spec" "$(bash "$SCRIPTS/orders.sh" feature.impl)" "docs/superpowers/specs/**"
+assert_contains "spec-v04/F25" "feature.compound orders promote then git rm" "$(bash "$SCRIPTS/orders.sh" feature.compound)" "root specs, git rm them"
+assert_contains "spec-v04/F25" "template carries the superpowers feature lookup" "$(cat "$FLOW/reference/templates/AGENTS.md")" "docs/superpowers/specs/*-<name>-design.md"
+assert_contains "spec-v04/F25" "AGENTS.md managed block carries the superpowers feature lookup" "$(cat "$SRC_ROOT/AGENTS.md")" "docs/superpowers/specs/*-<name>-design.md"
 
 echo ""
 echo "=== flow-legibility/4 — doctrine block + resolver ==="

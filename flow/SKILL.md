@@ -76,7 +76,7 @@ optional adapter rather than the only carrier. `doctrine.sh` appends a live curs
 summary after this block.
 
 <!-- vibe:doctrine -->
-vibe flow — working model. `.spec/` is durable memory; sessions are ephemeral. On session start, Read `.spec/lessons.md` and `.spec/plan.md`, then the active feature's `.spec/features/<name>/{product,tech,plan}.md`. A missing `state.json` cursor means idle — not an error.
+vibe flow — working model. `.spec/` is durable memory; sessions are ephemeral. On session start, Read `.spec/lessons.md` and `.spec/plan.md`, then the active feature's `docs/superpowers/{specs,plans}/*-<name>*` (fallback: `.spec/features/<name>/{product,tech,plan}.md`). A missing `state.json` cursor means idle — not an error.
 
 You drive the flow: each turn's orders name the current state and its transition command. At a non-gated edge, run `set-state.sh <next>` yourself — nothing advances on its own.
 
@@ -127,7 +127,7 @@ skill=vibe · delegate verification-before-completion + requesting-code-review +
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.compound -->
-skill=vibe · WRITE tagged .spec/lessons.md, promote durable facts from docs/superpowers/{specs,plans}/*-<feature>* into root specs, then git rm them, promote cross-cutting decisions to root specs, archive .spec/features/<feature> -> .spec/archive/<feature> · regen-active-rules.sh · offer archive delete · delegate finishing-a-development-branch LAST (it merges) · done → set-state.sh idle
+skill=vibe · WRITE tagged .spec/lessons.md, promote durable facts from docs/superpowers/{specs,plans}/*-<feature>* + cross-cutting decisions to root specs, git rm them, archive .spec/features/<feature> -> .spec/archive/<feature> · regen-active-rules.sh · offer archive delete after validation · delegate finishing-a-development-branch LAST (it merges) · done → set-state.sh idle
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.triage -->

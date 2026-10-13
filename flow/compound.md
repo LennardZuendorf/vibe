@@ -19,7 +19,7 @@ not here.
    `.spec/{product,tech,design,plan}.md` via the `spec` skill. Feature-specific
    detail stays in the archive, not in root specs.
 4. **Archive (feature.compound only).** The flow performs this move itself — it is
-   **not** the delegate's job: relocate `.spec/features/<feature>/` →
+   **not** the delegate's job: relocate the fallback `.spec/features/<feature>/` (if used; superpowers docs are `git rm`'d after promotion) →
    `.spec/archive/<feature>/`. Archive is a **transient safety net** (e.g. CI fails
    right after wrapup) — never a store for active work. CODE IS TRUTH.
 5. **Regenerate digest.** Run `bash .agents/skills/vibe/scripts/regen-active-rules.sh` to

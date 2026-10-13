@@ -65,12 +65,12 @@
       "writes": ["docs/superpowers/specs/*-<feature>-design.md", ".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/design.md", ".spec/features/<feature>/research.md"],
       "inject": null,
       "next": ["feature.plan", "idle"],
-      "exit": "feature product.md + tech.md written; design.md when full rigor; approach chosen"
+      "exit": "superpowers design doc written (or fallback product.md + tech.md; design.md when full rigor); approach chosen"
     },
     "feature.plan": {
       "skill": "vibe",
       "delegates": ["superpowers:writing-plans", "code-architect"],
-      "reads": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md"],
+      "reads": ["docs/superpowers/specs/*-<feature>-design.md", ".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md"],
       "writes": ["docs/superpowers/plans/*-<feature>.md", ".spec/features/<feature>/plan.md"],
       "inject": null,
       "next": ["feature.impl", "feature.design", "idle"],
@@ -79,7 +79,7 @@
     "feature.impl": {
       "skill": "vibe",
       "delegates": ["superpowers:executing-plans", "superpowers:subagent-driven-development", "superpowers:test-driven-development", "superpowers:receiving-code-review"],
-      "reads": [".spec/features/<feature>/plan.md"],
+      "reads": ["docs/superpowers/plans/*-<feature>.md", ".spec/features/<feature>/plan.md"],
       "writes": ["src/**", "tests/**"],
       "inject": null,
       "next": ["feature.verify", "idle"],
@@ -88,7 +88,7 @@
     "feature.verify": {
       "skill": "vibe",
       "delegates": ["superpowers:verification-before-completion", "superpowers:requesting-code-review", "superpowers:systematic-debugging", "code-reviewer"],
-      "reads": [".spec/features/<feature>/plan.md", "src/**", "tests/**"],
+      "reads": ["docs/superpowers/plans/*-<feature>.md", ".spec/features/<feature>/plan.md", "src/**", "tests/**"],
       "writes": ["evidence: test/build output, review notes"],
       "inject": null,
       "next": ["feature.compound", "feature.impl", "feature.plan", "idle"],
@@ -97,7 +97,7 @@
     "feature.compound": {
       "skill": "vibe",
       "delegates": ["superpowers:finishing-a-development-branch", "spec"],
-      "reads": [".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/plan.md", ".spec/lessons.md"],
+      "reads": ["docs/superpowers/specs/*-<feature>-design.md", "docs/superpowers/plans/*-<feature>.md", ".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/plan.md", ".spec/lessons.md"],
       "writes": [".spec/lessons.md", ".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md", "CLAUDE.md#active-rules", "AGENTS.md#active-rules", ".spec/archive/<feature>/**"],
       "inject": null,
       "next": ["idle"],

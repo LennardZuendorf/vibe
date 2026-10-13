@@ -33,11 +33,11 @@ change.
    > - model: code-explorer → sonnet (mechanical/trace); code-architect → opus (architecture) — pin explicitly, never inherit the default
    > - announce: "dispatching `code-explorer` (trace) + `code-architect` (sketch) — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
    > - inject: spec feature.md step 4 (which `tech.md` sections to populate, where merge markers go); text-only. Optionally dispatch 2–3 `code-architect` runs in PARALLEL (feature-dev's own pattern — each commits to ONE approach; compare, pick)
-   > - redirect: HOW → `.spec/features/<name>/tech.md` (+ `design.md` at full); the subagents write no files themselves
+   > - redirect: HOW → the superpowers design doc (fallback: `.spec/features/<name>/tech.md`, + `design.md` at full); the subagents write no files themselves
    > - skip: any self-commit or chain handoff. COPY these redirect/skip lines into each subagent (Task) prompt — subagents get no per-turn orders
 
-   Write **only** `.spec/features/<name>/product.md`, `tech.md`, and `design.md`
-   when the rigor gate says full. When HOW is sketched, advance to `feature.plan`
+   Write **only** the superpowers design doc (fallback only: `.spec/features/<name>/product.md`,
+   `tech.md`, and `design.md` when the rigor gate says full). When HOW is sketched, advance to `feature.plan`
    and continue.
 
 3. **Plan** (`feature.plan`). Follow [feature.md](.agents/skills/spec/feature.md)
@@ -51,7 +51,7 @@ change.
    > - fallback → `.spec/features/<name>/plan.md` with stable `<name>/n` unit IDs, same triggers as design
 
    `code-architect` may sketch the unit decomposition (text-only, same redirect).
-   Write `.spec/features/<name>/plan.md` with **stable unit IDs**; IDs never change
+   Write the superpowers plan (fallback only: `.spec/features/<name>/plan.md` with **stable unit IDs**); IDs never change
    on reorder or split. **Human gate:** confirm the plan before impl.
 
    At the plan gate, also **establish the working branch**: `git checkout -b
@@ -64,8 +64,8 @@ change.
    runs against the same tree either way.
 
 4. **Impl** (`feature.impl`). Mode is picked at the plan gate;
-   default **interactive**. Both modes consume the hybrid
-   `.spec/features/<name>/plan.md` (units in Seq order; per-unit **Steps** are the
+   default **interactive**. Both modes consume the superpowers plan
+   `docs/superpowers/plans/YYYY-MM-DD-<name>.md` (fallback: `.spec/features/<name>/plan.md`; units in Seq order; per-unit **Steps** are the
    task checklist) and run on the **feature branch established at the plan gate**
    (worktree only if offered+accepted in handover mode), so verify and the receipt
    run against the same tree. `superpowers:test-driven-development`
@@ -79,7 +79,7 @@ change.
 
    > **Delegate — superpowers:executing-plans**
    > - announce: "delegating to `superpowers:executing-plans` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
-   > - inject: the hybrid `.spec/features/<name>/plan.md` as its plan input (units in Seq order; per-unit **Steps** are the task checklist); work on the feature branch from the plan gate, no worktree
+   > - inject: the superpowers plan `docs/superpowers/plans/YYYY-MM-DD-<name>.md` (fallback: `.spec/features/<name>/plan.md`) as its plan input (tasks in order; per-task steps are the checklist); work on the feature branch from the plan gate, no worktree
    > - redirect: write `src/**` and `tests/**` only; cite plan unit IDs (`<name>/n`) in commits
    > - skip: its `finishing-a-development-branch` exit handoff — the flow advances to `feature.verify` instead
 
@@ -99,8 +99,10 @@ change.
    `feature.plan`.
 
 6. **Compound** (`feature.compound`). Hand to
-   `compound.md`: record a tagged lesson, promote cross-cutting decisions to
-   root specs, archive the feature folder, regenerate the active-rules digest.
+   `compound.md`: record a tagged lesson, promote durable facts from
+   `docs/superpowers/{specs,plans}/*-<name>*` and cross-cutting decisions into root specs,
+   then `git rm` the superpowers docs (fallback: archive the feature folder), regenerate
+   the active-rules digest.
 
 ## Rules
 
