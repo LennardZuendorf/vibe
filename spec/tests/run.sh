@@ -1513,37 +1513,55 @@ test_f1_subdir_invocation() {
 test_f1_subdir_invocation
 
 test_f1_plugin_cache_layout() {
-  local tmp proj cache s out rc bad=0
+  local tmp proj cache s out rc bad=0 marker
   tmp="$(mktemp -d)"; proj="$tmp/proj"; cache="$tmp/cache/spec"
   mkdir -p "$proj/src/deep" "$cache"
-  cp -R "$REPO_ROOT/spec/scripts" "$cache/scripts"
-  (cd "$proj" && git init -q . && bash "$cache/scripts/setup.sh" >/dev/null 2>&1) || true
-  [[ -d "$proj/.spec" ]] || mkdir -p "$proj/.spec"
-  printf '%s\n' '# Lessons' '' '### x' '**Tags:** alpha' >"$proj/.spec/lessons.md"
+  cp -R "${F1_SCRIPTS_DIR:-$REPO_ROOT/spec/scripts}" "$cache/scripts"
+  (cd "$proj" && git init -q . && bash "$cache/scripts/setup.sh" >/dev/null 2>&1)
+  if [[ ! -d "$proj/.spec" ]]; then
+    rm -rf "$tmp"; fail F1 "fixture setup failed: git init + setup.sh did not create .spec/"; return
+  fi
+  mkdir -p "$proj/.spec/features/f1feat"
+  printf '%s\n' '# Lessons' '' '### f1-fixture-lesson' '**Tags:** alpha' >"$proj/.spec/lessons.md"
+  printf '%s\n' '# Tech' '' '<!-- merge -->' 'f1-merge-preview' '<!-- /merge -->' >"$proj/.spec/features/f1feat/tech.md"
   for s in validate list-specs lessons-for scan-merges; do
-    case "$s" in lessons-for) set -- alpha ;; *) set -- ;; esac
-    out="$(cd "$proj/src/deep" && bash "$cache/scripts/$s.sh" "$@" 2>&1)"; rc=$?
-    if [[ $rc -ne 0 && $rc -ne 1 ]] || grep -qF "No .spec/ directory found" <<<"$out"; then
-      bad=$((bad + 1)); echo "        offender: $s (rc=$rc)"
+    case "$s" in
+      validate) marker="lessons.md: checked" ;;
+      list-specs) marker="- lessons.md [lessons]" ;;
+      lessons-for) marker="f1-fixture-lesson" ;;
+      scan-merges) marker="f1-merge-preview" ;;
+    esac
+    if [[ "$s" == lessons-for ]]; then
+      out="$(cd "$proj/src/deep" && bash "$cache/scripts/$s.sh" alpha 2>&1)"; rc=$?
+    else
+      out="$(cd "$proj/src/deep" && bash "$cache/scripts/$s.sh" 2>&1)"; rc=$?
+    fi
+    if [[ "$out" != *"$marker"* ]] || grep -qF "No .spec/ directory found" <<<"$out"; then
+      bad=$((bad + 1)); echo "        offender: $s (rc=$rc, missing marker: $marker)"
     fi
   done
   rm -rf "$tmp"
-  [[ $bad -eq 0 ]] && pass F1 "4 scripts from a plugin-cache path + nested cwd find the project .spec/" \
-    || fail F1 "$bad script(s) failed to find the project .spec/ from a nested cwd"
+  [[ $bad -eq 0 ]] && pass F1 "4 scripts from a plugin-cache path + nested cwd read the project .spec/ (positive markers)" \
+    || fail F1 "$bad script(s) failed to read the project .spec/ from a nested cwd"
 }
 test_f1_plugin_cache_layout
 
 test_f1_git_boundary() {
-  local tmp out
-  tmp="$(mktemp -d)"; mkdir -p "$tmp/outer/.spec" "$tmp/outer/inner/sub"
+  local tmp out s bad=0
+  tmp="$(mktemp -d)"; mkdir -p "$tmp/outer/.spec/features/f1feat" "$tmp/outer/inner/sub"
+  printf '%s\n' '<!-- merge -->' 'f1-merge-preview' '<!-- /merge -->' >"$tmp/outer/.spec/features/f1feat/tech.md"
+  printf '%s\n' '### f1-fixture-lesson' '**Tags:** alpha' >"$tmp/outer/.spec/lessons.md"
   (cd "$tmp/outer/inner" && git init -q .)
-  out="$(cd "$tmp/outer/inner/sub" && bash "$REPO_ROOT/spec/scripts/list-specs.sh" 2>&1 || true)"
+  for s in validate list-specs lessons-for scan-merges; do
+    out="$(cd "$tmp/outer/inner/sub" && bash "$REPO_ROOT/spec/scripts/$s.sh" alpha 2>&1 || true)"
+    case "$s" in
+      validate|list-specs) [[ "$out" == *"No .spec/ directory found"* ]] || { bad=$((bad + 1)); echo "        offender: $s"; } ;;
+      *) [[ "$out" != *"f1-merge-preview"* && "$out" != *"f1-fixture-lesson"* ]] || { bad=$((bad + 1)); echo "        offender: $s"; } ;;
+    esac
+  done
   rm -rf "$tmp"
-  if grep -qF "No .spec/ directory found" <<<"$out"; then
-    pass F1 "root search stops at the .git boundary (outer .spec/ not used)"
-  else
-    fail F1 "root search crossed the .git boundary"
-  fi
+  [[ $bad -eq 0 ]] && pass F1 "root search stops at the .git boundary for all 4 scripts" \
+    || fail F1 "root search crossed the .git boundary in $bad script(s)"
 }
 test_f1_git_boundary
 
