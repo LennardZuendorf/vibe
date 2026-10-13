@@ -70,9 +70,9 @@ Whole-feature delivery order with **binary** gates — a feature starts only whe
 | Order | Feature | Tool | Deliverable | Test | Status | Starts when |
 |---:|---|---|---|---|---|---|
 | F1 | spec-path-hotfix | spec | Skill-relative path fix in `validate.sh`/`list-specs.sh`/`lessons-for.sh`/`scan-merges.sh`; upward marker search; widened path-guard test | `spec/tests/run.sh` green from a subdirectory and a bare tmp dir | NOT STARTED | — |
-| F2 | contracts | all | `contracts/` schemas + goldens (payload, provider manifest, marker grammar, spec JSON) + `run.sh` | Green on empty tools; wired into CI | NOT STARTED (held) | — |
-| F3 | oracles-parity | flow | Frozen `oracles/js`+`oracles/bash`, corpus generator with floors, `vibe-parity` differential harness | Oracle byte change reddens CI; planted mutant confirmed via `git diff --numstat` also reddens it | NOT STARTED | — |
-| F4 | workspace-core | all | Cargo workspace + `vibe-core` (root, atomic write, markers, config, hook parsing, peer probe, ledger); MSRV; `cargo-deny` | Green matrix (3 OS × stable+MSRV); `cargo metadata` graph assertion | NOT STARTED (held) | F2 |
+| F2 | contracts | spec | `contracts/` Spec JSON v1 schema + goldens (`root`, `lessons-for`, `plan`, `feature`), exit-code contract, `run.sh`; payload, provider manifest and marker grammar move to their tools' rows | Green on empty tools; wired into CI | NOT STARTED | — |
+| F3 | oracles-parity | all | Frozen `oracles/js`+`oracles/bash` + `MANIFEST.sha256`; generic `vibe-parity` differential harness; spec corpus classes with floors (flow classes land with F5) | Oracle byte change reddens CI; planted mutant confirmed via `git diff --numstat` also reddens it | NOT STARTED | — |
+| F4 | workspace-core | all | Cargo workspace with `vibe-core`, `vibe-spec`, `vibe-parity` only (flow/instruct/signals crates arrive with their rows); MSRV 1.88; `cargo-deny` allowlist | Green matrix (3 OS × stable+MSRV); `cargo metadata` graph assertion | NOT STARTED | F2 |
 | F5 | flow-core | flow | Machine/policy in core; cursor at `.vibe/run/flow/state.json`; `state get`/`policy check` | Parity on `state get`/`policy decide` incl. mutated policies | NOT STARTED | F3, F4 |
 | F6 | flow-teeth-hooks | flow | Guard + Stop gate in Rust; `hook.sh` + `hooks.json` + frozen fallback; five-tier discovery | Parity on guard corpus + receipt×git corpus; tier matrix with deleted env | NOT STARTED | F5 |
 | F7 | machine-teeth | flow | `state set` enforces `next` + `--confirm`; ledger append; `/flow` a thin wrapper | Non-`next` refused, unconfirmed gate refused; parity on legal edges | NOT STARTED | F6 |
@@ -85,14 +85,15 @@ Whole-feature delivery order with **binary** gates — a feature starts only whe
 | F14 | instruct-adapters | instruct | Claude + OpenCode adapters; generated local files; `.claude/rules` emitter; `init`/`doctor` | Hook stdin fixtures → expected stdout; resume re-emits staleness only | NOT STARTED | F12, F13 |
 | F15 | instruct-migration | instruct | Split today's Active-Rules block into committed vs global blocks; retire the old marker grammar | This repo's AGENTS.md passes `write --check` + `lint` | NOT STARTED | F14 |
 | F16 | spec-core | spec | `vibe-spec` crate; root discovery; spec oracles frozen; `validate`/`list-specs`/`lessons-for`/`scan-merges` ported | Oracle diff + population floor; subdir invocation; exit 0/3 goldens | NOT STARTED | F3, F4 |
-| F17 | spec-validators | spec | Substring-bug fixes; strictness config + `--strict`; grammar checks + unified R-ID; `trace` | One landed mutant per bug fails; warn/error/off matrix; OpenSpec samples pass | NOT STARTED | F16 |
-| F18 | spec-delta | spec | Header-keyed ADDED/MODIFIED/REMOVED promotion engine; `check-drift` port; `export\|import --openspec` | Golden trees; MODIFIED replaces in place; round-trip byte-identity | NOT STARTED | F17 |
-| F19 | spec-hooks-agents | spec | Claude + OpenCode hooks (`validate --changed`/`--file`); four agents registered on both platforms | Changed/unchanged root; `claude plugin validate`; each agent names write path | NOT STARTED | F16 |
-| F20 | spec-migrate | spec | `migrate` (population assertion, allow-marker insertion); this repo → `docs/spec/` in one commit | Dry-run table; zero literals after; full suite + validate green | NOT STARTED | F17, F19 |
-| F21 | packaging | all | Three plugin dirs (manifests, skills, commands, agents, hooks, bin, opencode); `marketplace.json`; `doctor` peer checks | `claude plugin validate --strict` × 3; shim exits 0 without binary | NOT STARTED | F8, F14, F19 |
-| F22 | release-install | all | `cargo-dist` 5 targets, per-tool tags, `SHA256SUMS`; `install.sh` (subsets, platforms, uninstall, cargo fallback) | 5 verified artifacts; containerised subset × platform matrix; uninstall restores | NOT STARTED | F21 |
-| F23 | retire-legacy | all | Delete `flow/engine/`, node tests, `build-plugin.sh`, old `install.sh` paths; `vibe-flow migrate` | Full parity green; no `node` anywhere in hooks | NOT STARTED | F15, F20, F22 |
+| F17 | spec-validators | spec | Substring-bug fixes; strictness config + `--strict`; grammar checks + unified R-ID; `trace`; layered-layout checks (D44: allowlist, budgets, link resolution, unique names, typed frontmatter, `code:` existence, hub reachability); superpowers artifact name + `**Spec:**` link checks | One landed mutant per bug fails; warn/error/off matrix; OpenSpec samples pass; layered fixture tree passes, each mutated rule fails | NOT STARTED | F16 |
+| F18 | spec-delta | spec | Header-keyed ADDED/MODIFIED/REMOVED promotion engine; `promote.sh` port incl. superpowers promotion checklist and `promote <feature> --done` (D46); `check-drift` port with `--pre-merge`; `export\|import --openspec` | Golden trees; MODIFIED replaces in place; round-trip byte-identity; `--done` refuses on unchanged `docs/spec/` | NOT STARTED | F17 |
+| F19 | spec-hooks-agents | spec | Validate hooks (`validate --changed`/`--file`, exit 0); `using-spec` SessionStart router; blocking `PreToolUse` tooth (D47); agents `spec-promoter` + `spec-health` registered on both platforms; `spec-interviewer`/`spec-tracer` retired | Changed/unchanged root; tooth blocks unskilled edit and a discriminating test fails on `exit 0`; captured subagent payload fixture; `claude plugin validate` | NOT STARTED | F16 |
+| F20 | spec-migrate | spec | `setup.sh` port (`init`); `migrate --to docs/spec` (population assertion, allow-markers) + `--layout layered`; this repo → layered `docs/spec/` in one commit; `.spec/archive/` deleted | Dry-run table; zero literals after; full suite + `validate --strict` green | NOT STARTED | F17, F19 |
+| F21 | packaging | all | Three plugin dirs (manifests, skills, commands, agents, hooks, bin, opencode); `marketplace.json`; `doctor` peer checks — spec slice in the spec program | `claude plugin validate --strict` × 3; shim exits 0 without binary | NOT STARTED | F8, F14, F19 |
+| F22 | release-install | all | `cargo-dist` 5 targets, per-tool tags, `SHA256SUMS`; `install.sh` (subsets, platforms, uninstall, cargo fallback) — spec slice in the spec program | 5 verified artifacts; containerised subset × platform matrix; uninstall restores | NOT STARTED | F21 |
+| F23 | retire-legacy | all | Delete `flow/engine/`, node tests, `build-plugin.sh`, old `install.sh` paths; `vibe-flow migrate`; spec slice deletes `spec/scripts/*.sh` | Full parity green; no `node` anywhere in hooks | NOT STARTED | F15, F20, F22 |
 | F24 | doc-truth | all | READMEs (umbrella + per tool), CHANGELOG, root specs truth sweep; drift check extended to three tools | `check-drift` green; stranger eval from a fresh non-git target | NOT STARTED | F23 |
+| F25 | spec-superpowers-default | spec | Assertive, trigger-only spec skill rewrite (pressure-tested); `using-spec` router text; superpowers-first delegate lines in `flow/`; `superpowers-frozen` write-policy rule; `docs/superpowers/` un-ignored | Pressure baseline 100 % with and without superpowers; flow + spec suites green | NOT STARTED | — |
 
 Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8), spec (F16→F20). F1 is a same-week hotfix on the current bash tree, independent of the Rust arc.
 
@@ -101,17 +102,18 @@ Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8
 | Row | Issue | Row | Issue |
 |---|---|---|---|
 | F1 | #23 | F13 | #30 |
-| F3 | #24 | F14 | #31 |
+| F3 | oracles-parity | all | Frozen `oracles/js`+`oracles/bash` + `MANIFEST.sha256`; generic `vibe-parity` differential harness; spec corpus classes with floors (flow classes land with F5) | Oracle byte change reddens CI; planted mutant confirmed via `git diff --numstat` also reddens it | NOT STARTED | — |
 | F5 | #25 | F15 | #32 |
 | F6 | #26 | F16 | #33 |
 | F7 | #27 | F17 | #34 |
 | F8 | #28 | F18 | #35 |
 | F12 | #29 | F19 | #36 |
-| F2, F4, F9, F10, F11 | held — no issue yet | F20 | #37 |
+| F2, F4 | to file (spec program) | F20 | #37 |
+| F9, F10, F11 | held — no issue yet | F25 | to file (spec program) |
 
 **Superseded rows.** Rows 15–20 of the pre-v0.4 sequence never started; F1–F24 above absorbs them: machine-teeth → F7, plugin-runtime → F21/F22, spec-js → F16/F17, delegation-redirect → F9, spec-delta → F18, doc-truth → F24.
 
-**Active focus.** F1 (spec-path-hotfix) ships this week on the current bash tree — it is not part of the Rust arc. F2 (contracts) and F3 (oracles-parity) run in parallel; F4 (workspace-core) starts once F2 is done. Every other feature waits on F4, and F12 additionally waits on F8. The v0.5 arc (C1–C6 below) starts only when F22 is DONE; its tracking issue and children mirror v0.4's filing.
+**Active focus.** The spec program (design: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`) runs on one branch: amendment → F1 → F25 → F2 ∥ F3 → F4 → F16 → F17 → F18 → F19 → F20 → spec slices of F21–F24. F2 and F4 are un-held and scope-cut to the spec tool. F9, F10, F11 stay held; the flow (F5–F8) and instruct (F12–F15) tracks are unchanged and not part of this program.
 
 ---
 
@@ -185,7 +187,7 @@ The follow-on arc: one `vibe` CLI front door over the three tools, plus the cros
 
 ## Spec vs Implementation
 
-The whole v0.4 arc — F1 through F24 — is spec-ahead-of-code: nothing below has started. The tree is still v0.3: rows 12–14 (js-core, content-layer, inject-triggers) are delivered, and the old rows 15–20 (machine-teeth, plugin-runtime, spec-js, delegation-redirect, spec-delta, doc-truth) were never started before this rewrite superseded them. The reproduced spec-path bug (F1) is live in the tree today — `validate.sh`, the spec subagents, and `feature.md` hardcode `.agents/skills/spec/scripts/*.sh`, so a plugin install or any cwd other than the repo root breaks them.
+The whole v0.4 arc — F1 through F25 — is spec-ahead-of-code: nothing below has started. The tree is still v0.3: rows 12–14 (js-core, content-layer, inject-triggers) are delivered, and the old rows 15–20 (machine-teeth, plugin-runtime, spec-js, delegation-redirect, spec-delta, doc-truth) were never started before this rewrite superseded them. The reproduced spec-path bug (F1) is live in the tree today — `validate.sh`, the spec subagents, and `feature.md` hardcode `.agents/skills/spec/scripts/*.sh`, so a plugin install or any cwd other than the repo root breaks them.
 
 The v0.5 arc (C1–C6) is likewise spec-ahead — planned, not started. It gates on F22 (installer/release surface), with C4 after F16 and C5 after F14.
 
