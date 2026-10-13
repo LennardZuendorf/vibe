@@ -1,8 +1,8 @@
 # v0.4 roadmap
 
 The v0.4 re-architecture ("three tools, one language, no bundle") as a GitHub
-issue set, authored from `.spec/plan.md` rows F1–F24. `issues/` holds one
-Markdown file per issue (`00-epic.md`, `01-F1-*.md` … `24-F24-*.md`), each
+issue set, authored from `.spec/plan.md` rows F1–F25. `issues/` holds one
+Markdown file per issue (`00-epic.md`, `01-F1-*.md` … `25-F25-*.md`), each
 with YAML frontmatter (`id`, `tool`, `phase`, `depends_on`, `parent`, plus
 `issue`/`hold` once posted or held — see below) and the same body template
 GitHub issues get: Deliverable, Scope, Acceptance, Depends on, Decisions this
@@ -10,9 +10,10 @@ implements, Notes.
 
 ## Status
 
-The epic and 19 of the 24 features are posted to GitHub. Five features are
-**held** — their architecture is still being designed in the originating
-conversation, so no issue exists for them yet.
+The epic and 19 of the 25 features are posted to GitHub. Three features
+(F9, F10, F11) are **held** — their architecture is still being designed in
+the originating conversation, so no issue exists for them yet. Three more
+(F2, F4, F25) are to file.
 
 **Epic:** [#22 — v0.4 — three tools, one language, no bundle (tracking)](https://github.com/LennardZuendorf/vibe/issues/22)
 
@@ -91,7 +92,7 @@ files.
 
 When a held feature's architecture is settled: remove its `hold:` line and
 the `> **Held.**` notice from the file, fill in its real `## Depends on`
-section (the five held features' real dependents already reference them —
+section (the held features' real dependents already reference them —
 update those bodies too once the new issue number exists), and ask the agent
 to post it. It will pick up only that one file; the rest stay untouched.
 

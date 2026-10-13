@@ -100,7 +100,7 @@ style rather than a broad marketplace audience.
 
 | Piece | What It Owns | Lives In |
 |---|---|---|
-| `spec` | The spec tree (`docs/spec/`, or `.spec/` today), templates, validators, OpenSpec interchange, four subagents | `spec/` |
+| `spec` | The spec tree (`docs/spec/`, or `.spec/` today), templates, validators, OpenSpec interchange, two subagents | `spec/` |
 | `flow` | State machine, cursor, guard/stop hooks, ledger, advisory signals, the TUI | `flow/` |
 | `instruct` | Instruction tiers, blocks, channels, budgets, providers, sync | `instruct/` |
 | `contracts` | Versioned schemas + golden fixtures every tool's CI runs against | `contracts/` |
@@ -211,7 +211,7 @@ Output density is governed by one machine-level `style` note carried in `flow`'s
 
 | Tool | Covers | Lives in |
 |---|---|---|
-| **spec** | Durable planning memory: spec tree, templates, validators, OpenSpec interchange, four subagents. | [`spec/`](../spec/README.md) |
+| **spec** | Durable planning memory: spec tree, templates, validators, OpenSpec interchange, two subagents. | [`spec/`](../spec/README.md) |
 | **flow** | State-machine workflow with real teeth: cursor, guard/stop hooks, ledger, signals, TUI. | [`flow/`](../flow/README.md) |
 | **instruct** | Layered, budgeted instruction injection: tiers, blocks, channels, providers, sync. | `instruct/` |
 | **vibe CLI** (v0.5) | Front door + cross-tool capabilities: worktree lifecycle, global lessons, cross-repo visibility, global blocks. | `crates/vibe`, plugin `vibe/` |

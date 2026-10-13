@@ -22,7 +22,7 @@ vibe is three small, independent tools for coding with agents — **spec** (dura
 - **Phase 0 — foundations:** contracts, oracles/parity harness, Cargo workspace + `vibe-core` (F2–F4), plus a same-week bash hotfix for the spec path bug (F1).
 - **Phase 1 — flow:** Rust port of cursor/machine/policy, guard+stop hooks, machine-teeth (`state set` enforces `next`/gates), orders/payload, signals, TUI (F5–F10).
 - **Phase 2 — instruct:** 4-tier layering, block/channel rendering, providers, sources/sync, platform adapters, migration of today's Active-Rules block (F11–F15).
-- **Phase 3 — spec:** root discovery at `docs/spec/`, ported validators, strictness ratchet, OpenSpec delta/interchange, hooks + 4 real subagents, this repo's migration (F16–F20).
+- **Phase 3 — spec:** root discovery at `docs/spec/`, ported validators, strictness ratchet, OpenSpec delta/interchange, hooks + 2 real subagents, this repo's migration (F16–F20).
 - **Phase 4 — distribution + retirement:** three plugin packages, `install.sh` + cargo-dist release pipeline, deleting the JS/bash runtime, doc truth sweep (F21–F24).
 
 ## Superseded plan rows

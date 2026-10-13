@@ -8,7 +8,7 @@ updated: 2026-09-26
 
 # vibe — Implementation Plan
 
-Single-purpose repo: build the self-hosting vibe workflow harness. This plan is current-only — delivered work collapses to notes, no long-horizon backlog. The active arc is v0.4: three tools, one language, no bundle — `spec`, `flow`, and `instruct` rewritten as independent static Rust binaries, sequenced as binary-gated features F1–F24 below. The queued arc is v0.5: the `vibe` CLI front door — worktree lifecycle, global spec management, global blocks (C1–C6, own section below).
+Single-purpose repo: build the self-hosting vibe workflow harness. This plan is current-only — delivered work collapses to notes, no long-horizon backlog. The active arc is v0.4: three tools, one language, no bundle — `spec`, `flow`, and `instruct` rewritten as independent static Rust binaries, sequenced as binary-gated features F1–F25 below. The queued arc is v0.5: the `vibe` CLI front door — worktree lifecycle, global spec management, global blocks (C1–C6, own section below).
 
 **Parent specs:** [product.md](product.md), [tech.md](tech.md), [design.md](design.md). Architecture detail, including the v0.4 branch docs and the v0.5 CLI doc, lives in tech.md → `tech-contracts.md`, `tech-rust.md`, `tech-instruct.md`, `tech-spec.md`, `tech-cli.md`.
 
@@ -102,7 +102,7 @@ Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8
 | Row | Issue | Row | Issue |
 |---|---|---|---|
 | F1 | #23 | F13 | #30 |
-| F3 | oracles-parity | all | Frozen `oracles/js`+`oracles/bash` + `MANIFEST.sha256`; generic `vibe-parity` differential harness; spec corpus classes with floors (flow classes land with F5) | Oracle byte change reddens CI; planted mutant confirmed via `git diff --numstat` also reddens it | NOT STARTED | — |
+| F3 | #24 | F14 | #31 |
 | F5 | #25 | F15 | #32 |
 | F6 | #26 | F16 | #33 |
 | F7 | #27 | F17 | #34 |
@@ -111,7 +111,7 @@ Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8
 | F2, F4 | to file (spec program) | F20 | #37 |
 | F9, F10, F11 | held — no issue yet | F25 | to file (spec program) |
 
-**Superseded rows.** Rows 15–20 of the pre-v0.4 sequence never started; F1–F24 above absorbs them: machine-teeth → F7, plugin-runtime → F21/F22, spec-js → F16/F17, delegation-redirect → F9, spec-delta → F18, doc-truth → F24.
+**Superseded rows.** Rows 15–20 of the pre-v0.4 sequence never started; F1–F25 above absorbs them: machine-teeth → F7, plugin-runtime → F21/F22, spec-js → F16/F17, delegation-redirect → F9, spec-delta → F18, doc-truth → F24.
 
 **Active focus.** The spec program (design: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`) runs on one branch: amendment → F1 → F25 → F2 ∥ F3 → F4 → F16 → F17 → F18 → F19 → F20 → spec slices of F21–F24. F2 and F4 are un-held and scope-cut to the spec tool. F9, F10, F11 stay held; the flow (F5–F8) and instruct (F12–F15) tracks are unchanged and not part of this program.
 
