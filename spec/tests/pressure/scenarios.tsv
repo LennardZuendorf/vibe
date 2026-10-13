@@ -1,0 +1,7 @@
+id	accept	prompt
+flag	spec|superpowers:brainstorming	Add a --verbose flag to src/cli.sh.
+prd	spec|superpowers:brainstorming	Write a PRD for exporting reports as CSV.
+refactor	spec|superpowers:brainstorming|superpowers:writing-plans	Plan the refactor of src/cli.sh into modules.
+quick	spec|superpowers:brainstorming|superpowers:systematic-debugging	Quick fix: the greeting in src/cli.sh says "Helo". Just fix it.
+howbuild	spec|superpowers:brainstorming	How should we build user authentication here?
+archnote	spec	Update the architecture notes to say we store data in SQLite.
