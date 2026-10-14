@@ -67,17 +67,61 @@ fn spec_oracles_are_deterministic_over_the_corpus() {
 }
 
 #[test]
+fn every_oracle_command_runs() {
+    let suite = Suite::load(&repo().join("tests/parity/spec.json")).unwrap();
+    let mut printed = 0;
+    for (i, cmd) in suite.commands.iter().enumerate() {
+        let mut printed_here = false;
+        for (j, class) in cmd.classes.iter().enumerate() {
+            let case = suite.cases(class).unwrap().into_iter().next().unwrap();
+            let dir = scratch(&format!("runs-{i}-{j}"));
+            let dest = dir.join("sandbox");
+            stage(&case.tree(), &suite.oracle_root, &dest).unwrap();
+            let oracle = dest.join(ORACLE_DIR).to_string_lossy().into_owned();
+            let mut argv: Vec<String> = cmd
+                .oracle
+                .iter()
+                .map(|a| a.replace("{oracle}", &oracle))
+                .collect();
+            argv.extend(case.arg_sets(&cmd.name).into_iter().next().unwrap());
+            let (code, out) = execute(&argv, &dest.join(&case.spec.cwd), &dir).unwrap();
+            assert_ne!(code, Some(127), "{} did not start: {argv:?}", cmd.name);
+            assert!(code.is_some(), "{} was killed by a signal", cmd.name);
+            printed_here |= !out.is_empty();
+        }
+        printed += usize::from(printed_here);
+    }
+    assert!(
+        printed >= 5,
+        "only {printed} of {} oracle commands printed",
+        suite.commands.len()
+    );
+}
+
+#[test]
 fn no_root_cases_stop_at_the_sandbox_git_dir() {
+    const NONE: &str = "No .spec/ directory found in current project\n";
     let dir = scratch("escape");
     let dest = dir.join("sandbox");
+    fs::create_dir_all(dir.join(".spec")).unwrap();
+    fs::write(
+        dir.join(".spec/product.md"),
+        "---\ntype: entrypoint\nscope: product\nupdated: 2026-01-15\n---\n\n# Decoy\n",
+    )
+    .unwrap();
     let case = repo().join("tests/parity/corpus/spec/no-root/subdir");
     stage(&case.join("tree"), &repo().join("oracles/bash/spec"), &dest).unwrap();
     let script = dest.join(ORACLE_DIR).join("scripts/list-specs.sh");
     let argv = ["bash".to_string(), script.to_string_lossy().into_owned()];
     let (code, out) = execute(&argv, &dest.join("src/deep"), &dir).unwrap();
     assert_eq!(code, Some(0));
-    assert_eq!(
+    assert_eq!(String::from_utf8(out).unwrap(), NONE);
+
+    fs::remove_dir_all(dest.join(".git")).unwrap();
+    let (_, out) = execute(&argv, &dest.join("src/deep"), &dir).unwrap();
+    assert_ne!(
         String::from_utf8(out).unwrap(),
-        "No .spec/ directory found in current project\n"
+        NONE,
+        "control: without .git the walk must reach the decoy"
     );
 }
