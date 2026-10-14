@@ -5,30 +5,50 @@
 //! character except `/`; `[abc]`, `[a-z]` and `[!abc]` (or `[^abc]`) match one
 //! character except `/`; `\x` matches `x` literally. An unterminated `[` is
 //! a literal. The whole path must match.
+//!
+//! Dialect: path-aware. A single `*` or `?` never crosses `/`. This is NOT the
+//! flow write-policy dialect, where `*` does cross `/`. A port of the write
+//! policy needs its own matcher, proven against the policy oracle.
 
 /// Returns whether `path` matches `pattern` in full.
+///
+/// Work is bounded by `pattern length * path length`: failed positions are
+/// remembered, so repeated wildcards cannot cause exponential backtracking.
 pub fn glob_match(pattern: &str, path: &str) -> bool {
     let p: Vec<char> = pattern.chars().collect();
     let s: Vec<char> = path.chars().collect();
-    match_at(&p, 0, &s, 0)
+    let mut failed = vec![false; (p.len() + 1) * (s.len() + 1)];
+    match_at(&p, 0, &s, 0, &mut failed)
 }
 
-fn match_at(p: &[char], pi: usize, s: &[char], si: usize) -> bool {
+fn match_at(p: &[char], pi: usize, s: &[char], si: usize, failed: &mut [bool]) -> bool {
+    let key = pi * (s.len() + 1) + si;
+    if failed.get(key) == Some(&true) {
+        return false;
+    }
+    let hit = step(p, pi, s, si, failed);
+    if let Some(slot) = failed.get_mut(key).filter(|_| !hit) {
+        *slot = true;
+    }
+    hit
+}
+
+fn step(p: &[char], pi: usize, s: &[char], si: usize, failed: &mut [bool]) -> bool {
     let Some(&c) = p.get(pi) else {
         return si == s.len();
     };
     match c {
         '*' if p.get(pi + 1) == Some(&'*') => {
             let rest = pi + 2;
-            if p.get(rest) == Some(&'/') && match_at(p, rest + 1, s, si) {
+            if p.get(rest) == Some(&'/') && match_at(p, rest + 1, s, si, failed) {
                 return true;
             }
-            (si..=s.len()).any(|k| match_at(p, rest, s, k))
+            (si..=s.len()).any(|k| match_at(p, rest, s, k, failed))
         }
         '*' => {
             let mut k = si;
             loop {
-                if match_at(p, pi + 1, s, k) {
+                if match_at(p, pi + 1, s, k, failed) {
                     return true;
                 }
                 match s.get(k) {
@@ -37,16 +57,18 @@ fn match_at(p: &[char], pi: usize, s: &[char], si: usize) -> bool {
                 }
             }
         }
-        '?' => matches!(s.get(si), Some(&ch) if ch != '/') && match_at(p, pi + 1, s, si + 1),
+        '?' => {
+            matches!(s.get(si), Some(&ch) if ch != '/') && match_at(p, pi + 1, s, si + 1, failed)
+        }
         '[' => match class(p, pi, s.get(si).copied()) {
-            Some((hit, end)) => hit && match_at(p, end, s, si + 1),
-            None => s.get(si) == Some(&'[') && match_at(p, pi + 1, s, si + 1),
+            Some((hit, end)) => hit && match_at(p, end, s, si + 1, failed),
+            None => s.get(si) == Some(&'[') && match_at(p, pi + 1, s, si + 1, failed),
         },
         '\\' => match p.get(pi + 1) {
-            Some(&lit) => s.get(si) == Some(&lit) && match_at(p, pi + 2, s, si + 1),
+            Some(&lit) => s.get(si) == Some(&lit) && match_at(p, pi + 2, s, si + 1, failed),
             None => s.get(si) == Some(&'\\') && si + 1 == s.len(),
         },
-        lit => s.get(si) == Some(&lit) && match_at(p, pi + 1, s, si + 1),
+        lit => s.get(si) == Some(&lit) && match_at(p, pi + 1, s, si + 1, failed),
     }
 }
 
@@ -131,5 +153,17 @@ mod tests {
                 "glob_match({pattern:?}, {path:?})"
             );
         }
+    }
+
+    #[test]
+    fn hostile_patterns_finish_quickly() {
+        let start = std::time::Instant::now();
+        assert!(!glob_match("*a*a*a*a*a*a*b", &"a".repeat(300)));
+        assert!(!glob_match(
+            "**/**/**/**/**/**/**/b",
+            &("a/".repeat(150) + "c")
+        ));
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_secs() < 2, "took {elapsed:?}");
     }
 }
