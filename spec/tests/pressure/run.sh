@@ -2,6 +2,7 @@
 # Pressure-tests the spec skill: fresh headless sessions with no CLAUDE.md,
 # no user settings, no hooks (empty CLAUDE_CONFIG_DIR). Passes only if the first skill
 # invoked — before any write — is in the scenario's accept set.
+# Transcripts and stderr go to $PRESSURE_LOG_DIR (default .superpowers/p1/pressure).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
@@ -23,6 +24,11 @@ if [[ "$mode" != absent ]]; then
   echo "pressure: superpowers dir: $SP_DIR"
 fi
 
+MODEL="${PRESSURE_MODEL:-claude-sonnet-5-5}"
+LOG_DIR="${PRESSURE_LOG_DIR:-$REPO/.superpowers/p1/pressure}"
+mkdir -p "$LOG_DIR"
+echo "pressure: model $MODEL; logs $LOG_DIR"
+
 SANDBOX=""
 trap '[[ -z "$SANDBOX" ]] || rm -rf "$SANDBOX"' EXIT
 
@@ -37,17 +43,18 @@ make_sandbox() { # populates dir $1: proj/ plugin/ config/
 }
 claude_iso() { # cfg plugin-args... prompt
   local cfg="$1"; shift
-  CLAUDE_CONFIG_DIR="$cfg" claude -p "$@" --permission-mode plan --output-format stream-json --verbose
+  CLAUDE_CONFIG_DIR="$cfg" claude -p "$@" --model "$MODEL" --permission-mode plan --output-format stream-json --verbose </dev/null
 }
 
 pass=0 total=0
 run_one() { # id accept prompt sp
-  local id="$1" accept="$2" prompt="$3" sp="$4" d first args=()
+  local id="$1" accept="$2" prompt="$3" sp="$4" d first log args=()
   [[ "$sp" == absent ]] && accept="spec"
   d="$(mktemp -d)"; SANDBOX="$d"; make_sandbox "$d"
   args=(--plugin-dir "$d/plugin")
   [[ "$sp" == present ]] && args+=(--plugin-dir "$SP_DIR")
-  if ! first="$(cd "$d/proj" && claude_iso "$d/config" ${args[@]+"${args[@]}"} "$prompt" 2>/dev/null | node "$HERE/parse.mjs")"; then
+  log="$LOG_DIR/$id-$sp"
+  if ! first="$(cd "$d/proj" && claude_iso "$d/config" ${args[@]+"${args[@]}"} "$prompt" 2>"$log.err" | tee "$log.jsonl" | node "$HERE/parse.mjs")"; then
     echo "pressure: claude/parse failed for scenario $id ($sp); counting first-skill=none" >&2
     first="none"
   fi
