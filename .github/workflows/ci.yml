@@ -162,3 +162,56 @@ jobs:
 
       - name: Test suites (via the real macOS /bin/bash, not Homebrew's)
         run: /bin/bash tests/run.sh
+
+  rust-check:
+    # F4: format, lint and dependency policy. cargo-deny enforces deny.toml:
+    # banned crates, licenses, sources, duplicate versions, advisories.
+    name: rust — fmt, clippy, deny
+    runs-on: ubuntu-latest
+    env:
+      # fmt and clippy run on stable, the toolchain they were authored
+      # against; rust-test's 1.88 leg proves MSRV.
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+
+  rust-test:
+    # F4: unit + integration tests on 3 OS × stable + MSRV. RUSTUP_TOOLCHAIN
+    # overrides rust-toolchain.toml so the stable leg really runs stable.
+    # Tests that spawn bash or compare the corpus byte-for-byte are
+    # cfg(unix); Windows runs the rest.
+    name: rust — test (${{ matrix.os }}, ${{ matrix.toolchain }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        toolchain: [stable, '1.88']
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Toolchain
+        run: rustup toolchain install ${{ matrix.toolchain }} --profile minimal
+
+      - name: Test
+        run: cargo test --workspace --locked
