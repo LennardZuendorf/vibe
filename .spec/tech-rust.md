@@ -3,7 +3,7 @@ type: tech-topic
 parent: tech.md
 scope: rust workspace and distribution
 covers: crates, MSRV, dependency allowlist, shim discovery, oracles and parity, TUI, signals, distribution, CI matrix
-updated: 2026-10-13
+updated: 2026-10-14
 ---
 
 # Rust Workspace — Tech
@@ -12,8 +12,12 @@ updated: 2026-10-13
 
 Branch doc for the Rust implementation: workspace layout, the port from the
 Node engine and bash scripts, the hook shim, the TUI, and distribution.
-**Shipped today:** `flow/engine/` (Node/ESM) plus bash oracles drive
-everything this doc describes as a target; none of it exists as Rust yet.
+**Shipped today:** `flow/engine/` (Node/ESM) and the bash scripts still
+drive everything. F2–F4 delivered the foundations: frozen oracles under
+`oracles/` (43 files, `MANIFEST.sha256`), the Cargo workspace (`vibe-core`
+with glob matching and atomic write, a `vibe-spec` stub, `vibe-parity`), and
+the parity harness, which runs the spec oracles against themselves over
+`tests/parity/corpus/spec/` until F16 supplies the candidate.
 
 ## Workspace
 
@@ -76,6 +80,18 @@ classes derive from `state-machine.json` and `policy.json`: cursors ×
 {feature, none, malformed, missing}, policies × one mutation per rule,
 tool inputs × path class × state. An empty corpus class fails the run — a
 floor is asserted, not assumed.
+
+`vibe_core::glob::glob_match` is path-aware (`*` stops at `/`) for spec
+`applies:` globs. The flow write policy uses fnmatch without
+`FNM_PATHNAME` (`*` crosses `/`); its port (F5) needs its own matcher,
+proven against `oracles/bash/flow/scripts/detect-context.sh` and
+`oracles/js/policy.mjs`.
+
+Known pins for F16: the spec corpus already shows two divergences the
+port must pin, not copy. `setup.sh` and the no-root `validate.sh` path
+print the absolute oracle path in stdout (6 runs); `lessons-for.sh
+--format json` emits invalid JSON when a lesson holds quotes or
+backslashes (`lessons/quotes`).
 
 Port order, blast-radius first: guard → stop → cursor/`state set` → policy
 → root → machine/orders/doctrine → payload/compose → doctor →

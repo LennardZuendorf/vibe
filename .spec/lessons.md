@@ -164,3 +164,33 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** The description is the only text an agent sees before choosing. It names the smallest work it must catch, in the user's words, and says to invoke before reading files. A body row (Routing, Red Flags) does not catch what the description misses.
 **Tags:** skills, spec, triggers, pressure, superpowers
 **Date:** 2026-10-14
+
+### A compiled, passing plan is not a proven guard
+**Pattern:** Every Phase 2 code block was compiled and tested in a scratch workspace before the plan was written, yet task reviews found guards that pass without guarding in six of eight tasks: a schema validator that ignored `$ref` siblings, contracts that did not pin required sets, a vocabulary list missing half the state names, a path-dependency branch no test reached, a harness `cwd` that escaped the sandbox, and a boundary test with no decoy to stop.
+**Rule:** For every guard a plan adds, plant the defect it exists to catch and watch it fail before the plan ships. "It compiles and the tests pass" proves the code runs, not that the check discriminates.
+**Tags:** testing, planning, review, guards, rust, contracts
+**Date:** 2026-10-14
+
+### A backtracking matcher needs a bound before it reaches a hook
+**Pattern:** The hand-written glob matcher backtracked without memoization: `*a*a*a*a*b` against 200 characters took 4.9 s, and six `**/` segments took 6.8 s. It was meant to run on every path inside a hook.
+**Rule:** Any recursive wildcard matcher memoizes failed (pattern, subject) positions, and a test pins a hostile pattern under a generous time bound.
+**Tags:** rust, performance, glob, hooks
+**Date:** 2026-10-14
+
+### Derive a banned vocabulary from its source, never from memory
+**Pattern:** The core crate's "no tool vocabulary" test listed `feature.` and `strategy.` but missed `quick.*`, `setup.*` and the `agents-md` channel.
+**Rule:** A guard against a set of names reads the set from the file that defines it (state machine, channel config) and asserts a floor on how many it derived.
+**Tags:** testing, guards, rust, flow
+**Date:** 2026-10-14
+
+### Floors and fixtures must hold at every stage of a plan
+**Pattern:** A source-file floor of 5 failed at the stage that had 3 files, and fixture files named `*.sh` broke the repo-wide CI shellcheck once tracked. Both surfaced only when intermediate stages were built and files were staged.
+**Rule:** Build each intermediate task state of a plan, and dry-run the whole phase with every new file staged, before handing the plan over. Fixture files that are not real scripts never use a script extension.
+**Tags:** planning, testing, ci, shellcheck
+**Date:** 2026-10-14
+
+### The write guard suffix-matches nested spec paths
+**Pattern:** Corpus files under `tests/parity/corpus/**/tree/.spec/plan.md` are blocked for Edit/Write in every flow state, because the policy rule matches the `.spec/plan.md` suffix.
+**Rule:** Never hand-edit generated corpus trees; change the generator and regenerate. A real fix belongs to the flow policy (anchor root-spec rules at the repo root).
+**Tags:** flow, policy, parity, spec
+**Date:** 2026-10-14

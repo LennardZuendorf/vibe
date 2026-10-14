@@ -3,7 +3,7 @@ type: tech-topic
 parent: tech.md
 scope: cross-tool contracts
 covers: provider payload, marker grammar, spec JSON, provider manifests, exit codes, versioning
-updated: 2026-09-30
+updated: 2026-10-14
 ---
 
 # Cross-Tool Contracts — Tech
@@ -19,13 +19,16 @@ call, probed, absence-is-degrade.
 
 ```text
 contracts/
-├── payload.schema.json             # v1
-├── marker.schema.json              # v1
-├── spec-json.schema.json           # v1
-├── provider-manifest.schema.json   # v1
-├── fixtures/**                     # golden payloads, blocks, spec JSON
-└── run.sh                          # validates every tool's output against the schemas
+├── spec-json.schema.json           # v1 (F2)
+├── exit-codes.json                 # v1 (F2), with exit-codes.schema.json
+├── fixtures/spec-json/<query>/{valid,invalid}/*.json
+├── lib/schema.mjs                  # JSON Schema subset validator (Node, zero deps)
+├── run.mjs                         # validates schemas, goldens, exit codes, floors
+└── run.sh                          # entry point; also runs contracts/tests/
 ```
+
+`payload`, `marker` and `provider-manifest` schemas arrive with their
+tools' rows.
 
 Additivity rule: a contract changes only by adding optional fields within a
 major version. Readers ignore unknown fields. A breaking change bumps the
@@ -141,6 +144,18 @@ if `vibe-spec` is absent from PATH, a peer checks only that
 `<specroot>/features/<f>/` exists, using its own copy of the discovery
 order, and falls back to a bare path pointer instead of the summarized
 answer — never a hard failure.
+
+Fields are defined in `contracts/spec-json.schema.json`. Required sets are
+minimal: `root {v, root, source}`, `lessons-for {v, tags, lessons}`,
+`plan {v, feature, rows}`, `feature {v, feature, layer, docs}`.
+`root.source` names the discovery step that hit: `flag`, `env`, `config`,
+`docs-spec`, `dot-spec`. Spec JSON is a new `--json` output; the legacy
+`lessons-for.sh --format json` array is a different shape and stays
+byte-identical for parity.
+
+`doc.kind` is `design`, `plan`, `product`, `tech` or `research`.
+`contracts/run.mjs` pins every required set and the `root.source` order
+exactly, so dropping or adding a required field fails the gate.
 
 ## Exit-code contract
 
