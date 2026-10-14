@@ -1,0 +1,30 @@
+{
+  "runs": {
+    "lessons-for": [
+      [
+        "bash"
+      ],
+      [
+        "bash",
+        "spec"
+      ],
+      [
+        "--format",
+        "json",
+        "bash"
+      ],
+      [
+        "--format=inject",
+        "spec"
+      ],
+      [
+        "nomatch"
+      ],
+      [
+        "--bogus"
+      ],
+      []
+    ]
+  },
+  "v": 1
+}

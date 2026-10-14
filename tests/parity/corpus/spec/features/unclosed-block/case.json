@@ -1,0 +1,17 @@
+{
+  "runs": {
+    "promote": [
+      [
+        "auth"
+      ]
+    ],
+    "scan-merges": [
+      [],
+      [
+        "--format",
+        "json"
+      ]
+    ]
+  },
+  "v": 1
+}

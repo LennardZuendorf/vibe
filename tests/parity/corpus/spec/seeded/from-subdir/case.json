@@ -1,0 +1,11 @@
+{
+  "cwd": "src/app",
+  "runs": {
+    "lessons-for": [
+      [
+        "spec"
+      ]
+    ]
+  },
+  "v": 1
+}

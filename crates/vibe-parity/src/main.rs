@@ -3,6 +3,7 @@
 //! Usage:
 //!   vibe-parity run <suite.json> --self
 //!   vibe-parity run <suite.json> --candidate <binary>
+//!   vibe-parity gen-spec-corpus <templates-dir> <out-dir>
 //!
 //! Exit 0 when every run passes or is pinned, 1 on any failure or suite
 //! error, 2 on a usage error.
@@ -13,7 +14,7 @@ use vibe_core::exit;
 use vibe_parity::harness::{Mode, Status, run_suite};
 use vibe_parity::suite::Suite;
 
-const USAGE: &str = "usage: vibe-parity run <suite.json> (--self | --candidate <binary>)";
+const USAGE: &str = "usage: vibe-parity run <suite.json> (--self | --candidate <binary>)\n       vibe-parity gen-spec-corpus <templates-dir> <out-dir>";
 
 fn usage(msg: &str) -> ExitCode {
     eprintln!("vibe-parity: {msg}\n{USAGE}");
@@ -29,6 +30,18 @@ fn main() -> ExitCode {
             Ok(path) => run(Path::new(suite), Mode::Candidate(path)),
             Err(e) => usage(&format!("candidate {bin}: {e}")),
         },
+        ["gen-spec-corpus", templates, out] => {
+            match vibe_parity::corpus_spec::generate(Path::new(templates), Path::new(out)) {
+                Ok(n) => {
+                    println!("gen-spec-corpus: {n} cases written to {out}");
+                    ExitCode::from(exit::OK)
+                }
+                Err(e) => {
+                    eprintln!("vibe-parity: {e}");
+                    ExitCode::from(exit::FINDINGS)
+                }
+            }
+        }
         _ => usage("bad arguments"),
     }
 }
