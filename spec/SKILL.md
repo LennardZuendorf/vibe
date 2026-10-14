@@ -3,10 +3,11 @@ name: spec
 description: |
   You MUST use this before changing what the product does, how it is built,
   or any file under docs/spec, .spec or docs/superpowers — features,
-  refactors, architecture, decisions, PRDs, plans, roadmaps. Use before
-  writing code, before brainstorming alone, before answering "how should
-  we build X", and whenever the user mentions spec, PRD, design doc, plan,
-  or roadmap.
+  refactors, architecture, decisions, PRDs, plans, roadmaps, and also
+  one-line fixes, typos and new flags. "Quick" and "just fix it" still
+  route here first. Invoke it before reading files, before writing code,
+  before brainstorming alone, before answering "how should we build X",
+  and whenever the user mentions spec, PRD, design doc, plan, or roadmap.
 user-invocable: true
 argument-hint: "[strategy|feature [<name>]|interview [<name>]|promote <name>|audit|diff <name>|health|research <name>|lessons-for <tag>|product|tech|design|plan|lessons|setup|validate]"
 allowed-tools:
@@ -158,6 +159,8 @@ its live surface (code, tests, root docs). Never restore the folder.
 | Thought | Reality |
 |---|---|
 | "This is too small for a spec" | Small work routes to the bounded path. Route it. |
+| "It's a one-line fix, I'll just fix it" | Quick fixes route to the bug/quick-fix row. Invoke this skill first. |
+| "It's a small targeted change, I'll read the file first" | Route before reading. The route names the files. |
 | "I'll update the spec after the code" | The spec leads. Route first. |
 | "The user only asked a question" | "How should we build X" is design. Route it. |
 | "I know this codebase" | Lessons exist because agents knew the codebase. Read them. |
