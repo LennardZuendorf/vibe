@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # Discriminating tests for oracles/check.sh: the real tree and a clean copy
 # pass; a changed byte, a missing file, an unlisted file, a missing manifest
-# and a population below the floor each fail.
+# and a population below the floor each fail. The manifest itself is pinned
+# by hash here, outside oracles/, so a changed oracle with a regenerated
+# manifest still fails.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECK="$ROOT/oracles/check.sh"
+# The hash of oracles/MANIFEST.sha256. D30: oracles never change. Changing
+# this constant is an explicit, reviewed act, never a side effect of a fix.
+MANIFEST_SHA256=a343fc0ff327b4208f1059acf11678ce46c6ee23497ba4246890d46de6e2c37e
 pass=0
 fail=0
 
@@ -16,6 +21,20 @@ expect() { # name want-rc [dir]
     pass=$((pass + 1)); echo "  PASS [oracles] $name"
   else
     fail=$((fail + 1)); echo "  FAIL [oracles] $name (rc=$rc, want $want)"
+  fi
+}
+
+pin_ok() { # manifest-path; true when its hash equals MANIFEST_SHA256
+  local got
+  got="$(shasum -a 256 "$1" 2>/dev/null | awk '{ print $1 }')"
+  [[ -n "$got" && "$got" == "$MANIFEST_SHA256" ]]
+}
+
+record() { # name ok(0|1) [detail]
+  if [[ "$2" == 0 ]]; then
+    pass=$((pass + 1)); echo "  PASS [oracles] $1"
+  else
+    fail=$((fail + 1)); echo "  FAIL [oracles] $1${3:+ ($3)}"
   fi
 }
 
@@ -48,6 +67,26 @@ expect "a missing manifest fails" 1 "$d"; rm -rf "$d"
 
 d="$(copy)"; rm "$d/js/json.mjs"; grep -v ' js/json.mjs$' "$d/MANIFEST.sha256" >"$d/m" && mv "$d/m" "$d/MANIFEST.sha256"
 expect "a population below the floor fails" 1 "$d"; rm -rf "$d"
+
+rc=0; pin_ok "$ROOT/oracles/MANIFEST.sha256" || rc=1
+record "the manifest matches its pinned hash" "$rc"
+
+# The hole the pin closes: change an oracle and regenerate the manifest, and
+# check.sh alone passes. The pin must still fail on that manifest.
+d="$(copy)"; printf ' ' >>"$d/bash/spec/scripts/validate.sh"
+(cd "$d" && find bash js -type f | LC_ALL=C sort | xargs shasum -a 256 >MANIFEST.sha256)
+crc=0; bash "$CHECK" "$d" >/dev/null 2>&1 || crc=$?
+got="$(shasum -a 256 "$d/MANIFEST.sha256" 2>/dev/null | awk '{ print $1 }')"
+if [[ "$crc" != 0 ]]; then
+  record "a regenerated manifest over a changed oracle fails the pin" 1 "check.sh rc=$crc, want 0 on the regenerated copy"
+elif [[ -z "$got" ]]; then
+  record "a regenerated manifest over a changed oracle fails the pin" 1 "no hash for the copy's manifest"
+elif pin_ok "$d/MANIFEST.sha256"; then
+  record "a regenerated manifest over a changed oracle fails the pin" 1 "the pin accepted $got"
+else
+  record "a regenerated manifest over a changed oracle fails the pin" 0
+fi
+rm -rf "$d"
 
 attr="$(git -C "$ROOT" check-attr text -- oracles/bash/spec/scripts/validate.sh 2>/dev/null)"
 if [[ "$attr" == *": text: unset" ]]; then
