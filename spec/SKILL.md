@@ -158,9 +158,9 @@ its live surface (code, tests, root docs). Never restore the folder.
 
 | Thought | Reality |
 |---|---|
-| "This is too small for a spec" | Small work routes to the bounded path. Route it. |
+| "This is too small for a spec" | Small work routes too: bounded features to the bounded row, fixes to the quick-fix row. Route it. |
 | "It's a one-line fix, I'll just fix it" | Quick fixes route to the bug/quick-fix row. Invoke this skill first. |
-| "It's a small targeted change, I'll read the file first" | Route before reading. The route names the files. |
+| "It's a small targeted change, I'll read the file first" | Invoke this skill before reading code, in any permission mode. |
 | "I'll update the spec after the code" | The spec leads. Route first. |
 | "The user only asked a question" | "How should we build X" is design. Route it. |
 | "I know this codebase" | Lessons exist because agents knew the codebase. Read them. |
