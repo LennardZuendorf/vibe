@@ -14,8 +14,9 @@ static COUNTER: AtomicU64 = AtomicU64::new(0);
 ///
 /// A new temporary file is created exclusively in the same directory
 /// (mode 0600 on unix), written, synced, then renamed over `path`. A
-/// symlink at `path` is replaced, not followed. On any failure the
-/// temporary file is removed and `path` is left as it was.
+/// symlink at `path` is replaced, not followed. If a later step fails, the
+/// temporary file this call created is removed and `path` is left as it
+/// was; a file this call did not create is never removed.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let name = path
         .file_name()
@@ -24,20 +25,29 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
         Some(d) if !d.as_os_str().is_empty() => d,
         _ => Path::new("."),
     };
-    let tmp = tmp_path(dir, name);
-    let result = write_then_rename(&tmp, path, bytes);
+    write_via(&tmp_path(dir, name), path, bytes)
+}
+
+/// Creates `tmp` exclusively, then writes and renames it over `path`.
+/// Cleanup runs only after the create succeeded, so an existing `tmp`
+/// (the create fails with `AlreadyExists`) is left untouched.
+fn write_via(tmp: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
+    let file = create_exclusive(tmp).map_err(|source| Error::Io {
+        path: tmp.to_path_buf(),
+        source,
+    })?;
+    let result = write_then_rename(file, tmp, path, bytes);
     if result.is_err() {
-        let _ = fs::remove_file(&tmp);
+        let _ = fs::remove_file(tmp);
     }
     result
 }
 
-fn write_then_rename(tmp: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
+fn write_then_rename(mut file: File, tmp: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
     let io = |source| Error::Io {
         path: tmp.to_path_buf(),
         source,
     };
-    let mut file = create_exclusive(tmp).map_err(io)?;
     file.write_all(bytes).map_err(io)?;
     file.sync_all().map_err(io)?;
     drop(file);
@@ -73,7 +83,7 @@ fn tmp_path(dir: &Path, name: &OsStr) -> PathBuf {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
-    use super::write_atomic;
+    use super::{write_atomic, write_via};
     use crate::Error;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -152,5 +162,33 @@ mod tests {
             let err = write_atomic(Path::new(p), b"x").unwrap_err();
             assert!(matches!(err, Error::Invalid(_)), "{p:?}: {err}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_target_is_replaced_not_followed() {
+        let dir = scratch("symlink");
+        let keep = dir.join("keep.txt");
+        let link = dir.join("link");
+        fs::write(&keep, b"keep").unwrap();
+        std::os::unix::fs::symlink("keep.txt", &link).unwrap();
+        write_atomic(&link, b"new").unwrap();
+        let meta = fs::symlink_metadata(&link).unwrap();
+        assert!(meta.file_type().is_file(), "{:?}", meta.file_type());
+        assert_eq!(fs::read(&link).unwrap(), b"new");
+        assert_eq!(fs::read(&keep).unwrap(), b"keep");
+        assert_eq!(entries(&dir), ["keep.txt", "link"]);
+    }
+
+    #[test]
+    fn an_existing_temp_path_is_left_alone() {
+        let dir = scratch("tmpexists");
+        let tmp = dir.join(".out.txt.tmp");
+        let target = dir.join("out.txt");
+        fs::write(&tmp, b"someone else").unwrap();
+        let err = write_via(&tmp, &target, b"x").unwrap_err();
+        assert!(matches!(err, Error::Io { .. }), "{err}");
+        assert_eq!(fs::read(&tmp).unwrap(), b"someone else");
+        assert!(!target.exists());
     }
 }
