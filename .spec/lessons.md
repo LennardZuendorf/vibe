@@ -125,7 +125,7 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 
 ### A new shell script runs the umbrella suite, not just its own
 **Pattern:** The pressure-test harness passed shellcheck and its own honesty checks, then broke the flow suite's bash-3.2 portability lint (`"${arr[@]}"` on an empty array under `set -u`). The implementer and two reviewers ran only the spec checks; the defect surfaced two tasks later.
-**Rule:** Any change that adds or edits a tracked `*.sh` file — test scripts included — runs `bash tests/run.sh` (all suites) and `git ls-files '*.sh' | grep -v '^oracles/' | xargs shellcheck` (the CI command) before commit; a phase gate later found two SC2015 hits in `spec/tests/run.sh` the same way. Guard array expansions as `${arr[@]+"${arr[@]}"}` for stock macOS bash 3.2.
+**Rule:** Any change that adds or edits a tracked `*.sh` file — test scripts included — runs `bash tests/run.sh` (all suites) and `git ls-files '*.sh' | grep -Ev '^oracles/(bash|js)/' | xargs shellcheck` (the CI command) before commit; a phase gate later found two SC2015 hits in `spec/tests/run.sh` the same way. Guard array expansions as `${arr[@]+"${arr[@]}"}` for stock macOS bash 3.2.
 **Tags:** bash, portability, bash32, testing, spec
 **Date:** 2026-10-13
 

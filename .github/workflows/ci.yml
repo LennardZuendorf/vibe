@@ -41,11 +41,12 @@ jobs:
           fi
           shellcheck --version
 
-      # oracles/ is byte-frozen (F3): a newer shellcheck must never force an
-      # edit there, so the frozen copies are excluded. Their live originals
-      # are still linted until they are retired.
+      # oracles/bash and oracles/js are byte-frozen (F3): a newer shellcheck
+      # must never force an edit there, so the frozen copies are excluded.
+      # oracles/check.sh is live code and stays linted. The live originals of
+      # the frozen copies are linted until they are retired.
       - name: Shellcheck (all tracked *.sh except frozen oracles)
-        run: git ls-files '*.sh' | grep -v '^oracles/' | xargs shellcheck
+        run: git ls-files '*.sh' | grep -Ev '^oracles/(bash|js)/' | xargs shellcheck
 
       - name: Frozen oracles match MANIFEST.sha256
         run: bash oracles/check.sh
