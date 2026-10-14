@@ -38,8 +38,9 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Words that name a tool's vocabulary. Core must take these as input, never spell them.
-const TOOL_VOCABULARY: [&str; 12] = [
+/// Spec-path and file words that name a tool's vocabulary. State and channel
+/// names are derived from their source files, so they cannot drift from the list.
+const STATIC_VOCABULARY: [&str; 8] = [
     ".spec",
     "docs/spec",
     "docs/superpowers",
@@ -48,14 +49,42 @@ const TOOL_VOCABULARY: [&str; 12] = [
     "policy.json",
     "AGENTS.md",
     "CLAUDE.md",
-    "feature.",
-    "strategy.",
-    "user-prompt",
-    "session-start",
 ];
+
+fn object_keys(file: &str, field: &str) -> Vec<String> {
+    let text = fs::read_to_string(repo().join(file)).unwrap();
+    let json: Value = serde_json::from_str(&text).unwrap();
+    json[field].as_object().unwrap().keys().cloned().collect()
+}
+
+/// Every dotted flow state name and its flow prefix (`quick.verify`, `quick.`),
+/// plus every injection channel name, plus the static words.
+fn tool_vocabulary() -> Vec<String> {
+    let mut words: Vec<String> = STATIC_VOCABULARY.iter().map(|w| (*w).to_owned()).collect();
+    let states: Vec<String> = object_keys("flow/state-machine.json", "states")
+        .into_iter()
+        .filter(|s| s.contains('.'))
+        .collect();
+    assert!(states.len() >= 12, "derived only {} states", states.len());
+    for state in states {
+        if let Some((flow, _)) = state.split_once('.') {
+            words.push(format!("{flow}."));
+        }
+        words.push(state);
+    }
+    let channels = object_keys("flow/content/vibe.default.json", "channels");
+    assert!(
+        channels.len() >= 5,
+        "derived only {} channels",
+        channels.len()
+    );
+    words.extend(channels);
+    words
+}
 
 #[test]
 fn core_sources_hold_no_tool_vocabulary() {
+    let vocabulary = tool_vocabulary();
     let mut files = Vec::new();
     rust_files(
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
@@ -64,9 +93,9 @@ fn core_sources_hold_no_tool_vocabulary() {
     assert!(files.len() >= 3, "scanned only {} files", files.len());
     for file in &files {
         let text = fs::read_to_string(file).unwrap();
-        for word in TOOL_VOCABULARY {
+        for word in &vocabulary {
             assert!(
-                !text.contains(word),
+                !text.contains(word.as_str()),
                 "{} spells tool vocabulary {word:?}",
                 file.display()
             );
