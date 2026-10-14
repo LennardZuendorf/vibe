@@ -57,5 +57,40 @@ test('checkSchema rejects a non-local $ref', () => {
   assert.match(checkSchema({ $ref: 'https://example.com/x.json' }).join('\n'), /\$ref must be/);
 });
 
+test('checkSchema rejects a keyword beside $ref', () => {
+  const s = { $defs: { item: { type: 'string' } }, properties: { a: { $ref: '#/$defs/item', minLength: 5 } } };
+  assert.match(checkSchema(s).join('\n'), /#\/properties\/a: keywords beside \$ref are ignored: minLength/);
+});
+test('checkSchema allows annotations beside $ref', () => {
+  const s = { $defs: { item: { type: 'string' } }, properties: { a: { $ref: '#/$defs/item', $comment: 'c', title: 't', description: 'd' } } };
+  assert.deepEqual(checkSchema(s), []);
+});
+test('checkSchema rejects a dangling $ref nested under properties', () => {
+  assert.match(checkSchema({ properties: { a: { $ref: '#/$defs/nope' } } }).join('\n'), /#\/properties\/a: unresolved \$ref #\/\$defs\/nope/);
+});
+test('checkSchema rejects $ref to a prototype name', () => {
+  assert.match(checkSchema({ properties: { a: { $ref: '#/$defs/constructor' } } }).join('\n'), /unresolved \$ref #\/\$defs\/constructor/);
+});
+test('validate reports a prototype-name $ref as unresolved', () => {
+  assert.match(validate({ $defs: {} }, { $ref: '#/$defs/constructor' }, 1).join('\n'), /unresolved/);
+});
+test('checkSchema rejects additionalProperties false inside $defs', () => {
+  const s = { $defs: { d: { additionalProperties: false } } };
+  assert.match(checkSchema(s).join('\n'), /#\/\$defs\/d: additionalProperties/);
+});
+test('checkSchema rejects additionalProperties false inside items', () => {
+  const s = { type: 'array', items: { additionalProperties: false } };
+  assert.match(checkSchema(s).join('\n'), /#\/items: additionalProperties/);
+});
+test('minLength counts code points', () => {
+  assert.match(validate({}, { type: 'string', minLength: 2 }, '\u{1F600}').join('\n'), /shorter than 2/);
+});
+test('pattern runs with the u flag', () => {
+  assert.deepEqual(validate({}, { type: 'string', pattern: '^.$' }, '\u{1F600}'), []);
+});
+test('type number accepts an integer', () => {
+  assert.deepEqual(validate({}, { type: 'number' }, 1), []);
+});
+
 console.log(`\n=== results: ${passed} passed, ${failed} failed ===`);
 process.exit(failed === 0 ? 0 : 1);

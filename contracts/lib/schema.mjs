@@ -4,7 +4,9 @@
 // $defs, $ref (local "#/$defs/<name>" only), type, const, enum, required,
 // properties, additionalProperties (absent or true only), items, minItems,
 // minLength, minimum, pattern. Any other keyword is a schema error: a schema
-// must not rely on a keyword this validator would silently ignore.
+// must not rely on a keyword this validator would silently ignore. A "$ref"
+// schema may carry only $comment, title and description beside it, and its
+// target must exist in the root "$defs" (own properties only).
 
 const KEYWORDS = new Set([
   '$schema', '$comment', 'title', 'description', 'x-vibe-compat', '$defs', '$ref',
@@ -12,10 +14,13 @@ const KEYWORDS = new Set([
   'items', 'minItems', 'minLength', 'minimum', 'pattern',
 ]);
 
+const REF_SIBLINGS = new Set(['$comment', 'title', 'description']);
+const REF_PREFIX = '#/$defs/';
+
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 /** Returns a list of problems with `schema` itself; empty when usable. */
-export function checkSchema(schema, at = '#') {
+export function checkSchema(schema, at = '#', root = schema) {
   if (!isObject(schema)) return [`${at}: a schema must be an object`];
   const errors = [];
   for (const key of Object.keys(schema)) {
@@ -26,10 +31,16 @@ export function checkSchema(schema, at = '#') {
   }
   if ('$ref' in schema && !/^#\/\$defs\/[A-Za-z0-9_-]+$/.test(schema.$ref)) {
     errors.push(`${at}: $ref must be "#/$defs/<name>"`);
+  } else if ('$ref' in schema) {
+    if (!Object.hasOwn(root.$defs ?? {}, schema.$ref.slice(REF_PREFIX.length))) {
+      errors.push(`${at}: unresolved $ref ${schema.$ref}`);
+    }
+    const extra = Object.keys(schema).filter((k) => k !== '$ref' && !REF_SIBLINGS.has(k));
+    if (extra.length > 0) errors.push(`${at}: keywords beside $ref are ignored: ${extra.join(', ')}`);
   }
-  for (const [name, sub] of Object.entries(schema.$defs ?? {})) errors.push(...checkSchema(sub, `${at}/$defs/${name}`));
-  for (const [name, sub] of Object.entries(schema.properties ?? {})) errors.push(...checkSchema(sub, `${at}/properties/${name}`));
-  if ('items' in schema) errors.push(...checkSchema(schema.items, `${at}/items`));
+  for (const [name, sub] of Object.entries(schema.$defs ?? {})) errors.push(...checkSchema(sub, `${at}/$defs/${name}`, root));
+  for (const [name, sub] of Object.entries(schema.properties ?? {})) errors.push(...checkSchema(sub, `${at}/properties/${name}`, root));
+  if ('items' in schema) errors.push(...checkSchema(schema.items, `${at}/items`, root));
   return errors;
 }
 
@@ -49,7 +60,8 @@ function typeMatches(want, v) {
 export function validate(root, schema, value, at = '$') {
   if (schema.$ref) {
     const name = schema.$ref.slice('#/$defs/'.length);
-    const target = root.$defs?.[name];
+    const defs = root.$defs ?? {};
+    const target = Object.hasOwn(defs, name) ? defs[name] : undefined;
     if (!target) return [`${at}: unresolved $ref ${schema.$ref}`];
     return validate(root, target, value, at);
   }
