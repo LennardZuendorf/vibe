@@ -3,7 +3,7 @@ type: entrypoint
 scope: implementation
 covers: feature sequence, binary gates, validation criteria, open decisions
 children: []
-updated: 2026-10-13
+updated: 2026-10-14
 ---
 
 # vibe — Implementation Plan
@@ -93,7 +93,7 @@ Whole-feature delivery order with **binary** gates — a feature starts only whe
 | F22 | release-install | all | `cargo-dist` 5 targets, per-tool tags, `SHA256SUMS`; `install.sh` (subsets, platforms, uninstall, cargo fallback) — spec slice in the spec program | 5 verified artifacts; containerised subset × platform matrix; uninstall restores | NOT STARTED | F21 |
 | F23 | retire-legacy | all | Delete `flow/engine/`, node tests, `build-plugin.sh`, old `install.sh` paths; `vibe-flow migrate`; spec slice deletes `spec/scripts/*.sh` | Full parity green; no `node` anywhere in hooks | NOT STARTED | F15, F20, F22 |
 | F24 | doc-truth | all | READMEs (umbrella + per tool), CHANGELOG, root specs truth sweep; drift check extended to three tools | `check-drift` green; stranger eval from a fresh non-git target | NOT STARTED | F23 |
-| F25 | spec-superpowers-default | spec | Assertive, trigger-only spec skill rewrite (pressure-tested); `using-spec` router text; superpowers-first delegate lines in `flow/`; `superpowers-frozen` write-policy rule; `docs/superpowers/` un-ignored | Pressure baseline 100 % with and without superpowers; flow + spec suites green | IN PROGRESS — pressure baseline pending (needs auth token) | — |
+| F25 | spec-superpowers-default | spec | Assertive, trigger-only spec skill rewrite (pressure-tested); `using-spec` router text; superpowers-first delegate lines in `flow/`; `superpowers-frozen` write-policy rule; `docs/superpowers/` un-ignored | Pressure baseline 100 % with and without superpowers; flow + spec suites green | DONE | — |
 
 Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8), spec (F16→F20). F1 is a same-week hotfix on the current bash tree, independent of the Rust arc.
 
@@ -187,7 +187,7 @@ The follow-on arc: one `vibe` CLI front door over the three tools, plus the cros
 
 ## Spec vs Implementation
 
-F1 is delivered; F25 is in progress (pressure baseline pending). The rest of the v0.4 arc — F2 through F24 — is spec-ahead-of-code. The tree is still v0.3 apart from F1 and F25: rows 12–14 (js-core, content-layer, inject-triggers) are delivered, and the old rows 15–20 (machine-teeth, plugin-runtime, spec-js, delegation-redirect, spec-delta, doc-truth) were never started before this rewrite superseded them. F1 delivered the spec-path fix: the scripts `validate.sh`, `list-specs.sh`, `lessons-for.sh`, and `scan-merges.sh` walk up from the cwd to the directory holding `.git`, and a relative `SPEC_DIR` now resolves against the root found. `promote.sh`, `setup.sh`, and `check-drift.sh` are unchanged.
+F1 and F25 are delivered. The rest of the v0.4 arc — F2 through F24 — is spec-ahead-of-code. The tree is still v0.3 apart from F1 and F25: rows 12–14 (js-core, content-layer, inject-triggers) are delivered, and the old rows 15–20 (machine-teeth, plugin-runtime, spec-js, delegation-redirect, spec-delta, doc-truth) were never started before this rewrite superseded them. F1 delivered the spec-path fix: the scripts `validate.sh`, `list-specs.sh`, `lessons-for.sh`, and `scan-merges.sh` walk up from the cwd to the directory holding `.git`, and a relative `SPEC_DIR` now resolves against the root found. `promote.sh`, `setup.sh`, and `check-drift.sh` are unchanged.
 
 The v0.5 arc (C1–C6) is likewise spec-ahead — planned, not started. It gates on F22 (installer/release surface), with C4 after F16 and C5 after F14.
 

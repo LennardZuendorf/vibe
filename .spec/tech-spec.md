@@ -3,7 +3,7 @@ type: tech-topic
 parent: tech.md
 scope: spec root, OpenSpec interchange, validation
 covers: root discovery, migrate, OpenSpec grammar, strictness, adherence checks, trace, subagents, hooks, commands
-updated: 2026-10-13
+updated: 2026-10-14
 ---
 
 # Spec Framework — Tech
@@ -174,5 +174,7 @@ against the root found. `promote.sh`, `setup.sh`, and `check-drift.sh`
 are unchanged (`check-drift.sh` already searched upward); run `promote.sh`
 and `setup.sh` from the project root. The skill, the spec subagents, and
 `feature.md` reference scripts by skill-relative path. F25
-(`spec-superpowers-default`) is in progress: the pressure baseline is
-pending. The Rust port replaces these scripts.
+(`spec-superpowers-default`) is delivered: the pressure harness
+(`spec/tests/pressure/run.sh`) passes 12/12 with and without superpowers,
+against a 5/12 baseline for the pre-rewrite skill. The Rust port replaces
+these scripts.

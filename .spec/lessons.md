@@ -152,3 +152,15 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** A finding that a binding rule makes mandatory (stale safety comment, test that asserts nothing) enters the task's fix loop; only genuinely optional polish is deferred to the final review.
 **Tags:** review, sdd, process, comments
 **Date:** 2026-10-13
+
+### A headless CLI inside a read loop eats the loop's input
+**Pattern:** The pressure harness ran `claude -p` inside `while read … done <scenarios.tsv`. The headless CLI reads stdin when it is not a terminal, so the first session would have swallowed the remaining scenario rows and the loop would have ended after one scenario. The bug shipped through two reviews and was caught only before the first live run.
+**Rule:** Every command that may read stdin, when called inside a `while read` loop, gets `</dev/null`. Live harnesses also keep each session's transcript and stderr on disk; a silenced stderr hides auth and rate-limit failures.
+**Tags:** bash, harness, testing, pressure, spec
+**Date:** 2026-10-14
+
+### A skill description must name the small work it covers
+**Pattern:** After the rewrite, the spec skill passed every design-shaped pressure scenario but failed "Quick fix: … Just fix it" with and without superpowers, plus "Add a --verbose flag" without them (GREEN 9/12). The agent read the file and wrote straight away. Naming one-line fixes, typos, new flags, and "quick"/"just fix it" in the description took the run to 12/12 twice.
+**Rule:** The description is the only text an agent sees before choosing. It names the smallest work it must catch, in the user's words, and says to invoke before reading files. A body row (Routing, Red Flags) does not catch what the description misses.
+**Tags:** skills, spec, triggers, pressure, superpowers
+**Date:** 2026-10-14
