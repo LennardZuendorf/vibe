@@ -194,3 +194,9 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Never hand-edit generated corpus trees; change the generator and regenerate. A real fix belongs to the flow policy (anchor root-spec rules at the repo root).
 **Tags:** flow, policy, parity, spec
 **Date:** 2026-10-14
+
+### Control a red timing gate against a clean base before blaming load or the branch
+**Pattern:** The engine perf budget failed (`doctor` 194–252 ms > 150 ms). It was blamed first on load, then on `target/`. A clean `origin/main` export failed identically; the cost is `validate-state.sh` (81 ms, ~10 `jq` spawns) under `doctor`, independent of the branch.
+**Rule:** When a timing gate fails, profile the slow command's subprocesses and rerun the same gate on a clean base export before attributing the cause.
+**Tags:** testing, performance, verification
+**Date:** 2026-10-14

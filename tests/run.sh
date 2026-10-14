@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/run.sh — combined test runner: spec + flow + adapters + engine suites.
+# tests/run.sh — combined test runner: spec + flow + adapters + engine + oracles + contracts suites.
 #
 # This is a reporter/aggregator: it runs ALL suites even when one fails, prints a
 # per-suite PASS/FAIL line plus a final summary, and exits non-zero if any suite
