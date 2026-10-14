@@ -1,5 +1,6 @@
 // Unit tests for contracts/lib/schema.mjs. Run: node contracts/tests/schema.test.mjs
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { checkSchema, validate } from '../lib/schema.mjs';
 
 let passed = 0;
@@ -91,6 +92,16 @@ test('pattern runs with the u flag', () => {
 test('type number accepts an integer', () => {
   assert.deepEqual(validate({}, { type: 'number' }, 1), []);
 });
+
+// The real Spec JSON root def: every absolute root form, and no relative one.
+const spec = JSON.parse(readFileSync(new URL('../spec-json.schema.json', import.meta.url), 'utf8'));
+const rootOf = (root) => validate(spec, spec.$defs.root, { v: 1, root, source: 'flag' });
+for (const root of ['/home/dev/app/.spec', 'C:\\app\\.spec', 'C:/app/.spec', '\\\\server\\share\\app\\docs\\spec', '\\\\?\\C:\\app\\.spec']) {
+  test(`spec root ${root} validates`, () => assert.deepEqual(rootOf(root), []));
+}
+for (const root of ['docs/spec', '.spec', 'C:app', '\\app\\.spec']) {
+  test(`spec root ${root} fails`, () => assert.match(rootOf(root).join('\n'), /does not match/));
+}
 
 console.log(`\n=== results: ${passed} passed, ${failed} failed ===`);
 process.exit(failed === 0 ? 0 : 1);

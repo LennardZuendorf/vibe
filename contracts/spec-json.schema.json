@@ -9,7 +9,7 @@
       "required": ["v", "root", "source"],
       "properties": {
         "v": { "const": 1 },
-        "root": { "type": "string", "minLength": 1, "pattern": "^(/|[A-Za-z]:[\\\\/])", "description": "Absolute path of the spec root." },
+        "root": { "type": "string", "minLength": 1, "pattern": "^(/|[A-Za-z]:[\\\\/]|\\\\\\\\)", "description": "Absolute path of the spec root." },
         "source": { "enum": ["flag", "env", "config", "docs-spec", "dot-spec"], "description": "Discovery step that found the root (tech-spec.md, Root and discovery, steps 1-5)." },
         "depth": { "type": "integer", "minimum": 0, "description": "Parent directories walked before the hit (step 6); 0 for the cwd." },
         "layout": { "enum": ["flat", "layered"] }
