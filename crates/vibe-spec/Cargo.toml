@@ -1,0 +1,15 @@
+[package]
+name = "vibe-spec"
+description = "The vibe spec tool."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+vibe-core = { workspace = true }
+clap = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,6 @@
+# MSRV (D19). Bumped only at a tagged release. CI's stable leg overrides
+# this with RUSTUP_TOOLCHAIN; local Homebrew cargo (no rustup) ignores it.
+[toolchain]
+channel = "1.88"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

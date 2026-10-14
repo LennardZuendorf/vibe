@@ -1,0 +1,16 @@
+[package]
+name = "vibe-parity"
+description = "Differential parity harness: frozen oracle vs candidate. Dev-only."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+vibe-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
