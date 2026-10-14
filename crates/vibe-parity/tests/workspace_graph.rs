@@ -48,3 +48,55 @@ fn every_resolved_package_builds_at_msrv() {
     let n = check_msrv(&metadata(&[])).unwrap_or_else(|e| panic!("{e:#?}"));
     assert!(n >= 10, "examined only {n} packages");
 }
+
+/// Every package `Cargo.lock` resolves today: 3 members plus the reviewed
+/// transitive closure of clap, serde and serde_json. Sorted; duplicates kept.
+const REVIEWED_PACKAGES: [&str; 20] = [
+    "anstyle",
+    "clap",
+    "clap_builder",
+    "clap_derive",
+    "clap_lex",
+    "heck",
+    "itoa",
+    "memchr",
+    "proc-macro2",
+    "quote",
+    "serde",
+    "serde_core",
+    "serde_derive",
+    "serde_json",
+    "syn",
+    "unicode-ident",
+    "vibe-core",
+    "vibe-parity",
+    "vibe-spec",
+    "zmij",
+];
+
+#[test]
+fn resolved_packages_are_the_reviewed_set() {
+    let meta = metadata(&[]);
+    let mut resolved: Vec<&str> = meta["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
+    resolved.sort_unstable();
+    let added: Vec<&str> = resolved
+        .iter()
+        .filter(|n| !REVIEWED_PACKAGES.contains(n))
+        .copied()
+        .collect();
+    let removed: Vec<&str> = REVIEWED_PACKAGES
+        .iter()
+        .filter(|n| !resolved.contains(n))
+        .copied()
+        .collect();
+    assert_eq!(
+        resolved, REVIEWED_PACKAGES,
+        "resolved packages differ from the reviewed set; added {added:?}, removed {removed:?}. \
+         A dependency change must update REVIEWED_PACKAGES in a reviewed edit."
+    );
+}
