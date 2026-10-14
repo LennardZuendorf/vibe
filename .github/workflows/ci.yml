@@ -41,8 +41,14 @@ jobs:
           fi
           shellcheck --version
 
-      - name: Shellcheck (all tracked *.sh)
-        run: git ls-files '*.sh' | xargs shellcheck
+      # oracles/ is byte-frozen (F3): a newer shellcheck must never force an
+      # edit there, so the frozen copies are excluded. Their live originals
+      # are still linted until they are retired.
+      - name: Shellcheck (all tracked *.sh except frozen oracles)
+        run: git ls-files '*.sh' | grep -v '^oracles/' | xargs shellcheck
+
+      - name: Frozen oracles match MANIFEST.sha256
+        run: bash oracles/check.sh
 
       # js-core/8 fix round 2 (re-review Finding 5): this leg is the one that is
       # SUPPOSED to have jq — the whole jq half of the parity matrix (30 legs

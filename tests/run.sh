@@ -63,13 +63,14 @@ fi
 # adapters folded under flow/tests/adapters), and the JS engine suite under
 # flow/engine/tests. `engine` runs under `node`, not `bash` — everything else
 # does — so interpreter is its own parallel array rather than assumed.
-SUITE_NAMES=(spec flow adapters engine)
-SUITE_INTERPRETERS=("$SELF_BASH" "$SELF_BASH" "$SELF_BASH" node)
+SUITE_NAMES=(spec flow adapters engine oracles)
+SUITE_INTERPRETERS=("$SELF_BASH" "$SELF_BASH" "$SELF_BASH" node "$SELF_BASH")
 SUITE_SCRIPTS=(
   "spec/tests/run.sh"
   "flow/tests/run.sh"
   "flow/tests/adapters/run.sh"
   "flow/engine/tests/run.mjs"
+  "tests/oracles/run.sh"
 )
 
 overall=0
