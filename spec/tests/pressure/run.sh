@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Pressure-tests the spec skill: fresh headless sessions with no CLAUDE.md,
-# no user settings, no hooks (empty CLAUDE_CONFIG_DIR). Passes only if the first skill
-# invoked — before any write — is in the scenario's accept set.
-# Transcripts and stderr go to $PRESSURE_LOG_DIR (default .superpowers/p1/pressure).
+# Pressure-tests the spec skill: fresh headless sessions with no CLAUDE.md, no user
+# settings and no user plugins (empty CLAUDE_CONFIG_DIR). Org-managed plugins and the
+# hooks of loaded plugins still run. Passes only if the first skill invoked — before
+# any write — is in the scenario's accept set.
+# Transcripts and stderr go to a timestamped folder under $PRESSURE_LOG_DIR
+# (default .superpowers/p1/pressure).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
@@ -25,12 +27,16 @@ if [[ "$mode" != absent ]]; then
 fi
 
 MODEL="${PRESSURE_MODEL:-claude-sonnet-5-5}"
-LOG_DIR="${PRESSURE_LOG_DIR:-$REPO/.superpowers/p1/pressure}"
-mkdir -p "$LOG_DIR"
+LOG_DIR="${PRESSURE_LOG_DIR:-$REPO/.superpowers/p1/pressure}/$(date +%Y%m%dT%H%M%S)"
+if ! mkdir -p "$LOG_DIR"; then
+  echo "pressure: cannot create log dir '$LOG_DIR'; set PRESSURE_LOG_DIR; not run" >&2; exit 2
+fi
+LOG_DIR="$(cd "$LOG_DIR" && pwd)"
 echo "pressure: model $MODEL; logs $LOG_DIR"
 
 SANDBOX=""
 trap '[[ -z "$SANDBOX" ]] || rm -rf "$SANDBOX"' EXIT
+trap 'exit 130' INT TERM
 
 make_sandbox() { # populates dir $1: proj/ plugin/ config/
   local d="$1"
@@ -54,8 +60,10 @@ run_one() { # id accept prompt sp
   args=(--plugin-dir "$d/plugin")
   [[ "$sp" == present ]] && args+=(--plugin-dir "$SP_DIR")
   log="$LOG_DIR/$id-$sp"
-  if ! first="$(cd "$d/proj" && claude_iso "$d/config" ${args[@]+"${args[@]}"} "$prompt" 2>"$log.err" | tee "$log.jsonl" | node "$HERE/parse.mjs")"; then
-    echo "pressure: claude/parse failed for scenario $id ($sp); counting first-skill=none" >&2
+  (cd "$d/proj" && claude_iso "$d/config" ${args[@]+"${args[@]}"} "$prompt" >"$log.jsonl" 2>"$log.err") ||
+    echo "pressure: claude exited non-zero for scenario $id ($sp); see $log.err" >&2
+  if ! first="$(node "$HERE/parse.mjs" <"$log.jsonl")"; then
+    echo "pressure: parse failed for scenario $id ($sp); counting first-skill=none" >&2
     first="none"
   fi
   rm -rf "$d"; SANDBOX=""; total=$((total + 1))
