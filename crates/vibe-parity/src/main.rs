@@ -6,7 +6,8 @@
 //!   vibe-parity gen-spec-corpus <templates-dir> <out-dir>
 //!
 //! Exit 0 when every run passes or is pinned, 1 on any failure or suite
-//! error, 2 on a usage error.
+//! error, 2 on a usage error or a suite file that fails to load (unreadable,
+//! not valid suite JSON, or an unsupported version).
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 

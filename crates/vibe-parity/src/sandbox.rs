@@ -5,7 +5,10 @@ use std::path::Path;
 
 /// Where the oracle is staged inside a sandbox.
 pub const ORACLE_DIR: &str = ".oracle";
-/// An empty directory at the sandbox root that bounds every upward root search.
+/// An empty directory at the sandbox root. It bounds marker-based upward
+/// searches (a script that stops where a `.git` entry exists). It does not
+/// bound git's own repository discovery: an empty `.git/` is not a
+/// repository, so `git` keeps walking up past the sandbox.
 pub const GIT_DIR: &str = ".git";
 
 fn err(path: &Path, e: std::io::Error) -> String {

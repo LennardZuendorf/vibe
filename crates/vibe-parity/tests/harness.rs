@@ -272,3 +272,55 @@ fn a_symlinked_tree_or_oracle_root_is_refused() {
         "{report:#?}"
     );
 }
+
+#[test]
+fn a_case_dir_without_case_json_fails() {
+    let dir = work("nocasejson");
+    let corpus = dir.join("corpus/basic");
+    fs::create_dir_all(corpus.join("one/tree")).unwrap();
+    fs::write(corpus.join("one/case.json"), "{ \"v\": 1 }\n").unwrap();
+    fs::create_dir_all(corpus.join("two/tree")).unwrap();
+    let mut suite = base();
+    suite["corpus"] = json!(dir.join("corpus"));
+    suite["floors"]["basic"] = json!(1);
+    let report = run("nocasejson-run", suite, &Mode::SelfCheck);
+    assert!(
+        report.errors.iter().any(|e| e.contains("no case.json")),
+        "{report:#?}"
+    );
+    assert!(!report.ok());
+}
+
+#[test]
+fn a_runs_key_naming_no_command_fails() {
+    let report = one_case(
+        "unknownrun",
+        "{ \"v\": 1, \"runs\": { \"ehco\": [[\"x\"]] } }",
+    );
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|e| e.contains("runs names command ehco, which is not in the suite")),
+        "{report:#?}"
+    );
+    assert!(!report.ok());
+}
+
+#[test]
+fn a_command_over_no_class_fails() {
+    let mut suite = base();
+    let mut spare = suite["commands"][0].clone();
+    spare["name"] = json!("spare");
+    spare["classes"] = json!([]);
+    suite["commands"].as_array_mut().unwrap().push(spare);
+    let report = run("noclasses", suite, &Mode::SelfCheck);
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|e| e == "command spare runs over no class"),
+        "{report:#?}"
+    );
+    assert!(!report.ok());
+}

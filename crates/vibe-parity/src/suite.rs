@@ -154,7 +154,10 @@ impl Suite {
         Ok(suite)
     }
 
-    /// The cases of `class`, sorted by name. A missing class directory has none.
+    /// The cases of `class`, sorted by name. A missing class directory has
+    /// none. Every entry of a class directory must be a case with a
+    /// `case.json`, and every `runs` key must name a command of the suite;
+    /// either gap is an error, never a silently skipped run.
     pub fn cases(&self, class: &str) -> Result<Vec<Case>, String> {
         refuse_symlink(&self.corpus)?;
         let dir = self.corpus.join(class);
@@ -170,7 +173,10 @@ impl Suite {
             let file = case_dir.join("case.json");
             refuse_symlink(&file)?;
             if !file.is_file() {
-                continue;
+                return Err(format!(
+                    "{}: no case.json; every entry of a class directory must be a case",
+                    case_dir.display()
+                ));
             }
             let text = fs::read_to_string(&file).map_err(|e| format!("{}: {e}", file.display()))?;
             let spec: CaseSpec =
@@ -183,6 +189,16 @@ impl Suite {
                 ));
             }
             validate_spec(&spec).map_err(|e| format!("{}: {e}", file.display()))?;
+            if let Some(unknown) = spec
+                .runs
+                .keys()
+                .find(|k| !self.commands.iter().any(|c| &c.name == *k))
+            {
+                return Err(format!(
+                    "{}: runs names command {unknown}, which is not in the suite",
+                    file.display()
+                ));
+            }
             let name = case_dir
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())

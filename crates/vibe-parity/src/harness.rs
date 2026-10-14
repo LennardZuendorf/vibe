@@ -56,7 +56,9 @@ pub struct RunResult {
 pub struct Report {
     /// One entry per run.
     pub results: Vec<RunResult>,
-    /// Suite-level problems: floors, unknown classes, stale or unmatched pins.
+    /// Suite-level problems: floors, unknown classes, commands over no class,
+    /// case directories without `case.json`, unknown `runs` keys, stale or
+    /// unmatched pins.
     pub errors: Vec<String>,
 }
 
@@ -189,6 +191,11 @@ pub fn compare(oracle: &Outcome, candidate: &Outcome) -> Vec<(Field, String)> {
 }
 
 fn check_floors(suite: &Suite, errors: &mut Vec<String>) {
+    for cmd in &suite.commands {
+        if cmd.classes.is_empty() {
+            errors.push(format!("command {} runs over no class", cmd.name));
+        }
+    }
     let used: BTreeSet<&str> = suite
         .commands
         .iter()

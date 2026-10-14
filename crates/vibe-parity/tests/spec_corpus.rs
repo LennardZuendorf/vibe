@@ -119,9 +119,9 @@ fn no_root_cases_stop_at_the_sandbox_git_dir() {
 
     fs::remove_dir_all(dest.join(".git")).unwrap();
     let (_, out) = execute(&argv, &dest.join("src/deep"), &dir).unwrap();
-    assert_ne!(
-        String::from_utf8(out).unwrap(),
-        NONE,
-        "control: without .git the walk must reach the decoy"
+    let out = String::from_utf8(out).unwrap();
+    assert!(
+        out.contains("product.md"),
+        "control: without .git the walk must reach the decoy, got {out:?}"
     );
 }
