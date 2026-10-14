@@ -4,5 +4,7 @@
 //! instruct channel names. Tools pass those in.
 pub mod error;
 pub mod exit;
+pub mod fs;
+pub mod glob;
 
 pub use error::{Error, Result};
