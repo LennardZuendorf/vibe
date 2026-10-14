@@ -12,6 +12,17 @@ fn err(path: &Path, e: std::io::Error) -> String {
     format!("{}: {e}", path.display())
 }
 
+/// Errors when `path` is itself a symlink. A missing path is fine.
+pub fn refuse_symlink(path: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => Err(format!(
+            "{}: symlinks are not allowed in a corpus or oracle",
+            path.display()
+        )),
+        _ => Ok(()),
+    }
+}
+
 /// Recreates `dest` as a copy of `tree` (if it exists), plus the oracle at
 /// `dest/.oracle/` and an empty `dest/.git/`.
 pub fn stage(tree: &Path, oracle_root: &Path, dest: &Path) -> Result<(), String> {
@@ -19,9 +30,11 @@ pub fn stage(tree: &Path, oracle_root: &Path, dest: &Path) -> Result<(), String>
         fs::remove_dir_all(dest).map_err(|e| err(dest, e))?;
     }
     fs::create_dir_all(dest).map_err(|e| err(dest, e))?;
+    refuse_symlink(tree)?;
     if tree.is_dir() {
         copy_dir(tree, dest)?;
     }
+    refuse_symlink(oracle_root)?;
     copy_dir(oracle_root, &dest.join(ORACLE_DIR))?;
     let git = dest.join(GIT_DIR);
     fs::create_dir_all(&git).map_err(|e| err(&git, e))

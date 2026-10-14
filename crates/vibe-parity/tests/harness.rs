@@ -204,3 +204,71 @@ fn a_symlink_in_the_corpus_is_refused() {
     };
     assert!(msgs[0].contains("symlinks are not allowed"), "{msgs:?}");
 }
+
+/// A one-case suite over `case_json`, returning its self-check report.
+fn one_case(name: &str, case_json: &str) -> Report {
+    let dir = work(name);
+    let case = dir.join("corpus/basic/one");
+    fs::create_dir_all(case.join("tree")).unwrap();
+    fs::write(case.join("case.json"), case_json).unwrap();
+    let mut suite = base();
+    suite["corpus"] = json!(dir.join("corpus"));
+    suite["floors"]["basic"] = json!(1);
+    run(&format!("{name}-run"), suite, &Mode::SelfCheck)
+}
+
+#[test]
+fn a_cwd_outside_the_sandbox_is_refused() {
+    for (name, cwd) in [("cwd-up", ".."), ("cwd-abs", "/")] {
+        let report = one_case(name, &format!("{{ \"v\": 1, \"cwd\": {cwd:?} }}"));
+        assert!(!report.ok(), "{cwd}: {report:#?}");
+        assert!(
+            report.errors.iter().any(|e| e.contains("cwd")),
+            "{cwd}: {:?}",
+            report.errors
+        );
+    }
+}
+
+#[test]
+fn a_command_with_no_argument_lists_is_refused() {
+    let report = one_case("noruns", "{ \"v\": 1, \"runs\": { \"echo\": [] } }");
+    assert!(!report.ok(), "{report:#?}");
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|e| e.contains("no argument lists")),
+        "{:?}",
+        report.errors
+    );
+}
+
+#[test]
+fn a_symlinked_tree_or_oracle_root_is_refused() {
+    let dir = work("rootlink");
+    let case = dir.join("corpus/basic/one");
+    fs::create_dir_all(&case).unwrap();
+    fs::write(case.join("case.json"), "{ \"v\": 1 }\n").unwrap();
+    std::os::unix::fs::symlink(fixture().join("corpus/basic/one/tree"), case.join("tree")).unwrap();
+    let mut suite = base();
+    suite["corpus"] = json!(dir.join("corpus"));
+    suite["floors"]["basic"] = json!(1);
+    let report = run("rootlink-run", suite, &Mode::SelfCheck);
+    assert!(!report.ok(), "{report:#?}");
+    assert!(
+        format!("{report:?}").contains("symlinks are not allowed"),
+        "{report:#?}"
+    );
+
+    let link = dir.join("oracle-link");
+    std::os::unix::fs::symlink(fixture().join("oracle"), &link).unwrap();
+    let mut suite = base();
+    suite["oracle_root"] = json!(link);
+    let report = run("oraclelink-run", suite, &Mode::SelfCheck);
+    assert!(!report.ok(), "{report:#?}");
+    assert!(
+        format!("{report:?}").contains("symlinks are not allowed"),
+        "{report:#?}"
+    );
+}

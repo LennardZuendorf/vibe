@@ -1,9 +1,11 @@
 //! Parity suite files and corpus cases.
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
+
+use crate::sandbox::refuse_symlink;
 
 /// One parity suite: which commands run over which corpus classes, and the floors.
 #[derive(Debug, Deserialize)]
@@ -115,6 +117,24 @@ impl Case {
     }
 }
 
+fn validate_spec(spec: &CaseSpec) -> Result<(), String> {
+    let confined = Path::new(&spec.cwd)
+        .components()
+        .all(|c| matches!(c, Component::Normal(_)));
+    if !confined {
+        return Err(format!(
+            "cwd {:?} must be empty or a relative path without `..`",
+            spec.cwd
+        ));
+    }
+    for (command, sets) in &spec.runs {
+        if sets.is_empty() {
+            return Err(format!("runs for command {command} has no argument lists"));
+        }
+    }
+    Ok(())
+}
+
 impl Suite {
     /// Loads a suite file; `corpus` and `oracle_root` resolve against its directory.
     pub fn load(path: &Path) -> Result<Suite, String> {
@@ -136,7 +156,9 @@ impl Suite {
 
     /// The cases of `class`, sorted by name. A missing class directory has none.
     pub fn cases(&self, class: &str) -> Result<Vec<Case>, String> {
+        refuse_symlink(&self.corpus)?;
         let dir = self.corpus.join(class);
+        refuse_symlink(&dir)?;
         if !dir.is_dir() {
             return Ok(Vec::new());
         }
@@ -144,7 +166,9 @@ impl Suite {
         let entries = fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         for entry in entries {
             let case_dir = entry.map_err(|e| format!("{}: {e}", dir.display()))?.path();
+            refuse_symlink(&case_dir)?;
             let file = case_dir.join("case.json");
+            refuse_symlink(&file)?;
             if !file.is_file() {
                 continue;
             }
@@ -158,6 +182,7 @@ impl Suite {
                     spec.v
                 ));
             }
+            validate_spec(&spec).map_err(|e| format!("{}: {e}", file.display()))?;
             let name = case_dir
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
