@@ -29,8 +29,18 @@ fn metadata(extra: &[&str]) -> Value {
 
 #[test]
 fn member_graph_holds() {
-    let n = check_graph(&metadata(&["--no-deps"])).unwrap_or_else(|e| panic!("{e:#?}"));
+    let meta = metadata(&["--no-deps"]);
+    let n = check_graph(&meta).unwrap_or_else(|e| panic!("{e:#?}"));
     assert_eq!(n, 3);
+    let edges = meta["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| matches!(p["name"].as_str(), Some("vibe-spec" | "vibe-parity")))
+        .flat_map(|p| p["dependencies"].as_array().unwrap())
+        .filter(|d| d["name"] == "vibe-core")
+        .count();
+    assert!(edges >= 2, "examined only {edges} edges to vibe-core");
 }
 
 #[test]

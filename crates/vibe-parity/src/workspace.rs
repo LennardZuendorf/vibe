@@ -35,10 +35,12 @@ pub fn check_graph(meta: &Value) -> Result<usize, Vec<String>> {
     }
     for pkg in pkgs {
         let name = str_field(pkg, "name");
-        let deps = pkg
-            .get("dependencies")
-            .and_then(Value::as_array)
-            .map_or(&[][..], Vec::as_slice);
+        let Some(deps) = pkg.get("dependencies").and_then(Value::as_array) else {
+            errors.push(format!(
+                "{name}: cargo metadata lists no dependencies array"
+            ));
+            continue;
+        };
         for dep in deps {
             let dep_name = str_field(dep, "name");
             let is_path = dep.get("path").is_some_and(Value::is_string);
@@ -153,8 +155,28 @@ mod tests {
 
     #[test]
     fn an_outside_path_dependency_fails() {
-        let m = meta(vec![path("vibe-flow")], vec![]);
-        assert!(check_graph(&m).is_err());
+        let m = meta(vec![path("serde")], vec![]);
+        let errs = check_graph(&m).unwrap_err();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("path dependency outside the workspace")),
+            "{errs:?}"
+        );
+    }
+
+    #[test]
+    fn a_package_without_a_dependencies_array_fails() {
+        let mut m = meta(vec![], vec![]);
+        m["packages"][1]
+            .as_object_mut()
+            .unwrap()
+            .remove("dependencies");
+        let errs = check_graph(&m).unwrap_err();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("vibe-spec: cargo metadata lists no dependencies array")),
+            "{errs:?}"
+        );
     }
 
     #[test]
