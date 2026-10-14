@@ -102,6 +102,13 @@ if `crates/vibe-flow/src/tui/` or `crates/vibe-signals/` exists while
 `tests/parity/GREEN.hard` is absent — the TUI and signals cannot get ahead
 of the two hard blocks.
 
+Carried into later rows: F5 freezes `flow/reference/templates/AGENTS.md`
+(merge-agents reads it) and adds the policy-dialect matcher; F6 bounds
+git's own discovery in the sandbox (`GIT_CEILING_DIRECTORIES` or a real
+`git init`) before stop-gate oracles run; F16 adds a run timeout,
+compares empty directories, and pins per argument set instead of per
+case before candidate mode reaches CI.
+
 ## machine-teeth
 
 `vibe-flow state set <flow.phase> [feature] [--confirm]`: the target state
@@ -158,9 +165,9 @@ reverses only what it recorded — never a guess.
 
 | Job | Runs |
 |---|---|
-| `check` | fmt, clippy `-D warnings`, `cargo-deny` |
-| `test` | unit + integration, 3 OS × stable + MSRV |
-| `parity` | `crates/vibe-parity` vs. both oracle sets (ubuntu + node, dev-only) |
+| `rust-check` | fmt, clippy `-D warnings`, `cargo-deny` (the bash job holds `check`) |
+| `rust-test` | unit + integration, 3 OS × stable + MSRV |
+| `parity` | `crates/vibe-parity` vs. the spec oracles only until F5, then both oracle sets (ubuntu + node, dev-only) |
 | `shellcheck` | `bin/hook.sh`, `bin/fallback/*.sh`, `install.sh` |
 | `cross-smoke` | build all 5 targets; `--version` under qemu for aarch64-linux |
 | `port-order` | fails while TUI/signals code exists ahead of `GREEN.hard` |

@@ -162,7 +162,7 @@ exactly, so dropping or adding a required field fails the gate.
 | Context | Code | Meaning |
 |---|---|---|
 | any CLI | 0 | ok |
-| any CLI | 1 | refused (e.g. `state set` outside `next`, unconfirmed gate) |
+| any CLI | 1 | findings or refused (e.g. drift found; `state set` outside `next`, unconfirmed gate) |
 | any CLI | 2 | usage error |
 | `vibe-spec` JSON query | 3 | no spec tree found |
 | hook | 0 | pass, or degraded (missing keystone: root, cursor, machine) |
