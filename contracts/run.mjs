@@ -11,6 +11,16 @@ const COMPAT = 'additive-within-major; readers-ignore-unknown-fields';
 const QUERIES = ['root', 'lessons-for', 'plan', 'feature'];
 // .spec/tech-spec.md "Root and discovery", steps 1-5; step 6 repeats 4-5 per parent (`depth`).
 const ROOT_SOURCES = ['flag', 'env', 'config', 'docs-spec', 'dot-spec'];
+// Required sets are part of the v1 contract: dropping one breaks readers (additive-only).
+const REQUIRED = {
+  root: ['root', 'source', 'v'],
+  'lessons-for': ['lessons', 'tags', 'v'],
+  lesson: ['rule', 'tags', 'title'],
+  plan: ['feature', 'rows', 'v'],
+  'plan-row': ['id', 'status'],
+  feature: ['docs', 'feature', 'layer', 'v'],
+  doc: ['kind', 'path'],
+};
 const EXIT_CODES = { cli: ['0', '1', '2'], 'vibe-spec-query': ['3'], hook: ['0', '2'] };
 const FLOOR = { schemas: 2, validPerQuery: 2, invalidPerQuery: 2 };
 
@@ -67,6 +77,14 @@ for (const q of spec ? QUERIES : []) {
 const sources = spec?.$defs?.root?.properties?.source?.enum;
 if (spec && JSON.stringify(sources) !== JSON.stringify(ROOT_SOURCES)) {
   errors.push(`spec-json: root.source is ${JSON.stringify(sources)}, discovery order is ${JSON.stringify(ROOT_SOURCES)}`);
+}
+
+for (const [name, want] of Object.entries(REQUIRED)) {
+  if (!spec) break;
+  const def = spec.$defs?.[name];
+  if (!def) { if (!QUERIES.includes(name)) errors.push(`spec-json: $defs.${name} missing`); continue; }
+  const got = [...(def.required ?? [])].sort();
+  if (JSON.stringify(got) !== JSON.stringify(want)) errors.push(`spec-json: ${name} requires ${JSON.stringify(got)}, contract pins ${JSON.stringify(want)}`);
 }
 
 const exitSchema = schemas['exit-codes.schema.json'];

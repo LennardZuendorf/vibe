@@ -47,6 +47,7 @@ check('an unknown-field golden without one fails', (d) => writeFileSync(join(d, 
 check('a reordered root.source enum fails', (d) => edit(d, SPEC, (s) => { s.$defs.root.properties.source.enum.reverse(); return s; }), 1, /discovery order/);
 check('an extra cli exit code fails', (d) => edit(d, 'exit-codes.json', (c) => { c.contexts.cli['4'] = 'new'; return c; }), 1, /cli has/);
 check('a missing query def fails', (d) => edit(d, SPEC, (s) => { delete s.$defs.feature; return s; }), 1, /\$defs\.feature missing/);
+check('a dropped required field fails', (d) => edit(d, SPEC, (s) => { s.$defs.root.required = ['v', 'source']; return s; }), 1, /requires/);
 check('unparseable JSON fails', (d) => writeFileSync(join(d, `${FX}/root/valid/dot-spec.json`), '{ nope'), 1, /dot-spec\.json/);
 
 console.log(`\n=== results: ${passed} passed, ${failed} failed ===`);

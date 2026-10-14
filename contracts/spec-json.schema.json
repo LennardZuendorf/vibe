@@ -73,7 +73,7 @@
       "type": "object",
       "required": ["kind", "path"],
       "properties": {
-        "kind": { "enum": ["design", "plan", "product", "tech"] },
+        "kind": { "enum": ["design", "plan", "product", "tech", "research"] },
         "path": { "type": "string", "minLength": 1, "description": "Repo-relative path with forward slashes." }
       }
     }
