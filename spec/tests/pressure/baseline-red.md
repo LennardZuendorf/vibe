@@ -24,9 +24,9 @@ Passing runs: prd present → `spec`; prd absent → `spec` (only after Bash →
 
 Run 1 (rewritten skill, commit 839c748): `pressure: 9/12 passed`. FAIL: flag/absent, quick/present, quick/absent. The agent made no text before acting (Read/Bash → Write).
 
-REFACTOR: the description now names "one-line fixes, typos and new flags", says "'Quick' and 'just fix it' still route here first", and says to invoke before reading files. Two Red Flags rows were added from the RED words above.
+REFACTOR (commit b2aa4b1): the description now names "one-line fixes, typos and new flags", says "'Quick' and 'just fix it' still route here first", and says to invoke before reading files. Two Red Flags rows were added for the failing scenarios: one answers the quick-fix prompt itself, the other the RED words "small targeted change" and "plan mode only allows read-only actions" (wording aligned with The Rule in 792106e).
 
-Run 2:
+Run 2 (b2aa4b1, `claude-sonnet-5-5`):
 
 ```
 PASS flag present first-skill=spec
@@ -44,4 +44,8 @@ PASS archnote absent first-skill=spec
 pressure: 12/12 passed
 ```
 
-Run 3: identical, `pressure: 12/12 passed`.
+Run 3 (b2aa4b1): identical, `pressure: 12/12 passed`.
+
+Final (792106e, after the scoped review: harness logging fixes and aligned Red Flags rows), `claude-sonnet-5-5`, two consecutive runs: `pressure: 12/12 passed`, `pressure: 12/12 passed`.
+
+Limits: the six scenarios also served to tune the description, so 12/12 shows these prompts route; it does not prove generalisation. Only `claude-sonnet-5-5` was tested.
