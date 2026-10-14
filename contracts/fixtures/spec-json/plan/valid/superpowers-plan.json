@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "feature": "spec-v04-p2-rust-foundations",
+  "source": { "kind": "plan", "path": "docs/superpowers/plans/2026-10-14-spec-v04-p2-rust-foundations.md" },
+  "rows": [
+    { "id": "Task 1", "status": "done", "title": "Freeze the oracles" },
+    { "id": "Task 2", "status": "todo" }
+  ]
+}

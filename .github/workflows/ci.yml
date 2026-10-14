@@ -51,6 +51,9 @@ jobs:
       - name: Frozen oracles match MANIFEST.sha256
         run: bash oracles/check.sh
 
+      - name: Contracts (schemas, goldens, exit codes)
+        run: bash contracts/run.sh
+
       # js-core/8 fix round 2 (re-review Finding 5): this leg is the one that is
       # SUPPOSED to have jq — the whole jq half of the parity matrix (30 legs
       # plus the KNOWN DIVERGENCE pin) skips without it, and a skip-everything

@@ -1,0 +1,8 @@
+{
+  "v": 1,
+  "tags": ["bash"],
+  "lessons": [
+    { "title": "A headless CLI inside a read loop eats the loop's input", "rule": "Give every stdin reader inside a while-read loop </dev/null.", "tags": ["bash", "harness"], "pattern": "claude -p swallowed scenarios.tsv.", "date": "2026-10-14" },
+    { "title": "Guard bash 3.2 arrays", "rule": "Expand as ${arr[@]+\"${arr[@]}\"}.", "tags": ["bash", "bash32"], "pinned": true }
+  ]
+}
