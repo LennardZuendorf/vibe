@@ -276,6 +276,22 @@ fn trigger(id: &str) -> Option<Trigger> {
             );
             plain(p, "missing 'sibling:'")
         }
+        "SF24" => {
+            write(
+                &p,
+                ".spec/features/auth/product.md",
+                FEATURE_PRODUCT.split("### Requirement").next().unwrap(),
+            );
+            plain(p, "no '### Requirement:' blocks")
+        }
+        "SF25" => {
+            write(
+                &p,
+                ".spec/features/auth/product.md",
+                &FEATURE_PRODUCT.replace("- **THEN** they are in\n", ""),
+            );
+            plain(p, "has no THEN bullet")
+        }
         "SF10" => {
             write(
                 &p,
@@ -379,8 +395,7 @@ fn trigger(id: &str) -> Option<Trigger> {
 /// Registered checks that have no trigger yet; each later task moves its ids
 /// into `trigger`. Task 13 requires this to be empty.
 const PENDING: &[&str] = &[
-    "SF24", "SF25", "SF26", "SF27", "SF28", "SF29", "SF30", "SF31", "SF32", "SF33", "SF34", "SF35",
-    "SF36",
+    "SF26", "SF27", "SF28", "SF29", "SF30", "SF31", "SF32", "SF33", "SF34", "SF35", "SF36",
 ];
 
 fn registered() -> Vec<String> {

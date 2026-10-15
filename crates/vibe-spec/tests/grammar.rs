@@ -187,3 +187,106 @@ fn scope_section_boundaries() {
     );
     assert!(messages(&crlf, "SF8").is_empty());
 }
+
+/// OpenSpec's requirement grammar (P3b-R19): `### Requirement:`, a SHALL or
+/// MUST sentence, `#### Scenario:`, `- **WHEN**` / `- **THEN**` bullets.
+const OPENSPEC_AUTH: &str = "### Requirement: User Authentication\nThe system SHALL issue a session token on successful login.\n\n#### Scenario: Valid credentials\n- **WHEN** a user submits valid credentials\n- **THEN** a session token is returned\n\n#### Scenario: Invalid credentials\n- **WHEN** a user submits a wrong password\n- **THEN** an error is returned\n- **AND** no token is issued\n";
+const OPENSPEC_EXPORT: &str = "### Requirement: R2 — Data export\nUsers MUST be able to export their data as CSV.\n\n#### Scenario: Export with a fenced sample\n- **GIVEN** an account with data\n- **WHEN** the user requests an export\n- **THEN** a CSV file is produced\n\n```text\n#### Scenario: not a scenario\n- WHEN ignored\n```\n";
+
+fn grammar(p: &std::path::Path) -> Vec<String> {
+    let (_, v) = validate_json(p, &[], &[]);
+    v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| ["SF10", "SF24", "SF25"].contains(&f["check"].as_str().unwrap()))
+        .map(|f| {
+            format!(
+                "{} {}",
+                f["check"].as_str().unwrap(),
+                f["message"].as_str().unwrap()
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn openspec_samples_pass() {
+    let p = feature(
+        "gr-os",
+        &format!("{SCOPE}## Requirements\n\n{OPENSPEC_AUTH}\n{OPENSPEC_EXPORT}"),
+    );
+    assert_eq!(grammar(&p), Vec::<String>::new());
+}
+
+#[test]
+fn mutated_openspec_samples_fail() {
+    let cases: [(&str, String, &str); 5] = [
+        ("gr-os-noshall", OPENSPEC_AUTH.replace("SHALL ", ""), "SF10"),
+        (
+            "gr-os-shallow",
+            OPENSPEC_AUTH.replace("SHALL", "SHALLOW"),
+            "SF10",
+        ),
+        (
+            "gr-os-nothen",
+            OPENSPEC_AUTH.replace("- **THEN** a session token is returned\n", ""),
+            "SF25",
+        ),
+        (
+            "gr-os-nowhen",
+            OPENSPEC_AUTH.replace("- **WHEN** a user submits a wrong password\n", ""),
+            "SF25",
+        ),
+        (
+            "gr-os-noscenario",
+            "### Requirement: Bare\nThe system SHALL exist.\n".to_string(),
+            "SF10",
+        ),
+    ];
+    for (name, body, check) in cases {
+        let p = feature(name, &format!("{SCOPE}{body}"));
+        let got = grammar(&p);
+        assert!(
+            got.iter().any(|m| m.starts_with(check)),
+            "{name}: want {check}, got {got:?}"
+        );
+    }
+}
+
+#[test]
+fn zero_requirements_are_reported() {
+    let p = feature("gr-zero", SCOPE);
+    assert_eq!(
+        grammar(&p),
+        [
+            "SF24 features/auth/product.md: no '### Requirement:' blocks — the requirement checks examined nothing"
+        ]
+    );
+    let empty = feature(
+        "gr-empty-title",
+        &format!("{SCOPE}### Requirement:\nUsers MUST x.\n#### Scenario: a\n- WHEN x\n- THEN y\n"),
+    );
+    assert!(
+        grammar(&empty).contains(
+            &"SF24 features/auth/product.md: requirement with an empty title".to_string()
+        )
+    );
+}
+
+#[test]
+fn fenced_examples_do_not_count() {
+    let p = feature(
+        "gr-fenced",
+        &format!(
+            "{SCOPE}```markdown\n### Requirement: Example only\nThe system SHALL x.\n#### Scenario: e\n- WHEN a\n```\n"
+        ),
+    );
+    let got = grammar(&p);
+    assert!(
+        got.iter()
+            .any(|m| m.starts_with("SF24") && m.contains("no '### Requirement:' blocks")),
+        "{got:?}"
+    );
+    assert!(!got.iter().any(|m| m.starts_with("SF25")), "{got:?}");
+}

@@ -223,6 +223,7 @@ fn root_file(r: &mut Report, ctx: &Ctx, file: &Path) {
         content::root_plan_milestones(r, &text, n);
     }
     content::requirements_scenarios(r, &text, n);
+    content::scenario_grammar(r, &text, n);
     for line in lines(&text) {
         for link in md_links(line) {
             let target = md_link_target(link);
@@ -329,8 +330,10 @@ fn feature(r: &mut Report, ctx: &Ctx, fdir: &Path) {
         content::feature_frontmatter(r, &text, doc.as_bytes(), kind);
         if required == "product.md" {
             content::feature_scope(r, &text, doc.as_bytes());
+            content::requirement_population(r, &text, doc.as_bytes());
         }
         content::requirements_scenarios(r, &text, doc.as_bytes());
+        content::scenario_grammar(r, &text, doc.as_bytes());
         for line in lines(&text) {
             for link in md_links(line) {
                 let target = md_link_target(link);
@@ -375,6 +378,7 @@ fn feature(r: &mut Report, ctx: &Ctx, fdir: &Path) {
             content::cross_deps(r, &text, &fname, doc.as_bytes());
         }
         content::requirements_scenarios(r, &text, doc.as_bytes());
+        content::scenario_grammar(r, &text, doc.as_bytes());
     }
     r.green(format!("{label}/: checked").as_bytes());
     r.line(b"");

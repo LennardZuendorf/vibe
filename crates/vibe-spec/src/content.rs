@@ -11,7 +11,7 @@ use crate::pattern::{
 use crate::report::Report;
 use crate::text::{
     Fences, contains_ci, first_line, has_line_starting, is_space, lines, name_of, sub_dirs,
-    trim_end_space, trim_space,
+    trim_end_space, trim_space, trim_start_space,
 };
 
 const TOKEN_GROUPS: [&[u8]; 5] = [
@@ -485,4 +485,88 @@ pub fn sf14(r: &mut Report, dir: &Path, display: &str) {
             }
         }
     }
+}
+
+/// SF24: a fallback feature product needs at least one `### Requirement:`
+/// block, each with a title. Fenced lines do not count (bug d: SF10 passes
+/// a product with zero requirements without a word).
+pub fn requirement_population(r: &mut Report, text: &[u8], label: &[u8]) {
+    let mut fences = Fences::new();
+    let mut count = 0;
+    for line in lines(text) {
+        if fences.skip(line) {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix(b"### Requirement:") {
+            count += 1;
+            if trim_space(rest).is_empty() {
+                r.warn("SF24", &cat!(label, ": requirement with an empty title"));
+            }
+        }
+    }
+    if count == 0 {
+        r.warn(
+            "SF24",
+            &cat!(
+                label,
+                ": no '### Requirement:' blocks — the requirement checks examined nothing"
+            ),
+        );
+    }
+}
+
+/// The lowercased first word of a `- ` or `* ` bullet, past leading `*`/`_`.
+fn bullet_word(line: &[u8]) -> Option<Vec<u8>> {
+    let t = trim_start_space(line);
+    let rest = t.strip_prefix(b"- ").or_else(|| t.strip_prefix(b"* "))?;
+    let rest = trim_start_space(rest);
+    let start = rest.iter().position(|&c| c != b'*' && c != b'_')?;
+    let word: Vec<u8> = rest
+        .get(start..)?
+        .iter()
+        .take_while(|c| c.is_ascii_alphabetic())
+        .map(u8::to_ascii_lowercase)
+        .collect();
+    (!word.is_empty()).then_some(word)
+}
+
+/// SF25: each `#### Scenario:` block (up to the next `#` line, fences
+/// skipped) has a WHEN bullet and a THEN bullet (P3b-R18).
+pub fn scenario_grammar(r: &mut Report, text: &[u8], label: &[u8]) {
+    let finish = |r: &mut Report, open: Option<(Vec<u8>, bool, bool)>| {
+        if let Some((title, when, then)) = open {
+            if !when {
+                r.warn(
+                    "SF25",
+                    &cat!(label, ": scenario '", title, "' has no WHEN bullet"),
+                );
+            }
+            if !then {
+                r.warn(
+                    "SF25",
+                    &cat!(label, ": scenario '", title, "' has no THEN bullet"),
+                );
+            }
+        }
+    };
+    let mut fences = Fences::new();
+    let mut open: Option<(Vec<u8>, bool, bool)> = None;
+    for line in lines(text) {
+        if fences.skip(line) {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix(b"#### Scenario:") {
+            finish(r, open.take());
+            open = Some((trim_space(rest).to_vec(), false, false));
+        } else if line.starts_with(b"#") {
+            finish(r, open.take());
+        } else if let Some((_, when, then)) = open.as_mut() {
+            match bullet_word(line).as_deref() {
+                Some(b"when") => *when = true,
+                Some(b"then") => *then = true,
+                _ => {}
+            }
+        }
+    }
+    finish(r, open.take());
 }
