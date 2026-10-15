@@ -21,6 +21,7 @@ macro_rules! cat {
 mod lessons;
 mod list_specs;
 mod root;
+mod scan_merges;
 mod text;
 
 /// The vibe spec tool.
@@ -56,6 +57,13 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Report `<!-- merge -->` blocks in feature tech docs (port of scan-merges.sh).
+    #[command(disable_help_flag = true)]
+    ScanMerges {
+        /// `[<feature>] [--format table|json|plain]`.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -76,6 +84,7 @@ fn main() -> ExitCode {
         Command::Root { json } => root::command(&found, json),
         Command::ListSpecs { args: _ } => list_specs::run(&found),
         Command::LessonsFor { args } => lessons::run(&found, &args),
+        Command::ScanMerges { args } => scan_merges::run(&found, &cwd, &args),
     };
     emit(&out);
     ExitCode::from(code)

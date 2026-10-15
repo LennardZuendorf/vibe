@@ -1,0 +1,16 @@
+{
+  "runs": {
+    "scan-merges": [
+      [],
+      [
+        "--format",
+        "json"
+      ],
+      [
+        "--format",
+        "plain"
+      ]
+    ]
+  },
+  "v": 1
+}

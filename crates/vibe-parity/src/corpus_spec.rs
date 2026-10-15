@@ -113,6 +113,7 @@ const FEATURE_PLAN: &str =
     "---\ntype: feature-plan\nupdated: 2026-01-15\n---\n\n# auth — Plan\n\n- M1: NOT STARTED\n";
 const FEATURE_TECH: &str = "---\ntype: feature-tech\nupdated: 2026-01-15\n---\n\n# auth — Tech\n\n<!-- merge -->\n## Auth\n\nSessions live in signed cookies.\n<!-- /merge -->\n\nLocal notes.\n\n<!-- merge -->\nTokens expire after 1 hour.\n<!-- /merge -->\n";
 const FEATURE_TECH_UNCLOSED: &str = "---\ntype: feature-tech\nupdated: 2026-01-15\n---\n\n# auth — Tech\n\n<!-- merge -->\nNever closed.\n";
+const TECH_HEAD: &str = "---\ntype: feature-tech\nupdated: 2026-01-15\n---\n\n# auth — Tech\n\n";
 
 fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
     let seed = seeded(templates)?;
@@ -305,6 +306,59 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
                 ("promote", &[&["auth"]]),
             ],
             files: feature(FEATURE_TECH_UNCLOSED, &[(".spec/plan.md", &unplanned)]),
+        },
+        CaseDef {
+            class: "features",
+            name: "table-preview",
+            cwd: "",
+            runs: &[(
+                "scan-merges",
+                &[&[], &["--format", "json"], &["--format", "plain"]],
+            )],
+            files: feature(
+                &format!(
+                    "{TECH_HEAD}<!-- merge -->\n| Key | Value |\n|---|---|\n<!-- /merge -->\n"
+                ),
+                &[],
+            ),
+        },
+        CaseDef {
+            class: "features",
+            name: "long-preview",
+            cwd: "",
+            runs: &[(
+                "scan-merges",
+                &[&[], &["--format", "json"], &["--format", "plain"]],
+            )],
+            files: feature(
+                &format!(
+                    "{TECH_HEAD}<!-- merge -->\n{}é and more text after it\n<!-- /merge -->\n",
+                    "a".repeat(59)
+                ),
+                &[],
+            ),
+        },
+        CaseDef {
+            class: "features",
+            name: "quoted-preview",
+            cwd: "",
+            runs: &[("scan-merges", &[&[], &["--format", "json"]])],
+            files: feature(
+                &format!(
+                    "{TECH_HEAD}<!-- merge -->\nUse \"signed\" cookies, not C:\\tokens\n<!-- /merge -->\n"
+                ),
+                &[],
+            ),
+        },
+        CaseDef {
+            class: "features",
+            name: "no-trailing-newline",
+            cwd: "",
+            runs: &[("scan-merges", &[&[], &["--format", "json"]])],
+            files: feature(
+                &format!("{TECH_HEAD}<!-- merge -->\nLast block.\n<!-- /merge -->"),
+                &[],
+            ),
         },
         CaseDef {
             class: "features",
