@@ -1,10 +1,10 @@
 //! validate's findings and their text rendering. Text output is the F16
 //! byte format; each finding also keeps its check, severity and file.
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use crate::check::{Level, Levels};
-use crate::text::echo_e;
+use crate::check::{Level, Levels, normalize};
+use crate::text::{echo_e, find, trim_space};
 
 /// A finding's severity after strictness.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,6 +52,7 @@ pub struct Report {
     project: PathBuf,
     file: String,
     examined: BTreeSet<String>,
+    markers: BTreeMap<String, Vec<&'static str>>,
 }
 
 impl Report {
@@ -66,6 +67,7 @@ impl Report {
             project: project.to_path_buf(),
             file: String::new(),
             examined: BTreeSet::new(),
+            markers: BTreeMap::new(),
         }
     }
 
@@ -116,6 +118,9 @@ impl Report {
     }
 
     fn push(&mut self, check: &'static str, default: Level, counted: bool, msg: &[u8]) {
+        if self.allowed(check) {
+            return;
+        }
         match self.levels.resolve(check, default) {
             Level::Off => {}
             Level::Warn => {
@@ -131,6 +136,27 @@ impl Report {
                 self.record(check, Severity::Error, msg);
             }
         }
+    }
+
+    /// The current file holds `<!-- vibe-spec: allow <check> -->` (P3b-R8).
+    fn allowed(&mut self, check: &str) -> bool {
+        if self.file.is_empty() {
+            return false;
+        }
+        if !self.markers.contains_key(&self.file) {
+            let path = if self.file.starts_with('/') {
+                PathBuf::from(&self.file)
+            } else {
+                self.project.join(&self.file)
+            };
+            let ids = std::fs::read(path)
+                .map(|t| allow_markers(&t))
+                .unwrap_or_default();
+            self.markers.insert(self.file.clone(), ids);
+        }
+        self.markers
+            .get(&self.file)
+            .is_some_and(|ids| ids.contains(&check))
     }
 
     fn record(&mut self, check: &'static str, severity: Severity, msg: &[u8]) {
@@ -162,6 +188,25 @@ impl Report {
         self.out.extend_from_slice(msg);
         self.out.push(b'\n');
     }
+}
+
+/// The checks named by `<!-- vibe-spec: allow SF-nn -->` markers in `text`.
+pub fn allow_markers(text: &[u8]) -> Vec<&'static str> {
+    const OPEN: &[u8] = b"<!-- vibe-spec: allow ";
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(i) = find(rest, OPEN) {
+        let after = rest.get(i + OPEN.len()..).unwrap_or_default();
+        let Some(end) = find(after, b"-->") else {
+            break;
+        };
+        let key = trim_space(after.get(..end).unwrap_or_default());
+        if let Some(id) = std::str::from_utf8(key).ok().and_then(normalize) {
+            out.push(id);
+        }
+        rest = after.get(end + 3..).unwrap_or_default();
+    }
+    out
 }
 
 #[cfg(test)]
@@ -217,6 +262,16 @@ mod tests {
         r.examine("");
         r.examine(".spec/c.md");
         assert_eq!(r.examined(), 2);
+    }
+
+    #[test]
+    fn markers_name_checks() {
+        assert_eq!(
+            allow_markers(
+                b"a <!-- vibe-spec: allow SF-13 --> b <!-- vibe-spec: allow i1--> <!-- vibe-spec: allow SF99 --> <!-- vibe-spec: allow SF12"
+            ),
+            vec!["SF13", "I1"]
+        );
     }
 
     #[test]

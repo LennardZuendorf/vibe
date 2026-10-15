@@ -11,7 +11,7 @@ use std::process::{Command, Stdio};
 
 use vibe_core::exit;
 
-use crate::check::Levels;
+use crate::check;
 use crate::content;
 use crate::pattern::{md_link_target, md_links, paren_links};
 use crate::report::Report;
@@ -30,12 +30,14 @@ const ROOT_NAMES: [&str; 5] = [
 ];
 const ENTRYPOINTS: [&str; 4] = ["product.md", "tech.md", "design.md", "plan.md"];
 
+/// Parsed `validate` flags.
+pub struct Options {
+    /// `--strict`.
+    pub strict: bool,
+}
+
 /// Runs the command.
-pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<u8>) {
-    if let Some(arg) = args.first() {
-        eprintln!("vibe-spec validate: unexpected argument {arg} (F17 adds validate's flags)");
-        return (exit::USAGE, Vec::new());
-    }
+pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u8>) {
     let (dir, project, display): (PathBuf, PathBuf, String) = match found {
         Ok(root) => (root.dir.clone(), root.project.clone(), root.display()),
         Err(Miss::NotFound) => (cwd.join(".spec"), cwd.to_path_buf(), ".spec".to_string()),
@@ -44,7 +46,14 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
             return (miss.code(), Vec::new());
         }
     };
-    let mut r = Report::new(&project, Levels::default());
+    let levels = match check::load(&project, opts.strict) {
+        Ok(levels) => levels,
+        Err(why) => {
+            eprintln!("vibe-spec: {why}");
+            return (exit::USAGE, Vec::new());
+        }
+    };
+    let mut r = Report::new(&project, levels);
     r.line(format!("Validating {display}/...").as_bytes());
     r.line(b"");
     if !dir.is_dir() {
@@ -86,6 +95,10 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
     content::sf14(&mut r, &dir, &display);
     sf15(&mut r, &dir, &display);
     sf16(&mut r, &dir, &display);
+    if opts.strict && (r.examined() == 0 || r.levels().all_off()) {
+        r.at("");
+        r.refuse(b"validate --strict examined nothing (no spec file, or every check is off); refusing to report green");
+    }
     let (errors, warnings) = (r.errors, r.warnings);
     r.line(b"========================");
     r.line(format!("Errors:   {errors}").as_bytes());

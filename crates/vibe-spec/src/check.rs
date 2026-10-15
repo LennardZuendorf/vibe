@@ -2,6 +2,9 @@
 //! its level comes from `.vibe/spec.json` `strictness`, else the finding's
 //! own default (P3b-R5).
 use std::collections::BTreeMap;
+use std::path::Path;
+
+use serde_json::Value;
 
 /// Who introduced a check.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -112,6 +115,45 @@ pub fn normalize(key: &str) -> Option<&'static str> {
         .collect::<String>()
         .to_ascii_uppercase();
     CHECKS.iter().find(|c| c.id == up).map(|c| c.id)
+}
+
+/// `<project>/.vibe/spec.json` `strictness` (P3b-R6). No file or no key is
+/// an empty set; an unknown check id warns on stderr and is ignored.
+pub fn load(project: &Path, strict: bool) -> Result<Levels, String> {
+    let path = project.join(".vibe").join("spec.json");
+    if !path.is_file() {
+        return Ok(Levels::new(BTreeMap::new(), strict));
+    }
+    let shown = path.display();
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{shown}: {e}"))?;
+    let value: Value =
+        serde_json::from_str(&text).map_err(|e| format!("{shown}: not JSON: {e}"))?;
+    let Value::Object(map) = value else {
+        return Err(format!("{shown}: not a JSON object"));
+    };
+    let mut set = BTreeMap::new();
+    match map.get("strictness") {
+        None => {}
+        Some(Value::Object(entries)) => {
+            for (key, v) in entries {
+                let level = v.as_str().and_then(Level::parse).ok_or_else(|| {
+                    format!("{shown}: strictness.{key} must be \"warn\", \"error\" or \"off\"")
+                })?;
+                match normalize(key) {
+                    Some(id) => {
+                        set.insert(id, level);
+                    }
+                    None => {
+                        eprintln!(
+                            "vibe-spec: {shown}: unknown check '{key}' in strictness (ignored)"
+                        );
+                    }
+                }
+            }
+        }
+        Some(_) => return Err(format!("{shown}: `strictness` must be an object")),
+    }
+    Ok(Levels::new(set, strict))
 }
 
 /// Configured levels plus `--strict`.

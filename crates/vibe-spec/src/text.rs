@@ -32,6 +32,14 @@ pub fn has_line_starting(text: &[u8], prefix: &[u8]) -> bool {
     lines(text).iter().any(|l| l.starts_with(prefix))
 }
 
+/// The index of the first `needle` in `hay`.
+pub fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
 /// Byte substring test; the empty needle is always found.
 pub fn contains(hay: &[u8], needle: &[u8]) -> bool {
     needle.is_empty() || hay.windows(needle.len()).any(|w| w == needle)

@@ -136,10 +136,12 @@ fn no_root_exits_1_and_names_init() {
 }
 
 #[test]
-fn arguments_are_a_usage_error_until_f17() {
+fn unknown_arguments_are_a_usage_error() {
     let p = project("val-args");
     write(&p, ".spec/product.md", ENTRY);
-    assert_eq!(common::spec(&p, &["validate", "--strict"], &[]).code, 2);
+    assert_eq!(common::spec(&p, &["validate", "--bogus"], &[]).code, 2);
+    assert_eq!(common::spec(&p, &["validate", "extra"], &[]).code, 2);
+    assert_ne!(common::spec(&p, &["validate", "--strict"], &[]).code, 2);
 }
 
 #[test]

@@ -72,11 +72,10 @@ enum Command {
         args: Vec<String>,
     },
     /// Validate the spec tree (port of validate.sh).
-    #[command(disable_help_flag = true)]
     Validate {
-        /// None yet; F17 adds `--strict`, `--changed`, `--file`, `--format`.
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
+        /// Promote every non-off check to error; refuse a run that examined nothing.
+        #[arg(long)]
+        strict: bool,
     },
     /// A feature's plan rows (Spec JSON v1 `plan` with --json).
     Plan {
@@ -118,9 +117,7 @@ fn main() -> ExitCode {
         Command::ScanMerges { args: _ } => {
             scan_merges::run(&found, &cwd, &raw_tail(std::env::args_os()))
         }
-        Command::Validate { args: _ } => {
-            validate::run(&found, &cwd, &raw_tail(std::env::args_os()))
-        }
+        Command::Validate { strict } => validate::run(&found, &cwd, &validate::Options { strict }),
         Command::Plan { feature, json } => query::plan(&found, &feature, json),
         Command::Feature { name, json } => query::feature(&found, &name, json),
     };
@@ -131,7 +128,8 @@ fn main() -> ExitCode {
 /// The argv after the subcommand token, exactly as typed. clap strips a
 /// leading `--` from trailing arguments, but the legacy commands must see it
 /// (the oracles reject it as `Unknown option`). Every legacy subcommand
-/// reads its arguments through this. Non-UTF-8 arguments are read lossily,
+/// reads its arguments through this; `validate` no longer does (clap parses
+/// its flags). Non-UTF-8 arguments are read lossily,
 /// never a panic.
 fn raw_tail(argv: impl IntoIterator<Item = OsString>) -> Vec<String> {
     let mut it = argv.into_iter().skip(1);
