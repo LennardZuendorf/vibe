@@ -1018,6 +1018,7 @@ mk_gate_sbx() {
     git -C "$s" init -q
     git -C "$s" config user.email t@t.test
     git -C "$s" config user.name test
+    git -C "$s" config commit.gpgsign false
     git -C "$s" add -A
     git -C "$s" commit -q -m init
   fi
@@ -1692,7 +1693,7 @@ echo 'echo fine' > "$B32SUB/host/top.sh"
 git -C "$B32SUB/host" init -q >/dev/null 2>&1 || true
 git -C "$B32SUB/host/nested" init -q >/dev/null 2>&1 || true
 git -C "$B32SUB/host/nested" add -A >/dev/null 2>&1 || true
-git -C "$B32SUB/host/nested" -c user.email=t@t -c user.name=t commit -qm x >/dev/null 2>&1 || true
+git -C "$B32SUB/host/nested" -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -qm x >/dev/null 2>&1 || true
 git -C "$B32SUB/host" add -A >/dev/null 2>&1 || true
 b32_sub2_out="$(b32_bad=0; b32_broken=0; b32_lint "$B32SUB/host" 2>&1; echo "bad=$b32_bad broken=$b32_broken")"
 assert_contains "js-core/8" "bash-3.2 lint reports a nested-repo script its git enumeration cannot see" \

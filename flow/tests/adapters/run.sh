@@ -517,12 +517,15 @@ assert_contains "flow-mvp/9" "gate passes feature.verify with a fresh receipt (e
 SBG="$(mktmp)"
 if git -C "$SBG" init -q >/dev/null 2>&1 \
    && git -C "$SBG" config user.email t@t >/dev/null 2>&1 \
-   && git -C "$SBG" config user.name t >/dev/null 2>&1; then
+   && git -C "$SBG" config user.name t >/dev/null 2>&1 \
+   && git -C "$SBG" config commit.gpgsign false >/dev/null 2>&1; then
   bash "$INSTALL" "$SBG" >/dev/null 2>&1
   grep -qxF '.vibe/last-inject' "$SBG/.gitignore" \
     && pass "inject-triggers/6" "install gitignores the inject edge-detection marker" \
     || fail "inject-triggers/6" "install gitignores the inject edge-detection marker"
-  git -C "$SBG" add -A >/dev/null 2>&1; git -C "$SBG" commit -qm install >/dev/null 2>&1
+  git -C "$SBG" add -A >/dev/null 2>&1
+  git -C "$SBG" commit -qm install >/dev/null 2>&1 \
+    || fail "inject-triggers/6" "sandbox setup commit (install) failed"
   CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.agents/skills/vibe/scripts/set-state.sh" quick.verify >/dev/null 2>&1
   mkdir -p "$SBG/.agents/skills/vibe/evidence"
   printf 'commands + observed output\n' > "$SBG/.agents/skills/vibe/evidence/quick.md"
@@ -543,7 +546,9 @@ if git -C "$SBG" init -q >/dev/null 2>&1 \
   # Commit that edit: an uncommitted .gitignore is itself newer than the receipt
   # and would block for its own, unrelated reason — leaving `?? .vibe/` as the
   # ONLY thing the scan has to judge, which is the point of this leg.
-  git -C "$SBG" add .gitignore >/dev/null 2>&1; git -C "$SBG" commit -qm legacy >/dev/null 2>&1
+  git -C "$SBG" add .gitignore >/dev/null 2>&1
+  git -C "$SBG" commit -qm legacy >/dev/null 2>&1 \
+    || fail "inject-triggers/6" "sandbox setup commit (legacy) failed"
   # Asserted with the SAME argv the gate itself runs (`-uall`): the marker is one
   # enumerated row, not the collapsed `?? .vibe/` directory a plain --porcelain
   # would report. That enumeration is what lets the exclusion name the marker
