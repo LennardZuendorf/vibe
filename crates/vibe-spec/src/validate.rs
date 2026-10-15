@@ -92,7 +92,9 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     let layout = layered::detect(&dir);
     let is_layered = layout == layered::Layout::Layered;
     for file in &specs {
-        if is_layered && ["README.md", "AGENTS.md"].contains(&name_of(file).as_str()) {
+        // Layered: only the four hubs get the legacy root checks; every
+        // other root `.md` is SF30's.
+        if is_layered && !ENTRYPOINTS.contains(&name_of(file).as_str()) {
             continue;
         }
         root_file(&mut r, &ctx, file);

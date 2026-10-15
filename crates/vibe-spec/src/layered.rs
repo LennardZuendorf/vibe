@@ -8,7 +8,7 @@ use crate::adherence::feature_files;
 use crate::frontmatter;
 use crate::pattern::{md_link_target, md_links};
 use crate::report::Report;
-use crate::text::{Fences, join_raw, lines};
+use crate::text::{Fences, join_raw, lines, trim_space};
 use crate::validate::Ctx;
 
 /// A root's layout.
@@ -88,7 +88,7 @@ fn kind_type(folder: &str) -> Option<&'static str> {
 
 fn in_kind(kind: Option<&'static str>, rest: &[&str]) -> Place {
     match (kind, rest.last()) {
-        (Some(_), Some(&"README.md")) => Place::Readme,
+        (Some(_), Some(&"README.md" | &"AGENTS.md")) => Place::Readme,
         (Some(t), Some(last)) if last.ends_with(".md") => Place::Note(t),
         _ => Place::Other,
     }
@@ -173,7 +173,7 @@ fn budget(r: &mut Report, rel: &str, place: Place, text: &[u8]) {
         Place::Note(_) => (60, "note"),
         _ => return,
     };
-    let n = lines(text).len();
+    let n = text.iter().filter(|&&b| b == b'\n').count();
     if n > limit {
         r.warn("SF31", format!("{rel}: {n} lines, over the {limit}-line {what} budget — split it into a folder with its own hub").as_bytes());
     }
@@ -205,7 +205,7 @@ fn names(
             return;
         }
     }
-    if matches!(place, Place::Note(_) | Place::PartHub) {
+    if matches!(place, Place::Note(_)) {
         let stem = parts
             .last()
             .and_then(|p| p.strip_suffix(".md"))
@@ -232,6 +232,26 @@ fn skip_target(t: &[u8]) -> bool {
         || matches!((colon, slash), (Some(c), s) if s.is_none_or(|s| c < s))
 }
 
+/// A link target as a path: no `?query`, no CommonMark title, no `<...>`, trimmed.
+fn clean_target(raw: &[u8]) -> Vec<u8> {
+    let mut t = trim_space(raw);
+    if let Some(inner) = t.strip_prefix(b"<") {
+        t = inner
+            .iter()
+            .position(|&c| c == b'>')
+            .map_or(inner, |e| &inner[..e]);
+    } else if let Some(i) = t
+        .windows(2)
+        .position(|w| w[0].is_ascii_whitespace() && matches!(w[1], b'"' | b'\''))
+    {
+        t = &t[..i];
+    }
+    if let Some(q) = t.iter().position(|&c| c == b'?') {
+        t = &t[..q];
+    }
+    trim_space(t).to_vec()
+}
+
 /// SF22 for a layered file: every local link resolves (relative to the file; `/` = the project).
 fn links(r: &mut Report, ctx: &Ctx, path: &Path, rel: &str, text: &[u8]) {
     let base = path.parent().unwrap_or(ctx.dir);
@@ -241,7 +261,7 @@ fn links(r: &mut Report, ctx: &Ctx, path: &Path, rel: &str, text: &[u8]) {
             continue;
         }
         for link in md_links(line) {
-            let target = md_link_target(link);
+            let target = clean_target(&md_link_target(link));
             if skip_target(&target) {
                 continue;
             }

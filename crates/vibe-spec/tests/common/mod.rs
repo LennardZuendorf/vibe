@@ -305,6 +305,16 @@ pub fn layered_tree(name: &str) -> PathBuf {
         "docs/spec/parts/mobile/areas/screens.md",
         &note("area", "code: [src/billing.rs]\n", "Two screens."),
     );
+    write(
+        &p,
+        "docs/spec/parts/web/README.md",
+        &hub("Web", "- [Product](product.md)"),
+    );
+    write(
+        &p,
+        "docs/spec/parts/web/product.md",
+        &hub("Web product", "Plain text."),
+    );
     write(&p, "src/billing.rs", "// billing\n");
     p
 }

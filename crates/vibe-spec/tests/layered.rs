@@ -140,11 +140,19 @@ fn layered_edge_inputs() {
     )
     .unwrap();
     write(&p, "docs/spec/areas/.DS_Store", "binary");
-    let budget = format!(
-        "---\ntype: concept\nupdated: 2026-01-15\n---\n{}last line, no newline",
-        "x\n".repeat(56)
+    // 60 newlines plus an unterminated tail: `wc -l` says 60, so no SF31.
+    let body = |n: usize| {
+        format!(
+            "---\ntype: concept\nupdated: 2026-01-15\n---\n{}last line, no newline",
+            "x\n".repeat(n)
+        )
+    };
+    std::fs::write(p.join("docs/spec/concepts/invoice.md"), body(56)).unwrap();
+    assert!(
+        !findings(&p).iter().any(|(c, _)| c == "SF31"),
+        "60 newlines is within budget"
     );
-    std::fs::write(p.join("docs/spec/concepts/invoice.md"), budget).unwrap();
+    std::fs::write(p.join("docs/spec/concepts/invoice.md"), body(57)).unwrap();
     let got = findings(&p);
     assert!(
         got.iter()
@@ -238,5 +246,98 @@ fn layered_feature_docs_keep_type_checking() {
         !got.iter()
             .any(|(c, m)| c == "SF26" && m.contains("features/checkout/product.md")),
         "legacy-typed docs stay SF20's: {got:#?}"
+    );
+}
+
+#[test]
+fn part_hubs_and_nested_agents_are_exempt_from_name_uniqueness() {
+    let p = layered_tree("ly-fix-names");
+    assert!(findings(&p).is_empty(), "two parts must stay clean");
+    write(&p, "docs/spec/areas/AGENTS.md", "# Areas\n");
+    write(&p, "docs/spec/flows/AGENTS.md", &"x\n".repeat(70));
+    let got = findings(&p);
+    assert!(
+        !got.iter().any(|(c, _)| c == "SF32" || c == "SF31"),
+        "nested AGENTS.md is exempt: {got:#?}"
+    );
+}
+
+#[test]
+fn note_names_are_unique_across_parts() {
+    // D44: names are unique across the whole tree, parts included.
+    let p = layered_tree("ly-part-dup");
+    let note = "---\ntype: concept\nupdated: 2026-01-15\n---\n\nA bill.\n";
+    write(&p, "docs/spec/parts/web/concepts/invoice.md", note);
+    append(
+        &p,
+        "docs/spec/parts/web/product.md",
+        "- [Invoice](concepts/invoice.md)\n",
+    );
+    let got = findings(&p);
+    assert!(
+        got.iter()
+            .any(|(c, m)| c == "SF32" && m.contains("name 'invoice' is also used by")),
+        "{got:#?}"
+    );
+}
+
+#[test]
+fn other_root_files_are_left_to_sf30() {
+    for (name, body) in [
+        (
+            "ly-gloss-fm",
+            "---\ntype: concept\nupdated: 2026-01-15\n---\n\nWords.\n",
+        ),
+        ("ly-gloss-plain", "Words.\n"),
+    ] {
+        let p = layered_tree(name);
+        write(&p, "docs/spec/glossary.md", body);
+        let (code, v) = validate_json(&p, &[], &[]);
+        let got: Vec<(&str, &str)> = v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| (f["check"].as_str().unwrap(), f["message"].as_str().unwrap()))
+            .collect();
+        assert!(got.iter().all(|(c, _)| *c == "SF30"), "{name}: {got:#?}");
+        assert_eq!(got.len(), 1, "{name}: {got:#?}");
+        assert_eq!(code, 0, "{name}");
+    }
+}
+
+#[test]
+fn a_part_folder_root_raises_no_sf21() {
+    let p = layered_tree("ly-subroot");
+    let out = spec(&p, &["--root", "docs/spec/areas/billing", "validate"], &[]);
+    assert!(
+        out.text().contains("Validating"),
+        "{}{}",
+        out.text(),
+        out.stderr
+    );
+    assert!(!out.text().contains("SF21"), "{}", out.text());
+    assert!(!out.text().contains("must start with"), "{}", out.text());
+}
+
+#[test]
+fn link_targets_are_cleaned_before_resolving() {
+    let p = layered_tree("ly-linkforms");
+    append(
+        &p,
+        "docs/spec/flows/checkout.md",
+        "[a](../concepts/invoice.md?x=1) [b](../concepts/invoice.md \"Title\") [c](../concepts/invoice.md 'Title') [d](<../concepts/invoice.md>) [e]( ../concepts/invoice.md ) [f](<../concepts/invoice.md> \"T\")\n",
+    );
+    let got = findings(&p);
+    assert!(got.is_empty(), "{got:#?}");
+    append(
+        &p,
+        "docs/spec/flows/checkout.md",
+        "[g](gone.md \"Title\")\n",
+    );
+    let got = findings(&p);
+    assert!(
+        got.iter()
+            .any(|(c, m)| c == "SF22" && m.contains("broken link to 'gone.md'")),
+        "{got:#?}"
     );
 }
