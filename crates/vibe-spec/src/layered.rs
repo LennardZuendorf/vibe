@@ -1,14 +1,16 @@
 //! The layered layout (D44, P3b-R10, R11): detection, the tree walk, and
 //! the layered-only checks — SF22 links across notes, SF30 allowlist, SF31
-//! budgets, SF32 names (Task 10 adds SF33, SF34).
-use std::collections::BTreeMap;
+//! budgets, SF32 names, SF33 typed notes, SF34 reachability; notes also get
+//! the SF10/SF25 grammar checks.
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use crate::adherence::feature_files;
+use crate::content;
 use crate::frontmatter;
 use crate::pattern::{md_link_target, md_links};
 use crate::report::Report;
-use crate::text::{Fences, join_raw, lines, trim_space};
+use crate::text::{Fences, join_raw, lines, lossy, trim_space};
 use crate::validate::Ctx;
 
 /// A root's layout.
@@ -276,10 +278,158 @@ fn links(r: &mut Report, ctx: &Ctx, path: &Path, rel: &str, text: &[u8]) {
     }
 }
 
+/// SF33: notes carry the type of their folder (or `hub`), `updated:`, and
+/// `code:` (areas, existing paths from the project) or `applies:` (tech);
+/// root and part hubs declare `type: hub`.
+fn typed(r: &mut Report, ctx: &Ctx, rel: &str, place: Place, text: &[u8]) {
+    match place {
+        Place::Note(want) => {
+            let Some(fm) = frontmatter::parse(text) else {
+                r.warn(
+                    "SF33",
+                    format!("{rel}: no frontmatter (needs 'type: {want}' and 'updated:')")
+                        .as_bytes(),
+                );
+                return;
+            };
+            let t = fm.scalar("type");
+            match t {
+                None => r.warn(
+                    "SF33",
+                    format!("{rel}: missing 'type:' (expected '{want}')").as_bytes(),
+                ),
+                Some(t) if t != want && t != "hub" => r.warn(
+                    "SF33",
+                    format!("{rel}: type '{t}' does not match its folder (expected '{want}')")
+                        .as_bytes(),
+                ),
+                Some(_) => {}
+            }
+            if fm.scalar("updated").is_none() {
+                r.warn("SF33", format!("{rel}: missing 'updated:'").as_bytes());
+            }
+            match t.unwrap_or(want) {
+                "area" => {
+                    let code = fm.list("code");
+                    if code.is_empty() {
+                        r.warn(
+                            "SF33",
+                            format!("{rel}: an area needs 'code:' (a path or a list of paths)")
+                                .as_bytes(),
+                        );
+                    }
+                    for c in code {
+                        let p = join_raw(ctx.project, c.trim_start_matches('/').as_bytes());
+                        if !p.exists() {
+                            r.warn(
+                                "SF33",
+                                format!("{rel}: code path '{c}' does not exist").as_bytes(),
+                            );
+                        }
+                    }
+                }
+                "tech" if fm.list("applies").is_empty() => {
+                    r.warn(
+                        "SF33",
+                        format!("{rel}: a tech note needs 'applies:' (a glob)").as_bytes(),
+                    );
+                }
+                _ => {}
+            }
+        }
+        Place::Hub | Place::PartHub => {
+            let hub = frontmatter::parse(text).is_some_and(|f| f.scalar("type") == Some("hub"));
+            if !hub {
+                r.warn(
+                    "SF33",
+                    format!("{rel}: a hub declares 'type: hub'").as_bytes(),
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+/// `dir_rel` joined with `target`, `.`/`..` resolved; `None` when it leaves the root.
+fn join_rel(dir_rel: &[&str], target: &str) -> Option<String> {
+    let mut parts: Vec<&str> = dir_rel.to_vec();
+    for seg in target.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            s => parts.push(s),
+        }
+    }
+    Some(parts.join("/"))
+}
+
+/// SF34: every note, part hub and folder README is reachable from the root
+/// hubs, README.md or AGENTS.md by local links (fences skipped).
+fn reach(r: &mut Report, ctx: &Ctx, files: &[(PathBuf, Vec<String>)]) {
+    let rels: BTreeSet<String> = files.iter().map(|(_, parts)| parts.join("/")).collect();
+    let mut seen: BTreeSet<String> = HUBS
+        .iter()
+        .chain(["README.md", "AGENTS.md"].iter())
+        .map(|s| s.to_string())
+        .filter(|s| rels.contains(s))
+        .collect();
+    let mut queue: VecDeque<String> = seen.iter().cloned().collect();
+    while let Some(rel) = queue.pop_front() {
+        let text = std::fs::read(ctx.dir.join(&rel)).unwrap_or_default();
+        let dir: Vec<&str> = {
+            let mut d: Vec<&str> = rel.split('/').collect();
+            d.pop();
+            d
+        };
+        let mut fences = Fences::new();
+        for line in lines(&text) {
+            if fences.skip(line) {
+                continue;
+            }
+            for link in md_links(line) {
+                let target = clean_target(&md_link_target(link));
+                if skip_target(&target) || target.first() == Some(&b'/') {
+                    continue;
+                }
+                let target = lossy(&target);
+                let path = target.split('#').next().unwrap_or_default();
+                if let Some(next) = join_rel(&dir, path)
+                    && rels.contains(&next)
+                    && seen.insert(next.clone())
+                {
+                    queue.push_back(next);
+                }
+            }
+        }
+    }
+    for (_, parts) in files {
+        let refs: Vec<&str> = parts.iter().map(String::as_str).collect();
+        let reachable_kind = match place(&refs) {
+            Place::Note(_) | Place::PartHub => true,
+            Place::Readme => refs.len() > 1,
+            _ => false,
+        };
+        let rel = parts.join("/");
+        if reachable_kind && !seen.contains(&rel) {
+            r.at(&format!("{}/{rel}", ctx.display));
+            r.warn(
+                "SF34",
+                format!(
+                    "{rel}: not reachable from a hub (link it from a hub or its folder README.md)"
+                )
+                .as_bytes(),
+            );
+        }
+    }
+}
+
 /// The layered-only checks.
 pub fn run(r: &mut Report, ctx: &Ctx) {
     let mut stems: BTreeMap<String, String> = BTreeMap::new();
-    for (path, parts) in walk(ctx.dir) {
+    let files = walk(ctx.dir);
+    for (path, parts) in &files {
         let refs: Vec<&str> = parts.iter().map(String::as_str).collect();
         let rel = parts.join("/");
         let place = place(&refs);
@@ -293,11 +443,22 @@ pub fn run(r: &mut Report, ctx: &Ctx) {
             continue;
         }
         r.examine(&shown);
-        let text = std::fs::read(&path).unwrap_or_default();
+        let text = std::fs::read(path).unwrap_or_default();
         budget(r, &rel, place, &text);
         names(r, &rel, &refs, place, &mut stems);
         if place != Place::Hub {
-            links(r, ctx, &path, &rel, &text);
+            links(r, ctx, path, &rel, &text);
+        }
+        typed(r, ctx, &rel, place, &text);
+        let grammar = match place {
+            Place::Note(_) | Place::PartHub => true,
+            Place::Readme => refs.len() > 1,
+            _ => false,
+        };
+        if grammar {
+            content::requirements_scenarios(r, &text, rel.as_bytes());
+            content::scenario_grammar(r, &text, rel.as_bytes());
         }
     }
+    reach(r, ctx, &files);
 }

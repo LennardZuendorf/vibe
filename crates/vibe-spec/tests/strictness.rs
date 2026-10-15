@@ -442,6 +442,24 @@ fn trigger(id: &str) -> Option<Trigger> {
             );
             plain(p, "over the 60-line note budget")
         }
+        "SF33" => {
+            let p = common::layered_tree("mx-sf33-l");
+            write(
+                &p,
+                "docs/spec/tech/rust.md",
+                "---\ntype: tech\nupdated: 2026-01-15\n---\n\nx\n",
+            );
+            plain(p, "a tech note needs 'applies:'")
+        }
+        "SF34" => {
+            let p = common::layered_tree("mx-sf34-l");
+            write(
+                &p,
+                "docs/spec/flows/refund.md",
+                "---\ntype: flow\nupdated: 2026-01-15\n---\n\nx\n",
+            );
+            plain(p, "not reachable from a hub")
+        }
         "SF32" => {
             let p = common::layered_tree("mx-sf32-l");
             write(
@@ -457,7 +475,7 @@ fn trigger(id: &str) -> Option<Trigger> {
 
 /// Registered checks that have no trigger yet; each later task moves its ids
 /// into `trigger`. Task 13 requires this to be empty.
-const PENDING: &[&str] = &["SF33", "SF34", "SF35", "SF36"];
+const PENDING: &[&str] = &["SF35", "SF36"];
 
 fn registered() -> Vec<String> {
     let p = base("mx-ids");

@@ -341,3 +341,157 @@ fn link_targets_are_cleaned_before_resolving() {
         "{got:#?}"
     );
 }
+
+#[test]
+fn typed_notes_and_reachability_fail_when_broken() {
+    let cases: [Case; 8] = [
+        (
+            "ly-type",
+            "SF33",
+            "platform/errors.md: type 'flow' does not match its folder (expected 'platform')",
+            |p| {
+                write(
+                    p,
+                    "docs/spec/platform/errors.md",
+                    "---\ntype: flow\nupdated: 2026-01-15\n---\n\nTyped.\n",
+                )
+            },
+        ),
+        (
+            "ly-notype",
+            "SF33",
+            "questions/pricing.md: missing 'type:' (expected 'question')",
+            |p| {
+                write(
+                    p,
+                    "docs/spec/questions/pricing.md",
+                    "---\nupdated: 2026-01-15\n---\n\nMonthly?\n",
+                )
+            },
+        ),
+        (
+            "ly-noupdated",
+            "SF33",
+            "decisions/d01-use-rust.md: missing 'updated:'",
+            |p| {
+                write(
+                    p,
+                    "docs/spec/decisions/d01-use-rust.md",
+                    "---\ntype: decision\n---\n\nRust.\n",
+                )
+            },
+        ),
+        (
+            "ly-nofm",
+            "SF33",
+            "concepts/invoice.md: no frontmatter",
+            |p| write(p, "docs/spec/concepts/invoice.md", "A bill.\n"),
+        ),
+        (
+            "ly-code",
+            "SF33",
+            "areas/billing/invoices.md: code path 'src/gone.rs' does not exist",
+            |p| {
+                write(
+                    p,
+                    "docs/spec/areas/billing/invoices.md",
+                    "---\ntype: area\ncode: [src/billing.rs, src/gone.rs]\nupdated: 2026-01-15\n---\n\nMonthly.\n",
+                )
+            },
+        ),
+        (
+            "ly-nocode",
+            "SF33",
+            "parts/mobile/areas/screens.md: an area needs 'code:'",
+            |p| {
+                write(
+                    p,
+                    "docs/spec/parts/mobile/areas/screens.md",
+                    "---\ntype: area\nupdated: 2026-01-15\n---\n\nTwo.\n",
+                )
+            },
+        ),
+        (
+            "ly-applies",
+            "SF33",
+            "tech/rust.md: a tech note needs 'applies:'",
+            |p| {
+                write(
+                    p,
+                    "docs/spec/tech/rust.md",
+                    "---\ntype: tech\nupdated: 2026-01-15\n---\n\nEdition 2024.\n",
+                )
+            },
+        ),
+        (
+            "ly-orphan",
+            "SF34",
+            "flows/refund.md: not reachable from a hub",
+            |p| {
+                write(
+                    p,
+                    "docs/spec/flows/refund.md",
+                    "---\ntype: flow\nupdated: 2026-01-15\n---\n\nMoney back.\n",
+                )
+            },
+        ),
+    ];
+    for (name, check, needle, mutate) in cases {
+        let p = layered_tree(name);
+        mutate(&p);
+        let got = findings(&p);
+        assert!(
+            got.iter().any(|(c, m)| c == check && m.contains(needle)),
+            "{name}: want {check} {needle:?}\n{got:#?}"
+        );
+    }
+}
+
+#[test]
+fn a_root_hub_must_be_hub_typed() {
+    let p = layered_tree("ly-hubtype");
+    write(
+        &p,
+        "docs/spec/design.md",
+        "---\ntype: entrypoint\nscope: design\nchildren:\nupdated: 2026-01-15\n---\n\n# Design\n",
+    );
+    let got = findings(&p);
+    assert!(
+        got.iter()
+            .any(|(c, m)| c == "SF33" && m == "design.md: a hub declares 'type: hub'"),
+        "{got:#?}"
+    );
+}
+
+#[test]
+fn reachability_follows_links_through_folder_hubs() {
+    let p = layered_tree("ly-reach");
+    let hub = std::fs::read_to_string(p.join("docs/spec/product.md"))
+        .unwrap()
+        .replace("- [Billing](areas/billing/README.md)\n", "");
+    std::fs::write(p.join("docs/spec/product.md"), hub).unwrap();
+    let got: Vec<String> = findings(&p)
+        .into_iter()
+        .filter(|(c, _)| c == "SF34")
+        .map(|(_, m)| m)
+        .collect();
+    assert_eq!(
+        got,
+        [
+            "areas/billing/README.md: not reachable from a hub (link it from a hub or its folder README.md)",
+            "areas/billing/invoices.md: not reachable from a hub (link it from a hub or its folder README.md)",
+        ]
+    );
+}
+
+#[test]
+fn grammar_runs_on_notes() {
+    let p = layered_tree("ly-grammar");
+    write(
+        &p,
+        "docs/spec/flows/checkout.md",
+        "---\ntype: flow\nupdated: 2026-01-15\n---\n\n### Requirement: Pay\nThe system SHALL charge.\n\n#### Scenario: ok\n- WHEN paying\n",
+    );
+    let got = findings(&p);
+    assert!(got.iter().any(|(c, m)| c == "SF25" && m == "flows/checkout.md: scenario 'ok' has no THEN bullet"), "{got:#?}");
+}
