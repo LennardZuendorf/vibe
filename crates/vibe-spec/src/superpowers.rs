@@ -21,7 +21,8 @@ fn kebab(s: &str) -> bool {
         })
 }
 
-/// A real calendar-shaped date: `is_date` plus month 01–12 and day 01–31.
+/// A date-shaped name prefix: `is_date` plus a range check (month 01–12,
+/// day 01–31). It is not a calendar check: `2026-02-31` passes.
 fn plausible(date: &[u8]) -> bool {
     let num = |r: std::ops::Range<usize>| {
         date.get(r)
@@ -68,6 +69,22 @@ fn first_path(line: &[u8]) -> Option<Vec<u8>> {
     .filter(|p| !p.is_empty())
 }
 
+const NO_PATH: &str =
+    "the '**Spec:**' line names no path \u{2014} put the path in backticks or a link";
+
+/// A link target without `<…>` wrapping and without a `#anchor`.
+fn clean_target(raw: &[u8]) -> Vec<u8> {
+    let inner = raw
+        .strip_prefix(b"<")
+        .and_then(|r| r.strip_suffix(b">"))
+        .unwrap_or(raw);
+    inner
+        .split(|&c| c == b'#')
+        .next()
+        .unwrap_or_default()
+        .to_vec()
+}
+
 fn spec_link(r: &mut Report, project: &Path, rel: &str, path: &Path) {
     let text = std::fs::read(path).unwrap_or_default();
     let mut fences = Fences::new();
@@ -81,23 +98,40 @@ fn spec_link(r: &mut Report, project: &Path, rel: &str, path: &Path) {
         );
         return;
     };
-    let Some(target) = first_path(line.get(9..).unwrap_or_default()) else {
+    let target = first_path(line.get(9..).unwrap_or_default())
+        .map(|t| clean_target(&t))
+        .filter(|t| !t.is_empty());
+    let Some(target) = target else {
+        r.warn("SF36", format!("{rel}: {NO_PATH}").as_bytes());
+        return;
+    };
+    let here = path.parent().unwrap_or(project);
+    let candidates = if target.first() == Some(&b'/') {
+        vec![join_raw(Path::new(""), &target)]
+    } else {
+        vec![join_raw(project, &target), join_raw(here, &target)]
+    };
+    let shown = lossy(&target);
+    let Some(found) = candidates.iter().find(|c| c.exists()) else {
         r.warn(
             "SF36",
-            format!("{rel}: the '**Spec:**' line names no path").as_bytes(),
+            format!("{rel}: **Spec:** path '{shown}' does not exist").as_bytes(),
         );
         return;
     };
-    let target: Vec<u8> = target
-        .split(|&c| c == b'#')
-        .next()
-        .unwrap_or_default()
-        .to_vec();
-    let here = path.parent().unwrap_or(project);
-    if !(join_raw(project, &target).exists() || join_raw(here, &target).exists()) {
+    let inside = match (found.canonicalize(), project.canonicalize()) {
+        (Ok(f), Ok(p)) => f.starts_with(p),
+        _ => false,
+    };
+    if !inside {
         r.warn(
             "SF36",
-            format!("{rel}: **Spec:** path '{}' does not exist", lossy(&target)).as_bytes(),
+            format!("{rel}: **Spec:** path '{shown}' is outside the project").as_bytes(),
+        );
+    } else if !found.is_file() {
+        r.warn(
+            "SF36",
+            format!("{rel}: **Spec:** path '{shown}' is not a file").as_bytes(),
         );
     }
 }
@@ -119,13 +153,18 @@ pub fn run(r: &mut Report, project: &Path) {
                 continue;
             }
             let rel = format!("{dir}/{name}");
-            let file = e.file_type().is_ok_and(|t| t.is_file());
+            let file = std::fs::metadata(e.path()).is_ok_and(|m| m.is_file());
             if file {
                 r.examine(&rel);
             } else {
                 r.at(&rel);
+                r.warn(
+                    "SF35",
+                    format!("{rel}: not a file (subfolders are not read)").as_bytes(),
+                );
+                continue;
             }
-            if !file || !dated(&name, suffix) {
+            if !dated(&name, suffix) {
                 r.warn("SF35", format!("{rel}: not named {shape}").as_bytes());
                 continue;
             }

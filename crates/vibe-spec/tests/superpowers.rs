@@ -89,7 +89,7 @@ fn bad_names_fail() {
             "docs/superpowers/specs/2026-01-02-auth.md: not named YYYY-MM-DD-<topic>-design.md",
             "docs/superpowers/plans/2026-01-05-Bad_Topic.md: not named YYYY-MM-DD-<topic>.md",
             "docs/superpowers/plans/2026-13-40-x.md: not named YYYY-MM-DD-<topic>.md",
-            "docs/superpowers/plans/drafts: not named YYYY-MM-DD-<topic>.md",
+            "docs/superpowers/plans/drafts: not a file (subfolders are not read)",
             "docs/superpowers/plans/notes.md: not named YYYY-MM-DD-<topic>.md",
         ],
         "{got:#?}"
@@ -114,19 +114,41 @@ fn plan_spec_lines_must_resolve() {
         "docs/superpowers/plans/2026-01-08-nopath.md",
         "**Spec:** the auth design\n",
     );
+    for (n, body) in [
+        ("09-anchor", "**Spec:** `#anchor`\n"),
+        ("10-dir", "**Spec:** `docs`\n"),
+        (
+            "11-angle",
+            "**Spec:** [d](<../specs/2026-01-02-auth-design.md>)\n",
+        ),
+        ("12-up", "**Spec:** `../../../../outside-sp-up.md`\n"),
+    ] {
+        write(&p, &format!("docs/superpowers/plans/2026-01-{n}.md"), body);
+    }
+    let outside = p.parent().unwrap().join("outside-sp-up.md");
+    std::fs::write(&outside, "# outside\n").unwrap();
+    let abs = outside.to_string_lossy().into_owned();
+    write(
+        &p,
+        "docs/superpowers/plans/2026-01-13-abs.md",
+        &format!("**Spec:** `{abs}`\n"),
+    );
     let sf36: Vec<String> = found(&p)
         .into_iter()
         .filter(|(c, _)| c == "SF36")
         .map(|(_, m)| m)
         .collect();
-    assert_eq!(
-        sf36,
-        [
-            "docs/superpowers/plans/2026-01-06-nospec.md: no '**Spec:**' line naming the design it implements",
-            "docs/superpowers/plans/2026-01-07-gone.md: **Spec:** path 'docs/superpowers/specs/2026-01-01-gone-design.md' does not exist",
-            "docs/superpowers/plans/2026-01-08-nopath.md: the '**Spec:**' line names no path",
-        ]
-    );
+    let no_path = "the '**Spec:**' line names no path \u{2014} put the path in backticks or a link";
+    let want = [
+        "docs/superpowers/plans/2026-01-06-nospec.md: no '**Spec:**' line naming the design it implements".to_string(),
+        "docs/superpowers/plans/2026-01-07-gone.md: **Spec:** path 'docs/superpowers/specs/2026-01-01-gone-design.md' does not exist".to_string(),
+        format!("docs/superpowers/plans/2026-01-08-nopath.md: {no_path}"),
+        format!("docs/superpowers/plans/2026-01-09-anchor.md: {no_path}"),
+        "docs/superpowers/plans/2026-01-10-dir.md: **Spec:** path 'docs' is not a file".to_string(),
+        "docs/superpowers/plans/2026-01-12-up.md: **Spec:** path '../../../../outside-sp-up.md' is outside the project".to_string(),
+        format!("docs/superpowers/plans/2026-01-13-abs.md: **Spec:** path '{abs}' is outside the project"),
+    ];
+    assert_eq!(sf36, want);
 }
 
 #[test]
@@ -160,4 +182,37 @@ fn fenced_spec_line_does_not_count() {
             "docs/superpowers/plans/2026-01-09-fenced.md: no '**Spec:**' line naming the design it implements"
         ]
     );
+}
+
+#[test]
+fn layered_projects_get_sf36_too() {
+    let p = common::layered_tree("sp-layered");
+    write(
+        &p,
+        "docs/superpowers/plans/2026-01-03-auth.md",
+        "# No spec line\n",
+    );
+    assert_eq!(
+        found(&p),
+        [(
+            "SF36".to_string(),
+            "docs/superpowers/plans/2026-01-03-auth.md: no '**Spec:**' line naming the design it implements".to_string()
+        )]
+    );
+}
+
+#[test]
+fn symlinked_plans_follow_the_link() {
+    let p = sp("sp-symlink");
+    write(
+        &p,
+        "docs/real/target.md",
+        "**Spec:** `docs/superpowers/specs/2026-01-02-auth-design.md`\n",
+    );
+    std::os::unix::fs::symlink(
+        p.join("docs/real/target.md"),
+        p.join("docs/superpowers/plans/2026-01-14-linked.md"),
+    )
+    .unwrap();
+    assert_eq!(found(&p), Vec::<(String, String)>::new());
 }

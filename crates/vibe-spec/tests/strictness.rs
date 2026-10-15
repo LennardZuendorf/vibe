@@ -442,6 +442,15 @@ fn trigger(id: &str) -> Option<Trigger> {
             );
             plain(p, "over the 60-line note budget")
         }
+        "SF32" => {
+            let p = common::layered_tree("mx-sf32-l");
+            write(
+                &p,
+                "docs/spec/flows/invoice.md",
+                "---\ntype: flow\nupdated: 2026-01-15\n---\n\nPay.\n",
+            );
+            plain(p, "is also used by")
+        }
         "SF33" => {
             let p = common::layered_tree("mx-sf33-l");
             write(
@@ -467,15 +476,6 @@ fn trigger(id: &str) -> Option<Trigger> {
         "SF36" => {
             write(&p, "docs/superpowers/plans/2026-01-03-auth.md", "# Plan\n");
             plain(p, "no '**Spec:**' line")
-        }
-        "SF32" => {
-            let p = common::layered_tree("mx-sf32-l");
-            write(
-                &p,
-                "docs/spec/flows/invoice.md",
-                "---\ntype: flow\nupdated: 2026-01-15\n---\n\nPay.\n",
-            );
-            plain(p, "is also used by")
         }
         _ => None,
     }
