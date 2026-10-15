@@ -5,9 +5,9 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
-use crate::adherence::feature_files;
+use crate::adherence::{LAYERED_TYPES, feature_files};
 use crate::content;
-use crate::frontmatter;
+use crate::frontmatter::{self, Value};
 use crate::pattern::{md_link_target, md_links};
 use crate::report::Report;
 use crate::text::{Fences, join_raw, lines, lossy, trim_space};
@@ -105,6 +105,7 @@ pub fn place(parts: &[&str]) -> Place {
         ["features", _, doc] if FEATURE_DOCS.contains(doc) => Place::Feature,
         ["archive", _, _, ..] | ["templates", _, ..] => Place::Exempt,
         ["quick", slug] if slug.ends_with(".md") => Place::Exempt,
+        ["parts", _, "AGENTS.md"] => Place::Readme,
         ["parts", _, name] if name.ends_with(".md") => Place::PartHub,
         ["parts", _, kind, rest @ ..] if !rest.is_empty() => in_kind(kind_type(kind), rest),
         [kind, rest @ ..] if !rest.is_empty() => in_kind(kind_type(kind), rest),
@@ -292,23 +293,27 @@ fn typed(r: &mut Report, ctx: &Ctx, rel: &str, place: Place, text: &[u8]) {
                 );
                 return;
             };
-            let t = fm.scalar("type");
-            match t {
+            // A blank or out-of-vocabulary `type` is SF26's.
+            match fm.get("type") {
                 None => r.warn(
                     "SF33",
                     format!("{rel}: missing 'type:' (expected '{want}')").as_bytes(),
                 ),
-                Some(t) if t != want && t != "hub" => r.warn(
-                    "SF33",
-                    format!("{rel}: type '{t}' does not match its folder (expected '{want}')")
-                        .as_bytes(),
-                ),
+                Some(Value::Scalar(t))
+                    if t != want && t != "hub" && LAYERED_TYPES.contains(&t.as_str()) =>
+                {
+                    r.warn(
+                        "SF33",
+                        format!("{rel}: type '{t}' does not match its folder (expected '{want}')")
+                            .as_bytes(),
+                    );
+                }
                 Some(_) => {}
             }
             if fm.scalar("updated").is_none() {
                 r.warn("SF33", format!("{rel}: missing 'updated:'").as_bytes());
             }
-            match t.unwrap_or(want) {
+            match want {
                 "area" => {
                     let code = fm.list("code");
                     if code.is_empty() {
@@ -338,8 +343,12 @@ fn typed(r: &mut Report, ctx: &Ctx, rel: &str, place: Place, text: &[u8]) {
             }
         }
         Place::Hub | Place::PartHub => {
-            let hub = frontmatter::parse(text).is_some_and(|f| f.scalar("type") == Some("hub"));
-            if !hub {
+            // A root hub with no frontmatter at all is SF20's.
+            let fm = frontmatter::parse(text);
+            if place == Place::Hub && fm.is_none() {
+                return;
+            }
+            if !fm.is_some_and(|f| f.scalar("type") == Some("hub")) {
                 r.warn(
                     "SF33",
                     format!("{rel}: a hub declares 'type: hub'").as_bytes(),
@@ -367,7 +376,12 @@ fn join_rel(dir_rel: &[&str], target: &str) -> Option<String> {
 
 /// SF34: every note, part hub and folder README is reachable from the root
 /// hubs, README.md or AGENTS.md by local links (fences skipped).
-fn reach(r: &mut Report, ctx: &Ctx, files: &[(PathBuf, Vec<String>)]) {
+fn reach(
+    r: &mut Report,
+    ctx: &Ctx,
+    files: &[(PathBuf, Vec<String>)],
+    texts: &BTreeMap<String, Vec<u8>>,
+) {
     let rels: BTreeSet<String> = files.iter().map(|(_, parts)| parts.join("/")).collect();
     let mut seen: BTreeSet<String> = HUBS
         .iter()
@@ -377,14 +391,14 @@ fn reach(r: &mut Report, ctx: &Ctx, files: &[(PathBuf, Vec<String>)]) {
         .collect();
     let mut queue: VecDeque<String> = seen.iter().cloned().collect();
     while let Some(rel) = queue.pop_front() {
-        let text = std::fs::read(ctx.dir.join(&rel)).unwrap_or_default();
+        let text = texts.get(&rel).map_or(&[][..], Vec::as_slice);
         let dir: Vec<&str> = {
             let mut d: Vec<&str> = rel.split('/').collect();
             d.pop();
             d
         };
         let mut fences = Fences::new();
-        for line in lines(&text) {
+        for line in lines(text) {
             if fences.skip(line) {
                 continue;
             }
@@ -394,11 +408,18 @@ fn reach(r: &mut Report, ctx: &Ctx, files: &[(PathBuf, Vec<String>)]) {
                     continue;
                 }
                 let target = lossy(&target);
-                let path = target.split('#').next().unwrap_or_default();
-                if let Some(next) = join_rel(&dir, path)
-                    && rels.contains(&next)
-                    && seen.insert(next.clone())
-                {
+                let Some(next) = join_rel(&dir, &target) else {
+                    continue;
+                };
+                // A directory link reaches that folder's README.md.
+                let next = if rels.contains(&next) {
+                    next
+                } else if next.is_empty() {
+                    continue;
+                } else {
+                    format!("{next}/README.md")
+                };
+                if rels.contains(&next) && seen.insert(next.clone()) {
                     queue.push_back(next);
                 }
             }
@@ -408,7 +429,7 @@ fn reach(r: &mut Report, ctx: &Ctx, files: &[(PathBuf, Vec<String>)]) {
         let refs: Vec<&str> = parts.iter().map(String::as_str).collect();
         let reachable_kind = match place(&refs) {
             Place::Note(_) | Place::PartHub => true,
-            Place::Readme => refs.len() > 1,
+            Place::Readme => refs.len() > 1 && refs.last() != Some(&"AGENTS.md"),
             _ => false,
         };
         let rel = parts.join("/");
@@ -425,10 +446,24 @@ fn reach(r: &mut Report, ctx: &Ctx, files: &[(PathBuf, Vec<String>)]) {
     }
 }
 
+/// `text` without fenced code lines (and fence delimiters).
+fn unfenced(text: &[u8]) -> Vec<u8> {
+    let mut fences = Fences::new();
+    let mut out = Vec::with_capacity(text.len());
+    for line in lines(text) {
+        if !fences.skip(line) {
+            out.extend_from_slice(line);
+            out.push(b'\n');
+        }
+    }
+    out
+}
+
 /// The layered-only checks.
 pub fn run(r: &mut Report, ctx: &Ctx) {
     let mut stems: BTreeMap<String, String> = BTreeMap::new();
     let files = walk(ctx.dir);
+    let mut texts: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for (path, parts) in &files {
         let refs: Vec<&str> = parts.iter().map(String::as_str).collect();
         let rel = parts.join("/");
@@ -450,15 +485,16 @@ pub fn run(r: &mut Report, ctx: &Ctx) {
             links(r, ctx, path, &rel, &text);
         }
         typed(r, ctx, &rel, place, &text);
+        texts.insert(rel.clone(), text.clone());
         let grammar = match place {
             Place::Note(_) | Place::PartHub => true,
             Place::Readme => refs.len() > 1,
             _ => false,
         };
         if grammar {
-            content::requirements_scenarios(r, &text, rel.as_bytes());
+            content::requirements_scenarios(r, &unfenced(&text), rel.as_bytes());
             content::scenario_grammar(r, &text, rel.as_bytes());
         }
     }
-    reach(r, ctx, &files);
+    reach(r, ctx, &files, &texts);
 }

@@ -495,3 +495,135 @@ fn grammar_runs_on_notes() {
     let got = findings(&p);
     assert!(got.iter().any(|(c, m)| c == "SF25" && m == "flows/checkout.md: scenario 'ok' has no THEN bullet"), "{got:#?}");
 }
+
+fn of(p: &Path, checks: &[&str]) -> Vec<String> {
+    findings(p)
+        .into_iter()
+        .filter(|(c, _)| checks.contains(&c.as_str()))
+        .map(|(c, m)| format!("{c} {m}"))
+        .collect()
+}
+
+const NOTE: &str = "---\ntype: flow\nupdated: 2026-01-15\n---\n\nx\n";
+
+#[test]
+fn reach_follows_directory_links() {
+    let p = layered_tree("ly-dirlinks");
+    let hub = std::fs::read_to_string(p.join("docs/spec/product.md"))
+        .unwrap()
+        .replace("areas/billing/README.md", "areas/billing/")
+        .replace("- [Checkout](flows/checkout.md)\n", "- [Flows](flows)\n");
+    std::fs::write(p.join("docs/spec/product.md"), hub).unwrap();
+    write(
+        &p,
+        "docs/spec/flows/README.md",
+        "---\ntype: hub\nupdated: 2026-01-15\n---\n\n# Flows\n\n- [Checkout](checkout.md)\n",
+    );
+    assert_eq!(of(&p, &["SF34"]), Vec::<String>::new());
+}
+
+#[test]
+fn nested_agents_files_are_exempt_from_sf33_and_sf34() {
+    let p = layered_tree("ly-agents");
+    for rel in [
+        "parts/mobile/AGENTS.md",
+        "areas/AGENTS.md",
+        "areas/billing/AGENTS.md",
+    ] {
+        write(&p, &format!("docs/spec/{rel}"), "# Rules\n\nPlain.\n");
+    }
+    assert_eq!(of(&p, &["SF33", "SF34"]), Vec::<String>::new());
+}
+
+#[test]
+fn sf33_leaves_vocabulary_problems_to_sf26() {
+    let p = layered_tree("ly-vocab");
+    write(
+        &p,
+        "docs/spec/flows/refund.md",
+        "---\ntype: widget\nupdated: 2026-01-15\n---\n\nx\n",
+    );
+    write(
+        &p,
+        "docs/spec/flows/blank.md",
+        "---\ntype:\nupdated: 2026-01-15\n---\n\nx\n",
+    );
+    let got = of(&p, &["SF26", "SF33"]);
+    assert!(
+        got.iter()
+            .all(|m| m.starts_with("SF26 ") || m.contains("does not match")),
+        "{got:#?}"
+    );
+    assert!(!got.iter().any(|m| m.starts_with("SF33")), "{got:#?}");
+    assert!(
+        got.iter().any(|m| m.contains("flows/refund.md")),
+        "{got:#?}"
+    );
+    assert!(got.iter().any(|m| m.contains("flows/blank.md")), "{got:#?}");
+    write(
+        &p,
+        "docs/spec/flows/mixed.md",
+        "---\ntype: concept\nupdated: 2026-01-15\n---\n\nx\n",
+    );
+    let got = of(&p, &["SF26", "SF33"]);
+    assert!(
+        got.iter()
+            .any(|m| m.starts_with("SF33 flows/mixed.md: type 'concept'")),
+        "{got:#?}"
+    );
+    assert!(
+        !got.iter()
+            .any(|m| m.starts_with("SF26") && m.contains("mixed")),
+        "{got:#?}"
+    );
+}
+
+#[test]
+fn a_root_hub_without_frontmatter_is_sf20s() {
+    let p = layered_tree("ly-hubnofm");
+    write(&p, "docs/spec/design.md", "# Design\n");
+    assert_eq!(of(&p, &["SF33"]), Vec::<String>::new());
+}
+
+#[test]
+fn code_requirement_follows_the_folder() {
+    let p = layered_tree("ly-folder-code");
+    write(&p, "docs/spec/areas/odd.md", NOTE);
+    let got = of(&p, &["SF33"]);
+    assert!(
+        got.iter()
+            .any(|m| m.contains("areas/odd.md: an area needs 'code:'")),
+        "{got:#?}"
+    );
+}
+
+#[test]
+fn sf10_skips_fenced_samples_in_notes() {
+    let p = layered_tree("ly-fenced");
+    write(
+        &p,
+        "docs/spec/flows/sample.md",
+        "---\ntype: flow\nupdated: 2026-01-15\n---\n\n```\n### Requirement: Sample\nnothing\n```\n",
+    );
+    assert_eq!(of(&p, &["SF10"]), Vec::<String>::new());
+}
+
+#[test]
+fn reach_ignores_fences_survives_cycles_and_fragments() {
+    let p = layered_tree("ly-reach2");
+    append(
+        &p,
+        "docs/spec/product.md",
+        "\n```\n[Refund](flows/refund.md)\n```\n",
+    );
+    write(&p, "docs/spec/flows/refund.md", NOTE);
+    let got = of(&p, &["SF34"]);
+    assert_eq!(got.len(), 1, "{got:#?}");
+    assert!(got[0].contains("flows/refund.md"), "{got:#?}");
+
+    let p = layered_tree("ly-reach3");
+    append(&p, "docs/spec/product.md", "\n- [A](flows/a.md#top)\n");
+    write(&p, "docs/spec/flows/a.md", &format!("{NOTE}[b](b.md)\n"));
+    write(&p, "docs/spec/flows/b.md", &format!("{NOTE}[a](a.md)\n"));
+    assert_eq!(of(&p, &["SF34"]), Vec::<String>::new());
+}
