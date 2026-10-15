@@ -23,6 +23,7 @@ mod check;
 mod content;
 mod frontmatter;
 mod git;
+mod layered;
 mod lessons;
 mod list_specs;
 mod pattern;

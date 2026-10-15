@@ -14,6 +14,7 @@ use vibe_core::exit;
 use crate::adherence;
 use crate::check;
 use crate::content;
+use crate::layered;
 use crate::pattern::{md_link_target, md_links, paren_links};
 use crate::report::Report;
 use crate::root::{Miss, Root};
@@ -75,20 +76,25 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     if !dir.is_dir() {
         r.at("");
         r.refuse(b"No spec root found. Run setup first: vibe-spec init");
-        return finish(r, &display, opts.format, false);
+        return finish(r, &display, opts.format, false, layered::Layout::Flat);
     }
     let specs = md_files(&dir);
     if specs.is_empty() {
         r.at("");
         r.refuse(format!("No spec files found in {display}/").as_bytes());
-        return finish(r, &display, opts.format, false);
+        return finish(r, &display, opts.format, false, layered::Layout::Flat);
     }
     let ctx = Ctx {
         dir: &dir,
         project: &project,
         display: &display,
     };
+    let layout = layered::detect(&dir);
+    let is_layered = layout == layered::Layout::Layered;
     for file in &specs {
+        if is_layered && ["README.md", "AGENTS.md"].contains(&name_of(file).as_str()) {
+            continue;
+        }
         root_file(&mut r, &ctx, file);
     }
     for name in ENTRYPOINTS {
@@ -103,27 +109,42 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     claude_md(&mut r, &project, &display);
     sf13(&mut r, &dir, &display);
     content::sf14(&mut r, &dir, &display);
-    sf15(&mut r, &dir, &display);
+    if !is_layered {
+        sf15(&mut r, &dir, &display);
+    }
     sf16(&mut r, &dir, &display);
-    let files = adherence::flat_files(&dir);
-    adherence::run(&mut r, &ctx, &files, false);
+    let files = if is_layered {
+        layered::spec_files(&dir)
+    } else {
+        adherence::flat_files(&dir)
+    };
+    adherence::run(&mut r, &ctx, &files, is_layered);
+    if is_layered {
+        layered::run(&mut r, &ctx);
+    }
     if opts.strict && (r.examined() == 0 || r.levels().all_off()) {
         r.at("");
         r.refuse(b"validate --strict examined nothing (no spec file, or every check is off); refusing to report green");
     }
-    finish(r, &display, opts.format, true)
+    finish(r, &display, opts.format, true, layout)
 }
 
 /// The run's answer: the exit code and stdout in the chosen format. Text
 /// mode closes a full run with the oracle's summary lines.
-fn finish(mut r: Report, display: &str, format: Format, summary: bool) -> (u8, Vec<u8>) {
+fn finish(
+    mut r: Report,
+    display: &str,
+    format: Format,
+    summary: bool,
+    layout: layered::Layout,
+) -> (u8, Vec<u8>) {
     let code = if r.errors > 0 {
         exit::FINDINGS
     } else {
         exit::OK
     };
     match format {
-        Format::Json => (code, r.json(display, "flat")),
+        Format::Json => (code, r.json(display, layout.as_str())),
         Format::Text => {
             if summary {
                 let (errors, warnings) = (r.errors, r.warnings);

@@ -201,3 +201,110 @@ pub fn validate_json(cwd: &Path, extra: &[&str], env: &[(&str, &str)]) -> (i32, 
         .unwrap_or_else(|e| panic!("not JSON ({e}): {}\nstderr: {}", out.text(), out.stderr));
     (out.code, v)
 }
+
+/// A clean layered project (D44): hubs, README/AGENTS, every kind folder,
+/// a nested topic folder with its own README hub, and a part.
+pub fn layered_tree(name: &str) -> PathBuf {
+    let p = project(name);
+    let hub = |title: &str, body: &str| {
+        format!("---\ntype: hub\nupdated: 2026-01-15\n---\n\n# {title}\n\n{body}\n")
+    };
+    let note = |t: &str, extra: &str, body: &str| {
+        format!("---\ntype: {t}\n{extra}updated: 2026-01-15\n---\n\n{body}\n")
+    };
+    write(
+        &p,
+        "docs/spec/README.md",
+        &hub(
+            "Spec",
+            "[Product](product.md) · [Tech](tech.md) · [Design](design.md) · [Plan](plan.md) · [How to write](AGENTS.md)",
+        ),
+    );
+    write(
+        &p,
+        "docs/spec/AGENTS.md",
+        "# Writing the spec\n\nOne fact, one place. Link every note from a hub.\n",
+    );
+    write(
+        &p,
+        "docs/spec/product.md",
+        &hub(
+            "Product",
+            "- [Billing](areas/billing/README.md)\n- [Checkout](flows/checkout.md)\n- [Invoice](concepts/invoice.md)\n- [Mobile](parts/mobile/product.md)",
+        ),
+    );
+    write(
+        &p,
+        "docs/spec/tech.md",
+        &hub(
+            "Tech",
+            "- [Rust](tech/rust.md)\n- [Errors](platform/errors.md)\n- [Use Rust](decisions/d01-use-rust.md)\n- [Pricing](questions/pricing.md)",
+        ),
+    );
+    write(&p, "docs/spec/design.md", &hub("Design", "Plain text."));
+    write(
+        &p,
+        "docs/spec/plan.md",
+        &hub(
+            "Plan",
+            "| Feature | Status |\n|---|---|\n| checkout | NOT STARTED |",
+        ),
+    );
+    write(&p, "docs/spec/lessons.md", "# Lessons\n");
+    write(
+        &p,
+        "docs/spec/areas/billing/README.md",
+        &hub("Billing", "- [Invoices](invoices.md)"),
+    );
+    write(
+        &p,
+        "docs/spec/areas/billing/invoices.md",
+        &note(
+            "area",
+            "code: src/billing.rs\n",
+            "Issued monthly. See [checkout](../../flows/checkout.md).",
+        ),
+    );
+    write(
+        &p,
+        "docs/spec/flows/checkout.md",
+        &note("flow", "", "Cart to payment."),
+    );
+    write(
+        &p,
+        "docs/spec/concepts/invoice.md",
+        &note("concept", "", "A bill."),
+    );
+    write(
+        &p,
+        "docs/spec/platform/errors.md",
+        &note("platform", "", "Errors are typed."),
+    );
+    write(
+        &p,
+        "docs/spec/tech/rust.md",
+        &note("tech", "applies: \"crates/**/*.rs\"\n", "Edition 2024."),
+    );
+    write(
+        &p,
+        "docs/spec/decisions/d01-use-rust.md",
+        &note("decision", "", "We use Rust."),
+    );
+    write(
+        &p,
+        "docs/spec/questions/pricing.md",
+        &note("question", "", "Monthly or yearly?"),
+    );
+    write(
+        &p,
+        "docs/spec/parts/mobile/product.md",
+        &hub("Mobile", "- [Screens](areas/screens.md)"),
+    );
+    write(
+        &p,
+        "docs/spec/parts/mobile/areas/screens.md",
+        &note("area", "code: [src/billing.rs]\n", "Two screens."),
+    );
+    write(&p, "src/billing.rs", "// billing\n");
+    p
+}

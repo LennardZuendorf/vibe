@@ -231,5 +231,6 @@ pub fn command(found: &Result<Root, Miss>, json: bool) -> (u8, Vec<u8>) {
     if !matches!(root.source, Source::Flag | Source::Env) {
         v["depth"] = json!(root.depth);
     }
+    v["layout"] = json!(crate::layered::detect(&root.dir).as_str());
     (exit::OK, format!("{v}\n").into_bytes())
 }

@@ -24,6 +24,7 @@ fn dot_spec_from_a_subdirectory_resolves_like_the_root() {
     let v = json(&spec(&p.join("src/deep"), &["root", "--json"], &[]));
     assert_eq!(v["source"], "dot-spec");
     assert_eq!(v["depth"], 2);
+    assert_eq!(v["layout"], "flat");
     assert_eq!(v["root"], p.join(".spec").to_string_lossy().as_ref());
 }
 
