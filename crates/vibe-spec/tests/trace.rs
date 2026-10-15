@@ -289,3 +289,31 @@ fn json_shape_and_empty_stdout_on_failure() {
         assert!(out.stdout.is_empty(), "{}", out.text());
     }
 }
+
+#[test]
+fn trace_ignores_commits_outside_a_nested_project() {
+    let top = project("tr-nested");
+    let p = top.join("app");
+    write(&p, ".git-keep", "");
+    std::fs::remove_dir_all(top.join(".git")).unwrap();
+    write(&p, ".spec/product.md", ENTRY);
+    write(
+        &p,
+        ".spec/features/auth/plan.md",
+        "---\ntype: feature-plan\n---\n\n### auth/1 — Login\n",
+    );
+    let d = "2026-02-01T12:00:00Z";
+    git(&top, d, &["init", "-q"]);
+    git(&top, d, &["add", "-A"]);
+    git(&top, d, &["commit", "-q", "-m", "feat: login (auth/1)"]);
+    write(&top, "elsewhere.txt", "x\n");
+    git(&top, d, &["add", "-A"]);
+    git(
+        &top,
+        d,
+        &["commit", "-q", "-m", "fix: outside only, auth/9"],
+    );
+    let out = spec(&p, &["trace"], &[]);
+    assert_eq!(out.code, 0, "{}{}", out.text(), out.stderr);
+    assert!(!out.text().contains("auth/9"), "{}", out.text());
+}

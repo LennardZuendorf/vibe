@@ -101,8 +101,19 @@ pub fn commits(dir: &Path, since: Option<&str>) -> Result<Option<Vec<Commit>>, S
         }
         None => "HEAD".to_string(),
     };
-    let mut args = vec!["log", "-z", "--format=%H%n%B"];
-    args.push(&range);
+    // Only this project's history: the repository may hold more.
+    let scope = std::fs::canonicalize(dir)
+        .ok()
+        .and_then(|d| d.strip_prefix(&top).ok().map(Path::to_path_buf))
+        .map(|rel| {
+            rel.components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/")
+        })
+        .filter(|rel| !rel.is_empty())
+        .unwrap_or_else(|| ".".to_string());
+    let args = ["log", "-z", "--format=%H%n%B", &range, "--", &scope];
     let log = git(&top, &args).ok_or_else(|| format!("git log {range} failed"))?;
     let mut out = Vec::new();
     for record in log.split(|&b| b == 0) {
