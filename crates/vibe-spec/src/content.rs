@@ -1,7 +1,7 @@
 //! validate's content checks (SF3, SF8–SF12, SF14, I1): ports of the awk
 //! and grep blocks in `oracles/bash/spec/scripts/validate.sh`, rule order
 //! and all. F17 fixes their known bugs (R-ID prefix, RFC-2119 boundary,
-//! Scope scoping); F16 reproduces them.
+//! Scope scoping).
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -10,7 +10,8 @@ use crate::pattern::{
 };
 use crate::report::Report;
 use crate::text::{
-    contains_ci, first_line, has_line_starting, is_space, lines, name_of, sub_dirs, trim_space,
+    Fences, contains_ci, first_line, has_line_starting, is_space, lines, name_of, sub_dirs,
+    trim_end_space, trim_space,
 };
 
 const TOKEN_GROUPS: [&[u8]; 5] = [
@@ -81,11 +82,15 @@ pub fn design_tokens(r: &mut Report, text: &[u8], label: &[u8]) {
 }
 
 /// The lines of the `## Scope` section: after the first line that is
-/// exactly `## Scope` (surrounding blanks allowed) up to the next `# ` or
-/// `## ` heading. `None` without one (P3b-R16).
+/// `## Scope` (trailing blanks allowed) up to the next `# ` or `## `
+/// heading. Fenced lines neither start nor end it and hold no words. `None` without one (P3b-R16).
 fn scope_section(text: &[u8]) -> Option<Vec<&[u8]>> {
     let mut section: Option<Vec<&[u8]>> = None;
+    let mut fences = Fences::new();
     for line in lines(text) {
+        if fences.skip(line) {
+            continue;
+        }
         match section.as_mut() {
             Some(s) => {
                 if line.starts_with(b"# ") || line.starts_with(b"## ") {
@@ -93,7 +98,7 @@ fn scope_section(text: &[u8]) -> Option<Vec<&[u8]>> {
                 }
                 s.push(line);
             }
-            None if trim_space(line) == b"## Scope" => section = Some(Vec::new()),
+            None if trim_end_space(line) == b"## Scope" => section = Some(Vec::new()),
             None => {}
         }
     }

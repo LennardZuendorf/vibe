@@ -122,7 +122,7 @@ const RICH_PLAN: &str = "---\ntype: entrypoint\nscope: plan\nupdated: 2026-01-15
 const RICH_DESIGN: &str = "---\ntype: entrypoint\nscope: design\nchildren:\ncolors:\ntypography:\n  body: Inter\nrounded:\n# a comment\nspacing: 4px\ncomponents:\nupdated: 2026-01-15\n---\n\n# Design\n";
 const RICH_TECH: &str = "---\ntype: entrypoint\nscope: technical\nchildren:\n  - tech-api.md\n  - tech-{topic}.md\n  - tech-missing.md\nupdated: 2026-01-15\n---\n\n# Tech\n";
 const AUTH_PRODUCT: &str = "---\ntype: feature-product\nfeature: auth\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n# auth — Product\n\n## Scope\n\n| | |\n|---|---|\n| **Owns** | session cookies, login form, ui |\n| **Does not own** | billing |\n\n## Requirements\n\n### Requirement: Sign in (R1)\nUsers MUST sign in.\n#### Scenario: ok\nWorks.\n\n### Requirement: Sign out (R10)\nUsers MAY sign out.\n\n## Requirements Trace\n\n| R2 | missing |\n";
-const AUTH_PLAN: &str = "---\ntype: feature-plan\nfeature: auth\nparent: ../../plan.md\nupdated: 2026-01-15\n---\n\n# auth — Plan\n\nCovers R10.\n\n### auth/1 — Login\n\n### auth/1 — Login again\n\n### billing/2 — Cross\n\nDepends on billing/3 and auth/2.\n";
+const AUTH_PLAN: &str = "---\ntype: feature-plan\nfeature: auth\nparent: ../../plan.md\nupdated: 2026-01-15\n---\n\n# auth — Plan\n\nCovers R1 and R10.\n\n### auth/1 — Login\n\n### auth/1 — Login again\n\n### billing/2 — Cross\n\nDepends on billing/3 and auth/2.\n";
 const AUTH_TECH: &str = "---\ntype: feature-tech\nfeature: auth\nparent: ../../tech.md\nsibling: product.md\nupdated: 2026-01-15\n---\n\n# auth — Tech\n\n[design](design.md) [plan](plan.md) [gone](gone.md) [abs](/nonexistent/x.md)\n";
 const BILLING_PRODUCT: &str = "---\ntype: feature-product\nfeature: billing\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n# billing — Product\n\n## Scope\n\n| Owns | Does not own |\n|---|---|\n| `Session Cookies` | auth |\n| invoices | |\n";
 const BILLING_PLAN: &str = "---\ntype: feature-plan\nfeature: billing\nparent: ../../plan.md\nupdated: 2026-01-15\n---\n\n# billing — Plan\n\n## Requirements Trace\n\nNone yet.\n";
@@ -455,6 +455,23 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
                     (".spec/features/auth/design.md", "# no frontmatter\n"),
                     (".spec/features/billing/product.md", BILLING_PRODUCT),
                     (".spec/features/billing/plan.md", BILLING_PLAN),
+                ],
+            ),
+        },
+        CaseDef {
+            class: "features",
+            name: "rid-prefix",
+            cwd: "",
+            runs: &[],
+            files: with(
+                filled(),
+                &[
+                    (".spec/features/auth/product.md", AUTH_PRODUCT),
+                    (
+                        ".spec/features/auth/plan.md",
+                        "---\ntype: feature-plan\nfeature: auth\nparent: ../../plan.md\nupdated: 2026-01-15\n---\n\nCovers R10.\n\n### auth/1 — Login\n",
+                    ),
+                    (".spec/features/auth/tech.md", AUTH_TECH),
                 ],
             ),
         },

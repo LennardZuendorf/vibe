@@ -41,7 +41,7 @@ pub fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 /// Byte substring test; the empty needle is always found.
-#[allow(dead_code)]
+#[expect(dead_code, reason = "mutant helper; Task 13 decides")]
 pub fn contains(hay: &[u8], needle: &[u8]) -> bool {
     needle.is_empty() || hay.windows(needle.len()).any(|w| w == needle)
 }
@@ -81,11 +81,61 @@ pub fn trim_start_space(s: &[u8]) -> &[u8] {
     s.get(n..).unwrap_or_default()
 }
 
+/// `s` without trailing `[[:space:]]`.
+pub fn trim_end_space(s: &[u8]) -> &[u8] {
+    let n = s.iter().rev().take_while(|&&b| is_space(b)).count();
+    s.get(..s.len() - n).unwrap_or_default()
+}
+
 /// `s` without leading or trailing `[[:space:]]`.
 pub fn trim_space(s: &[u8]) -> &[u8] {
     let s = trim_start_space(s);
     let n = s.iter().rev().take_while(|&&b| is_space(b)).count();
     s.get(..s.len() - n).unwrap_or_default()
+}
+
+/// A fence line: <=3 leading spaces, then a run of >=3 backticks or tildes.
+/// Returns (char, run length, rest of the line).
+pub fn fence_run(line: &[u8]) -> Option<(u8, usize, &[u8])> {
+    let indent = line.iter().take_while(|&&c| c == b' ').count();
+    if indent > 3 {
+        return None;
+    }
+    let body = line.get(indent..)?;
+    let ch = *body.first()?;
+    if ch != b'`' && ch != b'~' {
+        return None;
+    }
+    let n = body.iter().take_while(|&&c| c == ch).count();
+    (n >= 3).then(|| (ch, n, body.get(n..).unwrap_or_default()))
+}
+
+/// Fenced-code tracking for the F17 line scanners.
+#[derive(Default)]
+pub struct Fences(Option<(u8, usize)>);
+
+impl Fences {
+    /// Outside any fence.
+    pub fn new() -> Fences {
+        Fences(None)
+    }
+
+    /// Feeds one line; true when it is a fence delimiter or inside a fence.
+    pub fn skip(&mut self, line: &[u8]) -> bool {
+        if let Some((ch, len)) = self.0 {
+            if fence_run(line)
+                .is_some_and(|(c, n, rest)| c == ch && n >= len && trim_space(rest).is_empty())
+            {
+                self.0 = None;
+            }
+            return true;
+        }
+        if let Some((ch, len, _)) = fence_run(line) {
+            self.0 = Some((ch, len));
+            return true;
+        }
+        false
+    }
 }
 
 /// What bash's `echo -e "$msg"` prints, newline included. Escapes:

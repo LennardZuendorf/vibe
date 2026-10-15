@@ -41,6 +41,6 @@ live list-specs list-specs.sh
 live lessons-for lessons-for.sh spec
 live lessons-for lessons-for.sh --format inject bash testing
 live scan-merges scan-merges.sh
-[[ "$compared" -eq 4 ]] || { echo "parity: live compared nothing" >&2; exit 1; }
+[[ "$compared" -eq 4 ]] || { echo "parity: live compared $compared, want 4" >&2; exit 1; }
 [[ "$fails" -eq 0 ]] || { echo "parity: $fails live mismatch(es)" >&2; exit 1; }
 echo "parity: self-check, candidate and live ($compared) green"

@@ -7,7 +7,7 @@ updated: 2026-01-15
 
 # auth — Plan
 
-Covers R10.
+Covers R1 and R10.
 
 ### auth/1 — Login
 

@@ -126,3 +126,64 @@ fn scope_words_count_only_inside_the_scope_section() {
         ["features/auth/product.md: missing '## Scope' section (add Owns / Does not own table)"]
     );
 }
+
+const REQ: &str = "### Requirement: A\nUsers MUST a.\n#### Scenario: a\n- WHEN x\n- THEN y\n";
+const MISSING_BOTH: [&str; 2] = [
+    "features/auth/product.md: Scope section missing 'Owns' column or row",
+    "features/auth/product.md: Scope section missing 'Does not own' column or row",
+];
+
+#[test]
+fn fenced_lines_neither_start_nor_end_the_scope_section() {
+    let a = feature(
+        "gr-scope-fence-end",
+        &format!("## Scope\n\n```\n## sample\n```\n\nOwns a; does not own b.\n\n{REQ}"),
+    );
+    assert!(messages(&a, "SF8").is_empty(), "{:?}", messages(&a, "SF8"));
+    let b = feature(
+        "gr-scope-fence-start",
+        &format!("```\n## Scope\n\nOwns a; does not own b.\n```\n\n## Scope\n\nTBD.\n\n{REQ}"),
+    );
+    assert_eq!(messages(&b, "SF8"), MISSING_BOTH);
+    let c = feature(
+        "gr-scope-fence-words",
+        &format!("## Scope\n\n```\nOwns a; does not own b.\n```\n\n{REQ}"),
+    );
+    assert_eq!(messages(&c, "SF8"), MISSING_BOTH);
+}
+
+#[test]
+fn the_scope_heading_allows_trailing_blanks_only() {
+    let p = feature(
+        "gr-scope-indent",
+        &format!("  ## Scope\n\nOwns a; does not own b.\n\n{REQ}"),
+    );
+    assert_eq!(
+        messages(&p, "SF8"),
+        ["features/auth/product.md: missing '## Scope' section (add Owns / Does not own table)"]
+    );
+    let ok = feature(
+        "gr-scope-trail",
+        &format!("## Scope  \t\n\nOwns a; does not own b.\n\n{REQ}"),
+    );
+    assert!(messages(&ok, "SF8").is_empty());
+}
+
+#[test]
+fn scope_section_boundaries() {
+    let sub = feature(
+        "gr-scope-h3",
+        &format!("## Scope\n\n### Detail\n\nOwns a; does not own b.\n\n{REQ}"),
+    );
+    assert!(messages(&sub, "SF8").is_empty());
+    let top = feature(
+        "gr-scope-h1",
+        &format!("## Scope\n\nTBD.\n\n# Top\n\nOwns a; does not own b.\n\n{REQ}"),
+    );
+    assert_eq!(messages(&top, "SF8"), MISSING_BOTH);
+    let crlf = feature(
+        "gr-scope-crlf",
+        "## Scope\r\n\r\nOwns a; does not own b.\r\n\r\n## Next\r\n",
+    );
+    assert!(messages(&crlf, "SF8").is_empty());
+}

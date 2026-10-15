@@ -309,6 +309,9 @@ mod tests {
         assert!(!rfc_keyword(b"Mayor of SHALLOW"));
         assert!(!rfc_keyword(b"users must x"));
         assert!(!rfc_keyword(b"MUSTN"));
+        assert!(!has_word(b"abc", b""));
+        assert!(!has_word(b"ab", b"abc"));
+        assert!(has_word(b"owns", b"owns"));
     }
 
     #[test]

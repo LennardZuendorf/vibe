@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use vibe_core::exit;
 
 use crate::root::{Miss, Root};
-use crate::text::{is_date, lines, lossy, trim_space, trim_start_space};
+use crate::text::{Fences, is_date, lines, lossy, trim_space, trim_start_space};
 
 /// superpowers' artifact directories, relative to the project.
 const SP_SPECS: &str = "docs/superpowers/specs";
@@ -149,18 +149,9 @@ pub fn plan(found: &Result<Root, Miss>, feature: &str, json_out: bool) -> (u8, V
 fn task_rows(text: &[u8]) -> Vec<Row> {
     let mut rows: Vec<Row> = Vec::new();
     let mut counts: Option<(usize, usize)> = None;
-    let mut fence: Option<(u8, usize)> = None;
+    let mut fences = Fences::new();
     for line in lines(text) {
-        if let Some((ch, len)) = fence {
-            if fence_run(line)
-                .is_some_and(|(c, n, rest)| c == ch && n >= len && trim_space(rest).is_empty())
-            {
-                fence = None;
-            }
-            continue;
-        }
-        if let Some((ch, len, _)) = fence_run(line) {
-            fence = Some((ch, len));
+        if fences.skip(line) {
             continue;
         }
         if line.starts_with(b"## ") || line.starts_with(b"### ") {
@@ -186,22 +177,6 @@ fn task_rows(text: &[u8]) -> Vec<Row> {
     }
     close(&mut rows, &mut counts);
     rows
-}
-
-/// A fence line: <=3 leading spaces, then a run of >=3 backticks or tildes.
-/// Returns (char, run length, rest of the line).
-fn fence_run(line: &[u8]) -> Option<(u8, usize, &[u8])> {
-    let indent = line.iter().take_while(|&&c| c == b' ').count();
-    if indent > 3 {
-        return None;
-    }
-    let body = line.get(indent..)?;
-    let ch = *body.first()?;
-    if ch != b'`' && ch != b'~' {
-        return None;
-    }
-    let n = body.iter().take_while(|&&c| c == ch).count();
-    (n >= 3).then(|| (ch, n, body.get(n..).unwrap_or_default()))
 }
 
 fn close(rows: &mut [Row], counts: &mut Option<(usize, usize)>) {
