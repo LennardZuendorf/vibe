@@ -20,9 +20,11 @@ macro_rules! cat {
 
 mod lessons;
 mod list_specs;
+mod pattern;
 mod root;
 mod scan_merges;
 mod text;
+mod validate;
 
 /// The vibe spec tool.
 #[derive(Parser)]
@@ -64,6 +66,13 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Validate the spec tree (port of validate.sh).
+    #[command(disable_help_flag = true)]
+    Validate {
+        /// None yet; F17 adds `--strict`, `--changed`, `--file`, `--format`.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -87,6 +96,7 @@ fn main() -> ExitCode {
         Command::ScanMerges { args: _ } => {
             scan_merges::run(&found, &cwd, &raw_tail(std::env::args()))
         }
+        Command::Validate { args: _ } => validate::run(&found, &cwd, &raw_tail(std::env::args())),
     };
     emit(&out);
     ExitCode::from(code)
