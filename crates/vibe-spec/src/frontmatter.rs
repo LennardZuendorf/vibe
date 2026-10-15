@@ -146,9 +146,7 @@ pub fn parse(text: &[u8]) -> Option<Frontmatter> {
             continue;
         };
         let key = lossy(trim_space(line.get(..colon).unwrap_or_default()));
-        let rest = trim_space(cut_comment(trim_space(
-            line.get(colon + 1..).unwrap_or_default(),
-        )));
+        let rest = trim_space(cut_comment(line.get(colon + 1..).unwrap_or_default()));
         let value = if rest.is_empty() {
             Value::Block(Vec::new())
         } else if rest.len() >= 2 && rest.first() == Some(&b'[') && rest.last() == Some(&b']') {
@@ -210,5 +208,8 @@ mod tests {
         assert_eq!(fm.scalar("updated"), Some("2026-01-15"));
         assert_eq!(fm.scalar("q"), Some("a # b"));
         assert_eq!(fm.scalar("h"), Some("a#b"));
+        let fm = parse(b"---\nchildren: # kids\n- a.md\nupdated:  # c\n---\n").unwrap();
+        assert_eq!(fm.list("children"), vec!["a.md"]);
+        assert_eq!(fm.scalar("updated"), None);
     }
 }
