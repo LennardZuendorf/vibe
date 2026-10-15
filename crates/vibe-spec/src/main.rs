@@ -17,9 +17,11 @@ macro_rules! cat {
     }};
 }
 
+mod adherence;
 #[allow(dead_code)] // consumed by later F17 tasks
 mod check;
 mod content;
+mod frontmatter;
 mod lessons;
 mod list_specs;
 mod pattern;

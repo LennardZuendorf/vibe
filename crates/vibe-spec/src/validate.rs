@@ -11,6 +11,7 @@ use std::process::{Command, Stdio};
 
 use vibe_core::exit;
 
+use crate::adherence;
 use crate::check;
 use crate::content;
 use crate::pattern::{md_link_target, md_links, paren_links};
@@ -104,6 +105,8 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     content::sf14(&mut r, &dir, &display);
     sf15(&mut r, &dir, &display);
     sf16(&mut r, &dir, &display);
+    let files = adherence::flat_files(&dir);
+    adherence::run(&mut r, &ctx, &files, false);
     if opts.strict && (r.examined() == 0 || r.levels().all_off()) {
         r.at("");
         r.refuse(b"validate --strict examined nothing (no spec file, or every check is off); refusing to report green");
@@ -134,13 +137,13 @@ fn finish(mut r: Report, display: &str, format: Format, summary: bool) -> (u8, V
 }
 
 /// Where the spec lives.
-struct Ctx<'a> {
+pub struct Ctx<'a> {
     /// The spec root (absolute).
-    dir: &'a Path,
+    pub dir: &'a Path,
     /// The project directory: the oracle's cwd after it `cd`s to the root's parent.
-    project: &'a Path,
+    pub project: &'a Path,
     /// The root relative to the project, as the oracle spells `$SPEC_DIR` (`.spec`).
-    display: &'a str,
+    pub display: &'a str,
 }
 
 fn read(path: &Path) -> Vec<u8> {

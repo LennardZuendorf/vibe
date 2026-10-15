@@ -388,6 +388,37 @@ fn trigger(id: &str) -> Option<Trigger> {
             std::fs::remove_file(p.join(".spec/features/auth/tech.md")).unwrap();
             plain(p, "missing required 'tech.md'")
         }
+        "SF26" => {
+            write(
+                &p,
+                ".spec/product.md",
+                "---\ntype: entry\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n# P\n",
+            );
+            plain(p, "type 'entry' is not one of")
+        }
+        "SF27" => {
+            write(
+                &p,
+                ".spec/tech.md",
+                "---\ntype: entrypoint\nscope: technical\nchildren: [tech-api.md]\nupdated: 2026-01-15\n---\n",
+            );
+            plain(p, "child 'tech-api.md' listed in frontmatter")
+        }
+        "SF28" => {
+            write(
+                &p,
+                ".spec/features/billing/product.md",
+                &FEATURE_PRODUCT
+                    .replace("feature: auth", "feature: billing")
+                    .replace("sessions", "invoices"),
+            );
+            write(
+                &p,
+                ".spec/features/billing/tech.md",
+                &FEATURE_TECH.replace("feature: auth", "feature: billing"),
+            );
+            plain(p, "no row in plan.md names 'billing'")
+        }
         _ => None,
     }
 }
@@ -395,7 +426,7 @@ fn trigger(id: &str) -> Option<Trigger> {
 /// Registered checks that have no trigger yet; each later task moves its ids
 /// into `trigger`. Task 13 requires this to be empty.
 const PENDING: &[&str] = &[
-    "SF26", "SF27", "SF28", "SF29", "SF30", "SF31", "SF32", "SF33", "SF34", "SF35", "SF36",
+    "SF29", "SF30", "SF31", "SF32", "SF33", "SF34", "SF35", "SF36",
 ];
 
 fn registered() -> Vec<String> {
@@ -494,7 +525,11 @@ fn warn_error_off_matrix() {
         );
         covered += 1;
     }
-    assert!(covered >= 16, "matrix covered only {covered} checks");
+    assert_eq!(
+        covered,
+        registered().len() - PENDING.len(),
+        "matrix must cover every non-pending check"
+    );
 }
 
 #[test]
