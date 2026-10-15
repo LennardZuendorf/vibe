@@ -71,6 +71,14 @@ pub fn oracle(cwd: &Path, script: &str, args: &[&str]) -> Out {
     run(cmd, cwd, &[])
 }
 
+/// Like [`oracle`], with extra environment variables.
+pub fn oracle_env(cwd: &Path, script: &str, args: &[&str], env: &[(&str, &str)]) -> Out {
+    let mut cmd = Command::new("bash");
+    cmd.arg(repo().join("oracles/bash/spec/scripts").join(script))
+        .args(args);
+    run(cmd, cwd, env)
+}
+
 /// Asserts the candidate's `command args` and the oracle's `script args`
 /// agree on exit code and stdout bytes when run in `cwd`.
 pub fn assert_parity(cwd: &Path, command: &str, script: &str, args: &[&str]) {

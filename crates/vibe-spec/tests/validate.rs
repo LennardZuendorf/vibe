@@ -162,7 +162,7 @@ fn design_lint_degrades_like_the_oracle() {
         ("node", "#!/bin/sh\nexit 0\n"),
         (
             "npx",
-            "#!/bin/sh\necho \"lint: $4 has issues\"\necho 'second\\tline'\nexit 1\n",
+            "#!/bin/sh\necho \"lint: $4 has issues\" >&2\necho 'second\\tline'\nexit 1\n",
         ),
         ("curl", "#!/bin/sh\nexit 0\n"),
     ] {
@@ -171,24 +171,35 @@ fn design_lint_degrades_like_the_oracle() {
     }
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
     let env = [("VIBE_DESIGN_LINT", "1"), ("PATH", path.as_str())];
-    let want = {
-        let mut cmd = std::process::Command::new("bash");
-        cmd.arg(common::repo().join("oracles/bash/spec/scripts/validate.sh"))
-            .current_dir(&p)
-            .env_clear()
-            .env("HOME", &p)
-            .env("LC_ALL", "C")
-            .env("TZ", "UTC");
-        for (k, v) in env {
-            cmd.env(k, v);
-        }
-        cmd.output().unwrap()
-    };
+    let want = common::oracle_env(&p, "validate.sh", &[], &env);
     let got = common::spec(&p, &["validate"], &env);
-    assert_eq!(got.text(), String::from_utf8_lossy(&want.stdout));
+    assert_eq!((got.code, got.text()), (want.code, want.text()));
     assert!(
         got.text().contains("lint: .spec/design.md has issues"),
         "{}",
         got.text()
     );
+}
+
+#[test]
+fn sf15_threshold_follows_bash_arithmetic() {
+    let p = project("val-sf15");
+    write(
+        &p,
+        ".spec/product.md",
+        &format!("{ENTRY}{}", "x\n".repeat(4)),
+    );
+    write(&p, ".spec/plan.md", "");
+    for v in ["010", "1x", "-5", "0x10", "09", " 5 ", "+7"] {
+        let env = [("SPEC_ROOT_MAX_LINES", v)];
+        let want = common::oracle_env(&p, "validate.sh", &[], &env);
+        let got = common::spec(&p, &["validate"], &env);
+        // BSD wc pads the SF15 count (P3a-R2); squash whitespace.
+        let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert_eq!(
+            (got.code, squash(&got.text())),
+            (want.code, squash(&want.text())),
+            "SPEC_ROOT_MAX_LINES={v:?}"
+        );
+    }
 }

@@ -433,18 +433,44 @@ fn sf15(r: &mut Report, dir: &Path, display: &str) {
         .ok()
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| "300".to_string());
-    // bash evaluates a non-numeric value as 0.
-    let max: usize = raw.parse().unwrap_or(0);
+    // `[[ $count -gt $max_lines ]]` is bash arithmetic; an invalid value is
+    // an arithmetic error, so the comparison never succeeds.
+    let max = parse_arith(&raw);
     for name in ROOT_NAMES {
         let path = dir.join(name);
         if !path.is_file() {
             continue;
         }
         let count = read(&path).iter().filter(|&&b| b == b'\n').count();
-        if count > max {
+        if max.is_some_and(|m| i64::try_from(count).is_ok_and(|c| c > m)) {
             r.yellow(format!("SF15: {display}/{name} is {count} lines (>{raw}); consider splitting into a branch doc (product-{{topic}}.md, tech-{{topic}}.md)").as_bytes());
         }
     }
+}
+
+/// The subset of bash integer arithmetic SF15 needs: surrounding blanks,
+/// optional sign, `0x` hex, leading-`0` octal, else decimal. `None` is an
+/// arithmetic error (bad digit, bad base, overflow).
+fn parse_arith(raw: &str) -> Option<i64> {
+    let t = raw.trim_matches(|c: char| c.is_ascii_whitespace());
+    let (neg, body) = match t.as_bytes().first()? {
+        b'-' => (true, &t[1..]),
+        b'+' => (false, &t[1..]),
+        _ => (false, t),
+    };
+    let (radix, digits) =
+        if let Some(h) = body.strip_prefix("0x").or_else(|| body.strip_prefix("0X")) {
+            (16, h)
+        } else if body.len() > 1 && body.starts_with('0') {
+            (8, &body[1..])
+        } else {
+            (10, body)
+        };
+    if digits.is_empty() || !digits.bytes().all(|b| (b as char).is_digit(radix)) {
+        return None;
+    }
+    let v = i64::from_str_radix(digits, radix).ok()?;
+    Some(if neg { -v } else { v })
 }
 
 /// SF16: lessons without a `**Tags:**` line. A final line without a
@@ -505,12 +531,12 @@ fn lint_design(r: &mut Report, project: &Path, rel: &str, label: &[u8]) {
         ));
         return;
     }
-    let (ok, mut text) = match Command::new("npx")
-        .args(["--yes", "@google/design.md", "lint", rel])
+    let (ok, mut text) = match lint_command(rel)
         .current_dir(project)
         .stdin(Stdio::null())
         .output()
     {
+        Ok(o) if cfg!(unix) => (o.status.success(), o.stdout),
         Ok(o) => (o.status.success(), [o.stdout, o.stderr].concat()),
         Err(_) => (false, Vec::new()),
     };
@@ -526,6 +552,26 @@ fn lint_design(r: &mut Report, project: &Path, rel: &str, label: &[u8]) {
             r.yellow(&cat!(label, ":   ", line));
         }
     }
+}
+
+/// `$(npx … 2>&1)`: on unix one shell pipe keeps stdout and stderr in write order.
+#[cfg(unix)]
+fn lint_command(rel: &str) -> Command {
+    let mut cmd = Command::new("sh");
+    cmd.args([
+        "-c",
+        "npx --yes @google/design.md lint \"$1\" 2>&1",
+        "sh",
+        rel,
+    ]);
+    cmd
+}
+
+#[cfg(not(unix))]
+fn lint_command(rel: &str) -> Command {
+    let mut cmd = Command::new("npx");
+    cmd.args(["--yes", "@google/design.md", "lint", rel]);
+    cmd
 }
 
 /// `command -v <name>`: an executable file in a `PATH` directory.
@@ -546,4 +592,24 @@ fn executable(p: &Path) -> bool {
 #[cfg(not(unix))]
 fn executable(p: &Path) -> bool {
     p.is_file()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_arith;
+
+    #[test]
+    fn parse_arith_follows_bash() {
+        assert_eq!(parse_arith("300"), Some(300));
+        assert_eq!(parse_arith(" 300 "), Some(300));
+        assert_eq!(parse_arith("010"), Some(8));
+        assert_eq!(parse_arith("0x10"), Some(16));
+        assert_eq!(parse_arith("-5"), Some(-5));
+        assert_eq!(parse_arith("+7"), Some(7));
+        assert_eq!(parse_arith("0"), Some(0));
+        assert_eq!(parse_arith("1x"), None);
+        assert_eq!(parse_arith("09"), None);
+        assert_eq!(parse_arith("abc"), None);
+        assert_eq!(parse_arith("99999999999999999999"), None);
+    }
 }
