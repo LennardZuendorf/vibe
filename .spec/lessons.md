@@ -265,3 +265,15 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Model fixtures on the real target, including repeated structures.
 **Tags:** spec, validate, layered, tests
 **Date:** 2026-10-15
+
+### A git pathspec prunes merge and empty commits
+**Pattern:** Scoping `trace`'s `git log` with `-- .` at the repo top silently dropped merge and empty commits (history simplification), so their unit citations vanished.
+**Rule:** Pass no pathspec when the scope is the whole repository. When a real sub-path scope is needed, accept or document that merges are pruned.
+**Tags:** git, trace, rust
+**Date:** 2026-10-15
+
+### Normalise the base path, not just the target
+**Pattern:** The layered link resolver applied `..` to the link target but compared it against an unnormalised `--root docs/../docs/spec`, so valid absolute links read as outside the root.
+**Rule:** Normalise both sides of a path comparison lexically before `strip_prefix`/`starts_with`. Test with a root given through `..`.
+**Tags:** spec, validate, paths, layered
+**Date:** 2026-10-15
