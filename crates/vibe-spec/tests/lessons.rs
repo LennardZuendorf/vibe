@@ -28,6 +28,7 @@ fn legacy_formats_match_the_oracle() {
         &[""],
         &["--bogus"],
         &["--format"],
+        &["--"],
         &[],
     ] {
         assert_parity(&p, "lessons-for", "lessons-for.sh", args);

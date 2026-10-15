@@ -43,7 +43,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
             eprintln!("Unknown option: {a}");
             return (exit::FINDINGS, Vec::new());
         } else {
-            feature = Some(a.to_string());
+            feature = Some(a.to_string()).filter(|f| !f.is_empty());
         }
         i += 1;
     }
@@ -57,12 +57,16 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
             return (miss.code(), Vec::new());
         }
     };
-    let targets: Vec<(String, PathBuf)> = match &feature {
-        Some(f) => vec![(f.clone(), dir.join("features").join(f).join("tech.md"))],
+    let targets: Vec<(String, String, PathBuf)> = match &feature {
+        Some(f) => vec![(
+            feature_name(f),
+            f.clone(),
+            dir.join("features").join(f).join("tech.md"),
+        )],
         None => sub_dirs(&dir.join("features"))
             .into_iter()
-            .map(|d| (name_of(&d), d.join("tech.md")))
-            .filter(|(_, p)| p.is_file())
+            .map(|d| (name_of(&d), name_of(&d), d.join("tech.md")))
+            .filter(|(_, _, p)| p.is_file())
             .collect(),
     };
     if targets.is_empty() {
@@ -71,11 +75,11 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
     }
     let mut unclosed = false;
     let mut blocks: Vec<Block> = Vec::new();
-    for (feat, path) in &targets {
+    for (feat, rel, path) in &targets {
         if !path.is_file() {
             continue;
         }
-        let file = format!("{display}/features/{feat}/tech.md");
+        let file = format!("{display}/features/{rel}/tech.md");
         let text = std::fs::read(path).unwrap_or_default();
         let mut open: Option<(usize, Vec<u8>)> = None;
         for (n, line) in read_lines(&text).into_iter().enumerate() {
@@ -176,4 +180,15 @@ fn row(out: &mut Vec<u8>, a: &[u8], b: &[u8], c: &[u8], d: &[u8]) {
     }
     out.extend_from_slice(d);
     out.push(b'\n');
+}
+
+/// `basename "$(dirname "$SPEC_DIR/features/$f/tech.md")"`, on bytes. The
+/// path is `.../features/<f>/tech.md`; `<f>` may hold slashes, `.` or `..`.
+/// `f` is never empty. Only slashes leave `features` as the last component.
+fn feature_name(f: &str) -> String {
+    let trimmed = f.trim_end_matches('/');
+    if trimmed.is_empty() {
+        return "features".to_string();
+    }
+    trimmed.rsplit('/').next().unwrap_or(trimmed).to_string()
 }

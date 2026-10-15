@@ -34,6 +34,14 @@ fn matches_the_oracle_across_formats_and_errors() {
         &["missing"],
         &["--bogus"],
         &["--format"],
+        &[""],
+        &["auth", ""],
+        &["--"],
+        &["--", "auth"],
+        &["auth/"],
+        &["./auth"],
+        &["."],
+        &[".."],
     ] {
         assert_parity(&p, "scan-merges", "scan-merges.sh", args);
     }

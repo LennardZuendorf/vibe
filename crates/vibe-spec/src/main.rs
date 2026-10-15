@@ -83,11 +83,31 @@ fn main() -> ExitCode {
     let (code, out) = match cli.command {
         Command::Root { json } => root::command(&found, json),
         Command::ListSpecs { args: _ } => list_specs::run(&found),
-        Command::LessonsFor { args } => lessons::run(&found, &args),
-        Command::ScanMerges { args } => scan_merges::run(&found, &cwd, &args),
+        Command::LessonsFor { args: _ } => lessons::run(&found, &raw_tail(std::env::args())),
+        Command::ScanMerges { args: _ } => {
+            scan_merges::run(&found, &cwd, &raw_tail(std::env::args()))
+        }
     };
     emit(&out);
     ExitCode::from(code)
+}
+
+/// The argv after the subcommand token, exactly as typed. clap strips a
+/// leading `--` from trailing arguments, but the legacy commands must see it
+/// (the oracles reject it as `Unknown option`). Every legacy subcommand
+/// reads its arguments through this; Task 6's `Validate` must too.
+fn raw_tail(argv: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut it = argv.into_iter().skip(1);
+    match it.next() {
+        Some(first) if first == "--root" => {
+            it.next();
+        }
+        Some(first) if first.starts_with("--root=") => {}
+        Some(_) => return it.collect(),
+        None => return Vec::new(),
+    }
+    it.next();
+    it.collect()
 }
 
 /// Writes `bytes` to stdout. A closed pipe is not an error.
@@ -95,4 +115,28 @@ fn emit(bytes: &[u8]) {
     let mut out = std::io::stdout().lock();
     let _ = out.write_all(bytes);
     let _ = out.flush();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::raw_tail;
+
+    fn tail(argv: &[&str]) -> Vec<String> {
+        raw_tail(argv.iter().map(ToString::to_string))
+    }
+
+    #[test]
+    fn raw_tail_keeps_a_leading_double_dash() {
+        assert_eq!(
+            tail(&["vibe-spec", "--root", "x", "scan-merges", "--", "auth"]),
+            ["--", "auth"]
+        );
+        assert_eq!(
+            tail(&["vibe-spec", "--root=x", "lessons-for", "--"]),
+            ["--"]
+        );
+        assert_eq!(tail(&["vibe-spec", "lessons-for", "--", "a"]), ["--", "a"]);
+        assert!(tail(&["vibe-spec", "scan-merges"]).is_empty());
+        assert!(tail(&["vibe-spec"]).is_empty());
+    }
 }
