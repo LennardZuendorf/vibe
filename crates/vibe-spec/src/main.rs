@@ -1,5 +1,6 @@
 //! `vibe-spec`: the spec tool. F16 ports the read-only spec scripts and adds
 //! root discovery and the Spec JSON v1 queries.
+use std::ffi::OsString;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -109,11 +110,13 @@ fn main() -> ExitCode {
     let (code, out) = match cli.command {
         Command::Root { json } => root::command(&found, json),
         Command::ListSpecs { args: _ } => list_specs::run(&found),
-        Command::LessonsFor { args: _ } => lessons::run(&found, &raw_tail(std::env::args())),
+        Command::LessonsFor { args: _ } => lessons::run(&found, &raw_tail(std::env::args_os())),
         Command::ScanMerges { args: _ } => {
-            scan_merges::run(&found, &cwd, &raw_tail(std::env::args()))
+            scan_merges::run(&found, &cwd, &raw_tail(std::env::args_os()))
         }
-        Command::Validate { args: _ } => validate::run(&found, &cwd, &raw_tail(std::env::args())),
+        Command::Validate { args: _ } => {
+            validate::run(&found, &cwd, &raw_tail(std::env::args_os()))
+        }
         Command::Plan { feature, json } => query::plan(&found, &feature, json),
         Command::Feature { name, json } => query::feature(&found, &name, json),
     };
@@ -124,19 +127,20 @@ fn main() -> ExitCode {
 /// The argv after the subcommand token, exactly as typed. clap strips a
 /// leading `--` from trailing arguments, but the legacy commands must see it
 /// (the oracles reject it as `Unknown option`). Every legacy subcommand
-/// reads its arguments through this; Task 6's `Validate` must too.
-fn raw_tail(argv: impl IntoIterator<Item = String>) -> Vec<String> {
+/// reads its arguments through this. Non-UTF-8 arguments are read lossily,
+/// never a panic.
+fn raw_tail(argv: impl IntoIterator<Item = OsString>) -> Vec<String> {
     let mut it = argv.into_iter().skip(1);
     match it.next() {
         Some(first) if first == "--root" => {
             it.next();
         }
-        Some(first) if first.starts_with("--root=") => {}
-        Some(_) => return it.collect(),
+        Some(first) if first.to_string_lossy().starts_with("--root=") => {}
+        Some(_) => return it.map(|a| a.to_string_lossy().into_owned()).collect(),
         None => return Vec::new(),
     }
     it.next();
-    it.collect()
+    it.map(|a| a.to_string_lossy().into_owned()).collect()
 }
 
 /// Writes `bytes` to stdout. A closed pipe is not an error.
@@ -149,9 +153,25 @@ fn emit(bytes: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::raw_tail;
+    use std::ffi::OsString;
 
     fn tail(argv: &[&str]) -> Vec<String> {
-        raw_tail(argv.iter().map(ToString::to_string))
+        raw_tail(argv.iter().map(OsString::from))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn raw_tail_survives_non_utf8_arguments() {
+        use std::os::unix::ffi::OsStringExt;
+        let bad = OsString::from_vec(vec![0xff, b'a']);
+        let argv = vec![
+            OsString::from("vibe-spec"),
+            OsString::from("--root"),
+            bad.clone(),
+            OsString::from("scan-merges"),
+            bad,
+        ];
+        assert_eq!(raw_tail(argv), ["\u{fffd}a"]);
     }
 
     #[test]

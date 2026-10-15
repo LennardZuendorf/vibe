@@ -33,3 +33,39 @@ fn unknown_command_is_a_usage_error() {
     assert_eq!(code, 2);
     assert!(err.contains("frobnicate"), "{err}");
 }
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_arguments_never_panic() {
+    use std::os::unix::ffi::OsStrExt;
+    let bad = std::ffi::OsStr::from_bytes(&[0xff, b'x']);
+    for args in [
+        vec![
+            std::ffi::OsStr::new("--root"),
+            bad,
+            std::ffi::OsStr::new("scan-merges"),
+        ],
+        vec![
+            std::ffi::OsStr::new("--root"),
+            bad,
+            std::ffi::OsStr::new("validate"),
+        ],
+        vec![
+            std::ffi::OsStr::new("--root"),
+            bad,
+            std::ffi::OsStr::new("lessons-for"),
+        ],
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_vibe-spec"))
+            .args(&args)
+            .output()
+            .expect("spawn vibe-spec");
+        assert_ne!(
+            out.status.code(),
+            Some(101),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(out.status.code().is_some());
+    }
+}
