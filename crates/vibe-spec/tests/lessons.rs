@@ -98,3 +98,19 @@ fn tags_match_literally_not_as_regex() {
         out.text()
     );
 }
+
+#[test]
+fn json_mode_rejects_an_empty_tag() {
+    let p = project("lessons-json-empty-tag");
+    write(&p, ".spec/lessons.md", LESSONS);
+    for args in [
+        &["lessons-for", "--json", ""][..],
+        &["lessons-for", "--tag", ""],
+        &["lessons-for", "--json", "bash", "--tag", ""],
+    ] {
+        let out = spec(&p, args, &[]);
+        assert_eq!(out.code, 2, "{args:?}: {}", out.text());
+        assert!(out.stdout.is_empty(), "{args:?}: {}", out.text());
+        assert!(out.stderr.contains("empty"), "{args:?}: {}", out.stderr);
+    }
+}

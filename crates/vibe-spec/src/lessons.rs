@@ -52,6 +52,10 @@ pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
             },
             "--json" => spec_json = true,
             "--tag" => match args.get(i + 1) {
+                Some(v) if v.is_empty() => {
+                    eprintln!("vibe-spec: a lessons-for tag must not be empty");
+                    return (exit::USAGE, Vec::new());
+                }
                 Some(v) => {
                     tags.push(v.clone());
                     i += 2;
@@ -200,6 +204,10 @@ fn answer(found: &Result<Root, Miss>, tags: &[String]) -> (u8, Vec<u8>) {
     };
     if tags.is_empty() {
         eprintln!("usage: vibe-spec lessons-for --json <tag> [<tag>...]");
+        return (exit::USAGE, Vec::new());
+    }
+    if tags.iter().any(String::is_empty) {
+        eprintln!("vibe-spec: a lessons-for tag must not be empty");
         return (exit::USAGE, Vec::new());
     }
     let text = std::fs::read(root.dir.join("lessons.md")).unwrap_or_default();
