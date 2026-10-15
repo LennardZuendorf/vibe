@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Spec JSON v1",
-  "description": "Answers of the four read-only vibe-spec queries when called with --json: root, lessons-for, plan, feature. Each answer is one JSON object with \"v\": 1. This is a new output; it is not the legacy `lessons-for.sh --format json` array, which stays byte-identical for parity.",
+  "description": "Answers of the four read-only vibe-spec queries when called with --json: root, lessons-for, plan, feature. Each answer is one JSON object with \"v\": 1. This is a new output; it is not the legacy `lessons-for.sh --format json` array, which stays byte-identical except that the port emits valid JSON: it escapes quotes, backslashes and control characters and replaces invalid UTF-8 with U+FFFD (pinned divergence).",
   "x-vibe-compat": "additive-within-major; readers-ignore-unknown-fields",
   "$defs": {
     "root": {

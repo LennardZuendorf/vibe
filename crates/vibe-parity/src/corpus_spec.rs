@@ -491,6 +491,33 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
                 ],
             ),
         },
+        CaseDef {
+            class: "features",
+            name: "sf14-awk",
+            cwd: "",
+            runs: &[],
+            files: with(
+                filled(),
+                &[
+                    (
+                        ".spec/features/left/product.md",
+                        "---\ntype: feature-product\nfeature: left\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n## Scope\n\n| Owns | Does not own |\n|---|---|\n| C:\\\\tokens | rest |\n| 00001 | rest |\n",
+                    ),
+                    (
+                        ".spec/features/left/tech.md",
+                        "---\ntype: feature-tech\nfeature: left\nparent: ../../tech.md\nsibling: product.md\nupdated: 2026-01-15\n---\n",
+                    ),
+                    (
+                        ".spec/features/right/product.md",
+                        "---\ntype: feature-product\nfeature: right\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n## Scope\n\n| Owns | Does not own |\n|---|---|\n| C:\\\\tokens | rest |\n| 1.000 | rest |\n",
+                    ),
+                    (
+                        ".spec/features/right/tech.md",
+                        "---\ntype: feature-tech\nfeature: right\nparent: ../../tech.md\nsibling: product.md\nupdated: 2026-01-15\n---\n",
+                    ),
+                ],
+            ),
+        },
     ])
 }
 

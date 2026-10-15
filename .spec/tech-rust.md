@@ -90,12 +90,14 @@ proven against `oracles/bash/flow/scripts/detect-context.sh` and
 `oracles/js/policy.mjs`.
 
 Pins are per argument set and may be scoped to one OS (`"os": "macos"`
-for BSD-tool differences; an os pin is never stale-checked). F16's nine
-pins: legacy `--format json` output is valid JSON — quotes and backslashes
-are escaped, and a preview cut inside a UTF-8 sequence ends in U+FFFD
-(`lessons-for`, `scan-merges`); `lessons-for` tags and the `validate` I1
-own-feature filter match literally, not as regexes; the no-root `validate`
-error names `vibe-spec init`; BSD `wc -l` pads the SF15 count (macOS only).
+for BSD-tool differences; an os pin is never stale-checked). F16's ten
+pins: legacy `--format json` output is valid JSON — quotes, backslashes
+and control characters are escaped, and invalid UTF-8 (such as a preview
+cut inside a sequence) becomes U+FFFD (`lessons-for`, `scan-merges`);
+`lessons-for` tags and the `validate` I1 own-feature filter match
+literally, not as regexes; SF14 compares scope items as bytes (no awk
+escape or numeric comparison); the no-root `validate` error names
+`vibe-spec init`; BSD `wc -l` pads the SF15 count (macOS only).
 
 Port order, blast-radius first: guard → stop → cursor/`state set` → policy
 → root → machine/orders/doctrine → payload/compose → doctor →

@@ -402,6 +402,11 @@ fn owns_items(text: &[u8]) -> Vec<Vec<u8>> {
 }
 
 /// SF14: two features owning the same item.
+///
+/// Items compare as bytes. The oracle passes the item to awk with `-v`, which
+/// processes escapes (`C:\\tokens` never matches its stored copy) and, in
+/// `$1 == it`, compares numeric-looking strings as numbers (`00001` equals
+/// `1.000`). The port does not copy either quirk; `features/sf14-awk` pins it.
 pub fn sf14(r: &mut Report, dir: &Path) {
     let mut seen: Vec<(Vec<u8>, String)> = Vec::new();
     for fdir in sub_dirs(&dir.join("features")) {

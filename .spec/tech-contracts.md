@@ -151,7 +151,9 @@ minimal: `root {v, root, source}`, `lessons-for {v, tags, lessons}`,
 `root.source` names the discovery step that hit: `flag`, `env`, `config`,
 `docs-spec`, `dot-spec`. Spec JSON is a new `--json` output; the legacy
 `lessons-for.sh --format json` array is a different shape and stays
-byte-identical for parity.
+byte-identical except that the port emits valid JSON: it escapes quotes,
+backslashes and control characters and replaces invalid UTF-8 with U+FFFD
+(a pinned divergence).
 
 `doc.kind` is `design`, `plan`, `product`, `tech` or `research`.
 `contracts/run.mjs` pins every required set and the `root.source` order
@@ -174,6 +176,10 @@ table of `<root>/features/<f>/plan.md`. `feature` reports the layer
 | `vibe-spec` JSON query | 3 | no spec tree found |
 | hook | 0 | pass, or degraded (missing keystone: root, cursor, machine) |
 | hook | 2 | block — guard/stop hard block, including present-but-corrupt policy (fail-safe) |
+
+Every command, legacy ones included, exits 3 when an explicit root (`--root`,
+`$VIBE_SPEC_ROOT`, config) names a missing directory (R4). Without an explicit
+root, only `root`, `--json`, `plan` and `feature` exit 3.
 
 ## Versioning and compatibility
 
