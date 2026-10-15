@@ -3,7 +3,7 @@ type: tech-topic
 parent: tech.md
 scope: cross-tool contracts
 covers: provider payload, marker grammar, spec JSON, provider manifests, exit codes, versioning
-updated: 2026-10-14
+updated: 2026-10-15
 ---
 
 # Cross-Tool Contracts — Tech
@@ -156,6 +156,13 @@ byte-identical for parity.
 `doc.kind` is `design`, `plan`, `product`, `tech` or `research`.
 `contracts/run.mjs` pins every required set and the `root.source` order
 exactly, so dropping or adding a required field fails the gate.
+
+`plan` rows come from the newest `docs/superpowers/plans/YYYY-MM-DD-<f>.md`:
+one row per `### Task N:`, with status `done`, `in-progress` or `todo` from
+its checkboxes. Without that plan, they come from the `| Unit | Status |`
+table of `<root>/features/<f>/plan.md`. `feature` reports the layer
+`superpowers` when a design or plan artifact exists. Otherwise it reports
+`fallback`, with the folder's `product|tech|design|plan|research` docs.
 
 ## Exit-code contract
 

@@ -3,7 +3,7 @@ type: tech-topic
 parent: tech.md
 scope: spec root, OpenSpec interchange, validation
 covers: root discovery, migrate, OpenSpec grammar, strictness, adherence checks, trace, subagents, hooks, commands
-updated: 2026-10-14
+updated: 2026-10-15
 ---
 
 # Spec Framework — Tech
@@ -179,5 +179,11 @@ and `setup.sh` from the project root. The skill, the spec subagents, and
 `feature.md` reference scripts by skill-relative path. F25
 (`spec-superpowers-default`) is delivered: the pressure harness
 (`spec/tests/pressure/run.sh`) passes 12/12 with and without superpowers,
-against a 5/12 baseline for the pre-rewrite skill. The Rust port replaces
-these scripts.
+against a 5/12 baseline for the pre-rewrite skill.
+F16 adds the `vibe-spec` binary (dev build: `cargo build -p vibe-spec`).
+Every command goes through one discovery function. It offers `root`,
+byte-identical ports of `list-specs`, `lessons-for`, `scan-merges` and
+`validate`, and the `lessons-for --json`, `plan` and `feature` queries.
+`tests/parity/run.sh` proves the ports against the frozen oracles, over the
+corpus and live on this repo. Skills, CI and flow keep calling the scripts
+until the binary ships (F21–F22).

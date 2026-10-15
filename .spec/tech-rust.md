@@ -3,7 +3,7 @@ type: tech-topic
 parent: tech.md
 scope: rust workspace and distribution
 covers: crates, MSRV, dependency allowlist, shim discovery, oracles and parity, TUI, signals, distribution, CI matrix
-updated: 2026-10-14
+updated: 2026-10-15
 ---
 
 # Rust Workspace — Tech
@@ -15,9 +15,11 @@ Node engine and bash scripts, the hook shim, the TUI, and distribution.
 **Shipped today:** `flow/engine/` (Node/ESM) and the bash scripts still
 drive everything. F2–F4 delivered the foundations: frozen oracles under
 `oracles/` (43 files, `MANIFEST.sha256`), the Cargo workspace (`vibe-core`
-with glob matching and atomic write, a `vibe-spec` stub, `vibe-parity`), and
-the parity harness, which runs the spec oracles against themselves over
-`tests/parity/corpus/spec/` until F16 supplies the candidate.
+with glob matching and atomic write, `vibe-spec`, `vibe-parity`), and the
+parity harness. F16 made `vibe-spec` the first candidate. `list-specs`,
+`lessons-for`, `scan-merges` and `validate` are parity-green over
+`tests/parity/corpus/spec/` and live on this repo (`tests/parity/run.sh`).
+`check-drift`, `promote` and `init` stay self-check only until F18/F20.
 
 ## Workspace
 
@@ -87,11 +89,13 @@ floor is asserted, not assumed.
 proven against `oracles/bash/flow/scripts/detect-context.sh` and
 `oracles/js/policy.mjs`.
 
-Known pins for F16: the spec corpus already shows two divergences the
-port must pin, not copy. `setup.sh` and the no-root `validate.sh` path
-print the absolute oracle path in stdout (6 runs); `lessons-for.sh
---format json` emits invalid JSON when a lesson holds quotes or
-backslashes (`lessons/quotes`).
+Pins are per argument set and may be scoped to one OS (`"os": "macos"`
+for BSD-tool differences; an os pin is never stale-checked). F16's nine
+pins: legacy `--format json` output is valid JSON — quotes and backslashes
+are escaped, and a preview cut inside a UTF-8 sequence ends in U+FFFD
+(`lessons-for`, `scan-merges`); `lessons-for` tags and the `validate` I1
+own-feature filter match literally, not as regexes; the no-root `validate`
+error names `vibe-spec init`; BSD `wc -l` pads the SF15 count (macOS only).
 
 Port order, blast-radius first: guard → stop → cursor/`state set` → policy
 → root → machine/orders/doctrine → payload/compose → doctor →
@@ -105,9 +109,7 @@ of the two hard blocks.
 Carried into later rows: F5 freezes `flow/reference/templates/AGENTS.md`
 (merge-agents reads it) and adds the policy-dialect matcher; F6 bounds
 git's own discovery in the sandbox (`GIT_CEILING_DIRECTORIES` or a real
-`git init`) before stop-gate oracles run; F16 adds a run timeout,
-compares empty directories, and pins per argument set instead of per
-case before candidate mode reaches CI.
+`git init`) before stop-gate oracles run.
 
 ## machine-teeth
 

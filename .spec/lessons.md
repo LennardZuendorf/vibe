@@ -200,3 +200,26 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** When a timing gate fails, profile the slow command's subprocesses and rerun the same gate on a clean base export before attributing the cause.
 **Tags:** testing, performance, verification
 **Date:** 2026-10-14
+
+### Enumerate the oracle's shell semantics before porting a line
+**Pattern:** Task reviews of the F16 ports found five parity defects, each in a shell construct the port had read as plain logic:
+- glob `*.md` matching dirs and dangling links;
+- the raw `$@` tail including a leading `--`;
+- `basename "$(dirname …)"`;
+- bash arithmetic in `-gt`;
+- a feature name interpolated into a `grep -E` pattern.
+**Rule:** Before porting a bash line, name each construct's exact semantics (glob, argv tail, arithmetic, regex interpolation, coreutils formatting). Add a corpus case for each one. Mimic it, or pin the divergence on purpose with a reason.
+**Tags:** rust, parity, oracle, bash, review
+**Date:** 2026-10-15
+
+### Line-based Markdown scanners must skip fenced code
+**Pattern:** The F16 `plan` query counted `- [ ]` and `## ` lines inside fenced examples. This repo's own plans hold fenced headings and checkboxes, so a fully ticked task would report `in-progress` forever. The plan text mandated the defect.
+**Rule:** Any line scanner over Markdown tracks ``` and ~~~ fences and ignores structure inside them. Test it against this repo's real plans, not only synthetic fixtures.
+**Tags:** markdown, parsing, plans, testing
+**Date:** 2026-10-15
+
+### Reuse the path-display helper instead of rejoining components
+**Pattern:** The `plan`/`feature` JSON rebuilt paths by joining `Path::components()` with `/`. For a spec root outside the project, the `RootDir` component produced `//Users/...`. `Root::display` already handled that case.
+**Rule:** Render a path through one shared helper that handles both the inside-project and the outside-project case. Test with a `--root` outside the project.
+**Tags:** rust, paths, json, contracts
+**Date:** 2026-10-15
