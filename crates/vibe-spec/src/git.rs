@@ -1,18 +1,19 @@
 //! `git` as a subprocess (no `git2`). Every function degrades to "nothing"
 //! when git is missing, the directory is outside a work tree, or the
-//! repository has no commits.
+//! repository has no commits. A shallow clone yields no dates either: git
+//! reports every file as added in the boundary commit.
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::text::lossy;
 
-/// `git -C dir -c core.quotepath=off <args>` stdout when it exits 0.
+/// `git -C dir --literal-pathspecs <args>` stdout when it exits 0.
 pub(crate) fn git(dir: &Path, args: &[&str]) -> Option<Vec<u8>> {
     let out = Command::new("git")
         .arg("-C")
         .arg(dir)
-        .args(["-c", "core.quotepath=off"])
+        .arg("--literal-pathspecs")
         .args(args)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
@@ -29,28 +30,29 @@ pub fn top(dir: &Path) -> Option<PathBuf> {
     (!t.is_empty()).then(|| PathBuf::from(t))
 }
 
-/// `HEAD` resolves.
-pub fn has_commits(top: &Path) -> bool {
-    git(top, &["rev-parse", "--verify", "-q", "HEAD"]).is_some()
-}
-
 /// For each file under `under` (top-relative, `/`-joined, `.` for the
 /// top), the committer date `YYYY-MM-DD` of the last commit touching it.
 pub fn last_dates(top: &Path, under: &str) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
-    if !has_commits(top) {
+    let shallow = git(top, &["rev-parse", "--is-shallow-repository"]);
+    if shallow.is_some_and(|b| b.starts_with(b"true")) {
         return out;
     }
+    // Fails without commits: nothing to report.
     let Some(log) = git(
         top,
-        &["log", "--format=%x00%cs", "--name-only", "--", under],
+        &["log", "-z", "--format=%x01%cs", "--name-only", "--", under],
     ) else {
         return out;
     };
-    for record in log.split(|&b| b == 0).skip(1) {
-        let mut rows = record.split(|&b| b == b'\n');
-        let date = lossy(rows.next().unwrap_or_default());
-        for name in rows.filter(|l| !l.is_empty()) {
+    let mut date = String::new();
+    for token in log.split(|&b| b == 0) {
+        if let Some(d) = token.strip_prefix(b"\x01") {
+            date = lossy(d);
+            continue;
+        }
+        let name = token.strip_prefix(b"\n").unwrap_or(token);
+        if !name.is_empty() && !date.is_empty() {
             out.entry(lossy(name)).or_insert_with(|| date.clone());
         }
     }

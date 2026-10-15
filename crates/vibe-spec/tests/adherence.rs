@@ -330,3 +330,89 @@ fn blank_or_bad_updated_is_left_to_sf26() {
     let got = found(&p, "SF29");
     assert!(got.iter().all(|m| !m.starts_with("product.md:")), "{got:?}");
 }
+
+fn root_findings(cwd: &Path, root: &Path) -> Vec<String> {
+    let out = common::spec(
+        cwd,
+        &[
+            "--root",
+            root.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ],
+        &[],
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["check"] == "SF29")
+        .map(|f| f["message"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn a_shallow_clone_is_silent() {
+    let p = project("ad-shallow-src");
+    write(&p, ".spec/product.md", PRODUCT);
+    write(
+        &p,
+        ".spec/tech.md",
+        &PRODUCT.replace("scope: product", "scope: technical"),
+    );
+    let old = "2026-01-15T12:00:00Z";
+    git(&p, old, &["init", "-q"]);
+    git(&p, old, &["add", "-A"]);
+    git(&p, old, &["commit", "-q", "-m", "docs"]);
+    write(&p, "other.txt", "x");
+    let new = "2026-03-01T12:00:00Z";
+    git(&p, new, &["add", "-A"]);
+    git(&p, new, &["commit", "-q", "-m", "other"]);
+    let dest = project("ad-shallow-dst").join("clone");
+    let url = format!("file://{}", p.display());
+    git(
+        &p,
+        new,
+        &["clone", "-q", "--depth", "1", &url, dest.to_str().unwrap()],
+    );
+    assert_eq!(
+        common::git_out(&dest, &["rev-parse", "--is-shallow-repository"]),
+        "true"
+    );
+    assert_eq!(found(&dest, "SF29"), Vec::<String>::new());
+}
+
+#[test]
+fn a_pathspec_looking_directory_is_literal() {
+    let p = tree("ad-pathspec", &["auth"]);
+    let odd = p.join(":(top)odd");
+    std::fs::create_dir_all(&odd).unwrap();
+    std::fs::rename(p.join(".spec"), odd.join(".spec")).unwrap();
+    let d = "2026-03-01T12:00:00Z";
+    git(&p, d, &["init", "-q"]);
+    git(&p, d, &["add", "-A"]);
+    git(&p, d, &["commit", "-q", "-m", "init"]);
+    let got = root_findings(&p, &odd.join(".spec"));
+    assert!(got.iter().any(|m| m.starts_with("product.md:")), "{got:?}");
+}
+
+#[test]
+fn quoted_file_names_still_match() {
+    let p = tree("ad-quoted", &["auth"]);
+    write(
+        &p,
+        ".spec/tech-a\"b.md",
+        &PRODUCT.replace("scope: product", "scope: technical"),
+    );
+    let d = "2026-03-01T12:00:00Z";
+    git(&p, d, &["init", "-q"]);
+    git(&p, d, &["add", "-A"]);
+    git(&p, d, &["commit", "-q", "-m", "init"]);
+    let got = found(&p, "SF29");
+    assert!(
+        got.iter().any(|m| m.starts_with("tech-a\"b.md:")),
+        "{got:?}"
+    );
+}
