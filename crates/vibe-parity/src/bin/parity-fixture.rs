@@ -1,5 +1,5 @@
 //! Test candidate for the parity harness. Reproduces
-//! `tests/fixture/oracle/echo.sh`; `--mutate=<exit|stdout|file>` makes it
+//! `tests/fixture/oracle/echo.sh`; `--mutate=<exit|stdout|file|dir|hang>` makes it
 //! diverge on purpose so tests can prove the harness turns red.
 use std::process::ExitCode;
 
@@ -11,6 +11,12 @@ fn main() -> ExitCode {
             Some(m) => mutate = m.to_string(),
             None => args.push(arg),
         }
+    }
+    if mutate == "hang" {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    }
+    if mutate == "dir" && std::fs::create_dir("made").is_err() {
+        return ExitCode::from(1);
     }
     let mark = if mutate == "stdout" { "!" } else { "" };
     println!("args:{}{mark}", args.join(" "));

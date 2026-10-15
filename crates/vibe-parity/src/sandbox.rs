@@ -69,8 +69,10 @@ pub fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Maps every file under `root`, except `.oracle/` and `.git/` at the top,
-/// to its bytes. Keys are relative paths joined with `/`.
+/// Maps every file and directory under `root`, except `.oracle/` and `.git/`
+/// at the top, to its bytes. Keys are relative paths joined with `/`; a
+/// directory's key ends in `/` and maps to no bytes, so an empty directory
+/// left behind is a difference too.
 pub fn snapshot(root: &Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
     let mut files = BTreeMap::new();
     walk(root, "", &mut files)?;
@@ -96,6 +98,7 @@ fn walk(dir: &Path, prefix: &str, files: &mut BTreeMap<String, Vec<u8>>) -> Resu
             .map_err(|e| err(&path, e))?
             .file_type();
         if kind.is_dir() {
+            files.insert(format!("{rel}/"), Vec::new());
             walk(&path, &rel, files)?;
         } else {
             let bytes = if kind.is_symlink() {

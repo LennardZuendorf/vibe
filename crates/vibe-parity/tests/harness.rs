@@ -4,6 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use vibe_parity::harness::{Mode, Report, Status, execute, run_suite};
@@ -323,4 +324,140 @@ fn a_command_over_no_class_fails() {
         "{report:#?}"
     );
     assert!(!report.ok());
+}
+
+#[test]
+fn a_pin_with_args_covers_only_that_run() {
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/one", "args": ["a"], "field": "stdout", "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=stdout"]);
+    let report = run("pin-args", suite, &candidate());
+    assert_eq!(report.pinned(), 1, "{report:#?}");
+    assert_eq!(report.failed(), 2, "{report:#?}");
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+}
+
+#[test]
+fn a_pin_with_args_that_match_no_run_is_stale() {
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/one", "args": ["zzz"], "field": "stdout", "reason": "test" }
+    ]);
+    let report = run("pin-args-stale", suite, &candidate());
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|e| e.starts_with("stale pin: echo basic/one [\"zzz\"]")),
+        "{:?}",
+        report.errors
+    );
+}
+
+#[test]
+fn an_os_pin_is_inactive_elsewhere_and_never_stale() {
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/one", "field": "stdout", "os": "plan9", "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=stdout"]);
+    let report = run("pin-os-other", suite.clone(), &candidate());
+    assert_eq!(report.failed(), 3, "{report:#?}");
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+    suite["divergences"][0]["os"] = json!(std::env::consts::OS);
+    let report = run("pin-os-here", suite, &candidate());
+    assert_eq!(report.pinned(), 2, "{report:#?}");
+    assert_eq!(report.failed(), 1, "{report:#?}");
+
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/one", "field": "stdout", "os": std::env::consts::OS, "reason": "test" }
+    ]);
+    let report = run("pin-os-unhit", suite, &candidate());
+    assert!(
+        report.ok(),
+        "an unhit os pin is not stale: {:?}",
+        report.errors
+    );
+}
+
+#[test]
+fn a_hanging_run_fails_at_the_timeout() {
+    let mut suite = base();
+    suite["timeout_ms"] = json!(300);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=hang"]);
+    let start = Instant::now();
+    let report = run("hang", suite, &candidate());
+    assert!(
+        start.elapsed() < Duration::from_secs(20),
+        "took {:?}",
+        start.elapsed()
+    );
+    assert_eq!(report.failed(), 3, "{report:#?}");
+    for r in &report.results {
+        let Status::Fail(msgs) = &r.status else {
+            panic!("{r:?}")
+        };
+        assert!(
+            msgs.iter().any(|m| m.contains("timed out after 300 ms")),
+            "{msgs:?}"
+        );
+    }
+}
+
+#[test]
+fn an_extra_empty_directory_fails_on_files() {
+    let mut suite = base();
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=dir"]);
+    let report = run("emptydir", suite, &candidate());
+    assert_eq!(report.failed(), 3, "{report:#?}");
+    for r in &report.results {
+        let Status::Fail(msgs) = &r.status else {
+            panic!("{r:?}")
+        };
+        assert!(msgs.iter().any(|m| m.contains("\"made/\"")), "{msgs:?}");
+    }
+}
+
+#[test]
+fn an_unported_command_is_skipped_in_candidate_mode_only() {
+    let mut suite = base();
+    suite["commands"][0]["candidate"] = Value::Null;
+    let report = run("unported", suite.clone(), &candidate());
+    assert_eq!(report.skipped, vec!["echo".to_string()]);
+    assert!(report.results.is_empty());
+    assert!(
+        !report.ok(),
+        "a candidate run that compared nothing must fail"
+    );
+
+    let report = run("unported-self", suite, &Mode::SelfCheck);
+    assert!(report.ok(), "{report:#?}");
+    assert_eq!(report.results.len(), 3);
+}
+
+#[test]
+fn the_cli_prints_skipped_commands() {
+    let dir = work("cli-skip");
+    let mut suite = base();
+    suite["commands"][0]["candidate"] = Value::Null;
+    let path = dir.join("suite.json");
+    fs::write(&path, serde_json::to_vec(&suite).unwrap()).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_vibe-parity"))
+        .arg("run")
+        .arg(&path)
+        .arg("--candidate")
+        .arg(env!("CARGO_BIN_EXE_parity-fixture"))
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(1), "{text}");
+    assert!(
+        text.contains("SKIP  echo (not ported; self-check only)"),
+        "{text}"
+    );
+    assert!(text.contains(", 1 skipped ("), "{text}");
 }

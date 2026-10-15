@@ -1,8 +1,10 @@
 //! Runs oracle and candidate over a suite's corpus and compares the results.
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use crate::sandbox::{ORACLE_DIR, snapshot, stage};
 use crate::suite::{Case, CommandSpec, Field, Suite};
@@ -60,6 +62,8 @@ pub struct Report {
     /// case directories without `case.json`, unknown `runs` keys, stale or
     /// unmatched pins.
     pub errors: Vec<String>,
+    /// Commands candidate mode skipped because they are not ported yet.
+    pub skipped: Vec<String>,
 }
 
 impl Report {
@@ -101,12 +105,23 @@ fn expand(argv: &[String], oracle: &Path, candidate: Option<&Path>) -> Vec<Strin
         .collect()
 }
 
-/// Runs `argv` in `cwd` with a cleared environment: only `PATH`, `HOME`,
-/// `LC_ALL=C` and `TZ=UTC` are set, and stdin is empty. Returns the exit
-/// code and stdout.
+/// [`execute_with_timeout`] with a 30 s limit.
 pub fn execute(argv: &[String], cwd: &Path, home: &Path) -> Result<(Option<i32>, Vec<u8>), String> {
+    execute_with_timeout(argv, cwd, home, Duration::from_secs(30))
+}
+
+/// Runs `argv` in `cwd` with a cleared environment: only `PATH`, `HOME`,
+/// `LC_ALL=C` and `TZ=UTC` are set, stdin is empty, stderr is discarded.
+/// Returns the exit code and stdout. A run still going after `limit` is
+/// killed and reported as an error.
+pub fn execute_with_timeout(
+    argv: &[String],
+    cwd: &Path,
+    home: &Path,
+    limit: Duration,
+) -> Result<(Option<i32>, Vec<u8>), String> {
     let (program, args) = argv.split_first().ok_or("empty argv")?;
-    let out = Command::new(program)
+    let mut child = Command::new(program)
         .args(args)
         .current_dir(cwd)
         .env_clear()
@@ -115,12 +130,46 @@ pub fn execute(argv: &[String], cwd: &Path, home: &Path) -> Result<(Option<i32>,
         .env("LC_ALL", "C")
         .env("TZ", "UTC")
         .stdin(Stdio::null())
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
         .map_err(|e| format!("{program}: {e}"))?;
-    Ok((out.status.code(), out.stdout))
+    let mut pipe = child.stdout.take().ok_or("no stdout pipe")?;
+    let reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = pipe.read_to_end(&mut buf);
+        buf
+    });
+    let start = Instant::now();
+    let status = loop {
+        match child.try_wait().map_err(|e| format!("{program}: {e}"))? {
+            Some(status) => break status,
+            None if start.elapsed() >= limit => {
+                let _ = child.kill();
+                let _ = child.wait();
+                // A grandchild may still hold the pipe; the reader thread is
+                // left to finish on its own.
+                return Err(format!(
+                    "{program}: timed out after {} ms",
+                    limit.as_millis()
+                ));
+            }
+            None => std::thread::sleep(Duration::from_millis(5)),
+        }
+    };
+    let stdout = reader
+        .join()
+        .map_err(|_| format!("{program}: stdout reader panicked"))?;
+    Ok((status.code(), stdout))
 }
 
-fn run_side(suite: &Suite, case: &Case, argv: &[String], work: &Path) -> Result<Outcome, String> {
+fn run_side(
+    suite: &Suite,
+    case: &Case,
+    argv: &[String],
+    work: &Path,
+    limit: Duration,
+) -> Result<Outcome, String> {
     let dest = work.join("sandbox");
     let home = work.join("home");
     stage(&case.tree(), &suite.oracle_root, &dest)?;
@@ -136,7 +185,7 @@ fn run_side(suite: &Suite, case: &Case, argv: &[String], work: &Path) -> Result<
             case.spec.cwd
         ));
     }
-    let (exit, stdout) = execute(argv, &cwd, &home)?;
+    let (exit, stdout) = execute_with_timeout(argv, &cwd, &home, limit)?;
     let files = snapshot(&dest)?;
     Ok(Outcome {
         exit,
@@ -259,15 +308,16 @@ fn run_command(
     hits: &mut [bool],
 ) {
     let oracle_dir = work.join("sandbox").join(ORACLE_DIR);
-    let candidate = match mode {
-        Mode::SelfCheck => None,
-        Mode::Candidate(path) => Some(path.as_path()),
-    };
     let oracle_argv = expand(&cmd.oracle, &oracle_dir, None);
-    let candidate_argv = match candidate {
-        None => oracle_argv.clone(),
-        Some(_) => expand(&cmd.candidate, &oracle_dir, candidate),
+    let candidate_argv = match (mode, &cmd.candidate) {
+        (Mode::SelfCheck, _) => oracle_argv.clone(),
+        (Mode::Candidate(path), Some(argv)) => expand(argv, &oracle_dir, Some(path)),
+        (Mode::Candidate(_), None) => {
+            report.skipped.push(cmd.name.clone());
+            return;
+        }
     };
+    let limit = Duration::from_millis(suite.timeout_ms);
     for class in &cmd.classes {
         let cases = match suite.cases(class) {
             Ok(cases) => cases,
@@ -277,21 +327,27 @@ fn run_command(
             }
         };
         for case in &cases {
-            let pins: Vec<(usize, Field)> = match mode {
-                Mode::SelfCheck => Vec::new(),
-                Mode::Candidate(_) => suite
-                    .divergences
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, d)| d.command == cmd.name && d.case == case.id())
-                    .map(|(i, d)| (i, d.field))
-                    .collect(),
-            };
             for args in case.arg_sets(&cmd.name) {
+                let pins: Vec<(usize, Field)> = match mode {
+                    Mode::SelfCheck => Vec::new(),
+                    Mode::Candidate(_) => suite
+                        .divergences
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, d)| {
+                            d.command == cmd.name
+                                && d.case == case.id()
+                                && d.active()
+                                && d.args.as_ref().is_none_or(|a| *a == args)
+                        })
+                        .map(|(i, d)| (i, d.field))
+                        .collect(),
+                };
                 let with = |base: &[String]| base.iter().chain(&args).cloned().collect::<Vec<_>>();
-                let outcome = run_side(suite, case, &with(&oracle_argv), work).and_then(|o| {
-                    run_side(suite, case, &with(&candidate_argv), work).map(|c| (o, c))
-                });
+                let outcome =
+                    run_side(suite, case, &with(&oracle_argv), work, limit).and_then(|o| {
+                        run_side(suite, case, &with(&candidate_argv), work, limit).map(|c| (o, c))
+                    });
                 let status = match outcome {
                     Ok((o, c)) => judge(compare(&o, &c), &pins, hits),
                     Err(e) => Status::Fail(vec![e]),
@@ -319,9 +375,14 @@ pub fn run_suite(suite: &Suite, mode: &Mode, work: &Path) -> Report {
     }
     if matches!(mode, Mode::Candidate(_)) {
         for (pin, hit) in suite.divergences.iter().zip(&hits) {
-            if !hit {
+            if !hit && pin.os.is_none() {
+                let args = pin
+                    .args
+                    .as_ref()
+                    .map(|a| format!(" {a:?}"))
+                    .unwrap_or_default();
                 report.errors.push(format!(
-                    "stale pin: {} {} {:?} no longer diverges (or matches no run)",
+                    "stale pin: {} {}{args} {:?} no longer diverges (or matches no run)",
                     pin.command, pin.case, pin.field
                 ));
             }

@@ -4,13 +4,13 @@
   "corpus": "corpus/spec",
   "oracle_root": "../../oracles/bash/spec",
   "commands": [
-    { "name": "list-specs", "oracle": ["bash", "{oracle}/scripts/list-specs.sh"], "candidate": ["{candidate}", "list-specs"], "classes": ["no-root", "seeded", "filled", "features", "malformed"] },
-    { "name": "validate", "oracle": ["bash", "{oracle}/scripts/validate.sh"], "candidate": ["{candidate}", "validate"], "classes": ["no-root", "seeded", "filled", "features", "malformed"] },
-    { "name": "lessons-for", "oracle": ["bash", "{oracle}/scripts/lessons-for.sh"], "candidate": ["{candidate}", "lessons-for"], "classes": ["no-root", "seeded", "lessons"] },
-    { "name": "scan-merges", "oracle": ["bash", "{oracle}/scripts/scan-merges.sh"], "candidate": ["{candidate}", "scan-merges"], "classes": ["no-root", "features"] },
-    { "name": "check-drift", "oracle": ["bash", "{oracle}/scripts/check-drift.sh"], "candidate": ["{candidate}", "check-drift"], "classes": ["no-root", "seeded", "filled", "features", "malformed"] },
-    { "name": "promote", "oracle": ["bash", "{oracle}/scripts/promote.sh"], "candidate": ["{candidate}", "promote"], "classes": ["features"] },
-    { "name": "setup", "oracle": ["bash", "{oracle}/scripts/setup.sh"], "candidate": ["{candidate}", "init"], "classes": ["no-root", "seeded"] }
+    { "name": "list-specs", "oracle": ["bash", "{oracle}/scripts/list-specs.sh"], "candidate": null, "classes": ["no-root", "seeded", "filled", "features", "malformed"] },
+    { "name": "validate", "oracle": ["bash", "{oracle}/scripts/validate.sh"], "candidate": null, "classes": ["no-root", "seeded", "filled", "features", "malformed"] },
+    { "name": "lessons-for", "oracle": ["bash", "{oracle}/scripts/lessons-for.sh"], "candidate": null, "classes": ["no-root", "seeded", "lessons"] },
+    { "name": "scan-merges", "oracle": ["bash", "{oracle}/scripts/scan-merges.sh"], "candidate": null, "classes": ["no-root", "features"] },
+    { "name": "check-drift", "oracle": ["bash", "{oracle}/scripts/check-drift.sh"], "candidate": null, "classes": ["no-root", "seeded", "filled", "features", "malformed"] },
+    { "name": "promote", "oracle": ["bash", "{oracle}/scripts/promote.sh"], "candidate": null, "classes": ["features"] },
+    { "name": "setup", "oracle": ["bash", "{oracle}/scripts/setup.sh"], "candidate": null, "classes": ["no-root", "seeded"] }
   ],
   "floors": { "no-root": 2, "seeded": 2, "filled": 2, "lessons": 2, "features": 2, "malformed": 2 }
 }

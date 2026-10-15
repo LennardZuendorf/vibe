@@ -73,18 +73,22 @@ fn run(suite_path: &Path, mode: Mode) -> ExitCode {
     for e in &report.errors {
         println!("ERROR {e}");
     }
+    for name in &report.skipped {
+        println!("SKIP  {name} (not ported; self-check only)");
+    }
     let label = match mode {
         Mode::SelfCheck => "self-check".to_string(),
         Mode::Candidate(p) => format!("candidate {}", p.display()),
     };
     println!(
-        "parity[{}]: {} passed, {} pinned, {} failed, {} error(s), {} runs ({label})",
+        "parity[{}]: {} passed, {} pinned, {} failed, {} error(s), {} runs, {} skipped ({label})",
         suite.name,
         report.passed(),
         report.pinned(),
         report.failed(),
         report.errors.len(),
-        report.results.len()
+        report.results.len(),
+        report.skipped.len()
     );
     ExitCode::from(if report.ok() {
         exit::OK

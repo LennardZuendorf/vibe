@@ -26,6 +26,13 @@ pub struct Suite {
     /// Known, deliberate differences between oracle and candidate.
     #[serde(default)]
     pub divergences: Vec<Divergence>,
+    /// Wall-clock limit per run, in milliseconds. A run over it fails.
+    #[serde(default = "default_timeout_ms")]
+    pub timeout_ms: u64,
+}
+
+fn default_timeout_ms() -> u64 {
+    30_000
 }
 
 /// One command compared between oracle and candidate.
@@ -37,7 +44,10 @@ pub struct CommandSpec {
     /// Oracle argv. `{oracle}` expands to the staged oracle directory.
     pub oracle: Vec<String>,
     /// Candidate argv. `{candidate}` expands to the candidate binary.
-    pub candidate: Vec<String>,
+    /// `null` (or absent) means not ported yet: candidate mode skips the
+    /// command; the self-check still runs it.
+    #[serde(default)]
+    pub candidate: Option<Vec<String>>,
     /// Corpus classes this command runs over.
     pub classes: Vec<String>,
 }
@@ -63,10 +73,26 @@ pub struct Divergence {
     pub command: String,
     /// Case id, `<class>/<case>`.
     pub case: String,
+    /// Only the run with exactly these extra arguments. Absent: every run of the case.
+    #[serde(default)]
+    pub args: Option<Vec<String>>,
     /// The field that differs.
     pub field: Field,
+    /// Only on this `std::env::consts::OS`. Elsewhere the pin is inactive.
+    /// An os-scoped pin is never reported stale: local tools vary.
+    #[serde(default)]
+    pub os: Option<String>,
     /// Why the difference is correct.
     pub reason: String,
+}
+
+impl Divergence {
+    /// False when the pin is scoped to another operating system.
+    pub fn active(&self) -> bool {
+        self.os
+            .as_deref()
+            .is_none_or(|os| os == std::env::consts::OS)
+    }
 }
 
 /// A corpus case's `case.json`.
