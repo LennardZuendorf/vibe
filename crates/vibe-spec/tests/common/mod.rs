@@ -230,7 +230,7 @@ pub fn layered_tree(name: &str) -> PathBuf {
         "docs/spec/product.md",
         &hub(
             "Product",
-            "- [Billing](areas/billing/README.md)\n- [Checkout](flows/checkout.md)\n- [Invoice](concepts/invoice.md)\n- [Mobile](parts/mobile/product.md)",
+            "- [Billing](areas/billing/README.md)\n- [Checkout](flows/checkout.md)\n- [Invoice](concepts/invoice.md)\n- [Mobile](parts/mobile/product.md)\n- [Web](parts/web/README.md)",
         ),
     );
     write(
