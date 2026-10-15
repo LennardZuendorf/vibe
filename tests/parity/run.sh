@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Spec parity (F16): the frozen bash oracles against themselves, against the
+# Spec parity: the frozen bash oracles against themselves, against the
 # vibe-spec candidate over the generated corpus, and against the candidate on
-# this repo's own spec tree ("live"). Needs cargo. Exit 0 only when all pass.
+# this repo's own spec tree ("live"). validate leaves live parity at F17: its
+# F17 checks are off only in the corpus (P3b-R2). Needs cargo. Exit 0 only
+# when all pass.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
@@ -44,7 +46,6 @@ live list-specs list-specs.sh
 live lessons-for lessons-for.sh spec
 live lessons-for lessons-for.sh --format inject bash testing
 live scan-merges scan-merges.sh
-live validate validate.sh
 [[ "$compared" -ge 1 ]] || { echo "parity: live compared nothing" >&2; exit 1; }
 [[ "$fails" -eq 0 ]] || { echo "parity: $fails live mismatch(es)" >&2; exit 1; }
 echo "parity: self-check, candidate and live ($compared) green"

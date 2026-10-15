@@ -83,9 +83,28 @@ pub fn oracle_env(cwd: &Path, script: &str, args: &[&str], env: &[(&str, &str)])
     run(cmd, cwd, env)
 }
 
+/// The corpus's F17-off strictness (P3b-R2).
+pub const LEGACY_STRICTNESS: &str = include_str!("../../../../tests/parity/legacy-strictness.json");
+
+/// Writes the legacy strictness into the project that holds `cwd` (nearest
+/// ancestor with `.git`), unless a config is already there.
+pub fn legacy(cwd: &Path) {
+    let project = cwd
+        .ancestors()
+        .find(|d| d.join(".git").exists())
+        .unwrap_or(cwd);
+    let path = project.join(".vibe/spec.json");
+    if !path.exists() {
+        write(project, ".vibe/spec.json", LEGACY_STRICTNESS);
+    }
+}
+
 /// Asserts the candidate's `command args` and the oracle's `script args`
 /// agree on exit code and stdout bytes when run in `cwd`.
 pub fn assert_parity(cwd: &Path, command: &str, script: &str, args: &[&str]) {
+    if command == "validate" {
+        legacy(cwd);
+    }
     let want = oracle(cwd, script, args);
     let mut full = vec![command];
     full.extend_from_slice(args);

@@ -125,3 +125,27 @@ fn no_root_cases_stop_at_the_sandbox_git_dir() {
         "control: without .git the walk must reach the decoy, got {out:?}"
     );
 }
+
+#[test]
+fn every_case_tree_turns_the_f17_checks_off() {
+    let want = fs::read_to_string(repo().join("tests/parity/legacy-strictness.json")).unwrap();
+    let corpus = repo().join("tests/parity/corpus/spec");
+    let mut cases = 0;
+    for class in fs::read_dir(&corpus)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.path().is_dir())
+    {
+        for case in fs::read_dir(class.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.path().is_dir())
+        {
+            let got = fs::read_to_string(case.path().join("tree/.vibe/spec.json"))
+                .unwrap_or_else(|e| panic!("{}: {e}", case.path().display()));
+            assert_eq!(got, want, "{}", case.path().display());
+            cases += 1;
+        }
+    }
+    assert!(cases >= 25, "only {cases} cases");
+}

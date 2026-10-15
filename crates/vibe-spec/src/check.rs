@@ -209,6 +209,30 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
+    #[allow(clippy::unwrap_used)]
+    fn the_corpus_config_turns_off_exactly_the_new_checks() {
+        let text = include_str!("../../../tests/parity/legacy-strictness.json");
+        let v: serde_json::Value = serde_json::from_str(text).unwrap();
+        let mut got: Vec<&str> = v["strictness"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(k, level)| {
+                assert_eq!(level, "off", "{k}");
+                normalize(k).unwrap()
+            })
+            .collect();
+        got.sort_unstable();
+        let mut want: Vec<&str> = CHECKS
+            .iter()
+            .filter(|c| c.origin == Origin::New)
+            .map(|c| c.id)
+            .collect();
+        want.sort_unstable();
+        assert_eq!(got, want);
+    }
+
+    #[test]
     fn ids_are_unique_and_partitioned() {
         let mut seen = std::collections::BTreeSet::new();
         for c in CHECKS {

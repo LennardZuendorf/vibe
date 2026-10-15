@@ -107,6 +107,7 @@ fn features_sf13_sf15_and_sf16_match() {
         "# Lessons\n\n### Escape \\t in titles\n**Rule:** x\n\n### Tagged\n**Tags:** a\n\n### Last\n**Tags:** no newline",
     );
     if cfg!(target_os = "macos") {
+        common::legacy(&p);
         // BSD wc pads the SF15 count (P3a-R2); compare everything else.
         let want = common::oracle(&p, "validate.sh", &[]).text();
         let got = common::spec(&p, &["validate"], &[]).text();
@@ -148,6 +149,7 @@ fn unknown_arguments_are_a_usage_error() {
 fn design_lint_degrades_like_the_oracle() {
     use std::os::unix::fs::PermissionsExt;
     let p = project("val-lint");
+    common::legacy(&p);
     write(&p, ".spec/product.md", ENTRY);
     write(
         &p,
@@ -186,6 +188,7 @@ fn design_lint_degrades_like_the_oracle() {
 #[test]
 fn sf15_threshold_follows_bash_arithmetic() {
     let p = project("val-sf15");
+    common::legacy(&p);
     write(
         &p,
         ".spec/product.md",
