@@ -229,7 +229,7 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
                     &[],
                 ],
             )],
-            files: vec![(".spec/lessons.md".into(), tagged)],
+            files: vec![(".spec/lessons.md".into(), tagged.clone())],
         },
         CaseDef {
             class: "lessons",
@@ -240,6 +240,39 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
                 &[&["escape"], &["--format", "json", "escape"]],
             )],
             files: vec![(".spec/lessons.md".into(), quotes)],
+        },
+        CaseDef {
+            class: "lessons",
+            name: "no-newline",
+            cwd: "",
+            runs: &[(
+                "lessons-for",
+                &[&["bash"], &["--format", "json", "bash"], &["spec"]],
+            )],
+            files: vec![(
+                ".spec/lessons.md".into(),
+                format!(
+                    "{LESSONS_HEAD}{}### Last lesson\n**Rule:** No newline at the end.\n**Tags:** spec, bash",
+                    lesson("First", "Has a newline.", "bash")
+                ),
+            )],
+        },
+        CaseDef {
+            class: "lessons",
+            name: "edge-args",
+            cwd: "",
+            runs: &[(
+                "lessons-for",
+                &[
+                    &["--format"],
+                    &["--format", "xml", "bash"],
+                    &["inject", "bash"],
+                    &["b.sh"],
+                    &[""],
+                    &["BASH"],
+                ],
+            )],
+            files: vec![(".spec/lessons.md".into(), tagged.clone())],
         },
         CaseDef {
             class: "features",

@@ -1,0 +1,18 @@
+{
+  "runs": {
+    "lessons-for": [
+      [
+        "bash"
+      ],
+      [
+        "--format",
+        "json",
+        "bash"
+      ],
+      [
+        "spec"
+      ]
+    ]
+  },
+  "v": 1
+}

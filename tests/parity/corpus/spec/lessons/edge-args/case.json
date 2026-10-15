@@ -1,0 +1,28 @@
+{
+  "runs": {
+    "lessons-for": [
+      [
+        "--format"
+      ],
+      [
+        "--format",
+        "xml",
+        "bash"
+      ],
+      [
+        "inject",
+        "bash"
+      ],
+      [
+        "b.sh"
+      ],
+      [
+        ""
+      ],
+      [
+        "BASH"
+      ]
+    ]
+  },
+  "v": 1
+}

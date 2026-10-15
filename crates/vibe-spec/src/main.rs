@@ -18,6 +18,7 @@ macro_rules! cat {
     }};
 }
 
+mod lessons;
 mod list_specs;
 mod root;
 mod text;
@@ -48,6 +49,13 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Lessons matching tags (port of lessons-for.sh; `--json` for Spec JSON v1).
+    #[command(disable_help_flag = true)]
+    LessonsFor {
+        /// Tags, `--format <markdown|inject|json>`, `--tag <t>`, `--json`.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -67,6 +75,7 @@ fn main() -> ExitCode {
     let (code, out) = match cli.command {
         Command::Root { json } => root::command(&found, json),
         Command::ListSpecs { args: _ } => list_specs::run(&found),
+        Command::LessonsFor { args } => lessons::run(&found, &args),
     };
     emit(&out);
     ExitCode::from(code)

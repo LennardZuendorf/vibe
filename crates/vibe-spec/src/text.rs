@@ -220,6 +220,15 @@ pub fn sub_dirs(dir: &Path) -> Vec<PathBuf> {
     sorted_entries(dir, |p, _| p.is_dir())
 }
 
+/// `YYYY-MM-DD` (digits and dashes only; the calendar is not checked).
+pub fn is_date(b: &[u8]) -> bool {
+    b.len() == 10
+        && b.iter().enumerate().all(|(i, c)| match i {
+            4 | 7 => *c == b'-',
+            _ => c.is_ascii_digit(),
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
