@@ -217,10 +217,10 @@ jobs:
         run: cargo test --workspace --locked
 
   parity:
-    # F3: the frozen spec oracles over the generated corpus. Until F16 ships a
-    # candidate, the oracle runs against itself: this proves the corpus and
-    # the oracles are deterministic and every class meets its floor.
-    name: parity — spec oracles (self-check until F16)
+    # F3/F16: the frozen spec oracles against themselves, against the
+    # vibe-spec candidate over the generated corpus, and live on this repo's
+    # spec tree. Commands not ported yet stay self-check only.
+    name: parity — spec oracles vs vibe-spec
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -231,5 +231,5 @@ jobs:
       - name: Toolchain (pinned by rust-toolchain.toml)
         run: rustup toolchain install
 
-      - name: Oracle self-check over the spec corpus
-        run: cargo run --locked -q -p vibe-parity -- run tests/parity/spec.json --self
+      - name: Spec parity (self-check, candidate, live)
+        run: bash tests/parity/run.sh

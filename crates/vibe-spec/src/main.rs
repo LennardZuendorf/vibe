@@ -18,6 +18,7 @@ macro_rules! cat {
     }};
 }
 
+mod list_specs;
 mod root;
 mod text;
 
@@ -40,6 +41,13 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// List spec files (port of list-specs.sh).
+    #[command(disable_help_flag = true)]
+    ListSpecs {
+        /// Ignored, as the oracle ignores them.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 fn main() -> ExitCode {
@@ -58,6 +66,7 @@ fn main() -> ExitCode {
     let found = root::discover(&cwd, cli.root.as_deref(), env_root.as_deref());
     let (code, out) = match cli.command {
         Command::Root { json } => root::command(&found, json),
+        Command::ListSpecs { args: _ } => list_specs::run(&found),
     };
     emit(&out);
     ExitCode::from(code)

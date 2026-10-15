@@ -274,6 +274,16 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
             files: feature(FEATURE_TECH_UNCLOSED, &[(".spec/plan.md", &unplanned)]),
         },
         CaseDef {
+            class: "features",
+            name: "empty-feature",
+            cwd: "",
+            runs: &[],
+            files: with(
+                feature(FEATURE_TECH, &[]),
+                &[(".spec/features/draft/notes.txt", "x\n")],
+            ),
+        },
+        CaseDef {
             class: "malformed",
             name: "no-frontmatter",
             cwd: "",
