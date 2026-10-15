@@ -140,6 +140,7 @@ pub fn load(project: &Path, strict: bool) -> Result<Levels, String> {
         return Err(format!("{shown}: not a JSON object"));
     };
     let mut set = BTreeMap::new();
+    let mut named: BTreeMap<&'static str, &str> = BTreeMap::new();
     match map.get("strictness") {
         None => {}
         Some(Value::Object(entries)) => {
@@ -149,6 +150,11 @@ pub fn load(project: &Path, strict: bool) -> Result<Levels, String> {
                 })?;
                 match normalize(key) {
                     Some(id) => {
+                        if let Some(first) = named.insert(id, key) {
+                            eprintln!(
+                                "vibe-spec: {shown}: strictness keys '{first}' and '{key}' both name {id} (the last wins)"
+                            );
+                        }
                         set.insert(id, level);
                     }
                     None => {

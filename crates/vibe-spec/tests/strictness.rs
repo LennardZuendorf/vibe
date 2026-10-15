@@ -734,3 +734,27 @@ fn finding_files_name_the_checked_file() {
     let want = format!("{}/product.md", root.display());
     assert_eq!(files_of(&v, "SF22"), [want], "{v:#}");
 }
+
+#[test]
+fn two_keys_for_one_check_warn_and_the_last_wins() {
+    let p = sf13_tree("str-dup");
+    write(
+        &p,
+        ".vibe/spec.json",
+        r#"{"strictness": {"SF-13": "error", "sf13": "off"}}"#,
+    );
+    let out = spec(&p, &["validate"], &[]);
+    assert!(
+        out.stderr.contains("'SF-13'") && out.stderr.contains("'sf13'"),
+        "{}",
+        out.stderr
+    );
+    assert_eq!(
+        out.stderr.matches("both name SF13").count(),
+        1,
+        "{}",
+        out.stderr
+    );
+    assert_eq!(out.code, 0, "the last key (sf13: off) wins: {}", out.text());
+    assert!(!out.text().contains("SF13"), "{}", out.text());
+}
