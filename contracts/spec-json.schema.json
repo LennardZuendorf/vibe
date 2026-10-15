@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Spec JSON v1",
-  "description": "Answers of the four read-only vibe-spec queries when called with --json: root, lessons-for, plan, feature. Each answer is one JSON object with \"v\": 1. This is a new output; it is not the legacy `lessons-for.sh --format json` array, which stays byte-identical except that the port emits valid JSON: it escapes quotes, backslashes and control characters and replaces invalid UTF-8 with U+FFFD (pinned divergence).",
+  "description": "Answers of the read-only vibe-spec queries when called with --json: root, lessons-for, plan, feature, validate (and trace, Task 12). Each answer is one JSON object with \"v\": 1. This is a new output; it is not the legacy `lessons-for.sh --format json` array, which stays byte-identical except that the port emits valid JSON: it escapes quotes, backslashes and control characters and replaces invalid UTF-8 with U+FFFD (pinned divergence).",
   "x-vibe-compat": "additive-within-major; readers-ignore-unknown-fields",
   "$defs": {
     "root": {
@@ -69,6 +69,40 @@
       }
     },
     "feature-name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "validate": {
+      "type": "object",
+      "required": ["v", "root", "layout", "strict", "examined", "errors", "warnings", "checks", "findings"],
+      "properties": {
+        "v": { "const": 1 },
+        "root": { "type": "string", "minLength": 1, "description": "The spec root as validate prints it: project-relative, or absolute outside the project." },
+        "layout": { "enum": ["flat", "layered"] },
+        "strict": { "type": "boolean" },
+        "examined": { "type": "integer", "minimum": 0, "description": "Distinct files the run examined." },
+        "errors": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 },
+        "checks": { "type": "array", "items": { "$ref": "#/$defs/check-level" } },
+        "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } }
+      }
+    },
+    "check-level": {
+      "type": "object",
+      "required": ["id", "level"],
+      "properties": {
+        "id": { "$ref": "#/$defs/check-id" },
+        "level": { "enum": ["default", "warn", "error", "off"] }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": ["check", "severity", "message"],
+      "properties": {
+        "check": { "$ref": "#/$defs/check-id" },
+        "severity": { "enum": ["warning", "error"] },
+        "file": { "type": "string", "minLength": 1, "description": "Project-relative path with forward slashes; absolute outside the project." },
+        "message": { "type": "string" }
+      }
+    },
+    "check-id": { "type": "string", "pattern": "^(SF[0-9]+|I[0-9]+)$" },
     "doc": {
       "type": "object",
       "required": ["kind", "path"],

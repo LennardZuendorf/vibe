@@ -3,8 +3,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use crate::check::{Level, Levels, normalize};
-use crate::text::{echo_e, find, trim_space};
+use serde_json::json;
+
+use crate::check::{CHECKS, Level, Levels, normalize};
+use crate::text::{echo_e, find, lossy, trim_space};
 
 /// A finding's severity after strictness.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -171,6 +173,41 @@ impl Report {
     fn colour(&mut self, code: &str, tag: &str, msg: &[u8]) {
         self.out
             .extend(echo_e(&cat!("\\033[", code, "m  ", tag, msg, "\\033[0m")));
+    }
+
+    /// Spec JSON v1 `validate`.
+    pub fn json(&self, root: &str, layout: &str) -> Vec<u8> {
+        let checks: Vec<serde_json::Value> = CHECKS
+            .iter()
+            .map(|c| json!({ "id": c.id, "level": self.levels.describe(c.id) }))
+            .collect();
+        let findings: Vec<serde_json::Value> = self
+            .findings
+            .iter()
+            .map(|f| {
+                let mut v = json!({
+                    "check": f.check,
+                    "severity": f.severity.as_str(),
+                    "message": lossy(&f.message),
+                });
+                if !f.file.is_empty() {
+                    v["file"] = json!(f.file);
+                }
+                v
+            })
+            .collect();
+        let v = json!({
+            "v": 1,
+            "root": root,
+            "layout": layout,
+            "strict": self.levels.strict(),
+            "examined": self.examined(),
+            "errors": self.errors,
+            "warnings": self.warnings,
+            "checks": checks,
+            "findings": findings,
+        });
+        format!("{v}\n").into_bytes()
     }
 
     /// `green`.

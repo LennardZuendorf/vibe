@@ -120,3 +120,13 @@ pub fn assert_spec_json(def: &str, json: &str) {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+/// `vibe-spec validate --format json <extra>` in `cwd`, parsed.
+pub fn validate_json(cwd: &Path, extra: &[&str], env: &[(&str, &str)]) -> (i32, serde_json::Value) {
+    let mut args = vec!["validate", "--format", "json"];
+    args.extend_from_slice(extra);
+    let out = spec(cwd, &args, env);
+    let v = serde_json::from_slice(&out.stdout)
+        .unwrap_or_else(|e| panic!("not JSON ({e}): {}\nstderr: {}", out.text(), out.stderr));
+    (out.code, v)
+}

@@ -188,3 +188,391 @@ fn no_spec_root_error_cannot_be_silenced() {
         out.text()
     );
 }
+
+use common::{assert_spec_json, validate_json};
+use std::path::PathBuf;
+
+/// A project that makes check `id` report at least one finding whose
+/// message contains `needle`, run with `args` and `env`.
+struct Trigger {
+    project: PathBuf,
+    env: Vec<(String, String)>,
+    args: Vec<String>,
+    needle: &'static str,
+}
+
+fn plain(project: PathBuf, needle: &'static str) -> Option<Trigger> {
+    Some(Trigger {
+        project,
+        env: Vec::new(),
+        args: Vec::new(),
+        needle,
+    })
+}
+
+const FEATURE_PRODUCT: &str = "---\ntype: feature-product\nfeature: auth\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n## Scope\n\n| Owns | Does not own |\n|---|---|\n| sessions | billing |\n\n### Requirement: Sign in (R1)\nUsers MUST sign in.\n\n#### Scenario: ok\n- **WHEN** they log in\n- **THEN** they are in\n";
+const FEATURE_TECH: &str = "---\ntype: feature-tech\nfeature: auth\nparent: ../../tech.md\nsibling: product.md\nupdated: 2026-01-15\n---\n\n# auth — Tech\n";
+
+/// A clean flat tree with one feature; triggers add the one defect they need.
+fn base(name: &str) -> PathBuf {
+    let p = project(name);
+    write(
+        &p,
+        ".spec/product.md",
+        "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n# P\n",
+    );
+    write(
+        &p,
+        ".spec/plan.md",
+        "---\ntype: entrypoint\nscope: implementation\nchildren:\nupdated: 2026-01-15\n---\n\n| Feature | Status |\n|---|---|\n| auth | IN PROGRESS |\n",
+    );
+    write(&p, ".spec/features/auth/product.md", FEATURE_PRODUCT);
+    write(&p, ".spec/features/auth/tech.md", FEATURE_TECH);
+    p
+}
+
+fn trigger(id: &str) -> Option<Trigger> {
+    trigger_in("mx", id)
+}
+
+/// [`trigger`] in a scratch project named after `prefix`, so tests that run
+/// in parallel never share a directory.
+fn trigger_in(prefix: &str, id: &str) -> Option<Trigger> {
+    let p = base(&format!("{prefix}-{}", id.to_ascii_lowercase()));
+    match id {
+        "SF3" => {
+            write(
+                &p,
+                ".spec/design.md",
+                "---\ntype: entrypoint\nscope: design\nchildren:\ncolors:\nupdated: 2026-01-15\n---\n",
+            );
+            plain(p, "empty token group")
+        }
+        "SF4" => {
+            write(
+                &p,
+                ".spec/design.md",
+                "---\ntype: entrypoint\nscope: design\nchildren:\nupdated: 2026-01-15\n---\n",
+            );
+            let empty = p.join("emptybin");
+            std::fs::create_dir_all(&empty).unwrap();
+            Some(Trigger {
+                project: p,
+                env: vec![
+                    ("VIBE_DESIGN_LINT".into(), "1".into()),
+                    ("PATH".into(), empty.display().to_string()),
+                ],
+                args: Vec::new(),
+                needle: "lint skipped",
+            })
+        }
+        "SF8" => {
+            write(
+                &p,
+                ".spec/features/auth/product.md",
+                &FEATURE_PRODUCT.replace("## Scope", "## Notes"),
+            );
+            plain(p, "missing '## Scope'")
+        }
+        "SF9" => {
+            write(
+                &p,
+                ".spec/features/auth/tech.md",
+                &FEATURE_TECH.replace("sibling: product.md\n", ""),
+            );
+            plain(p, "missing 'sibling:'")
+        }
+        "SF10" => {
+            write(
+                &p,
+                ".spec/features/auth/product.md",
+                &FEATURE_PRODUCT.replace("Users MUST sign in.", "Users sign in."),
+            );
+            plain(p, "missing RFC-2119 keyword")
+        }
+        "SF11" => {
+            write(
+                &p,
+                ".spec/features/auth/plan.md",
+                "---\ntype: feature-plan\nfeature: auth\nparent: ../../plan.md\nupdated: 2026-01-15\n---\n\nNo units. Covers R1.\n",
+            );
+            plain(p, "plan missing '### <feature>/<n>'")
+        }
+        "SF12" => {
+            write(
+                &p,
+                ".spec/features/auth/plan.md",
+                "---\ntype: feature-plan\nfeature: auth\nparent: ../../plan.md\nupdated: 2026-01-15\n---\n\n## Requirements Trace\n\n### auth/1 — a\n\n### auth/1 — b\n\nCovers R1.\n",
+            );
+            plain(p, "duplicate unit heading ID")
+        }
+        "SF13" => {
+            write(
+                &p,
+                ".spec/product.md",
+                "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n[g](features/ghost/)\n",
+            );
+            plain(p, "SF13: stale link")
+        }
+        "SF14" => {
+            write(
+                &p,
+                ".spec/features/billing/product.md",
+                &FEATURE_PRODUCT.replace("feature: auth", "feature: billing"),
+            );
+            write(
+                &p,
+                ".spec/features/billing/tech.md",
+                &FEATURE_TECH.replace("feature: auth", "feature: billing"),
+            );
+            plain(p, "SF14: scope conflict")
+        }
+        "SF15" => {
+            write(
+                &p,
+                ".spec/product.md",
+                &format!(
+                    "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n{}",
+                    "x\n".repeat(301)
+                ),
+            );
+            plain(p, "SF15:")
+        }
+        "SF16" => {
+            write(
+                &p,
+                ".spec/lessons.md",
+                "# Lessons\n\n### Untagged\n**Rule:** x\n",
+            );
+            plain(p, "has no **Tags:** line")
+        }
+        "I1" => {
+            write(
+                &p,
+                ".spec/features/auth/plan.md",
+                "---\ntype: feature-plan\nfeature: auth\nparent: ../../plan.md\nupdated: 2026-01-15\n---\n\n## Requirements Trace\n\nCovers R1.\n\n### auth/1 — a\n\nDepends on billing/2.\n",
+            );
+            plain(p, "cross-feature unit dependency")
+        }
+        "SF20" => {
+            write(&p, ".spec/tech.md", "# no frontmatter\n");
+            plain(p, "missing YAML frontmatter")
+        }
+        "SF21" => {
+            write(
+                &p,
+                ".spec/notes.md",
+                "---\ntype: entrypoint\nupdated: 2026-01-15\nchildren:\n---\n",
+            );
+            plain(p, "must start with")
+        }
+        "SF22" => {
+            write(
+                &p,
+                ".spec/product.md",
+                "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n[x](missing.md)\n",
+            );
+            plain(p, "broken link to 'missing.md'")
+        }
+        "SF23" => {
+            std::fs::remove_file(p.join(".spec/features/auth/tech.md")).unwrap();
+            plain(p, "missing required 'tech.md'")
+        }
+        _ => None,
+    }
+}
+
+/// Registered checks that have no trigger yet; each later task moves its ids
+/// into `trigger`. Task 13 requires this to be empty.
+const PENDING: &[&str] = &[
+    "SF24", "SF25", "SF26", "SF27", "SF28", "SF29", "SF30", "SF31", "SF32", "SF33", "SF34", "SF35",
+    "SF36",
+];
+
+fn registered() -> Vec<String> {
+    let p = base("mx-ids");
+    let (_, v) = validate_json(&p, &[], &[]);
+    v["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
+fn run_with(t: &Trigger, config: Option<(&str, &str)>) -> (i32, serde_json::Value) {
+    match config {
+        Some((id, level)) => write(
+            &t.project,
+            ".vibe/spec.json",
+            &format!(r#"{{"strictness": {{"{id}": "{level}"}}}}"#),
+        ),
+        None => {
+            let _ = std::fs::remove_file(t.project.join(".vibe/spec.json"));
+        }
+    }
+    let env: Vec<(&str, &str)> = t
+        .env
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    let args: Vec<&str> = t.args.iter().map(String::as_str).collect();
+    validate_json(&t.project, &args, &env)
+}
+
+fn hits<'a>(v: &'a serde_json::Value, id: &str, needle: &str) -> Vec<&'a serde_json::Value> {
+    v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["check"] == id && f["message"].as_str().unwrap().contains(needle))
+        .collect()
+}
+
+#[test]
+fn every_check_is_either_triggered_or_pending() {
+    for id in registered() {
+        let pending = PENDING.contains(&id.as_str());
+        assert!(
+            trigger(&id).is_some() != pending,
+            "{id}: needs exactly one of a trigger or a PENDING entry"
+        );
+    }
+}
+
+#[test]
+fn warn_error_off_matrix() {
+    let mut covered = 0;
+    for id in registered() {
+        let Some(t) = trigger(&id) else { continue };
+        let (_, warn) = run_with(&t, Some((&id, "warn")));
+        let w = hits(&warn, &id, t.needle);
+        assert!(
+            !w.is_empty(),
+            "{id} warn: no finding with {:?}\n{warn:#}",
+            t.needle
+        );
+        assert!(
+            w.iter().all(|f| f["severity"] == "warning"),
+            "{id} warn: {w:?}"
+        );
+        let (code, error) = run_with(&t, Some((&id, "error")));
+        let e = hits(&error, &id, t.needle);
+        assert!(
+            !e.is_empty() && e.iter().all(|f| f["severity"] == "error"),
+            "{id} error: {e:?}"
+        );
+        assert_eq!(code, 1, "{id} error must exit 1");
+        let (_, off) = run_with(&t, Some((&id, "off")));
+        assert!(
+            off["findings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|f| f["check"] != id.as_str()),
+            "{id} off: {off:#}"
+        );
+        covered += 1;
+    }
+    assert!(covered >= 16, "matrix covered only {covered} checks");
+}
+
+#[test]
+fn json_answers_validate_against_the_schema() {
+    let t = trigger_in("schema", "SF13").unwrap();
+    let (code, v) = run_with(&t, None);
+    assert_eq!(code, 0);
+    assert_spec_json("validate", &v.to_string());
+    assert_eq!(v["layout"], "flat");
+    assert!(v["examined"].as_u64().unwrap() >= 4);
+    let (_, strict) = validate_json(&t.project, &["--strict"], &[]);
+    assert_eq!(strict["strict"], true);
+    assert_spec_json("validate", &strict.to_string());
+}
+
+#[test]
+fn json_without_a_root_exits_3() {
+    let p = project("mx-noroot");
+    let out = spec(&p, &["validate", "--json"], &[]);
+    assert_eq!(out.code, 3);
+    assert!(out.stdout.is_empty());
+    let text = spec(&p, &["validate"], &[]);
+    assert_eq!(text.code, 1, "text mode keeps the oracle's exit");
+}
+
+#[test]
+fn json_survives_hostile_bytes() {
+    let p = base("mx-hostile");
+    write(
+        &p,
+        ".spec/lessons.md",
+        "# Lessons\n\n### Tab\there \u{1} \"q\" \\ x\n**Rule:** y\n",
+    );
+    std::fs::write(p.join(".spec/features/auth/plan.md"), b"---\ntype: feature-plan\nupdated: 2026-01-15\n---\n\n### auth/1 \xff\xfe\n\n### auth/1 again\n").unwrap();
+    let out = spec(&p, &["validate", "--json"], &[]);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_spec_json("validate", &v.to_string());
+    assert!(
+        v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["check"] == "SF16")
+    );
+}
+
+/// The `file` of every finding of `id` in `v`.
+fn files_of(v: &serde_json::Value, id: &str) -> Vec<String> {
+    v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["check"] == id)
+        .map(|f| f["file"].as_str().unwrap_or("<none>").to_string())
+        .collect()
+}
+
+#[test]
+fn finding_files_name_the_checked_file() {
+    // A root file, a feature doc, a missing required file and SF14's feature.
+    for (id, file) in [
+        ("SF22", ".spec/product.md"),
+        ("SF11", ".spec/features/auth/plan.md"),
+        ("SF23", ".spec/features/auth/tech.md"),
+        ("SF14", ".spec/features/billing/product.md"),
+    ] {
+        let t = trigger_in("files", id).unwrap();
+        let (_, v) = run_with(&t, None);
+        let files = files_of(&v, id);
+        assert!(!files.is_empty(), "{id}: no finding\n{v:#}");
+        assert!(
+            files.iter().all(|f| f == file),
+            "{id}: {files:?}, want {file}"
+        );
+    }
+
+    // CLAUDE.md: a broken link into the spec root.
+    let p = base("mx-file-claude");
+    write(&p, "CLAUDE.md", "# C\n\n[x](.spec/missing.md)\n");
+    let (_, v) = validate_json(&p, &[], &[]);
+    assert_eq!(files_of(&v, "SF22"), ["CLAUDE.md"], "{v:#}");
+
+    // A `--root` outside the project: the file is absolute.
+    let outside = base("mx-file-outside");
+    write(
+        &outside,
+        ".spec/product.md",
+        "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n[x](missing.md)\n",
+    );
+    let here = project("mx-file-here");
+    let root = outside.join(".spec");
+    let out = spec(
+        &here,
+        &["--root", root.to_str().unwrap(), "validate", "--json"],
+        &[],
+    );
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).unwrap_or_else(|e| panic!("{e}: {}", out.text()));
+    let want = format!("{}/product.md", root.display());
+    assert_eq!(files_of(&v, "SF22"), [want], "{v:#}");
+}

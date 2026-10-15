@@ -1,0 +1,27 @@
+{
+  "v": 1,
+  "root": ".spec",
+  "layout": "flat",
+  "strict": true,
+  "examined": 5,
+  "errors": 1,
+  "warnings": 0,
+  "checks": [
+    {
+      "id": "SF13",
+      "level": "error"
+    },
+    {
+      "id": "SF24",
+      "level": "off"
+    }
+  ],
+  "findings": [
+    {
+      "check": "SF13",
+      "severity": "fatal",
+      "file": ".spec/product.md",
+      "message": "SF13: stale link in .spec/product.md → features/ghost/ (not found)"
+    }
+  ]
+}

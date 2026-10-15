@@ -76,6 +76,12 @@ enum Command {
         /// Promote every non-off check to error; refuse a run that examined nothing.
         #[arg(long)]
         strict: bool,
+        /// Output format.
+        #[arg(long, value_enum, default_value = "text")]
+        format: validate::Format,
+        /// Same as `--format json`.
+        #[arg(long)]
+        json: bool,
     },
     /// A feature's plan rows (Spec JSON v1 `plan` with --json).
     Plan {
@@ -117,7 +123,18 @@ fn main() -> ExitCode {
         Command::ScanMerges { args: _ } => {
             scan_merges::run(&found, &cwd, &raw_tail(std::env::args_os()))
         }
-        Command::Validate { strict } => validate::run(&found, &cwd, &validate::Options { strict }),
+        Command::Validate {
+            strict,
+            format,
+            json,
+        } => validate::run(
+            &found,
+            &cwd,
+            &validate::Options {
+                strict,
+                format: if json { validate::Format::Json } else { format },
+            },
+        ),
         Command::Plan { feature, json } => query::plan(&found, &feature, json),
         Command::Feature { name, json } => query::feature(&found, &name, json),
     };

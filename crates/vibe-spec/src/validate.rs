@@ -30,16 +30,31 @@ const ROOT_NAMES: [&str; 5] = [
 ];
 const ENTRYPOINTS: [&str; 4] = ["product.md", "tech.md", "design.md", "plan.md"];
 
+/// `--format`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum Format {
+    /// The oracle's coloured report.
+    Text,
+    /// Spec JSON v1 `validate`.
+    Json,
+}
+
 /// Parsed `validate` flags.
 pub struct Options {
     /// `--strict`.
     pub strict: bool,
+    /// `--format` (`--json` sets `Json`).
+    pub format: Format,
 }
 
 /// Runs the command.
 pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u8>) {
     let (dir, project, display): (PathBuf, PathBuf, String) = match found {
         Ok(root) => (root.dir.clone(), root.project.clone(), root.display()),
+        Err(Miss::NotFound) if opts.format == Format::Json => {
+            eprintln!("{}", Miss::NotFound.message());
+            return (exit::NO_ROOT, Vec::new());
+        }
         Err(Miss::NotFound) => (cwd.join(".spec"), cwd.to_path_buf(), ".spec".to_string()),
         Err(miss) => {
             eprintln!("{}", miss.message());
@@ -59,13 +74,13 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     if !dir.is_dir() {
         r.at("");
         r.refuse(b"No spec root found. Run setup first: vibe-spec init");
-        return (exit::FINDINGS, r.out);
+        return finish(r, &display, opts.format, false);
     }
     let specs = md_files(&dir);
     if specs.is_empty() {
         r.at("");
         r.refuse(format!("No spec files found in {display}/").as_bytes());
-        return (exit::FINDINGS, r.out);
+        return finish(r, &display, opts.format, false);
     }
     let ctx = Ctx {
         dir: &dir,
@@ -93,11 +108,29 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         r.at("");
         r.refuse(b"validate --strict examined nothing (no spec file, or every check is off); refusing to report green");
     }
-    let (errors, warnings) = (r.errors, r.warnings);
-    r.line(b"========================");
-    r.line(format!("Errors:   {errors}").as_bytes());
-    r.line(format!("Warnings: {warnings}").as_bytes());
-    (if errors > 0 { exit::FINDINGS } else { exit::OK }, r.out)
+    finish(r, &display, opts.format, true)
+}
+
+/// The run's answer: the exit code and stdout in the chosen format. Text
+/// mode closes a full run with the oracle's summary lines.
+fn finish(mut r: Report, display: &str, format: Format, summary: bool) -> (u8, Vec<u8>) {
+    let code = if r.errors > 0 {
+        exit::FINDINGS
+    } else {
+        exit::OK
+    };
+    match format {
+        Format::Json => (code, r.json(display, "flat")),
+        Format::Text => {
+            if summary {
+                let (errors, warnings) = (r.errors, r.warnings);
+                r.line(b"========================");
+                r.line(format!("Errors:   {errors}").as_bytes());
+                r.line(format!("Warnings: {warnings}").as_bytes());
+            }
+            (code, r.out)
+        }
+    }
 }
 
 /// Where the spec lives.
