@@ -559,6 +559,9 @@ pub fn run(r: &mut Report, ctx: &Ctx) {
             r.warn("SF30", format!("{rel}: not in the layered layout (hubs, README.md, AGENTS.md, lessons.md, kind folders, parts/<part>/, features/<f>/, archive/, quick/, templates/)").as_bytes());
             continue;
         }
+        if place == Place::Lessons {
+            r.examine(&shown);
+        }
         if matches!(place, Place::Exempt | Place::Feature | Place::Lessons) {
             continue;
         }

@@ -784,3 +784,25 @@ fn inline_code_spans_hold_no_links() {
         "a code-span link reaches nothing: {got:#?}"
     );
 }
+
+fn examined(p: &Path) -> u64 {
+    validate_json(p, &[], &[]).1["examined"].as_u64().unwrap()
+}
+
+#[test]
+fn examined_counts_lessons_in_both_layouts() {
+    let lay = layered_tree("ly-examine-lessons");
+    let with = examined(&lay);
+    std::fs::remove_file(lay.join("docs/spec/lessons.md")).unwrap();
+    assert_eq!(with, examined(&lay) + 1, "layered lessons.md");
+
+    let flat = common::project("ly-examine-flat");
+    write(
+        &flat,
+        ".spec/product.md",
+        "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n",
+    );
+    let without = examined(&flat);
+    write(&flat, ".spec/lessons.md", "# Lessons\n");
+    assert_eq!(examined(&flat), without + 1, "flat lessons.md");
+}
