@@ -98,6 +98,15 @@ sooner. A `--strict` run that examined zero files is refused, not
 reported green: absence of findings is only evidence when presence of
 input is proven.
 
+Shipped (F17): every finding names one check in `vibe-spec`'s registry —
+SF3, SF4, SF8–SF16 and I1 from the oracle, SF20–SF23 for the families it
+left unnumbered (frontmatter, naming, links, tree), SF24–SF36 added by
+F17. Keys accept `SF-nn` or `SFnn`; an unknown id warns and is ignored.
+A configured level replaces a finding's default (legacy errors stay
+errors, everything else warns); `--strict` turns warn into error; an
+allow marker `<!-- vibe-spec: allow SF-nn -->` silences that check for
+its file before either applies.
+
 ## Adherence checks
 
 All warn-first, one SF-number each: layout allowlist (root hubs + `README.md`/`AGENTS.md`/`lessons.md`,
@@ -113,6 +122,16 @@ path exists and every branch doc backlinks its parent; feature folder
 name matches its plan row, a row with no folder is drift; `updated:`
 older than the file's last commit; grammar (≥1 scenario per requirement,
 WHEN and THEN present, SHALL/MUST word-bounded).
+
+Shipped (F17): SF24 requirement population, SF25 scenario WHEN/THEN,
+SF26 frontmatter values, SF27 children and backlinks, SF28 feature
+folder ↔ plan row, SF29 freshness against git, and on layered roots
+(a root hub declares `type: hub`) SF30 allowlist, SF31 budgets, SF32
+names, SF33 typed notes (`code:`, `applies:`), SF34 hub reachability;
+in both layouts SF35/SF36 check `docs/superpowers/` names and each
+plan's `**Spec:**` path. `trace` reads units from fallback feature plans
+only; superpowers plans carry no unit ids.
+`trace` refuses on zero units (exit 1, nothing on stdout). A shallow clone skips commit citations (`history: none`, stderr note) unless `--since` names a reachable ref. Any word-bounded `<feature>/<n>` token counts as a citation, including path fragments under `tests/`.
 
 `vibe-spec trace [--since <ref>]`: cross-references `<name>/n` unit
 citations from `git log` and `tests/**` against the plan, reporting
@@ -187,3 +206,4 @@ byte-identical ports of `list-specs`, `lessons-for`, `scan-merges` and
 `tests/parity/run.sh` proves the ports against the frozen oracles, over the
 corpus and live on this repo. Skills, CI and flow keep calling the scripts
 until the binary ships (F21–F22).
+F17 adds `validate --strict`, `--format text|json` (`--json`), the check registry and strictness config, and `trace`. `--changed`, `--file` and `--format hook` arrive with F19's hooks. The fixes (R-ID prefix, RFC 2119 boundary, Scope scoping, zero-requirement short-circuit) land in Rust only; `spec/scripts/validate.sh` keeps the oracle's behaviour until the binary ships.

@@ -40,12 +40,6 @@ pub fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
     hay.windows(needle.len()).position(|w| w == needle)
 }
 
-/// Byte substring test; the empty needle is always found.
-#[expect(dead_code, reason = "mutant helper; Task 13 decides")]
-pub fn contains(hay: &[u8], needle: &[u8]) -> bool {
-    needle.is_empty() || hay.windows(needle.len()).any(|w| w == needle)
-}
-
 /// ASCII case-insensitive substring test (`grep -qi` with a literal under `LC_ALL=C`).
 pub fn contains_ci(hay: &[u8], needle: &[u8]) -> bool {
     needle.is_empty()

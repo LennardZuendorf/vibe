@@ -229,3 +229,39 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Every test that runs `git init` in a sandbox sets `commit.gpgsign false` (and `tag.gpgsign false`) in that repo next to `user.email`/`user.name`, and never discards a setup commit's exit status.
 **Tags:** testing, git, sandbox, environment
 **Date:** 2026-10-15
+
+### Concurrent tests that share a deterministic scratch dir race under load
+**Pattern:** `common::project(name)` reused one directory per name; parallel tests clobbered each other.
+**Rule:** Give every test fixture a unique directory (process id plus an atomic counter).
+**Tags:** rust, tests, sandbox
+**Date:** 2026-10-15
+
+### Checks that read git history must detect shallow clones
+**Pattern:** SF29 and `trace` read a depth-1 CI checkout as full history: every file got the boundary commit's date, and every unit looked uncited.
+**Rule:** Check `rev-parse --is-shallow-repository` first, and stay silent or say so.
+**Tags:** spec, validate, git
+**Date:** 2026-10-15
+
+### Never split free text on separator bytes; use NUL
+**Pattern:** A `%x1f`/`%x1e` git log format broke on commit messages that contained those bytes.
+**Rule:** Use `git log -z`, because git refuses NUL in messages, and validate each record's header (hex sha).
+**Tags:** git, rust, parsing
+**Date:** 2026-10-15
+
+### Give each file one owning check per problem
+**Pattern:** In layered trees, legacy SF20/SF21 errored on files SF30 already reported, and SF26/SF33 repeated SF20.
+**Rule:** When a new layout or check covers a file, route that file away from the old check. Test that a bad input yields exactly one finding.
+**Tags:** spec, validate, layered
+**Date:** 2026-10-15
+
+### "Path resolves" means is_file inside the project
+**Pattern:** SF36 accepted `#anchor` (empty path resolves to the project dir) and directories, because it used `.exists()`.
+**Rule:** Strip fragments before the emptiness check, then require `is_file()` and canonical containment.
+**Tags:** spec, validate, paths
+**Date:** 2026-10-15
+
+### Fixtures must have the target's real shape
+**Pattern:** A one-part layered fixture hid SF32 false duplicates that fire on every multi-part tree (customer-portal's target).
+**Rule:** Model fixtures on the real target, including repeated structures.
+**Tags:** spec, validate, layered, tests
+**Date:** 2026-10-15

@@ -21,8 +21,16 @@ pub struct Check {
     /// `SF12`, `I1`.
     pub id: &'static str,
     /// Who introduced it.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "read by the registry tests only")
+    )]
     pub origin: Origin,
     /// What it checks.
+    #[expect(
+        dead_code,
+        reason = "documentation of the registry; no listing prints it"
+    )]
     pub title: &'static str,
 }
 

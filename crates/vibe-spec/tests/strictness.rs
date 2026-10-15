@@ -481,8 +481,7 @@ fn trigger(id: &str) -> Option<Trigger> {
     }
 }
 
-/// Registered checks that have no trigger yet; each later task moves its ids
-/// into `trigger`. Task 13 requires this to be empty.
+/// Registered checks without a trigger. F17 leaves none, so this stays empty.
 const PENDING: &[&str] = &[];
 
 fn registered() -> Vec<String> {
@@ -527,6 +526,7 @@ fn hits<'a>(v: &'a serde_json::Value, id: &str, needle: &str) -> Vec<&'a serde_j
 
 #[test]
 fn every_check_is_either_triggered_or_pending() {
+    assert!(PENDING.is_empty(), "F17 leaves no check untriggered");
     let all = registered();
     for id in PENDING {
         assert!(
@@ -596,6 +596,12 @@ fn warn_error_off_matrix() {
         covered, expected,
         "matrix must cover every non-pending check"
     );
+    assert_eq!(
+        covered.len(),
+        registered().len(),
+        "every registered check is tested warn/error/off"
+    );
+    assert_eq!(covered.len(), 29, "the registry holds 29 checks");
 }
 
 #[test]

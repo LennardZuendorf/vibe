@@ -128,7 +128,7 @@ marker itself.
 
 ## Spec JSON v1
 
-Four read-only queries, each `--json`, each exit 0 with a JSON object on
+Six read-only queries, each `--json`, each exit 0 with a JSON object on
 success:
 
 | Query | Answers |
@@ -137,6 +137,8 @@ success:
 | `lessons-for --tag <state>` | lessons tagged for the given flow state |
 | `plan --feature <f>` | that feature's plan rows |
 | `feature <f>` | that feature's product/tech/plan summary |
+| `validate` | layout, strictness, examined count, error and warning counts, `checks` (`{id, level}`) and `findings` (`{check, severity, file?, message}`) |
+| `trace` | unit and citation counts, `history` (`all\|since\|none`), `uncited` units, `orphans` |
 
 Exit 3 = no spec tree found at any point in the discovery order — the one
 query-specific exit code (see the exit-code contract below). Degrade path:
@@ -180,6 +182,7 @@ table of `<root>/features/<f>/plan.md`. `feature` reports the layer
 Every command, legacy ones included, exits 3 when an explicit root (`--root`,
 `$VIBE_SPEC_ROOT`, config) names a missing directory (R4). Without an explicit
 root, only `root`, `--json`, `plan` and `feature` exit 3.
+`validate --format json` and `trace` exit 3 without a root; text-mode `validate` keeps the oracle's exit 1.
 
 ## Versioning and compatibility
 

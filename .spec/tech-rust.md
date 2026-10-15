@@ -17,8 +17,10 @@ drive everything. F2–F4 delivered the foundations: frozen oracles under
 `oracles/` (43 files, `MANIFEST.sha256`), the Cargo workspace (`vibe-core`
 with glob matching and atomic write, `vibe-spec`, `vibe-parity`), and the
 parity harness. F16 made `vibe-spec` the first candidate. `list-specs`,
-`lessons-for`, `scan-merges` and `validate` are parity-green over
-`tests/parity/corpus/spec/` and live on this repo (`tests/parity/run.sh`).
+`lessons-for` and `scan-merges` are parity-green over
+`tests/parity/corpus/spec/` and live on this repo (`tests/parity/run.sh`);
+`validate` is parity-green over the corpus with F17's checks off
+(`tests/parity/legacy-strictness.json`, P3b-R2).
 `check-drift`, `promote` and `init` stay self-check only until F18/F20.
 
 ## Workspace
@@ -90,14 +92,14 @@ proven against `oracles/bash/flow/scripts/detect-context.sh` and
 `oracles/js/policy.mjs`.
 
 Pins are per argument set and may be scoped to one OS (`"os": "macos"`
-for BSD-tool differences; an os pin is never stale-checked). F16's ten
-pins: legacy `--format json` output is valid JSON — quotes, backslashes
+for BSD-tool differences; an os pin is never stale-checked). Thirteen pins (ten from F16, three from F17): legacy `--format json` output is valid JSON — quotes, backslashes
 and control characters are escaped, and invalid UTF-8 (such as a preview
 cut inside a sequence) becomes U+FFFD (`lessons-for`, `scan-merges`);
 `lessons-for` tags and the `validate` I1 own-feature filter match
 literally, not as regexes; SF14 compares scope items as bytes (no awk
 escape or numeric comparison); the no-root `validate` error names
 `vibe-spec init`; BSD `wc -l` pads the SF15 count (macOS only).
+F17's pins are the three bug fixes whose output differs from the oracle: whole-word R-IDs, capital whole-word RFC 2119 keywords, and Scope words inside the `## Scope` section.
 
 Port order, blast-radius first: guard → stop → cursor/`state set` → policy
 → root → machine/orders/doctrine → payload/compose → doctor →

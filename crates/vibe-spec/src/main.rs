@@ -1,5 +1,6 @@
 //! `vibe-spec`: the spec tool. F16 ports the read-only spec scripts and adds
-//! root discovery and the Spec JSON v1 queries.
+//! root discovery and the Spec JSON v1 queries; F17 adds the check registry,
+//! strictness, the F17 validators and `trace`.
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::PathBuf;
@@ -18,7 +19,6 @@ macro_rules! cat {
 }
 
 mod adherence;
-#[allow(dead_code)] // consumed by later F17 tasks
 mod check;
 mod content;
 mod frontmatter;
@@ -28,7 +28,6 @@ mod lessons;
 mod list_specs;
 mod pattern;
 mod query;
-#[allow(dead_code)] // consumed by later F17 tasks
 mod report;
 mod root;
 mod scan_merges;
