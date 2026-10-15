@@ -3,7 +3,7 @@
 //! SF26–SF29: frontmatter values, children and backlinks, feature rows, freshness.
 mod common;
 
-use common::{project, validate_json, write};
+use common::{git, project, validate_json, write};
 use std::path::{Path, PathBuf};
 
 const PRODUCT: &str =
@@ -221,4 +221,112 @@ fn a_fenced_plan_row_does_not_count() {
         found(&p, "SF28"),
         ["features/fenced/: no row in plan.md names 'fenced'"]
     );
+}
+
+fn committed(name: &str, date: &str) -> PathBuf {
+    let p = tree(name, &["auth"]);
+    git(&p, date, &["init", "-q"]);
+    git(&p, date, &["add", "-A"]);
+    git(&p, date, &["commit", "-q", "-m", "init"]);
+    p
+}
+
+#[test]
+fn stale_updated_is_reported() {
+    let p = committed("ad-stale", "2026-03-01T12:00:00Z");
+    let got = found(&p, "SF29");
+    assert!(
+        got.contains(
+            &"product.md: updated 2026-01-15 is older than its last commit (2026-03-01)"
+                .to_string()
+        ),
+        "{got:?}"
+    );
+    assert!(
+        got.contains(
+            &"features/auth/product.md: updated 2026-01-15 is older than its last commit (2026-03-01)"
+                .to_string()
+        ),
+        "{got:?}"
+    );
+}
+
+#[test]
+fn fresh_updated_is_silent() {
+    let p = committed("ad-fresh", "2026-01-15T12:00:00Z");
+    assert_eq!(found(&p, "SF29"), Vec::<String>::new());
+}
+
+#[test]
+fn freshness_is_silent_without_history() {
+    let bare = tree("ad-nogit", &["auth"]);
+    assert_eq!(found(&bare, "SF29"), Vec::<String>::new(), "empty .git dir");
+    let fresh = tree("ad-nocommit", &["auth"]);
+    git(&fresh, "2026-03-01T12:00:00Z", &["init", "-q"]);
+    assert_eq!(found(&fresh, "SF29"), Vec::<String>::new(), "no commits");
+    let p = committed("ad-untracked", "2026-01-15T12:00:00Z");
+    write(
+        &p,
+        ".spec/tech.md",
+        "---\ntype: entrypoint\nscope: technical\nchildren:\nupdated: 2020-01-01\n---\n",
+    );
+    assert_eq!(found(&p, "SF29"), Vec::<String>::new(), "untracked file");
+    let empty = p.join("nogit-bin");
+    std::fs::create_dir_all(&empty).unwrap();
+    let path = empty.display().to_string();
+    let (code, v) = validate_json(
+        &committed("ad-nobin", "2026-03-01T12:00:00Z"),
+        &[],
+        &[("PATH", path.as_str())],
+    );
+    assert_eq!(code, 0);
+    assert!(
+        v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["check"] != "SF29"),
+        "no git binary"
+    );
+}
+
+#[test]
+fn an_outside_root_is_silent() {
+    let p = committed("ad-outside", "2026-03-01T12:00:00Z");
+    let outside = tree("ad-outside-root", &["auth"]);
+    let root = outside.join(".spec");
+    let out = common::spec(
+        &p,
+        &[
+            "--root",
+            root.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ],
+        &[],
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["check"] != "SF29"),
+        "{v:#}"
+    );
+}
+
+#[test]
+fn blank_or_bad_updated_is_left_to_sf26() {
+    let p = committed("ad-blank", "2026-03-01T12:00:00Z");
+    write(
+        &p,
+        ".spec/product.md",
+        &PRODUCT.replace("updated: 2026-01-15", "updated:"),
+    );
+    common::git(&p, "2026-03-02T12:00:00Z", &["add", "-A"]);
+    common::git(&p, "2026-03-02T12:00:00Z", &["commit", "-q", "-m", "blank"]);
+    let got = found(&p, "SF29");
+    assert!(got.iter().all(|m| !m.starts_with("product.md:")), "{got:?}");
 }

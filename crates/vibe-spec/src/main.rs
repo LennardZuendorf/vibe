@@ -22,6 +22,7 @@ mod adherence;
 mod check;
 mod content;
 mod frontmatter;
+mod git;
 mod lessons;
 mod list_specs;
 mod pattern;

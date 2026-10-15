@@ -1,10 +1,11 @@
 //! F17 adherence checks over the tree (P3b-R11): SF26 frontmatter values,
-//! SF27 children and backlinks, SF28 feature folders in the plan. Task 8
-//! adds SF29 freshness.
+//! SF27 children and backlinks, SF28 feature folders in the plan, SF29
+//! freshness through git.
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use crate::frontmatter::{self, Frontmatter, Value};
+use crate::git;
 use crate::report::Report;
 use crate::text::{
     Fences, is_date, join_raw, lines, lossy, md_files, name_of, sub_dirs, trim_space,
@@ -79,6 +80,7 @@ pub fn run(r: &mut Report, ctx: &Ctx, files: &[PathBuf], layered: bool) {
         children(r, ctx);
     }
     feature_rows(r, ctx);
+    freshness(r, ctx, files);
 }
 
 fn values(r: &mut Report, rel: &str, fm: &Frontmatter, layered: bool) {
@@ -247,6 +249,61 @@ fn feature_rows(r: &mut Report, ctx: &Ctx) {
             r.warn(
                 "SF28",
                 format!("features/{f}/: no row in plan.md names '{f}'").as_bytes(),
+            );
+        }
+    }
+}
+
+fn slash(p: &Path) -> String {
+    p.components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// SF29: `updated:` older than the committer date of the file's last commit
+/// (P3b-R21). Silent without git, history, a commit for the file, or when
+/// the root lies outside the work tree.
+fn freshness(r: &mut Report, ctx: &Ctx, files: &[PathBuf]) {
+    let Ok(dir) = std::fs::canonicalize(ctx.dir) else {
+        return;
+    };
+    let Some(top) = git::top(&dir) else { return };
+    let Ok(top) = std::fs::canonicalize(&top) else {
+        return;
+    };
+    let Ok(under) = dir.strip_prefix(&top) else {
+        return;
+    };
+    let under = slash(under);
+    let dates = git::last_dates(&top, if under.is_empty() { "." } else { &under });
+    if dates.is_empty() {
+        return;
+    }
+    for file in files {
+        let Ok(abs) = std::fs::canonicalize(file) else {
+            continue;
+        };
+        let Ok(in_top) = abs.strip_prefix(&top) else {
+            continue;
+        };
+        let Some(date) = dates.get(&slash(in_top)) else {
+            continue;
+        };
+        let text = std::fs::read(file).unwrap_or_default();
+        let Some(fm) = frontmatter::parse(&text) else {
+            continue;
+        };
+        let Some(updated) = fm.scalar("updated") else {
+            continue;
+        };
+        if is_date(updated.as_bytes()) && updated < date.as_str() {
+            let rel = rel_of(ctx.dir, file);
+            r.at(&format!("{}/{rel}", ctx.display));
+            r.warn(
+                "SF29",
+                format!("{rel}: updated {updated} is older than its last commit ({date})")
+                    .as_bytes(),
             );
         }
     }

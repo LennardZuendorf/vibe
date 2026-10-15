@@ -83,6 +83,54 @@ pub fn oracle_env(cwd: &Path, script: &str, args: &[&str], env: &[(&str, &str)])
     run(cmd, cwd, env)
 }
 
+fn git_cmd(cwd: &Path, args: &[&str]) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.args([
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "tag.gpgsign=false",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "user.name=t",
+        "-c",
+        "init.defaultBranch=main",
+    ])
+    .args(args)
+    .current_dir(cwd)
+    .env_remove("GIT_DIR")
+    .env_remove("GIT_WORK_TREE");
+    cmd
+}
+
+/// Runs `git args` in `cwd` with author and committer date `date`; panics on failure.
+pub fn git(cwd: &Path, date: &str, args: &[&str]) {
+    let out = git_cmd(cwd, args)
+        .env("GIT_AUTHOR_DATE", date)
+        .env("GIT_COMMITTER_DATE", date)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// `git args` stdout, trimmed; panics on failure.
+pub fn git_out(cwd: &Path, args: &[&str]) -> String {
+    let out = git_cmd(cwd, args).output().unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
 /// The corpus's F17-off strictness (P3b-R2).
 pub const LEGACY_STRICTNESS: &str = include_str!("../../../../tests/parity/legacy-strictness.json");
 

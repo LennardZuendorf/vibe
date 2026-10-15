@@ -404,6 +404,12 @@ fn trigger(id: &str) -> Option<Trigger> {
             );
             plain(p, "child 'tech-api.md' listed in frontmatter")
         }
+        "SF29" => {
+            common::git(&p, "2026-03-01T12:00:00Z", &["init", "-q"]);
+            common::git(&p, "2026-03-01T12:00:00Z", &["add", "-A"]);
+            common::git(&p, "2026-03-01T12:00:00Z", &["commit", "-q", "-m", "init"]);
+            plain(p, "older than its last commit")
+        }
         "SF28" => {
             write(
                 &p,
@@ -425,9 +431,7 @@ fn trigger(id: &str) -> Option<Trigger> {
 
 /// Registered checks that have no trigger yet; each later task moves its ids
 /// into `trigger`. Task 13 requires this to be empty.
-const PENDING: &[&str] = &[
-    "SF29", "SF30", "SF31", "SF32", "SF33", "SF34", "SF35", "SF36",
-];
+const PENDING: &[&str] = &["SF30", "SF31", "SF32", "SF33", "SF34", "SF35", "SF36"];
 
 fn registered() -> Vec<String> {
     let p = base("mx-ids");
