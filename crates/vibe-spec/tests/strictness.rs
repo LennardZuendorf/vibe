@@ -460,6 +460,14 @@ fn trigger(id: &str) -> Option<Trigger> {
             );
             plain(p, "not reachable from a hub")
         }
+        "SF35" => {
+            write(&p, "docs/superpowers/plans/notes.md", "x\n");
+            plain(p, "not named YYYY-MM-DD-<topic>.md")
+        }
+        "SF36" => {
+            write(&p, "docs/superpowers/plans/2026-01-03-auth.md", "# Plan\n");
+            plain(p, "no '**Spec:**' line")
+        }
         "SF32" => {
             let p = common::layered_tree("mx-sf32-l");
             write(
@@ -475,7 +483,7 @@ fn trigger(id: &str) -> Option<Trigger> {
 
 /// Registered checks that have no trigger yet; each later task moves its ids
 /// into `trigger`. Task 13 requires this to be empty.
-const PENDING: &[&str] = &["SF35", "SF36"];
+const PENDING: &[&str] = &[];
 
 fn registered() -> Vec<String> {
     let p = base("mx-ids");

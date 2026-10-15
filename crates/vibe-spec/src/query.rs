@@ -11,11 +11,9 @@ use serde_json::{Value, json};
 use vibe_core::exit;
 
 use crate::root::{Miss, Root};
+use crate::superpowers::{PLANS, SPECS};
 use crate::text::{Fences, is_date, lines, lossy, trim_space, trim_start_space};
 
-/// superpowers' artifact directories, relative to the project.
-const SP_SPECS: &str = "docs/superpowers/specs";
-const SP_PLANS: &str = "docs/superpowers/plans";
 /// Fallback feature docs, in report order (`doc.kind`).
 const FALLBACK_DOCS: [&str; 5] = ["product", "tech", "design", "plan", "research"];
 
@@ -93,7 +91,7 @@ pub fn plan(found: &Result<Root, Miss>, feature: &str, json_out: bool) -> (u8, V
         Ok(root) => root,
         Err(e) => return e,
     };
-    let (path, rows) = match newest(&root.project.join(SP_PLANS), feature, ".md") {
+    let (path, rows) = match newest(&root.project.join(PLANS), feature, ".md") {
         Some(p) => {
             let rows = match read_plan(&p) {
                 Ok(text) => task_rows(&text),
@@ -250,10 +248,10 @@ pub fn feature(found: &Result<Root, Miss>, name: &str, json_out: bool) -> (u8, V
         Err(e) => return e,
     };
     let mut docs: Vec<(&str, PathBuf)> = Vec::new();
-    if let Some(p) = newest(&root.project.join(SP_SPECS), name, "-design.md") {
+    if let Some(p) = newest(&root.project.join(SPECS), name, "-design.md") {
         docs.push(("design", p));
     }
-    if let Some(p) = newest(&root.project.join(SP_PLANS), name, ".md") {
+    if let Some(p) = newest(&root.project.join(PLANS), name, ".md") {
         docs.push(("plan", p));
     }
     let layer = if docs.is_empty() {

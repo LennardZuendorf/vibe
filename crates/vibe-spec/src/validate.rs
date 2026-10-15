@@ -18,6 +18,7 @@ use crate::layered;
 use crate::pattern::{md_link_target, md_links, paren_links};
 use crate::report::Report;
 use crate::root::{Miss, Root};
+use crate::superpowers;
 use crate::text::{
     first_line, has_line_starting, is_space, join_raw, lines, md_files, name_of, read_lines,
     strip_prefix_or, sub_dirs, trim_start_space,
@@ -124,6 +125,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     if is_layered {
         layered::run(&mut r, &ctx);
     }
+    superpowers::run(&mut r, &project);
     if opts.strict && (r.examined() == 0 || r.levels().all_off()) {
         r.at("");
         r.refuse(b"validate --strict examined nothing (no spec file, or every check is off); refusing to report green");

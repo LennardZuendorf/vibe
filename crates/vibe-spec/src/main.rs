@@ -32,6 +32,7 @@ mod query;
 mod report;
 mod root;
 mod scan_merges;
+mod superpowers;
 mod text;
 mod validate;
 
