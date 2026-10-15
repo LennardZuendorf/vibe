@@ -409,7 +409,9 @@ fn claude_md(r: &mut Report, project: &Path, display: &str) {
             let into_spec = target.starts_with(prefix.as_bytes())
                 && target.ends_with(b".md")
                 && target.len() >= prefix.len() + 3;
-            if into_spec && !join_raw(project, &target).is_file() {
+            // An outside `--root` displays as an absolute path; check it as is.
+            let checked = resolve_in(project, &target);
+            if into_spec && !checked.is_file() {
                 r.red(&cat!("CLAUDE.md: broken link to '", target, "'"));
             }
         }

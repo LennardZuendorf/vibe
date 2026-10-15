@@ -273,3 +273,19 @@ fn milestone_warnings_print_but_do_not_count() {
     );
     assert_parity(&p, "validate", "validate.sh", &[]);
 }
+
+#[test]
+fn claude_md_links_to_an_outside_root_are_checked_as_is() {
+    let p = project("val-claude-abs");
+    let outside = project("val-claude-abs-root");
+    let root = outside.join(".spec");
+    write(&outside, ".spec/product.md", ENTRY);
+    let link = format!("{}/product.md", root.display());
+    write(&p, "CLAUDE.md", &format!("# C\n\n[spec]({link})\n"));
+    let out = common::spec(&p, &["--root", root.to_str().unwrap(), "validate"], &[]);
+    assert!(
+        !out.text().contains("CLAUDE.md: broken link"),
+        "{}",
+        out.text()
+    );
+}
