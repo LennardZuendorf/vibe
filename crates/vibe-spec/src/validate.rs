@@ -98,7 +98,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         if is_layered && !ENTRYPOINTS.contains(&name_of(file).as_str()) {
             continue;
         }
-        root_file(&mut r, &ctx, file);
+        root_file(&mut r, &ctx, file, is_layered);
     }
     for name in ENTRYPOINTS {
         children(&mut r, &ctx, name);
@@ -176,7 +176,7 @@ fn read(path: &Path) -> Vec<u8> {
 }
 
 /// The root-layer loop body for one `$SPEC_DIR/*.md` file.
-fn root_file(r: &mut Report, ctx: &Ctx, file: &Path) {
+fn root_file(r: &mut Report, ctx: &Ctx, file: &Path, layered: bool) {
     let name = name_of(file);
     let n = name.as_bytes();
     let dsp = ctx.display;
@@ -252,7 +252,11 @@ fn root_file(r: &mut Report, ctx: &Ctx, file: &Path) {
     }
     content::requirements_scenarios(r, &text, n);
     content::scenario_grammar(r, &text, n);
+    // A layered hub's links belong to the layered checker (SF22).
     for line in lines(&text) {
+        if layered {
+            break;
+        }
         for link in md_links(line) {
             let target = md_link_target(link);
             if target.is_empty()

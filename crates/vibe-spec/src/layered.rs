@@ -10,7 +10,7 @@ use crate::content;
 use crate::frontmatter::{self, Value};
 use crate::pattern::{md_link_target, md_links};
 use crate::report::Report;
-use crate::text::{Fences, join_raw, lines, lossy, trim_space};
+use crate::text::{Fences, join_raw, lines, trim_space};
 use crate::validate::Ctx;
 
 /// A root's layout.
@@ -255,26 +255,136 @@ fn clean_target(raw: &[u8]) -> Vec<u8> {
     trim_space(t).to_vec()
 }
 
-/// SF22 for a layered file: every local link resolves (relative to the file; `/` = the project).
-fn links(r: &mut Report, ctx: &Ctx, path: &Path, rel: &str, text: &[u8]) {
-    let base = path.parent().unwrap_or(ctx.dir);
+/// `line` without inline code spans (`` `…` ``, a run of N backticks to the
+/// next run of exactly N). An unclosed run stays as written.
+fn without_code_spans(line: &[u8]) -> Vec<u8> {
+    let run = |from: usize| line[from..].iter().take_while(|&&c| c == b'`').count();
+    let mut out = Vec::with_capacity(line.len());
+    let mut i = 0;
+    while i < line.len() {
+        if line[i] != b'`' {
+            out.push(line[i]);
+            i += 1;
+            continue;
+        }
+        let n = run(i);
+        let mut j = i + n;
+        let mut close = None;
+        while j < line.len() {
+            if line[j] == b'`' {
+                let m = run(j);
+                if m == n {
+                    close = Some(j + m);
+                    break;
+                }
+                j += m;
+            } else {
+                j += 1;
+            }
+        }
+        match close {
+            Some(end) => i = end,
+            None => {
+                out.extend_from_slice(&line[i..i + n]);
+                i += n;
+            }
+        }
+    }
+    out
+}
+
+/// The raw targets of every link in `text`, fenced code and inline code spans skipped.
+fn link_targets(text: &[u8]) -> Vec<Vec<u8>> {
     let mut fences = Fences::new();
+    let mut out = Vec::new();
     for line in lines(text) {
         if fences.skip(line) {
             continue;
         }
-        for link in md_links(line) {
-            let target = clean_target(&md_link_target(link));
-            if skip_target(&target) {
-                continue;
+        let line = without_code_spans(line);
+        out.extend(md_links(&line).into_iter().map(md_link_target));
+    }
+    out
+}
+
+/// Where a local link points.
+struct Link {
+    /// The cleaned target, as written.
+    target: Vec<u8>,
+    /// Inside the spec root: the walk's rel key it resolves to.
+    key: Option<String>,
+    /// The target exists (in the walk's rel set, or on disk outside the root).
+    exists: bool,
+}
+
+/// The one layered link resolver (SF22 and SF34). `None` for a target that
+/// is not a local path. Order: clean, skip, `/` = project-absolute else
+/// relative to the file's directory, `.`/`..`, then a directory means its
+/// `README.md`. Inside the spec root the walk's `rels` decide, byte-exact
+/// (so a case-only difference is broken on every OS); outside it `exists()`.
+fn resolve(ctx: &Ctx, rels: &BTreeSet<String>, dir_rel: &[&str], raw: &[u8]) -> Option<Link> {
+    let target = clean_target(raw);
+    if skip_target(&target) {
+        return None;
+    }
+    let (mut path, rest) = match target.strip_prefix(b"/") {
+        Some(abs) => (ctx.project.to_path_buf(), abs),
+        None => (
+            dir_rel.iter().fold(ctx.dir.to_path_buf(), |p, d| p.join(d)),
+            &target[..],
+        ),
+    };
+    for seg in rest.split(|&c| c == b'/') {
+        match seg {
+            b"" | b"." => {}
+            b".." => {
+                path.pop();
             }
-            let resolved = match target.strip_prefix(b"/") {
-                Some(abs) => join_raw(ctx.project, abs),
-                None => join_raw(base, &target),
+            _ => path = join_raw(&path, seg),
+        }
+    }
+    let (key, exists) = match path.strip_prefix(ctx.dir) {
+        Ok(inside) => {
+            let inside = inside
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/");
+            let readme = if inside.is_empty() {
+                "README.md".to_string()
+            } else {
+                format!("{inside}/README.md")
             };
-            if !resolved.exists() {
-                r.warn("SF22", &cat!(rel, ": broken link to '", target, "'"));
-            }
+            let key = [inside, readme]
+                .into_iter()
+                .find(|k| !k.is_empty() && rels.contains(k));
+            let exists = key.is_some();
+            (key, exists)
+        }
+        Err(_) => (None, path.exists()),
+    };
+    Some(Link {
+        target,
+        key,
+        exists,
+    })
+}
+
+/// The directory components of a root-relative file path.
+fn dir_of(rel: &str) -> Vec<&str> {
+    let mut d: Vec<&str> = rel.split('/').collect();
+    d.pop();
+    d
+}
+
+/// SF22 for a layered file: every local link resolves (relative to the file; `/` = the project).
+fn links(r: &mut Report, ctx: &Ctx, rels: &BTreeSet<String>, rel: &str, text: &[u8]) {
+    let dir = dir_of(rel);
+    for raw in link_targets(text) {
+        if let Some(link) = resolve(ctx, rels, &dir, &raw)
+            && !link.exists
+        {
+            r.warn("SF22", &cat!(rel, ": broken link to '", link.target, "'"));
         }
     }
 }
@@ -372,30 +482,15 @@ fn typed(r: &mut Report, ctx: &Ctx, rel: &str, place: Place, text: &[u8]) {
     }
 }
 
-/// `dir_rel` joined with `target`, `.`/`..` resolved; `None` when it leaves the root.
-fn join_rel(dir_rel: &[&str], target: &str) -> Option<String> {
-    let mut parts: Vec<&str> = dir_rel.to_vec();
-    for seg in target.split('/') {
-        match seg {
-            "" | "." => {}
-            ".." => {
-                parts.pop()?;
-            }
-            s => parts.push(s),
-        }
-    }
-    Some(parts.join("/"))
-}
-
 /// SF34: every note, part hub and folder README is reachable from the root
-/// hubs, README.md or AGENTS.md by local links (fences skipped).
+/// hubs, README.md or AGENTS.md by local links (fences and code spans skipped).
 fn reach(
     r: &mut Report,
     ctx: &Ctx,
     files: &[(PathBuf, Vec<String>)],
+    rels: &BTreeSet<String>,
     texts: &BTreeMap<String, Vec<u8>>,
 ) {
-    let rels: BTreeSet<String> = files.iter().map(|(_, parts)| parts.join("/")).collect();
     let mut seen: BTreeSet<String> = HUBS
         .iter()
         .chain(["README.md", "AGENTS.md"].iter())
@@ -405,36 +500,12 @@ fn reach(
     let mut queue: VecDeque<String> = seen.iter().cloned().collect();
     while let Some(rel) = queue.pop_front() {
         let text = texts.get(&rel).map_or(&[][..], Vec::as_slice);
-        let dir: Vec<&str> = {
-            let mut d: Vec<&str> = rel.split('/').collect();
-            d.pop();
-            d
-        };
-        let mut fences = Fences::new();
-        for line in lines(text) {
-            if fences.skip(line) {
-                continue;
-            }
-            for link in md_links(line) {
-                let target = clean_target(&md_link_target(link));
-                if skip_target(&target) || target.first() == Some(&b'/') {
-                    continue;
-                }
-                let target = lossy(&target);
-                let Some(next) = join_rel(&dir, &target) else {
-                    continue;
-                };
-                // A directory link reaches that folder's README.md.
-                let next = if rels.contains(&next) {
-                    next
-                } else if next.is_empty() {
-                    continue;
-                } else {
-                    format!("{next}/README.md")
-                };
-                if rels.contains(&next) && seen.insert(next.clone()) {
-                    queue.push_back(next);
-                }
+        let dir = dir_of(&rel);
+        for raw in link_targets(text) {
+            if let Some(next) = resolve(ctx, rels, &dir, &raw).and_then(|l| l.key)
+                && seen.insert(next.clone())
+            {
+                queue.push_back(next);
             }
         }
     }
@@ -476,6 +547,7 @@ fn unfenced(text: &[u8]) -> Vec<u8> {
 pub fn run(r: &mut Report, ctx: &Ctx) {
     let mut stems: BTreeMap<String, String> = BTreeMap::new();
     let files = walk(ctx.dir);
+    let rels: BTreeSet<String> = files.iter().map(|(_, parts)| parts.join("/")).collect();
     let mut texts: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for (path, parts) in &files {
         let refs: Vec<&str> = parts.iter().map(String::as_str).collect();
@@ -494,9 +566,7 @@ pub fn run(r: &mut Report, ctx: &Ctx) {
         let text = std::fs::read(path).unwrap_or_default();
         budget(r, &rel, place, &text);
         names(r, &rel, &refs, place, &mut stems);
-        if place != Place::Hub {
-            links(r, ctx, path, &rel, &text);
-        }
+        links(r, ctx, &rels, &rel, &text);
         typed(r, ctx, &rel, place, &text);
         texts.insert(rel.clone(), text.clone());
         let grammar = match place {
@@ -509,5 +579,5 @@ pub fn run(r: &mut Report, ctx: &Ctx) {
             content::scenario_grammar(r, &text, rel.as_bytes());
         }
     }
-    reach(r, ctx, &files, &texts);
+    reach(r, ctx, &files, &rels, &texts);
 }

@@ -698,3 +698,89 @@ fn reach_ignores_fences_survives_cycles_and_fragments() {
     write(&p, "docs/spec/flows/b.md", &format!("{NOTE}[a](a.md)\n"));
     assert_eq!(of(&p, &["SF34"]), Vec::<String>::new());
 }
+
+fn sf22(p: &Path) -> Vec<String> {
+    findings(p)
+        .into_iter()
+        .filter(|(c, _)| c == "SF22")
+        .map(|(_, m)| m)
+        .collect()
+}
+
+#[test]
+fn a_layered_root_hub_uses_the_layered_link_checker() {
+    let p = layered_tree("ly-hublinks");
+    write(&p, "docs/spec/flows/a.md", NOTE);
+    append(
+        &p,
+        "docs/spec/design.md",
+        "\n```\n[example](does-not-exist.md)\n```\n\n[a](/docs/spec/flows/a.md)\n",
+    );
+    assert!(findings(&p).is_empty(), "{:#?}", findings(&p));
+    append(&p, "docs/spec/design.md", "\n[x](missing.png)\n");
+    let (code, v) = validate_json(&p, &[], &[]);
+    let got: Vec<(&str, &str, &str)> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            (
+                f["check"].as_str().unwrap(),
+                f["severity"].as_str().unwrap(),
+                f["message"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        [("SF22", "warning", "design.md: broken link to 'missing.png'")]
+    );
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn an_absolute_link_from_a_hub_reaches_the_note() {
+    let p = layered_tree("ly-abs-reach");
+    write(&p, "docs/spec/flows/a.md", NOTE);
+    append(&p, "docs/spec/README.md", "\n[a](/docs/spec/flows/a.md)\n");
+    assert!(findings(&p).is_empty(), "{:#?}", findings(&p));
+}
+
+#[test]
+fn a_link_that_differs_only_in_case_is_broken() {
+    let p = layered_tree("ly-case");
+    write(&p, "docs/spec/flows/b.md", NOTE);
+    append(&p, "docs/spec/product.md", "\n[b](flows/b.md)\n");
+    append(&p, "docs/spec/flows/checkout.md", "\n[b](B.md)\n");
+    assert_eq!(
+        sf22(&p),
+        ["flows/checkout.md: broken link to 'B.md'"],
+        "{:#?}",
+        findings(&p)
+    );
+    append(&p, "docs/spec/product.md", "\n[b](flows/B.md)\n");
+    assert_eq!(sf22(&p).len(), 2, "{:#?}", findings(&p));
+}
+
+#[test]
+fn inline_code_spans_hold_no_links() {
+    let p = layered_tree("ly-codespan");
+    append(
+        &p,
+        "docs/spec/flows/checkout.md",
+        "\nWrite links like `[Trip](no-such-note.md)` and ``[T](x.md)``.\n",
+    );
+    assert!(findings(&p).is_empty(), "{:#?}", findings(&p));
+    write(&p, "docs/spec/flows/c.md", NOTE);
+    append(
+        &p,
+        "docs/spec/product.md",
+        "\nOnly in code: `[C](flows/c.md)`\n",
+    );
+    let got = findings(&p);
+    assert!(
+        got.iter()
+            .any(|(c, m)| c == "SF34" && m.starts_with("flows/c.md")),
+        "a code-span link reaches nothing: {got:#?}"
+    );
+}
