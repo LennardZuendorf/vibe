@@ -34,6 +34,7 @@ mod root;
 mod scan_merges;
 mod superpowers;
 mod text;
+mod trace;
 mod validate;
 
 /// The vibe spec tool.
@@ -105,6 +106,15 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Units cited by commits and tests/, uncited units, orphan citations.
+    Trace {
+        /// Only commits after this revision (`<ref>..HEAD`).
+        #[arg(long, value_name = "REF", allow_hyphen_values = true)]
+        since: Option<String>,
+        /// Print Spec JSON v1.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -142,6 +152,7 @@ fn main() -> ExitCode {
         ),
         Command::Plan { feature, json } => query::plan(&found, &feature, json),
         Command::Feature { name, json } => query::feature(&found, &name, json),
+        Command::Trace { since, json } => trace::run(&found, since.as_deref(), json),
     };
     emit(&out);
     ExitCode::from(code)

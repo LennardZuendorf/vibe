@@ -58,3 +58,50 @@ pub fn last_dates(top: &Path, under: &str) -> BTreeMap<String, String> {
     }
     out
 }
+
+/// A commit hash and its message.
+pub type Commit = (String, Vec<u8>);
+
+/// Commit hashes and messages, newest first: all of `HEAD`, or
+/// `<since>..HEAD`. `Ok(None)` without git, a work tree or commits (an
+/// error when `since` was given); `Err` for a `since` git cannot resolve.
+pub fn commits(dir: &Path, since: Option<&str>) -> Result<Option<Vec<Commit>>, String> {
+    if let Some(s) = since
+        && (s.is_empty() || s.starts_with('-'))
+    {
+        return Err(format!("--since '{s}' is not a revision"));
+    }
+    let Some(top) = top(dir).filter(|t| git(t, &["rev-parse", "--verify", "-q", "HEAD"]).is_some())
+    else {
+        return match since {
+            Some(_) => Err("--since needs git history".to_string()),
+            None => Ok(None),
+        };
+    };
+    let range = match since {
+        Some(s) => {
+            if git(
+                &top,
+                &["rev-parse", "--verify", "-q", &format!("{s}^{{commit}}")],
+            )
+            .is_none()
+            {
+                return Err(format!("unknown revision '{s}'"));
+            }
+            format!("{s}..HEAD")
+        }
+        None => "HEAD".to_string(),
+    };
+    let log = git(&top, &["log", "--format=%H%x1f%B%x1e", &range])
+        .ok_or_else(|| format!("git log {range} failed"))?;
+    let mut out = Vec::new();
+    for record in log.split(|&b| b == 0x1e) {
+        let record = record.strip_prefix(b"\n").unwrap_or(record);
+        let Some(sep) = record.iter().position(|&b| b == 0x1f) else {
+            continue;
+        };
+        let sha = lossy(record.get(..sep).unwrap_or_default());
+        out.push((sha, record.get(sep + 1..).unwrap_or_default().to_vec()));
+    }
+    Ok(Some(out))
+}

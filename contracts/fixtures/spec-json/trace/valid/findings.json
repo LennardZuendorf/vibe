@@ -1,0 +1,16 @@
+{
+  "v": 1,
+  "units": 4,
+  "cited": 2,
+  "history": "since",
+  "since": "abc123",
+  "uncited": [
+    "auth/3"
+  ],
+  "orphans": [
+    {
+      "unit": "auth/9",
+      "source": "commit 1a2b3c4"
+    }
+  ]
+}

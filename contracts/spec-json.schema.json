@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Spec JSON v1",
-  "description": "Answers of the read-only vibe-spec queries when called with --json: root, lessons-for, plan, feature, validate (and trace, Task 12). Each answer is one JSON object with \"v\": 1. This is a new output; it is not the legacy `lessons-for.sh --format json` array, which stays byte-identical except that the port emits valid JSON: it escapes quotes, backslashes and control characters and replaces invalid UTF-8 with U+FFFD (pinned divergence).",
+  "description": "Answers of the read-only vibe-spec queries when called with --json: root, lessons-for, plan, feature, validate, trace. Each answer is one JSON object with \"v\": 1. This is a new output; it is not the legacy `lessons-for.sh --format json` array, which stays byte-identical except that the port emits valid JSON: it escapes quotes, backslashes and control characters and replaces invalid UTF-8 with U+FFFD (pinned divergence).",
   "x-vibe-compat": "additive-within-major; readers-ignore-unknown-fields",
   "$defs": {
     "root": {
@@ -82,6 +82,27 @@
         "warnings": { "type": "integer", "minimum": 0 },
         "checks": { "type": "array", "items": { "$ref": "#/$defs/check-level" } },
         "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "required": ["v", "units", "cited", "history", "uncited", "orphans"],
+      "properties": {
+        "v": { "const": 1 },
+        "units": { "type": "integer", "minimum": 1 },
+        "cited": { "type": "integer", "minimum": 0 },
+        "history": { "enum": ["all", "since", "none"] },
+        "since": { "type": "string", "minLength": 1 },
+        "uncited": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "orphans": { "type": "array", "items": { "$ref": "#/$defs/orphan" } }
+      }
+    },
+    "orphan": {
+      "type": "object",
+      "required": ["unit", "source"],
+      "properties": {
+        "unit": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 }
       }
     },
     "check-level": {

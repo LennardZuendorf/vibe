@@ -245,6 +245,25 @@ pub fn r_ids(s: &[u8]) -> Vec<&[u8]> {
     out
 }
 
+/// `\b[a-z0-9][a-z0-9-]*/[0-9]+\b`: unit citations in free text (trace).
+pub fn unit_citations(s: &[u8]) -> Vec<&[u8]> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < s.len() {
+        let bounded = i == 0 || s.get(i - 1).is_some_and(|&c| !is_word(c));
+        if bounded
+            && let Some(n) = unit_slash_at(s, i)
+            && s.get(i + n).is_none_or(|&c| !is_word(c))
+        {
+            out.push(&s[i..i + n]);
+            i += n;
+            continue;
+        }
+        i += 1;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,6 +342,14 @@ mod tests {
         assert_eq!(
             r_ids(b"### Requirement: Sign in (R1)\nUsers"),
             vec![&b"R1"[..]]
+        );
+    }
+
+    #[test]
+    fn unit_citations_are_word_bounded() {
+        assert_eq!(
+            unit_citations(b"(auth/1) x-auth/2 tests/auth/3 auth/4x _auth/5 9lives/6"),
+            vec![&b"auth/1"[..], b"x-auth/2", b"auth/3", b"9lives/6"]
         );
     }
 }
