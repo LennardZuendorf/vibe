@@ -154,3 +154,138 @@ fn a_repo_without_commits_has_no_history() {
     assert!(out.stderr.contains("no git history"), "{}", out.stderr);
     assert_eq!(spec(&p, &["trace", "--since", "HEAD"], &[]).code, 2);
 }
+
+fn json_of(p: &std::path::Path, args: &[&str]) -> serde_json::Value {
+    let out = spec(p, args, &[]);
+    serde_json::from_slice(&out.stdout)
+        .unwrap_or_else(|e| panic!("{e}: {}{}", out.text(), out.stderr))
+}
+
+#[test]
+fn a_shallow_clone_skips_commit_citations() {
+    let p = project("tr-shallow");
+    write(&p, ".spec/product.md", ENTRY);
+    write(
+        &p,
+        ".spec/features/auth/plan.md",
+        "---\ntype: feature-plan\n---\n\n### auth/1 — A\n\n### auth/2 — B\n",
+    );
+    let d = "2026-02-01T12:00:00Z";
+    git(&p, d, &["init", "-q"]);
+    git(&p, d, &["add", "-A"]);
+    git(&p, d, &["commit", "-q", "-m", "feat: auth/1"]);
+    write(&p, "n.txt", "1\n");
+    git(&p, d, &["add", "-A"]);
+    git(&p, d, &["commit", "-q", "-m", "feat: auth/2"]);
+    write(&p, "n.txt", "2\n");
+    git(&p, d, &["add", "-A"]);
+    git(&p, d, &["commit", "-q", "-m", "chore: more"]);
+    assert_eq!(spec(&p, &["trace"], &[]).code, 0);
+    let dest = project("tr-shallow-clone");
+    let url = format!("file://{}", p.display());
+    git(&dest, d, &["clone", "-q", "--depth", "1", &url, "c"]);
+    let c = dest.join("c");
+    let out = spec(&c, &["trace", "--json"], &[]);
+    assert!(
+        out.stderr.contains(
+            "vibe-spec trace: shallow clone: commit citations skipped; fetch full history"
+        ),
+        "{}",
+        out.stderr
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["history"], "none");
+    assert_spec_json("trace", &v.to_string());
+    let ok = spec(&c, &["trace", "--since", "HEAD~0"], &[]);
+    assert_eq!(ok.code, 1, "{}{}", ok.text(), ok.stderr);
+    assert_eq!(spec(&c, &["trace", "--since", "no-such-ref"], &[]).code, 2);
+}
+
+#[test]
+fn control_bytes_in_a_message_do_not_break_records() {
+    let p = project("tr-ctl");
+    write(&p, ".spec/product.md", ENTRY);
+    write(
+        &p,
+        ".spec/features/auth/plan.md",
+        "---\ntype: feature-plan\n---\n\n### auth/1 — A\n",
+    );
+    let d = "2026-02-01T12:00:00Z";
+    git(&p, d, &["init", "-q"]);
+    git(&p, d, &["add", "-A"]);
+    git(
+        &p,
+        d,
+        &["commit", "-q", "-m", "x\u{1e}\u{1f} auth/1 auth/9"],
+    );
+    let head = git_out(&p, &["rev-parse", "HEAD"]);
+    let v = json_of(&p, &["trace", "--json"]);
+    assert_eq!(v["cited"], 1);
+    assert_eq!(
+        v["orphans"],
+        serde_json::json!([{"unit": "auth/9", "source": format!("commit {}", &head[..7])}])
+    );
+}
+
+#[test]
+fn a_bad_since_beats_the_zero_unit_refusal() {
+    let empty = project("tr-since-nounits");
+    write(&empty, ".spec/product.md", ENTRY);
+    assert_eq!(spec(&empty, &["trace", "--since", "nope"], &[]).code, 2);
+    assert_eq!(spec(&empty, &["trace"], &[]).code, 1);
+}
+
+#[test]
+fn only_exact_unit_headings_register() {
+    let p = project("tr-headings");
+    write(&p, ".spec/product.md", ENTRY);
+    write(
+        &p,
+        ".spec/features/auth/plan.md",
+        "---\ntype: feature-plan\n---\n\n### auth/2.1 — dotted\n\n### auth/3\n\n### auth/4 Title\n\n### auth/5x\n",
+    );
+    write(&p, "tests/a.sh", "# auth/2 auth/3 auth/4\n");
+    let v = json_of(&p, &["trace", "--json"]);
+    assert_eq!(v["units"], 2, "{v}");
+    assert_eq!(
+        v["orphans"],
+        serde_json::json!([{"unit": "auth/2", "source": "tests/a.sh"}])
+    );
+}
+
+#[test]
+fn binary_and_huge_test_files_are_skipped() {
+    let p = project("tr-binary");
+    write(&p, ".spec/product.md", ENTRY);
+    write(
+        &p,
+        ".spec/features/auth/plan.md",
+        "---\ntype: feature-plan\n---\n\n### auth/1 — A\n",
+    );
+    write(&p, "tests/a.sh", "# auth/1\n");
+    std::fs::write(p.join("tests/blob.bin"), b"\0auth/9\n").unwrap();
+    let mut big = b"auth/8\n".to_vec();
+    big.resize(1024 * 1024 + 1, b' ');
+    std::fs::write(p.join("tests/big.txt"), big).unwrap();
+    let out = spec(&p, &["trace", "--json"], &[]);
+    assert_eq!(out.code, 0, "{}{}", out.text(), out.stderr);
+}
+
+#[test]
+fn json_shape_and_empty_stdout_on_failure() {
+    let (p, _) = repo("tr-shape");
+    let v = json_of(&p, &["trace", "--json"]);
+    assert_eq!(v["history"], "all");
+    assert!(v.get("since").is_none(), "{v}");
+    let empty = project("tr-shape-empty");
+    write(&empty, ".spec/product.md", ENTRY);
+    for (cwd, args, code) in [
+        (&empty, vec!["trace", "--json"], 1),
+        (&p, vec!["trace", "--json", "--since", "no-such-ref"], 2),
+        (&project("tr-shape-noroot"), vec!["trace", "--json"], 3),
+    ] {
+        let out = spec(cwd, &args, &[]);
+        assert_eq!(out.code, code, "{}", out.stderr);
+        assert!(out.stdout.is_empty(), "{}", out.text());
+    }
+}

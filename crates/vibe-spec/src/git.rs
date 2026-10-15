@@ -30,12 +30,16 @@ pub fn top(dir: &Path) -> Option<PathBuf> {
     (!t.is_empty()).then(|| PathBuf::from(t))
 }
 
+/// True when the repository holding `dir` is a shallow clone.
+pub fn shallow(dir: &Path) -> bool {
+    git(dir, &["rev-parse", "--is-shallow-repository"]).is_some_and(|b| b.starts_with(b"true"))
+}
+
 /// For each file under `under` (top-relative, `/`-joined, `.` for the
 /// top), the committer date `YYYY-MM-DD` of the last commit touching it.
 pub fn last_dates(top: &Path, under: &str) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
-    let shallow = git(top, &["rev-parse", "--is-shallow-repository"]);
-    if shallow.is_some_and(|b| b.starts_with(b"true")) {
+    if shallow(top) {
         return out;
     }
     // Fails without commits: nothing to report.
@@ -65,6 +69,8 @@ pub type Commit = (String, Vec<u8>);
 /// Commit hashes and messages, newest first: all of `HEAD`, or
 /// `<since>..HEAD`. `Ok(None)` without git, a work tree or commits (an
 /// error when `since` was given); `Err` for a `since` git cannot resolve.
+/// A shallow clone without `since` also gives `Ok(None)`: its history ends
+/// at an arbitrary boundary.
 pub fn commits(dir: &Path, since: Option<&str>) -> Result<Option<Vec<Commit>>, String> {
     if let Some(s) = since
         && (s.is_empty() || s.starts_with('-'))
@@ -78,6 +84,9 @@ pub fn commits(dir: &Path, since: Option<&str>) -> Result<Option<Vec<Commit>>, S
             None => Ok(None),
         };
     };
+    if since.is_none() && shallow(&top) {
+        return Ok(None);
+    }
     let range = match since {
         Some(s) => {
             if git(
@@ -92,16 +101,23 @@ pub fn commits(dir: &Path, since: Option<&str>) -> Result<Option<Vec<Commit>>, S
         }
         None => "HEAD".to_string(),
     };
-    let log = git(&top, &["log", "--format=%H%x1f%B%x1e", &range])
-        .ok_or_else(|| format!("git log {range} failed"))?;
+    let mut args = vec!["log", "-z", "--format=%H%n%B"];
+    args.push(&range);
+    let log = git(&top, &args).ok_or_else(|| format!("git log {range} failed"))?;
     let mut out = Vec::new();
-    for record in log.split(|&b| b == 0x1e) {
+    for record in log.split(|&b| b == 0) {
         let record = record.strip_prefix(b"\n").unwrap_or(record);
-        let Some(sep) = record.iter().position(|&b| b == 0x1f) else {
-            continue;
+        let (sha, body) = match record.iter().position(|&b| b == b'\n') {
+            Some(n) => (
+                record.get(..n).unwrap_or_default(),
+                record.get(n + 1..).unwrap_or_default(),
+            ),
+            None => (record, &[][..]),
         };
-        let sha = lossy(record.get(..sep).unwrap_or_default());
-        out.push((sha, record.get(sep + 1..).unwrap_or_default().to_vec()));
+        if !matches!(sha.len(), 40 | 64) || !sha.iter().all(u8::is_ascii_hexdigit) {
+            continue;
+        }
+        out.push((lossy(sha), body.to_vec()));
     }
     Ok(Some(out))
 }

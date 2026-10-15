@@ -31,6 +31,7 @@ fn units(dir: &Path) -> (BTreeSet<String>, BTreeSet<String>) {
             if let Some(tok) = unit_citations(rest).first()
                 && rest.starts_with(tok)
                 && tok.starts_with(own.as_bytes())
+                && rest.get(tok.len()).is_none_or(|&c| c == b' ')
             {
                 units.insert(lossy(tok));
             }
@@ -40,9 +41,14 @@ fn units(dir: &Path) -> (BTreeSet<String>, BTreeSet<String>) {
     (features, units)
 }
 
-/// Every file under `<project>/tests/` (hidden entries skipped, symlinks not followed).
-fn test_files(project: &Path) -> Vec<(String, Vec<u8>)> {
-    fn go(dir: &Path, rel: &str, out: &mut Vec<(String, Vec<u8>)>) {
+/// Largest `tests/` file scanned.
+const MAX_TEST_FILE: u64 = 1024 * 1024;
+
+/// Calls `f(relative path, text)` for each text file under `<project>/tests/`,
+/// one at a time (hidden entries, symlinks, files over 1 MiB and files with a
+/// NUL in their first 8 KiB are skipped).
+fn each_test_file(project: &Path, f: &mut dyn FnMut(&str, &[u8])) {
+    fn go(dir: &Path, rel: &str, f: &mut dyn FnMut(&str, &[u8])) {
         let Ok(read) = std::fs::read_dir(dir) else {
             return;
         };
@@ -55,17 +61,24 @@ fn test_files(project: &Path) -> Vec<(String, Vec<u8>)> {
             }
             let here = format!("{rel}/{name}");
             match e.file_type() {
-                Ok(t) if t.is_dir() => go(&e.path(), &here, out),
+                Ok(t) if t.is_dir() => go(&e.path(), &here, f),
                 Ok(t) if t.is_file() => {
-                    out.push((here, std::fs::read(e.path()).unwrap_or_default()))
+                    if e.metadata().is_ok_and(|m| m.len() > MAX_TEST_FILE) {
+                        continue;
+                    }
+                    let Ok(text) = std::fs::read(e.path()) else {
+                        continue;
+                    };
+                    if text.iter().take(8192).any(|&b| b == 0) {
+                        continue;
+                    }
+                    f(&here, &text);
                 }
                 _ => {}
             }
         }
     }
-    let mut out = Vec::new();
-    go(&project.join("tests"), "tests", &mut out);
-    out
+    go(&project.join("tests"), "tests", f);
 }
 
 /// Runs the command.
@@ -77,6 +90,13 @@ pub fn run(found: &Result<Root, Miss>, since: Option<&str>, json_out: bool) -> (
             return (miss.code(), Vec::new());
         }
     };
+    let history = match git::commits(&root.project, since) {
+        Ok(h) => h,
+        Err(why) => {
+            eprintln!("vibe-spec trace: {why}");
+            return (exit::USAGE, Vec::new());
+        }
+    };
     let (features, units) = units(&root.dir);
     if units.is_empty() {
         eprintln!(
@@ -85,15 +105,14 @@ pub fn run(found: &Result<Root, Miss>, since: Option<&str>, json_out: bool) -> (
         );
         return (exit::FINDINGS, Vec::new());
     }
-    let history = match git::commits(&root.project, since) {
-        Ok(h) => h,
-        Err(why) => {
-            eprintln!("vibe-spec trace: {why}");
-            return (exit::USAGE, Vec::new());
-        }
-    };
     if history.is_none() {
-        eprintln!("vibe-spec trace: no git history; citations from tests/ only");
+        if git::shallow(&root.project) {
+            eprintln!(
+                "vibe-spec trace: shallow clone: commit citations skipped; fetch full history"
+            );
+        } else {
+            eprintln!("vibe-spec trace: no git history; citations from tests/ only");
+        }
     }
     let mut cited: BTreeMap<String, usize> = units.iter().map(|u| (u.clone(), 0)).collect();
     let mut orphans: BTreeSet<(String, String)> = BTreeSet::new();
@@ -118,23 +137,23 @@ pub fn run(found: &Result<Root, Miss>, since: Option<&str>, json_out: bool) -> (
             see(tok, &source);
         }
     }
-    for (rel, text) in test_files(&root.project) {
+    each_test_file(&root.project, &mut |rel, text| {
         if rel.ends_with(".md") {
             let mut fences = Fences::new();
-            for line in lines(&text) {
+            for line in lines(text) {
                 if fences.skip(line) {
                     continue;
                 }
                 for tok in unit_citations(line) {
-                    see(tok, &rel);
+                    see(tok, rel);
                 }
             }
         } else {
-            for tok in unit_citations(&text) {
-                see(tok, &rel);
+            for tok in unit_citations(text) {
+                see(tok, rel);
             }
         }
-    }
+    });
     let uncited: Vec<&String> = cited
         .iter()
         .filter(|(_, n)| **n == 0)
