@@ -208,10 +208,11 @@ fn sorted_entries(dir: &Path, keep: impl Fn(&Path, &str) -> bool) -> Vec<PathBuf
     out
 }
 
-/// `"$dir"/*.md` under `nullglob`, files only, in byte order. A directory
-/// named `*.md` is skipped (the oracle would error on it; no corpus case has one).
+/// `"$dir"/*.md` under nullglob: every non-hidden entry ending in .md, any
+/// type, in byte order; callers read with unwrap_or_default, so an unreadable
+/// entry behaves like the oracle's silenced grep/head.
 pub fn md_files(dir: &Path) -> Vec<PathBuf> {
-    sorted_entries(dir, |p, name| name.ends_with(".md") && p.is_file())
+    sorted_entries(dir, |_, name| name.ends_with(".md"))
 }
 
 /// `"$dir"/*/`: subdirectories (symlinks followed), in byte order.

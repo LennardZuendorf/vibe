@@ -43,3 +43,16 @@ fn matches_the_oracle_without_specs_or_root() {
     let none = project("ls-none");
     assert_parity(&none, "list-specs", "list-specs.sh", &[]);
 }
+
+#[test]
+fn lists_md_entries_of_any_type_like_the_glob() {
+    let p = project("ls-types");
+    write(&p, ".spec/product.md", DOC);
+    write(&p, ".spec/features/auth/product.md", DOC);
+    for base in [".spec", ".spec/features/auth"] {
+        let dir = p.join(base);
+        std::fs::create_dir_all(dir.join("dir.md")).unwrap();
+        std::os::unix::fs::symlink("nowhere", dir.join("broken.md")).unwrap();
+    }
+    assert_parity(&p, "list-specs", "list-specs.sh", &[]);
+}
