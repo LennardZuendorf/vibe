@@ -115,7 +115,7 @@ const FEATURE_TECH: &str = "---\ntype: feature-tech\nupdated: 2026-01-15\n---\n\
 const FEATURE_TECH_UNCLOSED: &str = "---\ntype: feature-tech\nupdated: 2026-01-15\n---\n\n# auth — Tech\n\n<!-- merge -->\nNever closed.\n";
 const TECH_HEAD: &str = "---\ntype: feature-tech\nupdated: 2026-01-15\n---\n\n# auth — Tech\n\n";
 const RICH_PRODUCT: &str = "---\ntype: entrypoint\nscope: product\nupdated: 2026-01-15\n---\n\n# Demo — Product\n\n### Requirement: Users sign in\nThey do.\n\n### Requirement:\nEmpty title.\n\n### Requirement: Export SHALL work\n#### Scenario: happy path\nGiven data.\n\n## Links\n\n[a](b(c).md) [web](https://x.md) [tpl]({name}.md) [top](tech.md#top) [dir](features/ghost/) (archive/old/)\n";
-const RICH_PLAN: &str = "---\ntype: entrypoint\nscope: plan\nupdated: 2026-01-15\n---\n\n# Plan\n\n## M1 — Alpha\n\n### auth/1 — leaked unit\n\n| auth/2 | leaked row |\n\n## Notes\n\n### auth/3 — fine here\n";
+const RICH_PLAN: &str = "---\ntype: entrypoint\nscope: plan\nupdated: 2026-01-15\n---\n\n# Plan\n\n## M1 — Alpha\n\n### auth/1 — leaked unit\n\n| auth/2 | leaked row |\n| AB12 | caps row |\n\n## Notes\n\n### auth/3 — fine here\n";
 const RICH_DESIGN: &str = "---\ntype: entrypoint\nscope: design\nchildren:\ncolors:\ntypography:\n  body: Inter\nrounded:\n# a comment\nspacing: 4px\ncomponents:\nupdated: 2026-01-15\n---\n\n# Design\n";
 const RICH_TECH: &str = "---\ntype: entrypoint\nscope: technical\nchildren:\n  - tech-api.md\n  - tech-{topic}.md\n  - tech-missing.md\nupdated: 2026-01-15\n---\n\n# Tech\n";
 const AUTH_PRODUCT: &str = "---\ntype: feature-product\nfeature: auth\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n# auth — Product\n\n## Scope\n\n| | |\n|---|---|\n| **Owns** | session cookies, login form, ui |\n| **Does not own** | billing |\n\n## Requirements\n\n### Requirement: Sign in (R1)\nUsers MUST sign in.\n#### Scenario: ok\nWorks.\n\n### Requirement: Sign out (R10)\nUsers MAY sign out.\n\n## Requirements Trace\n\n| R2 | missing |\n";
@@ -464,6 +464,29 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
                     ".spec/product.md",
                     &doc("entrypoint", "product", &"Line.\n".repeat(301)),
                 )],
+            ),
+        },
+        CaseDef {
+            class: "features",
+            name: "regex-feature",
+            cwd: "",
+            runs: &[],
+            files: with(
+                filled(),
+                &[
+                    (
+                        ".spec/features/a.b/product.md",
+                        "---\ntype: feature-product\nfeature: a.b\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n## Scope\n\n| Owns | Does not own |\n|---|---|\n| dots | rest |\n",
+                    ),
+                    (
+                        ".spec/features/a.b/tech.md",
+                        "---\ntype: feature-tech\nfeature: a.b\nparent: ../../tech.md\nsibling: product.md\nupdated: 2026-01-15\n---\n",
+                    ),
+                    (
+                        ".spec/features/a.b/plan.md",
+                        "---\ntype: feature-plan\nfeature: a.b\nparent: ../../plan.md\nupdated: 2026-01-15\n---\n\n## Requirements Trace\n\n### a.b/1 — x\n\nCites a-b/2, axb/3 and a.b/4.\n",
+                    ),
+                ],
             ),
         },
     ])

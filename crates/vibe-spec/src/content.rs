@@ -326,6 +326,10 @@ pub fn id_traceability(r: &mut Report, product: &Path, plan: &[u8], label: &[u8]
 }
 
 /// I1: unit references to other features in a feature plan.
+///
+/// Deliberate divergence (pinned): the oracle interpolates the feature name
+/// into an ERE (`a.b` also filters `a-b/2`; a name like `a(b` makes its grep
+/// fail and print nothing). The port matches the name literally.
 pub fn cross_deps(r: &mut Report, plan: &[u8], feature: &str, label: &[u8]) {
     let own = |d: &[u8]| {
         d.strip_prefix(feature.as_bytes())

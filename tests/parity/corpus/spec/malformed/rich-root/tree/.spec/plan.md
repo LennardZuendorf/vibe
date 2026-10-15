@@ -11,6 +11,7 @@ updated: 2026-01-15
 ### auth/1 — leaked unit
 
 | auth/2 | leaked row |
+| AB12 | caps row |
 
 ## Notes
 
