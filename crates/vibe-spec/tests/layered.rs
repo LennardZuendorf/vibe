@@ -806,3 +806,35 @@ fn examined_counts_lessons_in_both_layouts() {
     write(&flat, ".spec/lessons.md", "# Lessons\n");
     assert_eq!(examined(&flat), without + 1, "flat lessons.md");
 }
+
+#[test]
+fn a_root_given_with_dot_dot_still_resolves_absolute_links() {
+    let p = layered_tree("ly-dotdot-root");
+    write(&p, "docs/spec/flows/a.md", NOTE);
+    append(&p, "docs/spec/README.md", "\n[a](/docs/spec/flows/a.md)\n");
+    let (_, v) = validate_json(&p, &[], &[("VIBE_SPEC_ROOT", "docs/../docs/spec")]);
+    let got: Vec<&str> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|f| f["message"].as_str())
+        .collect();
+    assert!(got.is_empty(), "{got:#?}");
+}
+
+#[test]
+fn a_link_that_leaves_the_project_is_broken() {
+    let p = layered_tree("ly-escape");
+    let up = "../".repeat(40);
+    append(
+        &p,
+        "docs/spec/flows/checkout.md",
+        &format!("\n[h]({up}etc/hosts)\n"),
+    );
+    assert_eq!(
+        sf22(&p),
+        [format!("flows/checkout.md: broken link to '{up}etc/hosts'")],
+        "{:#?}",
+        findings(&p)
+    );
+}

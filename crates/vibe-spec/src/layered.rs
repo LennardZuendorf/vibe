@@ -3,7 +3,7 @@
 //! budgets, SF32 names, SF33 typed notes, SF34 reachability; notes also get
 //! the SF10/SF25 grammar checks.
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::adherence::{FEATURE_TYPES, LAYERED_TYPES, feature_files};
 use crate::content;
@@ -317,6 +317,21 @@ struct Link {
     exists: bool,
 }
 
+/// `p` with `.` dropped and `..` applied, without touching the disk.
+fn lexical(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 /// The one layered link resolver (SF22 and SF34). `None` for a target that
 /// is not a local path. Order: clean, skip, `/` = project-absolute else
 /// relative to the file's directory, `.`/`..`, then a directory means its
@@ -327,10 +342,12 @@ fn resolve(ctx: &Ctx, rels: &BTreeSet<String>, dir_rel: &[&str], raw: &[u8]) -> 
     if skip_target(&target) {
         return None;
     }
+    let root = lexical(ctx.dir);
+    let project = lexical(ctx.project);
     let (mut path, rest) = match target.strip_prefix(b"/") {
-        Some(abs) => (ctx.project.to_path_buf(), abs),
+        Some(abs) => (project.clone(), abs),
         None => (
-            dir_rel.iter().fold(ctx.dir.to_path_buf(), |p, d| p.join(d)),
+            dir_rel.iter().fold(root.clone(), |p, d| p.join(d)),
             &target[..],
         ),
     };
@@ -343,7 +360,7 @@ fn resolve(ctx: &Ctx, rels: &BTreeSet<String>, dir_rel: &[&str], raw: &[u8]) -> 
             _ => path = join_raw(&path, seg),
         }
     }
-    let (key, exists) = match path.strip_prefix(ctx.dir) {
+    let (key, exists) = match path.strip_prefix(&root) {
         Ok(inside) => {
             let inside = inside
                 .components()
@@ -361,7 +378,8 @@ fn resolve(ctx: &Ctx, rels: &BTreeSet<String>, dir_rel: &[&str], raw: &[u8]) -> 
             let exists = key.is_some();
             (key, exists)
         }
-        Err(_) => (None, path.exists()),
+        // Outside the spec root a target must still stay in the project.
+        Err(_) => (None, path.starts_with(&project) && path.exists()),
     };
     Some(Link {
         target,

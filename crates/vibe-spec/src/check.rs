@@ -152,7 +152,7 @@ pub fn load(project: &Path, strict: bool) -> Result<Levels, String> {
                     Some(id) => {
                         if let Some(first) = named.insert(id, key) {
                             eprintln!(
-                                "vibe-spec: {shown}: strictness keys '{first}' and '{key}' both name {id} (the last wins)"
+                                "vibe-spec: {shown}: strictness keys '{first}' and '{key}' both name {id}; '{key}' wins (keys are read in sorted order)"
                             );
                         }
                         set.insert(id, level);

@@ -111,9 +111,12 @@ pub fn commits(dir: &Path, since: Option<&str>) -> Result<Option<Vec<Commit>>, S
                 .collect::<Vec<_>>()
                 .join("/")
         })
-        .filter(|rel| !rel.is_empty())
-        .unwrap_or_else(|| ".".to_string());
-    let args = ["log", "-z", "--format=%H%n%B", &range, "--", &scope];
+        .filter(|rel| !rel.is_empty());
+    // A pathspec prunes merge and empty commits, so the top takes none.
+    let mut args = vec!["log", "-z", "--format=%H%n%B", &range];
+    if let Some(scope) = &scope {
+        args.extend(["--", scope]);
+    }
     let log = git(&top, &args).ok_or_else(|| format!("git log {range} failed"))?;
     let mut out = Vec::new();
     for record in log.split(|&b| b == 0) {

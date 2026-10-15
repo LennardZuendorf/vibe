@@ -317,3 +317,35 @@ fn trace_ignores_commits_outside_a_nested_project() {
     assert_eq!(out.code, 0, "{}{}", out.text(), out.stderr);
     assert!(!out.text().contains("auth/9"), "{}", out.text());
 }
+
+#[test]
+fn trace_at_the_repo_top_keeps_merge_and_empty_commits() {
+    let p = project("tr-top-merges");
+    write(&p, ".spec/product.md", ENTRY);
+    write(
+        &p,
+        ".spec/features/auth/plan.md",
+        "---\ntype: feature-plan\n---\n\n### auth/1 — A\n\n### auth/2 — B\n\n### auth/3 — C\n",
+    );
+    let d = "2026-02-01T12:00:00Z";
+    git(&p, d, &["init", "-q", "-b", "main"]);
+    git(&p, d, &["add", "-A"]);
+    git(&p, d, &["commit", "-q", "-m", "feat: a (auth/1)"]);
+    git(&p, d, &["checkout", "-q", "-b", "br"]);
+    write(&p, "x.txt", "x\n");
+    git(&p, d, &["add", "-A"]);
+    git(&p, d, &["commit", "-q", "-m", "chore: x"]);
+    git(&p, d, &["checkout", "-q", "main"]);
+    git(
+        &p,
+        d,
+        &["merge", "-q", "--no-ff", "br", "-m", "Merge: auth/2"],
+    );
+    git(
+        &p,
+        d,
+        &["commit", "-q", "--allow-empty", "-m", "note auth/3"],
+    );
+    let out = spec(&p, &["trace"], &[]);
+    assert_eq!(out.code, 0, "{}{}", out.text(), out.stderr);
+}
