@@ -223,3 +223,9 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Render a path through one shared helper that handles both the inside-project and the outside-project case. Test with a `--root` outside the project.
 **Tags:** rust, paths, json, contracts
 **Date:** 2026-10-15
+
+### Sandbox git repos in tests inherit the user's signing config
+**Pattern:** Five `inject-triggers/6` adapter asserts failed while the SSH signing agent was down. The test's throwaway `git commit` in its sandbox inherited global `commit.gpgsign=true`, failed silently (`>/dev/null 2>&1`), and left staged files that the `git status --porcelain` assertions then saw.
+**Rule:** Every test that runs `git init` in a sandbox sets `commit.gpgsign false` (and `tag.gpgsign false`) in that repo next to `user.email`/`user.name`, and never discards a setup commit's exit status.
+**Tags:** testing, git, sandbox, environment
+**Date:** 2026-10-15
