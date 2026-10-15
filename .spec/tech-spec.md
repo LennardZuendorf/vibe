@@ -90,8 +90,9 @@ the tree itself.
 
 ## Strictness
 
-`.vibe/spec.json` `strictness: {"SF-nn": "warn|error|off"}`, default
-`warn` for every check; `--strict` (CI) promotes every non-`off` check to
+`.vibe/spec.json` `strictness: {"SF-nn": "warn|error|off"}`; a legacy
+check keeps its default (errors stay errors), every other check
+defaults to `warn`; `--strict` (CI) promotes every non-`off` check to
 `error`. A check moves to `error` in this repo's own config only in the
 compound that migrates the last live spec still failing it — never
 sooner. A `--strict` run that examined zero files is refused, not
@@ -125,7 +126,7 @@ WHEN and THEN present, SHALL/MUST word-bounded).
 
 Shipped (F17): SF24 requirement population, SF25 scenario WHEN/THEN,
 SF26 frontmatter values, SF27 children and backlinks, SF28 feature
-folder ↔ plan row, SF29 freshness against git, and on layered roots
+folder → plan row, SF29 freshness against git, and on layered roots
 (a root hub declares `type: hub`) SF30 allowlist, SF31 budgets, SF32
 names, SF33 typed notes (`code:`, `applies:`), SF34 hub reachability;
 in both layouts SF35/SF36 check `docs/superpowers/` names and each

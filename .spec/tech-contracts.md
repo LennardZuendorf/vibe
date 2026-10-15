@@ -181,8 +181,10 @@ table of `<root>/features/<f>/plan.md`. `feature` reports the layer
 
 Every command, legacy ones included, exits 3 when an explicit root (`--root`,
 `$VIBE_SPEC_ROOT`, config) names a missing directory (R4). Without an explicit
-root, only `root`, `--json`, `plan` and `feature` exit 3.
-`validate --format json` and `trace` exit 3 without a root; text-mode `validate` keeps the oracle's exit 1.
+root, only `root`, `--json`, `plan`, `feature`, `validate --format json` and
+`trace` exit 3, while text-mode `validate` keeps the oracle's exit 1;
+`validate --json` and `trace --json` print their JSON object on exit 1 too, and
+`trace` prints nothing on the zero-unit refusal.
 
 ## Versioning and compatibility
 
