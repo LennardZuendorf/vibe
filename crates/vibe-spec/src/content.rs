@@ -6,11 +6,11 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::pattern::{cross_feature_deps, is_unit_heading, is_unit_row, r_ids, unit_ids};
+use crate::report::Report;
 use crate::text::{
     contains, contains_ci, first_line, has_line_starting, is_space, lines, name_of, sub_dirs,
     trim_space,
 };
-use crate::validate::Report;
 
 const TOKEN_GROUPS: [&[u8]; 5] = [
     b"colors",
@@ -75,27 +75,36 @@ pub fn design_tokens(r: &mut Report, text: &[u8], label: &[u8]) {
         }
     }
     for group in found {
-        r.yellow(&cat!(label, ": empty token group '", group, "'"));
+        r.warn("SF3", &cat!(label, ": empty token group '", group, "'"));
     }
 }
 
 /// SF8: the feature product's Scope section.
 pub fn feature_scope(r: &mut Report, text: &[u8], label: &[u8]) {
     if !has_line_starting(text, b"## Scope") {
-        r.yellow(&cat!(
-            label,
-            ": missing '## Scope' section (add Owns / Does not own table)"
-        ));
+        r.warn(
+            "SF8",
+            &cat!(
+                label,
+                ": missing '## Scope' section (add Owns / Does not own table)"
+            ),
+        );
         return;
     }
     if !contains_ci(text, b"owns") {
-        r.yellow(&cat!(label, ": Scope section missing 'Owns' column or row"));
+        r.warn(
+            "SF8",
+            &cat!(label, ": Scope section missing 'Owns' column or row"),
+        );
     }
     if !contains_ci(text, b"does not own") {
-        r.yellow(&cat!(
-            label,
-            ": Scope section missing 'Does not own' column or row"
-        ));
+        r.warn(
+            "SF8",
+            &cat!(
+                label,
+                ": Scope section missing 'Does not own' column or row"
+            ),
+        );
     }
 }
 
@@ -105,13 +114,13 @@ pub fn feature_frontmatter(r: &mut Report, text: &[u8], label: &[u8], kind: &str
         return;
     }
     if !has_line_starting(text, b"feature:") {
-        r.yellow(&cat!(label, ": missing 'feature:' in frontmatter"));
+        r.warn("SF9", &cat!(label, ": missing 'feature:' in frontmatter"));
     }
     if !has_line_starting(text, b"parent:") {
-        r.yellow(&cat!(label, ": missing 'parent:' in frontmatter"));
+        r.warn("SF9", &cat!(label, ": missing 'parent:' in frontmatter"));
     }
     if (kind == "product" || kind == "tech") && !has_line_starting(text, b"sibling:") {
-        r.yellow(&cat!(label, ": missing 'sibling:' in frontmatter"));
+        r.warn("SF9", &cat!(label, ": missing 'sibling:' in frontmatter"));
     }
 }
 
@@ -180,26 +189,32 @@ pub fn requirements_scenarios(r: &mut Report, text: &[u8], label: &[u8]) {
         finish(&mut issues, &req, has_rfc, scenarios);
     }
     for issue in &issues {
-        r.yellow(&cat!(label, ": ", issue));
+        r.warn("SF10", &cat!(label, ": ", issue));
     }
     if !issues.is_empty() {
-        r.yellow(&cat!(label, ": requirement hint — use '### Requirement: Title SHALL ...' with one or more '#### Scenario: ...' blocks"));
+        r.warn("SF10", &cat!(label, ": requirement hint — use '### Requirement: Title SHALL ...' with one or more '#### Scenario: ...' blocks"));
     }
 }
 
 /// SF11: a feature plan needs unit headings and a Requirements Trace.
 pub fn plan_structure(r: &mut Report, text: &[u8], label: &[u8]) {
     if !lines(text).iter().any(|l| is_unit_heading(l)) {
-        r.yellow(&cat!(
-            label,
-            ": plan missing '### <feature>/<n>' unit sections (e.g. '### vibe-flow/1 — ...')"
-        ));
+        r.warn(
+            "SF11",
+            &cat!(
+                label,
+                ": plan missing '### <feature>/<n>' unit sections (e.g. '### vibe-flow/1 — ...')"
+            ),
+        );
     }
     if !contains_ci(text, b"requirements trace") {
-        r.yellow(&cat!(
-            label,
-            ": plan missing 'Requirements Trace' section linking R-IDs to units"
-        ));
+        r.warn(
+            "SF11",
+            &cat!(
+                label,
+                ": plan missing 'Requirements Trace' section linking R-IDs to units"
+            ),
+        );
     }
 }
 
@@ -216,18 +231,24 @@ pub fn root_plan_milestones(r: &mut Report, text: &[u8], label: &[u8]) {
             in_milestone = false;
         }
         if in_milestone && is_unit_heading(line) {
-            r.yellow_uncounted(&cat!(
-                label,
-                ": milestone section embeds unit heading (move to feature plan) -> ",
-                line
-            ));
+            r.warn_uncounted(
+                "SF11",
+                &cat!(
+                    label,
+                    ": milestone section embeds unit heading (move to feature plan) -> ",
+                    line
+                ),
+            );
         }
         if in_milestone && is_unit_row(line) {
-            r.yellow_uncounted(&cat!(
-                label,
-                ": milestone section embeds unit table row (move to feature plan) -> ",
-                line
-            ));
+            r.warn_uncounted(
+                "SF11",
+                &cat!(
+                    label,
+                    ": milestone section embeds unit table row (move to feature plan) -> ",
+                    line
+                ),
+            );
         }
     }
 }
@@ -298,12 +319,10 @@ pub fn id_traceability(r: &mut Report, product: &Path, plan: &[u8], label: &[u8]
         }
     }
     for dup in dups {
-        r.yellow(&cat!(
-            label,
-            ": duplicate unit heading ID '",
-            dup,
-            "' in plan"
-        ));
+        r.warn(
+            "SF12",
+            &cat!(label, ": duplicate unit heading ID '", dup, "' in plan"),
+        );
     }
     if !product.is_file() {
         return;
@@ -315,12 +334,15 @@ pub fn id_traceability(r: &mut Report, product: &Path, plan: &[u8], label: &[u8]
     }
     for id in ids {
         if !contains(plan, &id) {
-            r.yellow(&cat!(
-                label,
-                ": ",
-                id,
-                " in product.md not cited in plan.md (light traceability check)"
-            ));
+            r.warn(
+                "SF12",
+                &cat!(
+                    label,
+                    ": ",
+                    id,
+                    " in product.md not cited in plan.md (light traceability check)"
+                ),
+            );
         }
     }
 }
@@ -342,12 +364,15 @@ pub fn cross_deps(r: &mut Report, plan: &[u8], feature: &str, label: &[u8]) {
         .filter(|d| !own(d))
         .collect();
     for dep in deps {
-        r.yellow(&cat!(
-            label,
-            ": cross-feature unit dependency '",
-            dep,
-            "' — use a whole-feature gate in the root plan Feature Sequence, not a unit edge"
-        ));
+        r.warn(
+            "I1",
+            &cat!(
+                label,
+                ": cross-feature unit dependency '",
+                dep,
+                "' — use a whole-feature gate in the root plan Feature Sequence, not a unit edge"
+            ),
+        );
     }
 }
 
@@ -407,7 +432,7 @@ fn owns_items(text: &[u8]) -> Vec<Vec<u8>> {
 /// processes escapes (`C:\\tokens` never matches its stored copy) and, in
 /// `$1 == it`, compares numeric-looking strings as numbers (`00001` equals
 /// `1.000`). The port does not copy either quirk; `features/sf14-awk` pins it.
-pub fn sf14(r: &mut Report, dir: &Path) {
+pub fn sf14(r: &mut Report, dir: &Path, display: &str) {
     let mut seen: Vec<(Vec<u8>, String)> = Vec::new();
     for fdir in sub_dirs(&dir.join("features")) {
         let product = fdir.join("product.md");
@@ -415,20 +440,24 @@ pub fn sf14(r: &mut Report, dir: &Path) {
             continue;
         }
         let feature = name_of(&fdir);
+        r.at(&format!("{display}/features/{feature}/product.md"));
         for item in owns_items(&std::fs::read(&product).unwrap_or_default()) {
             if item.is_empty() {
                 continue;
             }
             match seen.iter().find(|(i, _)| *i == item) {
                 Some((_, other)) if *other != feature => {
-                    r.yellow(&cat!(
-                        "SF14: scope conflict — '",
-                        other,
-                        "' and '",
-                        feature,
-                        "' both own: ",
-                        item
-                    ));
+                    r.warn(
+                        "SF14",
+                        &cat!(
+                            "SF14: scope conflict — '",
+                            other,
+                            "' and '",
+                            feature,
+                            "' both own: ",
+                            item
+                        ),
+                    );
                 }
                 Some(_) => {}
                 None => seen.push((item, feature.clone())),

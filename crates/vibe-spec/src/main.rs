@@ -17,11 +17,15 @@ macro_rules! cat {
     }};
 }
 
+#[allow(dead_code)] // consumed by later F17 tasks
+mod check;
 mod content;
 mod lessons;
 mod list_specs;
 mod pattern;
 mod query;
+#[allow(dead_code)] // consumed by later F17 tasks
+mod report;
 mod root;
 mod scan_merges;
 mod text;

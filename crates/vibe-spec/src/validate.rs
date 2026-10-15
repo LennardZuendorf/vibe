@@ -11,12 +11,14 @@ use std::process::{Command, Stdio};
 
 use vibe_core::exit;
 
+use crate::check::Levels;
 use crate::content;
 use crate::pattern::{md_link_target, md_links, paren_links};
+use crate::report::Report;
 use crate::root::{Miss, Root};
 use crate::text::{
-    echo_e, first_line, has_line_starting, is_space, join_raw, lines, md_files, name_of,
-    read_lines, strip_prefix_or, sub_dirs, trim_start_space,
+    first_line, has_line_starting, is_space, join_raw, lines, md_files, name_of, read_lines,
+    strip_prefix_or, sub_dirs, trim_start_space,
 };
 
 const ROOT_NAMES: [&str; 5] = [
@@ -27,58 +29,6 @@ const ROOT_NAMES: [&str; 5] = [
     "lessons.md",
 ];
 const ENTRYPOINTS: [&str; 4] = ["product.md", "tech.md", "design.md", "plan.md"];
-
-/// validate's stdout and its counters.
-#[derive(Default)]
-pub struct Report {
-    /// Everything printed so far.
-    pub out: Vec<u8>,
-    /// `ERRORS`.
-    pub errors: u32,
-    /// `WARNINGS`.
-    pub warnings: u32,
-}
-
-impl Report {
-    fn colour(&mut self, code: &str, tag: &str, msg: &[u8]) {
-        self.out
-            .extend(echo_e(&cat!("\\033[", code, "m  ", tag, msg, "\\033[0m")));
-    }
-
-    /// `red`: an error.
-    pub fn red(&mut self, msg: &[u8]) {
-        self.colour("31", "ERROR: ", msg);
-        self.errors += 1;
-    }
-
-    /// `yellow`: a warning.
-    pub fn yellow(&mut self, msg: &[u8]) {
-        self.colour("33", "WARN:  ", msg);
-        self.warnings += 1;
-    }
-
-    /// `yellow` called inside `cmd | while read`: printed, never counted,
-    /// because the increment happens in a subshell.
-    pub fn yellow_uncounted(&mut self, msg: &[u8]) {
-        self.colour("33", "WARN:  ", msg);
-    }
-
-    /// `green`.
-    pub fn green(&mut self, msg: &[u8]) {
-        self.colour("32", "OK:    ", msg);
-    }
-
-    /// `info`.
-    pub fn info(&mut self, msg: &[u8]) {
-        self.colour("36", "INFO:  ", msg);
-    }
-
-    /// Plain `echo "$msg"`.
-    pub fn line(&mut self, msg: &[u8]) {
-        self.out.extend_from_slice(msg);
-        self.out.push(b'\n');
-    }
-}
 
 /// Runs the command.
 pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<u8>) {
@@ -94,16 +44,24 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
             return (miss.code(), Vec::new());
         }
     };
-    let mut r = Report::default();
+    let mut r = Report::new(&project, Levels::default());
     r.line(format!("Validating {display}/...").as_bytes());
     r.line(b"");
     if !dir.is_dir() {
-        r.red(b"No spec root found. Run setup first: vibe-spec init");
+        r.at("");
+        r.error(
+            "SF23",
+            b"No spec root found. Run setup first: vibe-spec init",
+        );
         return (exit::FINDINGS, r.out);
     }
     let specs = md_files(&dir);
     if specs.is_empty() {
-        r.red(format!("No spec files found in {display}/").as_bytes());
+        r.at("");
+        r.error(
+            "SF23",
+            format!("No spec files found in {display}/").as_bytes(),
+        );
         return (exit::FINDINGS, r.out);
     }
     let ctx = Ctx {
@@ -115,7 +73,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
         root_file(&mut r, &ctx, file);
     }
     for name in ENTRYPOINTS {
-        children(&mut r, &dir, name);
+        children(&mut r, &ctx, name);
     }
     let features = dir.join("features");
     if features.is_dir() {
@@ -125,9 +83,9 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
     }
     claude_md(&mut r, &project, &display);
     sf13(&mut r, &dir, &display);
-    content::sf14(&mut r, &dir);
+    content::sf14(&mut r, &dir, &display);
     sf15(&mut r, &dir, &display);
-    sf16(&mut r, &dir);
+    sf16(&mut r, &dir, &display);
     let (errors, warnings) = (r.errors, r.warnings);
     r.line(b"========================");
     r.line(format!("Errors:   {errors}").as_bytes());
@@ -153,7 +111,9 @@ fn read(path: &Path) -> Vec<u8> {
 fn root_file(r: &mut Report, ctx: &Ctx, file: &Path) {
     let name = name_of(file);
     let n = name.as_bytes();
+    let dsp = ctx.display;
     r.line(&cat!("--- ", n, " ---"));
+    r.examine(&format!("{dsp}/{name}"));
     if name == "lessons.md" {
         r.green(&cat!(
             n,
@@ -164,23 +124,26 @@ fn root_file(r: &mut Report, ctx: &Ctx, file: &Path) {
     }
     let text = read(file);
     if first_line(&text) != b"---" {
-        r.red(&cat!(n, ": missing YAML frontmatter"));
+        r.error("SF20", &cat!(n, ": missing YAML frontmatter"));
         return;
     }
     if !has_line_starting(&text, b"type:") {
-        r.red(&cat!(n, ": missing 'type:' in frontmatter"));
+        r.error("SF20", &cat!(n, ": missing 'type:' in frontmatter"));
     }
     if !has_line_starting(&text, b"updated:") {
-        r.red(&cat!(n, ": missing 'updated:' in frontmatter"));
+        r.error("SF20", &cat!(n, ": missing 'updated:' in frontmatter"));
     }
     if has_line_starting(&text, b"type: entrypoint") && !has_line_starting(&text, b"children:") {
         if name == "plan.md" {
-            r.yellow(&cat!(
-                n,
-                ": entrypoint has no 'children:' list (add sub-plans if needed)"
-            ));
+            r.warn(
+                "SF20",
+                &cat!(
+                    n,
+                    ": entrypoint has no 'children:' list (add sub-plans if needed)"
+                ),
+            );
         } else {
-            r.red(&cat!(n, ": entrypoint missing 'children:' list"));
+            r.error("SF20", &cat!(n, ": entrypoint missing 'children:' list"));
         }
     }
     let branch = [
@@ -190,13 +153,13 @@ fn root_file(r: &mut Report, ctx: &Ctx, file: &Path) {
     ];
     if branch.iter().any(|p| has_line_starting(&text, p)) {
         if !has_line_starting(&text, b"parent:") {
-            r.red(&cat!(n, ": branch doc missing 'parent:' field"));
+            r.error("SF20", &cat!(n, ": branch doc missing 'parent:' field"));
         }
         if !has_line_starting(&text, b"scope:") {
-            r.yellow(&cat!(n, ": branch doc missing 'scope:' field"));
+            r.warn("SF20", &cat!(n, ": branch doc missing 'scope:' field"));
         }
         if !has_line_starting(&text, b"covers:") {
-            r.yellow(&cat!(n, ": branch doc missing 'covers:' field"));
+            r.warn("SF20", &cat!(n, ": branch doc missing 'covers:' field"));
         }
     }
     if !ROOT_NAMES.contains(&name.as_str()) {
@@ -204,12 +167,12 @@ fn root_file(r: &mut Report, ctx: &Ctx, file: &Path) {
             .iter()
             .any(|p| name.starts_with(p))
         {
-            r.red(&cat!(n, ": must start with 'product-', 'tech-', or 'plan-' (e.g., product-design.md, tech-api.md, plan-editor.md)"));
+            r.error("SF21", &cat!(n, ": must start with 'product-', 'tech-', or 'plan-' (e.g., product-design.md, tech-api.md, plan-editor.md)"));
         }
         if let Some(topic) = topic_of(&name)
             && !topic_ok(topic.as_bytes())
         {
-            r.red(&cat!(n, ": topic must be lowercase with hyphens only, no leading/trailing hyphens (found: '", topic, "')"));
+            r.error("SF21", &cat!(n, ": topic must be lowercase with hyphens only, no leading/trailing hyphens (found: '", topic, "')"));
         }
     }
     if name == "design.md" {
@@ -232,7 +195,7 @@ fn root_file(r: &mut Report, ctx: &Ctx, file: &Path) {
             }
             let parent = file.parent().unwrap_or(ctx.dir);
             if !join_raw(ctx.dir, &target).is_file() && !join_raw(parent, &target).is_file() {
-                r.red(&cat!(n, ": broken link to '", target, "'"));
+                r.error("SF22", &cat!(n, ": broken link to '", target, "'"));
             }
         }
     }
@@ -257,11 +220,13 @@ fn topic_ok(t: &[u8]) -> bool {
 }
 
 /// "Validate entrypoint children exist" for one entrypoint.
-fn children(r: &mut Report, dir: &Path, name: &str) {
+fn children(r: &mut Report, ctx: &Ctx, name: &str) {
+    let dir = ctx.dir;
     let path = dir.join(name);
     if !path.is_file() {
         return;
     }
+    r.at(&format!("{}/{name}", ctx.display));
     let text = read(&path);
     let mut in_children = false;
     for line in read_lines(&text) {
@@ -275,12 +240,15 @@ fn children(r: &mut Report, dir: &Path, name: &str) {
         match list_item(line) {
             Some(child) => {
                 if !child.contains(&b'{') && !join_raw(dir, child).is_file() {
-                    r.red(&cat!(
-                        name,
-                        ": child '",
-                        child,
-                        "' listed in frontmatter but file doesn't exist"
-                    ));
+                    r.error(
+                        "SF22",
+                        &cat!(
+                            name,
+                            ": child '",
+                            child,
+                            "' listed in frontmatter but file doesn't exist"
+                        ),
+                    );
                 }
             }
             None => in_children = false,
@@ -299,14 +267,20 @@ fn list_item(line: &[u8]) -> Option<&[u8]> {
 fn feature(r: &mut Report, ctx: &Ctx, fdir: &Path) {
     let fname = name_of(fdir);
     let label = format!("features/{fname}");
+    let dsp = ctx.display;
     r.line(format!("--- {label}/ ---").as_bytes());
     for required in ["product.md", "tech.md"] {
         let file = fdir.join(required);
         if !file.is_file() {
-            r.red(format!("{label}/: missing required '{required}'").as_bytes());
+            r.at(&format!("{dsp}/{label}/{required}"));
+            r.error(
+                "SF23",
+                format!("{label}/: missing required '{required}'").as_bytes(),
+            );
             continue;
         }
         let doc = format!("{label}/{required}");
+        r.examine(&format!("{dsp}/{label}/{required}"));
         let text = read(&file);
         if !feature_doc(r, &text, &doc, required) {
             continue;
@@ -329,7 +303,7 @@ fn feature(r: &mut Report, ctx: &Ctx, fdir: &Path) {
                     continue;
                 }
                 if !resolve_in(fdir, &target).is_file() {
-                    r.red(&cat!(doc, ": broken link to '", target, "'"));
+                    r.error("SF22", &cat!(doc, ": broken link to '", target, "'"));
                 }
             }
         }
@@ -340,6 +314,7 @@ fn feature(r: &mut Report, ctx: &Ctx, fdir: &Path) {
             continue;
         }
         let doc = format!("{label}/{optional}");
+        r.examine(&format!("{dsp}/{label}/{optional}"));
         let text = read(&file);
         if !feature_doc(r, &text, &doc, optional) {
             continue;
@@ -369,18 +344,30 @@ fn feature(r: &mut Report, ctx: &Ctx, fdir: &Path) {
 /// doc. False when it has no frontmatter (the oracle `continue`s).
 fn feature_doc(r: &mut Report, text: &[u8], doc: &str, file: &str) -> bool {
     if first_line(text) != b"---" {
-        r.red(format!("{doc}: missing YAML frontmatter").as_bytes());
+        r.error(
+            "SF20",
+            format!("{doc}: missing YAML frontmatter").as_bytes(),
+        );
         return false;
     }
     if !has_line_starting(text, b"type:") {
-        r.red(format!("{doc}: missing 'type:' in frontmatter").as_bytes());
+        r.error(
+            "SF20",
+            format!("{doc}: missing 'type:' in frontmatter").as_bytes(),
+        );
     }
     if !has_line_starting(text, b"updated:") {
-        r.red(format!("{doc}: missing 'updated:' in frontmatter").as_bytes());
+        r.error(
+            "SF20",
+            format!("{doc}: missing 'updated:' in frontmatter").as_bytes(),
+        );
     }
     let expected = format!("feature-{}", file.trim_end_matches(".md"));
     if !has_line_starting(text, format!("type: {expected}").as_bytes()) {
-        r.yellow(format!("{doc}: expected 'type: {expected}'").as_bytes());
+        r.warn(
+            "SF20",
+            format!("{doc}: expected 'type: {expected}'").as_bytes(),
+        );
     }
     true
 }
@@ -401,6 +388,7 @@ fn claude_md(r: &mut Report, project: &Path, display: &str) {
         return;
     }
     r.line(b"--- CLAUDE.md ---");
+    r.examine("CLAUDE.md");
     let prefix = format!("{display}/");
     let text = read(&path);
     for line in lines(&text) {
@@ -412,7 +400,7 @@ fn claude_md(r: &mut Report, project: &Path, display: &str) {
             // An outside `--root` displays as an absolute path; check it as is.
             let checked = resolve_in(project, &target);
             if into_spec && !checked.is_file() {
-                r.red(&cat!("CLAUDE.md: broken link to '", target, "'"));
+                r.error("SF22", &cat!("CLAUDE.md: broken link to '", target, "'"));
             }
         }
     }
@@ -427,6 +415,7 @@ fn sf13(r: &mut Report, dir: &Path, display: &str) {
         if !path.is_file() {
             continue;
         }
+        r.at(&format!("{display}/{name}"));
         let text = read(&path);
         for line in lines(&text) {
             for target in paren_links(line) {
@@ -436,15 +425,18 @@ fn sf13(r: &mut Report, dir: &Path, display: &str) {
                 {
                     continue;
                 }
-                r.yellow(&cat!(
-                    "SF13: stale link in ",
-                    display,
-                    "/",
-                    name,
-                    " → ",
-                    target,
-                    " (not found)"
-                ));
+                r.warn(
+                    "SF13",
+                    &cat!(
+                        "SF13: stale link in ",
+                        display,
+                        "/",
+                        name,
+                        " → ",
+                        target,
+                        " (not found)"
+                    ),
+                );
             }
         }
     }
@@ -464,9 +456,10 @@ fn sf15(r: &mut Report, dir: &Path, display: &str) {
         if !path.is_file() {
             continue;
         }
+        r.at(&format!("{display}/{name}"));
         let count = read(&path).iter().filter(|&&b| b == b'\n').count();
         if max.is_some_and(|m| i64::try_from(count).is_ok_and(|c| c > m)) {
-            r.yellow(format!("SF15: {display}/{name} is {count} lines (>{raw}); consider splitting into a branch doc (product-{{topic}}.md, tech-{{topic}}.md)").as_bytes());
+            r.warn("SF15", format!("SF15: {display}/{name} is {count} lines (>{raw}); consider splitting into a branch doc (product-{{topic}}.md, tech-{{topic}}.md)").as_bytes());
         }
     }
 }
@@ -498,21 +491,25 @@ fn parse_arith(raw: &str) -> Option<i64> {
 
 /// SF16: lessons without a `**Tags:**` line. A final line without a
 /// newline is not read (the oracle's `while read` drops it).
-fn sf16(r: &mut Report, dir: &Path) {
+fn sf16(r: &mut Report, dir: &Path, display: &str) {
     let path = dir.join("lessons.md");
     if !path.is_file() {
         return;
     }
+    r.at(&format!("{display}/lessons.md"));
     let text = read(&path);
     let mut title: Vec<u8> = Vec::new();
     let mut has_tags = false;
     let flag = |r: &mut Report, title: &[u8], has_tags: bool| {
         if !title.is_empty() && !has_tags {
-            r.yellow(&cat!(
-                "SF16: lesson '",
-                title,
-                "' in lessons.md has no **Tags:** line"
-            ));
+            r.warn(
+                "SF16",
+                &cat!(
+                    "SF16: lesson '",
+                    title,
+                    "' in lessons.md has no **Tags:** line"
+                ),
+            );
         }
     };
     for line in read_lines(&text) {
@@ -534,10 +531,10 @@ fn lint_design(r: &mut Report, project: &Path, rel: &str, label: &[u8]) {
         return;
     }
     if !on_path("node") || !on_path("npx") {
-        r.yellow(&cat!(
-            label,
-            ": design.md lint skipped (node/npx not found)"
-        ));
+        r.warn(
+            "SF4",
+            &cat!(label, ": design.md lint skipped (node/npx not found)"),
+        );
         return;
     }
     let reachable = Command::new("curl")
@@ -548,10 +545,10 @@ fn lint_design(r: &mut Report, project: &Path, rel: &str, label: &[u8]) {
         .status()
         .is_ok_and(|s| s.success());
     if !reachable {
-        r.yellow(&cat!(
-            label,
-            ": design.md lint skipped (npm registry unreachable)"
-        ));
+        r.warn(
+            "SF4",
+            &cat!(label, ": design.md lint skipped (npm registry unreachable)"),
+        );
         return;
     }
     let (ok, mut text) = match lint_command(rel)
@@ -566,13 +563,16 @@ fn lint_design(r: &mut Report, project: &Path, rel: &str, label: &[u8]) {
     if ok {
         return;
     }
-    r.yellow(&cat!(label, ": design.md lint reported issues (advisory)"));
+    r.warn(
+        "SF4",
+        &cat!(label, ": design.md lint reported issues (advisory)"),
+    );
     while text.last() == Some(&b'\n') {
         text.pop();
     }
     for line in text.split(|&b| b == b'\n') {
         if !line.is_empty() {
-            r.yellow(&cat!(label, ":   ", line));
+            r.warn("SF4", &cat!(label, ":   ", line));
         }
     }
 }
