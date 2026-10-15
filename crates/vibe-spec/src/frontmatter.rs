@@ -59,6 +59,61 @@ fn unquote(s: &[u8]) -> String {
     })
 }
 
+/// True when the byte at `i` can open a quoted token: the value start, or
+/// right after `[`, `,` or blanks.
+fn opens_token(s: &[u8], i: usize) -> bool {
+    s.get(..i)
+        .unwrap_or_default()
+        .iter()
+        .rev()
+        .find(|&&c| !is_space(c))
+        .is_none_or(|&c| c == b'[' || c == b',')
+}
+
+/// `s` up to a YAML comment: a `#` after whitespace, outside quotes.
+fn cut_comment(s: &[u8]) -> &[u8] {
+    let mut quote: Option<u8> = None;
+    for (i, &c) in s.iter().enumerate() {
+        match quote {
+            Some(q) => {
+                if c == q {
+                    quote = None;
+                }
+            }
+            None if (c == b'"' || c == b'\'') && opens_token(s, i) => quote = Some(c),
+            None if c == b'#' && i > 0 && s.get(i - 1).is_some_and(|&p| is_space(p)) => {
+                return s.get(..i).unwrap_or_default();
+            }
+            None => {}
+        }
+    }
+    s
+}
+
+/// `s` split on commas outside quotes.
+fn split_items(s: &[u8]) -> Vec<&[u8]> {
+    let mut out = Vec::new();
+    let mut quote: Option<u8> = None;
+    let mut start = 0;
+    for (i, &c) in s.iter().enumerate() {
+        match quote {
+            Some(q) => {
+                if c == q {
+                    quote = None;
+                }
+            }
+            None if (c == b'"' || c == b'\'') && opens_token(s, i) => quote = Some(c),
+            None if c == b',' => {
+                out.push(s.get(start..i).unwrap_or_default());
+                start = i + 1;
+            }
+            None => {}
+        }
+    }
+    out.push(s.get(start..).unwrap_or_default());
+    out
+}
+
 /// The frontmatter between a first line `---` and the next `---` line
 /// (`\r` and blanks around the dashes ignored). `None` without one, or when
 /// it never closes.
@@ -91,14 +146,16 @@ pub fn parse(text: &[u8]) -> Option<Frontmatter> {
             continue;
         };
         let key = lossy(trim_space(line.get(..colon).unwrap_or_default()));
-        let rest = trim_space(line.get(colon + 1..).unwrap_or_default());
+        let rest = trim_space(cut_comment(trim_space(
+            line.get(colon + 1..).unwrap_or_default(),
+        )));
         let value = if rest.is_empty() {
             Value::Block(Vec::new())
         } else if rest.len() >= 2 && rest.first() == Some(&b'[') && rest.last() == Some(&b']') {
             let inner = rest.get(1..rest.len() - 1).unwrap_or_default();
             Value::Inline(
-                inner
-                    .split(|&c| c == b',')
+                split_items(inner)
+                    .into_iter()
                     .map(unquote)
                     .filter(|s| !s.is_empty())
                     .collect(),
@@ -138,5 +195,20 @@ mod tests {
         assert!(parse(b"---\ntype: x\n").is_none());
         assert!(parse(b"").is_none());
         assert!(parse(b"---\n---\n").is_some());
+    }
+
+    #[test]
+    fn inline_lists_split_outside_quotes() {
+        let fm = parse(b"---\nchildren: [\"a,b.md\", c.md, 'd,e.md']\n---\n").unwrap();
+        assert_eq!(fm.list("children"), ["a,b.md", "c.md", "d,e.md"]);
+    }
+
+    #[test]
+    fn scalars_drop_trailing_comments() {
+        let fm =
+            parse(b"---\nupdated: 2026-01-15 # bumped\nq: \"a # b\" # c\nh: a#b\n---\n").unwrap();
+        assert_eq!(fm.scalar("updated"), Some("2026-01-15"));
+        assert_eq!(fm.scalar("q"), Some("a # b"));
+        assert_eq!(fm.scalar("h"), Some("a#b"));
     }
 }

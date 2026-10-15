@@ -62,7 +62,7 @@ fn frontmatter_values_are_checked() {
     );
     write(
         &p,
-        ".spec/features/auth/tech.md",
+        ".spec/features/auth/research.md",
         &FTECH
             .replace("{f}", "auth")
             .replace("feature-tech", "feature-notes"),
@@ -75,7 +75,50 @@ fn frontmatter_values_are_checked() {
     );
     assert!(
         got.iter()
-            .any(|m| m.starts_with("features/auth/tech.md: type 'feature-notes' is not one of")),
+            .any(|m| m.starts_with("features/auth/research.md: type 'feature-notes' is not one of")),
+        "{got:?}"
+    );
+}
+
+#[test]
+fn a_bad_legacy_feature_type_is_sf20_only() {
+    let p = tree("ad-legacy-type", &["auth"]);
+    write(
+        &p,
+        ".spec/features/auth/tech.md",
+        &FTECH
+            .replace("{f}", "auth")
+            .replace("feature-tech", "feature-notes"),
+    );
+    assert_eq!(found(&p, "SF26"), Vec::<String>::new());
+    assert!(!found(&p, "SF20").is_empty());
+}
+
+#[test]
+fn blank_or_non_scalar_values_are_invalid() {
+    let p = tree("ad-blank", &[]);
+    write(
+        &p,
+        ".spec/product.md",
+        "---\ntype:\nscope: product\nchildren:\nupdated:\n---\n",
+    );
+    let got = found(&p, "SF26");
+    assert!(
+        got.contains(&"product.md: type is blank or not a scalar value".to_string()),
+        "{got:?}"
+    );
+    assert!(
+        got.contains(&"product.md: updated is blank or not a scalar value".to_string()),
+        "{got:?}"
+    );
+    write(
+        &p,
+        ".spec/product.md",
+        "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: [2026-01-15]\n---\n",
+    );
+    let got = found(&p, "SF26");
+    assert!(
+        got.contains(&"product.md: updated is blank or not a scalar value".to_string()),
         "{got:?}"
     );
 }
@@ -105,6 +148,45 @@ fn inline_children_must_exist_and_backlink() {
 }
 
 #[test]
+fn a_leading_dot_slash_is_normalised() {
+    let p = tree("ad-dotslash", &[]);
+    write(
+        &p,
+        ".spec/tech.md",
+        "---\ntype: entrypoint\nscope: technical\nchildren: [./tech-a.md, ./tech-b.md]\nupdated: 2026-01-15\n---\n",
+    );
+    write(
+        &p,
+        ".spec/tech-a.md",
+        "---\ntype: tech-topic\nparent: \"./tech.md\"\nscope: a\ncovers: x\nupdated: 2026-01-15\n---\n",
+    );
+    write(
+        &p,
+        ".spec/tech-b.md",
+        "---\ntype: tech-topic\nparent: product.md\nscope: b\ncovers: x\nupdated: 2026-01-15\n---\n",
+    );
+    let (_, v) = validate_json(&p, &[], &[]);
+    let hits: Vec<_> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["check"] == "SF27")
+        .collect();
+    assert_eq!(hits.len(), 1, "{hits:?}");
+    assert_eq!(
+        hits[0]["message"],
+        "tech-b.md: parent is 'product.md', but tech.md lists it as a child"
+    );
+    assert!(
+        hits[0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with(".spec/tech-b.md"),
+        "{hits:?}"
+    );
+}
+
+#[test]
 fn a_missing_block_child_is_reported_once() {
     let p = tree("ad-block", &[]);
     write(
@@ -125,4 +207,18 @@ fn feature_folders_need_a_plan_row() {
     );
     std::fs::remove_file(p.join(".spec/plan.md")).unwrap();
     assert_eq!(found(&p, "SF28").len(), 3);
+}
+
+#[test]
+fn a_fenced_plan_row_does_not_count() {
+    let p = tree("ad-fenced", &["auth", "billing", "fenced"]);
+    write(
+        &p,
+        ".spec/plan.md",
+        &format!("{PLAN}\n```\n| fenced | x |\n```\n\n~~~\n| fenced | y |\n~~~\n"),
+    );
+    assert_eq!(
+        found(&p, "SF28"),
+        ["features/fenced/: no row in plan.md names 'fenced'"]
+    );
 }

@@ -471,6 +471,13 @@ fn hits<'a>(v: &'a serde_json::Value, id: &str, needle: &str) -> Vec<&'a serde_j
 
 #[test]
 fn every_check_is_either_triggered_or_pending() {
+    let all = registered();
+    for id in PENDING {
+        assert!(
+            all.iter().any(|r| r == id),
+            "{id}: PENDING but not registered"
+        );
+    }
     for id in registered() {
         let pending = PENDING.contains(&id.as_str());
         assert!(
@@ -482,7 +489,7 @@ fn every_check_is_either_triggered_or_pending() {
 
 #[test]
 fn warn_error_off_matrix() {
-    let mut covered = 0;
+    let mut covered: Vec<String> = Vec::new();
     for id in registered() {
         let Some(t) = trigger(&id) else { continue };
         let (warn_code, warn) = run_with(&t, Some((&id, "warn")));
@@ -523,11 +530,14 @@ fn warn_error_off_matrix() {
             "{id} off: a message still names {:?}\n{off:#}",
             t.needle
         );
-        covered += 1;
+        covered.push(id.clone());
     }
+    let expected: Vec<String> = registered()
+        .into_iter()
+        .filter(|id| !PENDING.contains(&id.as_str()))
+        .collect();
     assert_eq!(
-        covered,
-        registered().len() - PENDING.len(),
+        covered, expected,
         "matrix must cover every non-pending check"
     );
 }

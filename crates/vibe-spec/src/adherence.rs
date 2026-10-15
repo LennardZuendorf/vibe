@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use crate::frontmatter::{self, Frontmatter, Value};
 use crate::report::Report;
 use crate::text::{
-    is_date, join_raw, lines, lossy, md_files, name_of, sub_dirs, trim_space, trim_start_space,
+    Fences, is_date, join_raw, lines, lossy, md_files, name_of, sub_dirs, trim_space,
+    trim_start_space,
 };
 use crate::validate::Ctx;
 
@@ -81,43 +82,76 @@ pub fn run(r: &mut Report, ctx: &Ctx, files: &[PathBuf], layered: bool) {
 }
 
 fn values(r: &mut Report, rel: &str, fm: &Frontmatter, layered: bool) {
-    if let Some(t) = fm.scalar("type") {
-        let vocabulary: Vec<&str> = if layered {
-            LAYERED_TYPES.to_vec()
-        } else {
-            FLAT_TYPES.to_vec()
+    // Legacy SF20 checks the exact type of a feature's product, tech, design
+    // and plan docs, so SF26's vocabulary skips them.
+    let legacy_typed = rel
+        .strip_prefix("features/")
+        .and_then(|r| r.split_once('/'))
+        .is_some_and(|(_, doc)| ["product.md", "tech.md", "design.md", "plan.md"].contains(&doc));
+    match fm.get("type") {
+        None => {}
+        Some(Value::Scalar(t)) => {
+            let t = t.as_str();
+            if !legacy_typed {
+                let vocabulary: Vec<&str> = if layered {
+                    LAYERED_TYPES.to_vec()
+                } else {
+                    FLAT_TYPES.to_vec()
+                }
+                .into_iter()
+                .chain(FEATURE_TYPES)
+                .collect();
+                if !vocabulary.contains(&t) {
+                    r.warn(
+                        "SF26",
+                        format!("{rel}: type '{t}' is not one of {}", vocabulary.join(", "))
+                            .as_bytes(),
+                    );
+                }
+            }
+            if t == "entrypoint"
+                && let Some(s) = fm.scalar("scope")
+                && !SCOPES.contains(&s)
+            {
+                r.warn(
+                    "SF26",
+                    format!("{rel}: scope '{s}' is not one of {}", SCOPES.join(", ")).as_bytes(),
+                );
+            }
         }
-        .into_iter()
-        .chain(FEATURE_TYPES)
-        .collect();
-        if !vocabulary.contains(&t) {
-            r.warn(
-                "SF26",
-                format!("{rel}: type '{t}' is not one of {}", vocabulary.join(", ")).as_bytes(),
-            );
-        }
-        if t == "entrypoint"
-            && let Some(s) = fm.scalar("scope")
-            && !SCOPES.contains(&s)
-        {
-            r.warn(
-                "SF26",
-                format!("{rel}: scope '{s}' is not one of {}", SCOPES.join(", ")).as_bytes(),
-            );
-        }
-    }
-    if let Some(u) = fm.scalar("updated")
-        && !is_date(u.as_bytes())
-    {
-        r.warn(
+        Some(_) => r.warn(
             "SF26",
-            format!("{rel}: updated '{u}' is not a YYYY-MM-DD date").as_bytes(),
-        );
+            format!("{rel}: type is blank or not a scalar value").as_bytes(),
+        ),
+    }
+    match fm.get("updated") {
+        None => {}
+        Some(Value::Scalar(u)) => {
+            if !is_date(u.as_bytes()) {
+                r.warn(
+                    "SF26",
+                    format!("{rel}: updated '{u}' is not a YYYY-MM-DD date").as_bytes(),
+                );
+            }
+        }
+        Some(_) => r.warn(
+            "SF26",
+            format!("{rel}: updated is blank or not a scalar value").as_bytes(),
+        ),
     }
 }
 
-/// SF27. A missing child from a block list is legacy SF22's error, so only
-/// inline lists report existence here.
+/// A leading `./`, repeated, removed.
+fn norm(mut s: &str) -> &str {
+    while let Some(rest) = s.strip_prefix("./") {
+        s = rest;
+    }
+    s
+}
+
+/// SF27. The existence check is limited to inline lists (P3b-R11); legacy
+/// SF22 may also report a missing block-list child, but SF27 does not
+/// depend on it.
 fn children(r: &mut Report, ctx: &Ctx) {
     for name in ENTRYPOINTS {
         let Some(fm) = std::fs::read(ctx.dir.join(name))
@@ -127,7 +161,8 @@ fn children(r: &mut Report, ctx: &Ctx) {
             continue;
         };
         let inline = matches!(fm.get("children"), Some(Value::Inline(_)));
-        for child in fm.list("children") {
+        for listed in fm.list("children") {
+            let child = norm(&listed);
             if child.contains('{') {
                 continue;
             }
@@ -150,7 +185,7 @@ fn children(r: &mut Report, ctx: &Ctx) {
                 .and_then(|t| frontmatter::parse(&t))
                 .and_then(|f| f.scalar("parent").map(str::to_string));
             if let Some(p) = parent
-                && p != name
+                && norm(&p) != name
             {
                 r.at(&format!("{}/{child}", ctx.display));
                 r.warn(
@@ -165,7 +200,11 @@ fn children(r: &mut Report, ctx: &Ctx) {
 /// Every table cell of `text`: `` ` `` and `*` dropped, `[text](…)` → `text`, trimmed.
 fn row_cells(text: &[u8]) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
+    let mut fences = Fences::new();
     for line in lines(text) {
+        if fences.skip(line) {
+            continue;
+        }
         let t = trim_start_space(line);
         if !t.starts_with(b"|") {
             continue;
