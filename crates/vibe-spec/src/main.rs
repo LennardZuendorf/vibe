@@ -20,6 +20,7 @@ mod content;
 mod lessons;
 mod list_specs;
 mod pattern;
+mod query;
 mod root;
 mod scan_merges;
 mod text;
@@ -72,6 +73,23 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// A feature's plan rows (Spec JSON v1 `plan` with --json).
+    Plan {
+        /// Feature name (lowercase-kebab).
+        #[arg(long)]
+        feature: String,
+        /// Print Spec JSON v1.
+        #[arg(long)]
+        json: bool,
+    },
+    /// A feature's layer and docs (Spec JSON v1 `feature` with --json).
+    Feature {
+        /// Feature name (lowercase-kebab).
+        name: String,
+        /// Print Spec JSON v1.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -96,6 +114,8 @@ fn main() -> ExitCode {
             scan_merges::run(&found, &cwd, &raw_tail(std::env::args()))
         }
         Command::Validate { args: _ } => validate::run(&found, &cwd, &raw_tail(std::env::args())),
+        Command::Plan { feature, json } => query::plan(&found, &feature, json),
+        Command::Feature { name, json } => query::feature(&found, &name, json),
     };
     emit(&out);
     ExitCode::from(code)
