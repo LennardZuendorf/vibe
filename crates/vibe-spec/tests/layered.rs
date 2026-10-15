@@ -447,20 +447,72 @@ fn typed_notes_and_reachability_fail_when_broken() {
     }
 }
 
+fn only(p: &Path, check: &str, needle: &str) {
+    let got = findings(p);
+    assert_eq!(got.len(), 1, "exactly one finding: {got:#?}");
+    assert!(
+        got[0].0 == check && got[0].1.contains(needle),
+        "want {check} {needle:?}: {got:#?}"
+    );
+}
+
 #[test]
-fn a_root_hub_must_be_hub_typed() {
-    let p = layered_tree("ly-hubtype");
+fn a_hub_with_a_wrong_vocabulary_type_is_sf26_only() {
+    let p = layered_tree("ly-hubtype-vocab");
     write(
         &p,
         "docs/spec/design.md",
         "---\ntype: entrypoint\nscope: design\nchildren:\nupdated: 2026-01-15\n---\n\n# Design\n",
     );
-    let got = findings(&p);
-    assert!(
-        got.iter()
-            .any(|(c, m)| c == "SF33" && m == "design.md: a hub declares 'type: hub'"),
-        "{got:#?}"
+    only(&p, "SF26", "design.md: type 'entrypoint' is not one of");
+}
+
+#[test]
+fn a_hub_with_a_note_type_is_sf33_only() {
+    let p = layered_tree("ly-hubtype-area");
+    write(
+        &p,
+        "docs/spec/design.md",
+        "---\ntype: area\nupdated: 2026-01-15\n---\n\n# Design\n",
     );
+    only(&p, "SF33", "design.md: a hub declares 'type: hub'");
+}
+
+#[test]
+fn a_root_hub_without_type_is_sf20_only() {
+    let p = layered_tree("ly-hubtype-none");
+    write(
+        &p,
+        "docs/spec/design.md",
+        "---\nupdated: 2026-01-15\n---\n\n# Design\n",
+    );
+    only(&p, "SF20", "design.md: missing 'type:' in frontmatter");
+}
+
+#[test]
+fn a_part_hub_without_type_stays_sf33() {
+    let p = layered_tree("ly-parthub-none");
+    write(
+        &p,
+        "docs/spec/parts/mobile/product.md",
+        "---\nupdated: 2026-01-15\n---\n\n# Mobile\n\n- [Screens](areas/screens.md)\n",
+    );
+    only(
+        &p,
+        "SF33",
+        "parts/mobile/product.md: a hub declares 'type: hub'",
+    );
+}
+
+#[test]
+fn a_note_with_a_blank_updated_is_sf26_only() {
+    let p = layered_tree("ly-updated-blank");
+    write(
+        &p,
+        "docs/spec/flows/checkout.md",
+        "---\ntype: flow\nupdated:\n---\n\nCart.\n",
+    );
+    only(&p, "SF26", "flows/checkout.md");
 }
 
 #[test]

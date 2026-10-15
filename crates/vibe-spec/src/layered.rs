@@ -313,7 +313,8 @@ fn typed(r: &mut Report, ctx: &Ctx, rel: &str, place: Place, text: &[u8]) {
                 }
                 Some(_) => {}
             }
-            if fm.scalar("updated").is_none() {
+            // A blank `updated:` is SF26's.
+            if fm.get("updated").is_none() {
                 r.warn("SF33", format!("{rel}: missing 'updated:'").as_bytes());
             }
             match want {
@@ -346,12 +347,21 @@ fn typed(r: &mut Report, ctx: &Ctx, rel: &str, place: Place, text: &[u8]) {
             }
         }
         Place::Hub | Place::PartHub => {
-            // A root hub with no frontmatter at all is SF20's.
+            // A root hub with no frontmatter or no `type` is SF20's; a blank
+            // or out-of-vocabulary `type` is SF26's. A part hub has no
+            // legacy check, so its missing `type` stays here.
             let fm = frontmatter::parse(text);
-            if place == Place::Hub && fm.is_none() {
-                return;
-            }
-            if !fm.is_some_and(|f| f.scalar("type") == Some("hub")) {
+            let wrong = match fm.as_ref().map(|f| f.get("type")) {
+                None => place == Place::PartHub,
+                Some(None) => place == Place::PartHub,
+                Some(Some(Value::Scalar(t))) => {
+                    t != "hub"
+                        && (LAYERED_TYPES.contains(&t.as_str())
+                            || FEATURE_TYPES.contains(&t.as_str()))
+                }
+                Some(Some(_)) => false,
+            };
+            if wrong {
                 r.warn(
                     "SF33",
                     format!("{rel}: a hub declares 'type: hub'").as_bytes(),
