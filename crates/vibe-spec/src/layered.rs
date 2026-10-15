@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
-use crate::adherence::{LAYERED_TYPES, feature_files};
+use crate::adherence::{FEATURE_TYPES, LAYERED_TYPES, feature_files};
 use crate::content;
 use crate::frontmatter::{self, Value};
 use crate::pattern::{md_link_target, md_links};
@@ -300,7 +300,10 @@ fn typed(r: &mut Report, ctx: &Ctx, rel: &str, place: Place, text: &[u8]) {
                     format!("{rel}: missing 'type:' (expected '{want}')").as_bytes(),
                 ),
                 Some(Value::Scalar(t))
-                    if t != want && t != "hub" && LAYERED_TYPES.contains(&t.as_str()) =>
+                    if t != want
+                        && t != "hub"
+                        && (LAYERED_TYPES.contains(&t.as_str())
+                            || FEATURE_TYPES.contains(&t.as_str())) =>
                 {
                     r.warn(
                         "SF33",

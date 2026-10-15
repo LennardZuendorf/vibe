@@ -579,6 +579,25 @@ fn sf33_leaves_vocabulary_problems_to_sf26() {
 }
 
 #[test]
+fn a_feature_type_in_a_kind_folder_is_a_mismatch() {
+    let p = layered_tree("ly-feature-type");
+    write(
+        &p,
+        "docs/spec/flows/stray.md",
+        "---\ntype: feature-tech\nupdated: 2026-01-15\n---\n\nx\n",
+    );
+    let got = of(&p, &["SF26", "SF33"]);
+    assert_eq!(
+        got,
+        vec![
+            "SF33 flows/stray.md: type 'feature-tech' does not match its folder (expected 'flow')"
+                .to_string()
+        ],
+        "{got:#?}"
+    );
+}
+
+#[test]
 fn a_root_hub_without_frontmatter_is_sf20s() {
     let p = layered_tree("ly-hubnofm");
     write(&p, "docs/spec/design.md", "# Design\n");
