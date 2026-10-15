@@ -5,11 +5,12 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::pattern::{cross_feature_deps, is_unit_heading, is_unit_row, r_ids, unit_ids};
+use crate::pattern::{
+    cross_feature_deps, has_word, is_unit_heading, is_unit_row, r_ids, rfc_keyword, unit_ids,
+};
 use crate::report::Report;
 use crate::text::{
-    contains, contains_ci, first_line, has_line_starting, is_space, lines, name_of, sub_dirs,
-    trim_space,
+    contains_ci, first_line, has_line_starting, is_space, lines, name_of, sub_dirs, trim_space,
 };
 
 const TOKEN_GROUPS: [&[u8]; 5] = [
@@ -79,9 +80,30 @@ pub fn design_tokens(r: &mut Report, text: &[u8], label: &[u8]) {
     }
 }
 
-/// SF8: the feature product's Scope section.
+/// The lines of the `## Scope` section: after the first line that is
+/// exactly `## Scope` (surrounding blanks allowed) up to the next `# ` or
+/// `## ` heading. `None` without one (P3b-R16).
+fn scope_section(text: &[u8]) -> Option<Vec<&[u8]>> {
+    let mut section: Option<Vec<&[u8]>> = None;
+    for line in lines(text) {
+        match section.as_mut() {
+            Some(s) => {
+                if line.starts_with(b"# ") || line.starts_with(b"## ") {
+                    break;
+                }
+                s.push(line);
+            }
+            None if trim_space(line) == b"## Scope" => section = Some(Vec::new()),
+            None => {}
+        }
+    }
+    section
+}
+
+/// SF8: the feature product's Scope section names what it owns and what
+/// it does not own, as words inside that section.
 pub fn feature_scope(r: &mut Report, text: &[u8], label: &[u8]) {
-    if !has_line_starting(text, b"## Scope") {
+    let Some(section) = scope_section(text) else {
         r.warn(
             "SF8",
             &cat!(
@@ -90,14 +112,15 @@ pub fn feature_scope(r: &mut Report, text: &[u8], label: &[u8]) {
             ),
         );
         return;
-    }
-    if !contains_ci(text, b"owns") {
+    };
+    let lower: Vec<Vec<u8>> = section.iter().map(|l| l.to_ascii_lowercase()).collect();
+    if !lower.iter().any(|l| has_word(l, b"owns")) {
         r.warn(
             "SF8",
             &cat!(label, ": Scope section missing 'Owns' column or row"),
         );
     }
-    if !contains_ci(text, b"does not own") {
+    if !lower.iter().any(|l| has_word(l, b"does not own")) {
         r.warn(
             "SF8",
             &cat!(
@@ -122,14 +145,6 @@ pub fn feature_frontmatter(r: &mut Report, text: &[u8], label: &[u8], kind: &str
     if (kind == "product" || kind == "tech") && !has_line_starting(text, b"sibling:") {
         r.warn("SF9", &cat!(label, ": missing 'sibling:' in frontmatter"));
     }
-}
-
-/// `toupper(s) ~ /(SHALL|MUST|SHOULD|MAY)/` (substring; F17 adds the word boundary).
-fn rfc(s: &[u8]) -> bool {
-    let up = s.to_ascii_uppercase();
-    [&b"SHALL"[..], b"MUST", b"SHOULD", b"MAY"]
-        .iter()
-        .any(|k| contains(&up, k))
 }
 
 /// SF10: `### Requirement:` blocks need an RFC-2119 keyword and a scenario.
@@ -166,7 +181,7 @@ pub fn requirements_scenarios(r: &mut Report, text: &[u8], label: &[u8]) {
                 .position(|&c| !is_space(c))
                 .map_or(&b""[..], |i| &rest[i..]);
             req = title.to_vec();
-            has_rfc = rfc(&req);
+            has_rfc = rfc_keyword(&req);
             scenarios = 0;
             in_req = true;
         } else if line.starts_with(b"#### Scenario:") {
@@ -181,7 +196,7 @@ pub fn requirements_scenarios(r: &mut Report, text: &[u8], label: &[u8]) {
                 has_rfc = false;
                 scenarios = 0;
             }
-        } else if in_req && rfc(line) {
+        } else if in_req && rfc_keyword(line) {
             has_rfc = true;
         }
     }
@@ -303,8 +318,8 @@ fn product_r_ids(text: &[u8]) -> BTreeSet<Vec<u8>> {
     ids
 }
 
-/// SF12: duplicate unit IDs, and product R-IDs not cited in the plan
-/// (`grep -q` substring: `R1` counts as cited by `R10`).
+/// SF12: duplicate unit IDs, and product R-IDs the plan does not cite as a
+/// whole word (one matcher for both sides, P3b-R3).
 pub fn id_traceability(r: &mut Report, product: &Path, plan: &[u8], label: &[u8]) {
     let mut ids: Vec<&[u8]> = lines(plan)
         .into_iter()
@@ -332,8 +347,9 @@ pub fn id_traceability(r: &mut Report, product: &Path, plan: &[u8], label: &[u8]
         r.info(&cat!(label, ": no R-IDs in product.md — R-ID trace check skipped (tag requirement headings '(R1)' to enable)"));
         return;
     }
+    let cited: BTreeSet<&[u8]> = r_ids(plan).into_iter().collect();
     for id in ids {
-        if !contains(plan, &id) {
+        if !cited.contains(id.as_slice()) {
             r.warn(
                 "SF12",
                 &cat!(

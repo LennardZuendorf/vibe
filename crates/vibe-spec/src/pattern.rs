@@ -155,8 +155,28 @@ pub fn is_unit_row(line: &[u8]) -> bool {
     line.get(j + spaces(j)) == Some(&b'|')
 }
 
-fn word(c: u8) -> bool {
+/// `[A-Za-z0-9_]`, the `\b` word class.
+pub fn is_word(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'_'
+}
+
+/// `needle` in `s` with a non-word byte (or an end) on both sides.
+pub fn has_word(s: &[u8], needle: &[u8]) -> bool {
+    if needle.is_empty() || s.len() < needle.len() {
+        return false;
+    }
+    (0..=s.len() - needle.len()).any(|i| {
+        s.get(i..).is_some_and(|rest| rest.starts_with(needle))
+            && (i == 0 || s.get(i - 1).is_some_and(|&c| !is_word(c)))
+            && s.get(i + needle.len()).is_none_or(|&c| !is_word(c))
+    })
+}
+
+/// An RFC 2119 keyword in capitals as a whole word (P3b-R17).
+pub fn rfc_keyword(s: &[u8]) -> bool {
+    [&b"SHALL"[..], b"MUST", b"SHOULD", b"MAY"]
+        .iter()
+        .any(|k| has_word(s, k))
 }
 
 /// `grep -oE '\b[a-z][a-z0-9-]*/[0-9]+\b'`.
@@ -164,7 +184,7 @@ pub fn cross_feature_deps(line: &[u8]) -> Vec<&[u8]> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < line.len() {
-        let starts = (i == 0 || !word(line[i - 1])) && line[i].is_ascii_lowercase();
+        let starts = (i == 0 || !is_word(line[i - 1])) && line[i].is_ascii_lowercase();
         if starts {
             let mut j = i + 1;
             while line
@@ -175,7 +195,7 @@ pub fn cross_feature_deps(line: &[u8]) -> Vec<&[u8]> {
             }
             if line.get(j) == Some(&b'/') {
                 let k = j + 1 + digits_at(line, j + 1);
-                if k > j + 1 && !line.get(k).is_some_and(|&c| word(c)) {
+                if k > j + 1 && !line.get(k).is_some_and(|&c| is_word(c)) {
                     out.push(&line[i..k]);
                     i = k;
                     continue;
@@ -197,7 +217,7 @@ pub fn r_ids(s: &[u8]) -> Vec<&[u8]> {
         for p in 0..rest.len() {
             let r = if p == 0 && rest[0] == b'R' {
                 0
-            } else if !word(rest[p]) && rest.get(p + 1) == Some(&b'R') {
+            } else if !is_word(rest[p]) && rest.get(p + 1) == Some(&b'R') {
                 p + 1
             } else {
                 continue;
@@ -208,7 +228,7 @@ pub fn r_ids(s: &[u8]) -> Vec<&[u8]> {
             }
             let end = r + 1 + d;
             match rest.get(end) {
-                Some(&c) if word(c) => continue,
+                Some(&c) if is_word(c) => continue,
                 Some(_) => {
                     out.push(&rest[r..end]);
                     rest = &rest[end + 1..];
@@ -275,6 +295,20 @@ mod tests {
             cross_feature_deps(b"see a-b/2 and x/1y c/3 _d/4"),
             vec![&b"a-b/2"[..], b"c/3"]
         );
+    }
+
+    #[test]
+    fn whole_words_only() {
+        assert!(has_word(b"a owns b", b"owns"));
+        assert!(has_word(b"**Owns**", b"Owns"));
+        assert!(!has_word(b"downstream", b"owns"));
+        assert!(!has_word(b"ownsx", b"owns"));
+        assert!(has_word(b"x does not own", b"does not own"));
+        assert!(rfc_keyword(b"Users MUST NOT x"));
+        assert!(rfc_keyword(b"(SHALL)"));
+        assert!(!rfc_keyword(b"Mayor of SHALLOW"));
+        assert!(!rfc_keyword(b"users must x"));
+        assert!(!rfc_keyword(b"MUSTN"));
     }
 
     #[test]

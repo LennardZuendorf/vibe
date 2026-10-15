@@ -496,6 +496,38 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
         },
         CaseDef {
             class: "features",
+            name: "rfc-boundary",
+            cwd: "",
+            runs: &[],
+            files: with(
+                filled(),
+                &[
+                    (
+                        ".spec/features/auth/product.md",
+                        "---\ntype: feature-product\nfeature: auth\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n## Scope\n\n| Owns | Does not own |\n|---|---|\n| sessions | billing |\n\n### Requirement: Mayor sign in\nThey enter the shallow end.\n#### Scenario: ok\nWorks.\n",
+                    ),
+                    (".spec/features/auth/tech.md", AUTH_TECH),
+                ],
+            ),
+        },
+        CaseDef {
+            class: "features",
+            name: "scope-section",
+            cwd: "",
+            runs: &[],
+            files: with(
+                filled(),
+                &[
+                    (
+                        ".spec/features/auth/product.md",
+                        "---\ntype: feature-product\nfeature: auth\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n## Scope\n\nTBD.\n\n## Notes\n\nThe downstream team does not own billing.\n",
+                    ),
+                    (".spec/features/auth/tech.md", AUTH_TECH),
+                ],
+            ),
+        },
+        CaseDef {
+            class: "features",
             name: "sf14-awk",
             cwd: "",
             runs: &[],

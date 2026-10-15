@@ -41,6 +41,7 @@ pub fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 /// Byte substring test; the empty needle is always found.
+#[allow(dead_code)]
 pub fn contains(hay: &[u8], needle: &[u8]) -> bool {
     needle.is_empty() || hay.windows(needle.len()).any(|w| w == needle)
 }

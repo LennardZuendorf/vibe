@@ -157,11 +157,11 @@ Feature `product.md` files may include a machine-readable `requirements:` list i
 
 ```yaml
 requirements:
-  - id: R-1
+  - id: R1
     title: "Login with email"
     strength: SHALL
     scenarios: 2
-  - id: R-2
+  - id: R2
     title: "Password reset flow"
     strength: SHALL
     scenarios: 1

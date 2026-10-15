@@ -26,11 +26,6 @@ live() { # <vibe-spec command> <oracle script> [args...]
   shift 2
   env -i PATH="$PATH" HOME="$HOME" LC_ALL=C TZ=UTC \
     bash "oracles/bash/spec/scripts/$script" "$@" >"$SCRATCH/oracle" 2>/dev/null || orc=$?
-  if [[ "$(uname)" == Darwin ]]; then
-    # BSD wc pads validate's SF15 count (P3a-R2); the port prints it unpadded.
-    sed -E 's/(SF15: [^ ]+ is) +/\1 /' "$SCRATCH/oracle" >"$SCRATCH/oracle.n"
-    mv "$SCRATCH/oracle.n" "$SCRATCH/oracle"
-  fi
   env -i PATH="$PATH" HOME="$HOME" LC_ALL=C TZ=UTC \
     "$BIN/vibe-spec" "$command" "$@" >"$SCRATCH/candidate" 2>/dev/null || crc=$?
   compared=$((compared + 1))
@@ -46,6 +41,6 @@ live list-specs list-specs.sh
 live lessons-for lessons-for.sh spec
 live lessons-for lessons-for.sh --format inject bash testing
 live scan-merges scan-merges.sh
-[[ "$compared" -ge 1 ]] || { echo "parity: live compared nothing" >&2; exit 1; }
+[[ "$compared" -eq 4 ]] || { echo "parity: live compared nothing" >&2; exit 1; }
 [[ "$fails" -eq 0 ]] || { echo "parity: $fails live mismatch(es)" >&2; exit 1; }
 echo "parity: self-check, candidate and live ($compared) green"
