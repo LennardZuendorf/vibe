@@ -232,13 +232,7 @@ fn base(name: &str) -> PathBuf {
 }
 
 fn trigger(id: &str) -> Option<Trigger> {
-    trigger_in("mx", id)
-}
-
-/// [`trigger`] in a scratch project named after `prefix`, so tests that run
-/// in parallel never share a directory.
-fn trigger_in(prefix: &str, id: &str) -> Option<Trigger> {
-    let p = base(&format!("{prefix}-{}", id.to_ascii_lowercase()));
+    let p = base(&format!("mx-{}", id.to_ascii_lowercase()));
     match id {
         "SF3" => {
             write(
@@ -445,7 +439,8 @@ fn warn_error_off_matrix() {
     let mut covered = 0;
     for id in registered() {
         let Some(t) = trigger(&id) else { continue };
-        let (_, warn) = run_with(&t, Some((&id, "warn")));
+        let (warn_code, warn) = run_with(&t, Some((&id, "warn")));
+        assert_eq!(warn_code, 0, "{id} warn must exit 0\n{warn:#}");
         let w = hits(&warn, &id, t.needle);
         assert!(
             !w.is_empty(),
@@ -472,6 +467,16 @@ fn warn_error_off_matrix() {
                 .all(|f| f["check"] != id.as_str()),
             "{id} off: {off:#}"
         );
+        assert!(
+            hits(&off, &id, t.needle).is_empty()
+                && off["findings"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|f| !f["message"].as_str().unwrap().contains(t.needle)),
+            "{id} off: a message still names {:?}\n{off:#}",
+            t.needle
+        );
         covered += 1;
     }
     assert!(covered >= 16, "matrix covered only {covered} checks");
@@ -479,7 +484,7 @@ fn warn_error_off_matrix() {
 
 #[test]
 fn json_answers_validate_against_the_schema() {
-    let t = trigger_in("schema", "SF13").unwrap();
+    let t = trigger("SF13").unwrap();
     let (code, v) = run_with(&t, None);
     assert_eq!(code, 0);
     assert_spec_json("validate", &v.to_string());
@@ -503,11 +508,11 @@ fn json_without_a_root_exits_3() {
 #[test]
 fn json_survives_hostile_bytes() {
     let p = base("mx-hostile");
-    write(
-        &p,
-        ".spec/lessons.md",
-        "# Lessons\n\n### Tab\there \u{1} \"q\" \\ x\n**Rule:** y\n",
-    );
+    std::fs::write(
+        p.join(".spec/lessons.md"),
+        b"# Lessons\n\n### Tab\there \x01 \"q\" \\ \xff\xfe x\n**Rule:** y\n",
+    )
+    .unwrap();
     std::fs::write(p.join(".spec/features/auth/plan.md"), b"---\ntype: feature-plan\nupdated: 2026-01-15\n---\n\n### auth/1 \xff\xfe\n\n### auth/1 again\n").unwrap();
     let out = spec(&p, &["validate", "--json"], &[]);
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -519,6 +524,37 @@ fn json_survives_hostile_bytes() {
             .iter()
             .any(|f| f["check"] == "SF16")
     );
+    assert!(
+        v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["message"].as_str().unwrap().contains('\u{fffd}')),
+        "{v:#}"
+    );
+}
+
+#[test]
+fn json_without_spec_files_reports_sf23() {
+    let p = project("mx-nofiles");
+    write(&p, ".spec/notes.txt", "x");
+    let out = spec(&p, &["validate", "--json"], &[]);
+    assert_eq!(out.code, 1, "{}", out.text());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_spec_json("validate", &v.to_string());
+    let f = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["check"] == "SF23")
+        .unwrap_or_else(|| panic!("{v:#}"));
+    assert!(
+        f["message"]
+            .as_str()
+            .unwrap()
+            .contains("No spec files found in .spec/")
+    );
+    assert!(f.get("file").is_none(), "{f}");
 }
 
 /// The `file` of every finding of `id` in `v`.
@@ -541,7 +577,7 @@ fn finding_files_name_the_checked_file() {
         ("SF23", ".spec/features/auth/tech.md"),
         ("SF14", ".spec/features/billing/product.md"),
     ] {
-        let t = trigger_in("files", id).unwrap();
+        let t = trigger(id).unwrap();
         let (_, v) = run_with(&t, None);
         let files = files_of(&v, id);
         assert!(!files.is_empty(), "{id}: no finding\n{v:#}");
