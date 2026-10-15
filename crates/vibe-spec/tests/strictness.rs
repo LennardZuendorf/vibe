@@ -156,3 +156,35 @@ fn an_explicit_root_still_reads_the_project_config() {
     let out = spec(&p, &["--root", ".spec", "validate"], &[]);
     assert!(!out.text().contains("SF13"), "{}", out.text());
 }
+
+const SF23_OFF: &str = r#"{"strictness": {"SF23": "off"}}"#;
+
+#[test]
+fn no_spec_files_error_cannot_be_silenced() {
+    let p = project("str-nofiles");
+    write(&p, ".spec/notes.txt", "x");
+    write(&p, ".vibe/spec.json", SF23_OFF);
+    for args in [&["validate"][..], &["validate", "--strict"][..]] {
+        let out = spec(&p, args, &[]);
+        assert_eq!(out.code, 1, "{}", out.text());
+        assert!(
+            out.text().contains("ERROR: No spec files found in .spec/"),
+            "{}",
+            out.text()
+        );
+    }
+}
+
+#[test]
+fn no_spec_root_error_cannot_be_silenced() {
+    let p = project("str-noroot");
+    write(&p, ".vibe/spec.json", SF23_OFF);
+    let out = spec(&p, &["validate"], &[]);
+    assert_eq!(out.code, 1, "{}", out.text());
+    assert!(
+        out.text()
+            .contains("ERROR: No spec root found. Run setup first: vibe-spec init"),
+        "{}",
+        out.text()
+    );
+}

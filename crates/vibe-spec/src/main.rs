@@ -71,7 +71,7 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Validate the spec tree (port of validate.sh).
+    /// Validate the spec tree (port of validate.sh, plus F17's checks).
     Validate {
         /// Promote every non-off check to error; refuse a run that examined nothing.
         #[arg(long)]

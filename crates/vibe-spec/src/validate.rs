@@ -58,19 +58,13 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     r.line(b"");
     if !dir.is_dir() {
         r.at("");
-        r.error(
-            "SF23",
-            b"No spec root found. Run setup first: vibe-spec init",
-        );
+        r.refuse(b"No spec root found. Run setup first: vibe-spec init");
         return (exit::FINDINGS, r.out);
     }
     let specs = md_files(&dir);
     if specs.is_empty() {
         r.at("");
-        r.error(
-            "SF23",
-            format!("No spec files found in {display}/").as_bytes(),
-        );
+        r.refuse(format!("No spec files found in {display}/").as_bytes());
         return (exit::FINDINGS, r.out);
     }
     let ctx = Ctx {
