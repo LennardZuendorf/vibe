@@ -138,3 +138,54 @@ fn exit_codes_follow_the_contract() {
     );
     assert_eq!(spec(&none, &["feature", "auth"], &[]).code, 3);
 }
+
+#[test]
+fn a_root_outside_the_project_reports_absolute_paths() {
+    let p = project("q-out-proj");
+    let outside = project("q-out-root");
+    write(&outside, "features/auth/plan.md", FALLBACK_PLAN);
+    let root = outside.to_string_lossy().into_owned();
+    let abs = outside
+        .join("features/auth/plan.md")
+        .to_string_lossy()
+        .into_owned();
+    let out = spec(
+        &p,
+        &["--root", &root, "plan", "--feature", "auth", "--json"],
+        &[],
+    );
+    let got = v(&out);
+    assert_eq!(got["source"]["path"], json!(abs));
+    let out = spec(&p, &["--root", &root, "feature", "auth", "--json"], &[]);
+    let got = v(&out);
+    let path = got["docs"][0]["path"].as_str().unwrap();
+    assert!(!path.starts_with("//"), "{path}");
+    assert_eq!(path, abs);
+}
+
+#[test]
+fn fenced_blocks_do_not_count_as_plan_structure() {
+    let p = project("q-fence");
+    std::fs::create_dir_all(p.join(".spec")).unwrap();
+    let plan = "### Task 1: A\n\n- [x] one\n- [x] two\n\n```md\n- [ ] x\n## Example\n```\n\n~~~~\n### Task 7: fake\n~~~\n- [ ] still fenced\n~~~~\n\n### Task 2: B\n\n- [ ] b\n";
+    write(&p, "docs/superpowers/plans/2026-02-01-fz.md", plan);
+    let got = v(&spec(&p, &["plan", "--feature", "fz", "--json"], &[]));
+    assert_eq!(
+        got["rows"],
+        json!([
+            { "id": "Task 1", "status": "done", "title": "A" },
+            { "id": "Task 2", "status": "todo", "title": "B" }
+        ])
+    );
+}
+
+#[test]
+fn a_directory_named_like_a_plan_is_skipped() {
+    let p = project("q-dir");
+    std::fs::create_dir_all(p.join(".spec")).unwrap();
+    std::fs::create_dir_all(p.join("docs/superpowers/plans/2026-02-01-dd.md")).unwrap();
+    assert_eq!(spec(&p, &["plan", "--feature", "dd"], &[]).code, 1);
+    write(&p, ".spec/features/dd/product.md", "x\n");
+    let got = v(&spec(&p, &["feature", "dd", "--json"], &[]));
+    assert_eq!(got["layer"], "fallback");
+}

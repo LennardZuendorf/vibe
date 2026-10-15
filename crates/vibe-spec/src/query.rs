@@ -55,6 +55,7 @@ fn newest(dir: &Path, feature: &str, suffix: &str) -> Option<PathBuf> {
     let mut hits: Vec<String> = std::fs::read_dir(dir)
         .ok()?
         .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| {
             let b = n.as_bytes();
@@ -65,13 +66,25 @@ fn newest(dir: &Path, feature: &str, suffix: &str) -> Option<PathBuf> {
     hits.pop().map(|n| dir.join(n))
 }
 
-/// `path` relative to `project`, `/`-joined.
+/// `path` relative to `project`, `/`-joined; the absolute path when it lies
+/// outside `project`.
 fn rel(project: &Path, path: &Path) -> String {
-    let p = path.strip_prefix(project).unwrap_or(path);
-    p.components()
-        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("/")
+    match path.strip_prefix(project) {
+        Ok(p) if !p.as_os_str().is_empty() => p
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/"),
+        _ => path.to_string_lossy().into_owned(),
+    }
+}
+
+/// Read `path`, or report `vibe-spec: <path>: <error>` and exit 1.
+fn read_plan(path: &Path) -> Result<Vec<u8>, (u8, Vec<u8>)> {
+    std::fs::read(path).map_err(|e| {
+        eprintln!("vibe-spec: {}: {e}", path.display());
+        (exit::FINDINGS, Vec::new())
+    })
 }
 
 /// `vibe-spec plan --feature <f> [--json]`.
@@ -82,7 +95,10 @@ pub fn plan(found: &Result<Root, Miss>, feature: &str, json_out: bool) -> (u8, V
     };
     let (path, rows) = match newest(&root.project.join(SP_PLANS), feature, ".md") {
         Some(p) => {
-            let rows = task_rows(&std::fs::read(&p).unwrap_or_default());
+            let rows = match read_plan(&p) {
+                Ok(text) => task_rows(&text),
+                Err(e) => return e,
+            };
             (p, rows)
         }
         None => {
@@ -91,7 +107,10 @@ pub fn plan(found: &Result<Root, Miss>, feature: &str, json_out: bool) -> (u8, V
                 eprintln!("vibe-spec plan: no plan for feature {feature}");
                 return (exit::FINDINGS, Vec::new());
             }
-            let rows = table_rows(&std::fs::read(&p).unwrap_or_default());
+            let rows = match read_plan(&p) {
+                Ok(text) => table_rows(&text),
+                Err(e) => return e,
+            };
             (p, rows)
         }
     };
@@ -130,7 +149,20 @@ pub fn plan(found: &Result<Root, Miss>, feature: &str, json_out: bool) -> (u8, V
 fn task_rows(text: &[u8]) -> Vec<Row> {
     let mut rows: Vec<Row> = Vec::new();
     let mut counts: Option<(usize, usize)> = None;
+    let mut fence: Option<(u8, usize)> = None;
     for line in lines(text) {
+        if let Some((ch, len)) = fence {
+            if fence_run(line)
+                .is_some_and(|(c, n, rest)| c == ch && n >= len && trim_space(rest).is_empty())
+            {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some((ch, len, _)) = fence_run(line) {
+            fence = Some((ch, len));
+            continue;
+        }
         if line.starts_with(b"## ") || line.starts_with(b"### ") {
             close(&mut rows, &mut counts);
             if let Some((id, title)) = task_heading(line) {
@@ -154,6 +186,22 @@ fn task_rows(text: &[u8]) -> Vec<Row> {
     }
     close(&mut rows, &mut counts);
     rows
+}
+
+/// A fence line: <=3 leading spaces, then a run of >=3 backticks or tildes.
+/// Returns (char, run length, rest of the line).
+fn fence_run(line: &[u8]) -> Option<(u8, usize, &[u8])> {
+    let indent = line.iter().take_while(|&&c| c == b' ').count();
+    if indent > 3 {
+        return None;
+    }
+    let body = line.get(indent..)?;
+    let ch = *body.first()?;
+    if ch != b'`' && ch != b'~' {
+        return None;
+    }
+    let n = body.iter().take_while(|&&c| c == ch).count();
+    (n >= 3).then(|| (ch, n, body.get(n..).unwrap_or_default()))
 }
 
 fn close(rows: &mut [Row], counts: &mut Option<(usize, usize)>) {
