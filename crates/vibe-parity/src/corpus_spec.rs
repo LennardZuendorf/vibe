@@ -114,6 +114,15 @@ const FEATURE_PLAN: &str =
 const FEATURE_TECH: &str = "---\ntype: feature-tech\nupdated: 2026-01-15\n---\n\n# auth — Tech\n\n<!-- merge -->\n## Auth\n\nSessions live in signed cookies.\n<!-- /merge -->\n\nLocal notes.\n\n<!-- merge -->\nTokens expire after 1 hour.\n<!-- /merge -->\n";
 const FEATURE_TECH_UNCLOSED: &str = "---\ntype: feature-tech\nupdated: 2026-01-15\n---\n\n# auth — Tech\n\n<!-- merge -->\nNever closed.\n";
 const TECH_HEAD: &str = "---\ntype: feature-tech\nupdated: 2026-01-15\n---\n\n# auth — Tech\n\n";
+const RICH_PRODUCT: &str = "---\ntype: entrypoint\nscope: product\nupdated: 2026-01-15\n---\n\n# Demo — Product\n\n### Requirement: Users sign in\nThey do.\n\n### Requirement:\nEmpty title.\n\n### Requirement: Export SHALL work\n#### Scenario: happy path\nGiven data.\n\n## Links\n\n[a](b(c).md) [web](https://x.md) [tpl]({name}.md) [top](tech.md#top) [dir](features/ghost/) (archive/old/)\n";
+const RICH_PLAN: &str = "---\ntype: entrypoint\nscope: plan\nupdated: 2026-01-15\n---\n\n# Plan\n\n## M1 — Alpha\n\n### auth/1 — leaked unit\n\n| auth/2 | leaked row |\n\n## Notes\n\n### auth/3 — fine here\n";
+const RICH_DESIGN: &str = "---\ntype: entrypoint\nscope: design\nchildren:\ncolors:\ntypography:\n  body: Inter\nrounded:\n# a comment\nspacing: 4px\ncomponents:\nupdated: 2026-01-15\n---\n\n# Design\n";
+const RICH_TECH: &str = "---\ntype: entrypoint\nscope: technical\nchildren:\n  - tech-api.md\n  - tech-{topic}.md\n  - tech-missing.md\nupdated: 2026-01-15\n---\n\n# Tech\n";
+const AUTH_PRODUCT: &str = "---\ntype: feature-product\nfeature: auth\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n# auth — Product\n\n## Scope\n\n| | |\n|---|---|\n| **Owns** | session cookies, login form, ui |\n| **Does not own** | billing |\n\n## Requirements\n\n### Requirement: Sign in (R1)\nUsers MUST sign in.\n#### Scenario: ok\nWorks.\n\n### Requirement: Sign out (R10)\nUsers MAY sign out.\n\n## Requirements Trace\n\n| R2 | missing |\n";
+const AUTH_PLAN: &str = "---\ntype: feature-plan\nfeature: auth\nparent: ../../plan.md\nupdated: 2026-01-15\n---\n\n# auth — Plan\n\nCovers R10.\n\n### auth/1 — Login\n\n### auth/1 — Login again\n\n### billing/2 — Cross\n\nDepends on billing/3 and auth/2.\n";
+const AUTH_TECH: &str = "---\ntype: feature-tech\nfeature: auth\nparent: ../../tech.md\nsibling: product.md\nupdated: 2026-01-15\n---\n\n# auth — Tech\n\n[design](design.md) [plan](plan.md) [gone](gone.md) [abs](/nonexistent/x.md)\n";
+const BILLING_PRODUCT: &str = "---\ntype: feature-product\nfeature: billing\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n# billing — Product\n\n## Scope\n\n| Owns | Does not own |\n|---|---|\n| `Session Cookies` | auth |\n| invoices | |\n";
+const BILLING_PLAN: &str = "---\ntype: feature-plan\nfeature: billing\nparent: ../../plan.md\nupdated: 2026-01-15\n---\n\n# billing — Plan\n\n## Requirements Trace\n\nNone yet.\n";
 
 fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
     let seed = seeded(templates)?;
@@ -386,6 +395,76 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
             cwd: "",
             runs: &[],
             files: with(filled(), &[(".spec/tech.md", &bogus_tech)]),
+        },
+        CaseDef {
+            class: "malformed",
+            name: "rich-root",
+            cwd: "",
+            runs: &[],
+            files: with(
+                filled(),
+                &[
+                    (".spec/product.md", RICH_PRODUCT),
+                    (".spec/plan.md", RICH_PLAN),
+                    (".spec/design.md", RICH_DESIGN),
+                    (".spec/tech.md", RICH_TECH),
+                    (".spec/tech-api.md", branch_doc),
+                    (
+                        ".spec/tech-Bad_Topic.md",
+                        "---\ntype: tech-topic\nparent: tech.md\nscope: s\ncovers: c\nupdated: 2026-01-15\n---\n",
+                    ),
+                    (
+                        ".spec/tech-orphan.md",
+                        "---\ntype: tech-topic\nupdated: 2026-01-15\n---\n",
+                    ),
+                    (
+                        ".spec/notes.md",
+                        "---\ntype: note\nupdated: 2026-01-15\n---\n",
+                    ),
+                    (
+                        ".spec/lessons.md",
+                        "# Lessons\n\n### Tagged\n**Tags:** spec\n\n### Escape \\t in titles\n**Rule:** untagged.\n\n### Last\n**Rule:** x\n**Tags:** spec",
+                    ),
+                    ("CLAUDE.md", "[ok](.spec/product.md) [bad](.spec/gone.md)\n"),
+                ],
+            ),
+        },
+        CaseDef {
+            class: "malformed",
+            name: "empty-root",
+            cwd: "",
+            runs: &[],
+            files: vec![(".spec/notes.txt".into(), "no markdown here\n".into())],
+        },
+        CaseDef {
+            class: "features",
+            name: "rich-features",
+            cwd: "",
+            runs: &[],
+            files: with(
+                filled(),
+                &[
+                    (".spec/features/auth/product.md", AUTH_PRODUCT),
+                    (".spec/features/auth/plan.md", AUTH_PLAN),
+                    (".spec/features/auth/tech.md", AUTH_TECH),
+                    (".spec/features/auth/design.md", "# no frontmatter\n"),
+                    (".spec/features/billing/product.md", BILLING_PRODUCT),
+                    (".spec/features/billing/plan.md", BILLING_PLAN),
+                ],
+            ),
+        },
+        CaseDef {
+            class: "filled",
+            name: "long-root",
+            cwd: "",
+            runs: &[],
+            files: with(
+                filled(),
+                &[(
+                    ".spec/product.md",
+                    &doc("entrypoint", "product", &"Line.\n".repeat(301)),
+                )],
+            ),
         },
     ])
 }

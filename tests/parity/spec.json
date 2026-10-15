@@ -5,19 +5,22 @@
   "oracle_root": "../../oracles/bash/spec",
   "commands": [
     { "name": "list-specs", "oracle": ["bash", "{oracle}/scripts/list-specs.sh"], "candidate": ["{candidate}", "list-specs"], "classes": ["no-root", "seeded", "filled", "features", "malformed"] },
-    { "name": "validate", "oracle": ["bash", "{oracle}/scripts/validate.sh"], "candidate": null, "classes": ["no-root", "seeded", "filled", "features", "malformed"] },
+    { "name": "validate", "oracle": ["bash", "{oracle}/scripts/validate.sh"], "candidate": ["{candidate}", "validate"], "classes": ["no-root", "seeded", "filled", "features", "malformed"] },
     { "name": "lessons-for", "oracle": ["bash", "{oracle}/scripts/lessons-for.sh"], "candidate": ["{candidate}", "lessons-for"], "classes": ["no-root", "seeded", "lessons"] },
     { "name": "scan-merges", "oracle": ["bash", "{oracle}/scripts/scan-merges.sh"], "candidate": ["{candidate}", "scan-merges"], "classes": ["no-root", "features"] },
     { "name": "check-drift", "oracle": ["bash", "{oracle}/scripts/check-drift.sh"], "candidate": null, "classes": ["no-root", "seeded", "filled", "features", "malformed"] },
     { "name": "promote", "oracle": ["bash", "{oracle}/scripts/promote.sh"], "candidate": null, "classes": ["features"] },
     { "name": "setup", "oracle": ["bash", "{oracle}/scripts/setup.sh"], "candidate": null, "classes": ["no-root", "seeded"] }
   ],
-  "floors": { "no-root": 2, "seeded": 2, "filled": 2, "lessons": 4, "features": 7, "malformed": 2 },
+  "floors": { "no-root": 2, "seeded": 2, "filled": 3, "lessons": 4, "features": 8, "malformed": 4 },
   "divergences": [
     { "command": "lessons-for", "case": "lessons/quotes", "args": ["--format", "json", "escape"], "field": "stdout", "reason": "the oracle prints quotes and backslashes raw (invalid JSON); the port escapes them" },
     { "command": "lessons-for", "case": "lessons/tagged", "args": ["--format", "json", "bash"], "field": "stdout", "reason": "the oracle prints quotes and backslashes raw (invalid JSON); the port escapes them" },
     { "command": "lessons-for", "case": "lessons/edge-args", "args": ["b.sh"], "field": "stdout", "reason": "the oracle's grep -qi treats the tag as a regex (b.sh matches bash); the port matches literally" },
     { "command": "scan-merges", "case": "features/quoted-preview", "args": ["--format", "json"], "field": "stdout", "reason": "the oracle prints quotes and backslashes raw (invalid JSON); the port escapes them" },
-    { "command": "scan-merges", "case": "features/long-preview", "args": ["--format", "json"], "field": "stdout", "reason": "the oracle cuts the preview inside a UTF-8 sequence and prints the raw byte (invalid JSON); the port emits valid JSON with U+FFFD" }
+    { "command": "scan-merges", "case": "features/long-preview", "args": ["--format", "json"], "field": "stdout", "reason": "the oracle cuts the preview inside a UTF-8 sequence and prints the raw byte (invalid JSON); the port emits valid JSON with U+FFFD" },
+    { "command": "validate", "case": "no-root/bare", "args": [], "field": "stdout", "reason": "the oracle prints its own setup.sh path; the port names vibe-spec init" },
+    { "command": "validate", "case": "no-root/subdir", "args": [], "field": "stdout", "reason": "the oracle prints its own setup.sh path; the port names vibe-spec init" },
+    { "command": "validate", "case": "filled/long-root", "args": [], "field": "stdout", "os": "macos", "reason": "BSD wc -l pads the SF15 count with spaces; the port prints it unpadded like GNU wc (P3a-R2)" }
   ]
 }

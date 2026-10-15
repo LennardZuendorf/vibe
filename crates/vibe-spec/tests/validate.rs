@@ -203,3 +203,73 @@ fn sf15_threshold_follows_bash_arithmetic() {
         );
     }
 }
+
+const AUTH_PRODUCT: &str = "---\ntype: feature-product\nfeature: auth\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n## Scope\n\n| | |\n|---|---|\n| **Owns** | session cookies, login form, ui |\n| **Does not own** | billing |\n\n## Requirements\n\n### Requirement: Sign in (R1)\nUsers MUST sign in.\n#### Scenario: ok\nWorks.\n\n### Requirement: Sign out (R10)\nThey leave.\n\n### Requirement:\nEmpty title.\n\n## Requirements Trace\n\n| R2 | missing |\n";
+const AUTH_PLAN: &str = "---\ntype: feature-plan\nfeature: auth\nparent: ../../plan.md\nupdated: 2026-01-15\n---\n\nCovers R10.\n\n### auth/1 — Login\n\n### auth/1 — Login again\n\n### billing/2 — Cross\n\nDepends on billing/3, auth/2 and x_y/4.\n";
+const BILLING_PRODUCT: &str = "---\ntype: feature-product\nfeature: billing\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n## Scope\n\n| Owns | Does not own |\n|---|---|\n| `Session Cookies` | auth |\n| invoices | |\n";
+
+#[test]
+fn content_checks_match() {
+    let p = project("val-content");
+    write(
+        &p,
+        ".spec/product.md",
+        "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n### Requirement: Users sign in\nThey do.\n\n### Requirement: Export SHALL work\n#### Scenario: ok\n",
+    );
+    write(
+        &p,
+        ".spec/plan.md",
+        "---\ntype: entrypoint\nupdated: 2026-01-15\n---\n\n## M1 — Alpha\n\n### auth/1 — leaked\n\n| auth/2 | row |\n|  AB12  | caps |\n\n## Notes\n\n### auth/3 — fine\n",
+    );
+    write(
+        &p,
+        ".spec/design.md",
+        "---\ntype: entrypoint\nchildren:\ncolors:\ntypography:\n  body: Inter\nrounded:\n# note\nspacing: 4px\ncomponents:\nupdated: 2026-01-15\n---\n",
+    );
+    write(&p, ".spec/features/auth/product.md", AUTH_PRODUCT);
+    write(
+        &p,
+        ".spec/features/auth/tech.md",
+        "---\ntype: feature-tech\nupdated: 2026-01-15\n---\n",
+    );
+    write(&p, ".spec/features/auth/plan.md", AUTH_PLAN);
+    write(
+        &p,
+        ".spec/features/auth/design.md",
+        "---\ntype: feature-design\nfeature: auth\nparent: x\nupdated: 2026-01-15\ncolors:\n---\n",
+    );
+    write(&p, ".spec/features/billing/product.md", BILLING_PRODUCT);
+    write(
+        &p,
+        ".spec/features/billing/plan.md",
+        "---\ntype: feature-plan\nupdated: 2026-01-15\n---\n\nNo units.\n",
+    );
+    write(
+        &p,
+        ".spec/features/billing/tech.md",
+        "---\ntype: feature-tech\nfeature: billing\nparent: x\nsibling: y\nupdated: 2026-01-15\n---\n",
+    );
+    assert_parity(&p, "validate", "validate.sh", &[]);
+}
+
+#[test]
+fn milestone_warnings_print_but_do_not_count() {
+    let p = project("val-subshell");
+    write(
+        &p,
+        ".spec/plan.md",
+        "---\ntype: entrypoint\nchildren:\nupdated: 2026-01-15\n---\n\n## M1\n\n### auth/1 — leaked\n",
+    );
+    let out = common::spec(&p, &["validate"], &[]);
+    assert!(
+        out.text().contains("milestone section embeds unit heading"),
+        "{}",
+        out.text()
+    );
+    assert!(
+        out.text().ends_with("Errors:   0\nWarnings: 0\n"),
+        "{}",
+        out.text()
+    );
+    assert_parity(&p, "validate", "validate.sh", &[]);
+}

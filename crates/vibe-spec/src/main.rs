@@ -1,7 +1,5 @@
 //! `vibe-spec`: the spec tool. F16 ports the read-only spec scripts and adds
 //! root discovery and the Spec JSON v1 queries.
-// F16 in progress: callers arrive in Tasks 3–7; Task 7 removes this.
-#![allow(dead_code, unused_macros)]
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -18,6 +16,7 @@ macro_rules! cat {
     }};
 }
 
+mod content;
 mod lessons;
 mod list_specs;
 mod pattern;

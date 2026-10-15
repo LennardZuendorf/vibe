@@ -11,6 +11,7 @@ use std::process::{Command, Stdio};
 
 use vibe_core::exit;
 
+use crate::content;
 use crate::pattern::{md_link_target, md_links, paren_links};
 use crate::root::{Miss, Root};
 use crate::text::{
@@ -124,6 +125,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
     }
     claude_md(&mut r, &project, &display);
     sf13(&mut r, &dir, &display);
+    content::sf14(&mut r, &dir);
     sf15(&mut r, &dir, &display);
     sf16(&mut r, &dir);
     let (errors, warnings) = (r.errors, r.warnings);
@@ -211,8 +213,13 @@ fn root_file(r: &mut Report, ctx: &Ctx, file: &Path) {
         }
     }
     if name == "design.md" {
+        content::design_tokens(r, &text, n);
         lint_design(r, ctx.project, &format!("{}/design.md", ctx.display), n);
     }
+    if name == "plan.md" {
+        content::root_plan_milestones(r, &text, n);
+    }
+    content::requirements_scenarios(r, &text, n);
     for line in lines(&text) {
         for link in md_links(line) {
             let target = md_link_target(link);
@@ -304,6 +311,12 @@ fn feature(r: &mut Report, ctx: &Ctx, fdir: &Path) {
         if !feature_doc(r, &text, &doc, required) {
             continue;
         }
+        let kind = required.trim_end_matches(".md");
+        content::feature_frontmatter(r, &text, doc.as_bytes(), kind);
+        if required == "product.md" {
+            content::feature_scope(r, &text, doc.as_bytes());
+        }
+        content::requirements_scenarios(r, &text, doc.as_bytes());
         for line in lines(&text) {
             for link in md_links(line) {
                 let target = md_link_target(link);
@@ -331,7 +344,9 @@ fn feature(r: &mut Report, ctx: &Ctx, fdir: &Path) {
         if !feature_doc(r, &text, &doc, optional) {
             continue;
         }
+        content::feature_frontmatter(r, &text, doc.as_bytes(), optional.trim_end_matches(".md"));
         if optional == "design.md" {
+            content::design_tokens(r, &text, doc.as_bytes());
             lint_design(
                 r,
                 ctx.project,
@@ -339,6 +354,12 @@ fn feature(r: &mut Report, ctx: &Ctx, fdir: &Path) {
                 doc.as_bytes(),
             );
         }
+        if optional == "plan.md" {
+            content::plan_structure(r, &text, doc.as_bytes());
+            content::id_traceability(r, &fdir.join("product.md"), &text, label.as_bytes());
+            content::cross_deps(r, &text, &fname, doc.as_bytes());
+        }
+        content::requirements_scenarios(r, &text, doc.as_bytes());
     }
     r.green(format!("{label}/: checked").as_bytes());
     r.line(b"");
