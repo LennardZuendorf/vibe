@@ -39,6 +39,8 @@ fn matches_the_oracle_across_formats_and_errors() {
         &["--"],
         &["--", "auth"],
         &["auth/"],
+        &["/auth"],
+        &["//auth"],
         &["./auth"],
         &["."],
         &[".."],

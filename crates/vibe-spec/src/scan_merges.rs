@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use vibe_core::exit;
 
 use crate::root::{Miss, Root};
-use crate::text::{json_str, name_of, read_lines, sub_dirs};
+use crate::text::{join_raw, json_str, name_of, read_lines, sub_dirs};
 
 struct Block {
     feature: String,
@@ -61,7 +61,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
         Some(f) => vec![(
             feature_name(f),
             f.clone(),
-            dir.join("features").join(f).join("tech.md"),
+            join_raw(&dir.join("features"), f.as_bytes()).join("tech.md"),
         )],
         None => sub_dirs(&dir.join("features"))
             .into_iter()

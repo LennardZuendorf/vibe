@@ -297,6 +297,8 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
                         &["--format", "plain"],
                         &["auth"],
                         &["nope"],
+                        &["/auth"],
+                        &["//auth"],
                     ],
                 ),
                 (
