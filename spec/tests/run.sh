@@ -1554,7 +1554,7 @@ test_f1_git_boundary() {
   printf '%s\n' '### f1-fixture-lesson' '**Tags:** alpha' >"$tmp/outer/.spec/lessons.md"
   (cd "$tmp/outer/inner" && git init -q .)
   for s in validate list-specs lessons-for scan-merges; do
-    out="$(cd "$tmp/outer/inner/sub" && bash "$REPO_ROOT/spec/scripts/$s.sh" alpha 2>&1 || true)"
+    out="$(cd "$tmp/outer/inner/sub" && bash "$REPO_ROOT/spec/scripts/$s.sh" alpha 2>&1)" || true
     case "$s" in
       validate|list-specs) [[ "$out" == *"No .spec/ directory found"* ]] || { bad=$((bad + 1)); echo "        offender: $s"; } ;;
       *) [[ "$out" != *"f1-merge-preview"* && "$out" != *"f1-fixture-lesson"* ]] || { bad=$((bad + 1)); echo "        offender: $s"; } ;;

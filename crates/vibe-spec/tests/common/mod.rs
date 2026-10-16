@@ -18,7 +18,16 @@ pub fn project(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("vibe-spec-test-{name}-{}-{n}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join(".git")).unwrap();
-    fs::canonicalize(dir).unwrap()
+    plain(fs::canonicalize(dir).unwrap())
+}
+
+/// Drops the Windows verbatim prefix that `fs::canonicalize` adds (`\\?\C:\…`):
+/// the binary prints the plain `C:\…` form. A no-op elsewhere.
+fn plain(path: PathBuf) -> PathBuf {
+    match path.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        Some(rest) if !rest.starts_with(r"UNC\") => PathBuf::from(rest),
+        _ => path,
+    }
 }
 
 /// Writes `text` to `root/rel`, creating parents.
