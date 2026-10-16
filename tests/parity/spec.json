@@ -9,7 +9,7 @@
     { "name": "lessons-for", "oracle": ["bash", "{oracle}/scripts/lessons-for.sh"], "candidate": ["{candidate}", "lessons-for"], "classes": ["no-root", "seeded", "lessons"] },
     { "name": "scan-merges", "oracle": ["bash", "{oracle}/scripts/scan-merges.sh"], "candidate": ["{candidate}", "scan-merges"], "classes": ["no-root", "features"] },
     { "name": "check-drift", "oracle": ["bash", "{oracle}/scripts/check-drift.sh"], "candidate": ["{candidate}", "check-drift"], "classes": ["no-root", "seeded", "filled", "features", "malformed"] },
-    { "name": "promote", "oracle": ["bash", "{oracle}/scripts/promote.sh"], "candidate": null, "classes": ["features"] },
+    { "name": "promote", "oracle": ["bash", "{oracle}/scripts/promote.sh"], "candidate": ["{candidate}", "promote"], "classes": ["features"] },
     { "name": "setup", "oracle": ["bash", "{oracle}/scripts/setup.sh"], "candidate": null, "classes": ["no-root", "seeded"] }
   ],
   "floors": { "no-root": 2, "seeded": 2, "filled": 3, "lessons": 4, "features": 15, "malformed": 4 },

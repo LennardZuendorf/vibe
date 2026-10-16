@@ -30,6 +30,7 @@ mod layered;
 mod lessons;
 mod list_specs;
 mod pattern;
+mod promote;
 mod query;
 mod report;
 mod root;
@@ -118,6 +119,13 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Promote a feature (port of promote.sh; requirement deltas; superpowers).
+    #[command(disable_help_flag = true)]
+    Promote {
+        /// `<feature> [--dry-run] [--target <file>]`.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Units cited by commits and tests/, uncited units, orphan citations.
     Trace {
         /// Only commits after this revision (`<ref>..HEAD`).
@@ -167,6 +175,7 @@ fn main() -> ExitCode {
         Command::CheckDrift { pre_merge, json } => {
             drift::run(&found, &cwd, &drift::Options { pre_merge, json })
         }
+        Command::Promote { args: _ } => promote::run(&found, &cwd, &raw_tail(std::env::args_os())),
         Command::Trace { since, json } => trace::run(&found, since.as_deref(), json),
     };
     emit(&out);
