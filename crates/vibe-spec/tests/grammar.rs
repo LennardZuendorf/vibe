@@ -290,3 +290,20 @@ fn fenced_examples_do_not_count() {
     );
     assert!(!got.iter().any(|m| m.starts_with("SF25")), "{got:?}");
 }
+
+#[test]
+fn removed_requirements_need_no_scenario_or_citation() {
+    let p = feature(
+        "gr-removed",
+        &format!(
+            "{SCOPE}## Requirements\n\n{OPENSPEC_AUTH}\n## REMOVED Requirements\n\n### Requirement: Legacy login (R9)\n**Reason**: replaced by passkeys.\n"
+        ),
+    );
+    write(
+        &p,
+        ".spec/features/auth/plan.md",
+        "---\ntype: feature-plan\nfeature: auth\nparent: ../../plan.md\nupdated: 2026-01-15\n---\n\n## Requirements Trace\n\nNone.\n\n### auth/1 — a\n",
+    );
+    assert_eq!(grammar(&p), Vec::<String>::new());
+    assert_eq!(messages(&p, "SF12"), Vec::<String>::new());
+}

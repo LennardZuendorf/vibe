@@ -360,12 +360,18 @@ fn feature(r: &mut Report, ctx: &Ctx, fdir: &Path) {
         }
         let kind = required.trim_end_matches(".md");
         content::feature_frontmatter(r, &text, doc.as_bytes(), kind);
+        // P3c-R11: REMOVED blocks are deletions, not requirements.
+        let reqs = if required == "product.md" {
+            crate::delta::without_removed(&text)
+        } else {
+            text.clone()
+        };
         if required == "product.md" {
             content::feature_scope(r, &text, doc.as_bytes());
-            content::requirement_population(r, &text, doc.as_bytes());
+            content::requirement_population(r, &reqs, doc.as_bytes());
         }
-        content::requirements_scenarios(r, &text, doc.as_bytes());
-        content::scenario_grammar(r, &text, doc.as_bytes());
+        content::requirements_scenarios(r, &reqs, doc.as_bytes());
+        content::scenario_grammar(r, &reqs, doc.as_bytes());
         for line in lines(&text) {
             for link in md_links(line) {
                 let target = md_link_target(link);

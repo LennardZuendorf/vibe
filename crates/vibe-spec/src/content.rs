@@ -347,7 +347,9 @@ pub fn id_traceability(r: &mut Report, product: &Path, plan: &[u8], label: &[u8]
     if !product.is_file() {
         return;
     }
-    let ids = product_r_ids(&std::fs::read(product).unwrap_or_default());
+    let ids = product_r_ids(&crate::delta::without_removed(
+        &std::fs::read(product).unwrap_or_default(),
+    ));
     if ids.is_empty() {
         r.info(&cat!(label, ": no R-IDs in product.md — R-ID trace check skipped (tag requirement headings '(R1)' to enable)"));
         return;

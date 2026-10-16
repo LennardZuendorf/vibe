@@ -122,6 +122,10 @@ const RICH_PLAN: &str = "---\ntype: entrypoint\nscope: plan\nupdated: 2026-01-15
 const RICH_DESIGN: &str = "---\ntype: entrypoint\nscope: design\nchildren:\ncolors:\ntypography:\n  body: Inter\nrounded:\n# a comment\nspacing: 4px\ncomponents:\nupdated: 2026-01-15\n---\n\n# Design\n";
 const RICH_TECH: &str = "---\ntype: entrypoint\nscope: technical\nchildren:\n  - tech-api.md\n  - tech-{topic}.md\n  - tech-missing.md\nupdated: 2026-01-15\n---\n\n# Tech\n";
 const AUTH_PRODUCT: &str = "---\ntype: feature-product\nfeature: auth\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n# auth — Product\n\n## Scope\n\n| | |\n|---|---|\n| **Owns** | session cookies, login form, ui |\n| **Does not own** | billing |\n\n## Requirements\n\n### Requirement: Sign in (R1)\nUsers MUST sign in.\n#### Scenario: ok\nWorks.\n\n### Requirement: Sign out (R10)\nUsers MAY sign out.\n\n## Requirements Trace\n\n| R2 | missing |\n";
+/// A fallback product whose only requirement section is REMOVED (P3c-R11).
+const DELTA_PRODUCT: &str = "---\ntype: feature-product\nfeature: auth\nparent: ../../product-auth.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n# auth — Product\n\n## REMOVED Requirements\n\n### Requirement: Legacy login (R9)\n**Reason**: replaced by passkeys.\n";
+/// Its `parent:` target, holding the requirement the delta removes.
+const DELTA_TOPIC: &str = "---\ntype: product-topic\nparent: product.md\nscope: auth\ncovers: sign-in\nupdated: 2026-01-15\n---\n\n# auth — Product\n\n## Requirements\n\n### Requirement: Legacy login (R9)\nThe system SHALL accept passwords.\n\n#### Scenario: password\n- **WHEN** a password is sent\n- **THEN** a session starts\n";
 const AUTH_PLAN: &str = "---\ntype: feature-plan\nfeature: auth\nparent: ../../plan.md\nupdated: 2026-01-15\n---\n\n# auth — Plan\n\nCovers R1 and R10.\n\n### auth/1 — Login\n\n### auth/1 — Login again\n\n### billing/2 — Cross\n\nDepends on billing/3 and auth/2.\n";
 const AUTH_TECH: &str = "---\ntype: feature-tech\nfeature: auth\nparent: ../../tech.md\nsibling: product.md\nupdated: 2026-01-15\n---\n\n# auth — Tech\n\n[design](design.md) [plan](plan.md) [gone](gone.md) [abs](/nonexistent/x.md)\n";
 const BILLING_PRODUCT: &str = "---\ntype: feature-product\nfeature: billing\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n# billing — Product\n\n## Scope\n\n| Owns | Does not own |\n|---|---|\n| `Session Cookies` | auth |\n| invoices | |\n";
@@ -286,6 +290,19 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
                 ],
             )],
             files: vec![(".spec/lessons.md".into(), tagged.clone())],
+        },
+        CaseDef {
+            class: "features",
+            name: "delta-removed",
+            cwd: "",
+            runs: &[],
+            files: feature(
+                FEATURE_TECH,
+                &[
+                    (".spec/features/auth/product.md", DELTA_PRODUCT),
+                    (".spec/product-auth.md", DELTA_TOPIC),
+                ],
+            ),
         },
         CaseDef {
             class: "features",

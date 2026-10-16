@@ -12,7 +12,7 @@
     { "name": "promote", "oracle": ["bash", "{oracle}/scripts/promote.sh"], "candidate": null, "classes": ["features"] },
     { "name": "setup", "oracle": ["bash", "{oracle}/scripts/setup.sh"], "candidate": null, "classes": ["no-root", "seeded"] }
   ],
-  "floors": { "no-root": 2, "seeded": 2, "filled": 3, "lessons": 4, "features": 13, "malformed": 4 },
+  "floors": { "no-root": 2, "seeded": 2, "filled": 3, "lessons": 4, "features": 14, "malformed": 4 },
   "divergences": [
     { "command": "lessons-for", "case": "lessons/quotes", "args": ["--format", "json", "escape"], "field": "stdout", "reason": "the oracle prints quotes and backslashes raw (invalid JSON); the port escapes them" },
     { "command": "lessons-for", "case": "lessons/tagged", "args": ["--format", "json", "bash"], "field": "stdout", "reason": "the oracle prints quotes raw (invalid JSON); the port escapes them" },
@@ -26,6 +26,7 @@
     { "command": "validate", "case": "features/sf14-awk", "args": [], "field": "stdout", "reason": "the oracle's awk processes escapes in -v and compares numeric-looking scope items as numbers; the port compares bytes literally" },
     { "command": "validate", "case": "features/rid-prefix", "args": [], "field": "stdout", "reason": "the oracle's grep -q counts R1 as cited by R10; the port compares whole R-IDs (P3b-R3)" },
     { "command": "validate", "case": "features/rfc-boundary", "args": [], "field": "stdout", "reason": "the oracle's awk matches MAY inside Mayor and SHALL inside shallow; the port needs a capital whole word (P3b-R17)" },
-    { "command": "validate", "case": "features/scope-section", "args": [], "field": "stdout", "reason": "the oracle greps owns/does not own across the whole file (downstream counts); the port reads words inside the ## Scope section (P3b-R16)" }
+    { "command": "validate", "case": "features/scope-section", "args": [], "field": "stdout", "reason": "the oracle greps owns/does not own across the whole file (downstream counts); the port reads words inside the ## Scope section (P3b-R16)" },
+    { "command": "validate", "case": "features/delta-removed", "args": [], "field": "stdout", "reason": "REMOVED blocks are deletions: the port exempts them from SF10 and SF12 (P3c-R11); the oracle reads them as requirements" }
   ]
 }
