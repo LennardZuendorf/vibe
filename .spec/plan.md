@@ -3,7 +3,7 @@ type: entrypoint
 scope: implementation
 covers: feature sequence, binary gates, validation criteria, open decisions
 children: []
-updated: 2026-10-15
+updated: 2026-10-16
 ---
 
 # vibe — Implementation Plan

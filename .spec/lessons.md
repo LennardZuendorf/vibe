@@ -289,3 +289,9 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Never write `A && B || C` in shell; put `|| true` outside the command substitution. Treat a CI shellcheck finding as authoritative over the local version.
 **Tags:** shell, ci, shellcheck
 **Date:** 2026-10-16
+
+### A status edit is a spec edit: bump `updated:`
+**Pattern:** Closing the F2–F17 rows changed `.spec/plan.md` without touching its `updated:` field, so `vibe-spec validate` gained an SF29 warning (updated older than the last commit).
+**Rule:** Bump `updated:` in the same commit as any edit to a spec doc, status cells included. Run `vibe-spec validate --json` before committing a spec edit.
+**Tags:** spec, compound, sf29
+**Date:** 2026-10-16
