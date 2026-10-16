@@ -214,7 +214,7 @@ jobs:
         run: rustup toolchain install ${{ matrix.toolchain }} --profile minimal
 
       - name: Test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --no-fail-fast
 
   parity:
     # F3/F16: the frozen spec oracles against themselves, against the

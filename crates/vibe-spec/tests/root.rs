@@ -45,7 +45,10 @@ fn the_nearest_directory_wins_the_walk() {
     fs::create_dir_all(p.join("pkg/.spec")).unwrap();
     let v = json(&spec(&p.join("pkg"), &["root", "--json"], &[]));
     assert_eq!(v["source"], "dot-spec");
-    assert_eq!(v["root"], p.join("pkg/.spec").to_string_lossy().as_ref());
+    assert_eq!(
+        v["root"],
+        p.join("pkg").join(".spec").to_string_lossy().as_ref()
+    );
 }
 
 #[test]

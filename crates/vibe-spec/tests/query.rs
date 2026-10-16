@@ -146,7 +146,9 @@ fn a_root_outside_the_project_reports_absolute_paths() {
     write(&outside, "features/auth/plan.md", FALLBACK_PLAN);
     let root = outside.to_string_lossy().into_owned();
     let abs = outside
-        .join("features/auth/plan.md")
+        .join("features")
+        .join("auth")
+        .join("plan.md")
         .to_string_lossy()
         .into_owned();
     let out = spec(
