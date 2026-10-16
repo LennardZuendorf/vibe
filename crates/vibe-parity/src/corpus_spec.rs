@@ -293,6 +293,16 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
         },
         CaseDef {
             class: "features",
+            name: "superpowers-artifact",
+            cwd: "",
+            runs: &[],
+            files: with(
+                filled(),
+                &[("docs/superpowers/plans/2026-01-14-auth.md", "# auth plan\n")],
+            ),
+        },
+        CaseDef {
+            class: "features",
             name: "delta-removed",
             cwd: "",
             runs: &[],

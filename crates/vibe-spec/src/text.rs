@@ -289,6 +289,36 @@ pub fn is_date(b: &[u8]) -> bool {
         })
 }
 
+/// Regular files under `dir`, recursive, as `/`-joined paths relative to
+/// `dir`, sorted by bytes. Dot names are skipped; symlinks are not followed
+/// and not listed.
+pub fn walk_files(dir: &Path) -> Vec<String> {
+    fn walk(dir: &Path, prefix: &str, out: &mut Vec<String>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                continue;
+            }
+            let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
+                continue;
+            };
+            let rel = format!("{prefix}{name}");
+            if meta.is_dir() {
+                walk(&entry.path(), &format!("{rel}/"), out);
+            } else if meta.is_file() {
+                out.push(rel);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, "", &mut out);
+    out.sort();
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

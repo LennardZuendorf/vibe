@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { checkSchema, validate } from './lib/schema.mjs';
 
 const COMPAT = 'additive-within-major; readers-ignore-unknown-fields';
-const QUERIES = ['root', 'lessons-for', 'plan', 'feature', 'validate', 'trace'];
+const QUERIES = ['root', 'lessons-for', 'plan', 'feature', 'validate', 'trace', 'check-drift'];
 // .spec/tech-spec.md "Root and discovery", steps 1-5; step 6 repeats 4-5 per parent (`depth`).
 const ROOT_SOURCES = ['flag', 'env', 'config', 'docs-spec', 'dot-spec'];
 // Required sets are part of the v1 contract: dropping one breaks readers (additive-only).
@@ -21,6 +21,9 @@ const REQUIRED = {
   feature: ['docs', 'feature', 'layer', 'v'],
   trace: ['cited', 'history', 'orphans', 'uncited', 'units', 'v'],
   orphan: ['source', 'unit'],
+  'check-drift': ['errors', 'findings', 'pre_merge', 'root', 'v', 'warnings'],
+  'drift-feature': ['name', 'status'],
+  'drift-finding': ['message', 'severity'],
   doc: ['kind', 'path'],
   validate: ['checks', 'errors', 'examined', 'findings', 'layout', 'root', 'strict', 'v', 'warnings'],
   'check-level': ['id', 'level'],

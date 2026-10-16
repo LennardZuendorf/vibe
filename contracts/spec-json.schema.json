@@ -1,9 +1,39 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Spec JSON v1",
-  "description": "Answers of the read-only vibe-spec queries when called with --json: root, lessons-for, plan, feature, validate, trace. Each answer is one JSON object with \"v\": 1. This is a new output; it is not the legacy `lessons-for.sh --format json` array, which stays byte-identical except that the port emits valid JSON: it escapes quotes, backslashes and control characters and replaces invalid UTF-8 with U+FFFD (pinned divergence).",
+  "description": "Answers of the read-only vibe-spec queries when called with --json: root, lessons-for, plan, feature, validate, trace, check-drift. Each answer is one JSON object with \"v\": 1. This is a new output; it is not the legacy `lessons-for.sh --format json` array, which stays byte-identical except that the port emits valid JSON: it escapes quotes, backslashes and control characters and replaces invalid UTF-8 with U+FFFD (pinned divergence).",
   "x-vibe-compat": "additive-within-major; readers-ignore-unknown-fields",
   "$defs": {
+    "check-drift": {
+      "type": "object",
+      "required": ["v", "root", "pre_merge", "errors", "warnings", "findings"],
+      "properties": {
+        "v": { "const": 1 },
+        "root": { "type": "string", "minLength": 1 },
+        "pre_merge": { "type": "boolean" },
+        "errors": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 },
+        "features": { "type": "array", "items": { "$ref": "#/$defs/drift-feature" } },
+        "findings": { "type": "array", "items": { "$ref": "#/$defs/drift-finding" } }
+      }
+    },
+    "drift-feature": {
+      "type": "object",
+      "required": ["name", "status"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["NOT STARTED", "IN PROGRESS", "DONE", "NO ROW"] }
+      }
+    },
+    "drift-finding": {
+      "type": "object",
+      "required": ["severity", "message"],
+      "properties": {
+        "severity": { "enum": ["warning", "error"] },
+        "message": { "type": "string" },
+        "file": { "type": "string", "minLength": 1 }
+      }
+    },
     "root": {
       "type": "object",
       "required": ["v", "root", "source"],

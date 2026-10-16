@@ -6,7 +6,7 @@ mod common;
 
 use std::path::Path;
 
-use common::{project, spec, staged_oracle, write};
+use common::{assert_spec_json, project, spec, staged_oracle, write};
 
 /// Exit code, stdout and stderr all equal the staged oracle's.
 fn same(p: &Path) {
@@ -115,4 +115,63 @@ fn a_symlinked_root_is_scanned() {
         "{}",
         got.stderr
     );
+}
+
+const NEXT: &str = " — promote its facts, then run vibe-spec promote <feature> --done";
+
+#[test]
+fn superpowers_artifacts_warn_and_fail_pre_merge() {
+    let p = project("dr-sp");
+    write(&p, ".spec/plan.md", "x\n");
+    write(&p, "docs/superpowers/plans/2026-01-01-auth.md", "x\n");
+    write(
+        &p,
+        "docs/superpowers/specs/deep/2026-01-01-auth-design.md",
+        "x\n",
+    );
+    write(&p, "docs/superpowers/.DS_Store", "x");
+    let plain = spec(&p, &["check-drift"], &[]);
+    assert_eq!(plain.code, 0, "{}", plain.stderr);
+    assert_eq!(plain.text(), "check-drift: OK — 0 errors, 2 warning(s).\n");
+    assert_eq!(
+        plain.stderr,
+        format!(
+            "check-drift: WARN: superpowers artifact remains: docs/superpowers/plans/2026-01-01-auth.md{NEXT}\n\
+             check-drift: WARN: superpowers artifact remains: docs/superpowers/specs/deep/2026-01-01-auth-design.md{NEXT}\n"
+        )
+    );
+    let gate = spec(&p, &["check-drift", "--pre-merge"], &[]);
+    assert_eq!(gate.code, 1);
+    assert!(gate.text().is_empty());
+    assert!(
+        gate.stderr
+            .ends_with("check-drift: FAIL — 2 error(s), 0 warning(s).\n"),
+        "{}",
+        gate.stderr
+    );
+}
+
+#[test]
+fn json_validates_and_exits_like_text() {
+    let p = project("dr-json");
+    write(&p, ".spec/plan.md", "| auth | DONE |\n");
+    write(&p, ".spec/features/auth/plan.md", "NOT STARTED\n");
+    let out = spec(&p, &["check-drift", "--json"], &[]);
+    assert_eq!(out.code, 1);
+    assert!(out.stderr.is_empty(), "{}", out.stderr);
+    assert_spec_json("check-drift", &out.text());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        (v["errors"].as_u64(), v["warnings"].as_u64()),
+        (Some(1), Some(1))
+    );
+    assert_eq!(v["pre_merge"], false);
+    assert_eq!(
+        v["features"],
+        serde_json::json!([{ "name": "auth", "status": "DONE" }])
+    );
+    assert_eq!(v["findings"][1]["file"], ".spec/features/auth/plan.md");
+    let none = project("dr-json-none");
+    let miss = spec(&none, &["check-drift", "--json"], &[]);
+    assert_eq!((miss.code, miss.stdout.is_empty()), (3, true));
 }

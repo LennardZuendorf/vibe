@@ -108,8 +108,16 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Compound drift gate (port of check-drift.sh).
-    CheckDrift,
+    /// Compound drift gate (port of check-drift.sh); `--pre-merge` also fails
+    /// on superpowers artifacts left under docs/superpowers/.
+    CheckDrift {
+        /// Superpowers artifacts are errors (run before merging).
+        #[arg(long)]
+        pre_merge: bool,
+        /// Print Spec JSON v1.
+        #[arg(long)]
+        json: bool,
+    },
     /// Units cited by commits and tests/, uncited units, orphan citations.
     Trace {
         /// Only commits after this revision (`<ref>..HEAD`).
@@ -156,7 +164,9 @@ fn main() -> ExitCode {
         ),
         Command::Plan { feature, json } => query::plan(&found, &feature, json),
         Command::Feature { name, json } => query::feature(&found, &name, json),
-        Command::CheckDrift => drift::run(&found, &cwd),
+        Command::CheckDrift { pre_merge, json } => {
+            drift::run(&found, &cwd, &drift::Options { pre_merge, json })
+        }
         Command::Trace { since, json } => trace::run(&found, since.as_deref(), json),
     };
     emit(&out);

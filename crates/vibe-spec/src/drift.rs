@@ -5,10 +5,19 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use serde_json::{Value, json};
 use vibe_core::exit;
 
 use crate::root::{Miss, Root};
-use crate::text::{find, lines, name_of, sub_dirs};
+use crate::text::{find, lines, lossy, name_of, sub_dirs, walk_files};
+
+/// Command options.
+pub struct Options {
+    /// Superpowers artifacts are errors, not warnings (D46).
+    pub pre_merge: bool,
+    /// Print Spec JSON v1 `check-drift` instead of text.
+    pub json: bool,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Sev {
@@ -20,7 +29,6 @@ enum Sev {
 struct Event {
     sev: Sev,
     msg: Vec<u8>,
-    #[allow(dead_code)] // Task 4 reads it for --json.
     file: Option<String>,
 }
 
@@ -116,10 +124,10 @@ fn count_targets(dir: &Path) -> Vec<String> {
 }
 
 /// Runs the command.
-pub fn run(found: &Result<Root, Miss>, cwd: &Path) -> (u8, Vec<u8>) {
+pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u8>) {
     let root = match found {
         Ok(root) => root,
-        Err(Miss::NotFound) => {
+        Err(Miss::NotFound) if !opts.json => {
             eprintln!(
                 "check-drift: no .spec/ under {}; nothing to check.",
                 marker_root(cwd).to_string_lossy()
@@ -138,6 +146,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path) -> (u8, Vec<u8>) {
         .then(|| std::fs::read(&plan_path).unwrap_or_default());
     let features: Vec<PathBuf> = sub_dirs(&root.dir.join("features"));
     let mut ev: Vec<Event> = Vec::new();
+    let mut statuses: Vec<(String, &'static str)> = Vec::new();
 
     // (a) every live feature folder must be named in the root plan.
     match &plan {
@@ -177,6 +186,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path) -> (u8, Vec<u8>) {
             let row = first_line_with(text, format!("| {feat} |").as_bytes())
                 .or_else(|| first_line_with(text, format!("**{feat}**").as_bytes()));
             let Some(row) = row else {
+                statuses.push((feat.clone(), "NO ROW"));
                 ev.push(event(
                     Sev::Note,
                     cat!(
@@ -191,6 +201,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path) -> (u8, Vec<u8>) {
                 continue;
             };
             let status = row_status(row);
+            statuses.push((feat.clone(), status));
             ev.push(event(
                 Sev::Note,
                 cat!(
@@ -278,8 +289,54 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path) -> (u8, Vec<u8>) {
         }
     }
 
+    // D46 (P3c-R4): superpowers artifacts left in the tree.
+    for rel in walk_files(&root.project.join("docs").join("superpowers")) {
+        let shown = format!("docs/superpowers/{rel}");
+        let sev = if opts.pre_merge {
+            Sev::Error
+        } else {
+            Sev::Warning
+        };
+        ev.push(event(
+            sev,
+            cat!(
+                "superpowers artifact remains: ",
+                shown,
+                " — promote its facts, then run vibe-spec promote <feature> --done"
+            ),
+            Some(shown.clone()),
+        ));
+    }
+
     let errors = ev.iter().filter(|e| e.sev == Sev::Error).count();
     let warnings = ev.iter().filter(|e| e.sev == Sev::Warning).count();
+    if opts.json {
+        let findings: Vec<Value> = ev
+            .iter()
+            .filter(|e| e.sev != Sev::Note)
+            .map(|e| {
+                let mut f = json!({
+                    "severity": if e.sev == Sev::Error { "error" } else { "warning" },
+                    "message": lossy(&e.msg),
+                });
+                if let Some(file) = &e.file {
+                    f["file"] = json!(file);
+                }
+                f
+            })
+            .collect();
+        let v = json!({
+            "v": 1,
+            "root": d,
+            "pre_merge": opts.pre_merge,
+            "errors": errors,
+            "warnings": warnings,
+            "features": statuses.iter().map(|(n, s)| json!({ "name": n, "status": s })).collect::<Vec<_>>(),
+            "findings": findings,
+        });
+        let code = if errors > 0 { exit::FINDINGS } else { exit::OK };
+        return (code, format!("{v}\n").into_bytes());
+    }
     let mut err = std::io::stderr().lock();
     for e in &ev {
         let line = match e.sev {
