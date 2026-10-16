@@ -327,3 +327,19 @@ pub fn layered_tree(name: &str) -> PathBuf {
     write(&p, "src/billing.rs", "// billing\n");
     p
 }
+
+/// Runs a frozen oracle copied into `<project>/.oracle/scripts/`, with
+/// `project` as cwd. check-drift.sh finds its repo from its own path, so a
+/// staged copy treats `project` as the repo.
+pub fn staged_oracle(project: &Path, script: &str, args: &[&str]) -> Out {
+    let dir = project.join(".oracle").join("scripts");
+    fs::create_dir_all(&dir).unwrap();
+    fs::copy(
+        repo().join("oracles/bash/spec/scripts").join(script),
+        dir.join(script),
+    )
+    .unwrap();
+    let mut cmd = Command::new("bash");
+    cmd.arg(dir.join(script)).args(args);
+    run(cmd, project, &[])
+}

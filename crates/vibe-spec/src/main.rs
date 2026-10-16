@@ -23,6 +23,7 @@ mod check;
 mod content;
 #[allow(dead_code)] // Task 8 removes this once every item has a caller.
 mod delta;
+mod drift;
 mod frontmatter;
 mod git;
 mod layered;
@@ -107,6 +108,8 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Compound drift gate (port of check-drift.sh).
+    CheckDrift,
     /// Units cited by commits and tests/, uncited units, orphan citations.
     Trace {
         /// Only commits after this revision (`<ref>..HEAD`).
@@ -153,6 +156,7 @@ fn main() -> ExitCode {
         ),
         Command::Plan { feature, json } => query::plan(&found, &feature, json),
         Command::Feature { name, json } => query::feature(&found, &name, json),
+        Command::CheckDrift => drift::run(&found, &cwd),
         Command::Trace { since, json } => trace::run(&found, since.as_deref(), json),
     };
     emit(&out);
