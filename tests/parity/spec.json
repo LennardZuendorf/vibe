@@ -28,6 +28,9 @@
     { "command": "validate", "case": "features/rfc-boundary", "args": [], "field": "stdout", "reason": "the oracle's awk matches MAY inside Mayor and SHALL inside shallow; the port needs a capital whole word (P3b-R17)" },
     { "command": "validate", "case": "features/scope-section", "args": [], "field": "stdout", "reason": "the oracle greps owns/does not own across the whole file (downstream counts); the port reads words inside the ## Scope section (P3b-R16)" },
     { "command": "validate", "case": "features/delta-removed", "args": [], "field": "stdout", "reason": "REMOVED blocks are deletions: the port exempts them from SF10 and SF12 (P3c-R11); the oracle reads them as requirements" },
+    { "command": "promote", "case": "features/delta-removed", "args": ["auth", "--dry-run"], "field": "stdout", "reason": "the port also plans the product's requirement deltas (P3c-R9); the oracle promotes merge blocks only" },
+    { "command": "promote", "case": "features/delta-removed", "args": ["auth"], "field": "stdout", "reason": "the port also applies the product's requirement deltas (P3c-R9); the oracle promotes merge blocks only" },
+    { "command": "promote", "case": "features/delta-removed", "args": ["auth"], "field": "files", "reason": "the port removes Legacy login (R9) from product-auth.md (P3c-R9); the oracle never reads product.md" },
     { "command": "check-drift", "case": "features/superpowers-artifact", "args": [], "field": "stdout", "reason": "the port warns on superpowers artifacts left under docs/superpowers/ (D46, P3c-R4); the oracle does not look there" }
   ]
 }

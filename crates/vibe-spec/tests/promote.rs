@@ -223,3 +223,168 @@ fn an_unreadable_feature_tech_fails() {
     );
     assert_eq!(fs::read(p.join(".spec/tech.md")).unwrap(), b"# Tech\n");
 }
+
+const TOPIC: &str = "# auth — Product\n\n## Requirements\n\n### Requirement: Sign in (R1)\nThe system SHALL sign users in.\n\n#### Scenario: ok\n- **WHEN** valid\n- **THEN** in\n\n### Requirement: Sign out (R2)\nThe system SHALL sign users out.\n\n#### Scenario: out\n- **WHEN** asked\n- **THEN** out\n";
+const DELTA: &str = "---\ntype: feature-product\nfeature: auth\nparent: ../../product-auth.md\n---\n\n# Feature: Auth — Product\n\n## MODIFIED Requirements\n\n### Requirement: Sign in (R1)\nThe system SHALL sign users in with a passkey.\n\n#### Scenario: ok\n- **WHEN** valid\n- **THEN** in\n\n## REMOVED Requirements\n\n### Requirement: Sign out (R2)\n**Reason**: sessions expire.\n\n## ADDED Requirements\n\n### Requirement: Enrol (R3)\nThe system MUST enrol passkeys.\n\n#### Scenario: enrol\n- **WHEN** added\n- **THEN** stored\n";
+const AFTER: &str = "# auth — Product\n\n## Requirements\n\n### Requirement: Sign in (R1)\nThe system SHALL sign users in with a passkey.\n\n#### Scenario: ok\n- **WHEN** valid\n- **THEN** in\n\n### Requirement: Enrol (R3)\nThe system MUST enrol passkeys.\n\n#### Scenario: enrol\n- **WHEN** added\n- **THEN** stored\n";
+
+fn delta_tree(name: &str, product: &str) -> PathBuf {
+    let p = tree(name, TECH, "# Tech\n");
+    write(&p, ".spec/product-auth.md", TOPIC);
+    write(&p, ".spec/features/auth/product.md", product);
+    p
+}
+
+#[test]
+fn deltas_apply_after_merge_blocks() {
+    let p = delta_tree("pr-delta", DELTA);
+    let out = spec(&p, &["promote", "auth"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(
+        out.text(),
+        "PROMOTED 2 block(s) from .spec/features/auth/tech.md → .spec/tech.md (0 already present)\n\
+         APPLIED 3 requirement change(s) from .spec/features/auth/product.md → .spec/product-auth.md (0 already applied)\n"
+    );
+    assert_eq!(
+        fs::read_to_string(p.join(".spec/product-auth.md")).unwrap(),
+        AFTER
+    );
+    let again = spec(&p, &["promote", "auth"], &[]);
+    assert_eq!(
+        again.text(),
+        "No new blocks to promote — all 2 already present in .spec/tech.md\n\
+         No requirement changes to apply — all 3 already in .spec/product-auth.md\n"
+    );
+    assert_eq!(
+        fs::read_to_string(p.join(".spec/product-auth.md")).unwrap(),
+        AFTER
+    );
+}
+
+#[test]
+fn delta_dry_run_writes_nothing() {
+    let p = delta_tree("pr-delta-dry", DELTA);
+    let out = spec(&p, &["promote", "auth", "--dry-run"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(
+        out.text().ends_with(
+            "\n--- would apply 3 requirement change(s) to .spec/product-auth.md (0 already applied) ---\n\
+             REMOVED Sign out (R2)\nMODIFIED Sign in (R1)\nADDED Enrol (R3)\n"
+        ),
+        "{}",
+        out.text()
+    );
+    assert_eq!(
+        fs::read_to_string(p.join(".spec/product-auth.md")).unwrap(),
+        TOPIC
+    );
+    assert_eq!(
+        fs::read_to_string(p.join(".spec/tech.md")).unwrap(),
+        "# Tech\n"
+    );
+}
+
+#[test]
+fn a_refused_delta_writes_nothing_at_all() {
+    let p = delta_tree(
+        "pr-delta-bad",
+        &DELTA.replace(
+            "Sign in (R1)\nThe system SHALL sign users in with",
+            "Ghost\nThe system SHALL haunt",
+        ),
+    );
+    let out = spec(&p, &["promote", "auth"], &[]);
+    assert_eq!(out.code, 1);
+    assert!(out.text().is_empty());
+    assert_eq!(
+        out.stderr,
+        "ERROR: MODIFIED 'Ghost' is not in the target (.spec/features/auth/product.md)\n"
+    );
+    assert_eq!(
+        fs::read_to_string(p.join(".spec/product-auth.md")).unwrap(),
+        TOPIC
+    );
+    assert_eq!(
+        fs::read_to_string(p.join(".spec/tech.md")).unwrap(),
+        "# Tech\n"
+    );
+}
+
+#[test]
+fn a_parent_outside_the_root_is_refused() {
+    let p = delta_tree(
+        "pr-delta-out",
+        &DELTA.replace("../../product-auth.md", "../../../outside.md"),
+    );
+    let out = spec(&p, &["promote", "auth"], &[]);
+    assert_eq!(out.code, 1);
+    assert_eq!(
+        out.stderr,
+        "ERROR: parent '../../../outside.md' leaves the spec root (.spec/features/auth/product.md)\n"
+    );
+}
+
+#[test]
+fn deltas_run_without_merge_blocks_and_share_a_target() {
+    let p = delta_tree("pr-delta-only", DELTA);
+    write(&p, ".spec/features/auth/tech.md", "no blocks\n");
+    let out = spec(&p, &["promote", "auth"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(
+        out.stderr,
+        "WARN: no <!-- merge --> blocks found in .spec/features/auth/tech.md\n"
+    );
+    assert_eq!(
+        fs::read_to_string(p.join(".spec/product-auth.md")).unwrap(),
+        AFTER
+    );
+    let shared = delta_tree("pr-delta-shared", DELTA);
+    let out = spec(
+        &shared,
+        &["promote", "auth", "--target", ".spec/product-auth.md"],
+        &[],
+    );
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let text = fs::read_to_string(shared.join(".spec/product-auth.md")).unwrap();
+    assert!(text.starts_with(AFTER), "{text}");
+    assert!(text.ends_with("\nTokens expire after 1 hour.\n"), "{text}");
+}
+
+#[test]
+fn unreadable_delta_files_fail_without_writing() {
+    if is_root() {
+        return;
+    }
+    for (file, shown) in [
+        (
+            ".spec/features/auth/product.md",
+            ".spec/features/auth/product.md",
+        ),
+        (".spec/product-auth.md", ".spec/product-auth.md"),
+    ] {
+        for dry in [false, true] {
+            let p = delta_tree(&format!("pr-delta-unread-{dry}-{}", file.len()), DELTA);
+            let path = p.join(file);
+            chmod(&path, 0o000);
+            let args: Vec<&str> = if dry {
+                vec!["promote", "auth", "--dry-run"]
+            } else {
+                vec!["promote", "auth"]
+            };
+            let got = spec(&p, &args, &[]);
+            chmod(&path, 0o644);
+            assert_eq!(got.code, 1, "{file} dry={dry} {}", got.stderr);
+            assert!(got.stdout.is_empty(), "{file} dry={dry}");
+            assert!(
+                got.stderr
+                    .starts_with(&format!("promote: ERROR: cannot read {shown}: ")),
+                "{file} dry={dry} {}",
+                got.stderr
+            );
+            assert_eq!(
+                fs::read_to_string(p.join(".spec/tech.md")).unwrap(),
+                "# Tech\n"
+            );
+        }
+    }
+}

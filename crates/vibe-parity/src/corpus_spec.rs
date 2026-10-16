@@ -305,7 +305,7 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
             class: "features",
             name: "delta-removed",
             cwd: "",
-            runs: &[],
+            runs: &[("promote", &[&["auth", "--dry-run"], &["auth"]])],
             files: feature(
                 FEATURE_TECH,
                 &[

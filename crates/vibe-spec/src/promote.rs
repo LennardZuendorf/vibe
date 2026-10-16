@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 
 use vibe_core::exit;
 
+use crate::delta::{self, Change};
+use crate::layered::lexical;
 use crate::root::{Miss, Root};
 use crate::text::{find, join_raw, read_lines};
 
@@ -126,6 +128,95 @@ fn read_or_fail(path: &Path, show: &str) -> Result<Vec<u8>, (u8, Vec<u8>)> {
     }
 }
 
+/// The planned requirement changes for one feature.
+struct DeltaPlan {
+    dest: PathBuf,
+    dest_show: String,
+    product_show: String,
+    bytes: Vec<u8>,
+    changes: Vec<Change>,
+}
+
+/// Plans the feature product's delta sections against their target, reading
+/// `pending` instead of the disk when a merge write to the same file is
+/// queued. Err holds the stderr lines of a refusal.
+fn plan_delta(
+    dir: &Path,
+    display: &str,
+    feature: &str,
+    product: &[u8],
+    pending: Option<(&Path, &[u8])>,
+) -> Result<DeltaPlan, Vec<String>> {
+    let product_show = format!("{display}/features/{feature}/product.md");
+    let fdir = join_raw(&dir.join("features"), feature.as_bytes());
+    let dest = delta::target(dir, &fdir, product)
+        .map_err(|e| vec![format!("ERROR: {e} ({product_show})")])?;
+    let rel = lexical(&dest)
+        .strip_prefix(lexical(dir))
+        .map(|r| {
+            r.components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/")
+        })
+        .unwrap_or_default();
+    let dest_show = format!("{display}/{rel}");
+    let base = match pending {
+        Some((path, bytes)) if lexical(path) == lexical(&dest) => bytes.to_vec(),
+        _ if dest.is_file() => std::fs::read(&dest)
+            .map_err(|e| vec![format!("promote: ERROR: cannot read {dest_show}: {e}")])?,
+        _ => return Err(vec![format!("ERROR: {dest_show} not found")]),
+    };
+    let (bytes, changes) = delta::apply(&base, product).map_err(|errs| {
+        errs.into_iter()
+            .map(|e| format!("ERROR: {e} ({product_show})"))
+            .collect::<Vec<_>>()
+    })?;
+    Ok(DeltaPlan {
+        dest,
+        dest_show,
+        product_show,
+        bytes,
+        changes,
+    })
+}
+
+/// The stdout lines for a delta plan (P3c-R9).
+fn delta_lines(p: &DeltaPlan, dry_run: bool) -> Vec<u8> {
+    let applied = p.changes.iter().filter(|c| c.applied).count();
+    let skipped = p.changes.len() - applied;
+    let mut out = match (dry_run, applied) {
+        (true, 0) => format!(
+            "--- nothing to apply: all {} requirement change(s) already in {} ---\n",
+            p.changes.len(),
+            p.dest_show
+        ),
+        (true, _) => format!(
+            "--- would apply {applied} requirement change(s) to {} ({skipped} already applied) ---\n",
+            p.dest_show
+        ),
+        (false, 0) => format!(
+            "No requirement changes to apply — all {} already in {}\n",
+            p.changes.len(),
+            p.dest_show
+        ),
+        (false, _) => format!(
+            "APPLIED {applied} requirement change(s) from {} → {} ({skipped} already applied)\n",
+            p.product_show, p.dest_show
+        ),
+    }
+    .into_bytes();
+    if dry_run {
+        for c in p.changes.iter().filter(|c| c.applied) {
+            out.extend_from_slice(c.kind.as_str().as_bytes());
+            out.push(b' ');
+            out.extend_from_slice(&c.name);
+            out.push(b'\n');
+        }
+    }
+    out
+}
+
 /// Runs the command.
 pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<u8>) {
     let a = match parse(args) {
@@ -163,46 +254,91 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
         Ok(b) => b,
         Err(msg) => return fail(&msg),
     };
-    if blocks.is_empty() {
-        eprintln!("WARN: no <!-- merge --> blocks found in {tech_show}");
-        return (exit::OK, Vec::new());
-    }
-    let current = match read_or_fail(&target, &target_show) {
-        Ok(b) => b,
+    let product_path = tech.with_file_name("product.md");
+    let product_show = format!("{display}/features/{}/product.md", a.feature);
+    let product = match read_or_fail(&product_path, &product_show) {
+        Ok(b) => Some(b).filter(|t| delta::has_delta(t)),
         Err(r) => return r,
     };
-    let plan = merge_plan(&current, &blocks);
-    if a.dry_run {
-        if plan.appended == 0 {
-            let line = format!(
+    let mut out: Vec<u8> = Vec::new();
+    let mut merged: Option<Vec<u8>> = None;
+    if blocks.is_empty() {
+        eprintln!("WARN: no <!-- merge --> blocks found in {tech_show}");
+        if product.is_none() {
+            return (exit::OK, Vec::new());
+        }
+    } else {
+        let current = match read_or_fail(&target, &target_show) {
+            Ok(b) => b,
+            Err(r) => return r,
+        };
+        let plan = merge_plan(&current, &blocks);
+        out = match (a.dry_run, plan.appended) {
+            (true, 0) => format!(
                 "--- nothing to promote: all {} block(s) already present in {target_show} ---\n",
                 blocks.len()
-            );
-            return (exit::OK, line.into_bytes());
+            )
+            .into_bytes(),
+            (true, _) => {
+                let mut o = format!(
+                    "--- would promote {} block(s) to {target_show} ({} already present) ---\n",
+                    plan.appended, plan.skipped
+                )
+                .into_bytes();
+                o.extend_from_slice(&plan.append);
+                o
+            }
+            (false, 0) => format!(
+                "No new blocks to promote — all {} already present in {target_show}\n",
+                blocks.len()
+            )
+            .into_bytes(),
+            (false, _) => format!(
+                "PROMOTED {} block(s) from {tech_show} → {target_show} ({} already present)\n",
+                plan.appended, plan.skipped
+            )
+            .into_bytes(),
+        };
+        if !a.dry_run && plan.appended > 0 {
+            let mut bytes = current;
+            bytes.extend_from_slice(&plan.append);
+            merged = Some(bytes);
         }
-        let mut out = format!(
-            "--- would promote {} block(s) to {target_show} ({} already present) ---\n",
-            plan.appended, plan.skipped
-        )
-        .into_bytes();
-        out.extend_from_slice(&plan.append);
-        return (exit::OK, out);
     }
-    if plan.appended == 0 {
-        let line = format!(
-            "No new blocks to promote — all {} already present in {target_show}\n",
-            blocks.len()
-        );
-        return (exit::OK, line.into_bytes());
+    let delta_plan = match &product {
+        Some(doc) => {
+            let pending = merged.as_deref().map(|b| (target.as_path(), b));
+            match plan_delta(&dir, &display, &a.feature, doc, pending) {
+                Ok(p) => Some(p),
+                Err(lines) => {
+                    for l in lines {
+                        eprintln!("{l}");
+                    }
+                    return (exit::FINDINGS, Vec::new());
+                }
+            }
+        }
+        None => None,
+    };
+    if let Some(p) = &delta_plan {
+        if !out.is_empty() && !out.ends_with(b"\n") {
+            out.push(b'\n');
+        }
+        out.extend_from_slice(&delta_lines(p, a.dry_run));
     }
-    let mut bytes = current;
-    bytes.extend_from_slice(&plan.append);
-    if let Err(e) = vibe_core::fs::write_atomic(&target, &bytes) {
-        return fail(&format!("ERROR: {target_show}: {e}"));
+    if !a.dry_run {
+        if let Some(bytes) = &merged
+            && let Err(e) = vibe_core::fs::write_atomic(&target, bytes)
+        {
+            return fail(&format!("ERROR: {target_show}: {e}"));
+        }
+        if let Some(p) = delta_plan
+            .as_ref()
+            .filter(|p| p.changes.iter().any(|c| c.applied))
+            && let Err(e) = vibe_core::fs::write_atomic(&p.dest, &p.bytes)
+        {
+            return fail(&format!("ERROR: {}: {e}", p.dest_show));
+        }
     }
-    let line = format!(
-        "PROMOTED {} block(s) from {tech_show} → {target_show} ({} already present)\n",
-        plan.appended, plan.skipped
-    );
-    (exit::OK, line.into_bytes())
+    (exit::OK, out)
 }
