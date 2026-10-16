@@ -289,23 +289,33 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         }
     }
 
-    // D46 (P3c-R4): superpowers artifacts left in the tree.
-    for rel in walk_files(&root.project.join("docs").join("superpowers")) {
-        let shown = format!("docs/superpowers/{rel}");
-        let sev = if opts.pre_merge {
-            Sev::Error
-        } else {
-            Sev::Warning
-        };
-        ev.push(event(
+    // D46 (P3c-R4): superpowers artifacts left in the tree. An unreadable
+    // tree is a finding of the same severity (fail closed).
+    let sev = if opts.pre_merge {
+        Sev::Error
+    } else {
+        Sev::Warning
+    };
+    match walk_files(&root.project.join("docs").join("superpowers")) {
+        Ok(files) => {
+            for rel in files {
+                let shown = format!("docs/superpowers/{rel}");
+                ev.push(event(
+                    sev,
+                    cat!(
+                        "superpowers artifact remains: ",
+                        shown,
+                        " — promote its facts, then run vibe-spec promote <feature> --done"
+                    ),
+                    Some(shown.clone()),
+                ));
+            }
+        }
+        Err(e) => ev.push(event(
             sev,
-            cat!(
-                "superpowers artifact remains: ",
-                shown,
-                " — promote its facts, then run vibe-spec promote <feature> --done"
-            ),
-            Some(shown.clone()),
-        ));
+            cat!("cannot read docs/superpowers: ", e.to_string()),
+            Some("docs/superpowers".to_string()),
+        )),
     }
 
     let errors = ev.iter().filter(|e| e.sev == Sev::Error).count();

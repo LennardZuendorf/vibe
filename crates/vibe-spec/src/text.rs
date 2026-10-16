@@ -290,33 +290,40 @@ pub fn is_date(b: &[u8]) -> bool {
 }
 
 /// Regular files under `dir`, recursive, as `/`-joined paths relative to
-/// `dir`, sorted by bytes. Dot names are skipped; symlinks are not followed
-/// and not listed.
-pub fn walk_files(dir: &Path) -> Vec<String> {
-    fn walk(dir: &Path, prefix: &str, out: &mut Vec<String>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
+/// `dir`, sorted by bytes. The top-level `dir` is followed if it is a
+/// symlink; entries below it are neither followed nor listed. Dot names are
+/// skipped. A missing `dir` is `Ok(empty)`; any other error at any depth is
+/// an `Err` naming the failing path (fail closed).
+pub fn walk_files(dir: &Path) -> std::io::Result<Vec<String>> {
+    fn fail(path: &Path, e: &std::io::Error) -> std::io::Error {
+        std::io::Error::new(e.kind(), format!("{}: {e}", path.display()))
+    }
+    fn walk(dir: &Path, prefix: &str, out: &mut Vec<String>) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir).map_err(|e| fail(dir, &e))? {
+            let entry = entry.map_err(|e| fail(dir, &e))?;
             let name = entry.file_name().to_string_lossy().into_owned();
             if name.starts_with('.') {
                 continue;
             }
-            let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
-                continue;
-            };
+            let path = entry.path();
+            let meta = std::fs::symlink_metadata(&path).map_err(|e| fail(&path, &e))?;
             let rel = format!("{prefix}{name}");
             if meta.is_dir() {
-                walk(&entry.path(), &format!("{rel}/"), out);
+                walk(&path, &format!("{rel}/"), out)?;
             } else if meta.is_file() {
                 out.push(rel);
             }
         }
+        Ok(())
     }
     let mut out = Vec::new();
-    walk(dir, "", &mut out);
+    match walk(dir, "", &mut out) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && !dir.exists() => return Ok(vec![]),
+        Err(e) => return Err(e),
+    }
     out.sort();
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -378,5 +385,43 @@ mod tests {
         assert_eq!(remove_first(b"type: type: x", b"type: "), b"type: x");
         assert_eq!(remove_first(b"type:x", b"type: "), b"type:x");
         assert_eq!(trim_space(b" \t x y \r"), b"x y");
+    }
+
+    #[allow(clippy::unwrap_used)]
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("vibe-walk-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn walk_files_skips_dot_dirs_and_sorts_by_bytes() {
+        let dir = scratch("sort");
+        for f in ["b/c.md", "b-.md", "a/.hid/x.md", "a/y.md", ".top.md"] {
+            let path = dir.join(f);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "x").unwrap();
+        }
+        assert_eq!(walk_files(&dir).unwrap(), ["a/y.md", "b-.md", "b/c.md"]);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn walk_files_missing_dir_is_empty() {
+        let dir = scratch("missing").join("nope");
+        assert_eq!(walk_files(&dir).unwrap(), Vec::<String>::new());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn walk_files_does_not_list_symlinks() {
+        let dir = scratch("link");
+        std::fs::write(dir.join("real.md"), "x").unwrap();
+        std::os::unix::fs::symlink(dir.join("real.md"), dir.join("file-link.md")).unwrap();
+        std::os::unix::fs::symlink(&dir, dir.join("dir-link")).unwrap();
+        assert_eq!(walk_files(&dir).unwrap(), ["real.md"]);
     }
 }

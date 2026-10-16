@@ -143,11 +143,13 @@ fn superpowers_artifacts_warn_and_fail_pre_merge() {
     let gate = spec(&p, &["check-drift", "--pre-merge"], &[]);
     assert_eq!(gate.code, 1);
     assert!(gate.text().is_empty());
-    assert!(
-        gate.stderr
-            .ends_with("check-drift: FAIL — 2 error(s), 0 warning(s).\n"),
-        "{}",
-        gate.stderr
+    assert_eq!(
+        gate.stderr,
+        format!(
+            "check-drift: ERROR: superpowers artifact remains: docs/superpowers/plans/2026-01-01-auth.md{NEXT}\n\
+             check-drift: ERROR: superpowers artifact remains: docs/superpowers/specs/deep/2026-01-01-auth-design.md{NEXT}\n\
+             check-drift: FAIL — 2 error(s), 0 warning(s).\n"
+        )
     );
 }
 
@@ -170,8 +172,67 @@ fn json_validates_and_exits_like_text() {
         v["features"],
         serde_json::json!([{ "name": "auth", "status": "DONE" }])
     );
-    assert_eq!(v["findings"][1]["file"], ".spec/features/auth/plan.md");
+    let f = v["findings"].as_array().unwrap();
+    assert_eq!(f.len(), 2);
+    assert_eq!(f[0]["severity"], "error");
+    assert!(f[0].get("file").is_none());
+    assert_eq!(f[1]["severity"], "warning");
+    assert_eq!(f[1]["file"], ".spec/features/auth/plan.md");
     let none = project("dr-json-none");
     let miss = spec(&none, &["check-drift", "--json"], &[]);
     assert_eq!((miss.code, miss.stdout.is_empty()), (3, true));
+}
+
+#[test]
+fn json_pre_merge_reports_artifacts_with_file() {
+    let p = project("dr-json-sp");
+    write(&p, ".spec/plan.md", "x\n");
+    write(&p, "docs/superpowers/plans/2026-01-01-auth.md", "x\n");
+    let out = spec(&p, &["check-drift", "--json", "--pre-merge"], &[]);
+    assert_eq!(out.code, 1);
+    assert_spec_json("check-drift", &out.text());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["pre_merge"], true);
+    let f = v["findings"].as_array().unwrap();
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0]["severity"], "error");
+    assert_eq!(f[0]["file"], "docs/superpowers/plans/2026-01-01-auth.md");
+}
+
+fn is_root() -> bool {
+    std::process::Command::new("id")
+        .arg("-u")
+        .output()
+        .is_ok_and(|o| o.stdout == b"0\n")
+}
+
+#[test]
+fn unreadable_artifact_dir_fails_closed() {
+    use std::os::unix::fs::PermissionsExt;
+    if is_root() {
+        return; // root reads everything: the test would pass vacuously.
+    }
+    let p = project("dr-locked");
+    write(&p, ".spec/plan.md", "x\n");
+    write(&p, "docs/superpowers/locked/secret.md", "x\n");
+    let locked = p.join("docs").join("superpowers").join("locked");
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let plain = spec(&p, &["check-drift"], &[]);
+    let gate = spec(&p, &["check-drift", "--pre-merge"], &[]);
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(plain.code, 0, "{}", plain.stderr);
+    assert!(
+        plain
+            .stderr
+            .contains("check-drift: WARN: cannot read docs/superpowers: "),
+        "{}",
+        plain.stderr
+    );
+    assert_eq!(gate.code, 1, "{}", gate.stderr);
+    assert!(
+        gate.stderr
+            .contains("check-drift: ERROR: cannot read docs/superpowers: "),
+        "{}",
+        gate.stderr
+    );
 }
