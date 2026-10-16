@@ -303,9 +303,27 @@ fn with_eol(b: &[u8], nl: &[u8]) -> Vec<u8> {
 
 /// A `**Reason**:` line after the header (the REMOVED why-line).
 fn has_reason(block: &[u8]) -> bool {
-    spans(block).iter().skip(1).any(|&(s, e)| {
-        trim_ws(bare(block.get(s..e).unwrap_or_default())).starts_with(b"**Reason**:")
+    let mut fences = Fences::new();
+    spans(block).iter().enumerate().any(|(i, &(s, e))| {
+        let line = block.get(s..e).unwrap_or_default();
+        !fences.skip(line) && i > 0 && trim_ws(bare(line)).starts_with(b"**Reason**:")
     })
+}
+
+/// `b` with every line ending turned into `nl`.
+fn normalize_eol(b: &[u8], nl: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(b.len());
+    for (i, &c) in b.iter().enumerate() {
+        if c == b'\r' && b.get(i + 1) == Some(&b'\n') {
+            continue;
+        }
+        if c == b'\n' {
+            out.extend_from_slice(nl);
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn splice(doc: &[u8], start: usize, end: usize, with: &[u8]) -> Vec<u8> {
@@ -418,7 +436,10 @@ pub fn apply(target: &[u8], delta: &[u8]) -> Result<(Vec<u8>, Vec<Change>), Vec<
     for kind in [Kind::Removed, Kind::Modified, Kind::Added] {
         for sec in secs.iter().filter(|s| s.kind == kind) {
             for b in &sec.blocks {
-                let bytes = with_eol(delta.get(b.start..b.end).unwrap_or_default(), nl);
+                let bytes = with_eol(
+                    &normalize_eol(delta.get(b.start..b.end).unwrap_or_default(), nl),
+                    nl,
+                );
                 entries.push((kind, b.name.clone(), bytes));
             }
         }
@@ -510,10 +531,13 @@ pub fn target(root: &Path, feature_dir: &Path, product: &[u8]) -> Result<PathBuf
         return Ok(root.join("product.md"));
     };
     let path = lexical(&feature_dir.join(&parent));
-    if path.starts_with(lexical(root)) {
-        Ok(path)
-    } else {
+    let base = lexical(root);
+    if !path.starts_with(&base) {
         Err(format!("parent '{parent}' leaves the spec root"))
+    } else if path.starts_with(base.join("features")) {
+        Err(format!("parent '{parent}' points inside features/"))
+    } else {
+        Ok(path)
     }
 }
 
@@ -700,12 +724,32 @@ mod tests {
         let delta = "## ADDED Requirements\n### Requirement: Audit\nThe system SHALL log.\n#### Scenario: log\n- **WHEN** x\n- **THEN** y";
         let (doc, _) = applied(&target, delta);
         assert!(
-            doc.contains("- **THEN** out\r\n\r\n### Requirement: Audit\nThe system SHALL log.\n#### Scenario: log\n- **WHEN** x\n- **THEN** y\r\n\r\n---"),
+            doc.contains("- **THEN** out\r\n\r\n### Requirement: Audit\r\nThe system SHALL log.\r\n#### Scenario: log\r\n- **WHEN** x\r\n- **THEN** y\r\n\r\n---"),
             "{doc:?}"
         );
         let (again, ch) = applied(&doc, delta);
         assert_eq!(again, doc);
         assert!(!ch[0].2);
+    }
+
+    #[test]
+    fn lf_delta_on_crlf_target_is_a_noop_when_equal() {
+        let target = TARGET.replace('\n', "\r\n");
+        let modify = "## MODIFIED Requirements\n\n### Requirement: Sign in (R1)\nUsers SHALL sign in.\n\n#### Scenario: ok\n- **WHEN** valid\n- **THEN** in\n";
+        let (doc, ch) = applied(&target, modify);
+        assert_eq!(doc, target);
+        assert_eq!(ch, [(Kind::Modified, "Sign in (R1)".to_string(), false)]);
+        let add = "## ADDED Requirements\n\n### Requirement: Sign out (R2)\nUsers SHALL sign out.\n\n#### Scenario: out\n- **WHEN** asked\n- **THEN** out\n";
+        let (doc, ch) = applied(&target, add);
+        assert_eq!(doc, target);
+        assert_eq!(ch, [(Kind::Added, "Sign out (R2)".to_string(), false)]);
+    }
+
+    #[test]
+    fn fenced_reason_does_not_count() {
+        let delta = "## REMOVED Requirements\n### Requirement: Sign out (R2)\n```\n**Reason**: hidden\n```\n";
+        let err = apply(TARGET.as_bytes(), delta.as_bytes()).unwrap_err();
+        assert_eq!(err, ["REMOVED 'Sign out (R2)' has no **Reason**: line"]);
     }
 
     #[test]
@@ -742,6 +786,10 @@ mod tests {
         assert_eq!(
             target(root, &fd, b"---\nparent: ../../../x.md\n---\n").unwrap_err(),
             "parent '../../../x.md' leaves the spec root"
+        );
+        assert_eq!(
+            target(root, &fd, b"---\nparent: product.md\n---\n").unwrap_err(),
+            "parent 'product.md' points inside features/"
         );
     }
 }
