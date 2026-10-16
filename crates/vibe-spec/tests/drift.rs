@@ -76,6 +76,17 @@ fn check_drift_matches_the_oracle_on_every_stream() {
             ],
         ),
         (
+            "dr-prefix",
+            vec![
+                (
+                    ".spec/plan.md",
+                    "| spec | IN PROGRESS |\n| spec-delta | IN PROGRESS |\n",
+                ),
+                (".spec/features/spec/plan.md", "NOT STARTED\n"),
+                (".spec/features/spec-delta/plan.md", "NOT STARTED\n"),
+            ],
+        ),
+        (
             "dr-noplan",
             vec![(".spec/features/auth/plan.md", "NOT STARTED\n")],
         ),
