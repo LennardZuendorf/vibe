@@ -85,6 +85,8 @@ fn hand_count(line: &[u8]) -> bool {
     })
 }
 
+// A symlinked spec root is scanned; the oracle's `find` without -H skips it
+// (P3c Task 3 ruling: counts there are still drift).
 /// `find "$SPEC_DIR" -type f -name '*.md' -not -path "$SPEC_DIR/archive/*"`,
 /// as paths relative to the root, sorted. Dot files count; symlinks do not.
 fn count_targets(dir: &Path) -> Vec<String> {

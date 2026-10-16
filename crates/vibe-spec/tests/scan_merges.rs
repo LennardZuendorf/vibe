@@ -59,3 +59,16 @@ fn matches_the_oracle_without_features_or_root() {
     assert_parity(&none, "scan-merges", "scan-merges.sh", &[]);
     assert_parity(&none, "scan-merges", "scan-merges.sh", &["auth"]);
 }
+
+#[test]
+fn sorts_prefix_named_features_like_the_glob() {
+    let p = project("merges-prefix");
+    for f in ["spec", "spec-delta"] {
+        write(
+            &p,
+            &format!(".spec/features/{f}/tech.md"),
+            &format!("{HEAD}<!-- merge -->\nx\n<!-- /merge -->\n"),
+        );
+    }
+    assert_parity(&p, "scan-merges", "scan-merges.sh", &[]);
+}

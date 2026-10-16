@@ -89,3 +89,19 @@ fn check_drift_matches_the_oracle_on_every_stream() {
     }
     same(&project("dr-bare"));
 }
+
+#[test]
+fn a_symlinked_root_is_scanned() {
+    let p = project("dr-link");
+    write(&p, "real/c.md", "8 passed\n");
+    write(&p, "real/plan.md", "x\n");
+    std::os::unix::fs::symlink(p.join("real"), p.join(".spec")).unwrap();
+    let got = spec(&p, &["check-drift"], &[]);
+    assert_eq!(got.code, 1, "{}", got.stderr);
+    assert!(
+        got.stderr
+            .contains("check-drift: ERROR: hand-written test count in .spec/c.md:1:8 passed"),
+        "{}",
+        got.stderr
+    );
+}

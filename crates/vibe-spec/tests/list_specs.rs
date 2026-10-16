@@ -56,3 +56,17 @@ fn lists_md_entries_of_any_type_like_the_glob() {
     }
     assert_parity(&p, "list-specs", "list-specs.sh", &[]);
 }
+
+#[test]
+fn sorts_prefix_named_features_like_the_glob() {
+    let p = project("ls-prefix");
+    write(&p, ".spec/product.md", DOC);
+    for f in ["spec", "spec-delta"] {
+        write(
+            &p,
+            &format!(".spec/features/{f}/product.md"),
+            "---\ntype: feature-product\nscope: x\n---\n",
+        );
+    }
+    assert_parity(&p, "list-specs", "list-specs.sh", &[]);
+}

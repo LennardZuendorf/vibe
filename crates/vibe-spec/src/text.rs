@@ -268,9 +268,16 @@ pub fn md_files(dir: &Path) -> Vec<PathBuf> {
     sorted_entries(dir, |_, name| name.ends_with(".md"))
 }
 
-/// `"$dir"/*/`: subdirectories (symlinks followed), in byte order.
+/// `"$dir"/*/`: subdirectories (symlinks followed). Bash sorts the expanded
+/// words with their trailing `/`, so `spec-delta/` precedes `spec/`.
 pub fn sub_dirs(dir: &Path) -> Vec<PathBuf> {
-    sorted_entries(dir, |p, _| p.is_dir())
+    let mut out = sorted_entries(dir, |p, _| p.is_dir());
+    out.sort_by_key(|p| {
+        let mut key = p.as_os_str().as_encoded_bytes().to_vec();
+        key.push(b'/');
+        key
+    });
+    out
 }
 
 /// `YYYY-MM-DD` (digits and dashes only; the calendar is not checked).
@@ -285,6 +292,19 @@ pub fn is_date(b: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn sub_dirs_sort_with_the_trailing_slash() {
+        let dir = std::env::temp_dir().join(format!("vibe-subdirs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for n in ["spec", "spec-delta", "a", "a-b", "a_b"] {
+            std::fs::create_dir_all(dir.join(n)).unwrap();
+        }
+        let names: Vec<String> = sub_dirs(&dir).iter().map(|p| name_of(p)).collect();
+        assert_eq!(names, ["a-b", "a", "a_b", "spec-delta", "spec"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn lines_keep_a_final_unterminated_line_and_read_lines_drop_it() {
