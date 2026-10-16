@@ -318,7 +318,7 @@ struct Link {
 }
 
 /// `p` with `.` dropped and `..` applied, without touching the disk.
-fn lexical(p: &Path) -> PathBuf {
+pub(crate) fn lexical(p: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for c in p.components() {
         match c {

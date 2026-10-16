@@ -21,6 +21,8 @@ macro_rules! cat {
 mod adherence;
 mod check;
 mod content;
+#[allow(dead_code)] // Task 8 removes this once every item has a caller.
+mod delta;
 mod frontmatter;
 mod git;
 mod layered;
