@@ -116,6 +116,16 @@ fn fail(msg: &str) -> (u8, Vec<u8>) {
     (exit::FINDINGS, Vec::new())
 }
 
+/// Reads a file the oracle would read. `NotFound` keeps the oracle's empty
+/// content; any other error refuses (exit 1) so nothing is truncated.
+fn read_or_fail(path: &Path, show: &str) -> Result<Vec<u8>, (u8, Vec<u8>)> {
+    match std::fs::read(path) {
+        Ok(b) => Ok(b),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(fail(&format!("promote: ERROR: cannot read {show}: {e}"))),
+    }
+}
+
 /// Runs the command.
 pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<u8>) {
     let a = match parse(args) {
@@ -123,7 +133,8 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
         Err(msg) => return fail(&msg),
     };
     // The oracle's paths are cwd-relative under `.spec/`; the port uses the
-    // discovered root and prints it relative to the project.
+    // discovered root (a walk up from the cwd, shared by every subcommand: a
+    // deliberate divergence) and prints it relative to the project.
     let (dir, display): (PathBuf, String) = match found {
         Ok(root) => (root.dir.clone(), root.display()),
         Err(Miss::NotFound) => (cwd.join(".spec"), ".spec".to_string()),
@@ -144,7 +155,11 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
     if !target.is_file() {
         return fail(&format!("ERROR: {target_show} not found"));
     }
-    let blocks = match merge_blocks(&std::fs::read(&tech).unwrap_or_default(), &tech_show) {
+    let tech_bytes = match read_or_fail(&tech, &tech_show) {
+        Ok(b) => b,
+        Err(r) => return r,
+    };
+    let blocks = match merge_blocks(&tech_bytes, &tech_show) {
         Ok(b) => b,
         Err(msg) => return fail(&msg),
     };
@@ -152,7 +167,10 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
         eprintln!("WARN: no <!-- merge --> blocks found in {tech_show}");
         return (exit::OK, Vec::new());
     }
-    let current = std::fs::read(&target).unwrap_or_default();
+    let current = match read_or_fail(&target, &target_show) {
+        Ok(b) => b,
+        Err(r) => return r,
+    };
     let plan = merge_plan(&current, &blocks);
     if a.dry_run {
         if plan.appended == 0 {
