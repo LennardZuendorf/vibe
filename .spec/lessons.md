@@ -277,3 +277,15 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Normalise both sides of a path comparison lexically before `strip_prefix`/`starts_with`. Test with a root given through `..`.
 **Tags:** spec, validate, paths, layered
 **Date:** 2026-10-15
+
+### Compare Windows paths in their plain form
+**Pattern:** Test helpers built expected paths with `fs::canonicalize`, which returns `\\?\C:\…` on Windows, while the binary printed `C:\…`; four `root` tests failed only on the Windows CI legs.
+**Rule:** Strip the verbatim prefix from canonical paths in test helpers before comparing them with printed output. Push early so the Windows legs run.
+**Tags:** rust, tests, windows, paths
+**Date:** 2026-10-16
+
+### Shellcheck versions disagree; write for the strictest
+**Pattern:** `out="$(cd X && cmd || true)"` passed local shellcheck 0.11.0 but CI's runner shellcheck flagged SC2015 (info) and failed the job before any suite ran.
+**Rule:** Never write `A && B || C` in shell; put `|| true` outside the command substitution. Treat a CI shellcheck finding as authoritative over the local version.
+**Tags:** shell, ci, shellcheck
+**Date:** 2026-10-16
