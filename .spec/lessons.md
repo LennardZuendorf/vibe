@@ -280,7 +280,7 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 
 ### Compare Windows paths in their plain form
 **Pattern:** Test helpers built expected paths with `fs::canonicalize`, which returns `\\?\C:\…` on Windows, while the binary printed `C:\…`; four `root` tests failed only on the Windows CI legs.
-**Rule:** Strip the verbatim prefix from canonical paths in test helpers before comparing them with printed output. Push early so the Windows legs run.
+**Rule:** Strip the verbatim prefix in test helpers, then build expected paths one component per `join` (a verbatim base silently turned `/` into `\`; a plain one does not). Push early so the Windows legs run.
 **Tags:** rust, tests, windows, paths
 **Date:** 2026-10-16
 
