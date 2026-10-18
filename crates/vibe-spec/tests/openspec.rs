@@ -207,3 +207,70 @@ fn export_fails_closed_on_an_unreadable_file() {
     );
     assert!(!p.join("out").exists());
 }
+
+const BLOCK: &str = "## Requirements\n\n### Requirement: A\n\nThe system SHALL a.\n\n#### Scenario: a\n\n- **WHEN** a\n- **THEN** b\n";
+
+/// `x.md` exports to `specs/x/spec.md`; `x/spec.md.md` exports to
+/// `specs/x/spec.md/spec.md`, whose parent is the first file. The second
+/// write fails after `openspec/` exists, on every platform.
+fn mid_write_failure(name: &str) -> PathBuf {
+    let p = fixture(name);
+    write(&p, ".spec/x.md", BLOCK);
+    write(&p, ".spec/x/spec.md.md", BLOCK);
+    p
+}
+
+#[test]
+fn export_rollback_removes_every_directory_it_created() {
+    let p = mid_write_failure("os-export-rollback-a");
+    write(&p, "keep/user.txt", "mine\n");
+    let out = spec(&p, &["export", "--openspec", "keep/a/b/c"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert_eq!(out.text(), "");
+    assert_eq!(read(&p, "keep/user.txt"), "mine\n");
+    assert!(
+        !p.join("keep/a").exists(),
+        "left {:?}",
+        fs::read_dir(p.join("keep")).unwrap().count()
+    );
+    assert_eq!(fs::read_dir(p.join("keep")).unwrap().count(), 1);
+}
+
+#[test]
+fn export_rollback_keeps_a_preexisting_destination() {
+    let p = mid_write_failure("os-export-rollback-b");
+    write(&p, "keep/user.txt", "mine\n");
+    let out = spec(&p, &["export", "--openspec", "keep"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert_eq!(read(&p, "keep/user.txt"), "mine\n");
+    assert!(!p.join("keep/openspec").exists());
+    assert_eq!(fs::read_dir(p.join("keep")).unwrap().count(), 1);
+}
+
+#[test]
+fn export_keeps_x_md_and_x_md_md_distinct() {
+    let p = fixture("os-export-md-md");
+    write(&p, ".spec/x.md", BLOCK);
+    write(&p, ".spec/y.md.md", BLOCK);
+    let out = spec(&p, &["export", "--openspec", "out"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(p.join("out/openspec/specs/y.md/spec.md").is_file());
+    assert!(p.join("out/openspec/specs/x/spec.md").is_file());
+    assert!(!p.join("out/openspec/specs/y/spec.md").exists());
+    assert!(read(&p, "out/openspec/specs/y.md/spec.md").contains("# y.md Specification"));
+}
+
+#[test]
+fn export_refuses_a_destination_inside_the_spec_root() {
+    for dir in [".spec", ".spec/out", "./.spec/features/../out"] {
+        let p = fixture("os-export-inside");
+        let out = spec(&p, &["export", "--openspec", dir], &[]);
+        assert_eq!(out.code, 1, "{dir}: {}", out.stderr);
+        assert_eq!(
+            out.stderr,
+            format!("export: ERROR: {dir} is inside the spec root — refusing to export into it\n")
+        );
+        assert!(!p.join(".spec/openspec").exists());
+        assert!(!p.join(".spec/out").exists());
+    }
+}

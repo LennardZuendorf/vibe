@@ -323,6 +323,7 @@ fn plan_export(root: &Root) -> Result<Files, Refusal> {
     let d = root.display();
     let mut files: Files = Vec::new();
     let mut errs: Vec<String> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
     for rel in docs(&root.dir).map_err(|e| vec![e])? {
         let Some(text) =
             read_opt(&root.dir.join(&rel), &format!("{d}/{rel}")).map_err(|e| vec![e])?
@@ -340,7 +341,15 @@ fn plan_export(root: &Root) -> Result<Files, Refusal> {
             ));
             continue;
         }
-        let cap = rel.trim_end_matches(".md");
+        let Some(cap) = rel.strip_suffix(".md").filter(|c| !c.is_empty()) else {
+            errs.push(format!("{d}/{rel}: no capability name"));
+            continue;
+        };
+        if seen.iter().any(|c| c == cap) {
+            errs.push(format!("{d}/{rel}: capability '{cap}' is already exported"));
+            continue;
+        }
+        seen.push(cap.to_string());
         let mut spec = format!(
             "# {cap} Specification\n\n## Purpose\nRequirements of {d}/{rel} in the vibe spec, exported by vibe-spec.\n\n## Requirements\n\n"
         )
@@ -377,9 +386,24 @@ fn write_files(shown: &str, out_dir: &Path, files: &Files) -> Result<(), String>
         Err(e) if e.kind() == ErrorKind::NotFound => {}
         Err(e) => return Err(format!("{shown}: {e}")),
     }
-    let made_out = !out_dir.exists();
-    if made_out {
-        std::fs::create_dir_all(out_dir).map_err(|e| format!("{shown}: {e}"))?;
+    // Directories this call creates, leaf first, ending at the first
+    // missing ancestor. Rollback removes exactly these with `remove_dir`.
+    let mut made: Vec<&Path> = Vec::new();
+    let mut at_dir = Some(out_dir);
+    while let Some(d) = at_dir {
+        match std::fs::symlink_metadata(d) {
+            Err(e) if e.kind() == ErrorKind::NotFound => made.push(d),
+            _ => break,
+        }
+        at_dir = d.parent();
+    }
+    if !made.is_empty()
+        && let Err(e) = std::fs::create_dir_all(out_dir)
+    {
+        for d in &made {
+            let _ = std::fs::remove_dir(d);
+        }
+        return Err(format!("{shown}: {e}"));
     }
     let top = out_dir.join("openspec");
     let cleanup = |note: String| {
@@ -387,20 +411,23 @@ fn write_files(shown: &str, out_dir: &Path, files: &Files) -> Result<(), String>
         if let Err(e) = std::fs::remove_dir_all(&top) {
             note.push_str(&format!(" — cleanup failed: {e}"));
         }
-        if made_out {
-            let _ = std::fs::remove_dir(out_dir);
+        for d in &made {
+            if let Err(e) = std::fs::remove_dir(d) {
+                note.push_str(&format!(" — cleanup failed for {}: {e}", d.display()));
+            }
         }
         note
     };
     if let Err(e) = std::fs::create_dir(&top) {
-        if made_out {
-            let _ = std::fs::remove_dir(out_dir);
-        }
-        return Err(if e.kind() == ErrorKind::AlreadyExists {
-            format!("{shown}/openspec already exists")
+        let msg = if e.kind() == ErrorKind::AlreadyExists {
+            format!("{} already exists", at(shown, "openspec"))
         } else {
-            format!("{shown}/openspec: {e}")
-        });
+            format!("{}: {e}", at(shown, "openspec"))
+        };
+        for d in &made {
+            let _ = std::fs::remove_dir(d);
+        }
+        return Err(msg);
     }
     for (parts, bytes) in files {
         let path = parts.iter().fold(out_dir.to_path_buf(), |p, c| p.join(c));
@@ -410,10 +437,30 @@ fn write_files(shown: &str, out_dir: &Path, files: &Files) -> Result<(), String>
         }
         .and_then(|()| vibe_core::fs::write_atomic(&path, bytes).map_err(|e| e.to_string()));
         if let Err(e) = step {
-            return Err(cleanup(format!("{shown}/{}: {e}", parts.join("/"))));
+            return Err(cleanup(format!("{}: {e}", at(shown, &parts.join("/")))));
         }
     }
     Ok(())
+}
+
+/// `dir` as typed, without trailing `/` (the root stays `/`).
+fn shown_dir(dir: &Path) -> String {
+    let s = dir.to_string_lossy();
+    let t = s.trim_end_matches('/');
+    if t.is_empty() && s.starts_with('/') {
+        "/".to_string()
+    } else {
+        t.to_string()
+    }
+}
+
+/// `<shown>/<rest>` without a doubled `/` after the root.
+fn at(shown: &str, rest: &str) -> String {
+    if shown.ends_with('/') {
+        format!("{shown}{rest}")
+    } else {
+        format!("{shown}/{rest}")
+    }
 }
 
 /// `vibe-spec export --openspec <dir> [--json]`.
@@ -425,10 +472,14 @@ pub fn export(found: &Result<Root, Miss>, cwd: &Path, dir: &Path, json_out: bool
             return (miss.code(), Vec::new());
         }
     };
-    let shown = dir.to_string_lossy().trim_end_matches('/').to_string();
+    let shown = shown_dir(dir);
     let out_dir: PathBuf = cwd.join(dir);
+    if lexical(&out_dir).starts_with(lexical(&root.dir)) {
+        eprintln!("export: ERROR: {shown} is inside the spec root — refusing to export into it");
+        return (exit::FINDINGS, Vec::new());
+    }
     if std::fs::symlink_metadata(out_dir.join("openspec")).is_ok() {
-        eprintln!("export: {shown}/openspec already exists");
+        eprintln!("export: {} already exists", at(&shown, "openspec"));
         return (exit::FINDINGS, Vec::new());
     }
     let files = match plan_export(root) {
@@ -449,9 +500,28 @@ pub fn export(found: &Result<Root, Miss>, cwd: &Path, dir: &Path, json_out: bool
         let v = json!({ "v": 1, "direction": "export", "dir": shown, "written": written });
         return (exit::OK, format!("{v}\n").into_bytes());
     }
-    let mut out = format!("EXPORTED {} file(s) to {shown}/openspec/\n", written.len());
+    let mut out = format!(
+        "EXPORTED {} file(s) to {}/\n",
+        written.len(),
+        at(&shown, "openspec")
+    );
     for w in &written {
         out += &format!("  {w}\n");
     }
     (exit::OK, out.into_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_filesystem_root_stays_a_slash() {
+        assert_eq!(shown_dir(Path::new("/")), "/");
+        assert_eq!(shown_dir(Path::new("//")), "/");
+        assert_eq!(shown_dir(Path::new("out/")), "out");
+        assert_eq!(shown_dir(Path::new("/tmp/o/")), "/tmp/o");
+        assert_eq!(at("/", "openspec"), "/openspec");
+        assert_eq!(at("out", "openspec"), "out/openspec");
+    }
 }
