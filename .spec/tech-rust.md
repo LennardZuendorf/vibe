@@ -3,7 +3,7 @@ type: tech-topic
 parent: tech.md
 scope: rust workspace and distribution
 covers: crates, MSRV, dependency allowlist, shim discovery, oracles and parity, TUI, signals, distribution, CI matrix
-updated: 2026-10-15
+updated: 2026-10-18
 ---
 
 # Rust Workspace — Tech
@@ -21,7 +21,7 @@ parity harness. F16 made `vibe-spec` the first candidate. `list-specs`,
 `tests/parity/corpus/spec/` and live on this repo (`tests/parity/run.sh`);
 `validate` is parity-green over the corpus with F17's checks off
 (`tests/parity/legacy-strictness.json`, P3b-R2).
-`check-drift`, `promote` and `init` stay self-check only until F18/F20.
+`init` stays self-check only until F20.
 
 ## Workspace
 

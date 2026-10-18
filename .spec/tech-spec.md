@@ -3,7 +3,7 @@ type: tech-topic
 parent: tech.md
 scope: spec root, OpenSpec interchange, validation
 covers: root discovery, migrate, OpenSpec grammar, strictness, adherence checks, trace, subagents, hooks, commands
-updated: 2026-10-15
+updated: 2026-10-18
 ---
 
 # Spec Framework — Tech
@@ -71,22 +71,54 @@ Adopted verbatim: `### Requirement: <ID> — <name>` (SHALL/MUST),
 `#### Scenario:` with bulleted GIVEN/WHEN/THEN, `## ADDED|MODIFIED|REMOVED
 Requirements` deltas.
 
-| vibe document | OpenSpec equivalent |
+| vibe | OpenSpec |
 |---|---|
-| root `product.md` (+ `product-<topic>.md`) | `openspec/specs/<capability>/spec.md`, one H2 per capability |
-| feature `product.md` | `proposal.md` (`## Why`, `## What changes`) + delta specs |
-| feature `plan.md` | `tasks.md` (`<name>/n` ↔ `- [ ] n.`) |
-| feature `design.md` | `design.md` |
-| `tech.md`, `research.md`, frontmatter, `<!-- merge -->`, Requirements Trace | exported as `## vibe:<field>` blocks appended to `design.md`; imported back |
+| a root document with blocks under `## Requirements` (`product-auth.md`, `concepts/invoice.md`) | `openspec/specs/<path without .md>/spec.md`; `## Purpose` is generated |
+| fallback feature `product.md` | `changes/<f>/proposal.md` + one delta spec for its target's capability (plain `## Requirements` blocks export as ADDED) |
+| feature `plan.md` units | `changes/<f>/tasks.md` (`- [ ] 1.<n> <title>`, `[x]` when DONE) |
+| every feature file | carried byte for byte in `changes/<f>/design.md` as `## vibe:<file> <len>` blocks after `<!-- vibe:export v1 -->` |
 
-`vibe-spec export --openspec <dir>` / `import --openspec <dir> [--feature
-<name>]`: lossless for requirements, scenarios, deltas, and tasks;
-documented-lossy for `updated:` dates, branch docs, lessons, and drift
-state. Not adopted: the `openspec/` root, capability-per-folder layout,
-`config.yaml`, schema profiles, the `/opsx:*` commands, archive
-semantics — the split product/tech/plan model and lessons memory are why
-vibe exists. `openspec validate` runs on the exported directory, never on
-the tree itself.
+Requirements are keyed by their full header name, normalized as OpenSpec
+does (closing `#` run dropped, trimmed, case-sensitive). `RENAMED` is not
+supported: write REMOVED + ADDED. A REMOVED block carries a `**Reason**:`
+line. `promote <f>` applies a fallback feature's delta sections to its
+`parent:` document (REMOVED, then MODIFIED, then ADDED; all or nothing).
+
+`vibe-spec export --openspec <dir>` refuses an existing `<dir>/openspec/`
+and a MODIFIED that drops a scenario its target still has. `import
+--openspec <dir> [--feature <name>]` writes fallback feature folders only,
+never root documents. It restores carried files byte for byte, but refuses
+when the change's requirements were edited on the OpenSpec side. It refuses
+`RENAMED` and changes that touch more than one capability. A change without
+carried files is imported as a new feature. Round trip: export -> import is
+byte-identical. `openspec validate --strict` runs on the exported directory
+in CI (`tests/openspec/run.sh`), never on the tree itself.
+
+**Safety.** Today's behaviour of `promote`, `export`, `import` and
+`check-drift`:
+
+- Every read that feeds a write fails closed: a read error other than "not
+  found" exits 1 and writes nothing (`promote`, `export`, `import`), also
+  under `--dry-run`.
+- `promote` writes are all-or-nothing: originals are kept in memory and
+  restored if a later write fails. `--dry-run` runs the same plan and
+  refuses exactly like the real run.
+- `promote <f> --done` refuses (deletes nothing) if `docs`,
+  `docs/superpowers`, `docs/superpowers/plans` or `docs/superpowers/specs`
+  is a symlink. It binds artifacts by exact slug.
+- `export` refuses a destination inside the spec root, a symlinked `<dir>`
+  and an existing `<dir>/openspec/`. On a mid-write failure it removes only
+  what it created.
+- `import` never overwrites an existing `features/<id>/` and never writes
+  root documents. It refuses any symlink under the source `specs/` and a
+  symlinked `features/`. Rollback removes only what it created.
+- `check-drift --pre-merge` fails closed on an unreadable
+  `docs/superpowers` subtree.
+- `--json`: exit 0 always prints one JSON object. `--json` without a spec
+  root exits 3 with empty stdout.
+- Deliberate divergences from the bash oracles: root discovery walks up from
+  the cwd; a symlinked `.spec` root is used; read errors fail closed where
+  the oracle sometimes proceeded.
 
 ## Strictness
 
@@ -182,10 +214,11 @@ malformed input; `.vibe/spec.json` `"tooth": "warn"` downgrades to warn.
 ## Commands (v1)
 
 `root`, `init`, `validate [--changed|--file|--strict|--format text|json|hook]`,
-`check-drift [--pre-merge]`, `promote <feature> [--dry-run|--done]`,
+`check-drift [--pre-merge] [--json]`,
+`promote <feature> [--dry-run] [--target <file>] [--done] [--base <ref>] [--json]`,
 `scan-merges`, `lessons-for <tags>`, `list-specs`, `trace`,
 `migrate --to docs/spec [--layout layered] [--dry-run]`,
-`export|import --openspec`, `hook {session-start,guard,validate}`,
+`export|import --openspec <dir>`, `hook {session-start,guard,validate}`,
 `setup [--git-hooks|--claude|--opencode]`, `doctor`.
 
 ## Shipped today
@@ -208,3 +241,4 @@ byte-identical ports of `list-specs`, `lessons-for`, `scan-merges` and
 corpus and live on this repo. Skills, CI and flow keep calling the scripts
 until the binary ships (F21–F22).
 F17 adds `validate --strict`, `--format text|json` (`--json`), the check registry and strictness config, and `trace`. `--changed`, `--file` and `--format hook` arrive with F19's hooks. The fixes (R-ID prefix, RFC 2119 boundary, Scope scoping, zero-requirement short-circuit) land in Rust only; `spec/scripts/validate.sh` keeps the oracle's behaviour until the binary ships.
+F18 adds `check-drift` (`--pre-merge`, `--json`), `promote` (deltas, the superpowers checklist, `--done`, `--json`), `export --openspec` and `import --openspec` to `vibe-spec`, with byte parity for the two ports over the corpus. Skills, CI and flow still call `spec/scripts/*.sh` until F21-F22 (P3c-R2). The OpenSpec gate runs in its own CI job (`tests/openspec/run.sh`, network).

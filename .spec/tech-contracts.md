@@ -3,7 +3,7 @@ type: tech-topic
 parent: tech.md
 scope: cross-tool contracts
 covers: provider payload, marker grammar, spec JSON, provider manifests, exit codes, versioning
-updated: 2026-10-15
+updated: 2026-10-18
 ---
 
 # Cross-Tool Contracts — Tech
@@ -128,8 +128,8 @@ marker itself.
 
 ## Spec JSON v1
 
-Six read-only queries, each `--json`, each exit 0 with a JSON object on
-success:
+Nine queries, each `--json`, each exit 0 with a JSON object on success.
+`promote` and `import` write files; their JSON reports what was written.
 
 | Query | Answers |
 |---|---|
@@ -139,6 +139,9 @@ success:
 | `feature <f>` | that feature's product/tech/plan summary |
 | `validate` | layout, strictness, examined count, error and warning counts, `checks` (`{id, level}`) and `findings` (`{check, severity, file?, message}`) |
 | `trace` | unit and citation counts, `history` (`all\|since\|none`), `uncited` units, `orphans` |
+| `check-drift` | drift findings and counts |
+| `promote` | what the promotion wrote or would write, and the checklist |
+| `openspec` | what `export` or `import` wrote (both directions) |
 
 Exit 3 = no spec tree found at any point in the discovery order — the one
 query-specific exit code (see the exit-code contract below). Degrade path:

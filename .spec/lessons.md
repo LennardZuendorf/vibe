@@ -295,3 +295,45 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Bump `updated:` in the same commit as any edit to a spec doc, status cells included. Run `vibe-spec validate --json` before committing a spec edit.
 **Tags:** spec, compound, sf29
 **Date:** 2026-10-16
+
+### A glob port sorts by the glob's words, not bare names
+**Pattern:** `text::sub_dirs` sorted bare names; the bash oracle's `features/*/` glob sorts `name/`, so `spec-delta` precedes `spec`.
+**Rule:** When porting a glob, sort by the glob's expanded words (including the trailing `/`) and pin a prefix-pair case.
+**Tags:** rust, parity, sorting
+**Date:** 2026-10-16
+
+### Skipping is failing open
+**Pattern:** `walk_files` skipped unreadable dirs (the pre-merge gate passed) and symlinked entries (import dropped requirements, exit 0); `unwrap_or_default` on a read turned an unreadable target into empty content that the write then truncated (data loss).
+**Rule:** A read or walk error that feeds a gate or a write must abort, never default or skip silently. Test each with `chmod 000` and a symlink.
+**Tags:** rust, spec, safety, io
+**Date:** 2026-10-17
+
+### Plan every write in memory
+**Pattern:** Multi-file writes were not all-or-nothing (a second write failure left the first written), and `--dry-run` planned against disk instead of the merged bytes.
+**Rule:** Plan every write in memory, keep originals, restore on failure. Dry-run executes the same plan and gates only the writes.
+**Tags:** rust, spec, promote, atomicity
+**Date:** 2026-10-17
+
+### Lstat every path component before a delete
+**Pattern:** `promote --done` deleted through a symlinked artifact directory (leaf-only lstat).
+**Rule:** Before an irreversible delete, lstat every path component from the project root down and refuse any symlink.
+**Tags:** rust, spec, safety, symlink
+**Date:** 2026-10-18
+
+### Probe root-discovering commands in their own spec tree
+**Pattern:** A reviewer probe ran `import` in a scratch dir without `.spec`; root discovery walked up and imported into the repo's real `.spec/`.
+**Rule:** Probes of root-discovering commands create their own `.spec` in the scratch tree, or run outside the repo.
+**Tags:** spec, tests, discovery
+**Date:** 2026-10-18
+
+### Grep for scripted edits before claiming them
+**Pattern:** A fix-round edit silently failed to apply (the search text did not match the rustfmt-formatted file) and the round reported done; the re-review caught the missing test.
+**Rule:** After a scripted edit, grep for the new content before claiming it landed.
+**Tags:** tooling, review
+**Date:** 2026-10-16
+
+### Check the signing agent before a commit batch
+**Pattern:** Commits were blocked when the SSH signing agent (Bitwarden) was locked.
+**Rule:** Run `ssh-add -l` before a commit batch. On failure leave the work staged and report; never disable signing.
+**Tags:** git, signing
+**Date:** 2026-10-17
