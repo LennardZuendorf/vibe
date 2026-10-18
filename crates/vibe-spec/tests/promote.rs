@@ -266,13 +266,13 @@ fn delta_dry_run_writes_nothing() {
     let p = delta_tree("pr-delta-dry", DELTA);
     let out = spec(&p, &["promote", "auth", "--dry-run"], &[]);
     assert_eq!(out.code, 0, "{}", out.stderr);
-    assert!(
-        out.text().ends_with(
-            "\n--- would apply 3 requirement change(s) to .spec/product-auth.md (0 already applied) ---\n\
-             REMOVED Sign out (R2)\nMODIFIED Sign in (R1)\nADDED Enrol (R3)\n"
-        ),
-        "{}",
-        out.text()
+    assert_eq!(
+        out.text(),
+        "--- would promote 2 block(s) to .spec/tech.md (0 already present) ---\n\
+         \n## Auth\n\nSessions live in signed cookies.\n\
+         \nTokens expire after 1 hour.\n\
+         --- would apply 3 requirement change(s) to .spec/product-auth.md (0 already applied) ---\n\
+         REMOVED Sign out (R2)\nMODIFIED Sign in (R1)\nADDED Enrol (R3)\n"
     );
     assert_eq!(
         fs::read_to_string(p.join(".spec/product-auth.md")).unwrap(),
@@ -346,8 +346,17 @@ fn deltas_run_without_merge_blocks_and_share_a_target() {
     );
     assert_eq!(out.code, 0, "{}", out.stderr);
     let text = fs::read_to_string(shared.join(".spec/product-auth.md")).unwrap();
-    assert!(text.starts_with(AFTER), "{text}");
-    assert!(text.ends_with("\nTokens expire after 1 hour.\n"), "{text}");
+    assert_eq!(
+        text,
+        format!(
+            "{AFTER}\n## Auth\n\nSessions live in signed cookies.\n\nTokens expire after 1 hour.\n"
+        )
+    );
+    assert_eq!(
+        out.text(),
+        "PROMOTED 2 block(s) from .spec/features/auth/tech.md → .spec/product-auth.md (0 already present)\n\
+         APPLIED 3 requirement change(s) from .spec/features/auth/product.md → .spec/product-auth.md (0 already applied)\n"
+    );
 }
 
 #[test]
@@ -387,4 +396,74 @@ fn unreadable_delta_files_fail_without_writing() {
             );
         }
     }
+}
+
+#[test]
+fn a_failed_delta_write_restores_the_merge_target() {
+    if is_root() {
+        return;
+    }
+    let p = delta_tree(
+        "pr-delta-restore",
+        &DELTA.replace("../../product-auth.md", "../../sub/topic.md"),
+    );
+    write(&p, ".spec/sub/topic.md", TOPIC);
+    chmod(&p.join(".spec/sub"), 0o555);
+    let got = spec(&p, &["promote", "auth"], &[]);
+    chmod(&p.join(".spec/sub"), 0o755);
+    assert_eq!(got.code, 1, "{}", got.stderr);
+    assert!(got.stdout.is_empty());
+    assert!(
+        got.stderr
+            .starts_with("promote: ERROR: .spec/sub/topic.md: "),
+        "{}",
+        got.stderr
+    );
+    assert!(
+        got.stderr.ends_with(" — restored .spec/tech.md\n"),
+        "{}",
+        got.stderr
+    );
+    assert_eq!(
+        fs::read_to_string(p.join(".spec/tech.md")).unwrap(),
+        "# Tech\n"
+    );
+    assert_eq!(
+        fs::read_to_string(p.join(".spec/sub/topic.md")).unwrap(),
+        TOPIC
+    );
+}
+
+#[test]
+fn dry_run_refuses_a_merge_induced_delta_conflict_like_the_real_run() {
+    let block = "<!-- merge -->\n### Requirement: Sign in (R1)\nThe system SHALL sign users in quickly.\n<!-- /merge -->\n";
+    let mut seen = Vec::new();
+    for dry in [false, true] {
+        let p = delta_tree(&format!("pr-delta-conflict-{dry}"), DELTA);
+        write(&p, ".spec/features/auth/tech.md", block);
+        let mut args = vec!["promote", "auth", "--target", ".spec/product-auth.md"];
+        if dry {
+            args.push("--dry-run");
+        }
+        let got = spec(&p, &args, &[]);
+        assert_eq!(got.code, 1, "dry={dry} {}", got.stderr);
+        assert!(got.stdout.is_empty(), "dry={dry}");
+        assert_eq!(
+            fs::read_to_string(p.join(".spec/product-auth.md")).unwrap(),
+            TOPIC
+        );
+        seen.push((got.code, got.stderr));
+    }
+    assert_eq!(seen[0], seen[1]);
+}
+
+#[test]
+fn a_missing_delta_target_is_reported_with_the_promote_prefix() {
+    let p = delta_tree(
+        "pr-delta-missing",
+        &DELTA.replace("../../product-auth.md", "../../nope.md"),
+    );
+    let got = spec(&p, &["promote", "auth"], &[]);
+    assert_eq!(got.code, 1);
+    assert_eq!(got.stderr, "promote: ERROR: .spec/nope.md not found\n");
 }

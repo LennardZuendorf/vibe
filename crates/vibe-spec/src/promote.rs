@@ -135,6 +135,8 @@ struct DeltaPlan {
     product_show: String,
     bytes: Vec<u8>,
     changes: Vec<Change>,
+    /// The target as read from disk; `None` when the plan read a queued merge.
+    disk: Option<Vec<u8>>,
 }
 
 /// Plans the feature product's delta sections against their target, reading
@@ -161,11 +163,14 @@ fn plan_delta(
         })
         .unwrap_or_default();
     let dest_show = format!("{display}/{rel}");
-    let base = match pending {
-        Some((path, bytes)) if lexical(path) == lexical(&dest) => bytes.to_vec(),
-        _ if dest.is_file() => std::fs::read(&dest)
-            .map_err(|e| vec![format!("promote: ERROR: cannot read {dest_show}: {e}")])?,
-        _ => return Err(vec![format!("ERROR: {dest_show} not found")]),
+    let (base, disk) = match pending {
+        Some((path, bytes)) if lexical(path) == lexical(&dest) => (bytes.to_vec(), None),
+        _ if dest.is_file() => {
+            let b = std::fs::read(&dest)
+                .map_err(|e| vec![format!("promote: ERROR: cannot read {dest_show}: {e}")])?;
+            (b.clone(), Some(b))
+        }
+        _ => return Err(vec![format!("promote: ERROR: {dest_show} not found")]),
     };
     let (bytes, changes) = delta::apply(&base, product).map_err(|errs| {
         errs.into_iter()
@@ -178,7 +183,47 @@ fn plan_delta(
         product_show,
         bytes,
         changes,
+        disk,
     })
+}
+
+/// One planned write with the bytes to put back if a later write fails.
+struct Write {
+    path: PathBuf,
+    show: String,
+    bytes: Vec<u8>,
+    original: Option<Vec<u8>>,
+}
+
+/// Performs the writes in order. If write k fails, writes 0..k are put back
+/// (or removed when the file did not exist) and the refusal is returned.
+fn commit(writes: &[Write]) -> Result<(), String> {
+    for (k, w) in writes.iter().enumerate() {
+        let Err(e) = vibe_core::fs::write_atomic(&w.path, &w.bytes) else {
+            continue;
+        };
+        let mut msg = format!("promote: ERROR: {}: {e}", w.show);
+        let mut restored = Vec::new();
+        let mut failed = Vec::new();
+        for done in &writes[..k] {
+            let back = match &done.original {
+                Some(b) => vibe_core::fs::write_atomic(&done.path, b).map_err(|e| e.to_string()),
+                None => std::fs::remove_file(&done.path).map_err(|e| e.to_string()),
+            };
+            match back {
+                Ok(()) => restored.push(done.show.as_str()),
+                Err(err) => failed.push(format!("{}: {err}", done.show)),
+            }
+        }
+        if !restored.is_empty() {
+            msg.push_str(&format!(" — restored {}", restored.join(", ")));
+        }
+        for f in failed {
+            msg.push_str(&format!(" — restore failed for {f}"));
+        }
+        return Err(msg);
+    }
+    Ok(())
 }
 
 /// The stdout lines for a delta plan (P3c-R9).
@@ -261,7 +306,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
         Err(r) => return r,
     };
     let mut out: Vec<u8> = Vec::new();
-    let mut merged: Option<Vec<u8>> = None;
+    let mut writes: Vec<Write> = Vec::new();
     if blocks.is_empty() {
         eprintln!("WARN: no <!-- merge --> blocks found in {tech_show}");
         if product.is_none() {
@@ -299,15 +344,22 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
             )
             .into_bytes(),
         };
-        if !a.dry_run && plan.appended > 0 {
-            let mut bytes = current;
+        if plan.appended > 0 {
+            let mut bytes = current.clone();
             bytes.extend_from_slice(&plan.append);
-            merged = Some(bytes);
+            writes.push(Write {
+                path: target.clone(),
+                show: target_show.clone(),
+                bytes,
+                original: Some(current),
+            });
         }
     }
     let delta_plan = match &product {
         Some(doc) => {
-            let pending = merged.as_deref().map(|b| (target.as_path(), b));
+            let pending = writes
+                .first()
+                .map(|w| (w.path.as_path(), w.bytes.as_slice()));
             match plan_delta(&dir, &display, &a.feature, doc, pending) {
                 Ok(p) => Some(p),
                 Err(lines) => {
@@ -326,19 +378,25 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
         }
         out.extend_from_slice(&delta_lines(p, a.dry_run));
     }
-    if !a.dry_run {
-        if let Some(bytes) = &merged
-            && let Err(e) = vibe_core::fs::write_atomic(&target, bytes)
-        {
-            return fail(&format!("ERROR: {target_show}: {e}"));
+    if let Some(p) = delta_plan
+        .as_ref()
+        .filter(|p| p.changes.iter().any(|c| c.applied))
+    {
+        match writes.first_mut() {
+            // The delta was planned on the queued merge: one final write.
+            Some(w) if p.disk.is_none() => w.bytes.clone_from(&p.bytes),
+            _ => writes.push(Write {
+                path: p.dest.clone(),
+                show: p.dest_show.clone(),
+                bytes: p.bytes.clone(),
+                original: p.disk.clone(),
+            }),
         }
-        if let Some(p) = delta_plan
-            .as_ref()
-            .filter(|p| p.changes.iter().any(|c| c.applied))
-            && let Err(e) = vibe_core::fs::write_atomic(&p.dest, &p.bytes)
-        {
-            return fail(&format!("ERROR: {}: {e}", p.dest_show));
-        }
+    }
+    if !a.dry_run
+        && let Err(msg) = commit(&writes)
+    {
+        return fail(&msg);
     }
     (exit::OK, out)
 }
