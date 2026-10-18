@@ -135,3 +135,39 @@ pub fn commits(dir: &Path, since: Option<&str>) -> Result<Option<Vec<Commit>>, S
     }
     Ok(Some(out))
 }
+
+/// The commit this branch forked from (P3c-R13): `merge-base HEAD <base>`,
+/// where `<base>` is `explicit` or the first of `origin/HEAD`,
+/// `origin/main`, `main`, `master` that names a commit. None without git,
+/// history or a base.
+pub fn branch_base(dir: &Path, explicit: Option<&str>) -> Option<String> {
+    let candidates: Vec<&str> = match explicit {
+        Some(b) => vec![b],
+        None => vec!["origin/HEAD", "origin/main", "main", "master"],
+    };
+    let base = candidates.into_iter().find(|c| {
+        !c.starts_with('-')
+            && git(
+                dir,
+                &["rev-parse", "--verify", "-q", &format!("{c}^{{commit}}")],
+            )
+            .is_some()
+    })?;
+    let out = git(dir, &["merge-base", "HEAD", base])?;
+    let hash = String::from_utf8_lossy(&out).trim().to_string();
+    (!hash.is_empty()).then_some(hash)
+}
+
+/// Whether the tree under `dir` differs from `base`: tracked changes,
+/// committed or not, or untracked files. None when git fails.
+pub fn changed_since(dir: &Path, base: &str) -> Option<bool> {
+    let diff = git(dir, &["diff", "--name-only", base, "--", "."])?;
+    if !diff.is_empty() {
+        return Some(true);
+    }
+    let untracked = git(
+        dir,
+        &["ls-files", "--others", "--exclude-standard", "--", "."],
+    )?;
+    Some(!untracked.is_empty())
+}

@@ -7,7 +7,7 @@ mod common;
 use std::fs;
 use std::path::PathBuf;
 
-use common::{project, spec, staged_oracle, write};
+use common::{assert_spec_json, git, layered_tree, project, spec, staged_oracle, write};
 
 const TECH: &str = "---\ntype: feature-tech\n---\n\n<!-- merge -->\n## Auth\n\nSessions live in signed cookies.\n<!-- /merge -->\n\n<!-- merge -->\nTokens expire after 1 hour.\n<!-- /merge -->\n";
 const PRESENT: &str =
@@ -466,4 +466,210 @@ fn a_missing_delta_target_is_reported_with_the_promote_prefix() {
     let got = spec(&p, &["promote", "auth"], &[]);
     assert_eq!(got.code, 1);
     assert_eq!(got.stderr, "promote: ERROR: .spec/nope.md not found\n");
+}
+
+const STAMP: &str = "2026-01-01T00:00:00Z";
+
+/// A committed repo on branch `feat` off `main`, with two artifacts bound
+/// to `auth` and one that is not (`auth-v2`).
+fn sp_repo(name: &str) -> PathBuf {
+    let p = project(name);
+    write(&p, ".spec/plan.md", "# Plan\n");
+    write(
+        &p,
+        "docs/superpowers/specs/2026-01-02-auth-design.md",
+        "# Auth design\n",
+    );
+    write(&p, "docs/superpowers/plans/2026-01-14-auth.md", "x\n");
+    write(&p, "docs/superpowers/plans/2026-01-14-auth-v2.md", "x\n");
+    git(&p, STAMP, &["init", "-q", "-b", "main"]);
+    git(&p, STAMP, &["add", "-A"]);
+    git(&p, STAMP, &["commit", "-q", "-m", "base"]);
+    git(&p, STAMP, &["checkout", "-q", "-b", "feat"]);
+    p
+}
+
+fn bound_exist(p: &std::path::Path) -> (bool, bool) {
+    (
+        p.join("docs/superpowers/specs/2026-01-02-auth-design.md")
+            .is_file(),
+        p.join("docs/superpowers/plans/2026-01-14-auth.md")
+            .is_file(),
+    )
+}
+
+#[test]
+fn checklist_names_targets_per_layout() {
+    let p = sp_repo("pr-sp-flat");
+    let out = spec(&p, &["promote", "auth"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(
+        out.text(),
+        "superpowers artifacts for 'auth':\n\
+         \x20 docs/superpowers/plans/2026-01-14-auth.md\n\
+         \x20 docs/superpowers/specs/2026-01-02-auth-design.md\n\
+         Promote durable facts, then run: vibe-spec promote auth --done\n\
+         \x20 [ ] chosen approach \u{2192} .spec/plan.md\n\
+         \x20 [ ] new nouns \u{2192} .spec/product.md\n\
+         \x20 [ ] built places (+code:) \u{2192} .spec/tech.md\n\
+         \x20 [ ] rules \u{2192} .spec/tech.md\n\
+         \x20 [ ] failures \u{2192} .spec/lessons.md\n"
+    );
+    let l = layered_tree("pr-sp-layered");
+    write(&l, "docs/superpowers/plans/2026-01-14-auth.md", "x\n");
+    let out = spec(&l, &["promote", "auth"], &[]);
+    assert!(out.text().contains("  [ ] chosen approach \u{2192} docs/spec/decisions/\n  [ ] new nouns \u{2192} docs/spec/concepts/\n  [ ] built places (+code:) \u{2192} docs/spec/areas/\n  [ ] rules \u{2192} docs/spec/tech/\n  [ ] failures \u{2192} docs/spec/lessons.md\n"), "{}", out.text());
+}
+
+#[test]
+fn done_refuses_when_the_spec_root_is_unchanged() {
+    let p = sp_repo("pr-done-same");
+    let out = spec(&p, &["promote", "auth", "--done"], &[]);
+    assert_eq!(out.code, 1);
+    assert!(out.text().is_empty());
+    assert!(
+        out.stderr
+            .starts_with("promote: refused \u{2014} .spec/ is unchanged since "),
+        "{}",
+        out.stderr
+    );
+    assert_eq!(bound_exist(&p), (true, true));
+}
+
+#[test]
+fn done_deletes_after_promotion() {
+    let p = sp_repo("pr-done-ok");
+    write(&p, ".spec/plan.md", "# Plan\n\nD47 promoted.\n");
+    let dry = spec(&p, &["promote", "auth", "--done", "--dry-run"], &[]);
+    assert_eq!(
+        dry.text(),
+        "WOULD DELETE docs/superpowers/plans/2026-01-14-auth.md\nWOULD DELETE docs/superpowers/specs/2026-01-02-auth-design.md\n"
+    );
+    assert_eq!(bound_exist(&p), (true, true));
+    let out = spec(&p, &["promote", "auth", "--done"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(
+        out.text(),
+        "DELETED docs/superpowers/plans/2026-01-14-auth.md\nDELETED docs/superpowers/specs/2026-01-02-auth-design.md\n"
+    );
+    assert_eq!(bound_exist(&p), (false, false));
+    assert!(
+        p.join("docs/superpowers/plans/2026-01-14-auth-v2.md")
+            .is_file()
+    );
+}
+
+#[test]
+fn done_counts_untracked_files() {
+    let p = sp_repo("pr-done-new");
+    write(&p, ".spec/decisions.md", "# new\n");
+    assert_eq!(spec(&p, &["promote", "auth", "--done"], &[]).code, 0);
+    assert_eq!(bound_exist(&p), (false, false));
+}
+
+#[test]
+fn done_refuses_without_a_base() {
+    let bare = project("pr-done-nogit");
+    write(&bare, ".spec/plan.md", "x\n");
+    write(&bare, "docs/superpowers/plans/2026-01-14-auth.md", "x\n");
+    let out = spec(&bare, &["promote", "auth", "--done"], &[]);
+    assert_eq!(out.code, 1);
+    assert_eq!(
+        out.stderr,
+        "promote: refused \u{2014} no branch base found (pass --base <ref>); nothing deleted\n"
+    );
+    assert!(
+        bare.join("docs/superpowers/plans/2026-01-14-auth.md")
+            .is_file()
+    );
+    let p = sp_repo("pr-done-badbase");
+    write(&p, ".spec/plan.md", "changed\n");
+    assert_eq!(
+        spec(&p, &["promote", "auth", "--done", "--base", "nope"], &[]).code,
+        1
+    );
+    assert_eq!(bound_exist(&p), (true, true));
+}
+
+#[test]
+fn done_rejects_unsafe_names() {
+    let p = sp_repo("pr-done-name");
+    write(&p, ".spec/plan.md", "changed\n");
+    let out = spec(&p, &["promote", "../auth", "--done"], &[]);
+    assert_eq!(out.code, 1);
+    assert_eq!(
+        out.stderr,
+        "promote: refused \u{2014} invalid feature name \"../auth\" (lowercase-kebab); nothing deleted\n"
+    );
+    assert_eq!(bound_exist(&p), (true, true));
+    let none = spec(&p, &["promote", "billing", "--done"], &[]);
+    assert_eq!(
+        (none.code, none.stderr.as_str()),
+        (1, "promote: no superpowers artifacts for 'billing'\n")
+    );
+}
+
+#[test]
+fn json_validates() {
+    let p = sp_repo("pr-json");
+    let check = spec(&p, &["promote", "auth", "--json"], &[]);
+    assert_eq!(check.code, 0, "{}", check.stderr);
+    assert_spec_json("promote", &check.text());
+    write(&p, ".spec/plan.md", "changed\n");
+    let done = spec(&p, &["promote", "auth", "--done", "--json"], &[]);
+    assert_eq!(done.code, 0, "{}", done.stderr);
+    assert_spec_json("promote", &done.text());
+    let v: serde_json::Value = serde_json::from_slice(&done.stdout).unwrap();
+    assert_eq!(v["deleted"].as_array().unwrap().len(), 2);
+    let d = delta_tree("pr-json-delta", DELTA);
+    let both = spec(&d, &["promote", "auth", "--json", "--dry-run"], &[]);
+    assert_spec_json("promote", &both.text());
+    let v: serde_json::Value = serde_json::from_slice(&both.stdout).unwrap();
+    assert_eq!(
+        v["delta"]["changes"][0],
+        serde_json::json!({ "op": "REMOVED", "name": "Sign out (R2)", "applied": true })
+    );
+    assert_eq!(v["merge"]["appended"], 2);
+}
+
+#[test]
+fn done_reports_every_path_it_could_not_delete() {
+    let p = sp_repo("pr-done-fail");
+    write(&p, ".spec/plan.md", "changed\n");
+    let plans = p.join("docs/superpowers/plans");
+    let specs = p.join("docs/superpowers/specs");
+    if is_root() {
+        return;
+    }
+    chmod(&plans, 0o555);
+    let out = spec(&p, &["promote", "auth", "--done"], &[]);
+    chmod(&plans, 0o755);
+    assert_eq!(out.code, 1);
+    assert!(
+        out.stderr
+            .contains("docs/superpowers/plans/2026-01-14-auth.md"),
+        "{}",
+        out.stderr
+    );
+    assert!(out.stderr.contains("not deleted"), "{}", out.stderr);
+    assert!(plans.join("2026-01-14-auth.md").is_file());
+    assert!(!specs.join("2026-01-02-auth-design.md").exists());
+}
+
+#[test]
+fn an_unreadable_artifact_dir_fails_closed() {
+    if is_root() {
+        return;
+    }
+    let p = sp_repo("pr-sp-unread");
+    write(&p, ".spec/plan.md", "changed\n");
+    let plans = p.join("docs/superpowers/plans");
+    chmod(&plans, 0o000);
+    let out = spec(&p, &["promote", "auth", "--done"], &[]);
+    let chk = spec(&p, &["promote", "auth"], &[]);
+    chmod(&plans, 0o755);
+    assert_eq!((out.code, chk.code), (1, 1));
+    assert!(out.stderr.contains("cannot read"), "{}", out.stderr);
+    assert!(out.text().is_empty());
+    assert_eq!(bound_exist(&p), (true, true));
 }

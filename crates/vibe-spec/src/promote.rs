@@ -1,4 +1,5 @@
-//! `vibe-spec promote <feature> [--dry-run] [--target <file>]` — port of
+//! `vibe-spec promote <feature> [--dry-run] [--target <file>] [--done]
+//! [--base <ref>] [--json]` — port of
 //! `spec/scripts/promote.sh` (F18, P3c-R6): `<!-- merge -->` blocks of a
 //! fallback feature's tech.md are appended to the root tech doc. Byte
 //! parity: messages, the `while read` loop (an unterminated last line is
@@ -6,19 +7,25 @@
 //! blocks always present, argument errors exit 1.
 use std::path::{Path, PathBuf};
 
+use serde_json::{Value, json};
 use vibe_core::exit;
 
 use crate::delta::{self, Change};
-use crate::layered::lexical;
+use crate::layered::{Layout, detect, lexical};
+use crate::query::{rel, valid_name};
 use crate::root::{Miss, Root};
 use crate::text::{find, join_raw, read_lines};
+use crate::{git, superpowers};
 
-const USAGE: &str = "usage: vibe-spec promote <feature-name> [--dry-run] [--target <file>]";
+const USAGE: &str = "usage: vibe-spec promote <feature-name> [--dry-run] [--target <file>] [--done] [--base <ref>] [--json]";
 
 struct Args {
     feature: String,
     dry_run: bool,
     target: Option<String>,
+    done: bool,
+    base: Option<String>,
+    json: bool,
 }
 
 fn parse(args: &[String]) -> Result<Args, String> {
@@ -31,6 +38,9 @@ fn parse(args: &[String]) -> Result<Args, String> {
         feature,
         dry_run: false,
         target: None,
+        done: false,
+        base: None,
+        json: false,
     };
     let mut i = 1;
     while let Some(arg) = args.get(i) {
@@ -42,6 +52,16 @@ fn parse(args: &[String]) -> Result<Args, String> {
                     .filter(|t| !t.is_empty())
                     .ok_or_else(|| "promote: --target requires a path".to_string())?;
                 a.target = Some(t.clone());
+                i += 1;
+            }
+            "--done" => a.done = true,
+            "--json" => a.json = true,
+            "--base" => {
+                let b = args
+                    .get(i + 1)
+                    .filter(|b| !b.is_empty() && !b.starts_with('-'))
+                    .ok_or_else(|| "promote: --base requires a ref".to_string())?;
+                a.base = Some(b.clone());
                 i += 1;
             }
             other => return Err(format!("Unknown option: {other}")),
@@ -262,6 +282,155 @@ fn delta_lines(p: &DeltaPlan, dry_run: bool) -> Vec<u8> {
     out
 }
 
+/// The promotion checklist (spec section 5): what goes where, per layout.
+fn checklist(root: &Root) -> Vec<(&'static str, String)> {
+    let d = root.display();
+    let layered = detect(&root.dir) == Layout::Layered;
+    let to = |flat: &str, kinds: &str| {
+        if layered {
+            format!("{d}/{kinds}")
+        } else {
+            format!("{d}/{flat}")
+        }
+    };
+    vec![
+        ("chosen approach", to("plan.md", "decisions/")),
+        ("new nouns", to("product.md", "concepts/")),
+        ("built places (+code:)", to("tech.md", "areas/")),
+        ("rules", to("tech.md", "tech/")),
+        ("failures", to("lessons.md", "lessons.md")),
+    ]
+}
+
+fn checklist_text(feature: &str, shown: &[String], items: &[(&str, String)]) -> Vec<u8> {
+    let mut out = format!("superpowers artifacts for '{feature}':\n");
+    for s in shown {
+        out += &format!("  {s}\n");
+    }
+    out += &format!("Promote durable facts, then run: vibe-spec promote {feature} --done\n");
+    for (what, target) in items {
+        out += &format!("  [ ] {what} \u{2192} {target}\n");
+    }
+    out.into_bytes()
+}
+
+/// Shown artifact paths and the checklist items.
+type SpOut<'a> = (Vec<String>, Vec<(&'a str, String)>);
+
+fn refuse(msg: &str) -> (u8, Vec<u8>) {
+    eprintln!("promote: refused \u{2014} {msg}; nothing deleted");
+    (exit::FINDINGS, Vec::new())
+}
+
+/// The bound artifacts of a valid feature name; `Err` is a finished
+/// refusal (an unreadable directory fails closed, P3c-R13).
+fn bound(root: &Root, feature: &str) -> Result<Vec<PathBuf>, (u8, Vec<u8>)> {
+    superpowers::artifacts(&root.project, feature).map_err(|e| {
+        fail(&format!(
+            "promote: ERROR: cannot read superpowers artifacts: {e}"
+        ))
+    })
+}
+
+/// `promote <f> --done` (D46, P3c-R13): delete the bound artifacts once the
+/// spec root changed since the branch base; fail closed otherwise. The
+/// command promotes nothing itself, so there are no spec writes to order
+/// against: everything is checked first, then the files are removed.
+fn done(found: &Result<Root, Miss>, a: &Args) -> (u8, Vec<u8>) {
+    let root = match found {
+        Ok(root) => root,
+        Err(miss) => {
+            eprintln!("{}", miss.message());
+            return (miss.code(), Vec::new());
+        }
+    };
+    if !valid_name(&a.feature) {
+        return refuse(&format!(
+            "invalid feature name {:?} (lowercase-kebab)",
+            a.feature
+        ));
+    }
+    let artifacts = match bound(root, &a.feature) {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    if artifacts.is_empty() {
+        return fail(&format!(
+            "promote: no superpowers artifacts for '{}'",
+            a.feature
+        ));
+    }
+    let Some(base) = git::branch_base(&root.project, a.base.as_deref()) else {
+        return refuse("no branch base found (pass --base <ref>)");
+    };
+    let short = base.get(..7).unwrap_or(&base);
+    match git::changed_since(&root.dir, &base) {
+        Some(true) => {}
+        Some(false) => {
+            return refuse(&format!(
+                "{}/ is unchanged since {short}; promote the artifacts' durable facts first",
+                root.display()
+            ));
+        }
+        None => {
+            return refuse(&format!("cannot compare {}/ with {short}", root.display()));
+        }
+    }
+    let shown: Vec<String> = artifacts.iter().map(|p| rel(&root.project, p)).collect();
+    let mut deleted: Vec<String> = Vec::new();
+    let mut failed = false;
+    if !a.dry_run {
+        for (path, s) in artifacts.iter().zip(&shown) {
+            match std::fs::remove_file(path) {
+                Ok(()) => deleted.push(s.clone()),
+                Err(e) => {
+                    failed = true;
+                    eprintln!("promote: ERROR: not deleted {s}: {e}");
+                }
+            }
+        }
+    }
+    let out = if a.json {
+        let v = json!({
+            "v": 1, "feature": a.feature, "dry_run": a.dry_run,
+            "artifacts": shown, "deleted": deleted,
+        });
+        format!("{v}\n")
+    } else if a.dry_run {
+        shown
+            .iter()
+            .map(|s| format!("WOULD DELETE {s}\n"))
+            .collect()
+    } else {
+        deleted.iter().map(|s| format!("DELETED {s}\n")).collect()
+    };
+    if failed {
+        // Deleted files cannot come back: stdout names what is gone.
+        return (
+            exit::FINDINGS,
+            if a.json { Vec::new() } else { out.into_bytes() },
+        );
+    }
+    (exit::OK, out.into_bytes())
+}
+
+/// The always-present JSON fields, plus the checklist when artifacts exist.
+fn json_base(a: &Args, shown: &[String], items: &[(&str, String)]) -> Value {
+    let mut v = json!({
+        "v": 1, "feature": a.feature, "dry_run": a.dry_run,
+        "artifacts": shown, "deleted": Vec::<String>::new(),
+    });
+    if !items.is_empty() {
+        v["checklist"] = Value::Array(
+            items
+                .iter()
+                .map(|(w, t)| json!({ "what": w, "target": t }))
+                .collect(),
+        );
+    }
+    v
+}
+
 /// Runs the command.
 pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<u8>) {
     let a = match parse(args) {
@@ -279,12 +448,39 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
             return (miss.code(), Vec::new());
         }
     };
+    if a.done {
+        return done(found, &a);
+    }
+    let sp: Vec<PathBuf> = match found {
+        Ok(root) if valid_name(&a.feature) => match bound(root, &a.feature) {
+            Ok(v) => v,
+            Err(r) => return r,
+        },
+        _ => Vec::new(),
+    };
+    let sp_out: Option<SpOut> = match found {
+        Ok(root) if !sp.is_empty() => Some((
+            sp.iter().map(|p| rel(&root.project, p)).collect(),
+            checklist(root),
+        )),
+        _ => None,
+    };
     let tech = join_raw(&dir.join("features"), a.feature.as_bytes()).join("tech.md");
     let tech_show = format!("{display}/features/{}/tech.md", a.feature);
     let (target, target_show) = match &a.target {
         Some(t) => (cwd.join(t), t.clone()),
         None => (dir.join("tech.md"), format!("{display}/tech.md")),
     };
+    if !tech.is_file()
+        && let Some((shown, items)) = &sp_out
+    {
+        // Superpowers artifacts only: no fallback folder, no writes.
+        if a.json {
+            let v = json_base(&a, shown, items);
+            return (exit::OK, format!("{v}\n").into_bytes());
+        }
+        return (exit::OK, checklist_text(&a.feature, shown, items));
+    }
     if !tech.is_file() {
         return fail(&format!("ERROR: {tech_show} not found"));
     }
@@ -307,9 +503,10 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
     };
     let mut out: Vec<u8> = Vec::new();
     let mut writes: Vec<Write> = Vec::new();
+    let mut merged: Option<(usize, usize)> = None;
     if blocks.is_empty() {
         eprintln!("WARN: no <!-- merge --> blocks found in {tech_show}");
-        if product.is_none() {
+        if product.is_none() && sp_out.is_none() {
             return (exit::OK, Vec::new());
         }
     } else {
@@ -318,6 +515,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
             Err(r) => return r,
         };
         let plan = merge_plan(&current, &blocks);
+        merged = Some((plan.appended, plan.skipped));
         out = match (a.dry_run, plan.appended) {
             (true, 0) => format!(
                 "--- nothing to promote: all {} block(s) already present in {target_show} ---\n",
@@ -393,10 +591,39 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
             }),
         }
     }
+    if let Some((shown, items)) = &sp_out {
+        if !out.is_empty() && !out.ends_with(b"\n") {
+            out.push(b'\n');
+        }
+        out.extend_from_slice(&checklist_text(&a.feature, shown, items));
+    }
     if !a.dry_run
         && let Err(msg) = commit(&writes)
     {
         return fail(&msg);
+    }
+    if a.json {
+        let mut v = match &sp_out {
+            Some((shown, items)) => json_base(&a, shown, items),
+            None => json_base(&a, &[], &[]),
+        };
+        if let Some((appended, skipped)) = merged {
+            v["merge"] = json!({
+                "source": tech_show, "target": target_show,
+                "appended": appended, "skipped": skipped,
+            });
+        }
+        if let Some(p) = &delta_plan {
+            v["delta"] = json!({
+                "source": p.product_show, "target": p.dest_show,
+                "changes": p.changes.iter().map(|c| json!({
+                    "op": c.kind.as_str(),
+                    "name": crate::text::lossy(&c.name),
+                    "applied": c.applied,
+                })).collect::<Vec<_>>(),
+            });
+        }
+        return (exit::OK, format!("{v}\n").into_bytes());
     }
     (exit::OK, out)
 }

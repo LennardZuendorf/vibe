@@ -295,7 +295,7 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
             class: "features",
             name: "superpowers-artifact",
             cwd: "",
-            runs: &[],
+            runs: &[("promote", &[&["auth"]])],
             files: with(
                 filled(),
                 &[("docs/superpowers/plans/2026-01-14-auth.md", "# auth plan\n")],

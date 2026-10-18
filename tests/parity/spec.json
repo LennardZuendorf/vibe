@@ -31,6 +31,8 @@
     { "command": "promote", "case": "features/delta-removed", "args": ["auth", "--dry-run"], "field": "stdout", "reason": "the port also plans the product's requirement deltas (P3c-R9); the oracle promotes merge blocks only" },
     { "command": "promote", "case": "features/delta-removed", "args": ["auth"], "field": "stdout", "reason": "the port also applies the product's requirement deltas (P3c-R9); the oracle promotes merge blocks only" },
     { "command": "promote", "case": "features/delta-removed", "args": ["auth"], "field": "files", "reason": "the port removes Legacy login (R9) from product-auth.md (P3c-R9); the oracle never reads product.md" },
-    { "command": "check-drift", "case": "features/superpowers-artifact", "args": [], "field": "stdout", "reason": "the port warns on superpowers artifacts left under docs/superpowers/ (D46, P3c-R4); the oracle does not look there" }
+    { "command": "check-drift", "case": "features/superpowers-artifact", "args": [], "field": "stdout", "reason": "the port warns on superpowers artifacts left under docs/superpowers/ (D46, P3c-R4); the oracle does not look there" },
+    { "command": "promote", "case": "features/superpowers-artifact", "args": ["auth"], "field": "exit", "reason": "the port prints the superpowers promotion checklist (P3c-R12); the oracle fails on the missing fallback folder" },
+    { "command": "promote", "case": "features/superpowers-artifact", "args": ["auth"], "field": "stdout", "reason": "the port prints the superpowers promotion checklist (P3c-R12); the oracle prints nothing" }
   ]
 }

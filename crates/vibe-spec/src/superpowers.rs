@@ -1,7 +1,8 @@
 //! Superpowers artifacts (D45, P3b-R11): SF35 names under
 //! `docs/superpowers/{specs,plans}/`, SF36 each plan's `**Spec:**` path.
 //! Content format is not linted.
-use std::path::Path;
+use std::io;
+use std::path::{Path, PathBuf};
 
 use crate::pattern::{md_link_target, md_links};
 use crate::report::Report;
@@ -173,4 +174,42 @@ pub fn run(r: &mut Report, project: &Path) {
             }
         }
     }
+}
+
+/// Every artifact bound to `feature` (D45 binding, P3c-R12): regular files
+/// `specs/YYYY-MM-DD-<f>-design.md` and `plans/YYYY-MM-DD-<f>.md`, every
+/// date, sorted by project-relative path. Callers pass a valid name. A
+/// missing directory holds none; any other read error is returned (fail
+/// closed), so a caller never deletes on a partial listing.
+pub fn artifacts(project: &Path, feature: &str) -> io::Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    for (dir, suffix) in [(PLANS, ".md"), (SPECS, "-design.md")] {
+        let want = format!("-{feature}{suffix}");
+        let path = project.join(dir);
+        let entries = match std::fs::read_dir(&path) {
+            Ok(e) => e,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(io::Error::new(e.kind(), format!("{}: {e}", path.display()))),
+        };
+        for entry in entries {
+            let entry =
+                entry.map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", path.display())))?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let b = name.as_bytes();
+            let bound = b.len() == 10 + want.len()
+                && is_date(b.get(..10).unwrap_or_default())
+                && b.get(10..) == Some(want.as_bytes());
+            if !bound {
+                continue;
+            }
+            let meta = std::fs::symlink_metadata(entry.path()).map_err(|e| {
+                io::Error::new(e.kind(), format!("{}: {e}", entry.path().display()))
+            })?;
+            if meta.is_file() {
+                out.push(entry.path());
+            }
+        }
+    }
+    out.sort_by_key(|p| crate::query::rel(project, p));
+    Ok(out)
 }

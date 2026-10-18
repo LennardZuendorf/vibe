@@ -24,7 +24,7 @@ struct Row {
 }
 
 /// `^[a-z0-9][a-z0-9-]*$` (`feature-name` in the schema).
-fn valid_name(name: &str) -> bool {
+pub(crate) fn valid_name(name: &str) -> bool {
     let b = name.as_bytes();
     b.first()
         .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
@@ -66,7 +66,7 @@ fn newest(dir: &Path, feature: &str, suffix: &str) -> Option<PathBuf> {
 
 /// `path` relative to `project`, `/`-joined; the absolute path when it lies
 /// outside `project`.
-fn rel(project: &Path, path: &Path) -> String {
+pub(crate) fn rel(project: &Path, path: &Path) -> String {
     match path.strip_prefix(project) {
         Ok(p) if !p.as_os_str().is_empty() => p
             .components()

@@ -1,9 +1,57 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Spec JSON v1",
-  "description": "Answers of the read-only vibe-spec queries when called with --json: root, lessons-for, plan, feature, validate, trace, check-drift. Each answer is one JSON object with \"v\": 1. This is a new output; it is not the legacy `lessons-for.sh --format json` array, which stays byte-identical except that the port emits valid JSON: it escapes quotes, backslashes and control characters and replaces invalid UTF-8 with U+FFFD (pinned divergence).",
+  "description": "Answers of vibe-spec commands when called with --json: the queries root, lessons-for, plan, feature, validate, trace and check-drift, and promote, which also writes (merge blocks, requirement deltas) and deletes (--done). Each answer is one JSON object with \"v\": 1. This is a new output; it is not the legacy `lessons-for.sh --format json` array, which stays byte-identical except that the port emits valid JSON: it escapes quotes, backslashes and control characters and replaces invalid UTF-8 with U+FFFD (pinned divergence).",
   "x-vibe-compat": "additive-within-major; readers-ignore-unknown-fields",
   "$defs": {
+    "promote": {
+      "type": "object",
+      "required": ["v", "feature", "dry_run", "artifacts", "deleted"],
+      "properties": {
+        "v": { "const": 1 },
+        "feature": { "type": "string", "minLength": 1 },
+        "dry_run": { "type": "boolean" },
+        "merge": {
+          "type": "object",
+          "required": ["source", "target", "appended", "skipped"],
+          "properties": {
+            "source": { "type": "string", "minLength": 1 },
+            "target": { "type": "string", "minLength": 1 },
+            "appended": { "type": "integer", "minimum": 0 },
+            "skipped": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "delta": {
+          "type": "object",
+          "required": ["source", "target", "changes"],
+          "properties": {
+            "source": { "type": "string", "minLength": 1 },
+            "target": { "type": "string", "minLength": 1 },
+            "changes": { "type": "array", "items": { "$ref": "#/$defs/promote-change" } }
+          }
+        },
+        "artifacts": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "checklist": { "type": "array", "items": { "$ref": "#/$defs/promote-item" } },
+        "deleted": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "promote-change": {
+      "type": "object",
+      "required": ["op", "name", "applied"],
+      "properties": {
+        "op": { "enum": ["ADDED", "MODIFIED", "REMOVED"] },
+        "name": { "type": "string", "minLength": 1 },
+        "applied": { "type": "boolean" }
+      }
+    },
+    "promote-item": {
+      "type": "object",
+      "required": ["what", "target"],
+      "properties": {
+        "what": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "minLength": 1 }
+      }
+    },
     "check-drift": {
       "type": "object",
       "required": ["v", "root", "pre_merge", "errors", "warnings", "findings"],
