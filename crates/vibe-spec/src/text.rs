@@ -289,6 +289,28 @@ pub fn is_date(b: &[u8]) -> bool {
         })
 }
 
+/// Today's UTC date as `YYYY-MM-DD`, from the system clock (P3c-R18).
+pub fn today_utc() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    civil(i64::try_from(secs / 86_400).unwrap_or(0))
+}
+
+/// Days since 1970-01-01 as `YYYY-MM-DD` (Howard Hinnant's civil_from_days).
+pub fn civil(days: i64) -> String {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
 /// Regular files under `dir`, recursive, as `/`-joined paths relative to
 /// `dir`, sorted by bytes. The top-level `dir` is followed if it is a
 /// symlink; entries below it are neither followed nor listed. Dot names are
@@ -329,6 +351,15 @@ pub fn walk_files(dir: &Path) -> std::io::Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn civil_dates() {
+        assert_eq!(civil(0), "1970-01-01");
+        assert_eq!(civil(10_957), "2000-01-01");
+        assert_eq!(civil(19_723), "2024-01-01");
+        assert_eq!(civil(19_782), "2024-02-29");
+        assert!(is_date(today_utc().as_bytes()));
+    }
 
     #[test]
     #[allow(clippy::unwrap_used)]

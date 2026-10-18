@@ -135,6 +135,18 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Import OpenSpec changes as fallback feature folders.
+    Import {
+        /// Directory holding `openspec/`.
+        #[arg(long, value_name = "DIR")]
+        openspec: PathBuf,
+        /// Import only this change.
+        #[arg(long)]
+        feature: Option<String>,
+        /// Print Spec JSON v1.
+        #[arg(long)]
+        json: bool,
+    },
     /// Units cited by commits and tests/, uncited units, orphan citations.
     Trace {
         /// Only commits after this revision (`<ref>..HEAD`).
@@ -189,6 +201,11 @@ fn main() -> ExitCode {
             openspec: dir,
             json,
         } => openspec::export(&found, &cwd, &dir, json),
+        Command::Import {
+            openspec: dir,
+            feature,
+            json,
+        } => openspec::import(&found, &cwd, &dir, feature.as_deref(), json),
         Command::Trace { since, json } => trace::run(&found, since.as_deref(), json),
     };
     emit(&out);

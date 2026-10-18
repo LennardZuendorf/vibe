@@ -274,3 +274,241 @@ fn export_refuses_a_destination_inside_the_spec_root() {
         assert!(!p.join(".spec/out").exists());
     }
 }
+
+const FILES: [&str; 3] = ["product.md", "tech.md", "plan.md"];
+
+/// An empty project with a `.spec` root and no features.
+fn empty(name: &str) -> PathBuf {
+    let p = project(name);
+    write(&p, ".spec/product.md", "# P\n");
+    p
+}
+
+#[test]
+fn round_trip_is_byte_identical() {
+    let a = fixture("os-rt-a");
+    assert_eq!(spec(&a, &["export", "--openspec", "out"], &[]).code, 0);
+    let b = empty("os-rt-b");
+    let out_dir = a.join("out");
+    let out = spec(
+        &b,
+        &["import", "--openspec", out_dir.to_str().unwrap()],
+        &[],
+    );
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    for f in FILES {
+        let rel = format!(".spec/features/passkeys/{f}");
+        assert_eq!(
+            fs::read(b.join(&rel)).unwrap(),
+            fs::read(a.join(&rel)).unwrap(),
+            "{rel}"
+        );
+    }
+    assert!(!b.join(".spec/features/passkeys/design.md").exists());
+    let json = spec(
+        &empty("os-rt-json"),
+        &["import", "--openspec", out_dir.to_str().unwrap(), "--json"],
+        &[],
+    );
+    assert_eq!(json.code, 0, "{}", json.stderr);
+    assert_eq!(json.text().lines().count(), 1);
+    assert_spec_json("openspec", &json.text());
+}
+
+#[test]
+fn import_refuses_edited_requirements() {
+    let a = fixture("os-edit-a");
+    assert_eq!(spec(&a, &["export", "--openspec", "out"], &[]).code, 0);
+    let delta = a.join("out/openspec/changes/passkeys/specs/product-auth/spec.md");
+    let text = fs::read_to_string(&delta)
+        .unwrap()
+        .replace("valid passkey", "valid key");
+    fs::write(&delta, text).unwrap();
+    let b = empty("os-edit-b");
+    let out = spec(
+        &b,
+        &["import", "--openspec", a.join("out").to_str().unwrap()],
+        &[],
+    );
+    assert_eq!(out.code, 1);
+    assert_eq!(
+        out.stderr,
+        "import: passkeys: requirements were edited in OpenSpec; delete design.md's vibe blocks to import it as a new change\n"
+    );
+    assert!(!b.join(".spec/features/passkeys").exists());
+    assert!(
+        !b.join(".spec/features/notes").exists(),
+        "nothing is written when any change refuses"
+    );
+}
+
+#[test]
+fn foreign_change_imports() {
+    let src = project("os-foreign-src");
+    write(
+        &src,
+        "openspec/changes/add-export/proposal.md",
+        "# Proposal\n\n## Why\nUsers need their data.\n\n## What Changes\n- export\n",
+    );
+    write(
+        &src,
+        "openspec/changes/add-export/specs/product-auth/spec.md",
+        "## ADDED Requirements\n\n### Requirement: Export\nThe system SHALL export CSV.\n\n#### Scenario: csv\n- **WHEN** asked\n- **THEN** csv\n\n## REMOVED Requirements\n\n- `### Requirement: Legacy dump`\n",
+    );
+    write(
+        &src,
+        "openspec/changes/add-export/tasks.md",
+        "# Tasks\n\n## 1. Export\n\n- [x] 1.1 Writer\n- [ ] 1.2 Button\n",
+    );
+    let b = empty("os-foreign");
+    write(&b, ".spec/product-auth.md", "# auth\n");
+    let out = spec(&b, &["import", "--openspec", src.to_str().unwrap()], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let product = read(&b, ".spec/features/add-export/product.md");
+    let (head, body) = product.split_once("---\n\n").unwrap();
+    assert!(head.starts_with("---\ntype: feature-product\nfeature: add-export\nsibling: tech.md\nparent: ../../product-auth.md\nupdated: "), "{head}");
+    assert_eq!(
+        body,
+        "# Feature: add-export — Product\n\nUsers need their data.\n\n## ADDED Requirements\n\n### Requirement: Export\nThe system SHALL export CSV.\n\n#### Scenario: csv\n- **WHEN** asked\n- **THEN** csv\n\n## REMOVED Requirements\n\n### Requirement: Legacy dump\n"
+    );
+    let plan = read(&b, ".spec/features/add-export/plan.md");
+    assert!(
+        plan.contains("\n### add-export/1 — Writer\n\n### add-export/2 — Button\n"),
+        "{plan}"
+    );
+    assert!(
+        plan.ends_with("| add-export/1 | DONE |\n| add-export/2 | NOT STARTED |\n"),
+        "{plan}"
+    );
+    assert!(b.join(".spec/features/add-export/tech.md").is_file());
+}
+
+#[test]
+fn import_refuses() {
+    let a = fixture("os-refuse-a");
+    assert_eq!(spec(&a, &["export", "--openspec", "out"], &[]).code, 0);
+    let out_dir = a.join("out");
+    let exists = spec(
+        &a,
+        &["import", "--openspec", out_dir.to_str().unwrap()],
+        &[],
+    );
+    assert_eq!(exists.code, 1);
+    assert_eq!(
+        exists.stderr,
+        "import: notes: .spec/features/notes/ already exists\nimport: passkeys: .spec/features/passkeys/ already exists\n"
+    );
+    let src = project("os-refuse-src");
+    write(
+        &src,
+        "openspec/changes/two-caps/specs/a/spec.md",
+        "## ADDED Requirements\n### Requirement: A\nThe system SHALL a.\n#### Scenario: a\n- x\n",
+    );
+    write(
+        &src,
+        "openspec/changes/two-caps/specs/b/spec.md",
+        "## ADDED Requirements\n### Requirement: B\nThe system SHALL b.\n#### Scenario: b\n- x\n",
+    );
+    write(
+        &src,
+        "openspec/changes/renamed/specs/a/spec.md",
+        "## RENAMED Requirements\n- FROM: `### Requirement: A`\n- TO: `### Requirement: B`\n",
+    );
+    write(&src, "openspec/changes/Bad_Id/proposal.md", "# P\n");
+    let out = spec(
+        &empty("os-refuse-b"),
+        &["import", "--openspec", src.to_str().unwrap()],
+        &[],
+    );
+    assert_eq!(out.code, 1);
+    assert_eq!(
+        out.stderr,
+        "import: Bad_Id: not a valid feature name (lowercase-kebab)\n\
+         import: renamed: RENAMED Requirements is not supported\n\
+         import: two-caps: touches 2 capabilities; a vibe feature targets one document\n"
+    );
+    let one = spec(
+        &empty("os-refuse-one"),
+        &[
+            "import",
+            "--openspec",
+            src.to_str().unwrap(),
+            "--feature",
+            "nope",
+        ],
+        &[],
+    );
+    assert_eq!(
+        (one.code, one.stderr.as_str()),
+        (1, "import: no change 'nope' to import\n")
+    );
+}
+
+#[test]
+fn import_refuses_unsafe_names_and_symlinks() {
+    use std::os::unix::fs::symlink;
+    let src = project("os-unsafe-src");
+    write(&src, "openspec/changes/ok/proposal.md", "# P\n");
+    let b = empty("os-unsafe");
+    for bad in ["../evil", "-x", "/abs", ".."] {
+        let out = spec(
+            &b,
+            &[
+                "import",
+                "--openspec",
+                src.to_str().unwrap(),
+                &format!("--feature={bad}"),
+            ],
+            &[],
+        );
+        assert_eq!(out.code, 1, "{bad}");
+        assert_eq!(out.stderr, format!("import: no change '{bad}' to import\n"));
+    }
+    assert!(!b.join(".spec/features").exists());
+    // A symlinked change dir is refused, never followed.
+    let outside = project("os-unsafe-outside");
+    write(&outside, "proposal.md", "# P\n");
+    symlink(&outside, src.join("openspec/changes/linked")).unwrap();
+    let out = spec(&b, &["import", "--openspec", src.to_str().unwrap()], &[]);
+    assert_eq!(out.code, 1);
+    assert_eq!(out.stderr, "import: linked: is a symlink, not followed\n");
+    assert!(!b.join(".spec/features").exists());
+    fs::remove_file(src.join("openspec/changes/linked")).unwrap();
+    // A symlinked features dir is refused and nothing lands behind it.
+    let target = project("os-unsafe-features");
+    symlink(&target, b.join(".spec/features")).unwrap();
+    let out = spec(&b, &["import", "--openspec", src.to_str().unwrap()], &[]);
+    assert_eq!(out.code, 1);
+    assert_eq!(out.stderr, "import: .spec/features is a symlink\n");
+    assert!(!target.join("ok").exists());
+    // A symlinked design.md is refused.
+    fs::remove_file(b.join(".spec/features")).unwrap();
+    symlink(
+        outside.join("proposal.md"),
+        src.join("openspec/changes/ok/design.md"),
+    )
+    .unwrap();
+    let out = spec(&b, &["import", "--openspec", src.to_str().unwrap()], &[]);
+    assert_eq!(out.code, 1);
+    assert!(out.stderr.contains("import: ok: "), "{}", out.stderr);
+    assert!(out.stderr.contains("is a symlink"), "{}", out.stderr);
+    assert!(!b.join(".spec/features").exists());
+}
+
+#[test]
+fn import_without_a_root_exits_3_with_empty_stdout() {
+    let p = project("os-import-noroot");
+    let out = spec(&p, &["import", "--openspec", "out", "--json"], &[]);
+    assert_eq!(out.code, 3);
+    assert_eq!(out.text(), "");
+}
+
+#[test]
+fn import_without_openspec_dir_refuses() {
+    let b = empty("os-import-none");
+    let out = spec(&b, &["import", "--openspec", "nowhere"], &[]);
+    assert_eq!(
+        (out.code, out.stderr.as_str()),
+        (1, "import: no openspec/ under nowhere\n")
+    );
+}
