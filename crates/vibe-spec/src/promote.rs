@@ -148,6 +148,27 @@ fn read_or_fail(path: &Path, show: &str) -> Result<Vec<u8>, (u8, Vec<u8>)> {
     }
 }
 
+/// Whether two paths name one file: by identity when both exist (a symlinked
+/// directory component gives the same file two spellings), else lexically.
+fn same_file(a: &Path, b: &Path) -> bool {
+    if let (Ok(ma), Ok(mb)) = (std::fs::metadata(a), std::fs::metadata(b)) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            return (ma.dev(), ma.ino()) == (mb.dev(), mb.ino());
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (ma, mb);
+            return matches!(
+                (std::fs::canonicalize(a), std::fs::canonicalize(b)),
+                (Ok(x), Ok(y)) if x == y
+            );
+        }
+    }
+    lexical(a) == lexical(b)
+}
+
 /// The planned requirement changes for one feature.
 struct DeltaPlan {
     dest: PathBuf,
@@ -184,7 +205,7 @@ fn plan_delta(
         .unwrap_or_default();
     let dest_show = format!("{display}/{rel}");
     let (base, disk) = match pending {
-        Some((path, bytes)) if lexical(path) == lexical(&dest) => (bytes.to_vec(), None),
+        Some((path, bytes)) if same_file(path, &dest) => (bytes.to_vec(), None),
         _ if dest.is_file() => {
             let b = std::fs::read(&dest)
                 .map_err(|e| vec![format!("promote: ERROR: cannot read {dest_show}: {e}")])?;
@@ -218,16 +239,29 @@ struct Write {
 /// Performs the writes in order. If write k fails, writes 0..k are put back
 /// (or removed when the file did not exist) and the refusal is returned.
 fn commit(writes: &[Write]) -> Result<(), String> {
-    for (k, w) in writes.iter().enumerate() {
-        let Err(e) = vibe_core::fs::write_atomic(&w.path, &w.bytes) else {
+    // `write_atomic` makes a fresh file: put the original mode back on it.
+    let modes: Vec<Option<std::fs::Permissions>> = writes
+        .iter()
+        .map(|w| std::fs::metadata(&w.path).ok().map(|m| m.permissions()))
+        .collect();
+    let put =
+        |path: &Path, bytes: &[u8], mode: &Option<std::fs::Permissions>| -> Result<(), String> {
+            vibe_core::fs::write_atomic(path, bytes).map_err(|e| e.to_string())?;
+            match mode {
+                Some(m) => std::fs::set_permissions(path, m.clone()).map_err(|e| e.to_string()),
+                None => Ok(()),
+            }
+        };
+    for (k, (w, mode)) in writes.iter().zip(&modes).enumerate() {
+        let Err(e) = put(&w.path, &w.bytes, mode) else {
             continue;
         };
         let mut msg = format!("promote: ERROR: {}: {e}", w.show);
         let mut restored = Vec::new();
         let mut failed = Vec::new();
-        for done in &writes[..k] {
+        for (done, mode) in writes.iter().zip(&modes).take(k) {
             let back = match &done.original {
-                Some(b) => vibe_core::fs::write_atomic(&done.path, b).map_err(|e| e.to_string()),
+                Some(b) => put(&done.path, b, mode),
                 None => std::fs::remove_file(&done.path).map_err(|e| e.to_string()),
             };
             match back {
@@ -595,6 +629,16 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
             out.push(b'\n');
         }
         out.extend_from_slice(&checklist_text(&a.feature, shown, items));
+    }
+    // Never write through a symlink; checked for dry runs too, so a dry run
+    // predicts the real run.
+    for w in &writes {
+        if std::fs::symlink_metadata(&w.path).is_ok_and(|m| m.file_type().is_symlink()) {
+            return fail(&format!(
+                "promote: ERROR: {} is a symlink \u{2014} refusing to write through it",
+                w.show
+            ));
+        }
     }
     if !a.dry_run
         && let Err(msg) = commit(&writes)

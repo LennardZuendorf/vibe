@@ -782,3 +782,60 @@ fn a_leading_dash_name_is_refused_and_other_slugs_do_not_bind() {
             .is_file()
     );
 }
+
+#[test]
+fn one_file_under_two_paths_gets_one_write_with_merge_and_delta() {
+    let p = delta_tree("pr-alias", DELTA);
+    std::os::unix::fs::symlink(".spec", p.join(".spec2")).unwrap();
+    let out = spec(
+        &p,
+        &["promote", "auth", "--target", ".spec2/product-auth.md"],
+        &[],
+    );
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(
+        fs::read_to_string(p.join(".spec/product-auth.md")).unwrap(),
+        format!(
+            "{AFTER}\n## Auth\n\nSessions live in signed cookies.\n\nTokens expire after 1 hour.\n"
+        )
+    );
+    assert_eq!(
+        out.text(),
+        "PROMOTED 2 block(s) from .spec/features/auth/tech.md → .spec2/product-auth.md (0 already present)\n\
+         APPLIED 3 requirement change(s) from .spec/features/auth/product.md → .spec/product-auth.md (0 already applied)\n"
+    );
+}
+
+#[test]
+fn a_symlinked_write_target_is_refused() {
+    for dry in [false, true] {
+        let p = tree(&format!("pr-link-{dry}"), TECH, "# Tech\n");
+        std::os::unix::fs::symlink("tech.md", p.join(".spec/link.md")).unwrap();
+        let mut args = vec!["promote", "auth", "--target", ".spec/link.md"];
+        if dry {
+            args.push("--dry-run");
+        }
+        let got = spec(&p, &args, &[]);
+        assert_eq!(got.code, 1, "dry={dry} {}", got.stderr);
+        assert!(got.stdout.is_empty(), "dry={dry}");
+        assert_eq!(
+            got.stderr,
+            "promote: ERROR: .spec/link.md is a symlink — refusing to write through it\n"
+        );
+        assert_eq!(fs::read(p.join(".spec/tech.md")).unwrap(), b"# Tech\n");
+    }
+}
+
+#[test]
+fn a_promote_write_keeps_the_file_mode() {
+    use std::os::unix::fs::PermissionsExt;
+    let p = tree("pr-mode", TECH, "# Tech\n");
+    chmod(&p.join(".spec/tech.md"), 0o644);
+    let got = spec(&p, &["promote", "auth"], &[]);
+    assert_eq!(got.code, 0, "{}", got.stderr);
+    let mode = fs::metadata(p.join(".spec/tech.md"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o644);
+}
