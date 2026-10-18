@@ -317,10 +317,21 @@ pub fn civil(days: i64) -> String {
 /// skipped. A missing `dir` is `Ok(empty)`; any other error at any depth is
 /// an `Err` naming the failing path (fail closed).
 pub fn walk_files(dir: &Path) -> std::io::Result<Vec<String>> {
+    walk_all(dir).map(|(files, _)| files)
+}
+
+/// `walk_files`, plus the symlink entries it does not follow (same path
+/// form, sorted, dot names skipped).
+pub fn walk_all(dir: &Path) -> std::io::Result<(Vec<String>, Vec<String>)> {
     fn fail(path: &Path, e: &std::io::Error) -> std::io::Error {
         std::io::Error::new(e.kind(), format!("{}: {e}", path.display()))
     }
-    fn walk(dir: &Path, prefix: &str, out: &mut Vec<String>) -> std::io::Result<()> {
+    fn walk(
+        dir: &Path,
+        prefix: &str,
+        files: &mut Vec<String>,
+        links: &mut Vec<String>,
+    ) -> std::io::Result<()> {
         for entry in std::fs::read_dir(dir).map_err(|e| fail(dir, &e))? {
             let entry = entry.map_err(|e| fail(dir, &e))?;
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -331,21 +342,27 @@ pub fn walk_files(dir: &Path) -> std::io::Result<Vec<String>> {
             let meta = std::fs::symlink_metadata(&path).map_err(|e| fail(&path, &e))?;
             let rel = format!("{prefix}{name}");
             if meta.is_dir() {
-                walk(&path, &format!("{rel}/"), out)?;
+                walk(&path, &format!("{rel}/"), files, links)?;
             } else if meta.is_file() {
-                out.push(rel);
+                files.push(rel);
+            } else if meta.file_type().is_symlink() {
+                links.push(rel);
             }
         }
         Ok(())
     }
-    let mut out = Vec::new();
-    match walk(dir, "", &mut out) {
+    let mut files = Vec::new();
+    let mut links = Vec::new();
+    match walk(dir, "", &mut files, &mut links) {
         Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound && !dir.exists() => return Ok(vec![]),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && !dir.exists() => {
+            return Ok((vec![], vec![]));
+        }
         Err(e) => return Err(e),
     }
-    out.sort();
-    Ok(out)
+    files.sort();
+    links.sort();
+    Ok((files, links))
 }
 
 #[cfg(test)]

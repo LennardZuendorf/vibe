@@ -839,3 +839,60 @@ fn a_promote_write_keeps_the_file_mode() {
         .mode();
     assert_eq!(mode & 0o777, 0o644);
 }
+
+#[test]
+fn done_refuses_in_a_shallow_clone() {
+    let p = sp_repo("pr-done-shallow");
+    let dest = project("pr-done-shallow-clone");
+    let url = format!("file://{}", p.display());
+    git(&dest, STAMP, &["clone", "-q", "--depth", "1", &url, "c"]);
+    let c = dest.join("c");
+    write(&c, ".spec/plan.md", "changed\n");
+    for extra in [&[][..], &["--base", "HEAD"][..]] {
+        let mut args = vec!["promote", "auth", "--done"];
+        args.extend_from_slice(extra);
+        let out = spec(&c, &args, &[]);
+        assert_eq!(out.code, 1, "{args:?}: {}", out.stderr);
+        assert!(out.text().is_empty());
+        assert_eq!(
+            out.stderr,
+            "promote: refused \u{2014} no branch base found (pass --base <ref>); nothing deleted\n"
+        );
+        assert_eq!(bound_exist(&c), (true, true));
+    }
+}
+
+#[test]
+fn a_symlinked_artifact_leaf_refuses_everywhere() {
+    let p = sp_repo("pr-sp-leaf-link");
+    write(&p, ".spec/plan.md", "changed\n");
+    let plan = p.join("docs/superpowers/plans/2026-01-14-auth.md");
+    let keep = p.join("keep.md");
+    fs::write(&keep, "keep\n").unwrap();
+    fs::remove_file(&plan).unwrap();
+    std::os::unix::fs::symlink(&keep, &plan).unwrap();
+    for args in [&["promote", "auth", "--done"][..], &["promote", "auth"][..]] {
+        let out = spec(&p, args, &[]);
+        assert_eq!(out.code, 1, "{args:?}: {}", out.stderr);
+        assert!(out.text().is_empty());
+        assert!(
+            out.stderr
+                .contains("docs/superpowers/plans/2026-01-14-auth.md is a symlink"),
+            "{}",
+            out.stderr
+        );
+    }
+    assert!(keep.is_file());
+    assert!(
+        p.join("docs/superpowers/specs/2026-01-02-auth-design.md")
+            .is_file()
+    );
+}
+
+#[test]
+fn done_without_a_root_exits_3() {
+    let p = project("pr-done-noroot");
+    let out = spec(&p, &["promote", "auth", "--done"], &[]);
+    assert_eq!(out.code, 3, "{}", out.stderr);
+    assert!(out.text().is_empty());
+}

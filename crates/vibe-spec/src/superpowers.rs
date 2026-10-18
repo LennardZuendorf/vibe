@@ -180,7 +180,8 @@ pub fn run(r: &mut Report, project: &Path) {
 /// `specs/YYYY-MM-DD-<f>-design.md` and `plans/YYYY-MM-DD-<f>.md`, every
 /// date, sorted by project-relative path. Callers pass a valid name. A
 /// missing directory holds none; any other read error is returned (fail
-/// closed), so a caller never deletes on a partial listing.
+/// closed), so a caller never deletes on a partial listing. A bound leaf that
+/// is a symlink is returned as an error too: it is never followed or listed.
 pub fn artifacts(project: &Path, feature: &str) -> io::Result<Vec<PathBuf>> {
     // A symlinked ancestor would let a caller delete outside the project.
     for dir in ["docs", "docs/superpowers", PLANS, SPECS] {
@@ -218,6 +219,12 @@ pub fn artifacts(project: &Path, feature: &str) -> io::Result<Vec<PathBuf>> {
             let meta = std::fs::symlink_metadata(entry.path()).map_err(|e| {
                 io::Error::new(e.kind(), format!("{}: {e}", entry.path().display()))
             })?;
+            if meta.file_type().is_symlink() {
+                return Err(io::Error::other(format!(
+                    "{} is a symlink \u{2014} refusing to follow it",
+                    crate::query::rel(project, &entry.path())
+                )));
+            }
             if meta.is_file() {
                 out.push(entry.path());
             }

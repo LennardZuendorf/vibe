@@ -297,3 +297,62 @@ fn unreadable_feature_plan_fails_closed() {
     assert_eq!(out.code, 1, "{}", out.stderr);
     assert!(out.stderr.contains("cannot read "), "{}", out.stderr);
 }
+
+#[test]
+fn symlinked_artifacts_are_findings() {
+    let p = project("dr-link");
+    write(&p, ".spec/plan.md", "x\n");
+    write(&p, "keep/real.md", "x\n");
+    std::fs::create_dir_all(p.join("docs/superpowers/plans")).unwrap();
+    std::os::unix::fs::symlink(
+        p.join("keep/real.md"),
+        p.join("docs/superpowers/plans/2026-01-01-auth.md"),
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(p.join("keep"), p.join("docs/superpowers/specs")).unwrap();
+    let plain = spec(&p, &["check-drift"], &[]);
+    assert_eq!(plain.code, 0, "{}", plain.stderr);
+    assert!(
+        plain.stderr.contains(
+            "check-drift: WARN: superpowers artifact is a symlink: docs/superpowers/plans/2026-01-01-auth.md\n"
+        ),
+        "{}",
+        plain.stderr
+    );
+    assert!(
+        plain.stderr.contains(
+            "check-drift: WARN: superpowers artifact is a symlink: docs/superpowers/specs\n"
+        ),
+        "{}",
+        plain.stderr
+    );
+    let gate = spec(&p, &["check-drift", "--pre-merge", "--json"], &[]);
+    assert_eq!(gate.code, 1, "{}", gate.stderr);
+    let v: serde_json::Value = serde_json::from_slice(&gate.stdout).unwrap();
+    let f = v["findings"].as_array().unwrap();
+    assert_eq!(f.len(), 2, "{v}");
+    assert!(f.iter().all(|f| f["severity"] == "error"));
+    assert_eq!(f[0]["file"], "docs/superpowers/plans/2026-01-01-auth.md");
+}
+
+#[test]
+fn an_entry_that_cannot_be_inspected_in_the_count_walk_fails_closed() {
+    use std::os::unix::fs::PermissionsExt;
+    if is_root() {
+        return;
+    }
+    let p = project("dr-noexec");
+    write(&p, ".spec/plan.md", "x\n");
+    write(&p, ".spec/locked/inner.md", "x\n");
+    let locked = p.join(".spec/locked");
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o444)).unwrap();
+    let out = spec(&p, &["check-drift"], &[]);
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(
+        out.stderr
+            .contains("check-drift: ERROR: cannot read .spec/locked/inner.md: "),
+        "{}",
+        out.stderr
+    );
+}

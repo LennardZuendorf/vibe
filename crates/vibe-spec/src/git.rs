@@ -139,8 +139,12 @@ pub fn commits(dir: &Path, since: Option<&str>) -> Result<Option<Vec<Commit>>, S
 /// The commit this branch forked from (P3c-R13): `merge-base HEAD <base>`,
 /// where `<base>` is `explicit` or the first of `origin/HEAD`,
 /// `origin/main`, `main`, `master` that names a commit. None without git,
-/// history or a base.
+/// history or a base, and in a shallow clone.
 pub fn branch_base(dir: &Path, explicit: Option<&str>) -> Option<String> {
+    // A shallow history ends at an arbitrary boundary: no trustworthy base.
+    if shallow(dir) {
+        return None;
+    }
     let candidates: Vec<&str> = match explicit {
         Some(b) => vec![b],
         None => vec!["origin/HEAD", "origin/main", "main", "master"],

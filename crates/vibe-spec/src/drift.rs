@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use vibe_core::exit;
 
 use crate::root::{Miss, Root};
-use crate::text::{find, lines, lossy, name_of, sub_dirs, walk_files};
+use crate::text::{find, lines, lossy, name_of, sub_dirs, walk_all};
 
 /// Command options.
 pub struct Options {
@@ -123,8 +123,12 @@ fn count_targets(dir: &Path, shown: &str) -> (Vec<String>, Vec<(String, std::io:
             };
             let name = entry.file_name().to_string_lossy().into_owned();
             let rel = format!("{prefix}{name}");
-            let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
-                continue;
+            let meta = match std::fs::symlink_metadata(entry.path()) {
+                Ok(meta) => meta,
+                Err(e) => {
+                    errs.push((format!("{shown}/{rel}"), e));
+                    continue;
+                }
             };
             if meta.is_dir() {
                 if rel != "archive" {
@@ -348,8 +352,8 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     } else {
         Sev::Warning
     };
-    match walk_files(&root.project.join("docs").join("superpowers")) {
-        Ok(files) => {
+    match walk_all(&root.project.join("docs").join("superpowers")) {
+        Ok((files, links)) => {
             for rel in files {
                 let shown = format!("docs/superpowers/{rel}");
                 ev.push(event(
@@ -359,6 +363,15 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
                         shown,
                         " — promote its facts, then run vibe-spec promote <feature> --done"
                     ),
+                    Some(shown.clone()),
+                ));
+            }
+            // Never followed or deleted: still an artifact left behind.
+            for rel in links {
+                let shown = format!("docs/superpowers/{rel}");
+                ev.push(event(
+                    sev,
+                    cat!("superpowers artifact is a symlink: ", shown),
                     Some(shown.clone()),
                 ));
             }
