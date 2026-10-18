@@ -21,7 +21,7 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Added
 
-- `vibe-spec check-drift [--pre-merge]` and `vibe-spec promote` ported with byte parity (F18). `promote` applies `## ADDED|MODIFIED|REMOVED Requirements` deltas, prints the superpowers promotion checklist, and `promote <feature> --done` deletes the artifacts once the spec changed since the branch base.
+- `vibe-spec check-drift [--pre-merge]` and `vibe-spec promote` ported (F18), with byte parity for `.spec` roots. `promote` applies `## ADDED|MODIFIED|REMOVED Requirements` deltas, prints the superpowers promotion checklist, and `promote <feature> --done` deletes the artifacts once the spec changed since the branch base.
 - `vibe-spec export|import --openspec <dir>`: OpenSpec interchange; exports pass `openspec validate --strict` (CI job `openspec`).
 - **A Node engine under the flow half** — `flow/engine/`, zero runtime
   dependencies, Node ≥18, exposed as the `vibe` CLI (`state`, `orders`,

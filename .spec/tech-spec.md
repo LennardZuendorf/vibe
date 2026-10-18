@@ -76,13 +76,16 @@ Requirements` deltas.
 | a root document with blocks under `## Requirements` (`product-auth.md`, `concepts/invoice.md`) | `openspec/specs/<path without .md>/spec.md`; `## Purpose` is generated |
 | fallback feature `product.md` | `changes/<f>/proposal.md` + one delta spec for its target's capability (plain `## Requirements` blocks export as ADDED) |
 | feature `plan.md` units | `changes/<f>/tasks.md` (`- [ ] 1.<n> <title>`, `[x]` when DONE) |
-| every feature file | carried byte for byte in `changes/<f>/design.md` as `## vibe:<file> <len>` blocks after `<!-- vibe:export v1 -->` |
+| every feature file (`product\|tech\|design\|plan\|research.md`); any other file refuses the export | carried byte for byte in `changes/<f>/design.md` as `## vibe:<file> <len>` blocks after `<!-- vibe:export v1 -->` |
 
 Requirements are keyed by their full header name, normalized as OpenSpec
 does (closing `#` run dropped, trimmed, case-sensitive). `RENAMED` is not
 supported: write REMOVED + ADDED. A REMOVED block carries a `**Reason**:`
 line. `promote <f>` applies a fallback feature's delta sections to its
-`parent:` document (REMOVED, then MODIFIED, then ADDED; all or nothing).
+`parent:` document, or to `<root>/product.md` when there is no `parent:`
+(REMOVED, then MODIFIED, then ADDED; all or nothing). `<!-- merge -->`
+blocks in the feature's `tech.md` append to `<root>/tech.md`, or to
+`--target <file>`.
 
 `vibe-spec export --openspec <dir>` refuses an existing `<dir>/openspec/`
 and a MODIFIED that drops a scenario its target still has. `import
