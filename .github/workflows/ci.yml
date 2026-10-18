@@ -23,7 +23,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.19'
 
       - name: No runtime dependencies (zero-dep engine contract)
         run: |
@@ -143,7 +143,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.19'
 
       - name: System bash is really 3.2 (sanity — this job is pointless otherwise)
         # Asserts, not just prints: if Apple or the runner image ever ships a
@@ -248,7 +248,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.19'
 
       - name: Toolchain (pinned by rust-toolchain.toml)
         run: rustup toolchain install

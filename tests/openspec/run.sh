@@ -39,5 +39,8 @@ if validate bad >"$work/bad.json"; then
   echo "openspec: a requirement without SHALL/MUST passed validate --strict" >&2
   exit 1
 fi
+# Non-zero alone is not evidence (a registry blip also exits non-zero):
+# the report must show the one expected failure and its reason.
+node "$REPO_ROOT/tests/openspec/check.mjs" fail "$work/bad.json" "$EXPECTED_ITEMS"
 
 echo "openspec: the export validates ($EXPECTED_ITEMS items); a broken export fails"
