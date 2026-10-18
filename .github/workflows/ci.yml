@@ -233,3 +233,25 @@ jobs:
 
       - name: Spec parity (self-check, candidate, live)
         run: bash tests/parity/run.sh
+
+  openspec:
+    # F18 (P3c-R17): OpenSpec's own validator accepts vibe-spec's export of
+    # tests/openspec/fixture and rejects a broken one. Pinned CLI via npx.
+    name: openspec — validate an export
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Toolchain (pinned by rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - name: OpenSpec gate
+        run: bash tests/openspec/run.sh
