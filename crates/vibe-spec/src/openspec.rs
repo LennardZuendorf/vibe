@@ -118,6 +118,30 @@ fn summary(product: &[u8]) -> Option<String> {
     (!para.is_empty()).then(|| para.join(" "))
 }
 
+/// The generated proposal.md of a change.
+fn proposal_text(show: &str, f: &str, product: &[u8]) -> Vec<u8> {
+    let why =
+        summary(product).unwrap_or_else(|| format!("Change exported by vibe-spec from {show}/."));
+    format!(
+        "# Proposal: {f}\n\n## Why\n{why}\n\n## What Changes\n- Exported from `{show}/` by vibe-spec.\n"
+    )
+    .into_bytes()
+}
+
+/// The generated design.md of a change: the header and the carried files.
+fn design_text(show: &str, f: &str, carried: &[(String, Vec<u8>)]) -> Vec<u8> {
+    let mut design = format!(
+        "# Design: {f}\n\nExported from `{show}/` by vibe-spec. The blocks below carry the vibe files byte for byte; `vibe-spec import --openspec` restores them.\n\n{MARK}\n"
+    )
+    .into_bytes();
+    for name in CARRIED {
+        if let Some((_, bytes)) = carried.iter().find(|(n, _)| n == name) {
+            design.extend(carry(name, bytes));
+        }
+    }
+    design
+}
+
 /// Whether the plan's Progress row for `id` says DONE (a whole cell).
 fn done(plan: &[u8], id: &str) -> bool {
     lines(plan).into_iter().any(|l| {
@@ -290,26 +314,21 @@ fn change(root: &Root, fdir: &Path, f: &str) -> Result<Files, Refusal> {
             groups.join(&b'\n'),
         ));
     }
-    let why =
-        summary(&product).unwrap_or_else(|| format!("Change exported by vibe-spec from {show}/."));
-    let proposal = format!(
-        "# Proposal: {f}\n\n## Why\n{why}\n\n## What Changes\n- Exported from `{show}/` by vibe-spec.\n"
-    );
-    files.push((under(&base, "proposal.md"), proposal.into_bytes()));
+    files.push((
+        under(&base, "proposal.md"),
+        proposal_text(&show, f, &product),
+    ));
     let plan = read_opt(&fdir.join("plan.md"), &format!("{show}/plan.md")).map_err(one)?;
     if let Some(t) = plan.and_then(|p| tasks(&p, f)) {
         files.push((under(&base, "tasks.md"), t));
     }
-    let mut design = format!(
-        "# Design: {f}\n\nExported from `{show}/` by vibe-spec. The blocks below carry the vibe files byte for byte; `vibe-spec import --openspec` restores them.\n\n{MARK}\n"
-    )
-    .into_bytes();
+    let mut carried: Vec<(String, Vec<u8>)> = Vec::new();
     for name in CARRIED {
         if let Some(bytes) = read_opt(&fdir.join(name), &format!("{show}/{name}")).map_err(one)? {
-            design.extend(carry(name, &bytes));
+            carried.push((name.to_string(), bytes));
         }
     }
-    files.push((under(&base, "design.md"), design));
+    files.push((under(&base, "design.md"), design_text(&show, f, &carried)));
     for other in files_under(fdir).map_err(one)? {
         if !CARRIED.contains(&other.as_str()) {
             eprintln!("export: {show}/{other}: not exported");
@@ -776,6 +795,19 @@ fn import_change(root: &Root, cdir: &Path, id: &str) -> Result<Folder, String> {
         return Err("RENAMED Requirements is not supported".to_string());
     }
     let kinds = by_kind(&delta_text);
+    for block in kinds.get(2).into_iter().flatten() {
+        if !delta::has_reason(block) {
+            let name = block
+                .split(|&c| c == b'\n')
+                .next()
+                .and_then(delta::requirement_name)
+                .unwrap_or_default();
+            eprintln!(
+                "import: {id}: REMOVED '{}' needs a **Reason**: line before promote",
+                lossy(&name)
+            );
+        }
+    }
     let design = read_regular(&cdir.join("design.md"), "design.md")?;
     match design.as_deref().and_then(uncarry) {
         Some(Err(e)) => Err(e),
@@ -788,10 +820,44 @@ fn import_change(root: &Root, cdir: &Path, id: &str) -> Result<Folder, String> {
             if by_kind(product) != kinds {
                 return Err("requirements were edited in OpenSpec; delete design.md's vibe blocks to import it as a new change".to_string());
             }
+            check_side_edits(root, cdir, id, &carried, design.as_deref())?;
             Ok(carried)
         }
         None => foreign(root, id, cap, &kinds, cdir, design),
     }
+}
+
+/// An export is the source of truth for the files it carries. `tasks.md` is
+/// derived from plan.md: an edit on the OpenSpec side would be lost, so it
+/// refuses. `proposal.md` and the prose of `design.md` are not carried: an
+/// edit there is noted.
+fn check_side_edits(
+    root: &Root,
+    cdir: &Path,
+    id: &str,
+    carried: &Folder,
+    design: Option<&[u8]>,
+) -> Result<(), String> {
+    let get = |name: &str| carried.iter().find(|(n, _)| n == name).map(|(_, b)| b);
+    let want = get("plan.md").and_then(|p| tasks(p, id));
+    let have = read_regular(&cdir.join("tasks.md"), "tasks.md")?;
+    if want != have {
+        return Err(
+            "tasks.md was edited on the OpenSpec side \u{2014} edit plan.md in vibe instead"
+                .to_string(),
+        );
+    }
+    let show = format!("{}/features/{id}", root.display());
+    if let Some(product) = get("product.md") {
+        let proposal = read_regular(&cdir.join("proposal.md"), "proposal.md")?;
+        if proposal.as_deref() != Some(proposal_text(&show, id, product).as_slice()) {
+            eprintln!("import: {id}: proposal.md edits are not imported");
+        }
+    }
+    if design != Some(design_text(&show, id, carried).as_slice()) {
+        eprintln!("import: {id}: design.md edits are not imported");
+    }
+    Ok(())
 }
 
 /// A change without vibe blocks: synthesized feature docs (P3c-R15).
@@ -804,9 +870,14 @@ fn foreign(
     design: Option<Vec<u8>>,
 ) -> Result<Folder, String> {
     let today = crate::text::today_utc();
-    let parent = cap
-        .filter(|c| root.dir.join(format!("{c}.md")).is_file())
-        .unwrap_or_else(|| "product".to_string());
+    let parent = match cap {
+        Some(c) if root.dir.join(format!("{c}.md")).is_file() => c,
+        Some(c) => {
+            eprintln!("import: {id}: no {c}.md in the spec root \u{2014} targeting product.md");
+            "product".to_string()
+        }
+        None => "product".to_string(),
+    };
     let proposal = read_regular(&cdir.join("proposal.md"), "proposal.md")?.unwrap_or_default();
     let why = section_text(&proposal, "why")
         .unwrap_or_else(|| format!("Imported from OpenSpec change {id}."));

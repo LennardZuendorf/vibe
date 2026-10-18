@@ -660,3 +660,106 @@ fn a_quoted_marker_is_not_a_carried_design() {
     assert_eq!(read(&b, ".spec/features/ok/design.md"), design);
     assert!(read(&b, ".spec/features/ok/product.md").contains("Imported from OpenSpec change ok."));
 }
+
+/// Exports the fixture and imports it into an empty root, after `edit`
+/// changed the exported tree.
+fn import_edited(name: &str, edit: impl Fn(&Path)) -> (PathBuf, common::Out) {
+    let a = fixture(&format!("{name}-a"));
+    assert_eq!(spec(&a, &["export", "--openspec", "out"], &[]).code, 0);
+    edit(&a.join("out/openspec/changes/passkeys"));
+    let b = empty(&format!("{name}-b"));
+    let out = spec(
+        &b,
+        &["import", "--openspec", a.join("out").to_str().unwrap()],
+        &[],
+    );
+    (b, out)
+}
+
+#[test]
+fn import_refuses_openspec_side_tasks_edits() {
+    let (b, out) = import_edited("os-tasks", |c| {
+        let t = fs::read_to_string(c.join("tasks.md")).unwrap();
+        assert!(t.contains("[ ]"), "{t}");
+        fs::write(c.join("tasks.md"), t.replacen("[ ]", "[x]", 1)).unwrap();
+    });
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert_eq!(
+        out.stderr,
+        "import: passkeys: tasks.md was edited on the OpenSpec side — edit plan.md in vibe instead\n"
+    );
+    assert!(!b.join(".spec/features/passkeys").exists());
+    assert!(!b.join(".spec/features/notes").exists());
+    // Deleting it counts as an edit.
+    let (_, gone) = import_edited("os-tasks-gone", |c| {
+        fs::remove_file(c.join("tasks.md")).unwrap()
+    });
+    assert_eq!(gone.code, 1);
+}
+
+#[test]
+fn import_notes_prose_edits_it_does_not_import() {
+    let (b, out) = import_edited("os-prose", |c| {
+        let p = fs::read_to_string(c.join("proposal.md")).unwrap();
+        fs::write(c.join("proposal.md"), format!("{p}\nExtra.\n")).unwrap();
+        let d = fs::read_to_string(c.join("design.md")).unwrap();
+        fs::write(c.join("design.md"), d.replacen("# Design", "# Design!", 1)).unwrap();
+    });
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(
+        out.stderr,
+        "import: passkeys: proposal.md edits are not imported\nimport: passkeys: design.md edits are not imported\n"
+    );
+    assert!(b.join(".spec/features/passkeys/product.md").is_file());
+    // An untouched export imports silently.
+    let (_, quiet) = import_edited("os-prose-quiet", |_| {});
+    assert_eq!(quiet.code, 0);
+    assert_eq!(quiet.stderr, "");
+}
+
+#[test]
+fn a_bullet_form_removed_is_noted_and_promote_refuses_it() {
+    let src = project("os-bullet-src");
+    write(
+        &src,
+        "openspec/changes/drop-it/specs/product-auth/spec.md",
+        "## REMOVED Requirements\n\n- `### Requirement: Legacy dump`\n",
+    );
+    let b = empty("os-bullet");
+    write(&b, ".spec/product-auth.md", "# auth\n");
+    write(&b, ".spec/tech.md", "# Tech\n");
+    let out = spec(&b, &["import", "--openspec", src.to_str().unwrap()], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(
+        out.stderr,
+        "import: drop-it: REMOVED 'Legacy dump' needs a **Reason**: line before promote\n"
+    );
+    let got = spec(&b, &["promote", "drop-it"], &[]);
+    assert_eq!(got.code, 1);
+    assert!(
+        got.stderr
+            .contains("REMOVED 'Legacy dump' has no **Reason**: line"),
+        "{}",
+        got.stderr
+    );
+}
+
+#[test]
+fn a_foreign_fallback_to_product_md_is_noted() {
+    let src = project("os-fallback-src");
+    write(
+        &src,
+        "openspec/changes/add-export/specs/billing/spec.md",
+        "## ADDED Requirements\n\n### Requirement: Export\nThe system SHALL export CSV.\n\n#### Scenario: csv\n- **WHEN** asked\n- **THEN** csv\n",
+    );
+    let b = empty("os-fallback");
+    let out = spec(&b, &["import", "--openspec", src.to_str().unwrap()], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(
+        out.stderr,
+        "import: add-export: no billing.md in the spec root — targeting product.md\n"
+    );
+    assert!(
+        read(&b, ".spec/features/add-export/product.md").contains("parent: ../../product.md\n")
+    );
+}

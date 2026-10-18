@@ -302,7 +302,7 @@ fn with_eol(b: &[u8], nl: &[u8]) -> Vec<u8> {
 }
 
 /// A `**Reason**:` line after the header (the REMOVED why-line).
-fn has_reason(block: &[u8]) -> bool {
+pub(crate) fn has_reason(block: &[u8]) -> bool {
     let mut fences = Fences::new();
     spans(block).iter().enumerate().any(|(i, &(s, e))| {
         let line = block.get(s..e).unwrap_or_default();
