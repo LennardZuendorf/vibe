@@ -337,3 +337,9 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Run `ssh-add -l` before a commit batch. On failure leave the work staged and report; never disable signing.
 **Tags:** git, signing
 **Date:** 2026-10-17
+
+### Compare file identity, not spelling, before merging two writes
+**Pattern:** `promote` decided that a merge target and a delta target were one file by comparing their path text. The same file under two paths (a symlinked directory) got two writes, and the second overwrote the first while the command reported success.
+**Rule:** Compare file identity (device and inode, or canonical path) before merging two writes to one file; fall back to the lexical path only when a file is missing.
+**Tags:** rust, spec, safety, symlink
+**Date:** 2026-10-18

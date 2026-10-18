@@ -190,8 +190,12 @@ macOS `bash` 3.2, the engine suite jq-less and from a space-containing path, a
 
 ## v0.4 target
 
-The re-architecture in progress. Nothing in this section is runnable today —
-every command and path below is ⏳ **planned**. Detail lives in
+The re-architecture in progress. Nothing in this section is runnable from an
+install today — every command and path below is ⏳ **planned**. The exceptions
+are the `vibe-spec` commands that already exist in a dev build (`cargo run -p
+vibe-spec -- <command>`), among them `check-drift`, `promote` and `export|import
+--openspec`; skills, CI and the flow scripts still call the bash scripts and do
+not use them yet. Detail lives in
 [`.spec/tech.md`](.spec/tech.md) and its branch docs, including
 [`.spec/tech-instruct.md`](.spec/tech-instruct.md) for the instruct tool.
 
@@ -228,7 +232,7 @@ Default `docs/spec/`, legacy `.spec/` still resolved. `vibe-spec migrate --to
 docs/spec` rewrites this repo in one commit. spec also adopts **OpenSpec
 grammar** (`### Requirement: <ID>`, `#### Scenario:` GIVEN/WHEN/THEN,
 `## ADDED|MODIFIED|REMOVED Requirements`) inside vibe's own document model —
-grammar-compatible, not layout-adoption — plus `vibe-spec export|import --openspec <dir>`.
+grammar-compatible, not layout-adoption — plus `vibe-spec export|import --openspec <dir>` (dev build only; not yet wired into skills or CI scripts).
 
 ### flow TUI
 

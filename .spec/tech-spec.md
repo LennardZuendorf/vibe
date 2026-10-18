@@ -76,7 +76,7 @@ Requirements` deltas.
 | a root document with blocks under `## Requirements` (`product-auth.md`, `concepts/invoice.md`) | `openspec/specs/<path without .md>/spec.md`; `## Purpose` is generated |
 | fallback feature `product.md` | `changes/<f>/proposal.md` + one delta spec for its target's capability (plain `## Requirements` blocks export as ADDED) |
 | feature `plan.md` units | `changes/<f>/tasks.md` (`- [ ] 1.<n> <title>`, `[x]` when DONE) |
-| every feature file (`product\|tech\|design\|plan\|research.md`); any other file refuses the export | carried byte for byte in `changes/<f>/design.md` as `## vibe:<file> <len>` blocks after `<!-- vibe:export v1 -->` |
+| the five feature files (`product\|tech\|design\|plan\|research.md`); any other file in the folder is not exported (stderr note `export: <f>/<file>: not exported`) | carried byte for byte in `changes/<f>/design.md` as `## vibe:<file> <len>` blocks after `<!-- vibe:export v1 -->` |
 
 Requirements are keyed by their full header name, normalized as OpenSpec
 does (closing `#` run dropped, trimmed, case-sensitive). `RENAMED` is not
@@ -97,6 +97,17 @@ carried files is imported as a new feature. Round trip: export -> import is
 byte-identical. `openspec validate --strict` runs on the exported directory
 in CI (`tests/openspec/run.sh`), never on the tree itself.
 
+**Lossy / not adopted.** The round trip is lossless for requirements,
+scenarios, deltas and tasks. It is lossy for: `updated:` dates on a foreign
+import (stamped with today's date), branch docs, lessons, drift state, feature
+files that are not carried (a stderr note names each), and `proposal.md` or
+`design.md` prose edited on the OpenSpec side (import prints `import: <id>:
+<file> edits are not imported`). An edited `tasks.md` is refused instead:
+edit `plan.md` in vibe. Not adopted: the `openspec/` root as the source of
+truth, archive semantics, and `RENAMED`. `promote <f> --done` deletes the
+bound superpowers artifacts permanently (a filesystem remove; untracked files
+included).
+
 **Safety.** Today's behaviour of `promote`, `export`, `import` and
 `check-drift`:
 
@@ -112,6 +123,13 @@ in CI (`tests/openspec/run.sh`), never on the tree itself.
 - `export` refuses a destination inside the spec root, a symlinked `<dir>`
   and an existing `<dir>/openspec/`. On a mid-write failure it removes only
   what it created.
+- `promote` refuses to write through a symlinked target (also under
+  `--dry-run`) and keeps the original file mode. A merge target and a delta
+  target that are the same file under two paths (compared by identity) get
+  one write.
+- `promote <f> --done` also refuses in a shallow clone (no trustworthy branch
+  base) and when a bound artifact is a symlink. `check-drift` reports a
+  symlink under `docs/superpowers` as an artifact finding.
 - `import` never overwrites an existing `features/<id>/` and never writes
   root documents. It refuses any symlink under the source `specs/` and a
   symlinked `features/`. Rollback removes only what it created.
