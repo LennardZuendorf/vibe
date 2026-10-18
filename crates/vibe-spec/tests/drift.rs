@@ -236,3 +236,64 @@ fn unreadable_artifact_dir_fails_closed() {
         gate.stderr
     );
 }
+
+fn locked_run(rel: &str, dir: bool, name: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    if is_root() {
+        return; // root reads everything: the test would pass vacuously.
+    }
+    let p = project(name);
+    write(&p, ".spec/plan.md", "x\n");
+    if dir {
+        write(&p, &format!("{rel}/inner.md"), "x\n");
+    } else {
+        write(&p, rel, "x\n");
+    }
+    let locked = p.join(rel);
+    let set = |mode: u32| std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(mode));
+    set(0o000).unwrap();
+    let text = spec(&p, &["check-drift"], &[]);
+    let json = spec(&p, &["check-drift", "--json"], &[]);
+    set(if dir { 0o755 } else { 0o644 }).unwrap();
+    assert_eq!(text.code, 1, "{}", text.stderr);
+    assert!(
+        text.stderr.contains("check-drift: ERROR: cannot read "),
+        "{}",
+        text.stderr
+    );
+    assert_eq!(json.code, 1, "{}", json.stderr);
+    let v: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert!(
+        v["findings"].as_array().unwrap().iter().any(|f| {
+            f["severity"] == "error" && f["message"].as_str().unwrap().starts_with("cannot read ")
+        }),
+        "{v}"
+    );
+}
+
+#[test]
+fn unreadable_root_plan_fails_closed() {
+    locked_run(".spec/plan.md", false, "dr-locked-plan");
+}
+
+#[test]
+fn unreadable_dir_in_the_count_walk_fails_closed() {
+    locked_run(".spec/locked", true, "dr-locked-walk");
+}
+
+#[test]
+fn unreadable_feature_plan_fails_closed() {
+    use std::os::unix::fs::PermissionsExt;
+    if is_root() {
+        return;
+    }
+    let p = project("dr-locked-fplan");
+    write(&p, ".spec/plan.md", "| auth | IN PROGRESS |\n");
+    write(&p, ".spec/features/auth/plan.md", "x\n");
+    let f = p.join(".spec/features/auth/plan.md");
+    std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let out = spec(&p, &["check-drift"], &[]);
+    std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(out.stderr.contains("cannot read "), "{}", out.stderr);
+}

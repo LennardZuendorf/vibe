@@ -97,12 +97,30 @@ fn hand_count(line: &[u8]) -> bool {
 // (P3c Task 3 ruling: counts there are still drift).
 /// `find "$SPEC_DIR" -type f -name '*.md' -not -path "$SPEC_DIR/archive/*"`,
 /// as paths relative to the root, sorted. Dot files count; symlinks do not.
-fn count_targets(dir: &Path) -> Vec<String> {
-    fn walk(dir: &Path, prefix: &str, out: &mut Vec<String>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
+/// An unreadable directory is returned as `(shown path, error)`, never skipped.
+fn count_targets(dir: &Path, shown: &str) -> (Vec<String>, Vec<(String, std::io::Error)>) {
+    fn walk(
+        dir: &Path,
+        prefix: &str,
+        shown: &str,
+        out: &mut Vec<String>,
+        errs: &mut Vec<(String, std::io::Error)>,
+    ) {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(e) => {
+                errs.push((format!("{shown}/{}", prefix.trim_end_matches('/')), e));
+                return;
+            }
         };
-        for entry in entries.flatten() {
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(e) => {
+                    errs.push((format!("{shown}/{}", prefix.trim_end_matches('/')), e));
+                    continue;
+                }
+            };
             let name = entry.file_name().to_string_lossy().into_owned();
             let rel = format!("{prefix}{name}");
             let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
@@ -110,7 +128,7 @@ fn count_targets(dir: &Path) -> Vec<String> {
             };
             if meta.is_dir() {
                 if rel != "archive" {
-                    walk(&entry.path(), &format!("{rel}/"), out);
+                    walk(&entry.path(), &format!("{rel}/"), shown, out, errs);
                 }
             } else if meta.is_file() && name.ends_with(".md") {
                 out.push(rel);
@@ -118,9 +136,31 @@ fn count_targets(dir: &Path) -> Vec<String> {
         }
     }
     let mut out = Vec::new();
-    walk(dir, "", &mut out);
+    let mut errs = Vec::new();
+    walk(dir, "", shown, &mut out, &mut errs);
     out.sort();
-    out
+    (out, errs)
+}
+
+/// Reads a file that feeds the verdict. NotFound reads as empty (the file
+/// vanished after the `is_file` check); any other error is an ERROR finding.
+fn read_closed(path: &Path, shown: &str, ev: &mut Vec<Event>) -> Option<Vec<u8>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Some(bytes),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(Vec::new()),
+        Err(e) => {
+            ev.push(unreadable(shown, &e));
+            None
+        }
+    }
+}
+
+fn unreadable(shown: &str, e: &std::io::Error) -> Event {
+    event(
+        Sev::Error,
+        cat!("cannot read ", shown, ": ", e.to_string()),
+        Some(shown.to_string()),
+    )
 }
 
 /// Runs the command.
@@ -141,11 +181,14 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     };
     let d = root.display();
     let plan_path = root.dir.join("plan.md");
-    let plan = plan_path
-        .is_file()
-        .then(|| std::fs::read(&plan_path).unwrap_or_default());
-    let features: Vec<PathBuf> = sub_dirs(&root.dir.join("features"));
     let mut ev: Vec<Event> = Vec::new();
+    let plan_present = plan_path.is_file();
+    let plan = if plan_present {
+        read_closed(&plan_path, &format!("{d}/plan.md"), &mut ev)
+    } else {
+        None
+    };
+    let features: Vec<PathBuf> = sub_dirs(&root.dir.join("features"));
     let mut statuses: Vec<(String, &'static str)> = Vec::new();
 
     // (a) every live feature folder must be named in the root plan.
@@ -168,6 +211,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
                 }
             }
         }
+        None if plan_present => {}
         None => ev.push(event(
             Sev::Warning,
             cat!(
@@ -241,7 +285,9 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
             continue;
         }
         let rel = format!("{d}/features/{}/plan.md", name_of(dir));
-        let text = std::fs::read(&path).unwrap_or_default();
+        let Some(text) = read_closed(&path, &rel, &mut ev) else {
+            continue;
+        };
         for (i, line) in lines(&text).into_iter().enumerate() {
             if find(line, b"NOT STARTED").is_some() {
                 ev.push(event(
@@ -265,12 +311,18 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     if root.project.join("README.md").is_file() {
         targets.push(("README.md".to_string(), root.project.join("README.md")));
     }
-    for rel in count_targets(&root.dir) {
+    let (rels, walk_errs) = count_targets(&root.dir, &d);
+    for (shown, e) in &walk_errs {
+        ev.push(unreadable(shown, e));
+    }
+    for rel in rels {
         let path = root.dir.join(&rel);
         targets.push((format!("{d}/{rel}"), path));
     }
     for (shown, path) in &targets {
-        let text = std::fs::read(path).unwrap_or_default();
+        let Some(text) = read_closed(path, shown, &mut ev) else {
+            continue;
+        };
         for (i, line) in lines(&text).into_iter().enumerate() {
             if hand_count(line) {
                 ev.push(event(
