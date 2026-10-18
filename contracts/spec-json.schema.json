@@ -4,6 +4,16 @@
   "description": "Answers of vibe-spec commands when called with --json: the queries root, lessons-for, plan, feature, validate, trace and check-drift, and promote, which also writes (merge blocks, requirement deltas) and deletes (--done). Each answer is one JSON object with \"v\": 1. This is a new output; it is not the legacy `lessons-for.sh --format json` array, which stays byte-identical except that the port emits valid JSON: it escapes quotes, backslashes and control characters and replaces invalid UTF-8 with U+FFFD (pinned divergence).",
   "x-vibe-compat": "additive-within-major; readers-ignore-unknown-fields",
   "$defs": {
+    "openspec": {
+      "type": "object",
+      "required": ["v", "direction", "dir", "written"],
+      "properties": {
+        "v": { "const": 1 },
+        "direction": { "enum": ["export", "import"] },
+        "dir": { "type": "string", "minLength": 1 },
+        "written": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
     "promote": {
       "type": "object",
       "required": ["v", "feature", "dry_run", "artifacts", "deleted"],

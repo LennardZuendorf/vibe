@@ -21,7 +21,6 @@ macro_rules! cat {
 mod adherence;
 mod check;
 mod content;
-#[allow(dead_code)] // Task 8 removes this once every item has a caller.
 mod delta;
 mod drift;
 mod frontmatter;
@@ -29,6 +28,7 @@ mod git;
 mod layered;
 mod lessons;
 mod list_specs;
+mod openspec;
 mod pattern;
 mod promote;
 mod query;
@@ -126,6 +126,15 @@ enum Command {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    /// Write the spec tree as an OpenSpec directory (`<DIR>/openspec/`).
+    Export {
+        /// Output directory; `openspec/` is created inside it.
+        #[arg(long, value_name = "DIR")]
+        openspec: PathBuf,
+        /// Print Spec JSON v1.
+        #[arg(long)]
+        json: bool,
+    },
     /// Units cited by commits and tests/, uncited units, orphan citations.
     Trace {
         /// Only commits after this revision (`<ref>..HEAD`).
@@ -176,6 +185,10 @@ fn main() -> ExitCode {
             drift::run(&found, &cwd, &drift::Options { pre_merge, json })
         }
         Command::Promote { args: _ } => promote::run(&found, &cwd, &raw_tail(std::env::args_os())),
+        Command::Export {
+            openspec: dir,
+            json,
+        } => openspec::export(&found, &cwd, &dir, json),
         Command::Trace { since, json } => trace::run(&found, since.as_deref(), json),
     };
     emit(&out);
