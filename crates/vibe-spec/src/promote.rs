@@ -17,7 +17,7 @@ use crate::root::{Miss, Root};
 use crate::text::{find, join_raw, read_lines};
 use crate::{git, superpowers};
 
-const USAGE: &str = "usage: vibe-spec promote <feature-name> [--dry-run] [--target <file>] [--done] [--base <ref>] [--json]";
+const USAGE: &str = "usage: vibe-spec promote <feature-name> [--dry-run] [--target <file>] [--done] [--base <ref>] [--json]\n  --done only deletes the bound superpowers artifacts and ignores --target; --base applies to --done only";
 
 struct Args {
     feature: String,
@@ -404,14 +404,9 @@ fn done(found: &Result<Root, Miss>, a: &Args) -> (u8, Vec<u8>) {
     } else {
         deleted.iter().map(|s| format!("DELETED {s}\n")).collect()
     };
-    if failed {
-        // Deleted files cannot come back: stdout names what is gone.
-        return (
-            exit::FINDINGS,
-            if a.json { Vec::new() } else { out.into_bytes() },
-        );
-    }
-    (exit::OK, out.into_bytes())
+    // Deleted files cannot come back: stdout names what is gone.
+    let code = if failed { exit::FINDINGS } else { exit::OK };
+    (code, out.into_bytes())
 }
 
 /// The always-present JSON fields, plus the checklist when artifacts exist.
@@ -442,7 +437,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
     // deliberate divergence) and prints it relative to the project.
     let (dir, display): (PathBuf, String) = match found {
         Ok(root) => (root.dir.clone(), root.display()),
-        Err(Miss::NotFound) => (cwd.join(".spec"), ".spec".to_string()),
+        Err(Miss::NotFound) if !a.json => (cwd.join(".spec"), ".spec".to_string()),
         Err(miss) => {
             eprintln!("{}", miss.message());
             return (miss.code(), Vec::new());
@@ -507,6 +502,10 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
     if blocks.is_empty() {
         eprintln!("WARN: no <!-- merge --> blocks found in {tech_show}");
         if product.is_none() && sp_out.is_none() {
+            if a.json {
+                let v = json_base(&a, &[], &[]);
+                return (exit::OK, format!("{v}\n").into_bytes());
+            }
             return (exit::OK, Vec::new());
         }
     } else {

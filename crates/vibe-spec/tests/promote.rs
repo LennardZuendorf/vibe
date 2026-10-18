@@ -518,7 +518,17 @@ fn checklist_names_targets_per_layout() {
     let l = layered_tree("pr-sp-layered");
     write(&l, "docs/superpowers/plans/2026-01-14-auth.md", "x\n");
     let out = spec(&l, &["promote", "auth"], &[]);
-    assert!(out.text().contains("  [ ] chosen approach \u{2192} docs/spec/decisions/\n  [ ] new nouns \u{2192} docs/spec/concepts/\n  [ ] built places (+code:) \u{2192} docs/spec/areas/\n  [ ] rules \u{2192} docs/spec/tech/\n  [ ] failures \u{2192} docs/spec/lessons.md\n"), "{}", out.text());
+    assert_eq!(
+        out.text(),
+        "superpowers artifacts for 'auth':\n\
+         \x20 docs/superpowers/plans/2026-01-14-auth.md\n\
+         Promote durable facts, then run: vibe-spec promote auth --done\n\
+         \x20 [ ] chosen approach \u{2192} docs/spec/decisions/\n\
+         \x20 [ ] new nouns \u{2192} docs/spec/concepts/\n\
+         \x20 [ ] built places (+code:) \u{2192} docs/spec/areas/\n\
+         \x20 [ ] rules \u{2192} docs/spec/tech/\n\
+         \x20 [ ] failures \u{2192} docs/spec/lessons.md\n"
+    );
 }
 
 #[test]
@@ -584,9 +594,11 @@ fn done_refuses_without_a_base() {
     );
     let p = sp_repo("pr-done-badbase");
     write(&p, ".spec/plan.md", "changed\n");
+    let bad = spec(&p, &["promote", "auth", "--done", "--base", "nope"], &[]);
+    assert_eq!(bad.code, 1);
     assert_eq!(
-        spec(&p, &["promote", "auth", "--done", "--base", "nope"], &[]).code,
-        1
+        bad.stderr,
+        "promote: refused \u{2014} no branch base found (pass --base <ref>); nothing deleted\n"
     );
     assert_eq!(bound_exist(&p), (true, true));
 }
@@ -654,6 +666,24 @@ fn done_reports_every_path_it_could_not_delete() {
     assert!(out.stderr.contains("not deleted"), "{}", out.stderr);
     assert!(plans.join("2026-01-14-auth.md").is_file());
     assert!(!specs.join("2026-01-02-auth-design.md").exists());
+    // JSON mode: the same failure prints the actual deleted list.
+    write(
+        &p,
+        "docs/superpowers/specs/2026-01-02-auth-design.md",
+        "# Auth design\n",
+    );
+    chmod(&plans, 0o555);
+    let j = spec(&p, &["promote", "auth", "--done", "--json"], &[]);
+    chmod(&plans, 0o755);
+    assert_eq!(j.code, 1);
+    assert!(j.stderr.contains("not deleted"), "{}", j.stderr);
+    assert_spec_json("promote", &j.text());
+    let v: serde_json::Value = serde_json::from_slice(&j.stdout).unwrap();
+    assert_eq!(
+        v["deleted"],
+        serde_json::json!(["docs/superpowers/specs/2026-01-02-auth-design.md"])
+    );
+    assert_eq!(v["artifacts"].as_array().unwrap().len(), 2);
 }
 
 #[test]
@@ -672,4 +702,83 @@ fn an_unreadable_artifact_dir_fails_closed() {
     assert!(out.stderr.contains("cannot read"), "{}", out.stderr);
     assert!(out.text().is_empty());
     assert_eq!(bound_exist(&p), (true, true));
+}
+
+#[test]
+fn a_symlinked_artifact_dir_is_refused_everywhere() {
+    let p = sp_repo("pr-sp-symlink");
+    write(&p, ".spec/plan.md", "changed\n");
+    let outside = project("pr-sp-outside");
+    write(&outside, "2026-01-14-auth.md", "keep\n");
+    let plans = p.join("docs/superpowers/plans");
+    fs::remove_dir_all(&plans).unwrap();
+    std::os::unix::fs::symlink(&outside, &plans).unwrap();
+    for args in [&["promote", "auth", "--done"][..], &["promote", "auth"][..]] {
+        let out = spec(&p, args, &[]);
+        assert_eq!(out.code, 1, "{args:?}: {}", out.stderr);
+        assert!(out.text().is_empty());
+        assert!(
+            out.stderr
+                .contains("docs/superpowers/plans is a symlink \u{2014} refusing to follow it"),
+            "{}",
+            out.stderr
+        );
+        assert!(outside.join("2026-01-14-auth.md").is_file());
+    }
+}
+
+#[test]
+fn json_without_anything_to_report_still_prints_one_object() {
+    let p = project("pr-json-empty");
+    write(&p, ".spec/plan.md", "# Plan\n");
+    write(&p, ".spec/features/auth/tech.md", "# Tech\n");
+    write(&p, ".spec/tech.md", "# Tech\n");
+    let out = spec(&p, &["promote", "auth", "--json"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_spec_json("promote", &out.text());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["artifacts"], serde_json::json!([]));
+    assert_eq!(v["deleted"], serde_json::json!([]));
+}
+
+#[test]
+fn json_without_a_root_exits_3_with_empty_stdout() {
+    let bare = project("pr-json-noroot");
+    for args in [
+        &["promote", "auth", "--json"][..],
+        &["promote", "auth", "--done", "--json"][..],
+    ] {
+        let out = spec(&bare, args, &[]);
+        assert_eq!(out.code, 3, "{args:?}: {}", out.stderr);
+        assert!(out.stdout.is_empty());
+    }
+    assert_eq!(spec(&bare, &["promote", "auth"], &[]).code, 1);
+}
+
+#[test]
+fn a_leading_dash_name_is_refused_and_other_slugs_do_not_bind() {
+    let p = sp_repo("pr-done-slug");
+    write(&p, ".spec/plan.md", "changed\n");
+    let out = spec(&p, &["promote", "-auth", "--done"], &[]);
+    assert_eq!(out.code, 1);
+    assert!(
+        out.stderr.contains("invalid feature name"),
+        "{}",
+        out.stderr
+    );
+    write(
+        &p,
+        "docs/superpowers/specs/2026-01-14-auth-v2-design.md",
+        "x\n",
+    );
+    let out = spec(&p, &["promote", "auth", "--done"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(
+        p.join("docs/superpowers/specs/2026-01-14-auth-v2-design.md")
+            .is_file()
+    );
+    assert!(
+        p.join("docs/superpowers/plans/2026-01-14-auth-v2.md")
+            .is_file()
+    );
 }

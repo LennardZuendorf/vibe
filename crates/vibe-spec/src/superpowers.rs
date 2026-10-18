@@ -182,6 +182,19 @@ pub fn run(r: &mut Report, project: &Path) {
 /// missing directory holds none; any other read error is returned (fail
 /// closed), so a caller never deletes on a partial listing.
 pub fn artifacts(project: &Path, feature: &str) -> io::Result<Vec<PathBuf>> {
+    // A symlinked ancestor would let a caller delete outside the project.
+    for dir in ["docs", "docs/superpowers", PLANS, SPECS] {
+        match std::fs::symlink_metadata(project.join(dir)) {
+            Ok(m) if m.file_type().is_symlink() => {
+                return Err(io::Error::other(format!(
+                    "{dir} is a symlink \u{2014} refusing to follow it"
+                )));
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(io::Error::new(e.kind(), format!("{dir}: {e}"))),
+        }
+    }
     let mut out = Vec::new();
     for (dir, suffix) in [(PLANS, ".md"), (SPECS, "-design.md")] {
         let want = format!("-{feature}{suffix}");
