@@ -498,20 +498,20 @@ pub fn export(found: &Result<Root, Miss>, cwd: &Path, dir: &Path, json_out: bool
         return (exit::FINDINGS, Vec::new());
     }
     if std::fs::symlink_metadata(out_dir.join("openspec")).is_ok() {
-        eprintln!("export: {} already exists", at(&shown, "openspec"));
+        eprintln!("export: ERROR: {} already exists", at(&shown, "openspec"));
         return (exit::FINDINGS, Vec::new());
     }
     let files = match plan_export(root) {
         Ok(f) => f,
         Err(errs) => {
             for e in errs {
-                eprintln!("export: {e}");
+                eprintln!("export: ERROR: {e}");
             }
             return (exit::FINDINGS, Vec::new());
         }
     };
     if let Err(e) = write_files(&shown, &out_dir, &files) {
-        eprintln!("export: {e}");
+        eprintln!("export: ERROR: {e}");
         return (exit::FINDINGS, Vec::new());
     }
     let written: Vec<String> = files.iter().map(|(p, _)| p.join("/")).collect();
@@ -1023,7 +1023,7 @@ pub fn import(
         }
     };
     let refuse = |e: String| {
-        eprintln!("import: {e}");
+        eprintln!("import: ERROR: {e}");
         (exit::FINDINGS, Vec::new())
     };
     let shown = shown_dir(dir);
@@ -1036,10 +1036,7 @@ pub fn import(
     if std::fs::symlink_metadata(root.dir.join("features"))
         .is_ok_and(|m| !m.file_type().is_symlink() && !m.is_dir())
     {
-        return refuse(format!(
-            "ERROR: {}/features is not a directory",
-            root.display()
-        ));
+        return refuse(format!("{}/features is not a directory", root.display()));
     }
     let (ids, link_errs) = match change_ids(&os.join("changes"), only) {
         Ok(v) => v,
@@ -1060,7 +1057,7 @@ pub fn import(
     if !errs.is_empty() {
         errs.sort();
         for e in errs {
-            eprintln!("import: {e}");
+            eprintln!("import: ERROR: {e}");
         }
         return (exit::FINDINGS, Vec::new());
     }

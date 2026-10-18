@@ -298,7 +298,7 @@ fn a_refused_delta_writes_nothing_at_all() {
     assert!(out.text().is_empty());
     assert_eq!(
         out.stderr,
-        "ERROR: MODIFIED 'Ghost' is not in the target (.spec/features/auth/product.md)\n"
+        "promote: ERROR: MODIFIED 'Ghost' is not in the target (.spec/features/auth/product.md)\n"
     );
     assert_eq!(
         fs::read_to_string(p.join(".spec/product-auth.md")).unwrap(),
@@ -320,7 +320,7 @@ fn a_parent_outside_the_root_is_refused() {
     assert_eq!(out.code, 1);
     assert_eq!(
         out.stderr,
-        "ERROR: parent '../../../outside.md' leaves the spec root (.spec/features/auth/product.md)\n"
+        "promote: ERROR: parent '../../../outside.md' leaves the spec root (.spec/features/auth/product.md)\n"
     );
 }
 
@@ -617,7 +617,10 @@ fn done_rejects_unsafe_names() {
     let none = spec(&p, &["promote", "billing", "--done"], &[]);
     assert_eq!(
         (none.code, none.stderr.as_str()),
-        (1, "promote: no superpowers artifacts for 'billing'\n")
+        (
+            1,
+            "promote: ERROR: no superpowers artifacts for 'billing'\n"
+        )
     );
 }
 

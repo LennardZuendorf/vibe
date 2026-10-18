@@ -99,7 +99,7 @@ fn export_json_validates_and_refuses_an_existing_dir() {
     assert_spec_json("openspec", &out.text());
     let again = spec(&p, &["export", "--openspec", "out"], &[]);
     assert_eq!(again.code, 1);
-    assert_eq!(again.stderr, "export: out/openspec already exists\n");
+    assert_eq!(again.stderr, "export: ERROR: out/openspec already exists\n");
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn export_refuses_a_modified_that_drops_a_scenario() {
     assert_eq!(out.code, 1);
     assert_eq!(
         out.stderr,
-        "export: .spec/features/passkeys/product.md: MODIFIED 'Sign in (R1)' drops scenario(s) the target still has: Valid credentials\n"
+        "export: ERROR: .spec/features/passkeys/product.md: MODIFIED 'Sign in (R1)' drops scenario(s) the target still has: Valid credentials\n"
     );
     assert!(!p.join("out").exists());
 }
@@ -125,8 +125,9 @@ fn export_refuses_duplicate_names() {
     let out = spec(&p, &["export", "--openspec", "out"], &[]);
     assert_eq!(out.code, 1);
     assert!(
-        out.stderr
-            .contains("export: .spec/product-auth.md: duplicate requirement 'Sign in (R1)'\n"),
+        out.stderr.contains(
+            "export: ERROR: .spec/product-auth.md: duplicate requirement 'Sign in (R1)'\n"
+        ),
         "{}",
         out.stderr
     );
@@ -176,7 +177,7 @@ fn export_refuses_a_symlinked_destination_and_writes_nothing_outside() {
     symlink(&outside, p.join("out")).unwrap();
     let out = spec(&p, &["export", "--openspec", "out"], &[]);
     assert_eq!(out.code, 1);
-    assert_eq!(out.stderr, "export: out is a symlink\n");
+    assert_eq!(out.stderr, "export: ERROR: out is a symlink\n");
     assert!(!outside.join("openspec").exists());
     // A dangling `openspec` symlink inside a real dir counts as existing.
     fs::remove_file(p.join("out")).unwrap();
@@ -184,7 +185,7 @@ fn export_refuses_a_symlinked_destination_and_writes_nothing_outside() {
     symlink(outside.join("nowhere"), p.join("out/openspec")).unwrap();
     let out = spec(&p, &["export", "--openspec", "out"], &[]);
     assert_eq!(out.code, 1);
-    assert_eq!(out.stderr, "export: out/openspec already exists\n");
+    assert_eq!(out.stderr, "export: ERROR: out/openspec already exists\n");
     assert!(!outside.join("nowhere").exists());
 }
 
@@ -201,7 +202,7 @@ fn export_fails_closed_on_an_unreadable_file() {
     fs::set_permissions(&tech, fs::Permissions::from_mode(0o644)).unwrap();
     assert_eq!(out.code, 1);
     assert!(
-        out.stderr.starts_with("export: ") && out.stderr.contains("tech.md"),
+        out.stderr.starts_with("export: ERROR: ") && out.stderr.contains("tech.md"),
         "{}",
         out.stderr
     );
@@ -338,7 +339,7 @@ fn import_refuses_edited_requirements() {
     assert_eq!(out.code, 1);
     assert_eq!(
         out.stderr,
-        "import: passkeys: requirements were edited in OpenSpec; delete design.md's vibe blocks to import it as a new change\n"
+        "import: ERROR: passkeys: requirements were edited in OpenSpec; delete design.md's vibe blocks to import it as a new change\n"
     );
     assert!(!b.join(".spec/features/passkeys").exists());
     assert!(
@@ -401,7 +402,7 @@ fn import_refuses() {
     assert_eq!(exists.code, 1);
     assert_eq!(
         exists.stderr,
-        "import: notes: .spec/features/notes/ already exists\nimport: passkeys: .spec/features/passkeys/ already exists\n"
+        "import: ERROR: notes: .spec/features/notes/ already exists\nimport: ERROR: passkeys: .spec/features/passkeys/ already exists\n"
     );
     let src = project("os-refuse-src");
     write(
@@ -428,9 +429,9 @@ fn import_refuses() {
     assert_eq!(out.code, 1);
     assert_eq!(
         out.stderr,
-        "import: Bad_Id: not a valid feature name (lowercase-kebab)\n\
-         import: renamed: RENAMED Requirements is not supported\n\
-         import: two-caps: touches 2 capabilities; a vibe feature targets one document\n"
+        "import: ERROR: Bad_Id: not a valid feature name (lowercase-kebab)\n\
+         import: ERROR: renamed: RENAMED Requirements is not supported\n\
+         import: ERROR: two-caps: touches 2 capabilities; a vibe feature targets one document\n"
     );
     let one = spec(
         &empty("os-refuse-one"),
@@ -445,7 +446,7 @@ fn import_refuses() {
     );
     assert_eq!(
         (one.code, one.stderr.as_str()),
-        (1, "import: no change 'nope' to import\n")
+        (1, "import: ERROR: no change 'nope' to import\n")
     );
 }
 
@@ -467,7 +468,10 @@ fn import_refuses_unsafe_names_and_symlinks() {
             &[],
         );
         assert_eq!(out.code, 1, "{bad}");
-        assert_eq!(out.stderr, format!("import: no change '{bad}' to import\n"));
+        assert_eq!(
+            out.stderr,
+            format!("import: ERROR: no change '{bad}' to import\n")
+        );
     }
     assert!(!b.join(".spec/features").exists());
     // A symlinked change dir is refused, never followed.
@@ -476,7 +480,10 @@ fn import_refuses_unsafe_names_and_symlinks() {
     symlink(&outside, src.join("openspec/changes/linked")).unwrap();
     let out = spec(&b, &["import", "--openspec", src.to_str().unwrap()], &[]);
     assert_eq!(out.code, 1);
-    assert_eq!(out.stderr, "import: linked: is a symlink, not followed\n");
+    assert_eq!(
+        out.stderr,
+        "import: ERROR: linked: is a symlink, not followed\n"
+    );
     assert!(!b.join(".spec/features").exists());
     fs::remove_file(src.join("openspec/changes/linked")).unwrap();
     // A symlinked features dir is refused and nothing lands behind it.
@@ -484,7 +491,7 @@ fn import_refuses_unsafe_names_and_symlinks() {
     symlink(&target, b.join(".spec/features")).unwrap();
     let out = spec(&b, &["import", "--openspec", src.to_str().unwrap()], &[]);
     assert_eq!(out.code, 1);
-    assert_eq!(out.stderr, "import: .spec/features is a symlink\n");
+    assert_eq!(out.stderr, "import: ERROR: .spec/features is a symlink\n");
     assert!(!target.join("ok").exists());
     // A symlinked design.md is refused.
     fs::remove_file(b.join(".spec/features")).unwrap();
@@ -495,7 +502,7 @@ fn import_refuses_unsafe_names_and_symlinks() {
     .unwrap();
     let out = spec(&b, &["import", "--openspec", src.to_str().unwrap()], &[]);
     assert_eq!(out.code, 1);
-    assert!(out.stderr.contains("import: ok: "), "{}", out.stderr);
+    assert!(out.stderr.contains("import: ERROR: ok: "), "{}", out.stderr);
     assert!(out.stderr.contains("is a symlink"), "{}", out.stderr);
     assert!(!b.join(".spec/features").exists());
 }
@@ -514,7 +521,7 @@ fn import_without_openspec_dir_refuses() {
     let out = spec(&b, &["import", "--openspec", "nowhere"], &[]);
     assert_eq!(
         (out.code, out.stderr.as_str()),
-        (1, "import: no openspec/ under nowhere\n")
+        (1, "import: ERROR: no openspec/ under nowhere\n")
     );
 }
 
@@ -566,7 +573,7 @@ fn import_pins_carried_edge_cases() {
     assert_eq!(out.code, 1);
     assert_eq!(
         out.stderr,
-        "import: edge: design.md has a malformed vibe block\n"
+        "import: ERROR: edge: design.md has a malformed vibe block\n"
     );
     // Duplicate carried names refuse.
     let block = "\n## vibe:product.md 2\n\n```text\nx\n```\n";
@@ -583,7 +590,7 @@ fn import_pins_carried_edge_cases() {
     assert_eq!(out.code, 1);
     assert_eq!(
         out.stderr,
-        "import: edge: design.md carries 'product.md' twice\n"
+        "import: ERROR: edge: design.md carries 'product.md' twice\n"
     );
 }
 
@@ -608,7 +615,7 @@ fn import_refuses_symlinked_specs() {
     assert_eq!(out.code, 1);
     assert_eq!(
         out.stderr,
-        "import: ok: specs/cap/spec.md is a symlink, not followed\n"
+        "import: ERROR: ok: specs/cap/spec.md is a symlink, not followed\n"
     );
     assert!(!b.join(".spec/features").exists());
     fs::remove_dir_all(src.join("openspec/changes/ok/specs/cap")).unwrap();
@@ -617,7 +624,7 @@ fn import_refuses_symlinked_specs() {
     assert_eq!(out.code, 1);
     assert_eq!(
         out.stderr,
-        "import: ok: specs/cap is a symlink, not followed\n"
+        "import: ERROR: ok: specs/cap is a symlink, not followed\n"
     );
     assert!(!b.join(".spec/features").exists());
 }
@@ -686,7 +693,7 @@ fn import_refuses_openspec_side_tasks_edits() {
     assert_eq!(out.code, 1, "{}", out.stderr);
     assert_eq!(
         out.stderr,
-        "import: passkeys: tasks.md was edited on the OpenSpec side — edit plan.md in vibe instead\n"
+        "import: ERROR: passkeys: tasks.md was edited on the OpenSpec side — edit plan.md in vibe instead\n"
     );
     assert!(!b.join(".spec/features/passkeys").exists());
     assert!(!b.join(".spec/features/notes").exists());

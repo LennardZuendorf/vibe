@@ -122,7 +122,7 @@ enum Command {
     /// Promote a feature (port of promote.sh; requirement deltas; superpowers).
     #[command(disable_help_flag = true)]
     Promote {
-        /// `<feature> [--dry-run] [--target <file>]`.
+        /// `<feature> [--dry-run] [--target <file>] [--done] [--base <ref>] [--json]`.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },

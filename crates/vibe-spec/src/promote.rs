@@ -193,7 +193,7 @@ fn plan_delta(
     let product_show = format!("{display}/features/{feature}/product.md");
     let fdir = join_raw(&dir.join("features"), feature.as_bytes());
     let dest = delta::target(dir, &fdir, product)
-        .map_err(|e| vec![format!("ERROR: {e} ({product_show})")])?;
+        .map_err(|e| vec![format!("promote: ERROR: {e} ({product_show})")])?;
     let rel = lexical(&dest)
         .strip_prefix(lexical(dir))
         .map(|r| {
@@ -215,7 +215,7 @@ fn plan_delta(
     };
     let (bytes, changes) = delta::apply(&base, product).map_err(|errs| {
         errs.into_iter()
-            .map(|e| format!("ERROR: {e} ({product_show})"))
+            .map(|e| format!("promote: ERROR: {e} ({product_show})"))
             .collect::<Vec<_>>()
     })?;
     Ok(DeltaPlan {
@@ -390,7 +390,7 @@ fn done(found: &Result<Root, Miss>, a: &Args) -> (u8, Vec<u8>) {
     };
     if artifacts.is_empty() {
         return fail(&format!(
-            "promote: no superpowers artifacts for '{}'",
+            "promote: ERROR: no superpowers artifacts for '{}'",
             a.feature
         ));
     }
