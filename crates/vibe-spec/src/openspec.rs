@@ -511,11 +511,25 @@ pub fn export(found: &Result<Root, Miss>, cwd: &Path, dir: &Path, json_out: bool
     (exit::OK, out.into_bytes())
 }
 
+/// Offset of the first line that is exactly `MARK`.
+fn mark_line(design: &[u8]) -> Option<usize> {
+    let mut pos = 0;
+    for line in design.split_inclusive(|&c| c == b'\n') {
+        let t = line.strip_suffix(b"\n").unwrap_or(line);
+        let t = t.strip_suffix(b"\r").unwrap_or(t);
+        if t == MARK.as_bytes() {
+            return Some(pos);
+        }
+        pos += line.len();
+    }
+    None
+}
+
 /// The carried files of an exported design.md; None without the marker.
 /// Names outside `CARRIED`, repeated names and a block whose closing fence
 /// is not where the length says refuse.
 fn uncarry(design: &[u8]) -> Option<Result<Folder, String>> {
-    let at = crate::text::find(design, MARK.as_bytes())?;
+    let at = mark_line(design)?;
     let mut rest = design.get(at + MARK.len()..).unwrap_or_default();
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
     while let Some(h) = crate::text::find(rest, b"\n## vibe:") {
@@ -682,6 +696,25 @@ fn real_dir(path: &Path, show: &str) -> Result<bool, String> {
     }
 }
 
+/// Refuses any symlink at any depth under `dir` (`walk_files` would skip
+/// it silently and the requirements would be lost).
+fn no_links(dir: &Path, show: &str) -> Result<(), String> {
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("{show}: {e}"))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("{show}: {e}"))?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let shown = format!("{show}/{name}");
+        let meta = std::fs::symlink_metadata(entry.path()).map_err(|e| format!("{shown}: {e}"))?;
+        if meta.file_type().is_symlink() {
+            return Err(format!("{shown} is a symlink, not followed"));
+        }
+        if meta.is_dir() {
+            no_links(&entry.path(), &shown)?;
+        }
+    }
+    Ok(())
+}
+
 /// A regular file's bytes; None when absent. A symlink refuses.
 fn read_regular(path: &Path, show: &str) -> Result<Option<Vec<u8>>, String> {
     match std::fs::symlink_metadata(path) {
@@ -715,6 +748,7 @@ fn import_change(root: &Root, cdir: &Path, id: &str) -> Result<Folder, String> {
     }
     let sdir = cdir.join("specs");
     let specs: Vec<String> = if real_dir(&sdir, "specs")? {
+        no_links(&sdir, "specs")?;
         files_under(&sdir)?
             .into_iter()
             .filter(|r| r.ends_with("/spec.md"))
@@ -819,7 +853,7 @@ fn change_ids(changes: &Path, only: Option<&str>) -> Result<(Vec<String>, Vec<St
     for entry in entries {
         let entry = entry.map_err(|e| format!("openspec/changes: {e}"))?;
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name == "archive" || only.is_some_and(|o| o != name) {
+        if name == "archive" || name.starts_with('.') || only.is_some_and(|o| o != name) {
             continue;
         }
         let meta = std::fs::symlink_metadata(entry.path()).map_err(|e| format!("{name}: {e}"))?;
@@ -869,6 +903,7 @@ fn write_step(
     plan: &[(String, Folder)],
     made: &mut Vec<(PathBuf, bool)>,
 ) -> Result<(), String> {
+    // `features/` is lstat-checked; the spec root itself may be a symlink (accepted: it is the user's own root).
     match std::fs::symlink_metadata(features) {
         Ok(m) if m.file_type().is_symlink() => {
             return Err(format!("{shown}/features is a symlink"));
@@ -926,6 +961,14 @@ pub fn import(
         Ok(true) => {}
         Ok(false) => return refuse(format!("no openspec/ under {shown}")),
         Err(e) => return refuse(e),
+    }
+    if std::fs::symlink_metadata(root.dir.join("features"))
+        .is_ok_and(|m| !m.file_type().is_symlink() && !m.is_dir())
+    {
+        return refuse(format!(
+            "ERROR: {}/features is not a directory",
+            root.display()
+        ));
     }
     let (ids, link_errs) = match change_ids(&os.join("changes"), only) {
         Ok(v) => v,

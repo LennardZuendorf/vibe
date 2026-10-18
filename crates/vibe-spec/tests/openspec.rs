@@ -275,8 +275,6 @@ fn export_refuses_a_destination_inside_the_spec_root() {
     }
 }
 
-const FILES: [&str; 3] = ["product.md", "tech.md", "plan.md"];
-
 /// An empty project with a `.spec` root and no features.
 fn empty(name: &str) -> PathBuf {
     let p = project(name);
@@ -296,14 +294,21 @@ fn round_trip_is_byte_identical() {
         &[],
     );
     assert_eq!(out.code, 0, "{}", out.stderr);
-    for f in FILES {
-        let rel = format!(".spec/features/passkeys/{f}");
-        assert_eq!(
-            fs::read(b.join(&rel)).unwrap(),
-            fs::read(a.join(&rel)).unwrap(),
-            "{rel}"
-        );
+    let mut seen = 0;
+    for feature in ["notes", "passkeys"] {
+        let dir = a.join(".spec/features").join(feature);
+        for e in fs::read_dir(&dir).unwrap() {
+            let name = e.unwrap().file_name();
+            let rel = format!(".spec/features/{feature}/{}", name.to_string_lossy());
+            assert_eq!(
+                fs::read(b.join(&rel)).unwrap(),
+                fs::read(a.join(&rel)).unwrap(),
+                "{rel}"
+            );
+            seen += 1;
+        }
     }
+    assert!(seen >= 4, "{seen}");
     assert!(!b.join(".spec/features/passkeys/design.md").exists());
     let json = spec(
         &empty("os-rt-json"),
@@ -511,4 +516,147 @@ fn import_without_openspec_dir_refuses() {
         (out.code, out.stderr.as_str()),
         (1, "import: no openspec/ under nowhere\n")
     );
+}
+
+/// `<root>/openspec/changes/<id>/design.md` carrying `blocks` after the marker.
+fn carried_design(blocks: &str) -> String {
+    format!("# Design\n\n<!-- vibe:export v1 -->\n{blocks}")
+}
+
+#[test]
+fn import_pins_carried_edge_cases() {
+    let a = empty("os-edge-a");
+    let dir = ".spec/features/edge";
+    write(
+        &a,
+        &format!("{dir}/product.md"),
+        "---\ntype: feature-product\nfeature: edge\nupdated: 2026-01-15\n---\n\n# Feature: edge — Product\n\nEdge.\n",
+    );
+    write(&a, &format!("{dir}/design.md"), "# D\n```\ncode\n```");
+    write(&a, &format!("{dir}/research.md"), "");
+    assert_eq!(spec(&a, &["export", "--openspec", "out"], &[]).code, 0);
+    let exported = read(&a, "out/openspec/changes/edge/design.md");
+    assert!(
+        exported.contains("````text\n# D\n```\ncode\n```\n````\n"),
+        "{exported}"
+    );
+    let b = empty("os-edge-b");
+    let out = spec(
+        &b,
+        &["import", "--openspec", a.join("out").to_str().unwrap()],
+        &[],
+    );
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    for f in ["product.md", "design.md", "research.md"] {
+        let rel = format!("{dir}/{f}");
+        assert_eq!(
+            fs::read(b.join(&rel)).unwrap(),
+            fs::read(a.join(&rel)).unwrap(),
+            "{rel}"
+        );
+    }
+    // A bad closing fence refuses.
+    let bad = exported.replacen("\n````\n", "\n```\n", 1);
+    write(&a, "out/openspec/changes/edge/design.md", &bad);
+    let out = spec(
+        &empty("os-edge-c"),
+        &["import", "--openspec", a.join("out").to_str().unwrap()],
+        &[],
+    );
+    assert_eq!(out.code, 1);
+    assert_eq!(
+        out.stderr,
+        "import: edge: design.md has a malformed vibe block\n"
+    );
+    // Duplicate carried names refuse.
+    let block = "\n## vibe:product.md 2\n\n```text\nx\n```\n";
+    write(
+        &a,
+        "out/openspec/changes/edge/design.md",
+        &carried_design(&format!("{block}{block}")),
+    );
+    let out = spec(
+        &empty("os-edge-d"),
+        &["import", "--openspec", a.join("out").to_str().unwrap()],
+        &[],
+    );
+    assert_eq!(out.code, 1);
+    assert_eq!(
+        out.stderr,
+        "import: edge: design.md carries 'product.md' twice\n"
+    );
+}
+
+#[test]
+fn import_refuses_symlinked_specs() {
+    use std::os::unix::fs::symlink;
+    let src = project("os-speclink-src");
+    let real = project("os-speclink-real");
+    write(
+        &real,
+        "spec.md",
+        "## ADDED Requirements\n\n### Requirement: A\nThe system SHALL a.\n\n#### Scenario: a\n- x\n",
+    );
+    fs::create_dir_all(src.join("openspec/changes/ok/specs/cap")).unwrap();
+    symlink(
+        real.join("spec.md"),
+        src.join("openspec/changes/ok/specs/cap/spec.md"),
+    )
+    .unwrap();
+    let b = empty("os-speclink-b");
+    let out = spec(&b, &["import", "--openspec", src.to_str().unwrap()], &[]);
+    assert_eq!(out.code, 1);
+    assert_eq!(
+        out.stderr,
+        "import: ok: specs/cap/spec.md is a symlink, not followed\n"
+    );
+    assert!(!b.join(".spec/features").exists());
+    fs::remove_dir_all(src.join("openspec/changes/ok/specs/cap")).unwrap();
+    symlink(&real, src.join("openspec/changes/ok/specs/cap")).unwrap();
+    let out = spec(&b, &["import", "--openspec", src.to_str().unwrap()], &[]);
+    assert_eq!(out.code, 1);
+    assert_eq!(
+        out.stderr,
+        "import: ok: specs/cap is a symlink, not followed\n"
+    );
+    assert!(!b.join(".spec/features").exists());
+}
+
+#[test]
+fn import_refuses_a_features_file() {
+    let src = project("os-featfile-src");
+    write(&src, "openspec/changes/ok/proposal.md", "# P\n");
+    let b = empty("os-featfile");
+    write(&b, ".spec/features", "not a dir\n");
+    let out = spec(&b, &["import", "--openspec", src.to_str().unwrap()], &[]);
+    assert_eq!(out.code, 1);
+    assert_eq!(
+        out.stderr,
+        "import: ERROR: .spec/features is not a directory\n"
+    );
+    assert_eq!(read(&b, ".spec/features"), "not a dir\n");
+}
+
+#[test]
+fn import_skips_dot_dirs_in_changes() {
+    let src = project("os-dot-src");
+    write(&src, "openspec/changes/ok/proposal.md", "# P\n");
+    write(&src, "openspec/changes/.git/HEAD", "ref\n");
+    let b = empty("os-dot");
+    let out = spec(&b, &["import", "--openspec", src.to_str().unwrap()], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(out.stderr, "");
+    assert!(b.join(".spec/features/ok/product.md").is_file());
+}
+
+#[test]
+fn a_quoted_marker_is_not_a_carried_design() {
+    let src = project("os-quote-src");
+    let design = "# Design\n\nThe `<!-- vibe:export v1 -->` marker starts carried files.\n\n## vibe:product.md 2\n\n```text\nx\n```\n";
+    write(&src, "openspec/changes/ok/design.md", design);
+    let b = empty("os-quote");
+    let out = spec(&b, &["import", "--openspec", src.to_str().unwrap()], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(read(&b, ".spec/features/ok/design.md"), design);
+    assert!(read(&b, ".spec/features/ok/product.md").contains("Imported from OpenSpec change ok."));
 }
