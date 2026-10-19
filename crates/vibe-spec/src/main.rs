@@ -93,6 +93,15 @@ enum Command {
         /// Same as `--format json`.
         #[arg(long)]
         json: bool,
+        /// Keep the findings of files changed in git (or since `.vibe/spec-session`), and of the tree.
+        #[arg(long, conflicts_with = "file")]
+        changed: bool,
+        /// Keep only this file's findings.
+        #[arg(long)]
+        file: Option<String>,
+        /// The hook event for `--format hook`: PostToolUse or Stop.
+        #[arg(long)]
+        event: Option<String>,
     },
     /// A feature's plan rows (Spec JSON v1 `plan` with --json).
     Plan {
@@ -197,7 +206,14 @@ fn main() -> ExitCode {
                 let _ = std::io::Read::read_to_end(&mut std::io::stdin(), &mut stdin);
                 hook::guard(&stdin).0
             }
-            HookEvent::SessionStart | HookEvent::Validate => {
+            HookEvent::Validate => {
+                let mut stdin = Vec::new();
+                let _ = std::io::Read::read_to_end(&mut std::io::stdin(), &mut stdin);
+                let (code, out) = hook::validate(&stdin, &cwd);
+                emit(&out);
+                code
+            }
+            HookEvent::SessionStart => {
                 eprintln!("vibe-spec hook: this event is not implemented yet — allowing");
                 exit::OK
             }
@@ -217,12 +233,18 @@ fn main() -> ExitCode {
             strict,
             format,
             json,
+            changed,
+            file,
+            event,
         } => validate::run(
             &found,
             &cwd,
             &validate::Options {
                 strict,
                 format: if json { validate::Format::Json } else { format },
+                changed,
+                file,
+                event,
             },
         ),
         Command::Plan { feature, json } => query::plan(&found, &feature, json),

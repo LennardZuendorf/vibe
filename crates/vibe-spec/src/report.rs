@@ -175,6 +175,30 @@ impl Report {
             .extend(echo_e(&cat!("\\033[", code, "m  ", tag, msg, "\\033[0m")));
     }
 
+    /// Keeps only the findings `keep` accepts; the counts and the text
+    /// (after `header`) are rebuilt from them.
+    pub fn retain(&mut self, header: &[u8], keep: impl Fn(&Finding) -> bool) {
+        let mut kept = std::mem::take(&mut self.findings);
+        kept.retain(|f| keep(f));
+        self.out = header.to_vec();
+        self.errors = 0;
+        self.warnings = 0;
+        for f in &kept {
+            let (code, tag) = match f.severity {
+                Severity::Error => {
+                    self.errors += 1;
+                    ("31", "ERROR: ")
+                }
+                Severity::Warning => {
+                    self.warnings += 1;
+                    ("33", "WARN:  ")
+                }
+            };
+            self.colour(code, tag, &f.message);
+        }
+        self.findings = kept;
+    }
+
     /// Spec JSON v1 `validate`.
     pub fn json(&self, root: &str, layout: &str) -> Vec<u8> {
         let checks: Vec<serde_json::Value> = CHECKS

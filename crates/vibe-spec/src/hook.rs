@@ -277,6 +277,74 @@ pub fn guard(stdin: &[u8]) -> (u8, Vec<u8>) {
     }
 }
 
+/// The cap in ms for a validate hook; `VIBE_SPEC_HOOK_CAP_MS` overrides it (tests).
+fn cap_ms(default: u64) -> u64 {
+    std::env::var("VIBE_SPEC_HOOK_CAP_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
+/// The post-edit and stop validate hooks (P4-R5): never blocks, so the
+/// exit code is always 0. `PostToolUse` validates the edited file within
+/// 500 ms; `Stop` validates the changed files within 2 000 ms.
+pub fn validate(stdin: &[u8], _cwd: &Path) -> (u8, Vec<u8>) {
+    let payload = match parse(stdin) {
+        Ok(p) => p,
+        Err(e) => return allow_validate(&e),
+    };
+    let (file, changed, default_cap) = match payload.event.as_str() {
+        "PostToolUse" => {
+            let Some(file) = payload.file.clone().filter(|f| f.ends_with(".md")) else {
+                return (0, Vec::new());
+            };
+            let abs = if is_absolute(&file) {
+                file
+            } else {
+                format!("{}/{file}", payload.cwd.to_string_lossy())
+            };
+            (Some(abs), false, 500)
+        }
+        "Stop" => (None, true, 2000),
+        other => return allow_validate(&format!("unknown event {other}")),
+    };
+    let cap = cap_ms(default_cap);
+    let event = payload.event.clone();
+    let cwd = payload.cwd.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let found = crate::root::discover(&cwd, None, None);
+        let out = match found {
+            Ok(_) => Some(crate::validate::run(
+                &found,
+                &cwd,
+                &crate::validate::Options {
+                    strict: false,
+                    format: crate::validate::Format::Hook,
+                    changed,
+                    file,
+                    event: Some(event),
+                },
+            )),
+            Err(_) => None,
+        };
+        let _ = tx.send(out);
+    });
+    match rx.recv_timeout(std::time::Duration::from_millis(cap)) {
+        Ok(Some((_, out))) => (0, out),
+        Ok(None) => (0, Vec::new()),
+        Err(_) => {
+            eprintln!("vibe-spec hook validate: skipped — over {cap} ms");
+            (0, Vec::new())
+        }
+    }
+}
+
+fn allow_validate(cause: &str) -> (u8, Vec<u8>) {
+    eprintln!("vibe-spec hook validate: skipped — {cause}");
+    (0, Vec::new())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

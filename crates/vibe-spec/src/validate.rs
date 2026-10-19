@@ -5,6 +5,7 @@
 //! pipeline subshell and so never counts), and the exit code. F17 changes
 //! behaviour. Deliberate divergence (pinned): with no spec root, the error
 //! names `vibe-spec init`, not the oracle's `setup.sh` path.
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -20,7 +21,7 @@ use crate::report::Report;
 use crate::root::{Miss, Root};
 use crate::superpowers;
 use crate::text::{
-    first_line, has_line_starting, is_space, join_raw, lines, md_files, name_of, read_lines,
+    first_line, has_line_starting, is_space, join_raw, lines, lossy, md_files, name_of, read_lines,
     strip_prefix_or, sub_dirs, trim_start_space,
 };
 
@@ -40,6 +41,8 @@ pub enum Format {
     Text,
     /// Spec JSON v1 `validate`.
     Json,
+    /// Hook JSON for `--event` (P4-R5): nothing when there are no findings.
+    Hook,
 }
 
 /// Parsed `validate` flags.
@@ -48,13 +51,135 @@ pub struct Options {
     pub strict: bool,
     /// `--format` (`--json` sets `Json`).
     pub format: Format,
+    /// `--changed`: keep the findings of changed files and of the tree.
+    pub changed: bool,
+    /// `--file`: keep only this file's findings (project-relative or absolute).
+    pub file: Option<String>,
+    /// `--event` for `--format hook`: `PostToolUse` or `Stop`.
+    pub event: Option<String>,
+}
+
+/// Which findings survive `--file` / `--changed`.
+enum Filter {
+    /// Every finding.
+    All,
+    /// `--file`: this project-relative path only.
+    File(String),
+    /// `--changed`: these files, plus the tree-level findings.
+    Changed(BTreeSet<String>),
+}
+
+impl Filter {
+    fn keeps(&self, file: &str) -> bool {
+        match self {
+            Filter::All => true,
+            Filter::File(f) => file == f,
+            Filter::Changed(set) => file.is_empty() || set.contains(file),
+        }
+    }
+}
+
+/// `path` relative to `project`, `/`-joined, without a leading `./`.
+fn relative(project: &Path, path: &str) -> String {
+    let path = path.replace('\\', "/");
+    let p = Path::new(&path);
+    let rel = if p.is_absolute() {
+        let canon = |x: &Path| std::fs::canonicalize(x).unwrap_or_else(|_| x.to_path_buf());
+        p.strip_prefix(project)
+            .map(Path::to_path_buf)
+            .or_else(|_| p.strip_prefix(canon(project)).map(Path::to_path_buf))
+            .or_else(|_| {
+                // The file may not exist (canonicalize fails): canonicalize its parent.
+                let name = p.file_name().map(PathBuf::from).unwrap_or_default();
+                let parent = p.parent().map(canon).unwrap_or_default();
+                parent.strip_prefix(canon(project)).map(|r| r.join(&name))
+            })
+            .map_or(path.clone(), |r| r.to_string_lossy().replace('\\', "/"))
+    } else {
+        path.clone()
+    };
+    rel.trim_start_matches("./").to_string()
+}
+
+/// The files `--changed` keeps, project-relative. Git first; without a work
+/// tree, files under the root newer than `.vibe/spec-session`; without that
+/// marker, None (every file).
+fn changed_set(project: &Path, dir: &Path) -> Option<BTreeSet<String>> {
+    if let Some(top) = crate::git::top(project)
+        && let Some(files) = crate::git::changed_files(&top)
+    {
+        let canon = |x: &Path| std::fs::canonicalize(x).unwrap_or_else(|_| x.to_path_buf());
+        let prefix = canon(project).strip_prefix(canon(&top)).map_or_else(
+            |_| String::new(),
+            |r| {
+                let s = r.to_string_lossy().replace('\\', "/");
+                if s.is_empty() { s } else { format!("{s}/") }
+            },
+        );
+        return Some(
+            files
+                .iter()
+                .filter_map(|f| f.strip_prefix(&prefix).map(str::to_string))
+                .collect(),
+        );
+    }
+    let since = std::fs::metadata(project.join(".vibe/spec-session"))
+        .and_then(|m| m.modified())
+        .ok()?;
+    let mut out = BTreeSet::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if std::fs::metadata(&path)
+                .and_then(|m| m.modified())
+                .is_ok_and(|t| t > since)
+                && let Ok(rel) = path.strip_prefix(project)
+            {
+                out.insert(rel.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+    Some(out)
+}
+
+/// The hook JSON for `r`'s findings; empty when there are none.
+fn hook_json(r: &Report, event: &str) -> Vec<u8> {
+    let lines: Vec<String> = r
+        .findings
+        .iter()
+        .map(|f| {
+            let msg = lossy(&f.message).replace('\n', " ");
+            let sev = f.severity.as_str();
+            if f.file.is_empty() {
+                format!("{} {sev}: {msg}", f.check)
+            } else {
+                format!("{} {sev} {}: {msg}", f.check, f.file)
+            }
+        })
+        .collect();
+    if lines.is_empty() {
+        return Vec::new();
+    }
+    let text = lines.join("\n");
+    let v = if event == "PostToolUse" {
+        serde_json::json!({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}})
+    } else {
+        serde_json::json!({ "systemMessage": text })
+    };
+    format!("{v}\n").into_bytes()
 }
 
 /// Runs the command.
 pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u8>) {
     let (dir, project, display): (PathBuf, PathBuf, String) = match found {
         Ok(root) => (root.dir.clone(), root.project.clone(), root.display()),
-        Err(Miss::NotFound) if opts.format == Format::Json => {
+        Err(Miss::NotFound) if opts.format != Format::Text => {
             eprintln!("{}", Miss::NotFound.message());
             return (exit::NO_ROOT, Vec::new());
         }
@@ -71,19 +196,34 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
             return (exit::USAGE, Vec::new());
         }
     };
+    let filter = if let Some(file) = &opts.file {
+        Filter::File(relative(&project, file))
+    } else if opts.changed {
+        match changed_set(&project, &dir) {
+            Some(set) => {
+                if set.is_empty() && opts.format == Format::Text {
+                    return (exit::OK, b"validate: no spec changes\n".to_vec());
+                }
+                Filter::Changed(set)
+            }
+            None => Filter::All,
+        }
+    } else {
+        Filter::All
+    };
     let mut r = Report::new(&project, levels);
     r.line(format!("Validating {display}/...").as_bytes());
     r.line(b"");
     if !dir.is_dir() {
         r.at("");
         r.refuse(b"No spec root found. Run setup first: vibe-spec init");
-        return finish(r, &display, opts.format, false, layered::Layout::Flat);
+        return finish(r, &display, opts, &filter, false, layered::Layout::Flat);
     }
     let specs = md_files(&dir);
     if specs.is_empty() {
         r.at("");
         r.refuse(format!("No spec files found in {display}/").as_bytes());
-        return finish(r, &display, opts.format, false, layered::Layout::Flat);
+        return finish(r, &display, opts, &filter, false, layered::Layout::Flat);
     }
     let ctx = Ctx {
         dir: &dir,
@@ -130,7 +270,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         r.at("");
         r.refuse(b"validate --strict examined nothing (no spec file, or every check is off); refusing to report green");
     }
-    finish(r, &display, opts.format, true, layout)
+    finish(r, &display, opts, &filter, true, layout)
 }
 
 /// The run's answer: the exit code and stdout in the chosen format. Text
@@ -138,10 +278,16 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
 fn finish(
     mut r: Report,
     display: &str,
-    format: Format,
+    opts: &Options,
+    filter: &Filter,
     summary: bool,
     layout: layered::Layout,
 ) -> (u8, Vec<u8>) {
+    let format = opts.format;
+    if !matches!(filter, Filter::All) {
+        let header = format!("Validating {display}/...\n\n");
+        r.retain(header.as_bytes(), |f| filter.keeps(&f.file));
+    }
     let code = if r.errors > 0 {
         exit::FINDINGS
     } else {
@@ -149,6 +295,7 @@ fn finish(
     };
     match format {
         Format::Json => (code, r.json(display, layout.as_str())),
+        Format::Hook => (code, hook_json(&r, opts.event.as_deref().unwrap_or(""))),
         Format::Text => {
             if summary {
                 let (errors, warnings) = (r.errors, r.warnings);

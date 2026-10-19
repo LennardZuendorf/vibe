@@ -175,3 +175,26 @@ pub fn changed_since(dir: &Path, base: &str) -> Option<bool> {
     )?;
     Some(!untracked.is_empty())
 }
+
+/// Staged, unstaged and untracked files in the work tree at `top`
+/// (`git status --porcelain=v1 -z --untracked-files=all`), top-relative and
+/// `/`-joined. A rename lists its new path. None when git fails.
+pub fn changed_files(top: &Path) -> Option<Vec<String>> {
+    let out = git(
+        top,
+        &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+    )?;
+    let mut files = Vec::new();
+    let mut tokens = out.split(|&b| b == 0).filter(|t| !t.is_empty());
+    while let Some(entry) = tokens.next() {
+        let (Some(status), Some(name)) = (entry.get(..2), entry.get(3..)) else {
+            continue;
+        };
+        if status.iter().any(|&c| c == b'R' || c == b'C') {
+            // The next token is the rename's source.
+            tokens.next();
+        }
+        files.push(lossy(name));
+    }
+    Some(files)
+}

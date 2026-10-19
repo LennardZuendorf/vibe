@@ -31,6 +31,26 @@ mod root {
         unimplemented!()
     }
 }
+/// `hook::validate` names `crate::validate`, which this file never runs.
+mod validate {
+    pub enum Format {
+        Hook,
+    }
+    pub struct Options {
+        pub strict: bool,
+        pub format: Format,
+        pub changed: bool,
+        pub file: Option<String>,
+        pub event: Option<String>,
+    }
+    pub fn run(
+        _: &Result<crate::root::Root, crate::root::Miss>,
+        _: &std::path::Path,
+        _: &Options,
+    ) -> (u8, Vec<u8>) {
+        unimplemented!()
+    }
+}
 #[path = "../src/text.rs"]
 mod text;
 #[path = "../src/transcript.rs"]
