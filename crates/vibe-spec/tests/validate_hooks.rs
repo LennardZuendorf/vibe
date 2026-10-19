@@ -205,3 +205,48 @@ fn hook_validate_never_fails() {
         assert!(out.stdout.is_empty(), "{}", out.text());
     }
 }
+
+fn committed(name: &str) -> std::path::PathBuf {
+    let p = tree(name);
+    write(&p, "sub/y.txt", "y\n");
+    fs::remove_dir_all(p.join(".git")).unwrap();
+    git(&p, "2026-01-01T00:00:00Z", &["init", "-q"]);
+    git(&p, "2026-01-01T00:00:00Z", &["add", "-A"]);
+    git(&p, "2026-01-01T00:00:00Z", &["commit", "-q", "-m", "init"]);
+    p
+}
+
+#[test]
+fn changed_ignores_files_outside_the_spec_root() {
+    let p = committed("vh-outside");
+    write(&p, "sub/y.txt", "changed\n");
+    let out = spec(&p, &["validate", "--changed"], &[]);
+    assert_eq!(
+        (out.code, out.text().as_str()),
+        (0, "validate: no spec changes\n")
+    );
+}
+
+#[test]
+fn file_resolves_against_cwd_and_dotdot() {
+    let p = committed("vh-paths");
+    let only_a = |cwd: &Path, arg: &str| {
+        let (_, v) = common::validate_json(cwd, &["--file", arg], &[]);
+        let files = files_of(&v);
+        assert!(!files.is_empty(), "{arg} from {}", cwd.display());
+        assert!(files.iter().all(|f| f == "docs/spec/a.md"), "{files:?}");
+    };
+    only_a(&p, "docs/spec/../spec/a.md");
+    only_a(&p.join("sub"), "../docs/spec/a.md");
+    only_a(&p.join("docs/spec"), "a.md");
+    let out = spec(&p, &["validate", "--file", "/etc/passwd"], &[]);
+    assert_eq!(
+        (out.code, out.text().as_str()),
+        (0, "validate: /etc/passwd is not under the spec root\n")
+    );
+    let out = spec(&p, &["validate", "--file", "sub/y.txt"], &[]);
+    assert_eq!(
+        out.text(),
+        "validate: sub/y.txt is not under the spec root\n"
+    );
+}

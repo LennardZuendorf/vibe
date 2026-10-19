@@ -79,32 +79,24 @@ impl Filter {
     }
 }
 
-/// `path` relative to `project`, `/`-joined, without a leading `./`.
-fn relative(project: &Path, path: &str) -> String {
-    let path = path.replace('\\', "/");
-    let p = Path::new(&path);
-    let rel = if p.is_absolute() {
-        let canon = |x: &Path| std::fs::canonicalize(x).unwrap_or_else(|_| x.to_path_buf());
-        p.strip_prefix(project)
-            .map(Path::to_path_buf)
-            .or_else(|_| p.strip_prefix(canon(project)).map(Path::to_path_buf))
-            .or_else(|_| {
-                // The file may not exist (canonicalize fails): canonicalize its parent.
-                let name = p.file_name().map(PathBuf::from).unwrap_or_default();
-                let parent = p.parent().map(canon).unwrap_or_default();
-                parent.strip_prefix(canon(project)).map(|r| r.join(&name))
-            })
-            .map_or(path.clone(), |r| r.to_string_lossy().replace('\\', "/"))
+/// `file` (relative to `cwd` when not absolute) as a project-relative path,
+/// when it lies under the spec root `display`; file identity as in the guard.
+fn under_root(project: &Path, display: &str, cwd: &Path, file: &str) -> Option<String> {
+    let abs = if crate::hook::is_absolute(file) {
+        file.to_string()
     } else {
-        path.clone()
+        format!("{}/{file}", cwd.to_string_lossy())
     };
-    rel.trim_start_matches("./").to_string()
+    let id = crate::hook::identity(&abs);
+    let base = crate::hook::identity(&project.to_string_lossy());
+    let rel = crate::hook::under(&base, &id)?;
+    (rel.starts_with(&format!("{}/", display.trim_end_matches('/')))).then(|| rel.to_string())
 }
 
 /// The files `--changed` keeps, project-relative. Git first; without a work
 /// tree, files under the root newer than `.vibe/spec-session`; without that
 /// marker, None (every file).
-fn changed_set(project: &Path, dir: &Path) -> Option<BTreeSet<String>> {
+fn changed_set(project: &Path, dir: &Path, display: &str) -> Option<BTreeSet<String>> {
     if let Some(top) = crate::git::top(project)
         && let Some(files) = crate::git::changed_files(&top)
     {
@@ -116,10 +108,14 @@ fn changed_set(project: &Path, dir: &Path) -> Option<BTreeSet<String>> {
                 if s.is_empty() { s } else { format!("{s}/") }
             },
         );
+        // Only files under the spec root.
+        let root = format!("{}/", display.trim_end_matches('/'));
         return Some(
             files
                 .iter()
-                .filter_map(|f| f.strip_prefix(&prefix).map(str::to_string))
+                .filter_map(|f| f.strip_prefix(&prefix))
+                .filter(|f| f.starts_with(&root))
+                .map(str::to_string)
                 .collect(),
         );
     }
@@ -177,32 +173,55 @@ fn hook_json(r: &Report, event: &str) -> Vec<u8> {
 
 /// Runs the command.
 pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u8>) {
+    run_checked(found, cwd, opts).unwrap_or_else(|why| {
+        eprintln!("vibe-spec: {why}");
+        (exit::USAGE, Vec::new())
+    })
+}
+
+/// Like [`run`], but a config error comes back as `Err` instead of being
+/// printed (the hook worker must print nothing after its cap fires).
+pub fn run_checked(
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    opts: &Options,
+) -> Result<(u8, Vec<u8>), String> {
     let (dir, project, display): (PathBuf, PathBuf, String) = match found {
         Ok(root) => (root.dir.clone(), root.project.clone(), root.display()),
         Err(Miss::NotFound) if opts.format != Format::Text => {
             eprintln!("{}", Miss::NotFound.message());
-            return (exit::NO_ROOT, Vec::new());
+            return Ok((exit::NO_ROOT, Vec::new()));
         }
         Err(Miss::NotFound) => (cwd.join(".spec"), cwd.to_path_buf(), ".spec".to_string()),
         Err(miss) => {
             eprintln!("{}", miss.message());
-            return (miss.code(), Vec::new());
+            return Ok((miss.code(), Vec::new()));
         }
     };
     let levels = match check::load(&project, opts.strict) {
         Ok(levels) => levels,
-        Err(why) => {
-            eprintln!("vibe-spec: {why}");
-            return (exit::USAGE, Vec::new());
-        }
+        Err(why) => return Err(why.to_string()),
     };
     let filter = if let Some(file) = &opts.file {
-        Filter::File(relative(&project, file))
+        match under_root(&project, &display, cwd, file) {
+            Some(rel) => Filter::File(rel),
+            None => match opts.format {
+                Format::Text => {
+                    return Ok((
+                        exit::OK,
+                        format!("validate: {file} is not under the spec root\n").into_bytes(),
+                    ));
+                }
+                Format::Hook => return Ok((exit::OK, Vec::new())),
+                // An empty report: no finding has this name.
+                Format::Json => Filter::File("\0outside".to_string()),
+            },
+        }
     } else if opts.changed {
-        match changed_set(&project, &dir) {
+        match changed_set(&project, &dir, &display) {
             Some(set) => {
                 if set.is_empty() && opts.format == Format::Text {
-                    return (exit::OK, b"validate: no spec changes\n".to_vec());
+                    return Ok((exit::OK, b"validate: no spec changes\n".to_vec()));
                 }
                 Filter::Changed(set)
             }
@@ -217,13 +236,27 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     if !dir.is_dir() {
         r.at("");
         r.refuse(b"No spec root found. Run setup first: vibe-spec init");
-        return finish(r, &display, opts, &filter, false, layered::Layout::Flat);
+        return Ok(finish(
+            r,
+            &display,
+            opts,
+            &filter,
+            false,
+            layered::Layout::Flat,
+        ));
     }
     let specs = md_files(&dir);
     if specs.is_empty() {
         r.at("");
         r.refuse(format!("No spec files found in {display}/").as_bytes());
-        return finish(r, &display, opts, &filter, false, layered::Layout::Flat);
+        return Ok(finish(
+            r,
+            &display,
+            opts,
+            &filter,
+            false,
+            layered::Layout::Flat,
+        ));
     }
     let ctx = Ctx {
         dir: &dir,
@@ -270,7 +303,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         r.at("");
         r.refuse(b"validate --strict examined nothing (no spec file, or every check is off); refusing to report green");
     }
-    finish(r, &display, opts, &filter, true, layout)
+    Ok(finish(r, &display, opts, &filter, true, layout))
 }
 
 /// The run's answer: the exit code and stdout in the chosen format. Text
@@ -285,6 +318,7 @@ fn finish(
 ) -> (u8, Vec<u8>) {
     let format = opts.format;
     if !matches!(filter, Filter::All) {
+        // The counts come from the kept findings, so the oracle's uncounted warning counts here.
         let header = format!("Validating {display}/...\n\n");
         r.retain(header.as_bytes(), |f| filter.keeps(&f.file));
     }

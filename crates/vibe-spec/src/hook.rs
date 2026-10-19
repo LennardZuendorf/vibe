@@ -96,7 +96,7 @@ fn lexical(path: &str) -> String {
 
 /// File identity, not spelling: the longest existing ancestor is
 /// canonicalized (symlinks resolved), the rest is kept lexically.
-fn identity(path: &str) -> String {
+pub(crate) fn identity(path: &str) -> String {
     let lex = lexical(path);
     let mut rest: Vec<&str> = Vec::new();
     let mut head = lex.as_str();
@@ -124,13 +124,13 @@ fn identity(path: &str) -> String {
 }
 
 /// `path` relative to `base` (both identity-normalized, `/`-joined).
-fn under<'a>(base: &str, path: &'a str) -> Option<&'a str> {
+pub(crate) fn under<'a>(base: &str, path: &'a str) -> Option<&'a str> {
     let base = base.trim_end_matches('/');
     let rest = path.strip_prefix(base)?;
     rest.strip_prefix('/')
 }
 
-fn is_absolute(file: &str) -> bool {
+pub(crate) fn is_absolute(file: &str) -> bool {
     let f = file.replace('\\', "/");
     let b = f.as_bytes();
     f.starts_with('/')
@@ -315,7 +315,7 @@ pub fn validate(stdin: &[u8], _cwd: &Path) -> (u8, Vec<u8>) {
     std::thread::spawn(move || {
         let found = crate::root::discover(&cwd, None, None);
         let out = match found {
-            Ok(_) => Some(crate::validate::run(
+            Ok(_) => Some(crate::validate::run_checked(
                 &found,
                 &cwd,
                 &crate::validate::Options {
@@ -331,7 +331,8 @@ pub fn validate(stdin: &[u8], _cwd: &Path) -> (u8, Vec<u8>) {
         let _ = tx.send(out);
     });
     match rx.recv_timeout(std::time::Duration::from_millis(cap)) {
-        Ok(Some((_, out))) => (0, out),
+        Ok(Some(Ok((_, out)))) => (0, out),
+        Ok(Some(Err(why))) => allow_validate(&why),
         Ok(None) => (0, Vec::new()),
         Err(_) => {
             eprintln!("vibe-spec hook validate: skipped — over {cap} ms");

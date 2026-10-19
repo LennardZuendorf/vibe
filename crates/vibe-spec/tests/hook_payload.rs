@@ -43,11 +43,11 @@ mod validate {
         pub file: Option<String>,
         pub event: Option<String>,
     }
-    pub fn run(
+    pub fn run_checked(
         _: &Result<crate::root::Root, crate::root::Miss>,
         _: &std::path::Path,
         _: &Options,
-    ) -> (u8, Vec<u8>) {
+    ) -> Result<(u8, Vec<u8>), String> {
         unimplemented!()
     }
 }
