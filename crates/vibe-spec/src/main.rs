@@ -169,6 +169,8 @@ enum Command {
         json: bool,
     },
     /// Install the pre-commit hook, OpenCode files and the AGENTS.md router block.
+    ///
+    /// Needs no spec root: with or without one it exits 0 on success.
     Setup {
         /// Install the git pre-commit hook.
         #[arg(long)]

@@ -1,7 +1,9 @@
 //! `vibe-spec setup` (P4-R10): the pre-commit hook, the OpenCode agent files
 //! and plugin shim, and spec's router block in AGENTS.md. Every file carries a
 //! marker; a file without one is never replaced, and nothing is written when
-//! any target is refused.
+//! any target is refused or fails.
+//!
+//! `setup` needs no spec root: with or without one it exits 0 on success.
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -34,6 +36,17 @@ pub struct Options {
     pub json: bool,
 }
 
+/// Where a file carries its ownership marker.
+#[derive(Clone, Copy)]
+enum Kind {
+    /// Line 2 of the hook.
+    Hook,
+    /// Line 1 of the JS plugin.
+    Js,
+    /// The line right after the frontmatter of an agent file.
+    Md,
+}
+
 /// One planned file.
 struct Target {
     path: PathBuf,
@@ -43,6 +56,8 @@ struct Target {
     /// The mode to keep when replacing an existing file.
     keep_mode: Option<u32>,
     unchanged: bool,
+    /// The bytes and mode on disk before this run (`None`: the file is new).
+    original: Option<(Vec<u8>, u32)>,
 }
 
 /// Runs the command.
@@ -65,6 +80,7 @@ pub fn run(_found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<
                 &project,
                 dir.join("pre-commit"),
                 HOOK_MARKER,
+                Kind::Hook,
                 HOOK.as_bytes().to_vec(),
                 true,
             )
@@ -75,13 +91,14 @@ pub fn run(_found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<
             let path = project.join(".opencode/agents").join(format!("{name}.md"));
             add(opencode_agent(src)
                 .map_err(|e| format!("{name}: {e}"))
-                .and_then(|bytes| marked(&project, path, MD_MARKER, bytes, false)));
+                .and_then(|bytes| marked(&project, path, MD_MARKER, Kind::Md, bytes, false)));
         }
         let path = project.join(".opencode/plugins/vibe-spec.js");
         add(marked(
             &project,
             path,
             JS_MARKER,
+            Kind::Js,
             PLUGIN.as_bytes().to_vec(),
             false,
         ));
@@ -97,18 +114,20 @@ pub fn run(_found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<
         return (exit::FINDINGS, Vec::new());
     }
 
-    let mut written = Vec::new();
-    let mut skipped = Vec::new();
-    for t in &targets {
-        if t.unchanged {
-            skipped.push(t.label.clone());
-        } else if let Err(e) = write(t) {
-            eprintln!("vibe-spec setup: {}: {e}", t.label);
-            return (exit::FINDINGS, Vec::new());
-        } else {
-            written.push(t.label.clone());
-        }
+    if let Err(msg) = commit(&targets) {
+        eprintln!("vibe-spec setup: {msg}");
+        return (exit::FINDINGS, Vec::new());
     }
+    let written: Vec<String> = targets
+        .iter()
+        .filter(|t| !t.unchanged)
+        .map(|t| t.label.clone())
+        .collect();
+    let skipped: Vec<String> = targets
+        .iter()
+        .filter(|t| t.unchanged)
+        .map(|t| t.label.clone())
+        .collect();
     if opts.json {
         let v = serde_json::json!({"v": 1, "written": written, "skipped": skipped});
         return (exit::OK, format!("{v}\n").into_bytes());
@@ -138,7 +157,23 @@ fn hooks_dir(cwd: &Path) -> Result<PathBuf, String> {
     if rel.is_empty() {
         return Err("git printed no hooks path".to_string());
     }
-    Ok(cwd.join(rel))
+    Ok(normalise(&cwd.join(rel)))
+}
+
+/// Drops `.` and resolves `..` lexically.
+fn normalise(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 fn label(project: &Path, path: &Path) -> String {
@@ -189,8 +224,29 @@ fn mode_of(_: &fs::Metadata) -> u32 {
     0o644
 }
 
-fn contains(hay: &[u8], needle: &str) -> bool {
-    find(hay, needle).is_some()
+/// True when `bytes` carries `marker` where `kind` puts it, as a whole line.
+fn owns(bytes: &[u8], marker: &str, kind: Kind) -> bool {
+    let mut lines = bytes
+        .split(|b| *b == b'\n')
+        .map(|l| l.strip_suffix(b"\r").unwrap_or(l));
+    let line = match kind {
+        Kind::Js => lines.next(),
+        Kind::Hook => lines.nth(1),
+        Kind::Md => {
+            if lines.next() != Some(b"---".as_slice()) {
+                return false;
+            }
+            lines
+                .find(|l| *l == b"---".as_slice())
+                .and_then(|_| lines.next())
+        }
+    };
+    line == Some(marker.as_bytes())
+}
+
+fn count(hay: &[u8], needle: &str) -> usize {
+    let n = needle.as_bytes();
+    hay.windows(n.len()).filter(|w| *w == n).count()
 }
 
 fn find(hay: &[u8], needle: &str) -> Option<usize> {
@@ -203,6 +259,7 @@ fn marked(
     project: &Path,
     path: PathBuf,
     marker: &str,
+    kind: Kind,
     bytes: Vec<u8>,
     exec: bool,
 ) -> Result<Target, String> {
@@ -210,9 +267,9 @@ fn marked(
     let old = existing(project, &path)?;
     let mut unchanged = false;
     if let Some((old_bytes, mode)) = &old {
-        if !contains(old_bytes, marker) {
+        if !owns(old_bytes, marker, kind) {
             return Err(format!(
-                "{shown} exists and is not managed by vibe-spec (no `{marker}`); not replacing it"
+                "{shown} exists and is not managed by vibe-spec (no `{marker}` line in its header); not replacing it"
             ));
         }
         unchanged = *old_bytes == bytes && (!exec || mode & 0o111 == 0o111);
@@ -224,6 +281,7 @@ fn marked(
         exec,
         keep_mode: None,
         unchanged,
+        original: old,
     })
 }
 
@@ -233,6 +291,13 @@ fn router(project: &Path) -> Result<Target, String> {
     let shown = label(project, &path);
     let block = FRAGMENT.trim_end_matches('\n');
     let old = existing(project, &path)?;
+    if let Some((text, _)) = &old
+        && (count(text, ROUTER_START) > 1 || count(text, ROUTER_END) > 1)
+    {
+        return Err(format!(
+            "{shown} has more than one vibe-spec router block; keep one and re-run"
+        ));
+    }
     let (bytes, keep_mode) = match &old {
         None => (format!("{block}\n").into_bytes(), None),
         Some((text, mode)) => {
@@ -274,18 +339,78 @@ fn router(project: &Path) -> Result<Target, String> {
         exec: false,
         keep_mode,
         unchanged,
+        original: old,
     })
 }
 
-fn write(t: &Target) -> Result<(), String> {
+/// Writes one target; returns the directories it had to create.
+fn write(t: &Target) -> Result<Vec<PathBuf>, String> {
+    let mut made = Vec::new();
     if let Some(dir) = t.path.parent() {
+        let mut missing = Vec::new();
+        let mut cur = dir;
+        while !cur.exists() {
+            missing.push(cur.to_path_buf());
+            match cur.parent() {
+                Some(p) => cur = p,
+                None => break,
+            }
+        }
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        missing.reverse();
+        made = missing;
     }
-    vibe_core::fs::write_atomic(&t.path, &t.bytes).map_err(|e| e.to_string())?;
-    set_mode(
-        &t.path,
-        t.keep_mode.unwrap_or(if t.exec { 0o755 } else { 0o644 }),
-    )
+    let mode = t.keep_mode.unwrap_or(if t.exec { 0o755 } else { 0o644 });
+    put(&t.path, &t.bytes, mode)?;
+    Ok(made)
+}
+
+fn put(path: &Path, bytes: &[u8], mode: u32) -> Result<(), String> {
+    vibe_core::fs::write_atomic(path, bytes).map_err(|e| e.to_string())?;
+    set_mode(path, mode)
+}
+
+/// Performs the writes in order. If write k fails, writes 0..k are put back
+/// (or removed when the file did not exist) and the refusal is returned.
+fn commit(targets: &[Target]) -> Result<(), String> {
+    let mut made_dirs: Vec<PathBuf> = Vec::new();
+    let mut done: Vec<&Target> = Vec::new();
+    for t in targets.iter().filter(|t| !t.unchanged) {
+        match write(t) {
+            Ok(dirs) => {
+                made_dirs.extend(dirs);
+                done.push(t);
+            }
+            Err(e) => {
+                let mut msg = format!("ERROR: {}: {e}", t.label);
+                // The failed target may have left a new file behind.
+                if t.original.is_none() {
+                    let _ = fs::remove_file(&t.path);
+                }
+                let mut restored = Vec::new();
+                for d in done.iter().rev() {
+                    let back = match &d.original {
+                        Some((bytes, mode)) => put(&d.path, bytes, *mode),
+                        None => fs::remove_file(&d.path).map_err(|e| e.to_string()),
+                    };
+                    match back {
+                        Ok(()) => restored.push(d.label.as_str()),
+                        Err(err) => {
+                            msg.push_str(&format!(" — restore failed for {}: {err}", d.label))
+                        }
+                    }
+                }
+                for dir in made_dirs.iter().rev() {
+                    let _ = fs::remove_dir(dir);
+                }
+                if !restored.is_empty() {
+                    msg.push_str(&format!(" — restored {}", restored.join(", ")));
+                }
+                return Err(msg);
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(unix)]

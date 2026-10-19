@@ -261,3 +261,74 @@ fn json_shape() {
     assert_eq!(v["written"].as_array().unwrap().len(), 0);
     assert_eq!(v["skipped"].as_array().unwrap().len(), 1);
 }
+
+#[test]
+fn a_foreign_file_mentioning_the_marker_is_refused() {
+    let p = repo("setup-mention");
+    let foreign =
+        "mine\nsee <!-- vibe-spec:opencode v1 --> in the docs\n<!-- vibe-spec:opencode v1 -->\n";
+    write(&p, OC[1], foreign);
+    let out = spec(&p, &["setup", "--opencode"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert_eq!(std::fs::read_to_string(p.join(OC[1])).unwrap(), foreign);
+
+    let q = repo("setup-mention-hook");
+    std::fs::create_dir_all(q.join(".git/hooks")).unwrap();
+    let hook = "#!/bin/sh\necho '# vibe-spec pre-commit v1'\n# vibe-spec pre-commit v1\n";
+    std::fs::write(q.join(".git/hooks/pre-commit"), hook).unwrap();
+    assert_eq!(spec(&q, &["setup", "--git-hooks"], &[]).code, 1);
+    assert_eq!(
+        std::fs::read_to_string(q.join(".git/hooks/pre-commit")).unwrap(),
+        hook
+    );
+}
+
+#[test]
+fn two_router_blocks_are_refused() {
+    let p = repo("setup-two-blocks");
+    let two = "<!-- vibe-spec:router:start -->\na\n<!-- vibe-spec:router:end -->\nmid\n<!-- vibe-spec:router:start -->\nb\n<!-- vibe-spec:router:end -->\n";
+    write(&p, "AGENTS.md", two);
+    let out = spec(&p, &["setup", "--agents-md"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert_eq!(std::fs::read_to_string(p.join("AGENTS.md")).unwrap(), two);
+}
+
+#[test]
+fn git_hook_from_a_subdirectory() {
+    let p = repo("setup-subdir");
+    let sub = p.join("sub/deep");
+    std::fs::create_dir_all(&sub).unwrap();
+    let out = spec(&sub, &["setup", "--git-hooks", "--json"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["written"][0], ".git/hooks/pre-commit");
+
+    let q = repo("setup-subdir-link");
+    let real = q.join("elsewhere");
+    std::fs::create_dir_all(&real).unwrap();
+    std::fs::remove_dir_all(q.join(".git/hooks")).unwrap();
+    std::os::unix::fs::symlink(&real, q.join(".git/hooks")).unwrap();
+    let sub = q.join("sub");
+    std::fs::create_dir_all(&sub).unwrap();
+    let out = spec(&sub, &["setup", "--git-hooks"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(out.stderr.contains("symlink"), "{}", out.stderr);
+    assert!(!real.join("pre-commit").exists());
+}
+
+#[test]
+fn a_failed_write_puts_earlier_writes_back() {
+    use std::os::unix::fs::PermissionsExt;
+    let p = repo("setup-rollback");
+    let stale = "---\ndescription: x\n---\n<!-- vibe-spec:opencode v1 -->\nold\n";
+    write(&p, OC[1], stale);
+    let plugins = p.join(".opencode/plugins");
+    std::fs::create_dir_all(&plugins).unwrap();
+    std::fs::set_permissions(&plugins, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let out = spec(&p, &["setup", "--opencode"], &[]);
+    std::fs::set_permissions(&plugins, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert_eq!(std::fs::read_to_string(p.join(OC[1])).unwrap(), stale);
+    assert!(!p.join(OC[0]).exists());
+    assert!(!plugins.join("vibe-spec.js").exists());
+}
