@@ -17,7 +17,7 @@ change.
    and set it: `bash .agents/skills/vibe/scripts/set-state.sh feature.design <name>`.
    The name is carried in the cursor across all feature states.
 
-2. **Design** (`feature.design`). Read `docs/spec/lessons.md` first. On the default
+2. **Design** (`feature.design`). Read `lessons.md` in the spec root (`docs/spec/`, or legacy `.spec/`) first. On the default <!-- literal -->
    path, `superpowers:brainstorming` owns the dialogue and the design doc. On the
    fallback path only, follow the spec skill
    [feature.md authoring flow](.agents/skills/spec/feature.md) steps 1–4:

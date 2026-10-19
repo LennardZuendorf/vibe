@@ -48,8 +48,8 @@ clobbering:
 3. **Flow scaffold.** Ensure `.agents/skills/vibe/` files exist. Seed the cursor only if
    missing: `cp .agents/skills/vibe/state.example.json .agents/skills/vibe/state.json`. Add
    `.agents/skills/vibe/state.json` to `.gitignore`.
-4. **Spec scaffold.** If `docs/spec/` is bare, run `bash .agents/skills/spec/scripts/setup.sh`.
-   Ensure `docs/spec/lessons.md` exists with the `Tags:`/`Pinned-by:` format.
+4. **Spec scaffold.** If the spec root (`docs/spec/`, or legacy `.spec/`) is bare, run `bash .agents/skills/spec/scripts/setup.sh` (it seeds legacy `.spec/` until F22 ships the binary). <!-- literal -->
+   Ensure `lessons.md` exists there with the `Tags:`/`Pinned-by:` format.
 5. **Active rules.** Run `bash .agents/skills/vibe/scripts/regen-active-rules.sh` to seed
    the managed `vibe:active-rules` block (it is symlink-aware and dedupes targets by
    resolved path, so the `CLAUDE.md` → `AGENTS.md` symlink survives).

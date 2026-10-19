@@ -50,25 +50,25 @@ superpowers:
 outputs:
   - docs/superpowers/specs/YYYY-MM-DD-<name>-design.md   # default feature layer
   - docs/superpowers/plans/YYYY-MM-DD-<name>.md          # default feature layer
-  - docs/spec/features/<name>/product.md   # fallback
-  - docs/spec/features/<name>/tech.md      # fallback
-  - docs/spec/features/<name>/design.md    # fallback
-  - docs/spec/features/<name>/plan.md      # fallback
-  - docs/spec/product.md            # strategy + compound only
-  - docs/spec/tech.md               # strategy + compound only
-  - docs/spec/lessons.md            # compound only
-  - docs/spec/.config.yaml          # setup only
+  - <spec root>/features/<name>/product.md   # fallback
+  - <spec root>/features/<name>/tech.md      # fallback
+  - <spec root>/features/<name>/design.md    # fallback
+  - <spec root>/features/<name>/plan.md      # fallback
+  - <spec root>/product.md            # strategy + compound only
+  - <spec root>/tech.md               # strategy + compound only
+  - <spec root>/lessons.md            # compound only
+  - <spec root>/.config.yaml          # setup only
 
 reads:
-  - docs/spec/product.md
-  - docs/spec/tech.md
-  - docs/spec/design.md
-  - docs/spec/lessons.md
-  - docs/spec/plan.md
-  - docs/spec/.config.yaml
+  - <spec root>/product.md
+  - <spec root>/tech.md
+  - <spec root>/design.md
+  - <spec root>/lessons.md
+  - <spec root>/plan.md
+  - <spec root>/.config.yaml
   - docs/superpowers/specs/
   - docs/superpowers/plans/
-  - docs/spec/features/<name>/
+  - <spec root>/features/<name>/
 
 delegates:
   - role: spec-promoter

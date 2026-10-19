@@ -76,7 +76,7 @@ optional adapter rather than the only carrier. `doctrine.sh` appends a live curs
 summary after this block.
 
 <!-- vibe:doctrine -->
-vibe flow — working model. `docs/spec/` is durable memory; sessions are ephemeral. On session start, Read `docs/spec/lessons.md` and `docs/spec/plan.md`, then the active feature's `docs/superpowers/{specs,plans}/*-<name>*` (fallback: `docs/spec/features/<name>/{product,tech,plan}.md`). A missing `state.json` cursor means idle — not an error.
+vibe flow — working model. The spec root (`docs/spec/`, or the legacy dot-spec root) is durable memory; sessions are ephemeral. On session start, Read `lessons.md` and `plan.md` there, then the active feature's `docs/superpowers/{specs,plans}/*-<name>*` (fallback: `docs/spec/features/<name>/{product,tech,plan}.md`). A missing `state.json` cursor means idle — not an error.
 
 You drive the flow: each turn's orders name the current state and its transition command. At a non-gated edge, run `set-state.sh <next>` yourself — nothing advances on its own.
 
@@ -103,7 +103,7 @@ skill=vibe · WRITE/MERGE bootstrap: merge-agents.sh AGENTS.md instructions bloc
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:strategy.brainstorm -->
-skill=vibe · delegate superpowers:brainstorming · READ docs/spec/lessons.md first · scratch only, no source, no spec writes yet · done → set-state.sh strategy.spec
+skill=vibe · delegate superpowers:brainstorming · READ the spec root's lessons.md first · scratch only, no source, no spec writes yet · done → set-state.sh strategy.spec
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:strategy.spec -->
@@ -131,7 +131,7 @@ skill=vibe · WRITE tagged docs/spec/lessons.md, promote durable facts from docs
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.triage -->
-skill=vibe · READ docs/spec/lessons.md first · defect: delegate superpowers:systematic-debugging (diagnose only, no fix) | non-defect: self-scope, no delegate · escalation to feature.design: announce AND confirm · done → set-state.sh quick.fix
+skill=vibe · READ the spec root's lessons.md first · defect: delegate superpowers:systematic-debugging (diagnose only, no fix) | non-defect: self-scope, no delegate · escalation to feature.design: announce AND confirm · done → set-state.sh quick.fix
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.fix -->

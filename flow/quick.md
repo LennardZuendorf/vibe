@@ -8,7 +8,7 @@ States: `quick.triage → quick.fix → quick.verify → (quick.fix | idle)`.
 1. **Locate.** Read `.agents/skills/vibe/state.json`. Enter with
    `bash .agents/skills/vibe/scripts/set-state.sh quick.triage`.
 2. **Triage** (reason in full — triage is where a dropped edge case is
-   expensive). Read `docs/spec/lessons.md` first. **Branch by work type:**
+   expensive). Read `lessons.md` in the spec root (`docs/spec/`, or legacy `.spec/`) first. **Branch by work type:** <!-- literal -->
 
    **(a) Defect** (a bug with a root cause to find) — run the systematic-debugging
    contract, diagnose only:

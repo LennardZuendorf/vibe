@@ -28,6 +28,7 @@ under `--to`, else the discovered root, else `<project>/docs/spec`. It never
 overwrites: an existing file prints `SKIP: <rel>`. It is a redesign, not a port of `setup.sh`.
 
 Known limits:
+- Fresh installs still seed the legacy root through `setup.sh` until F22, because no binary ships before then. The shipped prose names both roots and the `validate.sh` fallback.
 - `install.sh` does not wire spec hooks into targets (P5). They reach targets through the plugin.
 - The OpenCode shim has not run against live OpenCode.
 - A hooks dir outside the project (a linked worktree or an external `core.hooksPath`) skips the symlink walk.

@@ -5,12 +5,12 @@
      replaced on the next setup.apply / install. Content outside the markers
      (above this line, or inside vibe:active-rules) is user-owned. -->
 
-This project runs the **vibe flow** — a spec-first workflow harness. `docs/spec/` is the
-durable memory; sessions are ephemeral. Read the specs before you write code.
+This project runs the **vibe flow** — a spec-first workflow harness. The spec root is the
+durable memory (`docs/spec/`, or legacy `.spec/`); sessions are ephemeral. Read the specs before you write code.
 
 ## Session start
 
-1. Read `docs/spec/lessons.md` and `docs/spec/plan.md`. (The spec half owns `docs/spec/`; a
+1. Read `lessons.md` and `plan.md` in the spec root (`docs/spec/`, or legacy `.spec/`). (The spec half owns that root; a
    flow-only install has no tree — the flow still runs, the specs are just absent.)
 2. Identify the feature you are working on and load its specs:
    `docs/superpowers/specs/*-<name>-design.md` + `docs/superpowers/plans/*-<name>.md`, or the fallback `docs/spec/features/<name>/{product,tech,plan}.md`.
@@ -33,7 +33,7 @@ durable memory; sessions are ephemeral. Read the specs before you write code.
 ## Working model
 
 ```
-ASK → read docs/spec/ → PLAN → CONFIRM → IMPL → verify → compound
+ASK → read the spec root → PLAN → CONFIRM → IMPL → verify → compound
 ```
 
 Most transitions auto-advance. Two edges are **human gates** — stop and get explicit
@@ -77,6 +77,7 @@ never by editing the block, which is regenerated.
 
 ```bash
 # Spec validation — run before claiming done (spec half; absent on --only flow)
+# (until F22 ships the binary, `bash .agents/skills/spec/scripts/validate.sh` on a legacy `.spec/` root)
 vibe-spec validate
 # Write policy for a path (works without state.json)
 bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
