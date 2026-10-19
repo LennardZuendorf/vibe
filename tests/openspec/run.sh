@@ -33,7 +33,7 @@ node "$REPO_ROOT/tests/openspec/check.mjs" count "$work/good.json" "$EXPECTED_IT
 
 # 2. A requirement without SHALL/MUST must fail: the gate discriminates.
 cp -R "$REPO_ROOT/tests/openspec/fixture" "$work/bad"
-node "$REPO_ROOT/tests/openspec/check.mjs" mutate "$work/bad/.spec/product-auth.md" "The system SHALL end" "The system ends"
+node "$REPO_ROOT/tests/openspec/check.mjs" mutate "$work/bad/.spec/product-auth.md" "The system SHALL end" "The system ends" # literal
 (cd "$work/bad" && "$BIN" export --openspec out >/dev/null)
 if validate bad >"$work/bad.json"; then
   echo "openspec: a requirement without SHALL/MUST passed validate --strict" >&2

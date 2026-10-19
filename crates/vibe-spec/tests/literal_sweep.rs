@@ -74,6 +74,12 @@ fn exemptions_are_prefixes_or_exact_paths() {
 #[ignore = "full-repo sweep; run through tests/literals/run.sh"]
 fn no_tracked_file_carries_a_literal() {
     let root = repo_root();
+    if let Some(dir) = std::env::var_os("LITERALS_ROOT") {
+        println!(
+            "literal sweep: root {} (LITERALS_ROOT)",
+            dir.to_string_lossy()
+        );
+    }
     let out = Command::new("git")
         .args(["ls-files", "-z"])
         .current_dir(&root)

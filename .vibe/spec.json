@@ -16,7 +16,8 @@
       "CHANGELOG.md",
       "target/**",
       "tests/parity/corpus/**",
-      "contracts/fixtures/**"
+      "contracts/fixtures/**",
+      "tests/openspec/**"
     ]
   },
   "strictness": {

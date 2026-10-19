@@ -1865,5 +1865,106 @@ assert_eq "js-core/8" ".mjs enumeration degrades to a find walk with no .git" \
 rm -rf "$MJSPROBE"
 
 echo ""
+echo "=== spec-v04/p4 — dual-root shell scripts (a project with only docs/spec) ==="
+# Each sandbox puts the scripts at <sb>/pkg/flow/scripts so the marker walk is the
+# only thing that can find <sb> (the no-marker fallback lands on <sb>/pkg). The
+# project carries docs/spec and nothing else: no .git, no legacy root.
+dr="$(mktemp -d)"
+mkdir -p "$dr/docs/spec" "$dr/pkg/flow/scripts" "$dr/.agents/skills/vibe"
+for f in regen-active-rules.sh orders.sh doctor.sh doctrine.sh detect-context.sh; do
+  cp "$SCRIPTS/$f" "$dr/pkg/flow/scripts/"
+done
+cp "$FLOW/state-machine.json" "$dr/pkg/flow/"
+
+# regen-active-rules.sh: digest from docs/spec/lessons.md
+cat > "$dr/docs/spec/lessons.md" <<'EOF'
+# Lessons
+
+### Docs root lesson
+**Pattern:** p.
+**Rule:** the docs-spec rule body.
+**Tags:** t
+**Date:** 2026-10-19
+EOF
+printf '# T\n<!-- vibe:active-rules:start -->\nold\n<!-- vibe:active-rules:end -->\n' > "$dr/AGENTS.md"
+bash "$dr/pkg/flow/scripts/regen-active-rules.sh" >/dev/null 2>&1
+assert_contains "spec-v04/p4" "regen reads docs/spec/lessons.md in a docs/spec-only project" "$(cat "$dr/AGENTS.md")" "the docs-spec rule body"
+
+# regen precedence: vibe-spec root, then docs/spec, then the legacy root.
+mkdir -p "$dr/.spec" "$dr/custom" "$dr/bin"
+cat > "$dr/.spec/lessons.md" <<'EOF'
+### Legacy root lesson
+**Rule:** the legacy rule body.
+**Tags:** t
+**Date:** 2026-10-19
+EOF
+cat > "$dr/custom/lessons.md" <<'EOF'
+### Custom root lesson
+**Rule:** the vibe-spec-root rule body.
+**Tags:** t
+**Date:** 2026-10-19
+EOF
+printf '# T\n<!-- vibe:active-rules:start -->\nold\n<!-- vibe:active-rules:end -->\n' > "$dr/AGENTS.md"
+bash "$dr/pkg/flow/scripts/regen-active-rules.sh" >/dev/null 2>&1
+out="$(cat "$dr/AGENTS.md")"
+assert_contains "spec-v04/p4" "regen prefers docs/spec over the legacy root when both exist" "$out" "the docs-spec rule body"
+assert_not_contains "spec-v04/p4" "regen ignores the legacy lessons when docs/spec has one" "$out" "the legacy rule body"
+printf '#!/usr/bin/env bash\necho "%s"\n' "$dr/custom" > "$dr/bin/vibe-spec"; chmod +x "$dr/bin/vibe-spec"
+printf '# T\n<!-- vibe:active-rules:start -->\nold\n<!-- vibe:active-rules:end -->\n' > "$dr/AGENTS.md"
+PATH="$dr/bin:$PATH" bash "$dr/pkg/flow/scripts/regen-active-rules.sh" >/dev/null 2>&1
+out="$(cat "$dr/AGENTS.md")"
+assert_contains "spec-v04/p4" "regen prefers the root vibe-spec names (stub on PATH) over docs/spec" "$out" "the vibe-spec-root rule body"
+assert_not_contains "spec-v04/p4" "regen ignores docs/spec when vibe-spec names another root" "$out" "the docs-spec rule body"
+rm -rf "${dr:?}/.spec" "${dr:?}/custom" "${dr:?}/bin"
+
+# orders.sh and doctrine.sh: the skills dir comes from the project root.
+cat > "$dr/.agents/skills/vibe/SKILL.md" <<'EOF'
+<!-- vibe:orders:strategy.spec -->
+DOCS-ROOT-ORDERS
+<!-- /vibe:orders -->
+<!-- vibe:doctrine -->
+DOCS-ROOT-DOCTRINE
+<!-- /vibe:doctrine -->
+EOF
+assert_contains "spec-v04/p4" "orders.sh finds the project skills dir in a docs/spec-only project" "$(bash "$dr/pkg/flow/scripts/orders.sh" strategy.spec 2>&1)" "DOCS-ROOT-ORDERS"
+assert_contains "spec-v04/p4" "doctrine.sh finds the project skills dir in a docs/spec-only project" "$(bash "$dr/pkg/flow/scripts/doctrine.sh" 2>&1)" "DOCS-ROOT-DOCTRINE"
+
+# doctor.sh: the reported root is the docs/spec project, not the fallback.
+# (its own sandbox: the .agents/skills tree above is a second root marker for doctor)
+dd="$(mktemp -d)"; mkdir -p "$dd/docs/spec" "$dd/pkg/flow/scripts"
+cp "$SCRIPTS/doctor.sh" "$dd/pkg/flow/scripts/"
+assert_eq "spec-v04/p4" "doctor.sh reports the docs/spec project as its root" "$(bash "$dd/pkg/flow/scripts/doctor.sh" 2>&1 | head -n1)" "# vibe doctor — $dd"
+rm -rf "${dd:?}"
+
+# detect-context.sh decide: the root-specs and features twins, shell branch.
+dc="$dr/pkg/flow/scripts/detect-context.sh"
+assert_eq "spec-v04/p4" "detect-context blocks docs/spec/plan.md in feature.impl" \
+  "$(bash "$dc" decide docs/spec/plan.md feature.impl 2>&1 | cut -c1-34)" "block:root docs/spec specs are wri"
+assert_eq "spec-v04/p4" "detect-context allows docs/spec/plan.md in strategy.spec" \
+  "$(bash "$dc" decide docs/spec/plan.md strategy.spec 2>&1)" "allow"
+assert_eq "spec-v04/p4" "detect-context warns on docs/spec/features/x/plan.md in feature.impl" \
+  "$(bash "$dc" decide docs/spec/features/x/plan.md feature.impl 2>&1 | cut -c1-37)" "warn:docs/spec/features edits are fro"
+assert_eq "spec-v04/p4" "detect-context allows docs/spec/features/x/plan.md in feature.design" \
+  "$(bash "$dc" decide docs/spec/features/x/plan.md feature.design 2>&1)" "allow"
+rm -rf "${dr:?}"
+
+# install.sh: bare run from a subdirectory targets a docs/spec-only project; the
+# global seed is skipped when docs/spec exists; uninstall names both roots.
+ib="$(mktemp -d)"; mkdir -p "$ib/docs/spec" "$ib/sub"
+out="$(cd "$ib/sub" && bash "$SRC_ROOT/install.sh" --dry-run --local 2>&1)"
+assert_contains "spec-v04/p4" "install.sh bare run finds a docs/spec-only project from a subdirectory" "$out" "$ib/.agents/skills/"
+mkdir -p "$ib/.git"
+out="$(cd "$ib/sub" && bash "$SRC_ROOT/install.sh" --dry-run --global 2>&1)"
+assert_not_contains "spec-v04/p4" "install.sh --global does not seed when docs/spec exists" "$out" "would seed"
+rmdir "$ib/docs/spec" "$ib/docs"
+out="$(cd "$ib/sub" && bash "$SRC_ROOT/install.sh" --dry-run --global 2>&1)"
+assert_contains "spec-v04/p4" "install.sh --global seeds a git repo that has no spec root" "$out" "would seed"
+mkdir -p "$ib/docs/spec"
+out="$(cd "$ib/sub" && bash "$SRC_ROOT/install.sh" --local --uninstall --yes 2>&1)"
+assert_contains "spec-v04/p4" "install.sh uninstall preserves docs/spec and says so" "$out" "Preserved: docs/spec/"
+assert_eq "spec-v04/p4" "install.sh uninstall leaves docs/spec in place" "$([[ -d "$ib/docs/spec" ]] && echo kept || echo GONE)" "kept"
+rm -rf "${ib:?}"
+
+echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

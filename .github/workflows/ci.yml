@@ -69,6 +69,11 @@ jobs:
           fi
           jq --version
 
+      # tests/run.sh builds and runs vibe-spec (literals suite, live checks), so
+      # the pinned toolchain must be installed before its first run.
+      - name: Toolchain (pinned by rust-toolchain.toml)
+        run: rustup toolchain install
+
       # Runs all six suites (spec, flow, adapters, engine, oracles,
       # contracts) via the combined aggregator — see tests/run.sh.
       - name: Test suites
@@ -120,9 +125,6 @@ jobs:
 
       # P4-R17: the bash spec scripts hard-code the legacy root, so this repo's own
       # tree is checked by vibe-spec itself, on whichever root it sits.
-      - name: Toolchain (pinned by rust-toolchain.toml)
-        run: rustup toolchain install
-
       - name: Spec validation
         run: cargo run -q --locked -p vibe-spec -- validate --strict
 
@@ -164,6 +166,9 @@ jobs:
 
       - name: Ensure jq (not preinstalled on every macOS image)
         run: command -v jq >/dev/null 2>&1 || brew install jq
+
+      - name: Toolchain (pinned by rust-toolchain.toml)
+        run: rustup toolchain install
 
       - name: Test suites (via the real macOS /bin/bash, not Homebrew's)
         run: /bin/bash tests/run.sh
