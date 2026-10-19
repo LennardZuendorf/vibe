@@ -376,6 +376,13 @@ fn root_file(r: &mut Report, ctx: &Ctx, file: &Path, layered: bool) {
         r.error("SF20", &cat!(n, ": missing YAML frontmatter"));
         return;
     }
+    if crate::frontmatter::parse(&text).is_none() {
+        r.error(
+            "SF20",
+            &cat!(n, ": unterminated frontmatter (no closing '---')"),
+        );
+        return;
+    }
     if !has_line_starting(&text, b"type:") {
         r.error("SF20", &cat!(n, ": missing 'type:' in frontmatter"));
     }

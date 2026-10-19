@@ -491,6 +491,21 @@ fn a_root_hub_without_type_is_sf20_only() {
 }
 
 #[test]
+fn a_root_hub_with_unclosed_frontmatter_is_sf20() {
+    let p = layered_tree("ly-hub-unclosed");
+    write(
+        &p,
+        "docs/spec/design.md",
+        "---\ntype: hub\nupdated: 2026-01-15\n\n# Design\n",
+    );
+    only(
+        &p,
+        "SF20",
+        "design.md: unterminated frontmatter (no closing '---')",
+    );
+}
+
+#[test]
 fn a_part_hub_without_type_stays_sf33() {
     let p = layered_tree("ly-parthub-none");
     write(
