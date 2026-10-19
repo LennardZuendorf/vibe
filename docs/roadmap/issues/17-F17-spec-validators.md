@@ -34,7 +34,7 @@ F16
 - A check that examines nothing must fail loudly — `--strict` refusing a zero-files green is the structural floor this repo's lessons call for.
 - A check moves to `error` only in the compound that migrates the last live spec — do not flip any check to error in this issue.
 
-Phase: 3 · Tool: spec · Source: `.spec/plan.md` row F17
+Phase: 3 · Tool: spec · Source: `docs/spec/plan.md` row F17
 
 ## Amended 2026-10-13
 - Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.

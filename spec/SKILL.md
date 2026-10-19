@@ -2,7 +2,7 @@
 name: spec
 description: |
   You MUST use this before changing what the product does, how it is built,
-  or any file under docs/spec, .spec or docs/superpowers — features,
+  or any file under docs/spec, docs/spec or docs/superpowers — features,
   refactors, architecture, decisions, PRDs, plans, roadmaps, and also
   one-line fixes, typos and new flags. "Quick" and "just fix it" still
   route here first. Invoke it before reading files, before writing code,
@@ -50,25 +50,25 @@ superpowers:
 outputs:
   - docs/superpowers/specs/YYYY-MM-DD-<name>-design.md   # default feature layer
   - docs/superpowers/plans/YYYY-MM-DD-<name>.md          # default feature layer
-  - .spec/features/<name>/product.md   # fallback
-  - .spec/features/<name>/tech.md      # fallback
-  - .spec/features/<name>/design.md    # fallback
-  - .spec/features/<name>/plan.md      # fallback
-  - .spec/product.md            # strategy + compound only
-  - .spec/tech.md               # strategy + compound only
-  - .spec/lessons.md            # compound only
-  - .spec/.config.yaml          # setup only
+  - docs/spec/features/<name>/product.md   # fallback
+  - docs/spec/features/<name>/tech.md      # fallback
+  - docs/spec/features/<name>/design.md    # fallback
+  - docs/spec/features/<name>/plan.md      # fallback
+  - docs/spec/product.md            # strategy + compound only
+  - docs/spec/tech.md               # strategy + compound only
+  - docs/spec/lessons.md            # compound only
+  - docs/spec/.config.yaml          # setup only
 
 reads:
-  - .spec/product.md
-  - .spec/tech.md
-  - .spec/design.md
-  - .spec/lessons.md
-  - .spec/plan.md
-  - .spec/.config.yaml
+  - docs/spec/product.md
+  - docs/spec/tech.md
+  - docs/spec/design.md
+  - docs/spec/lessons.md
+  - docs/spec/plan.md
+  - docs/spec/.config.yaml
   - docs/superpowers/specs/
   - docs/superpowers/plans/
-  - .spec/features/<name>/
+  - docs/spec/features/<name>/
 
 delegates:
   - role: spec-promoter
@@ -96,7 +96,7 @@ work. Routing is not optional. A reply to the user is not routing.
 ## The Rule
 
 1. Invoke this skill before you act on any change to behaviour, structure, or docs.
-2. Read `.spec/lessons.md` and the root doc of the area you touch. No `.spec/` yet → run `/spec setup` first.
+2. Read `docs/spec/lessons.md` and the root doc of the area you touch. No `docs/spec/` yet → run `/spec setup` first.
 3. Route the work by the table below. Announce the route in one line.
 4. Write only where the route says. Nowhere else.
 5. Finish: bump `updated:` on every spec you edited, then run `vibe-spec validate`.
@@ -105,14 +105,14 @@ work. Routing is not optional. A reply to the user is not routing.
 
 | Work | Do this | Writes |
 |---|---|---|
-| Strategy: product direction, architecture, decisions, root `plan.md` sequence, `design.md`, branch docs | Load [strategy.md](strategy.md). Edit the root spec yourself (dialogue via `superpowers:brainstorming` allowed) | `.spec/` root only |
+| Strategy: product direction, architecture, decisions, root `plan.md` sequence, `design.md`, branch docs | Load [strategy.md](strategy.md). Edit the root spec yourself (dialogue via `superpowers:brainstorming` allowed) | `docs/spec/` root only |
 | Feature, new or structural | Invoke `superpowers:brainstorming`, then `superpowers:writing-plans`. Topic = feature name. | `docs/superpowers/specs/`, `docs/superpowers/plans/` |
 | Feature, bounded | Invoke `superpowers:brainstorming` (bounded path) | code; root-doc drift is fixed via strategy.spec |
 | Bug or quick fix | Invoke `superpowers:systematic-debugging`; fix in place | code; root-doc drift is fixed via strategy.spec |
 | Implementing an approved plan | Follow the plan task by task. The design doc is frozen. | code and tests |
 | Question or investigation (not design: "how should we build X" is a feature) | Answer from the spec and the code | nothing |
-| Feature wrap-up (compound) | Promote durable facts into root specs + `lessons.md`, then delete the feature's artifacts | root `.spec/`, `lessons.md` |
-| Fallback | Load [feature.md](feature.md) and run it | `.spec/features/<name>/` |
+| Feature wrap-up (compound) | Promote durable facts into root specs + `lessons.md`, then delete the feature's artifacts | root `docs/spec/`, `lessons.md` |
+| Fallback | Load [feature.md](feature.md) and run it | `docs/spec/features/<name>/` |
 
 Fallback only when: superpowers is not installed, the user says *self*,
 `.vibe/spec.json` sets `"featureLayer": "vibe"`, or OpenSpec interchange is
@@ -128,13 +128,13 @@ its live surface (code, tests, root docs). Never restore the folder.
 | Argument | Action |
 |---|---|
 | `strategy` | Load [strategy.md](strategy.md) |
-| `feature [<name>]` | Route as a feature (table above); fallback loads [feature.md](feature.md) + `.spec/features/<name>/` |
+| `feature [<name>]` | Route as a feature (table above); fallback loads [feature.md](feature.md) + `docs/spec/features/<name>/` |
 | `interview [<name>]` | Fallback only: run `superpowers:brainstorming` for the WHAT phase, steps 1–2, in this skill |
 | `promote <name>` | Run `vibe-spec promote <name>` through the spec-promoter agent (fallback folders) |
 | `audit` | Run `vibe-spec validate` |
 | `diff <name>` | Run `vibe-spec scan-merges <name>` — pending merge blocks |
 | `health` | Run the spec-health agent — structural assessment |
-| `research <name>` | Fallback only: open `.spec/features/<name>/research.md` |
+| `research <name>` | Fallback only: open `docs/spec/features/<name>/research.md` |
 | `lessons-for <tag>` | Run `vibe-spec lessons-for <tag>` |
 | `product` · `tech` · `design` · `plan` · `lessons` | Load that root doc and follow its links |
 | `setup` | Run the setup interview (§ Setup) |
@@ -152,7 +152,7 @@ its live surface (code, tests, root docs). Never restore the folder.
 | "The user only asked a question" | "How should we build X" is design. Route it. |
 | "I know this codebase" | Lessons exist because agents knew the codebase. Read them. |
 | "Superpowers will handle it" | Superpowers designs. This skill decides where it is recorded. Invoke both. |
-| "I'll write the feature spec into `.spec/features/`" | Only on a fallback trigger. Default is superpowers' own artifacts. |
+| "I'll write the feature spec into `docs/spec/features/`" | Only on a fallback trigger. Default is superpowers' own artifacts. |
 | "The plan already exists, I can edit the design doc" | Design docs are frozen during impl. Route back to design. |
 
 ## Layers
@@ -161,17 +161,17 @@ Root layer — persistent, high level, current only. No spec holds a backlog; lo
 
 | Doc | Holds | Guide |
 |---|---|---|
-| `.spec/product.md` | mini PRD: story, users, requirements, principles, non-goals | [reference/product.md](reference/product.md) |
-| `.spec/tech.md` | architecture: stack, layout, contracts, build sequence, risks | [reference/tech.md](reference/tech.md) |
-| `.spec/design.md` | cross-cutting design language, UX conventions ([`DESIGN.md` format](https://github.com/google-labs-code/design.md) for visual tokens) | [reference/design.md](reference/design.md) |
-| `.spec/plan.md` | feature map, Feature Sequence with whole-feature gates, current focus | [reference/plan.md](reference/plan.md) |
-| `.spec/lessons.md` | tagged mistakes; read at session start | — |
-| `.spec/{product,tech}-<topic>.md` | cross-cutting concerns only | [reference/product.md](reference/product.md) |
+| `docs/spec/product.md` | mini PRD: story, users, requirements, principles, non-goals | [reference/product.md](reference/product.md) |
+| `docs/spec/tech.md` | architecture: stack, layout, contracts, build sequence, risks | [reference/tech.md](reference/tech.md) |
+| `docs/spec/design.md` | cross-cutting design language, UX conventions ([`DESIGN.md` format](https://github.com/google-labs-code/design.md) for visual tokens) | [reference/design.md](reference/design.md) |
+| `docs/spec/plan.md` | feature map, Feature Sequence with whole-feature gates, current focus | [reference/plan.md](reference/plan.md) |
+| `docs/spec/lessons.md` | tagged mistakes; read at session start | — |
+| `docs/spec/{product,tech}-<topic>.md` | cross-cutting concerns only | [reference/product.md](reference/product.md) |
 
 Feature layer — branch-scoped, deleted before the branch merges:
 
 - Default: `docs/superpowers/specs/YYYY-MM-DD-<name>-design.md` + `docs/superpowers/plans/YYYY-MM-DD-<name>.md`.
-- Fallback: `.spec/features/<name>/{product,tech}.md`, optional `design.md`, `plan.md` (stable `<name>/n` unit IDs), `research.md`. Rules: [feature.md](feature.md).
+- Fallback: `docs/spec/features/<name>/{product,tech}.md`, optional `design.md`, `plan.md` (stable `<name>/n` unit IDs), `research.md`. Rules: [feature.md](feature.md).
 
 Rules:
 
@@ -205,7 +205,7 @@ root. If `vibe-spec` is not on PATH, build it (`cargo build -p vibe-spec`).
 
 ## Config
 
-Read `.spec/.config.yaml` before any route. A missing file or key means the default.
+Read `docs/spec/.config.yaml` before any route. A missing file or key means the default.
 
 | Key | Default | When set |
 |---|---|---|
@@ -220,17 +220,17 @@ filler; security and irreversible-action warnings stay in full prose.
 
 On `/spec setup`:
 
-1. `.spec/.config.yaml` present → show settings, update only the one named, confirm, write.
+1. `docs/spec/.config.yaml` present → show settings, update only the one named, confirm, write.
 2. Absent → ask three questions, conversationally:
    - **Q1 — Workflow orchestration:** driven by the vibe flow (`/flow`) or by `/spec` directly? → yes | no
    - **Q2 — Available superpowers:** `all`, `none`, or `custom` (per superpower)?
    - **Q3 — Proactive suggestions:** offer optional executors at each step, or stay quiet? Default: yes.
 3. Show the summary. Write nothing before the user confirms.
-4. On confirm: write `.spec/.config.yaml` (always, even with all defaults), then run `vibe-spec init`. Report what it created; next is `/spec strategy` or `/spec feature <name>`.
+4. On confirm: write `docs/spec/.config.yaml` (always, even with all defaults), then run `vibe-spec init`. Report what it created; next is `/spec strategy` or `/spec feature <name>`.
 
 ## Templates
 
-Copy from [reference/templates/](reference/templates/) into `.spec/`:
+Copy from [reference/templates/](reference/templates/) into `docs/spec/`:
 
 | Template | For |
 |---|---|

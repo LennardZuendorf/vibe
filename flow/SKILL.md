@@ -76,13 +76,13 @@ optional adapter rather than the only carrier. `doctrine.sh` appends a live curs
 summary after this block.
 
 <!-- vibe:doctrine -->
-vibe flow — working model. `.spec/` is durable memory; sessions are ephemeral. On session start, Read `.spec/lessons.md` and `.spec/plan.md`, then the active feature's `docs/superpowers/{specs,plans}/*-<name>*` (fallback: `.spec/features/<name>/{product,tech,plan}.md`). A missing `state.json` cursor means idle — not an error.
+vibe flow — working model. `docs/spec/` is durable memory; sessions are ephemeral. On session start, Read `docs/spec/lessons.md` and `docs/spec/plan.md`, then the active feature's `docs/superpowers/{specs,plans}/*-<name>*` (fallback: `docs/spec/features/<name>/{product,tech,plan}.md`). A missing `state.json` cursor means idle — not an error.
 
 You drive the flow: each turn's orders name the current state and its transition command. At a non-gated edge, run `set-state.sh <next>` yourself — nothing advances on its own.
 
 Two human gates — stop and get explicit approval before crossing: plan → impl, and verify → ship. Everything else auto-advances.
 
-Write invariants (`detect-context.sh decide`; default idle when `state.json` is absent): `.spec/lessons.md` only in feature.compound, setup.apply, strategy.spec, quick.verify; root `.spec/{product,tech,design,plan}.md` only in strategy.spec, feature.compound, setup.apply; `.agents/skills/vibe/state.json` only via `set-state.sh`.
+Write invariants (`detect-context.sh decide`; default idle when `state.json` is absent): `docs/spec/lessons.md` only in feature.compound, setup.apply, strategy.spec, quick.verify; root `docs/spec/{product,tech,design,plan}.md` only in strategy.spec, feature.compound, setup.apply; `.agents/skills/vibe/state.json` only via `set-state.sh`.
 
 Output: brief technical English (ASD-STE100) — answer first, one idea per sentence, active voice, no filler or hedging; compress receipts and subagent summaries. Never compress security warnings, irreversible-action confirmations, or code/paths/commands — those stay full and byte-exact.
 <!-- /vibe:doctrine -->
@@ -99,27 +99,27 @@ skill=vibe · READ-ONLY audit of repo + harness · report what is missing/presen
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:setup.apply -->
-skill=vibe · WRITE/MERGE bootstrap: merge-agents.sh AGENTS.md instructions block, .agents/skills/vibe scaffold, baseline .spec/**, optional adapter symlinks (user-driven) · NEVER clobber existing content (diff + ask on divergence) · regen-active-rules.sh after merge · done → set-state.sh idle
+skill=vibe · WRITE/MERGE bootstrap: merge-agents.sh AGENTS.md instructions block, .agents/skills/vibe scaffold, baseline docs/spec/**, optional adapter symlinks (user-driven) · NEVER clobber existing content (diff + ask on divergence) · regen-active-rules.sh after merge · done → set-state.sh idle
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:strategy.brainstorm -->
-skill=vibe · delegate superpowers:brainstorming · READ .spec/lessons.md first · scratch only, no source, no spec writes yet · done → set-state.sh strategy.spec
+skill=vibe · delegate superpowers:brainstorming · READ docs/spec/lessons.md first · scratch only, no source, no spec writes yet · done → set-state.sh strategy.spec
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:strategy.spec -->
-skill=vibe · delegate spec · WRITE root .spec/{product,tech,design,plan}.md · validate after · if a durable lesson surfaced: append tagged .spec/lessons.md + regen-active-rules.sh before idle · no source · done → set-state.sh idle | iterate: strategy.brainstorm
+skill=vibe · delegate spec · WRITE root docs/spec/{product,tech,design,plan}.md · validate after · if a durable lesson surfaced: append tagged docs/spec/lessons.md + regen-active-rules.sh before idle · no source · done → set-state.sh idle | iterate: strategy.brainstorm
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.design -->
-skill=vibe · delegate superpowers:brainstorming (topic=<feature>) · READ lessons.md + root product/tech · WRITE docs/superpowers/specs/*-<feature>-design.md (fallback: .spec/features/<feature>/{product,tech,design?,research?}.md) · no source · done → set-state.sh feature.plan
+skill=vibe · delegate superpowers:brainstorming (topic=<feature>) · READ lessons.md + root product/tech · WRITE docs/superpowers/specs/*-<feature>-design.md (fallback: docs/spec/features/<feature>/{product,tech,design?,research?}.md) · no source · done → set-state.sh feature.plan
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.plan -->
-skill=vibe · delegate superpowers:writing-plans · WRITE docs/superpowers/plans/*-<feature>.md (fallback: .spec/features/<feature>/plan.md with STABLE unit IDs <feature>/n) · verification per task · no source · HUMAN GATE before impl · gate: plan-approval+mode · on approval → /flow feature.impl confirm
+skill=vibe · delegate superpowers:writing-plans · WRITE docs/superpowers/plans/*-<feature>.md (fallback: docs/spec/features/<feature>/plan.md with STABLE unit IDs <feature>/n) · verification per task · no source · HUMAN GATE before impl · gate: plan-approval+mode · on approval → /flow feature.impl confirm
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.impl -->
-skill=vibe · delegate executing-plans (interactive, default) | subagent-driven-development (handover) + TDD + receiving-code-review on verify-routed re-entry · WRITE src/**, tests/** · do NOT edit .spec/** or docs/superpowers/specs/** · cite plan task numbers (fallback: unit IDs <feature>/n) in tests/commits · done → set-state.sh feature.verify
+skill=vibe · delegate executing-plans (interactive, default) | subagent-driven-development (handover) + TDD + receiving-code-review on verify-routed re-entry · WRITE src/**, tests/** · do NOT edit docs/spec/** or docs/superpowers/specs/** · cite plan task numbers (fallback: unit IDs <feature>/n) in tests/commits · done → set-state.sh feature.verify
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.verify -->
@@ -127,17 +127,17 @@ skill=vibe · delegate verification-before-completion + requesting-code-review +
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:feature.compound -->
-skill=vibe · WRITE tagged .spec/lessons.md, promote durable facts from docs/superpowers/{specs,plans}/*-<feature>* + cross-cutting decisions to root specs, git rm them, archive .spec/features/<feature> -> .spec/archive/<feature> · regen-active-rules.sh · offer archive delete after validation · delegate finishing-a-development-branch LAST (it merges) · done → set-state.sh idle
+skill=vibe · WRITE tagged docs/spec/lessons.md, promote durable facts from docs/superpowers/{specs,plans}/*-<feature>* + cross-cutting decisions to root specs, git rm them, archive docs/spec/features/<feature> -> docs/spec/archive/<feature> · regen-active-rules.sh · offer archive delete after validation · delegate finishing-a-development-branch LAST (it merges) · done → set-state.sh idle
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.triage -->
-skill=vibe · READ .spec/lessons.md first · defect: delegate superpowers:systematic-debugging (diagnose only, no fix) | non-defect: self-scope, no delegate · escalation to feature.design: announce AND confirm · done → set-state.sh quick.fix
+skill=vibe · READ docs/spec/lessons.md first · defect: delegate superpowers:systematic-debugging (diagnose only, no fix) | non-defect: self-scope, no delegate · escalation to feature.design: announce AND confirm · done → set-state.sh quick.fix
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.fix -->
-skill=vibe · delegate TDD + receiving-code-review on verify-routed re-entry · WRITE src/** (+ optional .spec/quick/<slug>.md note) · no root spec writes · done → set-state.sh quick.verify
+skill=vibe · delegate TDD + receiving-code-review on verify-routed re-entry · WRITE src/** (+ optional docs/spec/quick/<slug>.md note) · no root spec writes · done → set-state.sh quick.verify
 <!-- /vibe:orders -->
 
 <!-- vibe:orders:quick.verify -->
-skill=vibe · delegate verification-before-completion + code-reviewer · gather EVIDENCE the fix works and breaks nothing · no root spec writes · if a durable lesson surfaced: append tagged .spec/lessons.md + regen-active-rules.sh before idle · findings → set-state.sh quick.fix | else → set-state.sh idle
+skill=vibe · delegate verification-before-completion + code-reviewer · gather EVIDENCE the fix works and breaks nothing · no root spec writes · if a durable lesson surfaced: append tagged docs/spec/lessons.md + regen-active-rules.sh before idle · findings → set-state.sh quick.fix | else → set-state.sh idle
 <!-- /vibe:orders -->

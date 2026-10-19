@@ -20,7 +20,7 @@ Report present vs missing:
 - **Adapter rows** — one per entry in `reference/adapters.json`
   (`CLAUDE.md`, `WARP.md`, …): absent / symlink-ok / symlink-wrong-target /
   real-file / broken-link.
-- `.spec/lessons.md` and the root specs.
+- `docs/spec/lessons.md` and the root specs.
 
 **Plugin preflight** — `bash .agents/skills/vibe/scripts/check-skills.sh <state>` lists
 which delegated skills are verifiable vs assumed-installed. Warn + list any that
@@ -48,8 +48,8 @@ clobbering:
 3. **Flow scaffold.** Ensure `.agents/skills/vibe/` files exist. Seed the cursor only if
    missing: `cp .agents/skills/vibe/state.example.json .agents/skills/vibe/state.json`. Add
    `.agents/skills/vibe/state.json` to `.gitignore`.
-4. **Spec scaffold.** If `.spec/` is bare, run `bash .agents/skills/spec/scripts/setup.sh`.
-   Ensure `.spec/lessons.md` exists with the `Tags:`/`Pinned-by:` format.
+4. **Spec scaffold.** If `docs/spec/` is bare, run `bash .agents/skills/spec/scripts/setup.sh`.
+   Ensure `docs/spec/lessons.md` exists with the `Tags:`/`Pinned-by:` format.
 5. **Active rules.** Run `bash .agents/skills/vibe/scripts/regen-active-rules.sh` to seed
    the managed `vibe:active-rules` block (it is symlink-aware and dedupes targets by
    resolved path, so the `CLAUDE.md` → `AGENTS.md` symlink survives).

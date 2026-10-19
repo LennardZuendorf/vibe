@@ -81,7 +81,7 @@ The `design` scope is the only place product and tech content may legitimately m
 
 Artifacts are durable memory — not session transcripts.
 
-- **Repo-relative paths only** — `.spec/features/foo/product.md`, not absolute or machine-specific paths.
+- **Repo-relative paths only** — `docs/spec/features/foo/product.md`, not absolute or machine-specific paths.
 - **No process exhaust** — omit interview notes, brainstorming dumps, and "we considered X" unless the decision matters.
 - **No qualifiers or hedges** — state decisions; delete "maybe", "probably", "might want to".
 - **Omit empty sections** — if a section has no content yet, leave it out; add when there is something to say.

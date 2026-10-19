@@ -59,8 +59,8 @@ For visual identity or UI design systems, follow the public
 [`DESIGN.md` format](https://github.com/google-labs-code/design.md): YAML
 frontmatter for machine-readable tokens plus markdown prose for human rationale.
 
-Use it inside `.spec/design.md` or `.spec/features/<name>/design.md`. Do not move
-design docs out of `.spec/`.
+Use it inside `docs/spec/design.md` or `docs/spec/features/<name>/design.md`. Do not move
+design docs out of `docs/spec/`.
 
 **Useful token groups:**
 - `colors`

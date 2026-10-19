@@ -75,10 +75,6 @@ SUITE_SCRIPTS=(
   "tests/literals/run.sh"
 )
 
-# The zero-literal sweep (P4-R16a) reports only, until the migration commit
-# lands (Task 13 removes this line and the sweep then fails on any literal).
-export LITERALS_REPORT_ONLY=1
-
 overall=0
 results=()
 

@@ -1,8 +1,8 @@
 # Strategy layer — global / long-living specs
 
-Root-layer files in `.spec/` are **persistent in role, current in content**. They describe the whole product and architecture. They never hold one feature's implementation detail. The files persist. Keep their content current: reduce delivered work in `plan.md` to a one-line note, and keep no long-horizon backlog (an external tracker holds it). Feature-level detail lives in the feature layer: by default `docs/superpowers/specs/` and `docs/superpowers/plans/`; on a fallback trigger, `.spec/features/<name>/` ([feature.md](feature.md)).
+Root-layer files in `docs/spec/` are **persistent in role, current in content**. They describe the whole product and architecture. They never hold one feature's implementation detail. The files persist. Keep their content current: reduce delivered work in `plan.md` to a one-line note, and keep no long-horizon backlog (an external tracker holds it). Feature-level detail lives in the feature layer: by default `docs/superpowers/specs/` and `docs/superpowers/plans/`; on a fallback trigger, `docs/spec/features/<name>/` ([feature.md](feature.md)).
 
-> **Config note:** If `.spec/.config.yaml` sets `suggest-superpowers: false`, skip every "Superpower tip" callout in this file. Run each step yourself. See [SKILL.md § Config](SKILL.md#config) for the full config reference.
+> **Config note:** If `docs/spec/.config.yaml` sets `suggest-superpowers: false`, skip every "Superpower tip" callout in this file. Run each step yourself. See [SKILL.md § Config](SKILL.md#config) for the full config reference.
 
 ## What lives at root
 
@@ -41,7 +41,7 @@ Step 4: plan.md        — feature table, Feature Sequence (binary gates), curre
 
 **Order matters.** Root entrypoints constrain everything. Feature work follows. Write branch docs last, and only for a **real** cross-cutting concern, never an anticipated one.
 
-> **Superpower tip (Step 1):** Before writing root specs, shape the product direction with `superpowers:brainstorming`. Inject the root `product.md` and `tech.md` templates as constraint context so the output lands in the right format. Ask the user: *"I can run a `superpowers:brainstorming` session on the product story and architecture before we write to `.spec/`. Proceed?"*
+> **Superpower tip (Step 1):** Before writing root specs, shape the product direction with `superpowers:brainstorming`. Inject the root `product.md` and `tech.md` templates as constraint context so the output lands in the right format. Ask the user: *"I can run a `superpowers:brainstorming` session on the product story and architecture before we write to `docs/spec/`. Proceed?"*
 
 Templates: [product](reference/templates/product.md), [tech](reference/templates/tech.md), [plan](reference/templates/plan.md), [feature-plan](reference/templates/feature-plan.md).
 

@@ -1,7 +1,7 @@
 # v0.4 roadmap
 
 The v0.4 re-architecture ("three tools, one language, no bundle") as a GitHub
-issue set, authored from `.spec/plan.md` rows F1–F25. `issues/` holds one
+issue set, authored from `docs/spec/plan.md` rows F1–F25. `issues/` holds one
 Markdown file per issue (`00-epic.md`, `01-F1-*.md` … `25-F25-*.md`), each
 with YAML frontmatter (`id`, `tool`, `phase`, `depends_on`, `parent`, plus
 `issue`/`hold` once posted or held — see below) and the same body template
@@ -68,7 +68,7 @@ milestone — each spans every phase in its arc.
 ## Why files instead of issues
 
 These Markdown files remain the source of truth even after posting: they are
-what gets regenerated from `.spec/plan.md` if the plan changes, and what a
+what gets regenerated from `docs/spec/plan.md` if the plan changes, and what a
 disabled-Issues repo would fall back to. Each posted file's frontmatter now
 carries `issue: <number>` linking it to the GitHub issue it became.
 
@@ -98,6 +98,6 @@ to post it. It will pick up only that one file; the rest stay untouched.
 
 ## Source of truth
 
-`.spec/plan.md` is canonical. If the plan changes, regenerate these files —
-never hand-edit a posted GitHub issue without updating `.spec/plan.md` first,
+`docs/spec/plan.md` is canonical. If the plan changes, regenerate these files —
+never hand-edit a posted GitHub issue without updating `docs/spec/plan.md` first,
 and never hand-edit these files to drift from the plan.

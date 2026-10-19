@@ -25,11 +25,11 @@ never through code. One repo, one installer, three release trains.
 
 |  | **spec** | **flow** | **instruct** |
 |---|---|---|---|
-| **What it is** | Durable `.spec/` planning layer — product / tech / design / plan / lessons — with templates and a validator. | State-machine workflow: routes each phase to the right skills, injects per-turn orders, guards its own write invariants with hooks. | ⏳ Planned — layered, budgeted instruction injection (global → repo → local → session tiers). |
+| **What it is** | Durable `docs/spec/` planning layer — product / tech / design / plan / lessons — with templates and a validator. | State-machine workflow: routes each phase to the right skills, injects per-turn orders, guards its own write invariants with hooks. | ⏳ Planned — layered, budgeted instruction injection (global → repo → local → session tiers). |
 | **Works with** | Any coding agent, or none. | Claude Code, for the hooks and `/flow`. Other agents read the same rules as prose. | Claude Code + OpenCode, both ⏳ planned. |
 | **Needs** | `bash` | `bash`, plus Node ≥18 for today's engine — a static Rust binary in v0.4. | Nothing today (unbuilt) — a static Rust binary in v0.4. |
 | **Install** | `./install.sh <repo> --only spec` | `./install.sh <repo> --only flow` | ⏳ planned: `./install.sh <repo> --only instruct` |
-| **Deep dive** | [`spec/README.md`](spec/README.md) | [`flow/README.md`](flow/README.md) | [`.spec/tech-instruct.md`](.spec/tech-instruct.md) |
+| **Deep dive** | [`spec/README.md`](spec/README.md) | [`flow/README.md`](flow/README.md) | [`docs/spec/tech/instruct.md`](docs/spec/tech/instruct.md) |
 
 This repo builds itself with its own harness, so what you install is what is
 dogfooded here.
@@ -60,7 +60,7 @@ git clone https://github.com/LennardZuendorf/vibe.git && cd vibe
 ./install.sh <target-repo>
 ```
 
-A bare run searches upward for the enclosing repo (a `.spec`/`.git` marker)
+A bare run searches upward for the enclosing repo (a `docs/spec`/`.git` marker)
 and, on a terminal, asks which mode you want.
 
 | Mode | Command | What you get |
@@ -84,7 +84,7 @@ claude plugin marketplace add LennardZuendorf/vibe
 claude plugin install vibe@vibe
 ```
 
-Uninstall removes only what the installer created — `.spec/**`, `AGENTS.md`
+Uninstall removes only what the installer created — `docs/spec/**`, `AGENTS.md`
 prose, unrelated hooks, and the flow cursor (unless `--yes`) survive:
 
 ```bash
@@ -95,11 +95,11 @@ prose, unrelated hooks, and the flow cursor (unless `--yes`) survive:
 
 ### spec — the planning layer
 
-Every vibe project gets a `.spec/` tree, the single source of truth for what
+Every vibe project gets a `docs/spec/` tree, the single source of truth for what
 you are building, why, and how:
 
 ```text
-.spec/
+docs/spec/
 ├── product.md, tech.md, design.md, plan.md, lessons.md   ← ROOT: persistent role, current content
 └── features/<name>/
     ├── product.md    required     what this feature does
@@ -113,7 +113,7 @@ Root files carry no backlog. Feature folders are branch-scoped: written at
 design, consumed at impl, merged at compound, then deleted. **Code is truth.**
 
 ```bash
-/spec setup            # initialise .spec/ with templates
+/spec setup            # initialise docs/spec/ with templates
 /spec strategy         # write root product/tech/design/plan
 /spec feature <name>   # scope and design a named feature
 /spec validate         # check structural consistency
@@ -171,7 +171,7 @@ your-repo/                     # after install
 │   ├── spec/                  # the spec framework
 │   └── vibe/                  # the flow: router, phase files, state machine, engine
 ├── .claude/                   # Claude adapter: /flow + four hooks + settings.json (flow half)
-├── .spec/                     # your durable project memory
+├── docs/spec/                     # your durable project memory
 └── AGENTS.md                  # merged instructions (CLAUDE.md may symlink here)
 ```
 
@@ -196,8 +196,8 @@ are the `vibe-spec` commands that already exist in a dev build (`cargo run -p
 vibe-spec -- <command>`), among them `check-drift`, `promote`, `export|import
 --openspec`, `hook {session-start,guard,validate}` and `setup`; skills, CI and the flow scripts still call the bash scripts and do
 not use them yet. Detail lives in
-[`.spec/tech.md`](.spec/tech.md) and its branch docs, including
-[`.spec/tech-instruct.md`](.spec/tech-instruct.md) for the instruct tool.
+[`docs/spec/tech.md`](docs/spec/tech.md) and its branch docs, including
+[`docs/spec/tech/instruct.md`](docs/spec/tech/instruct.md) for the instruct tool.
 
 ### Three binaries, one contract layer
 
@@ -228,7 +228,7 @@ The cursor moves from `.agents/skills/vibe/state.json` to
 
 ### spec root moves to `docs/spec/`
 
-Default `docs/spec/`, legacy `.spec/` still resolved. `vibe-spec migrate --to
+Default `docs/spec/`, legacy `docs/spec/` still resolved. `vibe-spec migrate --to
 docs/spec` rewrites this repo in one commit. spec also adopts **OpenSpec
 grammar** (`### Requirement: <ID>`, `#### Scenario:` GIVEN/WHEN/THEN,
 `## ADDED|MODIFIED|REMOVED Requirements`) inside vibe's own document model —
@@ -281,7 +281,7 @@ vibe/
 ├── .claude-plugin/marketplace.json
 ├── install.sh
 ├── .vibe/       # this repo's own config + blocks (+ run/, local/ ignored)
-├── docs/spec/   # this repo's memory (after migration; .spec/ until then)
+├── docs/spec/   # this repo's memory (after migration; docs/spec/ until then)
 └── .agents/skills/{spec,flow,instruct} → ../../<tool>/skills/<tool>  (compat)
 ```
 
@@ -300,7 +300,7 @@ foundations land: flow (F5→F10), instruct (F11→F15), spec (F16→F20).
 
 F1 (the spec path-resolution hotfix) is a same-week fix on the current bash
 tree, ahead of the phases above. Full sequence and evidence criteria:
-[`.spec/plan.md`](.spec/plan.md). The issue set — one tracking epic plus one
+[`docs/spec/plan.md`](docs/spec/plan.md). The issue set — one tracking epic plus one
 issue per feature — is authored under [`docs/roadmap/`](docs/roadmap/) and
 posts to GitHub with `bash docs/roadmap/create-issues.sh` once Issues are
 enabled on the repository.
@@ -312,12 +312,12 @@ enabled on the repository.
 | **Claude Code** | spec + flow today: both skills, `/flow`, per-turn inject, guard + gate hooks. instruct ⏳ planned. | Budgeted instruction injection beyond the flow's own hooks, until instruct ships. |
 | **OpenCode** | ⏳ planned — spec, flow, and instruct all ship an OpenCode plugin in v0.4. | Nothing today. |
 | **Other `AGENTS.md` readers** (Codex, etc.) | spec framework + committed instruction blocks; agents follow the written flow manually. | Hooks (no per-turn inject / guard / gate). |
-| **Bare git / any editor** | spec framework: `.spec/` docs, templates, `validate.sh`. | Flow automation, hooks, instruct. |
+| **Bare git / any editor** | spec framework: `docs/spec/` docs, templates, `validate.sh`. | Flow automation, hooks, instruct. |
 
 ## Documentation
 
 - [`spec/README.md`](spec/README.md) · [`flow/README.md`](flow/README.md) — each half, standalone.
-- [`.spec/product.md`](.spec/product.md) · [`.spec/tech.md`](.spec/tech.md) · [`.spec/plan.md`](.spec/plan.md) — the harness's own specs, a living worked example.
+- [`docs/spec/product.md`](docs/spec/product.md) · [`docs/spec/tech.md`](docs/spec/tech.md) · [`docs/spec/plan.md`](docs/spec/plan.md) — the harness's own specs, a living worked example.
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes.
 
 ## License

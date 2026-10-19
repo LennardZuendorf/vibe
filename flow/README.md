@@ -1,7 +1,7 @@
 # The vibe flow
 
 > **Roadmap:** this half becomes the standalone `vibe-flow` Rust binary and
-> plugin in v0.4 — see the root [README](../README.md) and [.spec/plan.md](../.spec/plan.md). Everything below describes what ships today.
+> plugin in v0.4 — see the root [README](../README.md) and [docs/spec/plan.md](../docs/spec/plan.md). Everything below describes what ships today.
 
 > **For humans.** This README is the standalone guide to the flow half of vibe kit.
 > Agents route through [SKILL.md](SKILL.md) — the `vibe` skill router — instead.
@@ -260,7 +260,7 @@ Neither restates the other, so the shipped text cannot drift from the enforcer.
 ```jsonc
 {
   "id": "lessons",
-  "match": ".spec/lessons.md",              // a literal path or a glob; an array is allowed
+  "match": "docs/spec/lessons.md",              // a literal path or a glob; an array is allowed
   "arms": [                                  // read top to bottom, first match wins
     { "states": ["feature.compound", "setup.apply", "strategy.spec", "quick.verify"],
       "verdict": "allow", "reason": "" },
@@ -273,8 +273,8 @@ Neither restates the other, so the shipped text cannot drift from the enforcer.
 Ask the policy anything, without a hook in the loop:
 
 ```bash
-node .agents/skills/vibe/engine/cli.mjs policy decide .spec/lessons.md          # verdict for the CURRENT cursor
-node .agents/skills/vibe/engine/cli.mjs policy decide .spec/product.md feature.impl  # …or for a named state
+node .agents/skills/vibe/engine/cli.mjs policy decide docs/spec/lessons.md          # verdict for the CURRENT cursor
+node .agents/skills/vibe/engine/cli.mjs policy decide docs/spec/product.md feature.impl  # …or for a named state
 node .agents/skills/vibe/engine/cli.mjs policy list                             # the loaded rules, one per line
 node .agents/skills/vibe/engine/cli.mjs policy render                           # the {{invariants}} prose
 ```
@@ -293,28 +293,28 @@ The shipped rules, in one sentence each:
 
 1. **`.agents/skills/vibe/state.json`** — blocked in every state; the cursor is
    written only by `set-state.sh`.
-2. **`.spec/lessons.md`** — blocked outside the flow-end states that carry the
+2. **`docs/spec/lessons.md`** — blocked outside the flow-end states that carry the
    conditional lesson step.
-3. **Root `.spec/{product,tech,design,plan}.md`** — blocked outside the states
+3. **Root `docs/spec/{product,tech,design,plan}.md`** — blocked outside the states
    that own the root specs.
-4. **`.spec/features/*`**, **`CLAUDE.md` / `AGENTS.md`**, **`src/*` + `tests/*`** —
+4. **`docs/spec/features/*`**, **`CLAUDE.md` / `AGENTS.md`**, **`src/*` + `tests/*`** —
    warn-only bands.
 
 The *authoritative* state lists are in the file, and `policy render` prints them;
 this README deliberately does not copy them.
 
 ```bash
-bash .agents/skills/vibe/scripts/detect-context.sh decide .spec/product.md
+bash .agents/skills/vibe/scripts/detect-context.sh decide docs/spec/product.md
 ```
 
 **What the teeth actually reach — three honest caveats:**
 
 1. **File tools only, plus a Bash warn.** The three hard blocks intercept
-   `Edit` / `Write` / `NotebookEdit`. A raw shell write (`echo >> .spec/lessons.md`,
+   `Edit` / `Write` / `NotebookEdit`. A raw shell write (`echo >> docs/spec/lessons.md`,
    `sed -i`, `tee`, `mv`/`cp`/`rm`) does **not** hit that path, so the guard also
    runs a warn-only Bash **sniffer**: it text-scans the command for a write-shaped
    op aimed at a guarded path and nudges. It never blocks (false positives are
-   certain), a pure read like `grep .spec/lessons.md` never warns, and a command
+   certain), a pure read like `grep docs/spec/lessons.md` never warns, and a command
    driving `set-state.sh` is never warned about `state.json`.
 2. **`set-state.sh` is a writer, not a gate.** It validates the target state
    *name* and writes the cursor; it does not enforce which edges are legal. Edge

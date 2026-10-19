@@ -31,10 +31,10 @@ F16
 - D36 — spec subagents are real platform agents
 
 ## Notes
-- Today's subagents exist as files but are registered nowhere (`.spec/tech.md:141` claims otherwise — false); this issue is what makes the claim true. Fix the code, then fix the comment.
+- Today's subagents exist as files but are registered nowhere (`docs/spec/tech.md:141` claims otherwise — false); this issue is what makes the claim true. Fix the code, then fix the comment.
 - A comment asserting a safety property becomes load-bearing — "binary missing → report and stop" per agent needs a fixture, not just prose.
 
-Phase: 3 · Tool: spec · Source: `.spec/plan.md` row F19
+Phase: 3 · Tool: spec · Source: `docs/spec/plan.md` row F19
 
 ## Amended 2026-10-13
 - Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.

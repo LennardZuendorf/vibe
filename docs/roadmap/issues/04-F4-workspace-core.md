@@ -31,7 +31,7 @@ F2
 ## Notes
 - A guard is only as strong as the capability it bans — the "no tool crate depends on another" rule must be a structural `cargo metadata` assertion, not a code-review convention.
 
-Phase: 0 · Tool: all · Source: `.spec/plan.md` row F4
+Phase: 0 · Tool: all · Source: `docs/spec/plan.md` row F4
 
 ## Amended 2026-10-13
 - Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.

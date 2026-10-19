@@ -1484,11 +1484,14 @@ test_skill_script_paths_relative
 # ── F1: spec scripts resolve the project root from cwd, never from their own path ──
 test_f1_subdir_invocation() {
   local out rc
-  out="$(cd "$REPO_ROOT/flow" && bash ../spec/scripts/validate.sh 2>&1)"; rc=$?
-  if [[ $rc -eq 0 ]] && ! grep -qF "No .spec/ directory found" <<<"$out"; then
-    pass F1 "validate.sh from flow/ resolves the repo .spec/"
+  # The legacy bash validator reads only `.spec/`; probe a fixture project, not this repo.
+  local fx; fx="$(mktemp -d)"; mkdir -p "$fx/.git" "$fx/.spec" "$fx/flow"
+  out="$(cd "$fx/flow" && bash "$REPO_ROOT/spec/scripts/validate.sh" 2>&1)"; rc=$?
+  rm -rf "$fx"
+  if grep -qF "Validating .spec/" <<<"$out" && ! grep -qF "No .spec/ directory found" <<<"$out"; then
+    pass F1 "validate.sh from flow/ resolves the project .spec/"
   else
-    fail F1 "validate.sh from flow/ resolves the repo .spec/ (rc=$rc)"
+    fail F1 "validate.sh from flow/ resolves the project .spec/ (rc=$rc)"
   fi
 }
 test_f1_subdir_invocation

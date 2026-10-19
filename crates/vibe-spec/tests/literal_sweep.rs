@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Path exemptions: `(prefix or exact path, reason)`. A trailing `/` is a prefix.
-const EXEMPT: [(&str, &str); 5] = [
+const EXEMPT: [(&str, &str); 6] = [
     (
         "oracles/",
         "frozen oracles of the bash and JS originals; never rewritten",
@@ -33,6 +33,10 @@ const EXEMPT: [(&str, &str); 5] = [
     (
         "flow/content/policy.json",
         "JSON holding the dual-root write rules (P4-R16)",
+    ),
+    (
+        "flow/reference/templates/AGENTS.md",
+        "ships the rendered dual-root write rules; a marker line would break unmerge",
     ),
     (
         "docs/superpowers/",

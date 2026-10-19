@@ -28,4 +28,4 @@ Rewrite the spec skill (`spec/SKILL.md`, `feature.md`, `strategy.md`, `reference
 - D45 — superpowers-first feature layer
 - D47 — router + tooth (prose half)
 
-Phase: 3 · Tool: spec · Source: `.spec/plan.md` row F25
+Phase: 3 · Tool: spec · Source: `docs/spec/plan.md` row F25

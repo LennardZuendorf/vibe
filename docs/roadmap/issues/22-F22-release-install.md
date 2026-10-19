@@ -32,7 +32,7 @@ F21
 ## Notes
 - A check that examines nothing must fail loudly — the uninstall test must assert the recorded-actions list is non-empty before trusting a clean restore; an installer that recorded nothing would "pass" a naive diff.
 
-Phase: 4 · Tool: all · Source: `.spec/plan.md` row F22
+Phase: 4 · Tool: all · Source: `docs/spec/plan.md` row F22
 
 ## Amended 2026-10-13
 - Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.

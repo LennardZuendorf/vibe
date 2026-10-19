@@ -8,13 +8,13 @@ States: `quick.triage → quick.fix → quick.verify → (quick.fix | idle)`.
 1. **Locate.** Read `.agents/skills/vibe/state.json`. Enter with
    `bash .agents/skills/vibe/scripts/set-state.sh quick.triage`.
 2. **Triage** (reason in full — triage is where a dropped edge case is
-   expensive). Read `.spec/lessons.md` first. **Branch by work type:**
+   expensive). Read `docs/spec/lessons.md` first. **Branch by work type:**
 
    **(a) Defect** (a bug with a root cause to find) — run the systematic-debugging
    contract, diagnose only:
 
    > **Delegate — superpowers:systematic-debugging**
-   > - announce: "delegating to `superpowers:systematic-debugging` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - announce: "delegating to `superpowers:systematic-debugging` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (docs/spec/.config.yaml) = standing decline
    > - inject: diagnose only — run its Phase 1–3, STOP before Phase 4 (the fix)
    > - redirect: findings stay in-turn (nothing written); the fix lands in the NEXT state (`quick.fix`)
    > - skip: its Phase 4 fix and any commit — `quick.fix` owns the change
@@ -31,9 +31,9 @@ States: `quick.triage → quick.fix → quick.verify → (quick.fix | idle)`.
    one reproducing test first, then the minimal fix:
 
    > **Delegate — superpowers:test-driven-development**
-   > - announce: "delegating to `superpowers:test-driven-development` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - announce: "delegating to `superpowers:test-driven-development` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (docs/spec/.config.yaml) = standing decline
    > - inject: one reproducing test first (RED), then the minimal fix
-   > - redirect: write `src/**` (+ optional `.spec/quick/<slug>.md` note); no root spec writes
+   > - redirect: write `src/**` (+ optional `docs/spec/quick/<slug>.md` note); no root spec writes
    > - skip: any branch-finishing or chain handoff — `quick.verify` is next
 
    The one-reproducing-test rule is scoped to bug-shaped changes (per TDD's own
@@ -48,7 +48,7 @@ States: `quick.triage → quick.fix → quick.verify → (quick.fix | idle)`.
    the fix works and breaks nothing.
 5. **Lesson (conditional)** (still in `quick.verify`, before going idle). Most
    quick fixes surface no durable lesson — default straight to `idle`. Only when a
-   keep-worthy lesson surfaced, append one tagged entry to `.spec/lessons.md`
+   keep-worthy lesson surfaced, append one tagged entry to `docs/spec/lessons.md`
    (canonical format), then `bash .agents/skills/vibe/scripts/regen-active-rules.sh`
    to refresh the digest. Receipt: `lesson +1 → <tag>`, `digest refreshed`. Then
    `bash .agents/skills/vibe/scripts/set-state.sh idle`.

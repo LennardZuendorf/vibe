@@ -32,7 +32,7 @@ F17
 - Porting a script destroys the oracle that proves the port — freeze `check-drift.sh`'s current behavior as an oracle before replacing it (companion to F16's oracle freeze).
 - Round-trip byte-identity is itself a differential test — treat it as the primary correctness signal for the delta engine, not a nice-to-have.
 
-Phase: 3 · Tool: spec · Source: `.spec/plan.md` row F18
+Phase: 3 · Tool: spec · Source: `docs/spec/plan.md` row F18
 
 ## Amended 2026-10-13
 - Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.

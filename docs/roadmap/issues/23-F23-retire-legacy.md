@@ -33,7 +33,7 @@ F15, F20, F22
 - Porting a script destroys the oracle that proves the port — the oracles in `oracles/js/` and `oracles/bash/` stay in tree permanently even after this deletion; do not delete them.
 - Nothing merges past this gate until parity is green — confirm `tests/parity/GREEN.hard` exists before running the deletion, not after.
 
-Phase: 4 · Tool: all · Source: `.spec/plan.md` row F23
+Phase: 4 · Tool: all · Source: `docs/spec/plan.md` row F23
 
 ## Amended 2026-10-13
 - Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.

@@ -32,7 +32,7 @@ F8, F14, F19
 ## Notes
 - Degrade gracefully — a missing binary must never crash a hook; this is the same discovery-tier requirement as F6, now proven for all three tools' shims, not just flow's.
 
-Phase: 4 · Tool: all · Source: `.spec/plan.md` row F21
+Phase: 4 · Tool: all · Source: `docs/spec/plan.md` row F21
 
 ## Amended 2026-10-13
 - Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.

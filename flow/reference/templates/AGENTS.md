@@ -5,15 +5,15 @@
      replaced on the next setup.apply / install. Content outside the markers
      (above this line, or inside vibe:active-rules) is user-owned. -->
 
-This project runs the **vibe flow** — a spec-first workflow harness. `.spec/` is the
+This project runs the **vibe flow** — a spec-first workflow harness. `docs/spec/` is the
 durable memory; sessions are ephemeral. Read the specs before you write code.
 
 ## Session start
 
-1. Read `.spec/lessons.md` and `.spec/plan.md`. (The spec half owns `.spec/`; a
+1. Read `docs/spec/lessons.md` and `docs/spec/plan.md`. (The spec half owns `docs/spec/`; a
    flow-only install has no tree — the flow still runs, the specs are just absent.)
 2. Identify the feature you are working on and load its specs:
-   `docs/superpowers/specs/*-<name>-design.md` + `docs/superpowers/plans/*-<name>.md`, or the fallback `.spec/features/<name>/{product,tech,plan}.md`.
+   `docs/superpowers/specs/*-<name>-design.md` + `docs/superpowers/plans/*-<name>.md`, or the fallback `docs/spec/features/<name>/{product,tech,plan}.md`.
 3. If `.agents/skills/vibe/state.json` exists and you are continuing a flow session,
    read `{flow, phase, feature}` and resume the linked `vibe` skill. A missing cursor
    means `idle` — proceed with the specs; a missing cursor is not an error.
@@ -33,7 +33,7 @@ durable memory; sessions are ephemeral. Read the specs before you write code.
 ## Working model
 
 ```
-ASK → read .spec/ → PLAN → CONFIRM → IMPL → verify → compound
+ASK → read docs/spec/ → PLAN → CONFIRM → IMPL → verify → compound
 ```
 
 Most transitions auto-advance. Two edges are **human gates** — stop and get explicit

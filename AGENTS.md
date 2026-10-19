@@ -1,4 +1,5 @@
 # AGENTS.md — vibe kit Engineering Guide
+<!-- vibe-spec: literal-file -->
 
 > This repository builds vibe kit itself. The sections below are this repo's own
 > dogfood guide (user-owned prose). The generic vibe-flow contract that ships to
@@ -14,11 +15,11 @@
 **Spec first. Always.**
 
 1. **ASK** — clarify requirements; no assumptions.
-2. **PLAN** — break down, read `.spec/`, present approach.
+2. **PLAN** — break down, read `docs/spec/`, present approach.
 3. **CONFIRM** — approval happens at the two human gates (plan→impl, verify→ship), not before every action.
 4. **EXECUTE** — implement step-by-step; verify before claiming done.
 
-- MUST read `.spec/` before writing code.
+- MUST read `docs/spec/` before writing code.
 - MUST NOT write code without an approved plan or spec.
 - MUST NOT invent filenames or state files the repo does not have (see **Dogfood status**).
 
@@ -32,7 +33,7 @@ Know what exists before you read or create files.
 
 | Path | Status |
 |---|---|
-| `.spec/` | **Live** — primary source of truth; read every session |
+| `docs/spec/` | **Live** — primary source of truth; read every session |
 | `.agents/skills/spec/` | **Live** — spec skill + `validate.sh` |
 | `AGENTS.md` / `CLAUDE.md` | **Live** — this guide; `CLAUDE.md` → `AGENTS.md` |
 | `.agents/skills/vibe/state-machine.json` | **Present** — static flow definition (data to edit when building flow) |
@@ -45,7 +46,7 @@ Know what exists before you read or create files.
 | **`flow.json`** | **Does not exist** — never expect, read, or create this file |
 | Per-turn inject / D12 orders-in-skills | **Live** — orders sourced from linked `vibe` skill via `orders.sh` |
 
-When in doubt, read [.spec/plan.md](.spec/plan.md) for spec-vs-repo gaps.
+When in doubt, read [docs/spec/plan.md](docs/spec/plan.md) for spec-vs-repo gaps.
 
 ## Task routing
 
@@ -53,22 +54,22 @@ Route by **intent**, not by flow cursor.
 
 | Intent | Load first | Write surface |
 |---|---|---|
-| Understand the project | `.spec/product.md`, `.spec/tech.md` | — |
-| Build a named feature | `.spec/features/<name>/` + root `plan.md` | per feature Scope |
-| Small bounded fix | relevant feature spec or `.spec/quick/<slug>.md` | minimal |
-| Spec / plan work | `.agents/skills/spec/SKILL.md` | `.spec/**` per write rules |
-| Build flow machinery | `.spec/tech.md` + `.agents/skills/vibe/` | `.agents/skills/vibe/`, `vibe` skill |
-| Build adapters / hooks | `.spec/tech.md` + `.claude/` | `.claude/`, `install.sh` |
+| Understand the project | `docs/spec/product.md`, `docs/spec/tech.md` | — |
+| Build a named feature | `docs/spec/features/<name>/` + root `plan.md` | per feature Scope |
+| Small bounded fix | relevant feature spec or `docs/spec/quick/<slug>.md` | minimal |
+| Spec / plan work | `.agents/skills/spec/SKILL.md` | `docs/spec/**` per write rules |
+| Build flow machinery | `docs/spec/tech.md` + `.agents/skills/vibe/` | `.agents/skills/vibe/`, `vibe` skill |
+| Build adapters / hooks | `docs/spec/tech.md` + `.claude/` | `.claude/`, `install.sh` |
 | Build AGENTS.md provisioning | `flow/reference/templates/AGENTS.md` | templates, merge scripts |
 | Set up or repair harness | `.agents/skills/vibe/SKILL.md` | `.agents/**`, managed blocks |
 
 `vibe` skill phases are **helpers** for their domains. Read the matching feature spec first;
-the skill does not override `.spec/`.
+the skill does not override `docs/spec/`.
 
 ## Target harness
 
 This is the **end-state** the repo is building. Reference the root
-[product.md](.spec/product.md) and [tech.md](.spec/tech.md) — not for ordinary feature work.
+[product.md](docs/spec/product.md) and [tech.md](docs/spec/tech.md) — not for ordinary feature work.
 
 - **Cursor:** `.agents/skills/vibe/state.json` — `{flow, phase, feature, updated}`; create from
   `state.example.json` only when testing transitions.
@@ -84,7 +85,7 @@ This is the **end-state** the repo is building. Reference the root
 ## Repo layout
 
 ```text
-.spec/                 # durable memory (product/tech/design/plan/lessons + features/)
+docs/spec/                 # durable memory (product/tech/design/plan/lessons + features/)
 .agents/skills/spec/   # bundled spec framework
 .agents/skills/vibe/   # workflow skill: router, phase files, state machine, scripts
 AGENTS.md              # this file (canonical)
@@ -103,7 +104,7 @@ CLAUDE.md              # symlink → AGENTS.md
 ## Boundaries
 
 **Always**
-- Read `.spec/` before code.
+- Read `docs/spec/` before code.
 - Run `validate.sh` before claiming work is done.
 - Cite plan unit IDs in tests and commits during impl.
 - Respect feature **Scope** tables — do not implement another feature's units.
@@ -134,8 +135,8 @@ docs(agents): rewrite instruction set
 
 ## Spec layout
 
-Root: `.spec/{product,tech,design,plan,lessons}.md`.
-Features: `.spec/features/<feature>/{product,tech}.md` required; `design.md`,
+Root: `docs/spec/{product,tech,design,plan,lessons}.md`.
+Features: `docs/spec/features/<feature>/{product,tech}.md` required; `design.md`,
 `plan.md`, `research.md` optional.
 
 <!-- vibe:instructions:start -->
@@ -143,15 +144,15 @@ Features: `.spec/features/<feature>/{product,tech}.md` required; `design.md`,
      replaced on the next setup.apply / install. Content outside the markers
      (above this line, or inside vibe:active-rules) is user-owned. -->
 
-This project runs the **vibe flow** — a spec-first workflow harness. `.spec/` is the
+This project runs the **vibe flow** — a spec-first workflow harness. `docs/spec/` is the
 durable memory; sessions are ephemeral. Read the specs before you write code.
 
 ## Session start
 
-1. Read `.spec/lessons.md` and `.spec/plan.md`. (The spec half owns `.spec/`; a
+1. Read `docs/spec/lessons.md` and `docs/spec/plan.md`. (The spec half owns `docs/spec/`; a
    flow-only install has no tree — the flow still runs, the specs are just absent.)
 2. Identify the feature you are working on and load its specs:
-   `docs/superpowers/specs/*-<name>-design.md` + `docs/superpowers/plans/*-<name>.md`, or the fallback `.spec/features/<name>/{product,tech,plan}.md`.
+   `docs/superpowers/specs/*-<name>-design.md` + `docs/superpowers/plans/*-<name>.md`, or the fallback `docs/spec/features/<name>/{product,tech,plan}.md`.
 3. If `.agents/skills/vibe/state.json` exists and you are continuing a flow session,
    read `{flow, phase, feature}` and resume the linked `vibe` skill. A missing cursor
    means `idle` — proceed with the specs; a missing cursor is not an error.
@@ -171,7 +172,7 @@ durable memory; sessions are ephemeral. Read the specs before you write code.
 ## Working model
 
 ```
-ASK → read .spec/ → PLAN → CONFIRM → IMPL → verify → compound
+ASK → read docs/spec/ → PLAN → CONFIRM → IMPL → verify → compound
 ```
 
 Most transitions auto-advance. Two edges are **human gates** — stop and get explicit

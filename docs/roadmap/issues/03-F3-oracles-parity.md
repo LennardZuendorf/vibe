@@ -33,7 +33,7 @@ Freeze today's implementation as permanent oracles before any Rust line is writt
 - A check that examines nothing must fail loudly — corpus floors must be asserted, not just "no diffs found."
 - Bugs found in the JS oracle during parity become pinned `expected-divergence` cases fixed only in Rust, never by editing the oracle.
 
-Phase: 0 · Tool: all · Source: `.spec/plan.md` row F3
+Phase: 0 · Tool: all · Source: `docs/spec/plan.md` row F3
 
 ## Amended 2026-10-13
 - Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.

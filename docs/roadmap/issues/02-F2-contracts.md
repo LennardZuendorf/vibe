@@ -32,7 +32,7 @@ parent: epic
 ## Notes
 - A guard is only as strong as the capability it bans, not the spelling it matches — schemas must state the invariant (e.g. "additive within a major, unknown fields ignored") structurally, not just as prose committed once.
 
-Phase: 0 · Tool: spec · Source: `.spec/plan.md` row F2
+Phase: 0 · Tool: spec · Source: `docs/spec/plan.md` row F2
 
 ## Amended 2026-10-13
 - Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.

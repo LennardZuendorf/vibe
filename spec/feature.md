@@ -4,9 +4,9 @@ Fallback feature flow. Run this only when the spec skill's Routing table sends y
 
 The fallback applies only when superpowers is not installed, the user says *self*, `.vibe/spec.json` sets `"featureLayer": "vibe"`, or OpenSpec interchange is required. The default feature layer is `superpowers:brainstorming` then `superpowers:writing-plans` (see [SKILL.md](SKILL.md) § Routing).
 
-Give each **named** unit of work `.spec/features/<name>/`. These specs are **branch-scoped**. Create them in DESIGN. Read them in IMPL. Wrap them up in COMPOUND: promote cross-cutting decisions, then move the folder to `archive/<name>/`. Prompt the user to delete the archive once validation passes. The archive is gone **before the branch merges**. Never read `archive/` for active work — **CODE IS TRUTH**. Keep global, long-living rules in root files: [strategy.md](strategy.md). Compound order: [SKILL.md](SKILL.md) § Layers (Rule 6).
+Give each **named** unit of work `docs/spec/features/<name>/`. These specs are **branch-scoped**. Create them in DESIGN. Read them in IMPL. Wrap them up in COMPOUND: promote cross-cutting decisions, then move the folder to `archive/<name>/`. Prompt the user to delete the archive once validation passes. The archive is gone **before the branch merges**. Never read `archive/` for active work — **CODE IS TRUTH**. Keep global, long-living rules in root files: [strategy.md](strategy.md). Compound order: [SKILL.md](SKILL.md) § Layers (Rule 6).
 
-> **Config note:** If `.spec/.config.yaml` sets `suggest-superpowers: false`, skip the "Superpower tip" callout in this file (optional executors only). Run that step yourself. See [SKILL.md § Config](SKILL.md#config) for the full config reference.
+> **Config note:** If `docs/spec/.config.yaml` sets `suggest-superpowers: false`, skip the "Superpower tip" callout in this file (optional executors only). Run that step yourself. See [SKILL.md § Config](SKILL.md#config) for the full config reference.
 
 ## Feature authoring flow
 
@@ -14,7 +14,7 @@ Run steps 1–5 for every named feature. Step 6 is the escape hatch.
 
 ### 1. Locate & name
 
-Confirm the feature name with the user. Read root `.spec/product.md`, `.spec/tech.md`, and `.spec/lessons.md` before writing anything. Create `.spec/features/<name>/` when the name is settled.
+Confirm the feature name with the user. Read root `docs/spec/product.md`, `docs/spec/tech.md`, and `docs/spec/lessons.md` before writing anything. Create `docs/spec/features/<name>/` when the name is settled.
 
 ### 2. Interview for WHAT
 
@@ -54,9 +54,9 @@ Write `plan.md` with stable `feature/n` unit IDs (`### <name>/1`, `### <name>/2`
 
 - Each unit cites requirement IDs from `product.md`
 - Each unit names test scenarios and verification evidence (command, test path, behaviour check)
-- Same-feature dependencies only — cross-feature order is a whole-feature gate in root `.spec/plan.md` Feature Sequence
+- Same-feature dependencies only — cross-feature order is a whole-feature gate in root `docs/spec/plan.md` Feature Sequence
 - The root Feature Sequence row is added at **COMPOUND** (the promote step), not
-  here: root `.spec/plan.md` is write-blocked during `feature.plan` under the
+  here: root `docs/spec/plan.md` is write-blocked during `feature.plan` under the
   flow's write invariants. Treat it as a compound-step obligation (see § Merged
   during COMPOUND below).
 
@@ -99,7 +99,7 @@ evidence summary, and a draft lesson entry (pattern, rule, tags) for the human t
 
 Feature folders are ephemeral. Write them at design, consume them at impl, delete them
 before the branch merges. This repo keeps none. The filled-in root
-docs under [`.spec/`](../.spec) (product / tech / design / plan / lessons) are
+docs under [`docs/spec/`](../docs/spec) (product / tech / design / plan / lessons) are
 the standing worked example.
 
 - [`spec/`](SKILL.md) — spec framework (units `spec/n`, delivered — wrapped up; no feature folder)
@@ -143,9 +143,9 @@ Created  →  Consumed  →  Merged  →  Archived  →  Deleted (before merge)
 4. **Verified against plan.** Evidence checked per unit verification table — not agent assertions alone.
 5. **Merged during COMPOUND.** Cross-cutting blocks from `features/<name>/tech.md` promote into root `tech.md` (or branch docs). Feature-only detail does not promote.
 
-   > **Compound note:** The spec skill owns the compound sequence ([SKILL.md § Layers](SKILL.md), Rule 6): promote `<!-- merge -->` blocks → add the root `.spec/plan.md` Feature Sequence row (if absent) and mark it DONE → record a tagged lesson ([strategy.md § Lessons](strategy.md) format) → move the folder to `archive/<name>/` → run `validate.sh` → prompt the user to delete the archive. The archive move is the flow's own work. `superpowers:finishing-a-development-branch` handles only the git close-out (branch merge/lifecycle) after the spec work is done. Never hand it the full compound procedure. It does not know the spec format.
+   > **Compound note:** The spec skill owns the compound sequence ([SKILL.md § Layers](SKILL.md), Rule 6): promote `<!-- merge -->` blocks → add the root `docs/spec/plan.md` Feature Sequence row (if absent) and mark it DONE → record a tagged lesson ([strategy.md § Lessons](strategy.md) format) → move the folder to `archive/<name>/` → run `validate.sh` → prompt the user to delete the archive. The archive move is the flow's own work. `superpowers:finishing-a-development-branch` handles only the git close-out (branch merge/lifecycle) after the spec work is done. Never hand it the full compound procedure. It does not know the spec format.
 
-6. **Archived then deleted.** At wrapup, move `.spec/features/<name>/` to `archive/<name>/` as a transient safety net. After validation passes, prompt the user to delete the archive. The folder is gone **before the branch merges**. Never read `archive/` for active work (CODE IS TRUTH). See § Archive and delete.
+6. **Archived then deleted.** At wrapup, move `docs/spec/features/<name>/` to `archive/<name>/` as a transient safety net. After validation passes, prompt the user to delete the archive. The folder is gone **before the branch merges**. Never read `archive/` for active work (CODE IS TRUTH). See § Archive and delete.
 
 Without a `/code:feature` workflow, use the same lifecycle: create the folder when scoping, remove it when done.
 
@@ -176,7 +176,7 @@ If everything you wrote applies to **every** future feature, that content belong
 
 ## Archive and delete
 
-After promote, move `.spec/features/<name>/` to `archive/<name>/`. The archive is a **transient safety net** for a CI failure right after wrapup. It is **never** a store for active work. Never read `archive/` while building — **CODE IS TRUTH**.
+After promote, move `docs/spec/features/<name>/` to `archive/<name>/`. The archive is a **transient safety net** for a CI failure right after wrapup. It is **never** a store for active work. Never read `archive/` while building — **CODE IS TRUTH**.
 
 Once validation passes, **prompt the user to delete the archive**. The folder is gone **before the branch merges**. Keep an archive past the branch only with a stated reason (rejected alternatives, plan archaeology worth standalone history). Otherwise delete it.
 

@@ -356,7 +356,7 @@ assert_eq "flow-mvp/5" "every machine delegate appears verbatim in its phase fil
 # now lives inline in quick.verify, not a separate per-phase compound state): it appends
 # to .spec/lessons.md and refreshes the digest before going idle.
 quick_body="$(cat "$FLOW/quick.md")"
-assert_contains "simplify/dead-states" "quick.md carries the inline lesson step (lessons.md)" "$quick_body" ".spec/lessons.md"
+assert_contains "simplify/dead-states" "quick.md carries the inline lesson step (lessons.md)" "$quick_body" "docs/spec/lessons.md"
 assert_contains "simplify/dead-states" "quick.md refreshes the digest inline" "$quick_body" "regen-active-rules.sh"
 assert_not_contains "simplify/dead-states" "quick.md no longer names the dead quick compound state" "$quick_body" "$dead_qc"
 
@@ -462,7 +462,7 @@ assert_contains "flow-legibility/3" "SKILL.md carries the subagent model-tier po
 feat_body="$(cat "$FLOW/feature.md")"
 assert_not_contains "spec-v04/F25" "feature.md no longer skips the superpowers spec write" "$feat_body" "skip: its terminal write under \`docs/superpowers/specs/\`"
 assert_not_contains "spec-v04/F25" "feature.md no longer skips the superpowers plan path" "$feat_body" "skip: its own \`docs/superpowers/plans/\` path"
-assert_contains "spec-v04/F25" "feature.md names the fallback triggers" "$feat_body" "fallback → \`.spec/features/<name>/\` only when"
+assert_contains "spec-v04/F25" "feature.md names the fallback triggers" "$feat_body" "fallback → \`docs/spec/features/<name>/\` only when"
 machine="$(cat "$FLOW/state-machine.json")"
 assert_contains "spec-v04/F25" "feature.design writes the superpowers spec" "$machine" "docs/superpowers/specs/*-<feature>-design.md"
 assert_contains "spec-v04/F25" "feature.plan writes the superpowers plan" "$machine" "docs/superpowers/plans/*-<feature>.md"
@@ -491,7 +491,7 @@ rm -f "$STATE"
 doc="$(bash "$SCRIPTS/doctrine.sh")"
 assert_contains "flow-legibility/4" "doctrine names the two human gates" "$doc" "plan → impl, and verify → ship"
 assert_contains "flow-legibility/4" "doctrine carries the durable/ephemeral framing" "$doc" "sessions are ephemeral"
-assert_contains "flow-legibility/4" "doctrine states the session-start reads" "$doc" ".spec/lessons.md"
+assert_contains "flow-legibility/4" "doctrine states the session-start reads" "$doc" "docs/spec/lessons.md"
 assert_contains "flow-legibility/4" "doctrine states the state.json write invariant" "$doc" ".agents/skills/vibe/state.json"
 # inject-triggers/5 (R4): NO live state rides SessionStart output — Claude Code
 # replays that output verbatim on --resume, so a cursor line printed here is
