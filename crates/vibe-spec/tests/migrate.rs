@@ -1603,3 +1603,30 @@ fn init_beside_a_legacy_root_then_migrate_is_refused() {
     let msg = "migrate: ERROR: both docs/spec and @ exist; merge by hand";
     refused(&p, &["migrate", "--to", "docs/spec"], msg);
 }
+
+#[test]
+fn a_layered_run_leaves_an_excluded_root_note_untouched() {
+    let p = corpus("migrate-layered-exclude");
+    let lessons = "---\ntype: lessons\nupdated: 2026-01-01\n---\n\n# Lessons\n\nOld habit: read @/tech.md first. [t](tech.md)\n";
+    put(&p, "@/lessons.md", lessons);
+    put(
+        &p,
+        ".vibe/spec.json",
+        "{\"migrate\": {\"exclude\": [\"@/lessons.md\"]}}\n",
+    );
+    commit_all(&p);
+    let out = migrate(&p, &["--layout", "layered"]);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    // The note moved with the root; its literal and link lines are byte-identical.
+    let got = read(&p, "docs/spec/lessons.md");
+    let keep = |text: &str| -> Vec<String> {
+        text.lines()
+            .filter(|l| l.contains(".spec") || l.contains("]("))
+            .map(str::to_string)
+            .collect()
+    };
+    assert_eq!(keep(&got), keep(&d(lessons)));
+    assert_eq!(keep(&got).len(), 1, "{got}");
+    // The rest of the tree was still rewritten.
+    assert!(!read(&p, "docs/spec/tech.md").contains(".spec"));
+}

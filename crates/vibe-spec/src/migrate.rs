@@ -765,20 +765,32 @@ fn text_of(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
+/// How `process` treats a file.
+#[derive(Clone, Copy)]
+struct Mode {
+    layered: bool,
+    /// Structural edits only: no literal or link rewrites (an excluded note).
+    structural: bool,
+}
+
 /// Scans one file: literal and link rewrites, then the layered edits.
 fn process(
     ctx: &Ctx,
     project: &Path,
     rel: &str,
     text: &[u8],
-    layered: bool,
+    mode: Mode,
     state: &mut State,
 ) -> Result<(), String> {
+    let Mode {
+        layered,
+        structural,
+    } = mode;
     let mover = ctx.mover;
     let new_path = mover.map(rel);
     let inside = mover.inside(rel);
-    let links = inside.is_some() && rel.ends_with(".md");
-    let exempt = literal::file_exempt(text);
+    let links = inside.is_some() && rel.ends_with(".md") && !structural;
+    let exempt = structural || literal::file_exempt(text);
     let orig: Vec<&[u8]> = text.split(|b| *b == b'\n').collect();
     let mut fences = Fences::new();
     let mut fixed: Vec<Vec<u8>> = Vec::with_capacity(orig.len());
@@ -820,7 +832,7 @@ fn process(
                 let mut body: Vec<String> = Vec::new();
                 for (k, line) in orig.iter().enumerate().take(d.end).skip(d.start) {
                     let hits = if exempt { 0 } else { literal::find(line).len() };
-                    let out = transform(ctx, line, true, hits > 0, (rel, &path), k + 1)?;
+                    let out = transform(ctx, line, !structural, hits > 0, (rel, &path), k + 1)?;
                     body.push(text_of(&out));
                 }
                 let cr = orig.get(d.end - 1).is_some_and(|l| l.ends_with(b"\r"));
@@ -924,6 +936,9 @@ pub fn plan(project: &Path, root: &Root, to: &str, layered: bool) -> Result<Plan
     let mut files: BTreeSet<String> = collect(project, &include, &cfg.exclude)?
         .into_iter()
         .collect();
+    // Notes the globs leave out: the layered mechanics read them, but their
+    // content is not rewritten (the exclude list is the user's word).
+    let mut structural: BTreeSet<String> = BTreeSet::new();
     if layered {
         // The layered mechanics read the root's top-level notes whatever the globs say.
         for e in fs::read_dir(project.join(&from)).map_err(|e| format!("{from}: {e}"))? {
@@ -932,7 +947,10 @@ pub fn plan(project: &Path, root: &Root, to: &str, layered: bool) -> Result<Plan
                 && name.ends_with(".md")
                 && e.file_type().is_ok_and(|t| t.is_file())
             {
-                files.insert(format!("{from}/{name}"));
+                let rel = format!("{from}/{name}");
+                if files.insert(rel.clone()) {
+                    structural.insert(rel);
+                }
             }
         }
     }
@@ -955,7 +973,17 @@ pub fn plan(project: &Path, root: &Root, to: &str, layered: bool) -> Result<Plan
             continue;
         }
         scanned += 1;
-        process(&ctx, project, rel, &bytes, layered, &mut state)?;
+        process(
+            &ctx,
+            project,
+            rel,
+            &bytes,
+            Mode {
+                layered,
+                structural: structural.contains(rel),
+            },
+            &mut state,
+        )?;
     }
     if scanned < cfg.floor {
         return Err(format!("scanned {scanned} file(s), floor {}", cfg.floor));
