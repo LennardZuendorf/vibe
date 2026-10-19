@@ -228,8 +228,8 @@ The cursor moves from `.agents/skills/vibe/state.json` to
 
 ### spec root moves to `docs/spec/`
 
-Default `docs/spec/`, legacy `.spec/` still resolved. `vibe-spec migrate --to <!-- literal -->
-docs/spec` rewrites this repo in one commit. spec also adopts **OpenSpec
+Default `docs/spec/`, legacy `.spec/` still resolved. `vibe-spec migrate --to docs/spec` <!-- literal -->
+rewrites this repo in one commit. spec also adopts **OpenSpec
 grammar** (`### Requirement: <ID>`, `#### Scenario:` GIVEN/WHEN/THEN,
 `## ADDED|MODIFIED|REMOVED Requirements`) inside vibe's own document model —
 grammar-compatible, not layout-adoption — plus `vibe-spec export|import --openspec <dir>` (dev build only; not yet wired into skills or CI scripts).

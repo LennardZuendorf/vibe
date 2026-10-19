@@ -37,7 +37,7 @@ the product is an agent workflow rather than a visual interface.
 ## Interaction Conventions
 
 - Use `vibe-flow`, `vibe-spec`, and `vibe-instruct` for their recurring workflows; each is a complete CLI (and, for `flow`, a TUI) on its own — or the `vibe` front door (`vibe spec|flow|instruct …`, v0.5) when all are installed.
-- Use `.vibe/run/` for runtime state (cursor, ledger, payloads) and the spec root (`docs/spec/`, or `.spec/` today) for durable memory. <!-- literal -->
+- Use `.vibe/run/` for runtime state (cursor, ledger, payloads) and the spec root (`docs/spec/`; legacy `.spec/` still resolves) for durable memory. <!-- literal -->
 - In agent-facing prompts, phrase constraints as positive targets first: "write only these paths" before "do not write elsewhere."
 - End each phase with a concise receipt: changed files, verification evidence, and next legal transition.
 
@@ -50,7 +50,7 @@ the product is an agent workflow rather than a visual interface.
 | `AGENTS.md` / `CLAUDE.md` (per-owner managed blocks) | How should this runtime behave in this repo, by whose rule? |
 | `.vibe/*.json` (`spec.json`, `flow.json`, `instruct.json`) | How is each tool configured in this repo? |
 | `.vibe/run/` (cursor, ledger, payloads) | What phase are we in, and what just happened? |
-| `docs/spec/**` (or `.spec/**` today) | What are we building, why, how, and what remains? | <!-- literal -->
+| `docs/spec/**` | What are we building, why, how, and what remains? |
 | The three skills (`spec`, `flow`, `instruct`) | What should the agent do right now, for which tool? |
 | The `flow` TUI | What are the live cursor, legal next states, and recent history, at a glance? |
 | `vibe worktree` (v0.5) | Where does this feature run, and what state is its isolated workspace in? |

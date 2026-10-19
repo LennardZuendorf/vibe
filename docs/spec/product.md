@@ -101,7 +101,7 @@ style rather than a broad marketplace audience.
 
 | Piece | What It Owns | Lives In |
 |---|---|---|
-| `spec` | The spec tree (`docs/spec/`, or `.spec/` today), templates, validators, OpenSpec interchange, two subagents | `spec/` | <!-- literal -->
+| `spec` | The spec tree (`docs/spec/`; legacy `.spec/` still resolves), templates, validators, OpenSpec interchange, two subagents | `spec/` | <!-- literal -->
 | `flow` | State machine, cursor, guard/stop hooks, ledger, advisory signals, the TUI | `flow/` |
 | `instruct` | Instruction tiers, blocks, channels, budgets, providers, sync | `instruct/` |
 | `contracts` | Versioned schemas + golden fixtures every tool's CI runs against | `contracts/` |
