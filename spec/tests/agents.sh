@@ -33,6 +33,11 @@ check_agent() { # name model rule-line
 check_agent spec-promoter sonnet 'Write only under the directory printed by `vibe-spec root`.'
 check_agent spec-health haiku 'Read-only: never write files.'
 
+# shellcheck disable=SC2016 # literal backticks
+ok agents/spec-promoter "bare apply command on its own line" \
+  grep -qE '^ *`vibe-spec promote <feature>`$' "$AGENTS/spec-promoter.md"
+ok agents/spec-promoter "tools include Write" grep -qE '^tools: .*Write' "$AGENTS/spec-promoter.md"
+
 ok agents "no old SKILL.md-format agent dirs" test -z "$(find "$AGENTS" -mindepth 1 -type d)"
 
 hits="$(grep -rIl -e spec-interviewer -e spec-tracer "$ROOT/spec" "$ROOT/.claude" "$ROOT/plugin" "$ROOT/flow" 2>/dev/null \
