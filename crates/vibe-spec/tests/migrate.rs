@@ -1525,3 +1525,81 @@ fn pre_existing_validate_errors_are_noted_not_fatal() {
     common::assert_spec_json("migrate", &out.text());
     assert_eq!(json(&out)["pre_existing_errors"], 2);
 }
+
+/// A refused run exits 1 with `msg` on stderr and leaves the tree as it was.
+fn refused(p: &Path, args: &[&str], msg: &str) {
+    let before = snapshot(p);
+    let out = spec(p, args, &[]);
+    assert_eq!(out.code, 1, "{args:?}: {}\n{}", out.text(), out.stderr);
+    assert!(out.stdout.is_empty(), "{args:?}: {}", out.text());
+    assert!(
+        out.stderr.lines().any(|l| l == d(msg)),
+        "{args:?}: {}",
+        out.stderr
+    );
+    assert_eq!(snapshot(p), before, "{args:?}");
+}
+
+#[test]
+fn a_move_from_a_foreign_root_is_refused() {
+    // config `root: specs`
+    let p = repo("migrate-foreign-config");
+    put(&p, ".vibe/spec.json", "{\"root\": \"specs\"}\n");
+    put(
+        &p,
+        "specs/product.md",
+        "---\ntype: entrypoint\n---\n\n# P\n",
+    );
+    put(&p, "README.md", "see @/x.md\n");
+    let msg = "migrate: ERROR: source root specs is not @; move it by hand";
+    refused(&p, &["migrate", "--to", "docs/spec"], msg);
+    // a nested sub/.spec
+    let p = repo("migrate-foreign-nested");
+    put(
+        &p,
+        "sub/@/product.md",
+        "---\ntype: entrypoint\n---\n\n# P\n",
+    );
+    put(&p, "README.md", "see @/x.md\n");
+    let msg = "migrate: ERROR: source root sub/@ is not @; move it by hand";
+    refused(
+        &p,
+        &["--root", "sub/.spec", "migrate", "--to", "docs/spec"],
+        msg,
+    );
+    // --root
+    let p = repo("migrate-foreign-flag");
+    put(
+        &p,
+        "other/product.md",
+        "---\ntype: entrypoint\n---\n\n# P\n",
+    );
+    put(&p, "README.md", "see @/x.md\n");
+    let msg = "migrate: ERROR: source root other is not @; move it by hand";
+    refused(
+        &p,
+        &["--root", "other", "migrate", "--to", "docs/spec"],
+        msg,
+    );
+}
+
+#[test]
+fn both_roots_present_without_a_move_is_refused() {
+    let p = repo("migrate-both-roots");
+    put(&p, "docs/spec/product.md", "---\ntype: hub\n---\n\n# P\n");
+    put(&p, "@/old.md", "---\ntype: entrypoint\n---\n\n# Old\n");
+    put(&p, "README.md", "see @/old.md\n");
+    let msg = "migrate: ERROR: both docs/spec and @ exist; merge by hand";
+    refused(&p, &["migrate", "--to", "docs/spec"], msg);
+}
+
+#[test]
+fn init_beside_a_legacy_root_then_migrate_is_refused() {
+    let p = repo("migrate-init-both");
+    put(&p, "@/product.md", "---\ntype: entrypoint\n---\n\n# P\n");
+    put(&p, "README.md", "see @/product.md\n");
+    let out = spec(&p, &["init", "--to", "docs/spec"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let msg = "migrate: ERROR: both docs/spec and @ exist; merge by hand";
+    refused(&p, &["migrate", "--to", "docs/spec"], msg);
+}

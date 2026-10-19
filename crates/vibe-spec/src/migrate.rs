@@ -1136,6 +1136,20 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         Ok(from) => from,
         Err(why) => return fail(why),
     };
+    if from != to {
+        // A move rewrites the legacy literal, so it only suits the legacy root.
+        if from != literal::LEGACY {
+            return fail(format!(
+                "source root {from} is not {}; move it by hand",
+                literal::LEGACY
+            ));
+        }
+    } else if fs::symlink_metadata(root.project.join(literal::LEGACY)).is_ok_and(|m| m.is_dir()) {
+        return fail(format!(
+            "both {to} and {} exist; merge by hand",
+            literal::LEGACY
+        ));
+    }
     let plan = match plan(&root.project, root, &to, opts.layered && !opts.check) {
         Ok(plan) => plan,
         Err(why) => return fail(why),
