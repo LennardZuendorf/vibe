@@ -48,8 +48,7 @@ test_missing_binary() {
 test_pass_through() {
   local out rc
   out="$(payload main-write.json | VIBE_SPEC_BIN="$BIN" CLAUDE_PROJECT_DIR="$PROJ" bash "$SHIM" guard 2>&1 >/dev/null)"; rc=$?
-  check HOOK-BLOCK "unskilled write exits 2" "2" "$rc"
-  if [[ -n "$out" ]]; then pass HOOK-BLOCK "block line printed"; else fail HOOK-BLOCK "block line printed"; fi
+  check HOOK-BLOCK "unskilled write exits 2 with the block line" "2|blocked: invoke Skill(spec) before editing docs/spec/a.md" "$rc|$out"
 }
 
 test_crash() {
@@ -58,6 +57,14 @@ test_crash() {
   printf '#!/usr/bin/env bash\nexit 5\n' > "$crash"; chmod +x "$crash"
   out="$(payload main-write.json | VIBE_SPEC_BIN="$crash" CLAUDE_PROJECT_DIR="$PROJ" bash "$SHIM" guard 2>&1 >/dev/null)"; rc=$?
   check HOOK-CRASH "crash allows with message" "0|vibe-spec: hook guard failed (exit 5) — allowing" "$rc|$out"
+}
+
+test_nonexistent_binary() {
+  local out rc
+  out="$(payload main-write.json | VIBE_SPEC_BIN="$SCRATCH/nope" CLAUDE_PROJECT_DIR="$PROJ" bash "$SHIM" guard 2>&1 >/dev/null)"; rc=$?
+  check HOOK-NOBIN "nonexistent VIBE_SPEC_BIN exits 0" "0" "$rc"
+  if [[ "$out" == *"vibe-spec: hook guard failed (exit 127) — allowing"* ]]; then
+    pass HOOK-NOBIN "stderr names exit 127"; else fail HOOK-NOBIN "stderr names exit 127"; echo "        actual: $out"; fi
 }
 
 test_generated_hooks() {
@@ -81,6 +88,7 @@ test_drift() {
 test_missing_binary
 test_pass_through
 test_crash
+test_nonexistent_binary
 test_generated_hooks
 test_drift
 

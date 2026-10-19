@@ -27,7 +27,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/spec/hooks/run-hook.sh\" guard"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/spec/hooks/run-hook.sh\" guard",
+            "timeout": 10
           }
         ]
       }
@@ -46,7 +47,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/spec/hooks/run-hook.sh\" validate"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/spec/hooks/run-hook.sh\" validate",
+            "timeout": 10
           }
         ]
       }
@@ -66,7 +68,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/spec/hooks/run-hook.sh\" session-start"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/spec/hooks/run-hook.sh\" session-start",
+            "timeout": 10
           }
         ]
       }
@@ -77,7 +80,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/spec/hooks/run-hook.sh\" validate"
+            "command": "bash \"$CLAUDE_PROJECT_DIR/spec/hooks/run-hook.sh\" validate",
+            "timeout": 10
           }
         ]
       }
