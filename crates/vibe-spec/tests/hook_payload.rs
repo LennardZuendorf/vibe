@@ -3,6 +3,34 @@
 
 #[path = "../src/hook.rs"]
 mod hook;
+/// `hook.rs` names `crate::root` for its guard, which this file never runs.
+mod root {
+    use std::path::{Path, PathBuf};
+
+    pub struct Root {
+        pub dir: PathBuf,
+        pub project: PathBuf,
+    }
+    pub enum Miss {
+        NotFound,
+        Other,
+    }
+    impl Miss {
+        pub fn message(&self) -> String {
+            unimplemented!()
+        }
+    }
+    pub enum Tooth {
+        Block,
+        Warn,
+    }
+    pub fn discover(_: &Path, _: Option<&Path>, _: Option<&std::ffi::OsStr>) -> Result<Root, Miss> {
+        unimplemented!()
+    }
+    pub fn tooth(_: &Path) -> Result<Tooth, String> {
+        unimplemented!()
+    }
+}
 #[path = "../src/text.rs"]
 mod text;
 #[path = "../src/transcript.rs"]

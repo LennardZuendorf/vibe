@@ -68,9 +68,10 @@ fn scan(path: &Path, names: &[&str]) -> std::io::Result<bool> {
 fn matches(skill: &str, names: &[&str]) -> bool {
     names.iter().any(|n| {
         skill == *n
-            || skill
-                .strip_suffix(n)
-                .is_some_and(|head| head.ends_with(':') && head.len() > 1)
+            || (!n.contains(':')
+                && skill
+                    .strip_suffix(n)
+                    .is_some_and(|head| head.ends_with(':') && head.len() > 1))
     })
 }
 

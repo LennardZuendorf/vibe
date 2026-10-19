@@ -25,7 +25,6 @@ mod delta;
 mod drift;
 mod frontmatter;
 mod git;
-#[allow(dead_code)] // wired by the guard in Task 2
 mod hook;
 mod layered;
 mod lessons;
@@ -40,7 +39,6 @@ mod scan_merges;
 mod superpowers;
 mod text;
 mod trace;
-#[allow(dead_code)] // wired by the guard in Task 2
 mod transcript;
 mod validate;
 
@@ -160,6 +158,24 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Hook entry points; each reads the hook payload on stdin.
+    Hook {
+        /// The hook event.
+        #[arg(value_enum)]
+        event: HookEvent,
+    },
+}
+
+/// A hook event handled by `vibe-spec hook`.
+#[derive(Clone, Copy, clap::ValueEnum)]
+#[value(rename_all = "kebab-case")]
+enum HookEvent {
+    /// Prints the using-spec router.
+    SessionStart,
+    /// The PreToolUse tooth.
+    Guard,
+    /// Post-edit and stop validation.
+    Validate,
 }
 
 fn main() -> ExitCode {
@@ -173,6 +189,20 @@ fn main() -> ExitCode {
     };
     if std::env::var_os("SPEC_DIR").is_some() {
         eprintln!("vibe-spec: SPEC_DIR is ignored; set VIBE_SPEC_ROOT instead");
+    }
+    if let Command::Hook { event } = &cli.command {
+        let code = match event {
+            HookEvent::Guard => {
+                let mut stdin = Vec::new();
+                let _ = std::io::Read::read_to_end(&mut std::io::stdin(), &mut stdin);
+                hook::guard(&stdin).0
+            }
+            HookEvent::SessionStart | HookEvent::Validate => {
+                eprintln!("vibe-spec hook: this event is not implemented yet — allowing");
+                exit::OK
+            }
+        };
+        return ExitCode::from(code);
     }
     let env_root = std::env::var_os("VIBE_SPEC_ROOT");
     let found = root::discover(&cwd, cli.root.as_deref(), env_root.as_deref());
@@ -211,6 +241,7 @@ fn main() -> ExitCode {
             json,
         } => openspec::import(&found, &cwd, &dir, feature.as_deref(), json),
         Command::Trace { since, json } => trace::run(&found, since.as_deref(), json),
+        Command::Hook { .. } => (exit::OK, Vec::new()),
     };
     emit(&out);
     ExitCode::from(code)

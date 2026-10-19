@@ -203,6 +203,36 @@ fn config_root(path: &Path) -> Result<Option<PathBuf>, Miss> {
     }
 }
 
+/// How the spec tooth treats a would-be block (`tooth` in `.vibe/spec.json`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tooth {
+    /// Refuse the edit (exit 2). The default.
+    Block,
+    /// Print the refusal and allow the edit.
+    Warn,
+}
+
+/// The `tooth` key of `<project>/.vibe/spec.json`; `Block` when the file or key is absent.
+pub fn tooth(project: &Path) -> Result<Tooth, String> {
+    let path = project.join(".vibe").join("spec.json");
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Tooth::Block),
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    };
+    let value: Value =
+        serde_json::from_str(&text).map_err(|e| format!("{}: not JSON: {e}", path.display()))?;
+    match value.get("tooth") {
+        None => Ok(Tooth::Block),
+        Some(Value::String(s)) if s == "block" => Ok(Tooth::Block),
+        Some(Value::String(s)) if s == "warn" => Ok(Tooth::Warn),
+        Some(_) => Err(format!(
+            "{}: `tooth` must be \"block\" or \"warn\"",
+            path.display()
+        )),
+    }
+}
+
 /// The nearest ancestor of `cwd` (inclusive) holding `.git`; `cwd` when none does.
 fn project_of(cwd: &Path) -> PathBuf {
     cwd.ancestors()

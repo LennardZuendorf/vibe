@@ -1,5 +1,5 @@
 //! The Claude Code hook payload: the JSON a hook reads on stdin.
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
@@ -44,4 +44,267 @@ pub fn parse(stdin: &[u8]) -> Result<Payload, String> {
         file: string(input, "file_path").or_else(|| string(input, "notebook_path")),
         command: string(input, "command"),
     })
+}
+
+/// What a path needs before the guard lets an edit through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    /// The spec root and `.vibe/spec.json`: needs `spec`.
+    Spec,
+    /// `docs/superpowers/specs/`: needs `superpowers:brainstorming` or `spec`.
+    Brainstorm,
+    /// `docs/superpowers/plans/`: needs `superpowers:writing-plans` or `spec`.
+    Plans,
+}
+
+impl Target {
+    fn names(self) -> &'static [&'static str] {
+        match self {
+            Target::Spec => &["spec"],
+            Target::Brainstorm => &["superpowers:brainstorming", "spec"],
+            Target::Plans => &["superpowers:writing-plans", "spec"],
+        }
+    }
+}
+
+/// `/`-joined absolute-or-relative spelling with `.` and `..` resolved
+/// lexically; backslashes count as separators.
+fn lexical(path: &str) -> String {
+    let path = path.replace('\\', "/");
+    let absolute = path.starts_with('/');
+    let mut parts: Vec<&str> = Vec::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                if parts.last().is_some_and(|l| *l != "..") {
+                    parts.pop();
+                } else if !absolute {
+                    parts.push("..");
+                }
+            }
+            p => parts.push(p),
+        }
+    }
+    let joined = parts.join("/");
+    if absolute {
+        format!("/{joined}")
+    } else {
+        joined
+    }
+}
+
+/// File identity, not spelling: the longest existing ancestor is
+/// canonicalized (symlinks resolved), the rest is kept lexically.
+fn identity(path: &str) -> String {
+    let lex = lexical(path);
+    let mut rest: Vec<&str> = Vec::new();
+    let mut head = lex.as_str();
+    loop {
+        if !head.is_empty()
+            && let Ok(real) = std::fs::canonicalize(head)
+        {
+            let mut out = lexical(&real.to_string_lossy());
+            for part in rest.iter().rev() {
+                if !out.ends_with('/') {
+                    out.push('/');
+                }
+                out.push_str(part);
+            }
+            return out;
+        }
+        match head.rsplit_once('/') {
+            Some((up, last)) => {
+                rest.push(last);
+                head = up;
+            }
+            None => return lex,
+        }
+    }
+}
+
+/// `path` relative to `base` (both identity-normalized, `/`-joined).
+fn under<'a>(base: &str, path: &'a str) -> Option<&'a str> {
+    let base = base.trim_end_matches('/');
+    let rest = path.strip_prefix(base)?;
+    rest.strip_prefix('/')
+}
+
+fn is_absolute(file: &str) -> bool {
+    let f = file.replace('\\', "/");
+    let b = f.as_bytes();
+    f.starts_with('/')
+        || (b.len() > 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'/')
+}
+
+/// The identity-normalized `file`, resolved against `project` when relative.
+fn resolve(project: &str, file: &str) -> String {
+    if is_absolute(file) {
+        identity(file)
+    } else {
+        identity(&format!("{project}/{file}"))
+    }
+}
+
+/// Classifies `file`; the `String` is its project-relative, `/`-joined path.
+/// `None` when it is outside the project or not a target.
+pub fn classify(project: &Path, root: &Path, file: &str) -> Option<(Target, String)> {
+    let project = identity(&project.to_string_lossy());
+    let target = resolve(&project, file);
+    let rel = under(&project, &target)?.to_string();
+    let root = identity(&root.to_string_lossy());
+    let kind = if under(&root, &target).is_some() || rel == ".vibe/spec.json" {
+        Target::Spec
+    } else if rel.starts_with("docs/superpowers/specs/") {
+        Target::Brainstorm
+    } else if rel.starts_with("docs/superpowers/plans/") {
+        Target::Plans
+    } else {
+        return None;
+    };
+    Some((kind, rel))
+}
+
+fn block_line(target: Target, rel: &str) -> String {
+    let skills = target
+        .names()
+        .iter()
+        .map(|n| format!("Skill({n})"))
+        .collect::<Vec<_>>()
+        .join(" or ");
+    format!("blocked: invoke {skills} before editing {rel}")
+}
+
+/// Prints one fail-open line and allows.
+fn allow(cause: &str) -> (u8, Vec<u8>) {
+    eprintln!("vibe-spec hook guard: allowing — {cause}");
+    (0, Vec::new())
+}
+
+/// A shell command that writes (redirect, `tee`, `sed -i`, `cp`, `mv`)?
+fn writes(command: &str) -> bool {
+    let words: Vec<&str> = words(command);
+    command.contains('>')
+        || words.iter().any(|w| matches!(*w, "tee" | "cp" | "mv"))
+        || (words.contains(&"sed")
+            && words
+                .iter()
+                .any(|w| w.starts_with("-i") || *w == "--in-place"))
+}
+
+fn words(command: &str) -> Vec<&str> {
+    command
+        .split(|c: char| {
+            c.is_whitespace() || matches!(c, '>' | '<' | ';' | '|' | '&' | '(' | ')' | '"' | '\'')
+        })
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// The PreToolUse tooth (P4-R3, P4-R4): `(0|2, stdout)`; stderr is printed here.
+pub fn guard(stdin: &[u8]) -> (u8, Vec<u8>) {
+    let payload = match parse(stdin) {
+        Ok(p) => p,
+        Err(e) => return allow(&e),
+    };
+    let tool = payload.tool.as_deref().unwrap_or("");
+    let is_bash = tool == "Bash";
+    if !is_bash && payload.file.is_none() {
+        return (0, Vec::new());
+    }
+    let found = crate::root::discover(&payload.cwd, None, None);
+    let root = match found {
+        Ok(root) => root,
+        Err(crate::root::Miss::NotFound) => return allow("no spec root"),
+        Err(miss) => return allow(&miss.message()),
+    };
+    if is_bash {
+        let command = payload.command.as_deref().unwrap_or("");
+        if writes(command) {
+            let cwd = payload.cwd.to_string_lossy().into_owned();
+            let hit = words(command).into_iter().find_map(|w| {
+                let file = if is_absolute(w) {
+                    w.to_string()
+                } else {
+                    format!("{cwd}/{w}")
+                };
+                classify(&root.project, &root.dir, &file)
+            });
+            if let Some((_, rel)) = hit {
+                eprintln!("vibe-spec: warning: a shell write to {rel} bypasses the spec tooth");
+            }
+        }
+        return (0, Vec::new());
+    }
+    let file = payload.file.as_deref().unwrap_or("");
+    let cwd = payload.cwd.to_string_lossy().into_owned();
+    let absolute = if is_absolute(file) {
+        file.to_string()
+    } else {
+        format!("{cwd}/{file}")
+    };
+    let Some((target, rel)) = classify(&root.project, &root.dir, &absolute) else {
+        let project = identity(&root.project.to_string_lossy());
+        if under(&project, &resolve(&project, &absolute)).is_none() {
+            return allow("the target is outside the project");
+        }
+        return (0, Vec::new());
+    };
+    let Some(transcript) = payload.transcript.as_deref() else {
+        return allow("the payload has no transcript_path");
+    };
+    match crate::transcript::loaded(transcript, payload.agent_id.as_deref(), target.names()) {
+        Ok(true) => return (0, Vec::new()),
+        Ok(false) => {}
+        Err(e) => {
+            return allow(&format!(
+                "unreadable transcript {}: {e}",
+                transcript.display()
+            ));
+        }
+    }
+    let line = block_line(target, &rel);
+    match crate::root::tooth(&root.project) {
+        Ok(crate::root::Tooth::Block) => {
+            eprintln!("{line}");
+            (2, Vec::new())
+        }
+        Ok(crate::root::Tooth::Warn) => {
+            eprintln!("vibe-spec hook guard: warn — {line}");
+            (0, Vec::new())
+        }
+        Err(e) => allow(&e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backslash_paths_classify() {
+        let got = classify(
+            Path::new(r"C:\p"),
+            Path::new(r"C:\p\docs\spec"),
+            r"C:\p\docs\spec\a.md",
+        );
+        assert_eq!(got, Some((Target::Spec, "docs/spec/a.md".to_string())));
+        let got = classify(
+            Path::new(r"C:\p"),
+            Path::new(r"C:\p\docs\spec"),
+            r"C:\p\docs\superpowers\plans\x.md",
+        );
+        assert_eq!(
+            got,
+            Some((Target::Plans, "docs/superpowers/plans/x.md".to_string()))
+        );
+        assert_eq!(
+            classify(
+                Path::new(r"C:\p"),
+                Path::new(r"C:\p\docs\spec"),
+                r"C:\p\src\a.rs"
+            ),
+            None
+        );
+    }
 }
