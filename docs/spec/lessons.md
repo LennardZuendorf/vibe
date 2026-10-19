@@ -380,4 +380,52 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** tests, git, process
 **Date:** 2026-10-19
 
+### Prove RED per behaviour, not by stubbing the command
+**Pattern:** Task 9 wrote the implementation before the tests and showed RED only by stubbing the whole command, which proves nothing about each behaviour.
+**Rule:** Prove RED per behaviour by breaking that one behaviour and watching its test fail. Write tests first.
+**Tags:** tdd, tests, process
+**Date:** 2026-10-19
+
+### A rewrite tool needs corruption-class tests
+**Pattern:** The first `migrate` regex matched `..spec` and `.spec.ts`. Link rewriting corrupted angle-bracket targets and missed reference definitions, CRLF lines lost `\r`, duplicate D numbers silently became two files, and the walk descended into `target/` and `node_modules/`.
+**Rule:** Before a tool rewrites user content, test each corruption class: look-alike tokens, link forms, line endings, duplicate keys and walk pruning. A committed rewrite cannot be undone.
+**Tags:** rust, migrate, safety
+**Date:** 2026-10-19
+
+### Verify must check what the change introduced
+**Pattern:** `migrate` verified only the literal count and ignored validate errors it had introduced.
+**Rule:** After a mutating command, compare validation errors before and after and revert on an increase. Report pre-existing errors without failing on them.
+**Tags:** rust, migrate, verify
+**Date:** 2026-10-19
+
+### Test the new arm of a dual-path change in isolation
+**Pattern:** Dual-root shell changes had no test with only the new root present, so removing the new arm left the suite green. CI also installed the toolchain after the first cargo use, and a test script pointed at a legacy fixture that `migrate` would rewrite.
+**Rule:** Give each dual-path change a test where only the new path exists. Install toolchains before the first step that needs them. Point tests at fixtures the migration excludes.
+**Tags:** tests, ci, migrate
+**Date:** 2026-10-19
+
+### Re-run every gate check after the final edit
+**Pattern:** The `migrate --check` gate ran before the last hand edit and the report claimed it passed. It exited 1 afterwards.
+**Rule:** Run each gate command after the last edit and paste that output. A result from before the edit proves nothing.
+**Tags:** verification, process
+**Date:** 2026-10-19
+
+### Audit rewritten prose for truth
+**Pattern:** `migrate` rewrote historical facts in lessons and made "the old root today" prose false or duplicated.
+**Rule:** After a bulk text rewrite, read the changed prose. Tag historical lines so a sweep leaves them alone.
+**Tags:** migrate, docs
+**Date:** 2026-10-19
+
+### Marker removal must not consume frontmatter
+**Pattern:** Removing inserted marker lines consumed the closing `---` of hub frontmatter, and the validator did not flag it.
+**Rule:** Treat unclosed frontmatter as an error (SF20) and test marker removal on every doc kind.
+**Tags:** spec, validate, frontmatter
+**Date:** 2026-10-19
+
+### Run `set-state strategy.spec` as its own command
+**Pattern:** A failed command in a chain wrote spec files before `set-state strategy.spec` had run.
+**Rule:** Run `set-state` alone and confirm its output before any command that writes spec files.
+**Tags:** process, flow, spec
+**Date:** 2026-10-19
+
 <!-- vibe-spec: allow SF15 -->

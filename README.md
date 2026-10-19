@@ -194,7 +194,7 @@ The re-architecture in progress. Nothing in this section is runnable from an
 install today — every command and path below is ⏳ **planned**. The exceptions
 are the `vibe-spec` commands that already exist in a dev build (`cargo run -p
 vibe-spec -- <command>`), among them `check-drift`, `promote`, `export|import
---openspec`, `hook {session-start,guard,validate}` and `setup`; skills, CI and the flow scripts still call the bash scripts and do
+--openspec`, `hook {session-start,guard,validate}`, `setup`, `init` and `migrate`; skills, CI and the flow scripts still call the bash scripts and do
 not use them yet. Detail lives in
 [`docs/spec/tech.md`](docs/spec/tech.md) and its branch docs, including
 [`docs/spec/tech/instruct.md`](docs/spec/tech/instruct.md) for the instruct tool.

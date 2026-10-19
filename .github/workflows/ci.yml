@@ -131,6 +131,10 @@ jobs:
       - name: Drift gate (compound + doc drift)
         run: cargo run -q --locked -p vibe-spec -- check-drift
 
+      # F20: zero legacy-root literals in the configured migrate set.
+      - name: Migrate sweep (zero literals)
+        run: cargo run -q --locked -p vibe-spec -- migrate --to docs/spec --check
+
   macos:
     # js-core/8: stock macOS ships bash 3.2 (Apple freezes it at the last
     # GPLv2 release) — the only way to know tests/run.sh's bash-3.2 fix

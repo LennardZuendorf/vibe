@@ -22,6 +22,11 @@ the `strictness` schema, merged over the config. `--opencode` writes
 validate`. `--agents-md` adds or refreshes the router block between
 `<!-- vibe-spec:router:start -->` and `<!-- vibe-spec:router:end -->`.
 
+`init [--to <dir>] [--json]` seeds `README.md`, `AGENTS.md`, `product.md`,
+`tech.md`, `design.md`, `plan.md` and `lessons.md` from compiled-in templates
+under `--to`, else the discovered root, else `<project>/docs/spec`. It never
+overwrites: an existing file prints `SKIP: <rel>`. It is a redesign, not a port of `setup.sh`.
+
 Known limits:
 - `install.sh` does not wire spec hooks into targets (P5). They reach targets through the plugin.
 - The OpenCode shim has not run against live OpenCode.

@@ -10,22 +10,32 @@ updated: 2026-10-19
 
 # Migrate
 
-`vibe-spec migrate --to docs/spec [--dry-run]`: `git mv` the tree; write
-`root` into `.vibe/spec.json`; rewrite `.spec/` literals across an <!-- literal -->
-explicit file set (the new root, `.vibe/*.json`, `.claude/**`,
-`.agents/**`, `tests/**`, root `*.md`, template files), tagging exempted
-lines `<!-- literal -->`; then a **population assertion** — literals
-before ≥1, literals after ==0, files scanned ≥ a floor — or the migration
-reverts and aborts rather than leaving a half-migrated tree.
-`oracles/` and `tests/parity/corpus/` hold `.spec/` literals by design <!-- literal -->
-(frozen oracles and legacy-layout fixtures) and are excluded from the
-rewrite and from the population count. Inserts
-`<!-- vibe-spec: allow SF-nn -->` markers for any newly-warn-eligible
-check so nothing appears that the owner cannot act on today. This repo
-migrates in one commit, late in the sequence (plan.md, F20).
+`vibe-spec migrate --to <dir> [--layout layered] [--dry-run] [--check] [--json]`
+moves the spec root (`git mv` when tracked), writes `root` into
+`.vibe/spec.json` and rewrites legacy-root literals across a configured file
+set. The set is the default globs plus `migrate.include`, minus
+`migrate.exclude`; symlinks are never followed. A **population assertion**
+guards it: literals before at least 1 (only when the root moves), files
+scanned at least `migrate.floor`, literals after 0. A miss reverts and exits 1.
 
-`--layout layered` runs after the move: `{tech,product,plan}-<topic>.md`
-→ `<kind>/<topic>.md`, each D-record → `decisions/dNN-<slug>.md`, hubs
-seeded from templates. Splitting oversized prose into kind notes is
-agent-led via the spec skill's restructure mode; the gate is
-`validate --strict` green.
+Any failure restores originals, removes created files and reverses moves.
+`migrate` also reverts when it introduces validate errors; pre-existing
+errors are only noted. A second run prints `migrate: already migrated`.
+`--check` writes nothing and exits 1 while literals remain: the zero-literal sweep.
+After the write, `migrate` inserts `<!-- vibe-spec: allow SF-nn -->` markers
+for SF22, SF30 to SF34 warnings and lists them. It bumps `updated:` on every
+doc it touches. Lines tagged `<!-- literal -->`, `// literal` or `# literal`
+at the line end are exempt, as is a file with `vibe-spec: literal-file` in its first 5 lines.
+
+Deviations from the plan text:
+- The literal regex does not match after a `.` or before `.` plus a word char (`..spec`, `.spec.ts`).
+- Relative links are re-resolved when the root moves, in moved notes and in links to them.
+
+`--layout layered`: `tech-<t>.md` becomes `tech/<t>.md`, each D-record
+becomes `decisions/dNN-<slug>.md`, hubs are seeded. `product-` and `plan-`
+topics refuse. Splitting prose into notes is agent-led.
+
+Known limits:
+- No guard against a panic or signal mid-run; recover through git.
+- Feature docs only warn on unclosed frontmatter; root docs error (SF20).
+- `AGENTS.md` keeps a file-level `literal-file` marker and the rendered template is exempt from the sweep, until P5.
