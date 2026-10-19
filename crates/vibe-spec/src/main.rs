@@ -26,6 +26,7 @@ mod drift;
 mod frontmatter;
 mod git;
 mod hook;
+mod init;
 mod layered;
 mod lessons;
 mod list_specs;
@@ -168,6 +169,18 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Seed a layered spec root (README, AGENTS, the four hubs and lessons).
+    ///
+    /// Targets `--to`, else the discovered root, else `docs/spec`. Never
+    /// overwrites a file (`SKIP:`); refuses a symlinked target path.
+    Init {
+        /// The directory to seed (relative to the current directory).
+        #[arg(long, value_name = "DIR")]
+        to: Option<PathBuf>,
+        /// Print Spec JSON v1.
+        #[arg(long)]
+        json: bool,
+    },
     /// Install the pre-commit hook, OpenCode files and the AGENTS.md router block.
     ///
     /// Needs no spec root: with or without one it exits 0 on success.
@@ -285,6 +298,7 @@ fn main() -> ExitCode {
             json,
         } => openspec::import(&found, &cwd, &dir, feature.as_deref(), json),
         Command::Trace { since, json } => trace::run(&found, since.as_deref(), json),
+        Command::Init { to, json } => init::run(&found, &cwd, to.as_deref(), json),
         Command::Setup {
             git_hooks,
             opencode,
