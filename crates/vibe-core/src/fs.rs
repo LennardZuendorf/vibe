@@ -1,12 +1,14 @@
 //! Atomic file writes.
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
-use std::io::Write;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{Error, Result};
+
+type StdResult<T, E> = std::result::Result<T, E>;
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -55,6 +57,73 @@ fn write_then_rename(mut file: File, tmp: &Path, path: &Path, bytes: &[u8]) -> R
         path: path.to_path_buf(),
         source,
     })
+}
+
+/// One planned write with the bytes to put back if a later write fails.
+pub struct Write {
+    /// The file to write.
+    pub path: PathBuf,
+    /// How errors name the file.
+    pub show: String,
+    /// The new content.
+    pub bytes: Vec<u8>,
+    /// The content to put back; `None` when the file did not exist.
+    pub original: Option<Vec<u8>>,
+}
+
+/// Writes `bytes` atomically, then puts `mode` (the mode the file had) back.
+fn put(path: &Path, bytes: &[u8], mode: Option<&std::fs::Permissions>) -> StdResult<(), String> {
+    write_atomic(path, bytes).map_err(|e| e.to_string())?;
+    match mode {
+        Some(m) => fs::set_permissions(path, m.clone()).map_err(|e| e.to_string()),
+        None => Ok(()),
+    }
+}
+
+/// Puts the originals back (or removes files that did not exist), in the
+/// order given. Returns the names restored and one line per failure.
+pub fn restore<'a>(writes: impl IntoIterator<Item = &'a Write>) -> (Vec<&'a str>, Vec<String>) {
+    let mut restored = Vec::new();
+    let mut failed = Vec::new();
+    for w in writes {
+        let mode = fs::metadata(&w.path).ok().map(|m| m.permissions());
+        let back = match &w.original {
+            Some(b) => put(&w.path, b, mode.as_ref()),
+            None => fs::remove_file(&w.path).map_err(|e| e.to_string()),
+        };
+        match back {
+            Ok(()) => restored.push(w.show.as_str()),
+            Err(err) => failed.push(format!("{}: {err}", w.show)),
+        }
+    }
+    (restored, failed)
+}
+
+/// Performs the writes in order. If write k fails, writes 0..k are put back
+/// (or removed when the file did not exist) and the refusal is returned as
+/// `<show>: <cause>`, followed by ` \u{2014} restored <names>` and one
+/// ` \u{2014} restore failed for <name>: <cause>` per file that stayed changed.
+pub fn commit(writes: &[Write]) -> StdResult<(), String> {
+    // `write_atomic` makes a fresh file: put the original mode back on it.
+    let modes: Vec<Option<std::fs::Permissions>> = writes
+        .iter()
+        .map(|w| fs::metadata(&w.path).ok().map(|m| m.permissions()))
+        .collect();
+    for (k, (w, mode)) in writes.iter().zip(&modes).enumerate() {
+        let Err(e) = put(&w.path, &w.bytes, mode.as_ref()) else {
+            continue;
+        };
+        let mut msg = format!("{}: {e}", w.show);
+        let (restored, failed) = restore(writes.iter().take(k));
+        if !restored.is_empty() {
+            msg.push_str(&format!(" \u{2014} restored {}", restored.join(", ")));
+        }
+        for f in failed {
+            msg.push_str(&format!(" \u{2014} restore failed for {f}"));
+        }
+        return Err(msg);
+    }
+    Ok(())
 }
 
 fn create_exclusive(path: &Path) -> std::io::Result<File> {

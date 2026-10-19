@@ -21,17 +21,20 @@
 //! The plan does not bump `updated:` and does not choose allow-markers; both
 //! are the execute half's, as is the `before >= 1` population check
 //! ([`check_population`]) that applies only when the root must move.
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use vibe_core::exit;
+use vibe_core::fs::{Write, commit, restore};
 use vibe_core::glob::glob_match;
 
 use crate::init::{normalise, slash};
 use crate::literal;
-use crate::root::{Miss, Root};
+use crate::root::{Miss, Root, Source};
 use crate::text::{Fences, today_utc};
+use crate::validate;
 
 /// The root hubs: `type: entrypoint` becomes `type: hub` in them.
 const HUBS: [&str; 4] = ["product.md", "tech.md", "design.md", "plan.md"];
@@ -1042,7 +1045,13 @@ fn table(plan: &Plan) -> String {
         .collect()
 }
 
-fn render_json(from: &str, to: &str, plan: &Plan, mode: (bool, bool)) -> Vec<u8> {
+fn render_json(
+    from: &str,
+    to: &str,
+    plan: &Plan,
+    mode: (bool, bool),
+    markers: &[String],
+) -> Vec<u8> {
     let v = serde_json::json!({
         "v": 1,
         "from": from,
@@ -1052,14 +1061,14 @@ fn render_json(from: &str, to: &str, plan: &Plan, mode: (bool, bool)) -> Vec<u8>
             "file": r.file, "line": r.line, "old": r.old, "new": r.new,
         })).collect::<Vec<_>>(),
         "created": plan.created.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>(),
-        "markers": Vec::<String>::new(),
+        "markers": markers,
         "dry_run": mode.0,
         "check": mode.1,
     });
     format!("{v}\n").into_bytes()
 }
 
-fn render_text(label: &str, plan: &Plan) -> Vec<u8> {
+fn render_text(label: &str, plan: &Plan, markers: &[String]) -> Vec<u8> {
     let mut out = format!(
         "migrate: {label} \u{2014} {} literal(s) in {} file(s)\n",
         plan.before,
@@ -1071,6 +1080,9 @@ fn render_text(label: &str, plan: &Plan) -> Vec<u8> {
     }
     for (path, bytes) in &plan.created {
         out.push_str(&format!("create: {path} ({} bytes)\n", bytes.len()));
+    }
+    for m in markers {
+        out.push_str(&format!("marker: {m}\n"));
     }
     out.push_str(&format!("scanned: {} file(s)\n", plan.scanned));
     out.into_bytes()
@@ -1114,11 +1126,11 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         Ok(plan) => plan,
         Err(why) => return fail(why),
     };
-    let show = |label: &str| {
+    let show = |label: &str, markers: &[String]| {
         if opts.json {
-            render_json(&from, &to, &plan, (opts.dry_run, opts.check))
+            render_json(&from, &to, &plan, (opts.dry_run, opts.check), markers)
         } else {
-            render_text(label, &plan)
+            render_text(label, &plan, markers)
         }
     };
     if opts.check {
@@ -1127,12 +1139,12 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         } else {
             exit::FINDINGS
         };
-        return (code, show("check"));
+        return (code, show("check", &[]));
     }
     let moving = from != to;
     if !moving && plan.moves.is_empty() && plan.rewrites.is_empty() && plan.created.is_empty() {
         let out = if opts.json {
-            show("")
+            show("", &[])
         } else {
             b"migrate: already migrated\n".to_vec()
         };
@@ -1141,11 +1153,679 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     if let Err(why) = check_population(&plan, moving) {
         return fail(why);
     }
-    if !opts.dry_run {
-        eprintln!(
-            "vibe-spec migrate: executing a migration is not available yet; pass --dry-run or --check"
-        );
-        return (exit::USAGE, Vec::new());
+    if opts.dry_run {
+        return (exit::OK, show("dry run", &[]));
     }
-    (exit::OK, show("dry run"))
+    match execute(&root.project, &from, &to, &plan) {
+        Ok(markers) => (exit::OK, show("done", &markers)),
+        Err(why) => fail(why),
+    }
+}
+
+/// One step to undo, in the order it ran.
+enum Step {
+    Mkdir(PathBuf),
+    Move { from: String, to: String, git: bool },
+}
+
+/// What a run has done so far, so a failure can undo it.
+struct Journal {
+    project: PathBuf,
+    steps: Vec<Step>,
+    /// Writes that went through (never a failed one: `commit` undoes those).
+    writes: Vec<Write>,
+}
+
+/// `git -C <project> --literal-pathspecs mv -- <from> <to>`, with git's own error text.
+fn git_mv(project: &Path, from: &str, to: &str) -> Result<(), String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(project)
+        .arg("--literal-pathspecs")
+        .args(["mv", "--", from, to])
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| format!("git mv {from}: {e}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    Err(format!(
+        "git mv {from} {to}: {}",
+        String::from_utf8_lossy(&out.stderr).trim()
+    ))
+}
+
+/// True when git tracks something at `rel`.
+fn tracked(project: &Path, rel: &str) -> bool {
+    crate::git::git(project, &["ls-files", "-z", "--", rel]).is_some_and(|b| !b.is_empty())
+}
+
+impl Journal {
+    /// Creates the missing directories down to `dir`, never through a link.
+    fn mkdirs(&mut self, dir: &Path) -> Result<(), String> {
+        let rel = dir
+            .strip_prefix(&self.project)
+            .map_err(|_| format!("{}: outside the project", dir.display()))?;
+        let mut cur = self.project.clone();
+        for c in rel.components() {
+            cur.push(c);
+            match fs::symlink_metadata(&cur) {
+                Ok(m) if m.is_dir() => {}
+                Ok(_) => {
+                    return Err(format!(
+                        "{}: not a directory (or a link); refusing to write through it",
+                        slash(cur.strip_prefix(&self.project).unwrap_or(&cur))
+                    ));
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    fs::create_dir(&cur).map_err(|e| format!("{}: {e}", cur.display()))?;
+                    self.steps.push(Step::Mkdir(cur.clone()));
+                }
+                Err(e) => return Err(format!("{}: {e}", cur.display())),
+            }
+        }
+        Ok(())
+    }
+
+    /// `git mv` when git tracks `from`, otherwise a rename.
+    fn mv(&mut self, from: &str, to: &str) -> Result<(), String> {
+        let target = self.project.join(to);
+        if let Some(parent) = target.parent() {
+            self.mkdirs(parent)?;
+        }
+        let git = tracked(&self.project, from);
+        if git {
+            git_mv(&self.project, from, to)?;
+        } else {
+            fs::rename(self.project.join(from), self.project.join(to))
+                .map_err(|e| format!("{from}: {e}"))?;
+        }
+        self.steps.push(Step::Move {
+            from: from.to_string(),
+            to: to.to_string(),
+            git,
+        });
+        Ok(())
+    }
+
+    /// Puts the originals back, reverses the moves and removes the
+    /// directories it made, newest first. Returns what could not be undone.
+    fn rollback(&self) -> Vec<String> {
+        let (_, mut failed) = restore(self.writes.iter().rev());
+        for step in self.steps.iter().rev() {
+            let done = match step {
+                Step::Mkdir(dir) => {
+                    fs::remove_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))
+                }
+                Step::Move {
+                    from,
+                    to,
+                    git: true,
+                } => git_mv(&self.project, to, from),
+                Step::Move {
+                    from,
+                    to,
+                    git: false,
+                } => fs::rename(self.project.join(to), self.project.join(from))
+                    .map_err(|e| format!("{to}: {e}")),
+            };
+            if let Err(why) = done {
+                failed.push(why);
+            }
+        }
+        failed
+    }
+}
+
+/// Reads a regular file (never a link).
+fn read_regular(project: &Path, rel: &str) -> Result<Vec<u8>, String> {
+    let path = project.join(rel);
+    let meta = fs::symlink_metadata(&path).map_err(|e| format!("{rel}: {e}"))?;
+    if !meta.is_file() {
+        return Err(format!("{rel}: not a regular file"));
+    }
+    fs::read(&path).map_err(|e| format!("{rel}: {e}"))
+}
+
+/// Applies the planned line edits to `bytes`, bottom-up. A line that no
+/// longer matches the plan is an error.
+fn apply(file: &str, bytes: &[u8], edits: &[&Rewrite]) -> Result<Vec<u8>, String> {
+    let mut lines: Vec<Vec<u8>> = bytes.split(|b| *b == b'\n').map(<[u8]>::to_vec).collect();
+    for e in edits.iter().rev() {
+        let old: Vec<&str> = e.old.split('\n').collect();
+        let at = e.line.saturating_sub(1);
+        let matches = lines.get(at..at + old.len()).is_some_and(|cur| {
+            cur.iter()
+                .zip(&old)
+                .all(|(l, o)| std::str::from_utf8(l).is_ok_and(|s| s == *o))
+        });
+        if !matches {
+            return Err(format!(
+                "{file}:{}: the line differs from the plan (or is not UTF-8)",
+                e.line
+            ));
+        }
+        lines.splice(
+            at..at + old.len(),
+            e.new.split('\n').map(|l| l.as_bytes().to_vec()),
+        );
+    }
+    Ok(lines.join(&b'\n'))
+}
+
+/// Sets `updated:` in a leading frontmatter block, keeping line endings.
+/// Text without frontmatter is returned as it is.
+fn bump_updated(bytes: &[u8], today: &str) -> Vec<u8> {
+    let mut lines: Vec<Vec<u8>> = bytes.split(|b| *b == b'\n').map(<[u8]>::to_vec).collect();
+    let is = |l: &[u8], text: &str| l.strip_suffix(b"\r").unwrap_or(l) == text.as_bytes();
+    let Some(first) = lines.first() else {
+        return bytes.to_vec();
+    };
+    if !is(first, "---") {
+        return bytes.to_vec();
+    }
+    let Some(close) = lines
+        .iter()
+        .skip(1)
+        .position(|l| is(l, "---"))
+        .map(|i| i + 1)
+    else {
+        return bytes.to_vec();
+    };
+    let cr: &[u8] = if first.ends_with(b"\r") { b"\r" } else { b"" };
+    let mut line = format!("updated: {today}").into_bytes();
+    line.extend_from_slice(cr);
+    match lines
+        .iter()
+        .take(close)
+        .skip(1)
+        .position(|l| l.starts_with(b"updated:"))
+    {
+        Some(i) => {
+            if let Some(slot) = lines.get_mut(i + 1) {
+                *slot = line;
+            }
+        }
+        None => lines.insert(close, line),
+    }
+    lines.join(&b'\n')
+}
+
+/// Every regular `.md` file under `dir` (links are never followed), as
+/// project-relative `/`-joined paths.
+fn md_under(project: &Path, rel: &str, out: &mut BTreeSet<String>) -> Result<(), String> {
+    for e in fs::read_dir(project.join(rel)).map_err(|e| format!("{rel}: {e}"))? {
+        let e = e.map_err(|e| format!("{rel}: {e}"))?;
+        let Ok(name) = e.file_name().into_string() else {
+            continue;
+        };
+        let child = format!("{rel}/{name}");
+        let t = e.file_type().map_err(|e| format!("{child}: {e}"))?;
+        if t.is_dir() {
+            md_under(project, &child, out)?;
+        } else if t.is_file() && name.ends_with(".md") {
+            out.insert(child);
+        }
+    }
+    Ok(())
+}
+
+/// The end of the JSON string that starts at `at`.
+fn string_end(b: &[u8], at: usize) -> usize {
+    let mut i = at + 1;
+    while let Some(&c) = b.get(i) {
+        match c {
+            b'\\' => i += 2,
+            b'"' => return i,
+            _ => i += 1,
+        }
+    }
+    b.len().saturating_sub(1)
+}
+
+/// Sets the top-level `root` key of the JSON object `text`, keeping every
+/// other key, its order and its formatting. A new key goes first. Anything
+/// that is not a JSON object with a string `root` (or none) is an error.
+fn set_root(text: &str, to: &str) -> Result<String, String> {
+    let want: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!(".vibe/spec.json: {e}"))?;
+    let Some(obj) = want.as_object() else {
+        return Err(".vibe/spec.json: not a JSON object".to_string());
+    };
+    if obj.get("root").is_some_and(|r| !r.is_string()) {
+        return Err(".vibe/spec.json: root must be a string".to_string());
+    }
+    let value = serde_json::Value::String(to.to_string()).to_string();
+    let b = text.as_bytes();
+    let (mut i, mut depth, mut last) = (0, 0usize, 0u8);
+    let mut open = None;
+    let mut out = None;
+    while i < b.len() && out.is_none() {
+        match b[i] {
+            b'"' => {
+                let end = string_end(b, i);
+                let is_key = depth == 1 && (last == b'{' || last == b',');
+                if is_key
+                    && serde_json::from_str::<String>(&text[i..=end]).is_ok_and(|k| k == "root")
+                {
+                    let mut j = end + 1;
+                    while b
+                        .get(j)
+                        .is_some_and(|c| c.is_ascii_whitespace() || *c == b':')
+                    {
+                        j += 1;
+                    }
+                    let vend = string_end(b, j);
+                    out = Some(format!("{}{value}{}", &text[..j], &text[vend + 1..]));
+                }
+                last = b'"';
+                i = end + 1;
+                continue;
+            }
+            b'{' | b'[' => {
+                depth += 1;
+                if b[i] == b'{' && open.is_none() {
+                    open = Some(i);
+                }
+            }
+            b'}' | b']' => depth = depth.saturating_sub(1),
+            c if c.is_ascii_whitespace() => {
+                i += 1;
+                continue;
+            }
+            _ => {}
+        }
+        last = b[i];
+        i += 1;
+    }
+    let merged = match (out, open) {
+        (Some(done), _) => done,
+        (None, Some(o)) => {
+            let rest = &text[o + 1..];
+            let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
+            if obj.is_empty() {
+                let close = rest.find('}').unwrap_or(0);
+                format!(
+                    "{}{{{eol}  \"root\": {value}{eol}{}",
+                    &text[..o],
+                    &rest[close..]
+                )
+            } else if let Some(nl) = rest.find('\n').filter(|nl| rest[..*nl].trim().is_empty()) {
+                let indent: String = rest[nl + 1..]
+                    .chars()
+                    .take_while(|c| *c == ' ' || *c == '\t')
+                    .collect();
+                format!("{}{{{eol}{indent}\"root\": {value},{rest}", &text[..o])
+            } else {
+                let gap = if rest.starts_with(char::is_whitespace) {
+                    ""
+                } else {
+                    " "
+                };
+                format!("{}{{\"root\": {value},{gap}{rest}", &text[..o])
+            }
+        }
+        (None, None) => return Err(".vibe/spec.json: not a JSON object".to_string()),
+    };
+    // The result must be the same object with only `root` changed.
+    let mut check: serde_json::Value =
+        serde_json::from_str(&merged).map_err(|e| format!(".vibe/spec.json: {e}"))?;
+    let got = check.get("root").cloned();
+    if got.as_ref().and_then(|v| v.as_str()) != Some(to) {
+        return Err(".vibe/spec.json: could not set root".to_string());
+    }
+    let mut expect = want;
+    if let (Some(e), Some(c)) = (expect.as_object_mut(), check.as_object_mut()) {
+        e.insert(
+            "root".to_string(),
+            serde_json::Value::String(to.to_string()),
+        );
+        if e != c {
+            return Err(
+                ".vibe/spec.json: could not set root without changing other keys".to_string(),
+            );
+        }
+    }
+    Ok(merged)
+}
+
+/// The `root` value of `.vibe/spec.json` text, when it is a string.
+fn root_of(text: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(text).ok()?;
+    v.get("root")?.as_str().map(str::to_string)
+}
+
+/// Inserts one allow-marker per check id after the frontmatter (at the top
+/// when there is none), with the file's own line ending.
+fn insert_markers(bytes: &[u8], ids: &BTreeSet<&str>) -> Vec<u8> {
+    let mut lines: Vec<Vec<u8>> = bytes.split(|b| *b == b'\n').map(<[u8]>::to_vec).collect();
+    let is = |l: &[u8]| l.strip_suffix(b"\r").unwrap_or(l) == b"---";
+    let crlf = lines.first().is_some_and(|l| l.ends_with(b"\r"));
+    let at = match lines.first() {
+        Some(f) if is(f) => lines
+            .iter()
+            .skip(1)
+            .position(|l| is(l))
+            .map_or(0, |i| i + 2),
+        _ => 0,
+    };
+    let marks: Vec<Vec<u8>> = ids
+        .iter()
+        .map(|id| {
+            let mut m = format!("<!-- vibe-spec: allow {id} -->").into_bytes();
+            if crlf {
+                m.push(b'\r');
+            }
+            m
+        })
+        .collect();
+    lines.splice(at..at, marks);
+    lines.join(&b'\n')
+}
+
+const MARKABLE: [&str; 5] = ["SF22", "SF30", "SF31", "SF33", "SF34"];
+
+/// The warnings of the new root that a marker can carry: `(file, check)`.
+fn markable(project: &Path, to: &str) -> Result<BTreeSet<(String, String)>, String> {
+    let root = Root {
+        dir: project.join(to),
+        project: project.to_path_buf(),
+        source: Source::Flag,
+        depth: 0,
+    };
+    let (_, out) = validate::run_checked(
+        &Ok(root),
+        project,
+        &validate::Options {
+            strict: false,
+            format: validate::Format::Json,
+            changed: false,
+            file: None,
+            event: None,
+        },
+    )?;
+    let v: serde_json::Value =
+        serde_json::from_slice(&out).map_err(|e| format!("validating the new root: {e}"))?;
+    let prefix = format!("{to}/");
+    Ok(v["findings"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter(|f| f["severity"] == "warning")
+        .filter_map(|f| {
+            let check = f["check"].as_str().filter(|c| MARKABLE.contains(c))?;
+            let file = f["file"]
+                .as_str()
+                .filter(|f| f.starts_with(&prefix) && f.ends_with(".md"))?;
+            Some((file.to_string(), check.to_string()))
+        })
+        .collect())
+}
+
+/// Moves, rewrites, creates and verifies; undoes everything on failure.
+/// Returns the markers inserted (`<file> <check>`). An `Err` is the cause
+/// and says what happened to the tree (`reverted`).
+fn execute(project: &Path, from: &str, to: &str, plan: &Plan) -> Result<Vec<String>, String> {
+    let mut j = Journal {
+        project: project.to_path_buf(),
+        steps: Vec::new(),
+        writes: Vec::new(),
+    };
+    match steps(&mut j, from, to, plan) {
+        Ok(markers) => Ok(markers),
+        Err(cause) => {
+            let failed = j.rollback();
+            if failed.is_empty() {
+                Err(format!("{cause} \u{2014} reverted"))
+            } else {
+                Err(format!(
+                    "{cause} \u{2014} revert incomplete: {}",
+                    failed.join("; ")
+                ))
+            }
+        }
+    }
+}
+
+fn steps(j: &mut Journal, from: &str, to: &str, plan: &Plan) -> Result<Vec<String>, String> {
+    const CONFIG: &str = ".vibe/spec.json";
+    let project = j.project.clone();
+    let moving = from != to;
+    for (a, b) in &plan.moves {
+        j.mv(a, b)?;
+    }
+    let today = today_utc();
+
+    let mut edits: BTreeMap<&str, Vec<&Rewrite>> = BTreeMap::new();
+    for r in &plan.rewrites {
+        edits.entry(r.file.as_str()).or_default().push(r);
+    }
+    // Spec docs this run moved or rewrote get today's `updated:`.
+    let mut docs: BTreeSet<String> = BTreeSet::new();
+    let under = format!("{to}/");
+    if moving {
+        md_under(&project, to, &mut docs)?;
+    } else {
+        docs.extend(
+            plan.moves
+                .iter()
+                .map(|(_, t)| t.clone())
+                .filter(|t| t.ends_with(".md")),
+        );
+        docs.extend(
+            edits
+                .keys()
+                .filter(|f| f.starts_with(&under) && f.ends_with(".md"))
+                .map(|f| (*f).to_string()),
+        );
+    }
+    let mut files: BTreeSet<String> = docs.clone();
+    files.extend(edits.keys().map(|f| (*f).to_string()));
+
+    // path -> (original, new bytes)
+    let mut finals: BTreeMap<String, (Option<Vec<u8>>, Vec<u8>)> = BTreeMap::new();
+    for rel in &files {
+        let original = read_regular(&project, rel)?;
+        let mut bytes = match edits.get(rel.as_str()) {
+            Some(list) => apply(rel, &original, list)?,
+            None => original.clone(),
+        };
+        if docs.contains(rel) {
+            bytes = bump_updated(&bytes, &today);
+        }
+        finals.insert(rel.clone(), (Some(original), bytes));
+    }
+    for (rel, bytes) in &plan.created {
+        if fs::symlink_metadata(project.join(rel)).is_ok() {
+            return Err(format!("{rel} already exists"));
+        }
+        finals.insert(rel.clone(), (None, bytes.clone()));
+    }
+    let existing = match fs::symlink_metadata(project.join(CONFIG)) {
+        Ok(_) => Some(finals.get(CONFIG).map_or_else(
+            || read_regular(&project, CONFIG),
+            |(_, now)| Ok(now.clone()),
+        )?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(format!("{CONFIG}: {e}")),
+    };
+    let config = match &existing {
+        Some(bytes) => {
+            let text = std::str::from_utf8(bytes)
+                .map_err(|_| format!("{CONFIG}: not UTF-8; fix it by hand"))?;
+            (moving || root_of(text).as_deref() != Some(to))
+                .then(|| set_root(text, to))
+                .transpose()?
+        }
+        None => moving.then(|| {
+            format!(
+                "{{\n  \"root\": {}\n}}\n",
+                serde_json::Value::String(to.to_string())
+            )
+        }),
+    };
+    if let Some(text) = config {
+        let original = match finals.remove(CONFIG) {
+            Some((orig, _)) => orig,
+            None => existing,
+        };
+        finals.insert(CONFIG.to_string(), (original, text.into_bytes()));
+    }
+
+    let mut writes: Vec<Write> = Vec::new();
+    let config_entry = finals.remove(CONFIG);
+    for (rel, (original, bytes)) in finals
+        .into_iter()
+        .chain(config_entry.map(|e| (CONFIG.to_string(), e)))
+    {
+        if original.as_deref() == Some(bytes.as_slice()) {
+            continue;
+        }
+        let target = project.join(&rel);
+        if let Some(parent) = target.parent() {
+            j.mkdirs(parent)?;
+        }
+        writes.push(Write {
+            path: project.join(&rel),
+            show: rel,
+            bytes,
+            original,
+        });
+    }
+    commit(&writes)?;
+    j.writes.extend(writes);
+    #[cfg(unix)]
+    for (rel, _) in &plan.created {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(project.join(rel), fs::Permissions::from_mode(0o644))
+            .map_err(|e| format!("{rel}: {e}"))?;
+    }
+
+    // After the write the legacy literal is gone everywhere in the set.
+    let new_root = Root {
+        dir: project.join(to),
+        project: project.clone(),
+        source: Source::Flag,
+        depth: 0,
+    };
+    let after = self::plan(&project, &new_root, to, false)?;
+    if after.before != 0 {
+        return Err(format!(
+            "{} {} literal(s) remain after the rewrite",
+            after.before,
+            literal::LEGACY
+        ));
+    }
+
+    // Allow-markers for the warnings the move leaves behind (P4-R14). A
+    // marker adds lines, so a budget warning can follow: look again, a few times.
+    let mut marked: BTreeSet<(String, String)> = BTreeSet::new();
+    for _ in 0..3 {
+        let fresh: Vec<(String, String)> = markable(&project, to)?
+            .into_iter()
+            .filter(|m| !marked.contains(m))
+            .collect();
+        if fresh.is_empty() {
+            break;
+        }
+        let mut by_file: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+        for (file, check) in &fresh {
+            by_file.entry(file).or_default().insert(check);
+        }
+        let mut batch: Vec<Write> = Vec::new();
+        for (file, ids) in by_file {
+            let original = read_regular(&project, file)?;
+            let bytes = insert_markers(&original, &ids);
+            batch.push(Write {
+                path: project.join(file),
+                show: file.to_string(),
+                bytes,
+                original: Some(original),
+            });
+        }
+        commit(&batch)?;
+        j.writes.extend(batch);
+        marked.extend(fresh);
+    }
+    Ok(marked
+        .into_iter()
+        .map(|(file, check)| format!("{file} {check}"))
+        .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    use super::*;
+
+    #[test]
+    fn set_root_keeps_other_keys_and_their_order() {
+        let cases = [
+            ("{}", "{\n  \"root\": \"d/s\"\n}"),
+            ("{}\n", "{\n  \"root\": \"d/s\"\n}\n"),
+            (
+                "{\n  \"tooth\": \"warn\",\n  \"x\": [1, 2]\n}\n",
+                "{\n  \"root\": \"d/s\",\n  \"tooth\": \"warn\",\n  \"x\": [1, 2]\n}\n",
+            ),
+            (
+                "{\r\n\t\"a\": 1\r\n}",
+                "{\r\n\t\"root\": \"d/s\",\r\n\t\"a\": 1\r\n}",
+            ),
+            ("{\"a\":1}", "{\"root\": \"d/s\", \"a\":1}"),
+            ("{ \"a\":1}", "{\"root\": \"d/s\", \"a\":1}"),
+            (
+                "{\"a\": 1, \"root\": \"old\" , \"b\": 2}",
+                "{\"a\": 1, \"root\": \"d/s\" , \"b\": 2}",
+            ),
+            // A nested or quoted `root` is not the top-level key.
+            (
+                "{\"n\": {\"root\": \"in\"}, \"s\": \"\\\"root\\\": 1\"}",
+                "{\"root\": \"d/s\", \"n\": {\"root\": \"in\"}, \"s\": \"\\\"root\\\": 1\"}",
+            ),
+        ];
+        for (input, want) in cases {
+            assert_eq!(set_root(input, "d/s").unwrap(), want, "{input:?}");
+        }
+    }
+
+    #[test]
+    fn set_root_fails_closed() {
+        for bad in ["", "{\"a\": ", "[]", "\"x\"", "{\"root\": 3}", "{\"a\":1,}"] {
+            assert!(set_root(bad, "d/s").is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn bump_updated_keeps_line_endings() {
+        let up = |s: &str| String::from_utf8(bump_updated(s.as_bytes(), "2030-01-02")).unwrap();
+        assert_eq!(
+            up("---\ntype: x\nupdated: 2026-01-01\n---\nbody\n"),
+            "---\ntype: x\nupdated: 2030-01-02\n---\nbody\n"
+        );
+        assert_eq!(
+            up("---\r\ntype: x\r\n---\r\nbody\r\n"),
+            "---\r\ntype: x\r\nupdated: 2030-01-02\r\n---\r\nbody\r\n"
+        );
+        assert_eq!(up("no frontmatter\n"), "no frontmatter\n");
+        assert_eq!(up("---\nunclosed\n"), "---\nunclosed\n");
+    }
+
+    #[test]
+    fn markers_go_after_the_frontmatter() {
+        let ids: BTreeSet<&str> = ["SF30", "SF22"].into_iter().collect();
+        let put = |s: &str| String::from_utf8(insert_markers(s.as_bytes(), &ids)).unwrap();
+        assert_eq!(
+            put("---\ntype: x\n---\n\nbody\n"),
+            "---\ntype: x\n---\n<!-- vibe-spec: allow SF22 -->\n<!-- vibe-spec: allow SF30 -->\n\nbody\n"
+        );
+        assert_eq!(
+            put("---\r\ntype: x\r\n---\r\nbody"),
+            "---\r\ntype: x\r\n---\r\n<!-- vibe-spec: allow SF22 -->\r\n<!-- vibe-spec: allow SF30 -->\r\nbody"
+        );
+        assert_eq!(
+            put("body\n"),
+            "<!-- vibe-spec: allow SF22 -->\n<!-- vibe-spec: allow SF30 -->\nbody\n"
+        );
+    }
 }

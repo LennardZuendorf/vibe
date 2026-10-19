@@ -279,12 +279,9 @@ fn json_shape_and_exit_codes() {
 }
 
 #[test]
-fn bare_migrate_refuses_until_execute_exists_and_writes_nothing() {
-    let p = corpus("migrate-bare");
+fn conflicting_flags_and_a_missing_target_are_usage_errors() {
+    let p = corpus("migrate-usage");
     let before = snapshot(&p);
-    let out = spec(&p, &["migrate", "--to", "docs/spec"], &[]);
-    assert_eq!(out.code, 2, "{}", out.stderr);
-    assert_eq!(snapshot(&p), before);
     let both = spec(
         &p,
         &["migrate", "--to", "docs/spec", "--dry-run", "--check"],
@@ -293,6 +290,7 @@ fn bare_migrate_refuses_until_execute_exists_and_writes_nothing() {
     assert_eq!(both.code, 2, "{}", both.stderr);
     let none = spec(&p, &["migrate"], &[]);
     assert_eq!(none.code, 2, "{}", none.stderr);
+    assert_eq!(snapshot(&p), before);
 }
 
 #[test]
@@ -1026,4 +1024,389 @@ fn crlf_endings_are_kept() {
         assert!(!new.contains("\r\r"), "{r}");
     }
     assert_eq!(v["created"].as_array().unwrap().len(), 1);
+}
+
+// ---- execute (Task 11) ----
+
+fn today() -> String {
+    let out = std::process::Command::new("date")
+        .args(["-u", "+%F"])
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
+/// Commits everything, dated in the past.
+fn commit_all(p: &Path) {
+    common::git(p, "2026-03-01T12:00:00Z", &["add", "-A"]);
+    common::git(
+        p,
+        "2026-03-01T12:00:00Z",
+        &["commit", "-q", "-m", "legacy tree"],
+    );
+}
+
+fn status(p: &Path) -> String {
+    common::git_out(p, &["status", "--porcelain"])
+}
+
+fn migrate(p: &Path, extra: &[&str]) -> common::Out {
+    let mut args = vec!["migrate", "--to", "docs/spec"];
+    args.extend_from_slice(extra);
+    spec(p, &args, &[])
+}
+
+fn read(p: &Path, rel: &str) -> String {
+    fs::read_to_string(p.join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
+}
+
+#[test]
+fn migrates_a_flat_repo() {
+    let p = corpus("migrate-flat");
+    put(
+        &p,
+        ".vibe/spec.json",
+        "{\n  \"tooth\": \"warn\",\n  \"migrate\": {\"floor\": 1}\n}\n",
+    );
+    commit_all(&p);
+    let out = migrate(&p, &[]);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    assert!(out.text().starts_with("migrate: done"), "{}", out.text());
+    for name in ["product", "tech", "tech-cli", "plan"] {
+        assert!(p.join(format!("docs/spec/{name}.md")).is_file(), "{name}");
+    }
+    assert!(!p.join(d(".spec")).exists());
+    // The root key is merged in first; the other keys keep their order.
+    let cfg = read(&p, ".vibe/spec.json");
+    let v: serde_json::Value = serde_json::from_str(&cfg).unwrap();
+    assert_eq!(v["root"], "docs/spec", "{cfg}");
+    assert_eq!(v["tooth"], "warn");
+    assert_eq!(v["migrate"]["floor"], 1);
+    let at = |k: &str| cfg.find(k).unwrap();
+    assert!(at("\"tooth\"") < at("\"migrate\""), "{cfg}");
+    // Literals are rewritten in the file set, and only there.
+    assert_eq!(read(&p, "README.md"), "Run `vibe-spec --root docs/spec`\n");
+    assert_eq!(
+        read(&p, ".claude/settings.json"),
+        "{\"allow\": [\"Edit(docs/spec/**)\"]}\n"
+    );
+    assert_eq!(read(&p, "tests/run.sh"), "ROOT=\"$ROOT/docs/spec\"\n");
+    assert_eq!(read(&p, "src/decoy.txt"), d("@\n"));
+    assert!(read(&p, "docs/spec/product.md").contains("See docs/spec/tech.md"));
+    let check = migrate(&p, &["--check"]);
+    assert_eq!(check.code, 0, "{}\n{}", check.text(), check.stderr);
+    // git sees renames, not a delete plus an add.
+    let st = status(&p);
+    let renames = st.lines().filter(|l| l.starts_with('R')).count();
+    assert_eq!(renames, 4, "{st}");
+    assert!(
+        !st.lines()
+            .any(|l| l.starts_with("D ") || l.starts_with("A ")),
+        "{st}"
+    );
+}
+
+#[test]
+fn layered_execute() {
+    let p = corpus("migrate-layered-run");
+    // A root note outside the layered layout draws an SF30 warning.
+    put(
+        &p,
+        "@/notes.md",
+        "---\ntype: note\nupdated: 2026-01-01\n---\n\n# Notes\n",
+    );
+    commit_all(&p);
+    let out = migrate(&p, &["--layout", "layered"]);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    for hub in ["product", "tech", "design", "plan"] {
+        let path = format!("docs/spec/{hub}.md");
+        if p.join(&path).exists() {
+            let text = read(&p, &path);
+            assert!(text.contains("type: hub\n"), "{path}: {text}");
+            assert!(!text.contains("type: entrypoint"), "{path}");
+        }
+    }
+    assert!(p.join("docs/spec/tech/cli.md").is_file());
+    assert!(!p.join("docs/spec/tech-cli.md").exists());
+    let cli = read(&p, "docs/spec/tech/cli.md");
+    assert!(
+        cli.contains("type: tech\n") && cli.contains("applies: \"**\""),
+        "{cli}"
+    );
+    assert!(cli.contains("[tech.md](../tech.md)"), "{cli}");
+    let plan = read(&p, "docs/spec/plan.md");
+    assert!(
+        plan.contains("- [D12 \u{2014} Orders in the skill](decisions/d12-orders-in-the-skill.md)"),
+        "{plan}"
+    );
+    assert!(
+        p.join("docs/spec/decisions/d12-orders-in-the-skill.md")
+            .is_file()
+    );
+    assert!(p.join("docs/spec/decisions/d13-carrier-split.md").is_file());
+    assert!(read(&p, "docs/spec/tech.md").contains("tech/cli.md"));
+    // The marker for the SF30 warning is inserted after the frontmatter and listed.
+    let notes = read(&p, "docs/spec/notes.md");
+    assert!(
+        notes.contains("---\n<!-- vibe-spec: allow SF30 -->\n"),
+        "{notes}"
+    );
+    assert!(
+        out.text().contains("docs/spec/notes.md SF30"),
+        "{}",
+        out.text()
+    );
+    // Links resolve: no SF22 and no marker-able warning is left.
+    let (_, v) = common::validate_json(&p, &[], &[]);
+    let findings = v["findings"].as_array().unwrap();
+    let left: Vec<&serde_json::Value> = findings
+        .iter()
+        .filter(|f| {
+            ["SF22", "SF30", "SF31", "SF33", "SF34"].contains(&f["check"].as_str().unwrap())
+        })
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+    // The JSON run reports the same markers.
+    let q = corpus("migrate-layered-json");
+    put(
+        &q,
+        "@/notes.md",
+        "---\ntype: note\nupdated: 2026-01-01\n---\n\n# Notes\n",
+    );
+    let out = migrate(&q, &["--layout", "layered", "--json"]);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    let v = json(&out);
+    assert_eq!(v["dry_run"], false);
+    assert_eq!(
+        v["markers"],
+        serde_json::json!(["docs/spec/notes.md SF30"]),
+        "{v}"
+    );
+}
+
+fn is_root() -> bool {
+    let out = std::process::Command::new("id").arg("-u").output().unwrap();
+    String::from_utf8_lossy(&out.stdout).trim() == "0"
+}
+
+#[test]
+fn revert_restores_the_tree() {
+    use std::os::unix::fs::PermissionsExt;
+    if is_root() {
+        eprintln!("skipped: running as root, a read-only directory does not stop the write");
+        return;
+    }
+    let p = corpus("migrate-revert");
+    put(&p, "@/scratch.txt", "untracked\n");
+    commit_all(&p);
+    put(&p, "@/late.txt", "untracked later\n");
+    let tree = snapshot(&p);
+    let st = status(&p);
+    // The last write (tests/run.sh) cannot create its temporary file.
+    fs::set_permissions(p.join("tests"), fs::Permissions::from_mode(0o555)).unwrap();
+    let out = migrate(&p, &["--layout", "layered"]);
+    fs::set_permissions(p.join("tests"), fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(out.code, 1, "{}\n{}", out.text(), out.stderr);
+    assert!(out.stdout.is_empty(), "{}", out.text());
+    assert!(
+        out.stderr.starts_with("migrate: ERROR: tests/run.sh: "),
+        "{}",
+        out.stderr
+    );
+    assert!(
+        out.stderr.ends_with(" \u{2014} reverted\n"),
+        "{}",
+        out.stderr
+    );
+    let now = snapshot(&p);
+    let changed: Vec<&String> = now
+        .keys()
+        .chain(tree.keys())
+        .filter(|k| now.get(*k) != tree.get(*k))
+        .collect();
+    assert!(changed.is_empty(), "tree differs at {changed:?}");
+    assert_eq!(status(&p), st, "git status differs after the revert");
+    // And a second attempt on the restored tree works.
+    let again = migrate(&p, &["--layout", "layered"]);
+    assert_eq!(again.code, 0, "{}\n{}", again.text(), again.stderr);
+}
+
+#[test]
+fn non_git_project_renames() {
+    let p = corpus("migrate-nogit");
+    fs::remove_dir_all(p.join(".git")).unwrap();
+    let out = migrate(&p, &[]);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    assert!(p.join("docs/spec/tech-cli.md").is_file());
+    assert!(!p.join(d(".spec")).exists());
+    assert!(!p.join(".git").exists());
+    assert_eq!(read(&p, "README.md"), "Run `vibe-spec --root docs/spec`\n");
+}
+
+#[test]
+fn moved_and_rewritten_docs_get_today() {
+    let p = corpus("migrate-today");
+    put(
+        &p,
+        "@/notes.md",
+        "---\ntype: note\n---\n\n# Notes (no updated key)\n",
+    );
+    commit_all(&p);
+    let out = migrate(&p, &["--layout", "layered"]);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    let today = today();
+    let line = format!("updated: {today}\n");
+    for rel in [
+        "product.md",
+        "tech.md",
+        "plan.md",
+        "tech/cli.md",
+        "notes.md",
+        "decisions/d12-orders-in-the-skill.md",
+    ] {
+        let text = read(&p, &format!("docs/spec/{rel}"));
+        assert_eq!(text.matches("updated:").count(), 1, "{rel}: {text}");
+        assert!(text.contains(&line), "{rel}: {text}");
+    }
+    // Only spec docs are bumped.
+    assert_eq!(read(&p, "README.md"), "Run `vibe-spec --root docs/spec`\n");
+    // Committed today, the docs are not older than their last commit.
+    let date = format!("{today}T12:00:00Z");
+    common::git(&p, &date, &["add", "-A"]);
+    common::git(&p, &date, &["commit", "-q", "-m", "migrated"]);
+    let (_, v) = common::validate_json(&p, &["--strict"], &[]);
+    let sf29: Vec<&serde_json::Value> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["check"] == "SF29")
+        .collect();
+    assert!(sf29.is_empty(), "{sf29:?}");
+}
+
+#[test]
+fn legacy_root_still_found() {
+    let a = corpus("migrate-legacy-a");
+    let b = corpus("migrate-legacy-b");
+    let before_b = snapshot(&b);
+    let out = migrate(&a, &[]);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    let v = json(&spec(&a, &["root", "--json"], &[]));
+    assert_eq!(v["source"], "config", "{v}");
+    assert!(v["root"].as_str().unwrap().ends_with("docs/spec"), "{v}");
+    let v = json(&spec(&b, &["root", "--json"], &[]));
+    assert_eq!(v["source"], "dot-spec", "{v}");
+    assert_eq!(snapshot(&b), before_b);
+}
+
+#[test]
+fn a_run_with_nothing_to_move_writes_nothing() {
+    // No literal anywhere: a population miss before any write.
+    let p = repo("migrate-nopop");
+    put(&p, "@/product.md", "---\ntype: entrypoint\n---\n\n# P\n");
+    let before = snapshot(&p);
+    let out = migrate(&p, &[]);
+    assert_eq!(out.code, 1, "{}", out.text());
+    assert!(out.stderr.contains("migrate: ERROR: "), "{}", out.stderr);
+    assert_eq!(snapshot(&p), before);
+}
+
+#[test]
+fn malformed_config_json_fails_closed() {
+    let p = corpus("migrate-badjson");
+    put(&p, ".vibe/spec.json", "{\"tooth\": ");
+    let before = snapshot(&p);
+    let out = migrate(&p, &[]);
+    assert_ne!(out.code, 0);
+    assert!(out.stdout.is_empty());
+    assert_eq!(snapshot(&p), before);
+}
+
+#[test]
+fn links_inside_fenced_code_are_left_alone() {
+    let p = repo("migrate-fence-links");
+    put(&p, "README.md", "@\n");
+    put(
+        &p,
+        "@/product.md",
+        "---\ntype: entrypoint\n---\n\n```\n[a](../a.md) and @/x\n```\n\n[b](../b.md)\n",
+    );
+    let out = spec(
+        &p,
+        &["migrate", "--to", "docs/spec", "--dry-run", "--json"],
+        &[],
+    );
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let v = json(&out);
+    let news: Vec<(u64, &str)> = v["rewrites"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["file"] == "docs/spec/product.md")
+        .map(|r| (r["line"].as_u64().unwrap(), r["new"].as_str().unwrap()))
+        .collect();
+    // The literal inside the fence is still rewritten; its link is not.
+    assert_eq!(
+        news,
+        [(6, "[a](../a.md) and docs/spec/x"), (9, "[b](../../b.md)")],
+        "{v}"
+    );
+}
+
+#[test]
+fn slugs_drop_non_ascii_characters_instead_of_splitting_on_them() {
+    let p = repo("migrate-slug-drop");
+    put(&p, "README.md", "@\n");
+    put(
+        &p,
+        "@/plan.md",
+        "---\ntype: entrypoint\n---\n\n- **D5 \u{2014} Na\u{ef}ve plan.** Body.\n",
+    );
+    let v = json(&plan_of(&p));
+    assert_eq!(
+        v["created"][0], "docs/spec/decisions/d5-nave-plan.md",
+        "{v}"
+    );
+}
+
+#[test]
+fn crlf_decision_files_keep_every_line_ending() {
+    let p = repo("migrate-crlf-created");
+    let crlf = |s: &str| d(s).replace('\n', "\r\n");
+    write(
+        &p,
+        ".spec/tech.md",
+        &crlf(
+            "---\ntype: entrypoint\nchildren: [tech-cli.md]\nupdated: 2026-01-01\n---\n\nsee @/plan.md\n",
+        ),
+    );
+    write(
+        &p,
+        ".spec/tech-cli.md",
+        &crlf("---\ntype: tech-topic\nparent: tech.md\nupdated: 2026-01-01\n---\n\n[t](tech.md)\n"),
+    );
+    write(
+        &p,
+        ".spec/plan.md",
+        &crlf(
+            "---\ntype: entrypoint\nupdated: 2026-01-01\n---\n\n- **D3 \u{2014} Cr lf.** Line one.\n  Line two @/x.\n",
+        ),
+    );
+    let out = migrate(&p, &["--layout", "layered"]);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    let bytes = fs::read(p.join("docs/spec/decisions/d3-cr-lf.md")).unwrap();
+    let want = format!(
+        "---\r\ntype: decision\r\nupdated: {}\r\n---\r\n\r\n- **D3 \u{2014} Cr lf.** Line one.\r\n  Line two docs/spec/x.\r\n",
+        today()
+    );
+    assert_eq!(String::from_utf8(bytes).unwrap(), want);
+    // No file the run touched has a bare line feed.
+    for rel in ["plan.md", "tech.md", "tech/cli.md"] {
+        let text = fs::read(p.join("docs/spec").join(rel)).unwrap();
+        for (i, b) in text.iter().enumerate() {
+            if *b == b'\n' {
+                assert!(i > 0 && text[i - 1] == b'\r', "{rel}: bare LF at {i}");
+            }
+        }
+    }
 }

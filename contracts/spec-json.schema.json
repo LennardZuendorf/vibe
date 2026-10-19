@@ -24,8 +24,8 @@
         "moves": { "type": "array", "items": { "$ref": "#/$defs/migrate-move" }, "description": "In execution order; the root move first." },
         "rewrites": { "type": "array", "items": { "$ref": "#/$defs/migrate-rewrite" }, "description": "Sorted by file, then line." },
         "created": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "New files, by their path after the moves." },
-        "markers": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "Allow-markers inserted; always empty in a plan." },
-        "dry_run": { "type": "boolean", "description": "True when run with --dry-run." },
+        "markers": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "Allow-markers inserted, as `<file> <check>`; empty in a plan (`--dry-run`, `--check`) and when the new root needed none." },
+        "dry_run": { "type": "boolean", "description": "True when run with --dry-run; false for a real run." },
         "check": { "type": "boolean", "description": "True when run with --check (the zero-literal sweep). Optional: readers treat absent as false. Nothing is written in either mode." }
       }
     },

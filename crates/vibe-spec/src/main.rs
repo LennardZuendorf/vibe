@@ -200,10 +200,13 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Move the spec root and rewrite legacy-root literals (scan, plan, check).
+    /// Move the spec root and rewrite legacy-root literals.
     ///
-    /// This release plans and checks only: pass `--dry-run` to print the
-    /// plan, or `--check` for the zero-literal sweep. Nothing is written.
+    /// Plans, then moves (`git mv` for tracked files), rewrites, writes
+    /// `.vibe/spec.json` `root`, checks that no literal is left and inserts
+    /// allow-markers for the warnings the move leaves. Any failure restores
+    /// the tree and the git index. `--dry-run` prints the plan; `--check` is
+    /// the zero-literal sweep. Both write nothing.
     Migrate {
         /// The new spec root, relative to the current directory.
         #[arg(long, value_name = "DIR")]

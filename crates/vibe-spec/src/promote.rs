@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use vibe_core::exit;
+use vibe_core::fs::Write;
 
 use crate::delta::{self, Change};
 use crate::layered::{Layout, detect, lexical};
@@ -226,58 +227,6 @@ fn plan_delta(
         changes,
         disk,
     })
-}
-
-/// One planned write with the bytes to put back if a later write fails.
-struct Write {
-    path: PathBuf,
-    show: String,
-    bytes: Vec<u8>,
-    original: Option<Vec<u8>>,
-}
-
-/// Performs the writes in order. If write k fails, writes 0..k are put back
-/// (or removed when the file did not exist) and the refusal is returned.
-fn commit(writes: &[Write]) -> Result<(), String> {
-    // `write_atomic` makes a fresh file: put the original mode back on it.
-    let modes: Vec<Option<std::fs::Permissions>> = writes
-        .iter()
-        .map(|w| std::fs::metadata(&w.path).ok().map(|m| m.permissions()))
-        .collect();
-    let put =
-        |path: &Path, bytes: &[u8], mode: &Option<std::fs::Permissions>| -> Result<(), String> {
-            vibe_core::fs::write_atomic(path, bytes).map_err(|e| e.to_string())?;
-            match mode {
-                Some(m) => std::fs::set_permissions(path, m.clone()).map_err(|e| e.to_string()),
-                None => Ok(()),
-            }
-        };
-    for (k, (w, mode)) in writes.iter().zip(&modes).enumerate() {
-        let Err(e) = put(&w.path, &w.bytes, mode) else {
-            continue;
-        };
-        let mut msg = format!("promote: ERROR: {}: {e}", w.show);
-        let mut restored = Vec::new();
-        let mut failed = Vec::new();
-        for (done, mode) in writes.iter().zip(&modes).take(k) {
-            let back = match &done.original {
-                Some(b) => put(&done.path, b, mode),
-                None => std::fs::remove_file(&done.path).map_err(|e| e.to_string()),
-            };
-            match back {
-                Ok(()) => restored.push(done.show.as_str()),
-                Err(err) => failed.push(format!("{}: {err}", done.show)),
-            }
-        }
-        if !restored.is_empty() {
-            msg.push_str(&format!(" — restored {}", restored.join(", ")));
-        }
-        for f in failed {
-            msg.push_str(&format!(" — restore failed for {f}"));
-        }
-        return Err(msg);
-    }
-    Ok(())
 }
 
 /// The stdout lines for a delta plan (P3c-R9).
@@ -641,9 +590,9 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
         }
     }
     if !a.dry_run
-        && let Err(msg) = commit(&writes)
+        && let Err(msg) = vibe_core::fs::commit(&writes)
     {
-        return fail(&msg);
+        return fail(&format!("promote: ERROR: {msg}"));
     }
     if a.json {
         let mut v = match &sp_out {
