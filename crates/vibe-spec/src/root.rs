@@ -151,6 +151,22 @@ fn explicit(cwd: &Path, path: &Path, source: Source) -> Result<Root, Miss> {
     })
 }
 
+/// The stderr warning for a project that holds both `docs/spec/` and the legacy
+/// root while discovery fell through to `docs/spec/` (no config `root`).
+pub fn both_roots_warning(root: &Root) -> Option<String> {
+    if root.source != Source::DocsSpec {
+        return None;
+    }
+    let legacy = root.project.join(crate::literal::LEGACY);
+    std::fs::symlink_metadata(legacy)
+        .ok()
+        .filter(|m| m.is_dir())?;
+    Some(format!(
+        "vibe-spec: warning: both docs/spec/ and {}/ exist; using docs/spec/ (set \"root\" in .vibe/spec.json)",
+        crate::literal::LEGACY
+    ))
+}
+
 /// Steps 3–5 at one directory.
 fn at(dir: &Path, depth: usize) -> Result<Option<Root>, Miss> {
     let config = dir.join(".vibe").join("spec.json");

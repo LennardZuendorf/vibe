@@ -295,6 +295,11 @@ fn main() -> ExitCode {
     }
     let env_root = std::env::var_os("VIBE_SPEC_ROOT");
     let found = root::discover(&cwd, cli.root.as_deref(), env_root.as_deref());
+    if let Ok(root) = &found
+        && let Some(warning) = root::both_roots_warning(root)
+    {
+        eprintln!("{warning}");
+    }
     let (code, out) = match cli.command {
         Command::Root { json } => root::command(&found, json),
         Command::ListSpecs { args: _ } => list_specs::run(&found),

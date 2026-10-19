@@ -40,6 +40,35 @@ fn docs_spec_beats_dot_spec_at_the_same_level() {
 }
 
 #[test]
+fn both_roots_warn_once_on_stderr_for_cli_commands_only() {
+    let p = project("both-warn");
+    fs::create_dir_all(p.join(".spec")).unwrap();
+    fs::create_dir_all(p.join("docs/spec")).unwrap();
+    let warn = "vibe-spec: warning: both docs/spec/ and .spec/ exist; using docs/spec/ (set \"root\" in .vibe/spec.json)";
+    let out = spec(&p, &["root"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(
+        out.stderr.lines().filter(|l| *l == warn).count(),
+        1,
+        "{}",
+        out.stderr
+    );
+    assert_eq!(out.text(), format!("{}\n", p.join("docs/spec").display()));
+    let out = spec(&p, &["root", "--json"], &[]);
+    assert!(out.stderr.contains(warn), "{}", out.stderr);
+    assert_eq!(json(&out)["source"], "docs-spec");
+    // The hook subcommand stays silent.
+    let out = common::spec_stdin(&p, &["hook", "session-start"], &[], b"{}");
+    assert!(!out.stderr.contains("warning: both"), "{}", out.stderr);
+    // A config root, or a single root, never warns.
+    let q = project("one-warn");
+    fs::create_dir_all(q.join("docs/spec")).unwrap();
+    assert!(!spec(&q, &["root"], &[]).stderr.contains("warning: both"));
+    write(&p, ".vibe/spec.json", "{\"root\": \"docs/spec\"}\n");
+    assert!(!spec(&p, &["root"], &[]).stderr.contains("warning: both"));
+}
+
+#[test]
 fn the_nearest_directory_wins_the_walk() {
     let p = project("nearest");
     fs::create_dir_all(p.join("docs/spec")).unwrap();

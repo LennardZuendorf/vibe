@@ -96,7 +96,7 @@ work. Routing is not optional. A reply to the user is not routing.
 ## The Rule
 
 1. Invoke this skill before you act on any change to behaviour, structure, or docs.
-2. Read `docs/spec/lessons.md` and the root doc of the area you touch. No `docs/spec/` yet → run `/spec setup` first.
+2. Read `docs/spec/lessons.md` and the root doc of the area you touch. No spec root yet (`vibe-spec root` exits 3) → run `/spec setup` first.
 3. Route the work by the table below. Announce the route in one line.
 4. Write only where the route says. Nowhere else.
 5. Finish: bump `updated:` on every spec you edited, then run `vibe-spec validate`.
@@ -205,7 +205,7 @@ root. If `vibe-spec` is not on PATH, build it (`cargo build -p vibe-spec`).
 
 ## Config
 
-Read `docs/spec/.config.yaml` before any route. A missing file or key means the default.
+Read `.config.yaml` in the spec root (`vibe-spec root`) before any route. A missing file or key means the default.
 
 | Key | Default | When set |
 |---|---|---|
@@ -220,17 +220,17 @@ filler; security and irreversible-action warnings stay in full prose.
 
 On `/spec setup`:
 
-1. `docs/spec/.config.yaml` present → show settings, update only the one named, confirm, write.
+1. `.config.yaml` present in the spec root (`vibe-spec root`) → show settings, update only the one named, confirm, write.
 2. Absent → ask three questions, conversationally:
    - **Q1 — Workflow orchestration:** driven by the vibe flow (`/flow`) or by `/spec` directly? → yes | no
    - **Q2 — Available superpowers:** `all`, `none`, or `custom` (per superpower)?
    - **Q3 — Proactive suggestions:** offer optional executors at each step, or stay quiet? Default: yes.
 3. Show the summary. Write nothing before the user confirms.
-4. On confirm: write `docs/spec/.config.yaml` (always, even with all defaults), then run `vibe-spec init`. Report what it created; next is `/spec strategy` or `/spec feature <name>`.
+4. On confirm: write `.config.yaml` into the spec root (`vibe-spec root`) (always, even with all defaults); run `vibe-spec init` only when there is no spec root yet. Report what it created; next is `/spec strategy` or `/spec feature <name>`.
 
 ## Templates
 
-Copy from [reference/templates/](reference/templates/) into `docs/spec/`:
+Copy from [reference/templates/](reference/templates/) into the spec root (`vibe-spec root`):
 
 | Template | For |
 |---|---|
