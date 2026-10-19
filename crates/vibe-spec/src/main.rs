@@ -214,8 +214,12 @@ fn main() -> ExitCode {
                 code
             }
             HookEvent::SessionStart => {
-                eprintln!("vibe-spec hook: this event is not implemented yet — allowing");
-                exit::OK
+                let mut stdin = Vec::new();
+                let _ = std::io::Read::read_to_end(&mut std::io::stdin(), &mut stdin);
+                let harness = hook::Harness::detect(|k| std::env::var_os(k).is_some());
+                let (code, out) = hook::session_start(&stdin, &cwd, harness);
+                emit(&out);
+                code
             }
         };
         return ExitCode::from(code);

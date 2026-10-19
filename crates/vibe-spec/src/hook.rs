@@ -346,6 +346,69 @@ fn allow_validate(cause: &str) -> (u8, Vec<u8>) {
     (0, Vec::new())
 }
 
+/// The router skill: frontmatter plus body (P4-R6).
+const USING_SPEC: &str = include_str!("../../../spec/using-spec/SKILL.md");
+
+/// Which JSON shape the host harness reads from a `SessionStart` hook.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Harness {
+    /// Claude Code: `hookSpecificOutput.additionalContext`.
+    Claude,
+    /// Cursor: `additional_context`.
+    Cursor,
+    /// Any other harness: `additionalContext`.
+    Other,
+}
+
+impl Harness {
+    /// Detects the harness from the environment (P4-R6).
+    pub fn detect(var: impl Fn(&str) -> bool) -> Harness {
+        if var("CLAUDE_PLUGIN_ROOT") || var("CLAUDE_PROJECT_DIR") {
+            Harness::Claude
+        } else if var("CURSOR_PLUGIN_ROOT") {
+            Harness::Cursor
+        } else {
+            Harness::Other
+        }
+    }
+}
+
+/// The skill text after its frontmatter.
+fn router_body() -> &'static str {
+    USING_SPEC
+        .strip_prefix("---\n")
+        .and_then(|rest| rest.split_once("\n---\n"))
+        .map_or(USING_SPEC, |(_, body)| body)
+        .trim()
+}
+
+/// `hook session-start`: injects the `using-spec` router and, inside a
+/// project with a spec root, touches `.vibe/spec-session`. Always exits 0.
+pub fn session_start(stdin: &[u8], cwd: &Path, harness: Harness) -> (u8, Vec<u8>) {
+    let dir = parse(stdin).map_or_else(|_| cwd.to_path_buf(), |p| p.cwd);
+    if let Ok(root) = crate::root::discover(&dir, None, None) {
+        let vibe = root.project.join(".vibe");
+        let marked = std::fs::create_dir_all(&vibe)
+            .and_then(|()| std::fs::write(vibe.join("spec-session"), b""));
+        if let Err(e) = marked {
+            eprintln!("vibe-spec hook session-start: cannot write the session marker — {e}");
+        }
+    }
+    let text = format!(
+        "<EXTREMELY_IMPORTANT>\n{}\n</EXTREMELY_IMPORTANT>",
+        router_body()
+    );
+    let value = match harness {
+        Harness::Claude => serde_json::json!({"hookSpecificOutput": {
+            "hookEventName": "SessionStart", "additionalContext": text}}),
+        Harness::Cursor => serde_json::json!({"additional_context": text}),
+        Harness::Other => serde_json::json!({"additionalContext": text}),
+    };
+    let mut out = value.to_string().into_bytes();
+    out.push(b'\n');
+    (0, out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
