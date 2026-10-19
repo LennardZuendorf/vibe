@@ -5,7 +5,7 @@ updated: 2026-10-19
 
 # v0.5 — the vibe CLI arc (queued)
 
-The follow-on arc: one `vibe` CLI front door over the three tools, plus the cross-tool capabilities no single tool can own — worktree lifecycle, global spec management, global blocks. Architecture: [tech-cli.md](../../../tech/cli.md). Decisions: D40–D43 below. Nothing starts before F22 is DONE; C4 additionally waits on F16, C5 on F14.
+The follow-on arc: one `vibe` CLI front door over the three tools, plus the cross-tool capabilities no single tool can own — worktree lifecycle, global spec management, global blocks. Architecture: [tech-cli.md](../../../tech/cli.md). Decisions: D40–D43 in [decisions](../../../decisions/README.md). Nothing starts before F22 is DONE; C4 additionally waits on F16, C5 on F14.
 
 **Issue catalog.** #42 tracks this arc; C1–C6 are #43–#48, filed as its sub-issues (2026-09-26), all six on the `v0.5 — CLI front door` milestone; #42 itself carries none.
 

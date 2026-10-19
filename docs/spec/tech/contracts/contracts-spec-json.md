@@ -24,7 +24,7 @@ Nine queries, each `--json`, each exit 0 with a JSON object on success.
 | `openspec` | what `export` or `import` wrote (both directions) |
 
 Exit 3 = no spec tree found at any point in the discovery order — the one
-query-specific exit code (see the exit-code contract below). Degrade path:
+query-specific exit code (see [the exit-code contract](contracts-exit-codes.md)). Degrade path:
 if `vibe-spec` is absent from PATH, a peer checks only that
 `<specroot>/features/<f>/` exists, using its own copy of the discovery
 order, and falls back to a bare path pointer instead of the summarized

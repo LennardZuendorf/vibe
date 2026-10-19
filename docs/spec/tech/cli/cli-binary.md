@@ -14,8 +14,8 @@ no-tool-depends-on-tool rule). Subcommands:
 | Subcommand | Behaviour |
 |---|---|
 | `vibe spec\|flow\|instruct …` | Exec the peer binary through the same five-tier discovery as `bin/hook.sh`; a missing peer prints one "not installed" advice line, exit 0 — advice, never failure. |
-| `vibe worktree …` | Native — worktree lifecycle (below). |
-| `vibe space …` | Native — global spec space (below). |
+| `vibe worktree …` | Native — worktree lifecycle ([Worktree lifecycle](cli-worktree.md)). |
+| `vibe space …` | Native — global spec space ([Global spec space and blocks](cli-space.md)). |
 | `vibe doctor` | Peer checks + registry + global-tier consistency. |
 
 The three tool binaries remain independently installable with their own

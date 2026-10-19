@@ -13,6 +13,8 @@ updated: 2026-10-19
 |---|---|---|
 | `instruct` | Instruction tiers, blocks, channels, budgets, providers, sync | `instruct/` |
 
+Planned: the `instruct/` directory does not exist yet. The code ships today in `flow/content` (policy, defaults, blocks), which is this area's `code:` path.
+
 ## Features
 
 | Tool | Covers | Lives in |

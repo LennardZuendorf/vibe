@@ -2,8 +2,9 @@
 type: hub
 scope: design
 design_format: google-labs-code/design.md-inspired
-children: []
+children: [concepts/design-principles.md, concepts/interaction-conventions.md, concepts/information-hierarchy.md, parts/flow/concepts/tui-conventions.md, parts/spec/concepts/spec-document-ergonomics.md]
 updated: 2026-10-19
+---
 
 # vibe — Design
 

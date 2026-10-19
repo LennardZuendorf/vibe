@@ -5,7 +5,7 @@ updated: 2026-10-19
 
 # Issue catalog (GitHub)
 
-**Issue catalog (GitHub).** The F-rows and issues are 1:1; held rows have no issue yet (their architecture design is in flight and files its own issues). #22 is the v0.4 tracking issue; #18 (repo/branch-scoped cursor) is absorbed by this arc — the cursor path lands in F5, the plugin-carried runtime in F21; #12 (plugin never registered, closed) is fixed by design in F21/F22. Each phase above is a GitHub Milestone (`v0.4 Phase 0–4`, see [docs/roadmap/README.md](../../roadmap/README.md#milestones)); #22 itself carries no milestone since it spans all five.
+**Issue catalog (GitHub).** The F-rows and issues are 1:1; held rows have no issue yet (their architecture design is in flight and files its own issues). #22 is the v0.4 tracking issue; #18 (repo/branch-scoped cursor) is absorbed by this arc — the cursor path lands in F5, the plugin-carried runtime in F21; #12 (plugin never registered, closed) is fixed by design in F21/F22. Each phase of the Feature Sequence is a GitHub Milestone (`v0.4 Phase 0–4`, see [docs/roadmap/README.md](../../roadmap/README.md#milestones)); #22 itself carries no milestone since it spans all five.
 
 | Row | Issue | Row | Issue |
 |---|---|---|---|

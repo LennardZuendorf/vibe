@@ -1,8 +1,9 @@
 ---
 type: hub
 scope: product
-children: []
+children: [concepts/story.md, concepts/carrier-model.md, concepts/requirements.md, concepts/product-principles.md, concepts/target-user.md, concepts/non-goals.md, parts/spec/spec.md, parts/flow/flow.md, parts/instruct/instruct.md, parts/cli/cli.md, areas/contracts-schemas.md, areas/installer.md, questions/resolved-questions.md]
 updated: 2026-10-19
+---
 
 # vibe — Product
 
