@@ -758,3 +758,43 @@ fn two_keys_for_one_check_warn_and_the_last_wins() {
     assert_eq!(out.code, 0, "the last key (sf13: off) wins: {}", out.text());
     assert!(!out.text().contains("SF13"), "{}", out.text());
 }
+
+#[test]
+fn env_strictness_overlays_the_config() {
+    let p = project("str-env");
+    write(
+        &p,
+        ".spec/product.md",
+        "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n# P\n",
+    );
+    write(&p, ".vibe/spec.json", r#"{"strictness":{"SF29":"off"}}"#);
+    common::git(&p, "2026-03-01T12:00:00Z", &["init", "-q"]);
+    common::git(&p, "2026-03-01T12:00:00Z", &["add", "-A"]);
+    common::git(&p, "2026-03-01T12:00:00Z", &["commit", "-q", "-m", "init"]);
+
+    let plain = spec(&p, &["validate", "--strict"], &[]);
+    assert!(
+        !plain.text().contains("older than its last commit"),
+        "{}",
+        plain.text()
+    );
+
+    let env = [("VIBE_SPEC_STRICTNESS", r#"{"SF29":"error"}"#)];
+    let on = spec(&p, &["validate", "--strict"], &env);
+    assert_eq!(on.code, 1, "{}", on.text());
+    assert!(
+        on.text().contains("older than its last commit"),
+        "{}",
+        on.text()
+    );
+
+    for bad in ["not json", "[]", r#"{"SF29":"loud"}"#] {
+        let out = spec(&p, &["validate"], &[("VIBE_SPEC_STRICTNESS", bad)]);
+        assert_eq!(out.code, 2, "{bad}: {}", out.text());
+        assert!(
+            out.stderr.contains("VIBE_SPEC_STRICTNESS"),
+            "{}",
+            out.stderr
+        );
+    }
+}

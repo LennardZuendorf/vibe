@@ -36,6 +36,7 @@ mod query;
 mod report;
 mod root;
 mod scan_merges;
+mod setup;
 mod superpowers;
 mod text;
 mod trace;
@@ -167,6 +168,21 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Install the pre-commit hook, OpenCode files and the AGENTS.md router block.
+    Setup {
+        /// Install the git pre-commit hook.
+        #[arg(long)]
+        git_hooks: bool,
+        /// Write the OpenCode agents and plugin shim.
+        #[arg(long)]
+        opencode: bool,
+        /// Add or refresh the router block in AGENTS.md.
+        #[arg(long)]
+        agents_md: bool,
+        /// Print Spec JSON v1.
+        #[arg(long)]
+        json: bool,
+    },
     /// Hook entry points; each reads the hook payload on stdin.
     Hook {
         /// The hook event.
@@ -267,6 +283,21 @@ fn main() -> ExitCode {
             json,
         } => openspec::import(&found, &cwd, &dir, feature.as_deref(), json),
         Command::Trace { since, json } => trace::run(&found, since.as_deref(), json),
+        Command::Setup {
+            git_hooks,
+            opencode,
+            agents_md,
+            json,
+        } => setup::run(
+            &found,
+            &cwd,
+            &setup::Options {
+                git_hooks,
+                opencode,
+                agents_md,
+                json,
+            },
+        ),
         Command::Hook { .. } => (exit::OK, Vec::new()),
     };
     emit(&out);
