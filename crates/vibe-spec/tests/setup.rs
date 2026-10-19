@@ -9,8 +9,21 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const BAD: &str = "---\ntype: entry\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n# P\n";
-const GOOD: &str =
-    "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n# P\n";
+/// A valid note edited today: the hook holds a changed doc to today's date.
+fn good() -> String {
+    let today = String::from_utf8(
+        Command::new("date")
+            .args(["-u", "+%F"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    format!(
+        "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: {}\n---\n\n# P\n",
+        today.trim()
+    )
+}
 
 fn repo(name: &str) -> PathBuf {
     let p = project(name);
@@ -82,7 +95,7 @@ fn git_hook_installs_and_is_idempotent() {
     let (code, err) = git_commit(&p, &bin_dir());
     assert_ne!(code, 0, "hook must block: {err}");
 
-    write(&p, ".spec/product.md", GOOD);
+    write(&p, ".spec/product.md", &good());
     Command::new("git")
         .args(["add", "-A"])
         .current_dir(&p)
