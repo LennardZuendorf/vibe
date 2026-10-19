@@ -343,3 +343,34 @@ pub fn staged_oracle(project: &Path, script: &str, args: &[&str]) -> Out {
     cmd.arg(dir.join(script)).args(args);
     run(cmd, project, &[])
 }
+
+/// Like [`spec`], with `stdin` piped to the process (hooks read their payload there).
+pub fn spec_stdin(cwd: &Path, args: &[&str], env: &[(&str, &str)], stdin: &[u8]) -> Out {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_vibe-spec"));
+    cmd.args(args)
+        .current_dir(cwd)
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", cwd)
+        .env("LC_ALL", "C")
+        .env("TZ", "UTC")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let mut child = cmd.spawn().unwrap();
+    let mut pipe = child.stdin.take().unwrap();
+    // A process that exits without reading closes the pipe; that is not a test error.
+    let _ = pipe.write_all(stdin);
+    drop(pipe);
+    let o = child.wait_with_output().unwrap();
+    Out {
+        code: o.status.code().unwrap_or(-1),
+        stdout: o.stdout,
+        stderr: String::from_utf8_lossy(&o.stderr).into_owned(),
+    }
+}

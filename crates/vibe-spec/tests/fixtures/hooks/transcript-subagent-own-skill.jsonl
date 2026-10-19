@@ -1,0 +1,9 @@
+{"type":"user","isSidechain":true,"message":{"role":"user","content":"The spec skill rules apply. Use the Write tool to create docs/spec/c.md containing: sub2. Then reply done."}}
+{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"thinking","text":""}]}}
+{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"spec"}}]}}
+{"type":"user","isSidechain":true,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01TzDcf4gyzuVDgAePxBH2iM"}]}}
+{"type":"user","isSidechain":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: /work/project/.claude/skills/spec\n\nSpec skill loaded. You may now edit files under docs/spec.\n"}]}}
+{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"thinking","text":""}]}}
+{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","name":"Write","input":{"file_path":"/work/project/docs/spec/c.md"}}]}}
+{"type":"user","isSidechain":true,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01VchKvqsuum2d7DiKEn4xD3"}]}}
+{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}

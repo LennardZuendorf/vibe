@@ -25,6 +25,8 @@ mod delta;
 mod drift;
 mod frontmatter;
 mod git;
+#[allow(dead_code)] // wired by the guard in Task 2
+mod hook;
 mod layered;
 mod lessons;
 mod list_specs;
@@ -38,6 +40,8 @@ mod scan_merges;
 mod superpowers;
 mod text;
 mod trace;
+#[allow(dead_code)] // wired by the guard in Task 2
+mod transcript;
 mod validate;
 
 /// The vibe spec tool.
