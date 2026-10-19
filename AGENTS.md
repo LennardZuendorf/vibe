@@ -85,7 +85,7 @@ This is the **end-state** the repo is building. Reference the root
 ## Repo layout
 
 ```text
-docs/spec/                 # durable memory (product/tech/design/plan/lessons + features/)
+docs/spec/             # durable memory (product/tech/design/plan/lessons + features/)
 .agents/skills/spec/   # bundled spec framework
 .agents/skills/vibe/   # workflow skill: router, phase files, state machine, scripts
 AGENTS.md              # this file (canonical)

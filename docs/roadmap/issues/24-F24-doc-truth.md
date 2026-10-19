@@ -10,7 +10,7 @@ parent: epic
 ---
 
 ## Deliverable
-READMEs (umbrella repo + one per tool), CHANGELOG, root `docs/spec`/`docs/spec` truth sweep — every claim marked "shipped today" vs. "v0.4 target" gets reconciled to just "true." `check-drift` (F18) extended to run across all three tools' documentation, not just spec's own tree.
+READMEs (umbrella repo + one per tool), CHANGELOG, root `.spec`/`docs/spec` truth sweep — every claim marked "shipped today" vs. "v0.4 target" gets reconciled to just "true." `check-drift` (F18) extended to run across all three tools' documentation, not just spec's own tree. <!-- literal -->
 
 ## Scope
 **Owns:** documentation content and the drift check's three-tool extension.

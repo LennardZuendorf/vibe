@@ -68,7 +68,7 @@ flowchart TD
   FL --> RUN[".vibe/run/ — cursor, ledger, inject payload"]
   IN -.reads.-> RUN
   IN -.reads.-> PROV[".vibe/providers/*.json"]
-  SP --> DOCS["docs/spec/ (docs/spec/ legacy)"]
+  SP --> DOCS["docs/spec/ (legacy root still resolves)"]
   SP --> MD["AGENTS.md managed blocks"]
   FL --> MD
   IN -->|recomposes| MD
@@ -81,7 +81,7 @@ flowchart TD
 
 | Layer | Owns | Carrier |
 |---|---|---|
-| Memory | `docs/spec/` (`docs/spec/` legacy), AGENTS.md managed blocks, `.vibe/*.json`, `.vibe/blocks/` | repo, committed |
+| Memory | `docs/spec/` (`.spec/` legacy), AGENTS.md managed blocks, `.vibe/*.json`, `.vibe/blocks/` | repo, committed | <!-- literal -->
 | Spec | spec tree, templates, validation, OpenSpec interchange | plugin (`spec/`) |
 | Flow | state machine, cursor, guard, ledger, signals, TUI | plugin (`flow/`) |
 | Instruct | tiers, blocks, channels, budgets, sources | plugin (`instruct/`) |
@@ -107,7 +107,7 @@ vibe/
 ├── .claude-plugin/marketplace.json
 ├── install.sh
 ├── .vibe/       # this repo's own config + blocks (+ run/, local/ ignored)
-├── docs/spec/   # this repo's memory (after migration; docs/spec/ until then)
+├── docs/spec/   # this repo's memory
 └── .agents/skills/{spec,flow,instruct} → ../../<tool>/skills/<tool>  (compat)
 ```
 
@@ -122,7 +122,7 @@ regenerates both.
 
 ## Spec Framework Contract
 
-Default root `docs/spec/`; `docs/spec/` legacy. Layered layout (D44):
+Default root `docs/spec/`; `.spec/` legacy. Layered layout (D44): <!-- literal -->
 
 ```text
 docs/spec/
@@ -244,7 +244,7 @@ crate depends on another — asserted by a `cargo metadata` CI test. No
 module names a state, a spec path, or a channel outside its own tool. Two
 orders are pinned by test: repo-root resolution in core (`CLAUDE_PROJECT_DIR`
 → `VIBE_ROOT` → upward search for `.vibe/`/`.git` → cwd) and spec-root
-discovery in `vibe-spec` (`--root` → env → config → `docs/spec/` → `docs/spec/`
+discovery in `vibe-spec` (`--root` → env → config → `docs/spec/` → `.spec/` <!-- literal -->
 → walk up to `.git`). Ported units carry a frozen oracle and a
 differential parity harness before they replace the original — order,
 corpus, and the deletion gate: [tech-rust.md](tech/rust.md).

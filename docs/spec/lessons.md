@@ -54,13 +54,13 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Date:** 2026-07-03
 
 ### The dogfood repo is a privileged target — eval on a fresh, non-git install
-**Pattern:** `orders.sh` (the flow's headline per-turn feature) worked in every in-repo test and on the source repo, but a README-only stranger eval installing into a fresh `mktemp -d` found it silently returned `state=unknown` for every state. Root cause: it located the skills dir by searching upward for a `docs/spec`/`.git` marker, and a fresh install target has neither — while the source repo (and the dogfood repo the tests run in) always does. The bug was invisible precisely because every test environment was privileged.
+**Pattern:** `orders.sh` (the flow's headline per-turn feature) worked in every in-repo test and on the source repo, but a README-only stranger eval installing into a fresh `mktemp -d` found it silently returned `state=unknown` for every state. Root cause: it located the skills dir by searching upward for a `.spec`/`.git` marker, and a fresh install target has neither — while the source repo (and the dogfood repo the tests run in) always does. The bug was invisible precisely because every test environment was privileged. <!-- literal -->
 **Rule:** A tool that will be *installed elsewhere* must be tested from a representative fresh target (a bare `mktemp -d`, no `.git`, no `docs/spec`), not just the source/dogfood repo. Prefer self-location relative to the script's own path over repo-root markers the target may lack. Run a periodic "stranger" eval (fresh agent, docs-only, throwaway sandbox) as a release gate — it exercises the install-target reality the in-repo suites cannot.
 **Tags:** release-docs, stranger-eval, self-location, install-target, dogfood, orders
 **Date:** 2026-07-03
 
 ### Compound is where drift is born — enforce it mechanically
-**Pattern:** flow-mvp shipped and merged (PR #14) with every unit still marked NOT STARTED in its own `plan.md`, no root `plan.md` Feature Sequence row, and no compound at all — the feature folder was never archived and its Delivered note never written. The gates object, a quick-flow compound state, the precedence section, the evidence-receipt verify tooth, and caveman demotion were all demonstrably live in the tree, yet the `docs/spec/` memory said the work had never begun. End-of-feature discipline is exactly the moment attention lapses (the work "feels done"), and nothing in the harness forced the compound — the audit caught it weeks later.
+**Pattern:** flow-mvp shipped and merged (PR #14) with every unit still marked NOT STARTED in its own `plan.md`, no root `plan.md` Feature Sequence row, and no compound at all — the feature folder was never archived and its Delivered note never written. The gates object, a quick-flow compound state, the precedence section, the evidence-receipt verify tooth, and caveman demotion were all demonstrably live in the tree, yet the `.spec/` memory said the work had never begun. End-of-feature discipline is exactly the moment attention lapses (the work "feels done"), and nothing in the harness forced the compound — the audit caught it weeks later. <!-- literal -->
 **Rule:** Compound must be mechanically enforced, not trusted to discipline. A drift check (`spec/scripts/check-drift.sh`, CI-wired after `validate.sh`) fails when a directory under `docs/spec/features/` has no row in the root `docs/spec/plan.md`, and flags any `NOT STARTED` unit left in a feature `plan.md`. Hand-written assertion counts are errored the same way — they rot silently. A green suite is not a compounded feature; make the missing-compound state impossible to merge past.
 **Tags:** compound, drift, dogfood, ci
 **Date:** 2026-07-09
@@ -142,7 +142,7 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Date:** 2026-10-13
 
 ### Sweep for the meaning, not one spelling of it
-**Pattern:** A fix swept `flow/` for the literal `docs/spec/features/` to find every line that still made the fallback the default. Lines saying "follow the spec skill feature.md steps 1–4" and injecting "the feature's `product.md` requirements" carried the same meaning without the string and survived until the final review.
+**Pattern:** A fix swept `flow/` for the literal `.spec/features/` to find every line that still made the fallback the default. Lines saying "follow the spec skill feature.md steps 1–4" and injecting "the feature's `product.md` requirements" carried the same meaning without the string and survived until the final review. <!-- literal -->
 **Rule:** When retiring a default, list every phrasing that expresses it (paths, file names, step references, template names) and grep for all of them; then pin the invariant with a test that fails on any unqualified reference, not just the one spelling.
 **Tags:** flow, spec, superpowers, grep, review
 **Date:** 2026-10-13
@@ -190,7 +190,7 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Date:** 2026-10-14
 
 ### The write guard suffix-matches nested spec paths
-**Pattern:** Corpus files under `tests/parity/corpus/**/tree/docs/spec/plan.md` are blocked for Edit/Write in every flow state, because the policy rule matches the `docs/spec/plan.md` suffix.
+**Pattern:** Corpus files under `tests/parity/corpus/**/tree/.spec/plan.md` are blocked for Edit/Write in every flow state, because the policy rule matches the `.spec/plan.md` suffix. <!-- literal -->
 **Rule:** Never hand-edit generated corpus trees; change the generator and regenerate. A real fix belongs to the flow policy (anchor root-spec rules at the repo root).
 **Tags:** flow, policy, parity, spec
 **Date:** 2026-10-14
@@ -291,7 +291,7 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Date:** 2026-10-16
 
 ### A status edit is a spec edit: bump `updated:`
-**Pattern:** Closing the F2–F17 rows changed `docs/spec/plan.md` without touching its `updated:` field, so `vibe-spec validate` gained an SF29 warning (updated older than the last commit).
+**Pattern:** Closing the F2–F17 rows changed `.spec/plan.md` without touching its `updated:` field, so `vibe-spec validate` gained an SF29 warning (updated older than the last commit). <!-- literal -->
 **Rule:** Bump `updated:` in the same commit as any edit to a spec doc, status cells included. Run `vibe-spec validate --json` before committing a spec edit.
 **Tags:** spec, compound, sf29
 **Date:** 2026-10-16
@@ -321,7 +321,7 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Date:** 2026-10-18
 
 ### Probe root-discovering commands in their own spec tree
-**Pattern:** A reviewer probe ran `import` in a scratch dir without `docs/spec`; root discovery walked up and imported into the repo's real `docs/spec/`.
+**Pattern:** A reviewer probe ran `import` in a scratch dir without `.spec`; root discovery walked up and imported into the repo's real `.spec/`. <!-- literal -->
 **Rule:** Probes of root-discovering commands create their own `docs/spec` in the scratch tree, or run outside the repo.
 **Tags:** spec, tests, discovery
 **Date:** 2026-10-18

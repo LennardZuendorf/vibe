@@ -228,7 +228,7 @@ The cursor moves from `.agents/skills/vibe/state.json` to
 
 ### spec root moves to `docs/spec/`
 
-Default `docs/spec/`, legacy `docs/spec/` still resolved. `vibe-spec migrate --to
+Default `docs/spec/`, legacy `.spec/` still resolved. `vibe-spec migrate --to <!-- literal -->
 docs/spec` rewrites this repo in one commit. spec also adopts **OpenSpec
 grammar** (`### Requirement: <ID>`, `#### Scenario:` GIVEN/WHEN/THEN,
 `## ADDED|MODIFIED|REMOVED Requirements`) inside vibe's own document model —
@@ -281,7 +281,7 @@ vibe/
 ├── .claude-plugin/marketplace.json
 ├── install.sh
 ├── .vibe/       # this repo's own config + blocks (+ run/, local/ ignored)
-├── docs/spec/   # this repo's memory (after migration; docs/spec/ until then)
+├── docs/spec/   # this repo's memory
 └── .agents/skills/{spec,flow,instruct} → ../../<tool>/skills/<tool>  (compat)
 ```
 

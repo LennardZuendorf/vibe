@@ -2,7 +2,7 @@
 name: spec
 description: |
   You MUST use this before changing what the product does, how it is built,
-  or any file under docs/spec, docs/spec or docs/superpowers — features,
+  or any file under docs/spec, .spec or docs/superpowers — features, <!-- literal -->
   refactors, architecture, decisions, PRDs, plans, roadmaps, and also
   one-line fixes, typos and new flags. "Quick" and "just fix it" still
   route here first. Invoke it before reading files, before writing code,

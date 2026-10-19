@@ -18,7 +18,8 @@
       "target/**",
       "tests/parity/corpus/**",
       "contracts/fixtures/**",
-      "tests/openspec/**"
+      "tests/openspec/**",
+      "flow/reference/templates/AGENTS.md"
     ]
   },
   "strictness": {

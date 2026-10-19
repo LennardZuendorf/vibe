@@ -101,7 +101,7 @@ style rather than a broad marketplace audience.
 
 | Piece | What It Owns | Lives In |
 |---|---|---|
-| `spec` | The spec tree (`docs/spec/`, or `docs/spec/` today), templates, validators, OpenSpec interchange, two subagents | `spec/` |
+| `spec` | The spec tree (`docs/spec/`, or `.spec/` today), templates, validators, OpenSpec interchange, two subagents | `spec/` | <!-- literal -->
 | `flow` | State machine, cursor, guard/stop hooks, ledger, advisory signals, the TUI | `flow/` |
 | `instruct` | Instruction tiers, blocks, channels, budgets, providers, sync | `instruct/` |
 | `contracts` | Versioned schemas + golden fixtures every tool's CI runs against | `contracts/` |
@@ -202,7 +202,7 @@ Output density is governed by one machine-level `style` note carried in `flow`'s
 4. **Hook strictness.** Shipped warn-first; only the guard's hard blocks deny, every `Stop` predicate is warn-only.
 5. **Skill count (v0.4).** Supersedes #2 — three skills, one per tool (`spec`, `flow`, `instruct`), each shipped by its own plugin.
 6. **Engine language.** Rust, static binaries, zero runtime deps — supersedes the Node engine.
-7. **Spec root.** Default `docs/spec/`, `docs/spec/` legacy still resolves; configurable via `.vibe/spec.json` or `$VIBE_SPEC_ROOT`.
+7. **Spec root.** Default `docs/spec/`, `.spec/` legacy still resolves; configurable via `.vibe/spec.json` or `$VIBE_SPEC_ROOT`. <!-- literal -->
 8. **OpenSpec.** Adopt the Requirement/Scenario grammar for interchange; the strategic layout is vibe's layered vault (D44), the feature layer is superpowers-first (D45).
 9. **Umbrella (v0.5).** The `vibe` CLI becomes the front door that ships all three tools plus worktree and global-spec capabilities. D18's core survives — the three tools stay independent and alone-installable — but "no umbrella ever" retires at v0.5.
 

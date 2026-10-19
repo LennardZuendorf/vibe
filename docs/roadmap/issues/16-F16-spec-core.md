@@ -10,7 +10,7 @@ parent: epic
 ---
 
 ## Deliverable
-`vibe-spec` crate. Root discovery order: `--root` → `$VIBE_SPEC_ROOT` → `.vibe/spec.json` `root` → `docs/spec/` → `docs/spec/` → repeat per parent up to `.git` → exit 3. `vibe-spec root [--json]` is the one function every subcommand and peer calls. Freeze the spec bash scripts as oracles under `tests/oracle/` (companion to F3's flow oracles). Port `validate`, `list-specs`, `lessons-for`, `scan-merges`. JSON queries for peers: `lessons-for --json`, `plan --json`, `feature --json` (exit 0 + JSON, exit 3 = no spec tree).
+`vibe-spec` crate. Root discovery order: `--root` → `$VIBE_SPEC_ROOT` → `.vibe/spec.json` `root` → `docs/spec/` → `.spec/` → repeat per parent up to `.git` → exit 3. `vibe-spec root [--json]` is the one function every subcommand and peer calls. Freeze the spec bash scripts as oracles under `tests/oracle/` (companion to F3's flow oracles). Port `validate`, `list-specs`, `lessons-for`, `scan-merges`. JSON queries for peers: `lessons-for --json`, `plan --json`, `feature --json` (exit 0 + JSON, exit 3 = no spec tree). <!-- literal -->
 
 ## Scope
 **Owns:** root discovery, the four ported scripts, JSON query surface.

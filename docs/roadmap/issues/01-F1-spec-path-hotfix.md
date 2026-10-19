@@ -31,7 +31,7 @@ Same-week bash hotfix on the current tree (no Rust yet). Rewrite four hardcoded 
 
 ## Notes
 - A check that examines nothing must fail loudly — the widened guard must assert its own population (≥1 file scanned) before it can claim a clean pass.
-- A comment asserting a safety property becomes load-bearing — `docs/spec/tech.md:143-145` claims paths are "named by command, never install-specific"; this is currently false. Fix the code, then fix the comment in the same commit.
+- A comment asserting a safety property becomes load-bearing — `.spec/tech.md:143-145` claims paths are "named by command, never install-specific"; this is currently false. Fix the code, then fix the comment in the same commit. <!-- literal -->
 
 Phase: 0 · Tool: spec · Source: `docs/spec/plan.md` row F1
 
