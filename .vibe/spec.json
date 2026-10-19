@@ -23,7 +23,12 @@
     ]
   },
   "strictness": {
+    "SF22": "error",
     "SF29": "off",
-    "SF15": "off"
+    "SF30": "error",
+    "SF31": "error",
+    "SF32": "error",
+    "SF33": "error",
+    "SF34": "error"
   }
 }

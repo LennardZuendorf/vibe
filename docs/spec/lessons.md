@@ -379,3 +379,5 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Create probe dirs outside the repo tree and run `git init` in each before any git-aware command.
 **Tags:** tests, git, process
 **Date:** 2026-10-19
+
+<!-- vibe-spec: allow SF15 -->
