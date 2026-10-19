@@ -1410,3 +1410,118 @@ fn crlf_decision_files_keep_every_line_ending() {
         }
     }
 }
+
+/// A committed corpus with staged, unstaged and untracked changes in the
+/// root, and a `CLAUDE.md` link that only breaks once the root has moved
+/// (validate checks it against the root's new name).
+fn staged_corpus(name: &str, breaking: bool) -> PathBuf {
+    let p = corpus(name);
+    put(
+        &p,
+        "CLAUDE.md",
+        &format!(
+            "[x]({})\n",
+            if breaking {
+                "docs/spec/gone.md"
+            } else {
+                "README.md"
+            }
+        ),
+    );
+    commit_all(&p);
+    put(
+        &p,
+        "@/product.md",
+        &d(
+            "---\ntype: entrypoint\nscope: x\nupdated: 2026-01-01\n---\n\n# Product\n\nSee @/tech.md\nstaged line\n",
+        ),
+    );
+    common::git(
+        &p,
+        "2026-03-02T12:00:00Z",
+        &["add", "@/product.md".replace('@', ".spec").as_str()],
+    );
+    put(
+        &p,
+        "@/product.md",
+        &d(
+            "---\ntype: entrypoint\nscope: x\nupdated: 2026-01-01\n---\n\n# Product\n\nSee @/tech.md\nstaged line\nunstaged line\n",
+        ),
+    );
+    put(&p, "@/new.md", "staged new file\n");
+    common::git(&p, "2026-03-02T12:00:00Z", &["add", ".spec/new.md"]);
+    put(&p, "@/untracked.txt", "untracked\n");
+    p
+}
+
+fn git_state(p: &Path) -> Vec<String> {
+    ["status --porcelain", "diff", "diff --cached", "ls-files -s"]
+        .iter()
+        .map(|a| common::git_out(p, &a.split(' ').collect::<Vec<_>>()))
+        .collect()
+}
+
+#[test]
+fn an_error_the_migration_adds_reverts_after_the_commit() {
+    let p = staged_corpus("migrate-introduced", true);
+    let tree = snapshot(&p);
+    let state = git_state(&p);
+    let out = migrate(&p, &[]);
+    assert_eq!(out.code, 1, "{}\n{}", out.text(), out.stderr);
+    assert!(out.stdout.is_empty(), "{}", out.text());
+    assert_eq!(
+        out.stderr,
+        "migrate: ERROR: migration introduced 1 validate error(s) \u{2014} reverted\n"
+    );
+    let now = snapshot(&p);
+    let changed: Vec<&String> = now
+        .keys()
+        .chain(tree.keys())
+        .filter(|k| now.get(*k) != tree.get(*k))
+        .collect();
+    assert!(changed.is_empty(), "tree differs at {changed:?}");
+    assert_eq!(git_state(&p), state, "git state differs after the revert");
+}
+
+#[test]
+fn staged_changes_survive_a_migration() {
+    let p = staged_corpus("migrate-staged", false);
+    let out = migrate(&p, &[]);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    // The staged blobs followed the renames.
+    let staged = common::git_out(&p, &["show", ":docs/spec/product.md"]);
+    assert!(
+        staged.contains("staged line") && !staged.contains("unstaged line"),
+        "{staged}"
+    );
+    assert!(read(&p, "docs/spec/product.md").contains("unstaged line"));
+    assert_eq!(
+        common::git_out(&p, &["show", ":docs/spec/new.md"]),
+        "staged new file"
+    );
+    let st = status(&p);
+    assert!(st.contains("A  docs/spec/new.md"), "{st}");
+    assert!(st.contains("?? docs/spec/untracked.txt"), "{st}");
+}
+
+#[test]
+fn pre_existing_validate_errors_are_noted_not_fatal() {
+    let p = corpus("migrate-preexisting");
+    put(&p, "CLAUDE.md", "[x](@/gone.md)\n");
+    let before = spec(&p, &["validate", "--format", "json"], &[]);
+    assert_eq!(json(&before)["errors"], 2, "{}", before.text());
+    let q = corpus("migrate-preexisting-json");
+    put(&q, "CLAUDE.md", "[x](@/gone.md)\n");
+    let out = migrate(&p, &[]);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    assert!(
+        out.text()
+            .contains("migrate: note: 2 pre-existing validate error(s)\n"),
+        "{}",
+        out.text()
+    );
+    let out = migrate(&q, &["--json"]);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    common::assert_spec_json("migrate", &out.text());
+    assert_eq!(json(&out)["pre_existing_errors"], 2);
+}

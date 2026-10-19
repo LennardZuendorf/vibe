@@ -72,12 +72,21 @@ pub struct Write {
 }
 
 /// Writes `bytes` atomically, then puts `mode` (the mode the file had) back.
-fn put(path: &Path, bytes: &[u8], mode: Option<&std::fs::Permissions>) -> StdResult<(), String> {
-    write_atomic(path, bytes).map_err(|e| e.to_string())?;
+/// An `Err` carries whether the file was already replaced.
+fn put_staged(
+    path: &Path,
+    bytes: &[u8],
+    mode: Option<&std::fs::Permissions>,
+) -> StdResult<(), (String, bool)> {
+    write_atomic(path, bytes).map_err(|e| (e.to_string(), false))?;
     match mode {
-        Some(m) => fs::set_permissions(path, m.clone()).map_err(|e| e.to_string()),
+        Some(m) => fs::set_permissions(path, m.clone()).map_err(|e| (e.to_string(), true)),
         None => Ok(()),
     }
+}
+
+fn put(path: &Path, bytes: &[u8], mode: Option<&std::fs::Permissions>) -> StdResult<(), String> {
+    put_staged(path, bytes, mode).map_err(|(e, _)| e)
 }
 
 /// Puts the originals back (or removes files that did not exist), in the
@@ -110,11 +119,12 @@ pub fn commit(writes: &[Write]) -> StdResult<(), String> {
         .map(|w| fs::metadata(&w.path).ok().map(|m| m.permissions()))
         .collect();
     for (k, (w, mode)) in writes.iter().zip(&modes).enumerate() {
-        let Err(e) = put(&w.path, &w.bytes, mode.as_ref()) else {
+        let Err((e, replaced)) = put_staged(&w.path, &w.bytes, mode.as_ref()) else {
             continue;
         };
         let mut msg = format!("{}: {e}", w.show);
-        let (restored, failed) = restore(writes.iter().take(k));
+        // A file that was replaced but could not get its mode back is put back too.
+        let (restored, failed) = restore(writes.iter().take(k + usize::from(replaced)));
         if !restored.is_empty() {
             msg.push_str(&format!(" \u{2014} restored {}", restored.join(", ")));
         }

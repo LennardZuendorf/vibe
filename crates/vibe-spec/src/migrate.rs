@@ -1050,9 +1050,9 @@ fn render_json(
     to: &str,
     plan: &Plan,
     mode: (bool, bool),
-    markers: &[String],
+    done: Option<&Outcome>,
 ) -> Vec<u8> {
-    let v = serde_json::json!({
+    let mut v = serde_json::json!({
         "v": 1,
         "from": from,
         "to": to,
@@ -1061,14 +1061,17 @@ fn render_json(
             "file": r.file, "line": r.line, "old": r.old, "new": r.new,
         })).collect::<Vec<_>>(),
         "created": plan.created.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>(),
-        "markers": markers,
+        "markers": done.map_or_else(Vec::new, |d| d.markers.clone()),
         "dry_run": mode.0,
         "check": mode.1,
     });
+    if let Some(d) = done.filter(|d| d.pre_existing > 0) {
+        v["pre_existing_errors"] = serde_json::json!(d.pre_existing);
+    }
     format!("{v}\n").into_bytes()
 }
 
-fn render_text(label: &str, plan: &Plan, markers: &[String]) -> Vec<u8> {
+fn render_text(label: &str, plan: &Plan, done: Option<&Outcome>) -> Vec<u8> {
     let mut out = format!(
         "migrate: {label} \u{2014} {} literal(s) in {} file(s)\n",
         plan.before,
@@ -1081,10 +1084,21 @@ fn render_text(label: &str, plan: &Plan, markers: &[String]) -> Vec<u8> {
     for (path, bytes) in &plan.created {
         out.push_str(&format!("create: {path} ({} bytes)\n", bytes.len()));
     }
-    for m in markers {
+    for m in done.map_or(&[][..], |d| d.markers.as_slice()) {
         out.push_str(&format!("marker: {m}\n"));
     }
     out.push_str(&format!("scanned: {} file(s)\n", plan.scanned));
+    if let Some(d) = done {
+        if d.pre_existing > 0 {
+            out.push_str(&format!(
+                "migrate: note: {} pre-existing validate error(s)\n",
+                d.pre_existing
+            ));
+        }
+        for u in &d.unmarked {
+            out.push_str(&format!("migrate: note: unmarked {u}\n"));
+        }
+    }
     out.into_bytes()
 }
 
@@ -1126,7 +1140,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         Ok(plan) => plan,
         Err(why) => return fail(why),
     };
-    let show = |label: &str, markers: &[String]| {
+    let show = |label: &str, markers: Option<&Outcome>| {
         if opts.json {
             render_json(&from, &to, &plan, (opts.dry_run, opts.check), markers)
         } else {
@@ -1139,12 +1153,12 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         } else {
             exit::FINDINGS
         };
-        return (code, show("check", &[]));
+        return (code, show("check", None));
     }
     let moving = from != to;
     if !moving && plan.moves.is_empty() && plan.rewrites.is_empty() && plan.created.is_empty() {
         let out = if opts.json {
-            show("", &[])
+            show("", None)
         } else {
             b"migrate: already migrated\n".to_vec()
         };
@@ -1154,10 +1168,10 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         return fail(why);
     }
     if opts.dry_run {
-        return (exit::OK, show("dry run", &[]));
+        return (exit::OK, show("dry run", None));
     }
     match execute(&root.project, &from, &to, &plan) {
-        Ok(markers) => (exit::OK, show("done", &markers)),
+        Ok(done) => (exit::OK, show("done", Some(&done))),
         Err(why) => fail(why),
     }
 }
@@ -1525,10 +1539,17 @@ fn insert_markers(bytes: &[u8], ids: &BTreeSet<&str>) -> Vec<u8> {
 
 const MARKABLE: [&str; 5] = ["SF22", "SF30", "SF31", "SF33", "SF34"];
 
-/// The warnings of the new root that a marker can carry: `(file, check)`.
-fn markable(project: &Path, to: &str) -> Result<BTreeSet<(String, String)>, String> {
+/// What validating the root at `dir` (project-relative) found.
+struct Findings {
+    /// Findings at error level.
+    errors: usize,
+    /// Warnings a marker can carry: `(file, check)`, under `dir`.
+    markable: BTreeSet<(String, String)>,
+}
+
+fn validate_root(project: &Path, dir: &str) -> Result<Findings, String> {
     let root = Root {
-        dir: project.join(to),
+        dir: project.join(dir),
         project: project.to_path_buf(),
         source: Source::Flag,
         depth: 0,
@@ -1545,35 +1566,49 @@ fn markable(project: &Path, to: &str) -> Result<BTreeSet<(String, String)>, Stri
         },
     )?;
     let v: serde_json::Value =
-        serde_json::from_slice(&out).map_err(|e| format!("validating the new root: {e}"))?;
-    let prefix = format!("{to}/");
-    Ok(v["findings"]
+        serde_json::from_slice(&out).map_err(|e| format!("validating {dir}: {e}"))?;
+    let all = v["findings"]
         .as_array()
         .map(Vec::as_slice)
-        .unwrap_or_default()
-        .iter()
-        .filter(|f| f["severity"] == "warning")
-        .filter_map(|f| {
-            let check = f["check"].as_str().filter(|c| MARKABLE.contains(c))?;
-            let file = f["file"]
-                .as_str()
-                .filter(|f| f.starts_with(&prefix) && f.ends_with(".md"))?;
-            Some((file.to_string(), check.to_string()))
-        })
-        .collect())
+        .unwrap_or_default();
+    let prefix = format!("{dir}/");
+    Ok(Findings {
+        errors: all.iter().filter(|f| f["severity"] == "error").count(),
+        markable: all
+            .iter()
+            .filter(|f| f["severity"] == "warning")
+            .filter_map(|f| {
+                let check = f["check"].as_str().filter(|c| MARKABLE.contains(c))?;
+                let file = f["file"]
+                    .as_str()
+                    .filter(|f| f.starts_with(&prefix) && f.ends_with(".md"))?;
+                Some((file.to_string(), check.to_string()))
+            })
+            .collect(),
+    })
+}
+
+/// What a finished run reports besides the plan.
+struct Outcome {
+    /// `<file> <check>` per marker inserted.
+    markers: Vec<String>,
+    /// Validate errors the old root already had.
+    pre_existing: usize,
+    /// Warnings still unmarked after the last marker pass: `<file> <check>`.
+    unmarked: Vec<String>,
 }
 
 /// Moves, rewrites, creates and verifies; undoes everything on failure.
 /// Returns the markers inserted (`<file> <check>`). An `Err` is the cause
 /// and says what happened to the tree (`reverted`).
-fn execute(project: &Path, from: &str, to: &str, plan: &Plan) -> Result<Vec<String>, String> {
+fn execute(project: &Path, from: &str, to: &str, plan: &Plan) -> Result<Outcome, String> {
     let mut j = Journal {
         project: project.to_path_buf(),
         steps: Vec::new(),
         writes: Vec::new(),
     };
     match steps(&mut j, from, to, plan) {
-        Ok(markers) => Ok(markers),
+        Ok(done) => Ok(done),
         Err(cause) => {
             let failed = j.rollback();
             if failed.is_empty() {
@@ -1588,10 +1623,11 @@ fn execute(project: &Path, from: &str, to: &str, plan: &Plan) -> Result<Vec<Stri
     }
 }
 
-fn steps(j: &mut Journal, from: &str, to: &str, plan: &Plan) -> Result<Vec<String>, String> {
+fn steps(j: &mut Journal, from: &str, to: &str, plan: &Plan) -> Result<Outcome, String> {
     const CONFIG: &str = ".vibe/spec.json";
     let project = j.project.clone();
     let moving = from != to;
+    let before_errors = validate_root(&project, from)?.errors;
     for (a, b) in &plan.moves {
         j.mv(a, b)?;
     }
@@ -1721,12 +1757,16 @@ fn steps(j: &mut Journal, from: &str, to: &str, plan: &Plan) -> Result<Vec<Strin
     // Allow-markers for the warnings the move leaves behind (P4-R14). A
     // marker adds lines, so a budget warning can follow: look again, a few times.
     let mut marked: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut settled = false;
     for _ in 0..3 {
-        let fresh: Vec<(String, String)> = markable(&project, to)?
+        let found = validate_root(&project, to)?;
+        let fresh: Vec<(String, String)> = found
+            .markable
             .into_iter()
             .filter(|m| !marked.contains(m))
             .collect();
         if fresh.is_empty() {
+            settled = true;
             break;
         }
         let mut by_file: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
@@ -1748,10 +1788,31 @@ fn steps(j: &mut Journal, from: &str, to: &str, plan: &Plan) -> Result<Vec<Strin
         j.writes.extend(batch);
         marked.extend(fresh);
     }
-    Ok(marked
-        .into_iter()
-        .map(|(file, check)| format!("{file} {check}"))
-        .collect())
+    let found = validate_root(&project, to)?;
+    let unmarked: Vec<String> = if settled {
+        Vec::new()
+    } else {
+        found
+            .markable
+            .iter()
+            .filter(|m| !marked.contains(*m))
+            .map(|(file, check)| format!("{file} {check}"))
+            .collect()
+    };
+    if found.errors > before_errors {
+        return Err(format!(
+            "migration introduced {} validate error(s)",
+            found.errors - before_errors
+        ));
+    }
+    Ok(Outcome {
+        markers: marked
+            .into_iter()
+            .map(|(file, check)| format!("{file} {check}"))
+            .collect(),
+        pre_existing: before_errors,
+        unmarked,
+    })
 }
 
 #[cfg(test)]
