@@ -25,7 +25,8 @@
         "rewrites": { "type": "array", "items": { "$ref": "#/$defs/migrate-rewrite" }, "description": "Sorted by file, then line." },
         "created": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "New files, by their path after the moves." },
         "markers": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "Allow-markers inserted; always empty in a plan." },
-        "dry_run": { "type": "boolean", "description": "True for --dry-run and --check: nothing was written." }
+        "dry_run": { "type": "boolean", "description": "True when run with --dry-run." },
+        "check": { "type": "boolean", "description": "True when run with --check (the zero-literal sweep). Optional: readers treat absent as false. Nothing is written in either mode." }
       }
     },
     "migrate-move": {

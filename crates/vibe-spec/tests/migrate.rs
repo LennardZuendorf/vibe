@@ -119,7 +119,7 @@ fn literal_regex() {
     let p = repo("migrate-regex");
     fs::create_dir_all(p.join("docs/spec")).unwrap();
     put(&p, "docs/spec/README.md", "---\ntype: hub\n---\n");
-    let cases: [(&str, bool); 17] = [
+    let cases: &[(&str, bool)] = &[
         ("see @/plan.md", true),
         ("\"@\"", true),
         ("$ROOT/@", true),
@@ -138,6 +138,12 @@ fn literal_regex() {
         ("@ <!-- literal --> more", true),
         ("## literal notes about @", true),
         ("@/x, then @/y", true),
+        // A dot before, or a file extension after, makes it a different name.
+        ("see ..@", false),
+        ("@.ts", false),
+        ("@.js and more", false),
+        ("@.md", false),
+        ("the end of @.", true),
     ];
     let body: String = cases.iter().map(|(l, _)| format!("{}\n", d(l))).collect();
     put(&p, "README.md", &body);
@@ -824,4 +830,200 @@ fn a_layered_root_in_its_final_state_is_already_migrated() {
     assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
     assert_eq!(out.text(), "migrate: already migrated\n");
     assert_eq!(snapshot(&p), before);
+}
+
+#[test]
+fn links_in_angle_brackets_reference_definitions_and_code_spans() {
+    let p = repo("migrate-links-forms");
+    put(&p, "README.md", "@\n");
+    put(
+        &p,
+        "@/product.md",
+        "---\ntype: entrypoint\n---\n\n[a](<../a b.md>) and [b](<../b.md#h> \"t\")\n\n[r]: ../x.md\n[s]: <../y z.md> \"title\"\n[web]: https://x.io/a\n\nCode `[c](../c.md)` and ``[d](../d.md)`` and [e](../e.md).\n\n    [r]: ../indented-code.md\n",
+    );
+    let out = spec(
+        &p,
+        &["migrate", "--to", "docs/spec", "--dry-run", "--json"],
+        &[],
+    );
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let v = json(&out);
+    let news: Vec<&str> = v["rewrites"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["file"] == "docs/spec/product.md")
+        .map(|r| r["new"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        news,
+        [
+            "[a](<../../a b.md>) and [b](<../../b.md#h> \"t\")",
+            "[r]: ../../x.md",
+            "[s]: <../../y z.md> \"title\"",
+            "Code `[c](../c.md)` and ``[d](../d.md)`` and [e](../../e.md).",
+        ],
+        "{v}"
+    );
+}
+
+fn plan_of(p: &Path) -> common::Out {
+    spec(
+        p,
+        &[
+            "migrate",
+            "--to",
+            "docs/spec",
+            "--layout",
+            "layered",
+            "--dry-run",
+            "--json",
+        ],
+        &[],
+    )
+}
+
+#[test]
+fn slugs_are_ascii_kebab() {
+    let p = repo("migrate-slug-ascii");
+    put(&p, "README.md", "@\n");
+    put(
+        &p,
+        "@/plan.md",
+        "---\ntype: entrypoint\n---\n\n- **D1 \u{2014} Today's plan, caf\u{e9}  --  now.** Body.\n- **D2 \u{2014} --A--.** Body.\n",
+    );
+    let out = plan_of(&p);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let v = json(&out);
+    assert_eq!(
+        v["created"][0],
+        "docs/spec/decisions/d1-todays-plan-caf-now.md"
+    );
+    assert_eq!(v["created"][1], "docs/spec/decisions/d2-a.md");
+
+    let q = repo("migrate-slug-empty");
+    put(
+        &q,
+        "@/plan.md",
+        "---\ntype: entrypoint\n---\n\n- **D7 \u{2014} \u{e9}\u{e9}.** Body.\n",
+    );
+    let out = plan_of(&q);
+    assert_eq!(out.code, 1, "{}", out.text());
+    assert!(out.stdout.is_empty());
+    assert!(out.stderr.contains("migrate: ERROR: "), "{}", out.stderr);
+    assert!(out.stderr.contains("D7"), "{}", out.stderr);
+}
+
+#[test]
+fn a_repeated_decision_number_is_refused() {
+    let p = repo("migrate-dup-d");
+    put(
+        &p,
+        "@/plan.md",
+        "---\ntype: entrypoint\n---\n\n- **D12 \u{2014} First title.** A.\n- **D12 \u{2014} Other title.** B.\n",
+    );
+    let out = plan_of(&p);
+    assert_eq!(out.code, 1, "{}", out.text());
+    assert!(
+        out.stderr
+            .contains(&d("migrate: ERROR: @/plan.md: duplicate decision D12")),
+        "{}",
+        out.stderr
+    );
+}
+
+#[test]
+fn check_json_is_not_a_dry_run() {
+    let p = corpus("migrate-check-json");
+    let v = json(&spec(
+        &p,
+        &["migrate", "--to", "docs/spec", "--check", "--json"],
+        &[],
+    ));
+    assert_eq!(v["dry_run"], false, "{v}");
+    assert_eq!(v["check"], true, "{v}");
+    let v = json(&spec(
+        &p,
+        &["migrate", "--to", "docs/spec", "--dry-run", "--json"],
+        &[],
+    ));
+    assert_eq!(v["dry_run"], true, "{v}");
+    assert_eq!(v["check"], false, "{v}");
+}
+
+#[test]
+fn the_walk_skips_build_dirs_and_unrelated_trees() {
+    use std::os::unix::fs::PermissionsExt;
+    let p = corpus("migrate-prune");
+    put(&p, "tests/target/x.md", "@ in a build dir\n");
+    put(&p, "tests/node_modules/y.md", "@ in node_modules\n");
+    put(&p, "tests/sub/target/z.md", "@ nested build dir\n");
+    // A tree no include glob reaches is never opened.
+    put(&p, "src/locked/a.txt", "@\n");
+    fs::set_permissions(p.join("src/locked"), fs::Permissions::from_mode(0o000)).unwrap();
+    let out = spec(
+        &p,
+        &["migrate", "--to", "docs/spec", "--dry-run", "--json"],
+        &[],
+    );
+    fs::set_permissions(p.join("src/locked"), fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let v = json(&out);
+    assert_eq!(v["rewrites"].as_array().unwrap().len(), 6, "{v}");
+
+    // A non-UTF-8 name aborts only where it would be scanned. Some file
+    // systems refuse such names; then there is nothing to test.
+    use std::os::unix::ffi::OsStrExt;
+    let bad = std::ffi::OsStr::from_bytes(b"bad-\xff.txt");
+    if fs::write(p.join("src").join(bad), "x").is_ok() {
+        let out = spec(&p, &["migrate", "--to", "docs/spec", "--dry-run"], &[]);
+        assert_eq!(out.code, 0, "{}", out.stderr);
+        fs::write(p.join("tests").join(bad), "x").unwrap();
+        let out = spec(&p, &["migrate", "--to", "docs/spec", "--dry-run"], &[]);
+        assert_eq!(out.code, 1, "{}", out.text());
+        assert!(out.stderr.contains("not UTF-8"), "{}", out.stderr);
+    }
+}
+
+#[test]
+fn crlf_endings_are_kept() {
+    let p = repo("migrate-crlf");
+    let crlf = |s: &str| d(s).replace('\n', "\r\n");
+    write(
+        &p,
+        ".spec/tech.md",
+        &crlf("---\ntype: entrypoint\nchildren: [tech-cli.md]\n---\n\nsee @/plan.md\n"),
+    );
+    write(
+        &p,
+        ".spec/tech-cli.md",
+        &crlf("---\ntype: tech-topic\nparent: tech.md\nupdated: 2026-01-01\n---\n\n[t](tech.md)\n"),
+    );
+    write(
+        &p,
+        ".spec/plan.md",
+        &crlf(
+            "---\ntype: entrypoint\n---\n\n- **D3 \u{2014} Cr lf.** Line one.\n  Line two @/x.\n",
+        ),
+    );
+    let out = plan_of(&p);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    let v = json(&out);
+    for r in v["rewrites"].as_array().unwrap() {
+        let (old, new) = (r["old"].as_str().unwrap(), r["new"].as_str().unwrap());
+        // Every line keeps its ending: each `\n` is preceded by `\r`, and the
+        // last line of the text keeps the `\r` it had.
+        assert_eq!(
+            old.matches('\r').count(),
+            old.matches('\n').count() + 1,
+            "{r}"
+        );
+        assert_eq!(
+            new.matches('\r').count(),
+            new.matches('\n').count() + 1,
+            "{r}"
+        );
+        assert!(!new.contains("\r\r"), "{r}");
+    }
+    assert_eq!(v["created"].as_array().unwrap().len(), 1);
 }

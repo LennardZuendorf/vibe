@@ -2,7 +2,10 @@
 //!
 //! A literal is the legacy root name standing alone: not preceded or followed
 //! by a letter, digit, `_` or `-` (the P4-R12 regex, applied per line and
-//! matched here by hand, since there is no regex crate). Two exemptions:
+//! matched here by hand, since there is no regex crate). Deliberately tighter
+//! than that regex: a `.` before the name (`..` + name), or a `.` and a word
+//! character after it (a file extension such as `.ts`), is not a literal.
+//! Two exemptions:
 //!
 //! - a line tag: the line, minus trailing whitespace, ends with
 //!   `<!-- literal -->`, `// literal` or `# literal`. The two short tags must
@@ -44,9 +47,12 @@ fn find_needle(line: &[u8], needle: &[u8]) -> Vec<usize> {
     line.windows(needle.len())
         .enumerate()
         .filter(|(at, w)| {
+            let after = at + needle.len();
             *w == needle
-                && (*at == 0 || line.get(*at - 1).is_none_or(|b| !word(*b)))
-                && line.get(*at + needle.len()).is_none_or(|b| !word(*b))
+                && (*at == 0 || line.get(*at - 1).is_none_or(|b| !word(*b) && *b != b'.'))
+                && line.get(after).is_none_or(|b| !word(*b))
+                && !(line.get(after) == Some(&b'.')
+                    && line.get(after + 1).is_some_and(|b| word(*b)))
         })
         .map(|(at, _)| at)
         .collect()
@@ -134,6 +140,8 @@ mod tests {
         assert!(at("@ # literal").is_empty());
         assert_eq!(at("@ ## literal"), [0]);
         assert_eq!(at("@ x// literal"), [0]);
+        assert!(at("..@ @.ts @.js @.md").is_empty());
+        assert_eq!(at("ends @."), [5]);
     }
 
     #[test]

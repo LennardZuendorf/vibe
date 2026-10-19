@@ -231,14 +231,40 @@ fn escape(text: &str) -> String {
     out
 }
 
-/// Every regular file in the project (links not followed, `.git` skipped)
-/// that an include glob selects and no exclude glob removes, sorted.
+/// Directories no run descends into.
+const SKIP_DIRS: [&str; 3] = [".git", "target", "node_modules"];
+
+/// Whether an include glob can match something below (or at) directory `dir`.
+/// A segment holding `**` may match any depth; every other segment matches
+/// exactly one level.
+fn viable(include: &[String], dir: &str) -> bool {
+    include.iter().any(|g| {
+        let pat: Vec<&str> = g.split('/').collect();
+        for (i, seg) in dir.split('/').enumerate() {
+            match pat.get(i) {
+                None => return false,
+                Some(p) if p.contains("**") => return true,
+                Some(p) if !glob_match(p, seg) => return false,
+                Some(_) => {}
+            }
+        }
+        true
+    })
+}
+
+/// Every regular file in the project (links not followed) that an include
+/// glob selects and no exclude glob removes, sorted. Directories no include
+/// glob reaches, `.git`, `target` and `node_modules` are never opened. A
+/// name that is not UTF-8 aborts the plan only where it would be scanned.
 fn collect(project: &Path, include: &[String], exclude: &[String]) -> Result<Vec<String>, String> {
     // A directory is pruned when an exclude glob takes everything below it.
     let pruned = |dir: &str| {
         exclude.iter().any(|g| {
             glob_match(g, &format!("{dir}/\u{1}")) && glob_match(g, &format!("{dir}/\u{1}/\u{1}"))
         })
+    };
+    let selected = |rel: &str| {
+        include.iter().any(|g| glob_match(g, rel)) && !exclude.iter().any(|g| glob_match(g, rel))
     };
     let mut out = Vec::new();
     let mut stack = vec![String::new()];
@@ -247,30 +273,30 @@ fn collect(project: &Path, include: &[String], exclude: &[String]) -> Result<Vec
         let entries = fs::read_dir(project.join(&dir)).map_err(|e| format!("{shown}: {e}"))?;
         for e in entries {
             let e = e.map_err(|e| format!("{shown}: {e}"))?;
-            let name = e
-                .file_name()
-                .into_string()
-                .map_err(|_| format!("{shown}: a file name is not UTF-8"))?;
-            if name == ".git" {
-                continue;
-            }
+            let os_name = e.file_name();
+            let utf8 = os_name.to_str().is_some();
+            let name = os_name.to_string_lossy().into_owned();
             let rel = if dir.is_empty() {
-                name
+                name.clone()
             } else {
                 format!("{dir}/{name}")
             };
             let kind = e.file_type().map_err(|e| format!("{rel}: {e}"))?;
-            if kind.is_symlink() {
+            if kind.is_symlink() || name == ".git" {
                 continue;
             }
             if kind.is_dir() {
-                if !pruned(&rel) {
-                    stack.push(rel);
+                if SKIP_DIRS.contains(&name.as_str()) || !viable(include, &rel) || pruned(&rel) {
+                    continue;
                 }
-            } else if kind.is_file()
-                && include.iter().any(|g| glob_match(g, &rel))
-                && !exclude.iter().any(|g| glob_match(g, &rel))
-            {
+                if !utf8 {
+                    return Err(format!("{rel}: a directory name is not UTF-8"));
+                }
+                stack.push(rel);
+            } else if kind.is_file() && selected(&rel) {
+                if !utf8 {
+                    return Err(format!("{rel}: a file name is not UTF-8"));
+                }
                 out.push(rel);
             }
         }
@@ -343,28 +369,125 @@ fn fix_target(target: &str, old_file: &str, new_file: &str, mover: &Mover) -> Op
     Some(format!("{rel}{suffix}"))
 }
 
-/// `line` with every relative markdown link re-resolved for the file's move.
-fn fix_links(line: &[u8], old_file: &str, new_file: &str, mover: &Mover) -> Vec<u8> {
-    let Ok(text) = std::str::from_utf8(line) else {
-        return line.to_vec();
+/// `target` (plain or in angle brackets) re-resolved; `None` when unchanged.
+fn fix_wrapped(target: &str, old_file: &str, new_file: &str, mover: &Mover) -> Option<String> {
+    match target.strip_prefix('<').and_then(|t| t.strip_suffix('>')) {
+        Some(inner) => fix_target(inner, old_file, new_file, mover).map(|n| format!("<{n}>")),
+        None => fix_target(target, old_file, new_file, mover),
+    }
+}
+
+/// A reference definition `[label]: target "title"` (up to three spaces of
+/// indent) with its target re-resolved; `None` when the line is not one or
+/// the target stays valid.
+fn fix_definition(text: &str, old_file: &str, new_file: &str, mover: &Mover) -> Option<String> {
+    let indent = text.chars().take_while(|c| *c == ' ').count();
+    if indent > 3 {
+        return None;
+    }
+    let body = text.get(indent..)?.strip_prefix('[')?;
+    let close = body.find("]:")?;
+    if close == 0 || body.get(..close)?.contains(['[', ']']) {
+        return None;
+    }
+    let after = body.get(close + 2..)?;
+    let lead = after.len() - after.trim_start_matches(' ').len();
+    let rest = after.get(lead..)?;
+    let end = if rest.starts_with('<') {
+        rest.find('>').map(|i| i + 1)?
+    } else {
+        rest.find(char::is_whitespace).unwrap_or(rest.len())
     };
+    let (target, tail) = rest.split_at(end);
+    let new = fix_wrapped(target, old_file, new_file, mover)?;
+    let head = text.get(..text.len() - tail.len() - target.len())?;
+    Some(format!("{head}{new}{tail}"))
+}
+
+/// Splits `text` into `(is_code, piece)` runs; a code span is a backtick run
+/// up to the next run of the same length (an unclosed run is plain text).
+fn code_spans(text: &str) -> Vec<(bool, &str)> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::new();
+    let (mut plain, mut i) = (0, 0);
+    while i < bytes.len() {
+        if bytes.get(i) != Some(&b'`') {
+            i += 1;
+            continue;
+        }
+        let run = bytes.iter().skip(i).take_while(|b| **b == b'`').count();
+        let mut j = i + run;
+        let mut close = None;
+        while j < bytes.len() {
+            if bytes.get(j) == Some(&b'`') {
+                let n = bytes.iter().skip(j).take_while(|b| **b == b'`').count();
+                if n == run {
+                    close = Some(j + n);
+                    break;
+                }
+                j += n;
+            } else {
+                j += 1;
+            }
+        }
+        match close {
+            Some(end) => {
+                out.push((false, text.get(plain..i).unwrap_or_default()));
+                out.push((true, text.get(i..end).unwrap_or_default()));
+                plain = end;
+                i = end;
+            }
+            None => i += run,
+        }
+    }
+    out.push((false, text.get(plain..).unwrap_or_default()));
+    out
+}
+
+/// Inline links `](target)` of a text piece, re-resolved.
+fn fix_inline(text: &str, old_file: &str, new_file: &str, mover: &Mover) -> String {
     let mut out = String::new();
     let mut rest = text;
     while let Some((head, tail)) = rest.split_once("](") {
         out.push_str(head);
         out.push_str("](");
-        let end = tail
-            .find(|c: char| c == ')' || c.is_whitespace())
-            .unwrap_or(tail.len());
+        let end = if tail.starts_with('<') {
+            tail.find('>').map_or(tail.len(), |i| i + 1)
+        } else {
+            tail.find(|c: char| c == ')' || c.is_whitespace())
+                .unwrap_or(tail.len())
+        };
         let (target, after) = tail.split_at(end);
-        match fix_target(target, old_file, new_file, mover) {
+        match fix_wrapped(target, old_file, new_file, mover) {
             Some(new) => out.push_str(&new),
             None => out.push_str(target),
         }
         rest = after;
     }
     out.push_str(rest);
-    out.into_bytes()
+    out
+}
+
+/// `line` with every relative markdown link (inline or reference
+/// definition, outside code spans) re-resolved for the file's move.
+fn fix_links(line: &[u8], old_file: &str, new_file: &str, mover: &Mover) -> Vec<u8> {
+    let Ok(text) = std::str::from_utf8(line) else {
+        return line.to_vec();
+    };
+    if let Some(new) = fix_definition(text, old_file, new_file, mover) {
+        return new.into_bytes();
+    }
+    code_spans(text)
+        .into_iter()
+        .map(|(code, piece)| {
+            if code {
+                piece.to_string()
+            } else {
+                fix_inline(piece, old_file, new_file, mover)
+            }
+        })
+        .collect::<String>()
+        .into_bytes()
 }
 
 /// A multi-line edit: lines `start..end` (0-based) become `new`.
@@ -414,7 +537,8 @@ fn hub_edits(lines: &mut [String], renames: &[(String, String)]) {
     let mut in_children = false;
     for line in lines.iter_mut().take(close).skip(1) {
         if line.trim_end() == "type: entrypoint" {
-            *line = "type: hub".to_string();
+            let cr = if line.ends_with('\r') { "\r" } else { "" };
+            *line = format!("type: hub{cr}");
             continue;
         }
         if line.starts_with("children:") {
@@ -430,16 +554,37 @@ fn hub_edits(lines: &mut [String], renames: &[(String, String)]) {
     }
 }
 
+/// `lines` joined by `\n`, each ending in `\r` when `crlf`.
+fn join_lines(lines: &[String], crlf: bool) -> String {
+    let cr = if crlf { "\r" } else { "" };
+    lines
+        .iter()
+        .map(|l| format!("{}{cr}", l.trim_end_matches('\r')))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// A `tech-<t>.md` note: `type: tech`, `applies: "**"`, no `parent:`,
 /// `covers:` or `scope:`.
 fn tech_edit(lines: &[String], today: &str) -> Option<Edit> {
     const APPLIES: &str = "applies: \"**\"";
+    let crlf = lines.first().is_some_and(|l| l.ends_with('\r'));
     let Some(close) = fm_close(lines) else {
         let first = lines.first().map_or("", String::as_str);
+        let new = [
+            "---",
+            "type: tech",
+            APPLIES,
+            &format!("updated: {today}"),
+            "---",
+            "",
+            first,
+        ]
+        .map(str::to_string);
         return Some(Edit {
             start: 0,
             end: 1,
-            new: format!("---\ntype: tech\n{APPLIES}\nupdated: {today}\n---\n\n{first}"),
+            new: join_lines(&new, crlf),
         });
     };
     let mut groups: Vec<(String, Vec<String>)> = Vec::new();
@@ -474,11 +619,11 @@ fn tech_edit(lines: &[String], today: &str) -> Option<Edit> {
         }
     }
     out.push("---".to_string());
-    let old = lines.get(..=close)?;
-    (out != old).then(|| Edit {
+    let new = join_lines(&out, crlf);
+    (new != lines.get(..=close)?.join("\n")).then_some(Edit {
         start: 0,
         end: close + 1,
-        new: out.join("\n"),
+        new,
     })
 }
 
@@ -494,20 +639,26 @@ fn parse_decision(line: &str) -> Option<(String, String)> {
     (!title.trim().is_empty()).then(|| (digits, title.trim().to_string()))
 }
 
-/// Kebab-case title, at most six words.
-fn slug(title: &str) -> String {
-    let words: Vec<String> = title
-        .to_lowercase()
-        .split(|c: char| !c.is_alphanumeric())
+/// Kebab-case ASCII title (`[a-z0-9-]`), at most six words; apostrophes and
+/// other non-ASCII characters are dropped. `None` when nothing is left.
+fn slug(title: &str) -> Option<String> {
+    let dashed: String = title
+        .chars()
+        .filter(|c| !matches!(c, '\'' | '\u{2019}') && c.is_ascii())
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let words: Vec<&str> = dashed
+        .split('-')
         .filter(|w| !w.is_empty())
         .take(6)
-        .map(str::to_string)
         .collect();
-    if words.is_empty() {
-        "decision".to_string()
-    } else {
-        words.join("-")
-    }
+    (!words.is_empty()).then(|| words.join("-"))
 }
 
 /// A line that ends a D-bullet when it follows the bullet.
@@ -528,8 +679,10 @@ struct Decision {
     name: String,
 }
 
-/// The D-bullets of `lines` (fenced code skipped), in order.
-fn decisions(lines: &[String]) -> Vec<Decision> {
+/// The D-bullets of `lines` (fenced code skipped), in order. A repeated
+/// number or a title with no ASCII file name is an error naming `rel`.
+fn decisions(rel: &str, lines: &[String]) -> Result<Vec<Decision>, String> {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
     let start = fm_close(lines).map_or(0, |c| c + 1);
     let mut fences = Fences::new();
     let mut out = Vec::new();
@@ -544,7 +697,15 @@ fn decisions(lines: &[String]) -> Vec<Decision> {
             while lines.get(end).is_some_and(|l| !ends_bullet(l)) {
                 end += 1;
             }
-            let name = format!("d{num}-{}.md", slug(&title));
+            if !seen.insert(num.clone()) {
+                return Err(format!("{rel}: duplicate decision D{num}"));
+            }
+            let Some(slug) = slug(&title) else {
+                return Err(format!(
+                    "{rel}: D{num}: the title gives no ASCII file name; place it by hand"
+                ));
+            };
+            let name = format!("d{num}-{slug}.md");
             out.push(Decision {
                 start: i,
                 end,
@@ -557,7 +718,7 @@ fn decisions(lines: &[String]) -> Vec<Decision> {
             i += 1;
         }
     }
-    out
+    Ok(out)
 }
 
 /// Accumulates the plan across files.
@@ -565,7 +726,6 @@ struct State {
     rewrites: Vec<Rewrite>,
     created: Vec<(String, Vec<u8>)>,
     before: usize,
-    names: BTreeSet<String>,
 }
 
 /// One line after the link pass and the literal rewrite.
@@ -648,12 +808,9 @@ fn process(
             edits.extend(tech_edit(&lines, ctx.today));
         }
         if name == "plan.md" {
-            for d in decisions(&lines) {
+            for d in decisions(rel, &lines)? {
                 let path = format!("{}/decisions/{}", mover.to, d.name);
                 let current = format!("{}/decisions/{}", mover.from, d.name);
-                if !state.names.insert(path.clone()) {
-                    return Err(format!("{rel}: D{} appears twice", d.num));
-                }
                 if lstat(project, &current)?.is_some() {
                     return Err(format!("{path} already exists"));
                 }
@@ -663,8 +820,10 @@ fn process(
                     let out = transform(ctx, line, true, hits > 0, (rel, &path), k + 1)?;
                     body.push(text_of(&out));
                 }
+                let cr = orig.get(d.end - 1).is_some_and(|l| l.ends_with(b"\r"));
+                let eol = if cr { "\r\n" } else { "\n" };
                 let bytes = format!(
-                    "---\ntype: decision\nupdated: {}\n---\n\n{}\n",
+                    "---{eol}type: decision{eol}updated: {}{eol}---{eol}{eol}{}\n",
                     ctx.today,
                     body.join("\n")
                 );
@@ -672,7 +831,13 @@ fn process(
                 edits.push(Edit {
                     start: d.start,
                     end: d.end,
-                    new: format!("- [D{} \u{2014} {}](decisions/{})", d.num, d.title, d.name),
+                    new: format!(
+                        "- [D{} \u{2014} {}](decisions/{}){}",
+                        d.num,
+                        d.title,
+                        d.name,
+                        if cr { "\r" } else { "" }
+                    ),
                 });
             }
         }
@@ -779,7 +944,6 @@ pub fn plan(project: &Path, root: &Root, to: &str, layered: bool) -> Result<Plan
         rewrites: Vec::new(),
         created: Vec::new(),
         before: 0,
-        names: BTreeSet::new(),
     };
     let mut scanned = 0;
     for rel in &files {
@@ -846,7 +1010,7 @@ pub struct Options {
 }
 
 fn escaped(text: &str) -> String {
-    text.replace('\n', "\u{23ce}")
+    text.replace('\r', "").replace('\n', "\u{23ce}")
 }
 
 /// Files with a literal among the rewrites.
@@ -878,7 +1042,7 @@ fn table(plan: &Plan) -> String {
         .collect()
 }
 
-fn render_json(from: &str, to: &str, plan: &Plan) -> Vec<u8> {
+fn render_json(from: &str, to: &str, plan: &Plan, mode: (bool, bool)) -> Vec<u8> {
     let v = serde_json::json!({
         "v": 1,
         "from": from,
@@ -889,7 +1053,8 @@ fn render_json(from: &str, to: &str, plan: &Plan) -> Vec<u8> {
         })).collect::<Vec<_>>(),
         "created": plan.created.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>(),
         "markers": Vec::<String>::new(),
-        "dry_run": true,
+        "dry_run": mode.0,
+        "check": mode.1,
     });
     format!("{v}\n").into_bytes()
 }
@@ -951,7 +1116,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     };
     let show = |label: &str| {
         if opts.json {
-            render_json(&from, &to, &plan)
+            render_json(&from, &to, &plan, (opts.dry_run, opts.check))
         } else {
             render_text(label, &plan)
         }
