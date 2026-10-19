@@ -382,17 +382,35 @@ fn router_body() -> &'static str {
         .trim()
 }
 
+/// Refreshes `<project>/.vibe/spec-session` without following links; the
+/// error names why the marker was skipped.
+fn touch_marker(project: &Path) -> Result<(), String> {
+    let vibe = project.join(".vibe");
+    match std::fs::symlink_metadata(&vibe) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir(&vibe).map_err(|e| format!(".vibe cannot be created ({e})"))?;
+        }
+        Err(e) => return Err(format!(".vibe cannot be read ({e})")),
+        Ok(m) if m.file_type().is_symlink() => return Err(".vibe is a symlink".to_string()),
+        Ok(m) if !m.is_dir() => return Err(".vibe is not a directory".to_string()),
+        Ok(_) => {}
+    }
+    let marker = vibe.join("spec-session");
+    if std::fs::symlink_metadata(&marker).is_ok_and(|m| m.file_type().is_symlink()) {
+        return Err(".vibe/spec-session is a symlink".to_string());
+    }
+    vibe_core::fs::write_atomic(&marker, b"")
+        .map_err(|e| format!(".vibe/spec-session cannot be written ({e})"))
+}
+
 /// `hook session-start`: injects the `using-spec` router and, inside a
 /// project with a spec root, touches `.vibe/spec-session`. Always exits 0.
 pub fn session_start(stdin: &[u8], cwd: &Path, harness: Harness) -> (u8, Vec<u8>) {
     let dir = parse(stdin).map_or_else(|_| cwd.to_path_buf(), |p| p.cwd);
-    if let Ok(root) = crate::root::discover(&dir, None, None) {
-        let vibe = root.project.join(".vibe");
-        let marked = std::fs::create_dir_all(&vibe)
-            .and_then(|()| std::fs::write(vibe.join("spec-session"), b""));
-        if let Err(e) = marked {
-            eprintln!("vibe-spec hook session-start: cannot write the session marker — {e}");
-        }
+    if let Ok(root) = crate::root::discover(&dir, None, None)
+        && let Err(why) = touch_marker(&root.project)
+    {
+        eprintln!("vibe-spec hook session-start: marker skipped — {why}");
     }
     let text = format!(
         "<EXTREMELY_IMPORTANT>\n{}\n</EXTREMELY_IMPORTANT>",

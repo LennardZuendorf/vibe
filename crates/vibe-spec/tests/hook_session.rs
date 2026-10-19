@@ -88,3 +88,92 @@ fn skill_is_within_budget() {
     let words = body.split_whitespace().count();
     assert!(words <= 150, "{words} words");
 }
+
+const LINE_SYMLINK: &str = "vibe-spec hook session-start: marker skipped — ";
+
+fn injected(v: &Value) -> bool {
+    v["additionalContext"]
+        .as_str()
+        .is_some_and(|c| c.contains("using-spec"))
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinked_vibe_dir_is_not_followed() {
+    let p = rooted("session-link-dir");
+    let outside = common::project("session-outside");
+    std::os::unix::fs::symlink(&outside, p.join(".vibe")).unwrap();
+    let out = common::spec_stdin(&p, &["hook", "session-start"], &[], &payload(&p));
+    assert_eq!(out.code, 0);
+    assert!(injected(&serde_json::from_slice(&out.stdout).unwrap()));
+    assert!(!outside.join("spec-session").exists());
+    let want = format!("{LINE_SYMLINK}.vibe is a symlink");
+    assert_eq!(
+        out.stderr.lines().filter(|l| *l == want).count(),
+        1,
+        "{}",
+        out.stderr
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn symlinked_marker_is_not_followed() {
+    let p = rooted("session-link-file");
+    common::write(&p, "target.txt", "keep");
+    fs::create_dir_all(p.join(".vibe")).unwrap();
+    std::os::unix::fs::symlink(p.join("target.txt"), p.join(".vibe/spec-session")).unwrap();
+    let out = common::spec_stdin(&p, &["hook", "session-start"], &[], &payload(&p));
+    assert_eq!(out.code, 0);
+    assert!(injected(&serde_json::from_slice(&out.stdout).unwrap()));
+    assert_eq!(fs::read(p.join("target.txt")).unwrap(), b"keep");
+    let want = format!("{LINE_SYMLINK}.vibe/spec-session is a symlink");
+    assert_eq!(
+        out.stderr.lines().filter(|l| *l == want).count(),
+        1,
+        "{}",
+        out.stderr
+    );
+}
+
+#[test]
+fn file_named_vibe_is_skipped() {
+    let p = rooted("session-vibe-file");
+    common::write(&p, ".vibe", "x");
+    let out = common::spec_stdin(&p, &["hook", "session-start"], &[], &payload(&p));
+    assert_eq!(out.code, 0);
+    assert!(
+        out.stderr
+            .contains(&format!("{LINE_SYMLINK}.vibe is not a directory")),
+        "{}",
+        out.stderr
+    );
+}
+
+#[test]
+fn bad_input_still_routes() {
+    let p = common::project("session-bad");
+    let out = common::spec_stdin(&p, &["hook", "session-start"], &[], b"junk");
+    assert_eq!(out.code, 0);
+    assert!(injected(&serde_json::from_slice(&out.stdout).unwrap()));
+    let gone = p.join("does-not-exist");
+    let out = common::spec_stdin(&p, &["hook", "session-start"], &[], &payload(&gone));
+    assert_eq!(out.code, 0);
+    assert!(injected(&serde_json::from_slice(&out.stdout).unwrap()));
+}
+
+#[test]
+fn second_run_refreshes_the_marker() {
+    let p = rooted("session-mtime");
+    run(&p, &[]);
+    let marker = p.join(".vibe/spec-session");
+    let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+    fs::File::options()
+        .write(true)
+        .open(&marker)
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    run(&p, &[]);
+    assert!(fs::metadata(&marker).unwrap().modified().unwrap() > old);
+}
