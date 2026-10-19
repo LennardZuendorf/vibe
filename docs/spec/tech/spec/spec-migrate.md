@@ -23,7 +23,7 @@ Any failure restores originals, removes created files and reverses moves.
 errors are only noted. A second run prints `migrate: already migrated`.
 `--check` writes nothing and exits 1 while literals remain: the zero-literal sweep.
 After the write, `migrate` inserts `<!-- vibe-spec: allow SF-nn -->` markers
-for SF22, SF30 to SF34 warnings and lists them. It bumps `updated:` on every
+for SF22, SF30, SF31, SF33 and SF34 warnings (SF32 is not included) and lists them. It bumps `updated:` on every
 doc it touches. Lines tagged `<!-- literal -->`, `// literal` or `# literal`
 at the line end are exempt, as is a file with `vibe-spec: literal-file` in its first 5 lines.
 
@@ -32,10 +32,14 @@ Deviations from the plan text:
 - Relative links are re-resolved when the root moves, in moved notes and in links to them.
 
 `--layout layered`: `tech-<t>.md` becomes `tech/<t>.md`, each D-record
-becomes `decisions/dNN-<slug>.md`, hubs are seeded. `product-` and `plan-`
+becomes `decisions/dNN-<slug>.md`, and `type: entrypoint` becomes `type: hub`.
+Only decision files are created; hubs are not seeded. `product-` and `plan-`
 topics refuse. Splitting prose into notes is agent-led.
 
 Known limits:
+- A move runs only from the legacy root; any other source root, or both roots present without a move, exits 1.
+- `migrate` is untested on Windows.
+- P4 code has not run on Windows CI until the first push.
 - No guard against a panic or signal mid-run; recover through git.
 - Feature docs only warn on unclosed frontmatter; root docs error (SF20).
 - `AGENTS.md` keeps a file-level `literal-file` marker and the rendered template is exempt from the sweep, until P5.
