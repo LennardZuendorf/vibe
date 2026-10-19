@@ -256,6 +256,11 @@ fn main() -> ExitCode {
     let cwd = match std::env::current_dir() {
         Ok(dir) => dir,
         Err(e) => {
+            if matches!(cli.command, Command::Hook { .. }) {
+                // Hooks fail open: a usage exit would block the session.
+                eprintln!("vibe-spec: cannot read the current directory: {e} — hook skipped");
+                return ExitCode::SUCCESS;
+            }
             eprintln!("vibe-spec: cannot read the current directory: {e}");
             return ExitCode::from(exit::USAGE);
         }

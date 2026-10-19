@@ -67,6 +67,46 @@ test_nonexistent_binary() {
     pass HOOK-NOBIN "stderr names exit 127"; else fail HOOK-NOBIN "stderr names exit 127"; echo "        actual: $out"; fi
 }
 
+# fake <name> <exit> <stderr-printf-format> — an executable fake binary.
+fake() {
+  printf '#!/usr/bin/env bash\ncat >/dev/null\nprintf %s >&2\nexit %s\n' "'$3'" "$2" > "$SCRATCH/$1"
+  chmod +x "$SCRATCH/$1"
+}
+
+test_usage_errors() {
+  local ev fx out rc
+  fake usage2.sh 2 'error: unrecognized subcommand hook\nUsage: vibe-spec\n'
+  for pair in session-start:session-start.json guard:main-write.json validate:post-write.json; do
+    ev="${pair%%:*}"; fx="${pair##*:}"
+    out="$(payload "$fx" | VIBE_SPEC_BIN="$SCRATCH/usage2.sh" CLAUDE_PROJECT_DIR="$PROJ" bash "$SHIM" "$ev" 2>&1 >/dev/null)"; rc=$?
+    check HOOK-USAGE "$ev: exit 2 with usage stderr fails open" "0" "$rc"
+  done
+  out="$(payload main-write.json | VIBE_SPEC_BIN="$SCRATCH/usage2.sh" CLAUDE_PROJECT_DIR="$PROJ" bash "$SHIM" Stop 2>&1 >/dev/null)"; rc=$?
+  check HOOK-USAGE "Stop: exit 2 fails open" "0" "$rc"
+  fake block1.sh 2 'blocked: x\n'
+  out="$(payload main-write.json | VIBE_SPEC_BIN="$SCRATCH/block1.sh" CLAUDE_PROJECT_DIR="$PROJ" bash "$SHIM" guard 2>&1 >/dev/null)"; rc=$?
+  check HOOK-USAGE "guard: single blocked line exits 2" "2|blocked: x" "$rc|$out"
+  fake block2.sh 2 'blocked: x\nextra\n'
+  out="$(payload main-write.json | VIBE_SPEC_BIN="$SCRATCH/block2.sh" CLAUDE_PROJECT_DIR="$PROJ" bash "$SHIM" guard 2>&1 >/dev/null)"; rc=$?
+  check HOOK-USAGE "guard: two stderr lines fail open" "0" "$rc"
+  # a PATH binary that lacks the hook subcommand
+  mkdir -p "$SCRATCH/pathbin"
+  cp "$SCRATCH/usage2.sh" "$SCRATCH/pathbin/vibe-spec"
+  out="$(payload main-write.json | env -u VIBE_SPEC_BIN PATH="$SCRATCH/pathbin:/usr/bin:/bin" CLAUDE_PROJECT_DIR="$EMPTY" bash "$SHIM" guard 2>&1 >/dev/null)"; rc=$?
+  check HOOK-USAGE "PATH binary without hook subcommand fails open" "0" "$rc"
+}
+
+test_newer_binary() {
+  local proj="$SCRATCH/proj-bins" out
+  mkdir -p "$proj/target/release" "$proj/target/debug"
+  printf '#!/usr/bin/env bash\necho release >&2\nexit 0\n' > "$proj/target/release/vibe-spec"
+  printf '#!/usr/bin/env bash\necho debug >&2\nexit 0\n' > "$proj/target/debug/vibe-spec"
+  chmod +x "$proj/target/release/vibe-spec" "$proj/target/debug/vibe-spec"
+  touch -t 202001010000 "$proj/target/release/vibe-spec"
+  out="$(payload main-write.json | env -u VIBE_SPEC_BIN PATH="/usr/bin:/bin" CLAUDE_PROJECT_DIR="$proj" bash "$SHIM" guard 2>&1 >/dev/null)"
+  check HOOK-NEWER "newer debug binary beats older release" "debug" "$out"
+}
+
 test_generated_hooks() {
   local f="$ROOT/plugin/hooks/hooks.json" v
   v="$(jq -r '.hooks.SessionStart[] | select(.matcher != null) | .matcher' "$f" 2>/dev/null)"
@@ -89,6 +129,8 @@ test_missing_binary
 test_pass_through
 test_crash
 test_nonexistent_binary
+test_usage_errors
+test_newer_binary
 test_generated_hooks
 test_drift
 
