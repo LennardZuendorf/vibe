@@ -145,9 +145,9 @@ fn git_hook_follows_a_worktree() {
 }
 
 const OC: [&str; 3] = [
-    ".opencode/agent/spec-promoter.md",
-    ".opencode/agent/spec-health.md",
-    ".opencode/plugin/vibe-spec.js",
+    ".opencode/agents/spec-promoter.md",
+    ".opencode/agents/spec-health.md",
+    ".opencode/plugins/vibe-spec.js",
 ];
 
 #[test]

@@ -26,7 +26,7 @@ const ROUTER_END: &str = "<!-- vibe-spec:router:end -->";
 pub struct Options {
     /// Install `<git hooks dir>/pre-commit`.
     pub git_hooks: bool,
-    /// Write `.opencode/agent/*.md` and `.opencode/plugin/vibe-spec.js`.
+    /// Write `.opencode/agents/*.md` and `.opencode/plugins/vibe-spec.js`.
     pub opencode: bool,
     /// Add or refresh the router block in `AGENTS.md`.
     pub agents_md: bool,
@@ -72,12 +72,12 @@ pub fn run(_found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<
     }
     if opts.opencode {
         for (name, src) in [("spec-promoter", PROMOTER), ("spec-health", HEALTH)] {
-            let path = project.join(".opencode/agent").join(format!("{name}.md"));
+            let path = project.join(".opencode/agents").join(format!("{name}.md"));
             add(opencode_agent(src)
                 .map_err(|e| format!("{name}: {e}"))
                 .and_then(|bytes| marked(&project, path, MD_MARKER, bytes, false)));
         }
-        let path = project.join(".opencode/plugin/vibe-spec.js");
+        let path = project.join(".opencode/plugins/vibe-spec.js");
         add(marked(
             &project,
             path,
