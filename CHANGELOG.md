@@ -21,7 +21,7 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Added
 
-- Spec hooks and agents (F19): `vibe-spec hook {session-start,guard,validate}`, `validate --changed|--file|--format hook`, and `vibe-spec setup [--git-hooks] [--opencode] [--agents-md]`. A shim (`spec/hooks/run-hook.sh`) wires four events into the plugin `hooks.json` and `.claude/settings.json`. The `guard` tooth blocks spec edits made without `Skill(spec)`. Agents `spec-promoter` and `spec-health` replace `spec-interviewer` and `spec-tracer`.
+- Spec hooks and agents (F19): `vibe-spec hook {session-start,guard,validate}`, `validate --changed|--file|--format hook`, and `vibe-spec setup [--git-hooks] [--opencode] [--agents-md]`. A shim (`spec/hooks/run-hook.sh`) wires four events into the plugin `hooks.json` and `.claude/settings.json`. The `guard` tooth blocks spec-root edits made without `Skill(spec)`, and edits under `docs/superpowers/specs/` or `plans/` made without `spec` or the matching superpowers skill (`superpowers:brainstorming`, `superpowers:writing-plans`). Agents `spec-promoter` and `spec-health` replace `spec-interviewer` and `spec-tracer`.
 - `vibe-spec check-drift [--pre-merge]` and `vibe-spec promote` ported (F18), with byte parity for `.spec` roots. `promote` applies `## ADDED|MODIFIED|REMOVED Requirements` deltas, prints the superpowers promotion checklist, and `promote <feature> --done` deletes the artifacts once the spec changed since the branch base.
 - `vibe-spec export|import --openspec <dir>`: OpenSpec interchange; exports pass `openspec validate --strict` (CI job `openspec`).
 - **A Node engine under the flow half** — `flow/engine/`, zero runtime

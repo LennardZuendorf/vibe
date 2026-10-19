@@ -245,8 +245,12 @@ Router: `hook session-start` prints the `using-spec` skill inside
 touches `.vibe/spec-session` and never writes through a symlink.
 
 Tooth (D47): `hook guard` exits 2 with one stderr line when the target is
-under the spec root, is `.vibe/spec.json`, or is under `docs/superpowers/**`,
-and the transcript holds no load of the matching skill. A load is a `Skill`
+under the spec root, is `.vibe/spec.json`, or is under
+`docs/superpowers/specs/` or `docs/superpowers/plans/` (other paths under
+`docs/superpowers/` are not guarded), and the transcript holds no load of the
+matching skill. Spec root and `.vibe/spec.json` need `spec`; `specs/` needs
+`superpowers:brainstorming` or `spec`; `plans/` needs
+`superpowers:writing-plans` or `spec`. A load is a `Skill`
 tool call or a `<command-name>` record, in the main transcript or the
 subagent's own. Prose and tool results never count. It fails open (exit 0, one
 stderr line) on malformed input, an unreadable transcript, no spec root or a
