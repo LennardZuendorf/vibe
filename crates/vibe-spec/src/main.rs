@@ -30,6 +30,8 @@ mod init;
 mod layered;
 mod lessons;
 mod list_specs;
+mod literal;
+mod migrate;
 mod openspec;
 mod pattern;
 mod promote;
@@ -198,12 +200,40 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Move the spec root and rewrite legacy-root literals (scan, plan, check).
+    ///
+    /// This release plans and checks only: pass `--dry-run` to print the
+    /// plan, or `--check` for the zero-literal sweep. Nothing is written.
+    Migrate {
+        /// The new spec root, relative to the current directory.
+        #[arg(long, value_name = "DIR")]
+        to: PathBuf,
+        /// Also restructure into the layered layout.
+        #[arg(long, value_enum)]
+        layout: Option<Layout>,
+        /// Print the plan and write nothing.
+        #[arg(long, conflicts_with = "check")]
+        dry_run: bool,
+        /// Exit 1 when a literal remains; write nothing.
+        #[arg(long)]
+        check: bool,
+        /// Print Spec JSON v1.
+        #[arg(long)]
+        json: bool,
+    },
     /// Hook entry points; each reads the hook payload on stdin.
     Hook {
         /// The hook event.
         #[arg(value_enum)]
         event: HookEvent,
     },
+}
+
+/// `migrate --layout`.
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Layout {
+    /// The layered spec layout.
+    Layered,
 }
 
 /// A hook event handled by `vibe-spec hook`.
@@ -311,6 +341,23 @@ fn main() -> ExitCode {
                 git_hooks,
                 opencode,
                 agents_md,
+                json,
+            },
+        ),
+        Command::Migrate {
+            to,
+            layout,
+            dry_run,
+            check,
+            json,
+        } => migrate::run(
+            &found,
+            &cwd,
+            &migrate::Options {
+                to,
+                layered: layout.is_some(),
+                dry_run,
+                check,
                 json,
             },
         ),

@@ -126,7 +126,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, to: Option<&Path>, json: bool
 }
 
 /// `/`-joined path text.
-fn slash(path: &Path) -> String {
+pub(crate) fn slash(path: &Path) -> String {
     path.components()
         .map(|c| c.as_os_str().to_string_lossy().into_owned())
         .collect::<Vec<_>>()
@@ -134,7 +134,7 @@ fn slash(path: &Path) -> String {
 }
 
 /// Drops `.` and resolves `..` lexically.
-fn normalise(path: &Path) -> PathBuf {
+pub(crate) fn normalise(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for c in path.components() {
         match c {

@@ -233,6 +233,93 @@ pub fn tooth(project: &Path) -> Result<Tooth, String> {
     }
 }
 
+/// The `migrate` section of `.vibe/spec.json` (P4-R12).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MigrateConfig {
+    /// Extra globs added to the default file set.
+    pub include: Vec<String>,
+    /// Globs subtracted from the file set.
+    pub exclude: Vec<String>,
+    /// The fewest files a run must scan.
+    pub floor: usize,
+}
+
+impl Default for MigrateConfig {
+    fn default() -> Self {
+        MigrateConfig {
+            include: Vec::new(),
+            exclude: Vec::new(),
+            floor: 1,
+        }
+    }
+}
+
+/// The `migrate` section of `<project>/.vibe/spec.json`: `include` and
+/// `exclude` (arrays of non-empty strings) and `floor` (a non-negative
+/// integer, default 1). No file or no section gives the defaults; a wrong
+/// type or an unknown key fails closed, and so does a symlinked config.
+pub fn migrate_config(project: &Path) -> Result<MigrateConfig, String> {
+    let path = project.join(".vibe").join("spec.json");
+    let shown = path.display().to_string();
+    match std::fs::symlink_metadata(&path) {
+        Ok(m) if m.file_type().is_symlink() => {
+            return Err(format!(
+                "{shown}: is a symlink; not reading migrate settings through it"
+            ));
+        }
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(MigrateConfig::default()),
+        Err(e) => return Err(format!("{shown}: {e}")),
+    }
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{shown}: {e}"))?;
+    let value: Value =
+        serde_json::from_str(&text).map_err(|e| format!("{shown}: not JSON: {e}"))?;
+    let Value::Object(map) = value else {
+        return Err(format!("{shown}: not a JSON object"));
+    };
+    let Some(section) = map.get("migrate") else {
+        return Ok(MigrateConfig::default());
+    };
+    let Value::Object(section) = section else {
+        return Err(format!("{shown}: `migrate` must be an object"));
+    };
+    let mut cfg = MigrateConfig::default();
+    for (key, v) in section {
+        match key.as_str() {
+            "include" => cfg.include = globs(v, &shown, "include")?,
+            "exclude" => cfg.exclude = globs(v, &shown, "exclude")?,
+            "floor" => {
+                cfg.floor = v
+                    .as_u64()
+                    .and_then(|n| usize::try_from(n).ok())
+                    .ok_or_else(|| {
+                        format!("{shown}: `migrate.floor` must be a non-negative integer")
+                    })?;
+            }
+            other => {
+                return Err(format!(
+                    "{shown}: unknown key `migrate.{other}` (allowed: include, exclude, floor)"
+                ));
+            }
+        }
+    }
+    Ok(cfg)
+}
+
+fn globs(v: &Value, shown: &str, key: &str) -> Result<Vec<String>, String> {
+    let bad = || format!("{shown}: `migrate.{key}` must be an array of non-empty strings");
+    let Value::Array(items) = v else {
+        return Err(bad());
+    };
+    items
+        .iter()
+        .map(|i| match i {
+            Value::String(s) if !s.is_empty() => Ok(s.clone()),
+            _ => Err(bad()),
+        })
+        .collect()
+}
+
 /// The nearest ancestor of `cwd` (inclusive) holding `.git`; `cwd` when none does.
 fn project_of(cwd: &Path) -> PathBuf {
     cwd.ancestors()

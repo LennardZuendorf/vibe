@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Spec JSON v1",
-  "description": "Answers of vibe-spec commands when called with --json: the queries root, lessons-for, plan, feature, validate, trace and check-drift, plus promote, export and import (--openspec) setup and init. promote also writes (merge blocks, requirement deltas) and deletes (--done); export writes an openspec/ directory; import writes feature folders. Each answer is one JSON object with \"v\": 1. This is a new output; it is not the legacy `lessons-for.sh --format json` array, which stays byte-identical except that the port emits valid JSON: it escapes quotes, backslashes and control characters and replaces invalid UTF-8 with U+FFFD (pinned divergence).",
+  "description": "Answers of vibe-spec commands when called with --json: the queries root, lessons-for, plan, feature, validate, trace and check-drift, plus promote, export and import (--openspec), setup, init and migrate. promote also writes (merge blocks, requirement deltas) and deletes (--done); export writes an openspec/ directory; import writes feature folders. Each answer is one JSON object with \"v\": 1. This is a new output; it is not the legacy `lessons-for.sh --format json` array, which stays byte-identical except that the port emits valid JSON: it escapes quotes, backslashes and control characters and replaces invalid UTF-8 with U+FFFD (pinned divergence).",
   "x-vibe-compat": "additive-within-major; readers-ignore-unknown-fields",
   "$defs": {
     "init": {
@@ -12,6 +12,38 @@
         "root": { "type": "string", "minLength": 1, "description": "The seeded directory, project-relative with forward slashes." },
         "created": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "skipped": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "migrate": {
+      "type": "object",
+      "required": ["v", "from", "to", "moves", "rewrites", "created", "markers", "dry_run"],
+      "properties": {
+        "v": { "const": 1 },
+        "from": { "type": "string", "minLength": 1, "description": "The spec root before the migration, project-relative with forward slashes." },
+        "to": { "type": "string", "minLength": 1, "description": "The target root, project-relative with forward slashes." },
+        "moves": { "type": "array", "items": { "$ref": "#/$defs/migrate-move" }, "description": "In execution order; the root move first." },
+        "rewrites": { "type": "array", "items": { "$ref": "#/$defs/migrate-rewrite" }, "description": "Sorted by file, then line." },
+        "created": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "New files, by their path after the moves." },
+        "markers": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "Allow-markers inserted; always empty in a plan." },
+        "dry_run": { "type": "boolean", "description": "True for --dry-run and --check: nothing was written." }
+      }
+    },
+    "migrate-move": {
+      "type": "object",
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 }
+      }
+    },
+    "migrate-rewrite": {
+      "type": "object",
+      "required": ["file", "line", "old", "new"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1, "description": "The file's path after the moves." },
+        "line": { "type": "integer", "minimum": 1, "description": "First line, 1-based, in the file as it is before the migration." },
+        "old": { "type": "string", "description": "The original text of one or more consecutive lines, joined by newline." },
+        "new": { "type": "string" }
       }
     },
     "setup": {
