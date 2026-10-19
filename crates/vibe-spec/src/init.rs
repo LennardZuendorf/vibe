@@ -59,6 +59,25 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, to: Option<&Path>, json: bool
         return (exit::FINDINGS, Vec::new());
     }
     let root_label = slash(rel_dir);
+    match fs::read_dir(&dir) {
+        Ok(entries) => {
+            let populated = entries.flatten().any(|e| {
+                e.file_name().to_string_lossy().ends_with(".md")
+                    && e.file_type().is_ok_and(|t| !t.is_dir())
+            });
+            if populated && crate::layered::detect(&dir) == crate::layered::Layout::Flat {
+                eprintln!(
+                    "init: ERROR: {root_label} is a flat spec root; run vibe-spec migrate --to {root_label} --layout layered"
+                );
+                return (exit::FINDINGS, Vec::new());
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            eprintln!("init: ERROR: {root_label}: {e}");
+            return (exit::FINDINGS, Vec::new());
+        }
+    }
 
     let today = crate::text::today_utc();
     let mut errors: Vec<String> = Vec::new();

@@ -180,7 +180,7 @@ fn refuses_a_symlinked_target() {
 #[test]
 fn json_shape() {
     let p = repo("init-json");
-    write(&p, "docs/spec/tech.md", "mine\n");
+    write(&p, "docs/spec/tech.md", "---\ntype: hub\n---\n\nmine\n");
     let out = spec(&p, &["init", "--json"], &[]);
     assert_eq!(out.code, 0, "{}", out.stderr);
     assert_spec_json("init", &out.text());
@@ -190,4 +190,68 @@ fn json_shape() {
     assert_eq!(v["skipped"], serde_json::json!(["docs/spec/tech.md"]));
     assert_eq!(v["created"].as_array().unwrap().len(), 6);
     assert!(out.text().ends_with('\n') && out.text().matches('\n').count() == 1);
+}
+
+fn tree(p: &Path) -> Vec<(String, Vec<u8>)> {
+    fn go(base: &Path, dir: &Path, out: &mut Vec<(String, Vec<u8>)>) {
+        for e in fs::read_dir(dir).unwrap().flatten() {
+            if e.file_name() == ".git" {
+                continue;
+            }
+            let path = e.path();
+            let rel = path
+                .strip_prefix(base)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            if path.is_dir() {
+                go(base, &path, out);
+            } else {
+                out.push((rel, fs::read(&path).unwrap()));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    go(p, p, &mut out);
+    out.sort();
+    out
+}
+
+#[test]
+fn refuses_a_populated_flat_root() {
+    for (name, rel) in [
+        ("init-flat-legacy", ".spec"),
+        ("init-flat-docs", "docs/spec"),
+    ] {
+        let p = repo(name);
+        write(
+            &p,
+            &format!("{rel}/product.md"),
+            "---\ntype: entrypoint\n---\n\n# P\n",
+        );
+        let before = tree(&p);
+        let args: Vec<&str> = if rel == "docs/spec" {
+            vec!["init", "--to", "docs/spec"]
+        } else {
+            vec!["init"]
+        };
+        let out = spec(&p, &args, &[]);
+        assert_eq!(out.code, 1, "{rel}: {}", out.stderr);
+        assert!(out.stdout.is_empty(), "{rel}");
+        let want = format!(
+            "init: ERROR: {rel} is a flat spec root; run vibe-spec migrate --to {rel} --layout layered"
+        );
+        assert!(
+            out.stderr.lines().any(|l| l == want),
+            "{rel}: {}",
+            out.stderr
+        );
+        assert_eq!(tree(&p), before, "{rel}");
+    }
+    // An empty legacy root still seeds.
+    let p = repo("init-empty-legacy");
+    fs::create_dir_all(p.join(".spec")).unwrap();
+    let out = spec(&p, &["init"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(p.join(".spec/README.md").is_file());
 }
