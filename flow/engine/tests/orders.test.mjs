@@ -602,7 +602,7 @@ test('CLI: `vibe orders` with an explicit state arg on the install-layout fixtur
       { cwd: unrelatedCwd },
     );
     assertEqual(result.code, 0, `stderr: ${result.stderr}`);
-    assertMatch(result.stdout, /^skill=vibe · READ docs\/spec\/lessons\.md first/);
+    assertMatch(result.stdout, /^skill=vibe · READ the spec root's lessons\.md first/);
   } finally {
     rmSync(installRoot, { recursive: true, force: true });
     rmSync(unrelatedCwd, { recursive: true, force: true });
