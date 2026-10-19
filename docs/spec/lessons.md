@@ -428,4 +428,22 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** process, flow, spec
 **Date:** 2026-10-19
 
+### A hook shim must tell a block from a crash by output
+**Pattern:** The shim passed every exit 2 through as a tooth block. A stale binary's usage error also exits 2, so it blocked every edit and every Stop. Per-task reviews missed it; only the whole-branch review caught it.
+**Rule:** Pass a block through only when the output proves it was one, such as a single `blocked:` line. Map every other code to allow. Test with a fake binary for each event.
+**Tags:** hooks, fail-open, review
+**Date:** 2026-10-19
+
+### Keep shipped prose root-neutral
+**Pattern:** A bulk rewrite put the new root's path into the shipped skill. In a repo on the old root, following the skill created the new root and hid the user's tree.
+**Rule:** Shipped instructions name "the spec root (`vibe-spec root`)", not a fixed path. Warn when both roots exist.
+**Tags:** spec, migrate, docs, dual-root
+**Date:** 2026-10-19
+
+### Date test fixtures relative to today
+**Pattern:** A freshness check moved to compare against today, and a fixture with a fixed date stopped passing.
+**Rule:** Build dated fixtures from today's date unless the test is about a fixed date.
+**Tags:** tests, fixtures, spec
+**Date:** 2026-10-19
+
 <!-- vibe-spec: allow SF15 -->
