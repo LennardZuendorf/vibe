@@ -343,3 +343,39 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Compare file identity (device and inode, or canonical path) before merging two writes to one file; fall back to the lexical path only when a file is missing.
 **Tags:** rust, spec, safety, symlink
 **Date:** 2026-10-18
+
+### Scope hook paths by project identity
+**Pattern:** `validate --file` compared raw payload paths, so `..` and cwd-relative paths returned an empty result without an error.
+**Rule:** Normalise every hook path through one identity function and make it project-relative before filtering.
+**Tags:** rust, spec, hooks
+**Date:** 2026-10-19
+
+### Write runtime markers atomically, never through links
+**Pattern:** The session marker was written through a symlinked `.vibe` and a symlinked `spec-session`, so it truncated or created files outside the project.
+**Rule:** `lstat` the directory and the file, skip on a symlink, and write with temp file plus rename.
+**Tags:** rust, safety, symlink
+**Date:** 2026-10-19
+
+### Give every hook a timeout
+**Pattern:** The spec hook entries had no `timeout`, while the flow entries had 10.
+**Rule:** Set `"timeout"` on every hook entry in `settings.json` and generated `hooks.json`, and assert it in a test.
+**Tags:** hooks, tooling
+**Date:** 2026-10-19
+
+### Route agents through the engine
+**Pattern:** The `spec-promoter` agent edited root docs by hand and never ran `vibe-spec promote`, which applies merge blocks and deltas.
+**Rule:** An agent that owns a workflow runs the engine command and works only the checklist it prints.
+**Tags:** agents, spec
+**Date:** 2026-10-19
+
+### Match ownership markers by exact line and restore multi-file writes
+**Pattern:** `setup` matched its ownership marker as a substring, so a foreign file could be overwritten. Its multi-file writes had no restore. The hooks path from a subdirectory skipped the symlink walk.
+**Rule:** Match the marker as a whole line, make multi-file writes all-or-nothing, and make the hooks path absolute before the symlink walk. Normalise lexically: `git rev-parse --path-format=absolute` resolves symlinks and hides a symlinked hooks dir.
+**Tags:** rust, safety, git
+**Date:** 2026-10-19
+
+### Probe in a dir with its own `git init`
+**Pattern:** A reviewer probe ran in a plain subdirectory inside the repo. Git resolved the enclosing repo and the probe installed a hook into the shared git dir.
+**Rule:** Create probe dirs outside the repo tree and run `git init` in each before any git-aware command.
+**Tags:** tests, git, process
+**Date:** 2026-10-19

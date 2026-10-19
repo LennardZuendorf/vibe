@@ -193,8 +193,8 @@ macOS `bash` 3.2, the engine suite jq-less and from a space-containing path, a
 The re-architecture in progress. Nothing in this section is runnable from an
 install today — every command and path below is ⏳ **planned**. The exceptions
 are the `vibe-spec` commands that already exist in a dev build (`cargo run -p
-vibe-spec -- <command>`), among them `check-drift`, `promote` and `export|import
---openspec`; skills, CI and the flow scripts still call the bash scripts and do
+vibe-spec -- <command>`), among them `check-drift`, `promote`, `export|import
+--openspec`, `hook {session-start,guard,validate}` and `setup`; skills, CI and the flow scripts still call the bash scripts and do
 not use them yet. Detail lives in
 [`.spec/tech.md`](.spec/tech.md) and its branch docs, including
 [`.spec/tech-instruct.md`](.spec/tech-instruct.md) for the instruct tool.
