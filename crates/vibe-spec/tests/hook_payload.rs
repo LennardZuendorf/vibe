@@ -31,6 +31,12 @@ mod root {
         unimplemented!()
     }
 }
+/// `hook::session_start` names `crate::git`, which this file never runs.
+mod git {
+    pub fn top(_: &std::path::Path) -> Option<std::path::PathBuf> {
+        unimplemented!()
+    }
+}
 /// `hook::validate` names `crate::validate`, which this file never runs.
 mod validate {
     pub enum Format {

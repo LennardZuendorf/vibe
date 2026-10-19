@@ -1,7 +1,7 @@
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\"" } ] },
+      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\"", "timeout": 10 } ] },
       { "matcher": "startup|clear|compact", "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" session-start", "timeout": 10 } ] }
     ],
     "PreToolUse": [

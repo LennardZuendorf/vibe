@@ -115,6 +115,8 @@ test_generated_hooks() {
   check HOOK-GEN "PreToolUse matcher" "Edit|Write|MultiEdit|NotebookEdit|Bash" "$v"
   v="$(jq -r '.hooks.PostToolUse[0].matcher' "$f" 2>/dev/null)"
   check HOOK-GEN "PostToolUse matcher" "Edit|Write|MultiEdit" "$v"
+  v="$(jq -r '.hooks.SessionStart[] | select(.matcher == null) | .hooks[0].timeout' "$f" 2>/dev/null)"
+  check HOOK-GEN "doctrine SessionStart timeout" "10" "$v"
   v="$(jq -r '.hooks.Stop | length' "$f" 2>/dev/null)"
   check HOOK-GEN "Stop entry" "1" "$v"
 }

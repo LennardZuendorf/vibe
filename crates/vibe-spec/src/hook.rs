@@ -212,7 +212,7 @@ pub fn guard(stdin: &[u8]) -> (u8, Vec<u8>) {
     if !is_bash && payload.file.is_none() {
         return (0, Vec::new());
     }
-    let found = crate::root::discover(&payload.cwd, None, None);
+    let found = crate::root::discover(&payload.cwd, None, env_root().as_deref());
     let root = match found {
         Ok(root) => root,
         Err(crate::root::Miss::NotFound) => return allow("no spec root"),
@@ -311,9 +311,10 @@ pub fn validate(stdin: &[u8], _cwd: &Path) -> (u8, Vec<u8>) {
     let cap = cap_ms(default_cap);
     let event = payload.event.clone();
     let cwd = payload.cwd.clone();
+    let env = env_root();
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let found = crate::root::discover(&cwd, None, None);
+        let found = crate::root::discover(&cwd, None, env.as_deref());
         let out = match found {
             Ok(_) => Some(crate::validate::run_checked(
                 &found,
@@ -373,6 +374,11 @@ impl Harness {
     }
 }
 
+/// `$VIBE_SPEC_ROOT`, as the CLI reads it.
+fn env_root() -> Option<std::ffi::OsString> {
+    std::env::var_os("VIBE_SPEC_ROOT")
+}
+
 /// The skill text after its frontmatter.
 fn router_body() -> &'static str {
     USING_SPEC
@@ -407,7 +413,9 @@ fn touch_marker(project: &Path) -> Result<(), String> {
 /// project with a spec root, touches `.vibe/spec-session`. Always exits 0.
 pub fn session_start(stdin: &[u8], cwd: &Path, harness: Harness) -> (u8, Vec<u8>) {
     let dir = parse(stdin).map_or_else(|_| cwd.to_path_buf(), |p| p.cwd);
-    if let Ok(root) = crate::root::discover(&dir, None, None)
+    // The marker only matters where git cannot say what changed.
+    if let Ok(root) = crate::root::discover(&dir, None, env_root().as_deref())
+        && crate::git::top(&root.project).is_none()
         && let Err(why) = touch_marker(&root.project)
     {
         eprintln!("vibe-spec hook session-start: marker skipped — {why}");

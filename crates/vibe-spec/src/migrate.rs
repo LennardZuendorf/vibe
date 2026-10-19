@@ -1728,6 +1728,7 @@ fn steps(j: &mut Journal, from: &str, to: &str, plan: &Plan) -> Result<Outcome, 
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(format!("{CONFIG}: {e}")),
     };
+    let config_is_new = existing.is_none();
     let config = match &existing {
         Some(bytes) => {
             let text = std::str::from_utf8(bytes)
@@ -1774,10 +1775,16 @@ fn steps(j: &mut Journal, from: &str, to: &str, plan: &Plan) -> Result<Outcome, 
     commit(&writes)?;
     j.writes.extend(writes);
     #[cfg(unix)]
-    for (rel, _) in &plan.created {
+    {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(project.join(rel), fs::Permissions::from_mode(0o644))
-            .map_err(|e| format!("{rel}: {e}"))?;
+        let mut fresh: Vec<&str> = plan.created.iter().map(|(rel, _)| rel.as_str()).collect();
+        if config_is_new && fs::symlink_metadata(project.join(CONFIG)).is_ok() {
+            fresh.push(CONFIG);
+        }
+        for rel in fresh {
+            fs::set_permissions(project.join(rel), fs::Permissions::from_mode(0o644))
+                .map_err(|e| format!("{rel}: {e}"))?;
+        }
     }
 
     // After the write the legacy literal is gone everywhere in the set.

@@ -266,3 +266,23 @@ fn guard_scans_a_large_transcript_in_time() {
     assert_eq!(out.code, 0, "{}", out.stderr);
     assert!(took.as_millis() < 1000, "took {took:?}");
 }
+
+#[test]
+fn the_env_root_is_a_tooth_target() {
+    let (p, t) = setup("g-env-root", &[]);
+    common::write(&p, "custom/a.md", "# A\n");
+    let stdin = payload("main-write.json", &p, &t, "custom/a.md");
+    let plain = guard(&p, &stdin);
+    assert_eq!(plain.code, 0, "{}", plain.stderr);
+    let env = common::spec_stdin(
+        &p,
+        &["hook", "guard"],
+        &[("VIBE_SPEC_ROOT", "custom")],
+        &stdin,
+    );
+    assert_eq!(env.code, 2, "{}", env.stderr);
+    assert_eq!(
+        env.stderr.trim_end(),
+        "blocked: invoke Skill(spec) before editing custom/a.md"
+    );
+}

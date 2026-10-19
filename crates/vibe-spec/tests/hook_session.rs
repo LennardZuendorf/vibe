@@ -177,3 +177,32 @@ fn second_run_refreshes_the_marker() {
     run(&p, &[]);
     assert!(fs::metadata(&marker).unwrap().modified().unwrap() > old);
 }
+
+#[test]
+fn no_marker_when_git_can_say_what_changed() {
+    let p = rooted("session-git");
+    fs::remove_dir_all(p.join(".git")).unwrap();
+    common::git(&p, "2026-03-01T12:00:00Z", &["init", "-q"]);
+    let (code, v) = run(&p, &[]);
+    assert_eq!(code, 0);
+    assert!(injected(&v), "{v}");
+    assert!(
+        !p.join(".vibe").exists(),
+        ".vibe is not littered in a git repo"
+    );
+}
+
+#[test]
+fn the_env_root_is_honoured() {
+    // A root named by $VIBE_SPEC_ROOT, with no docs/spec/ beside it.
+    let p = common::project("session-env");
+    common::write(&p, "custom/README.md", "# Spec\n");
+    let (code, v) = run(&p, &[("VIBE_SPEC_ROOT", "custom")]);
+    assert_eq!(code, 0);
+    assert!(injected(&v), "{v}");
+    assert!(p.join(".vibe/spec-session").is_file());
+    let q = common::project("session-env-none");
+    common::write(&q, "custom/README.md", "# Spec\n");
+    run(&q, &[]);
+    assert!(!q.join(".vibe").exists());
+}

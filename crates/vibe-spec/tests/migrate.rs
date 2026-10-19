@@ -1630,3 +1630,18 @@ fn a_layered_run_leaves_an_excluded_root_note_untouched() {
     // The rest of the tree was still rewritten.
     assert!(!read(&p, "docs/spec/tech.md").contains(".spec"));
 }
+
+#[test]
+fn a_created_config_is_world_readable() {
+    use std::os::unix::fs::PermissionsExt;
+    let p = corpus("migrate-config-mode");
+    assert!(!p.join(".vibe/spec.json").exists());
+    commit_all(&p);
+    let out = migrate(&p, &[]);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    let mode = fs::metadata(p.join(".vibe/spec.json"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o644, "{mode:o}");
+}
