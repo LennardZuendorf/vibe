@@ -263,33 +263,27 @@ fn slash(p: &Path) -> String {
 
 /// SF29: `updated:` older than the committer date of the file's last commit
 /// (P3b-R21). Silent without git, history, a commit for the file, or when
-/// the root lies outside the work tree.
+/// the root lies outside the work tree. Under `--changed`, a file in the
+/// changed set is compared with today's UTC date instead: its edit is not
+/// committed yet, so the last commit says nothing about it.
 fn freshness(r: &mut Report, ctx: &Ctx, files: &[PathBuf]) {
-    let Ok(dir) = std::fs::canonicalize(ctx.dir) else {
-        return;
-    };
-    let Some(top) = git::top(&dir) else { return };
-    let Ok(top) = std::fs::canonicalize(&top) else {
-        return;
-    };
-    let Ok(under) = dir.strip_prefix(&top) else {
-        return;
-    };
-    let under = slash(under);
-    let dates = git::last_dates(&top, if under.is_empty() { "." } else { &under });
-    if dates.is_empty() {
-        return;
-    }
+    let today = crate::text::today_utc();
+    let dates = commit_dates(ctx);
     for file in files {
-        let Ok(abs) = std::fs::canonicalize(file) else {
-            continue;
+        let rel = rel_of(ctx.dir, file);
+        let shown = format!("{}/{rel}", ctx.display);
+        let edited = ctx.changed.is_some_and(|set| set.contains(&shown));
+        let (limit, what) = if edited {
+            (Some(today.clone()), "today")
+        } else {
+            let date = std::fs::canonicalize(file).ok().and_then(|abs| {
+                let (top, map) = dates.as_ref()?;
+                let in_top = abs.strip_prefix(top).ok()?;
+                map.get(&slash(in_top)).cloned()
+            });
+            (date, "its last commit")
         };
-        let Ok(in_top) = abs.strip_prefix(&top) else {
-            continue;
-        };
-        let Some(date) = dates.get(&slash(in_top)) else {
-            continue;
-        };
+        let Some(limit) = limit else { continue };
         let text = std::fs::read(file).unwrap_or_default();
         let Some(fm) = frontmatter::parse(&text) else {
             continue;
@@ -297,14 +291,21 @@ fn freshness(r: &mut Report, ctx: &Ctx, files: &[PathBuf]) {
         let Some(updated) = fm.scalar("updated") else {
             continue;
         };
-        if is_date(updated.as_bytes()) && updated < date.as_str() {
-            let rel = rel_of(ctx.dir, file);
-            r.at(&format!("{}/{rel}", ctx.display));
+        if is_date(updated.as_bytes()) && updated < limit.as_str() {
+            r.at(&shown);
             r.warn(
                 "SF29",
-                format!("{rel}: updated {updated} is older than its last commit ({date})")
-                    .as_bytes(),
+                format!("{rel}: updated {updated} is older than {what} ({limit})").as_bytes(),
             );
         }
     }
+}
+
+/// The git top and the last-commit dates under the spec root, when there are any.
+fn commit_dates(ctx: &Ctx) -> Option<(PathBuf, std::collections::BTreeMap<String, String>)> {
+    let dir = std::fs::canonicalize(ctx.dir).ok()?;
+    let top = std::fs::canonicalize(git::top(&dir)?).ok()?;
+    let under = slash(dir.strip_prefix(&top).ok()?);
+    let dates = git::last_dates(&top, if under.is_empty() { "." } else { &under });
+    (!dates.is_empty()).then_some((top, dates))
 }

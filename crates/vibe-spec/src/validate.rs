@@ -262,6 +262,10 @@ pub fn run_checked(
         dir: &dir,
         project: &project,
         display: &display,
+        changed: match &filter {
+            Filter::Changed(set) => Some(set),
+            _ => None,
+        },
     };
     let layout = layered::detect(&dir);
     let is_layered = layout == layered::Layout::Layered;
@@ -350,6 +354,9 @@ pub struct Ctx<'a> {
     pub project: &'a Path,
     /// The root relative to the project, as the oracle spells `$SPEC_DIR` (`.spec`). // literal
     pub display: &'a str,
+    /// Under `--changed`: the changed files, project-relative. SF29 holds
+    /// those to today's date instead of the last commit's.
+    pub changed: Option<&'a BTreeSet<String>>,
 }
 
 fn read(path: &Path) -> Vec<u8> {

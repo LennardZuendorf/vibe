@@ -417,3 +417,48 @@ fn quoted_file_names_still_match() {
         "{got:?}"
     );
 }
+
+#[test]
+fn a_changed_doc_edited_without_a_bump_fails_under_strict() {
+    // Committed with the file's own date, so the commit-date check is silent.
+    let p = committed("ad-edit-nobump", "2026-01-15T12:00:00Z");
+    assert_eq!(found(&p, "SF29"), Vec::<String>::new());
+    write(
+        &p,
+        ".spec/product.md",
+        &format!("{PRODUCT}\nAn edit with no bump.\n"),
+    );
+    let out = common::spec(
+        &p,
+        &["validate", "--changed", "--strict", "--format", "json"],
+        &[],
+    );
+    assert_eq!(out.code, 1, "{}{}", out.text(), out.stderr);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let hits: Vec<&serde_json::Value> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["check"] == "SF29")
+        .collect();
+    assert_eq!(hits.len(), 1, "{v}");
+    assert_eq!(hits[0]["severity"], "error", "{v}");
+    assert!(
+        hits[0]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("product.md: updated 2026-01-15 is older than today ("),
+        "{v}"
+    );
+    // An unchanged stale doc keeps the commit-date wording (no --changed).
+    let out = common::spec(&p, &["validate", "--format", "json"], &[]);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["check"] != "SF29"),
+        "a plain run still compares with the last commit: {v}"
+    );
+}
