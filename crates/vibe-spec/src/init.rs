@@ -66,8 +66,14 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, to: Option<&Path>, json: bool
                     && e.file_type().is_ok_and(|t| !t.is_dir())
             });
             if populated && crate::layered::detect(&dir) == crate::layered::Layout::Flat {
+                // migrate refuses `--to` the legacy name, so point it at docs/spec.
+                let to = if root_label == crate::literal::LEGACY {
+                    "docs/spec"
+                } else {
+                    root_label.as_str()
+                };
                 eprintln!(
-                    "init: ERROR: {root_label} is a flat spec root; run vibe-spec migrate --to {root_label} --layout layered"
+                    "init: ERROR: {root_label} is a flat spec root; run vibe-spec migrate --to {to} --layout layered"
                 );
                 return (exit::FINDINGS, Vec::new());
             }

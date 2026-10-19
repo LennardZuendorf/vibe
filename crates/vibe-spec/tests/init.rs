@@ -238,8 +238,10 @@ fn refuses_a_populated_flat_root() {
         let out = spec(&p, &args, &[]);
         assert_eq!(out.code, 1, "{rel}: {}", out.stderr);
         assert!(out.stdout.is_empty(), "{rel}");
+        // A legacy root migrates to docs/spec; `migrate --to .spec` is refused.
+        let to = if rel == ".spec" { "docs/spec" } else { rel };
         let want = format!(
-            "init: ERROR: {rel} is a flat spec root; run vibe-spec migrate --to {rel} --layout layered"
+            "init: ERROR: {rel} is a flat spec root; run vibe-spec migrate --to {to} --layout layered"
         );
         assert!(
             out.stderr.lines().any(|l| l == want),
