@@ -18,6 +18,7 @@ flow/warnings.log
 # in flow/engine/content.mjs). Per-project runtime state, not memory — same
 # reason as the cursor and evidence dir above.
 .vibe/last-inject
+.vibe/spec-session
 .serena/
 # Overnight run artifact (local morning report, not merged)
 REPORT.md

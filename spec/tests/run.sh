@@ -1593,6 +1593,15 @@ test_f25_voice() {
 }
 test_f25_voice
 
+# ── Task P4-5: spec hook shim + generated plugin hooks (own suite) ──────────
+test_hooks_suite() {
+  local out rc
+  out="$(bash "$REPO_ROOT/spec/tests/hooks.sh" 2>&1)"; rc=$?
+  printf '%s\n' "$out"
+  if [[ $rc -eq 0 ]]; then pass HOOKS "spec/tests/hooks.sh passes"; else fail HOOKS "spec/tests/hooks.sh passes"; fi
+}
+test_hooks_suite
+
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

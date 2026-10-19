@@ -1,7 +1,17 @@
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\"" } ] }
+      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\"" } ] },
+      { "matcher": "startup|clear|compact", "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" session-start" } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash", "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" guard" } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|Write|MultiEdit", "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" validate" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" validate" } ] }
     ]
   }
 }
