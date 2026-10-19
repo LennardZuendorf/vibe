@@ -1,5 +1,5 @@
 //! `vibe-spec check-drift` — port of `spec/scripts/check-drift.sh` (F18,
-//! P3c-R3). For a `.spec` root the output is the oracle's, byte for byte:
+//! P3c-R3). For a `.spec` root the output is the oracle's, byte for byte: // literal
 //! stdout carries only the final OK line, everything else goes to stderr.
 //! Paths print relative to the project through `Root::display()`.
 use std::io::Write;
@@ -37,14 +37,17 @@ fn event(sev: Sev, msg: Vec<u8>, file: Option<String>) -> Event {
 }
 
 /// The oracle's `find_repo_root`, from the cwd: the nearest ancestor (not
-/// `/`) holding `.spec/` or `.git`, else the cwd.
+/// `/`) holding `docs/spec/`, the legacy root or `.git`, else the cwd.
 fn marker_root(cwd: &Path) -> PathBuf {
     let mut d = Some(cwd);
     while let Some(dir) = d {
         if dir.parent().is_none() {
             break;
         }
-        if dir.join(".spec").is_dir() || dir.join(".git").exists() {
+        if dir.join("docs/spec").is_dir()
+            || dir.join(crate::literal::LEGACY).is_dir()
+            || dir.join(".git").exists()
+        {
             return dir.to_path_buf();
         }
         d = dir.parent();
@@ -173,7 +176,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         Ok(root) => root,
         Err(Miss::NotFound) if !opts.json => {
             eprintln!(
-                "check-drift: no .spec/ under {}; nothing to check.",
+                "check-drift: no .spec/ under {}; nothing to check.", // literal
                 marker_root(cwd).to_string_lossy()
             );
             return (exit::OK, Vec::new());
@@ -432,4 +435,21 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         exit::OK,
         format!("check-drift: OK — 0 errors, {warnings} warning(s).\n").into_bytes(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::marker_root;
+
+    #[test]
+    #[expect(clippy::unwrap_used, reason = "test scratch tree")]
+    fn marker_root_accepts_a_docs_spec_only_project() {
+        let base = std::env::temp_dir().join(format!("vibe-drift-marker-{}", std::process::id()));
+        let nested = base.join("a/b");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::create_dir_all(base.join("docs/spec")).unwrap();
+        let got = marker_root(&nested);
+        std::fs::remove_dir_all(&base).unwrap();
+        assert_eq!(got, base);
+    }
 }

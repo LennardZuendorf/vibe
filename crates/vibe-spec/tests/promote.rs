@@ -1,4 +1,5 @@
 #![cfg(unix)]
+// vibe-spec: literal-file
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! `vibe-spec promote` (F18): the oracle's streams and files for merge
 //! blocks, then requirement deltas (Task 6) and superpowers (Task 7).

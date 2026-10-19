@@ -47,11 +47,11 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
         }
         i += 1;
     }
-    // The oracle's paths are relative to the project ("$SPEC_DIR" = .spec);
-    // without a root it looks for .spec/ under the cwd, which cannot exist.
+    // The oracle's paths are relative to the project ("$SPEC_DIR" = .spec); // literal
+    // without a root it looks for .spec/ under the cwd, which cannot exist. // literal
     let (dir, display): (PathBuf, String) = match found {
         Ok(root) => (root.dir.clone(), root.display()),
-        Err(Miss::NotFound) => (cwd.join(".spec"), ".spec".to_string()),
+        Err(Miss::NotFound) => (cwd.join(".spec"), ".spec".to_string()), // literal
         Err(miss) => {
             eprintln!("{}", miss.message());
             return (miss.code(), Vec::new());

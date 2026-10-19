@@ -13,7 +13,7 @@
     "idle": {
       "skill": null,
       "delegates": [],
-      "reads": [".spec/lessons.md", ".spec/plan.md"],
+      "reads": ["docs/spec/lessons.md", "docs/spec/plan.md"],
       "writes": [],
       "inject": "state=idle · no active flow · pick a flow → run set-state.sh {setup.detect | strategy.brainstorm | feature.design | quick.triage}",
       "next": ["setup.detect", "strategy.brainstorm", "feature.design", "quick.triage"],
@@ -23,7 +23,7 @@
     "setup.detect": {
       "skill": "vibe",
       "delegates": [],
-      "reads": ["repo tree", "CLAUDE.md", "AGENTS.md", ".agents/**", ".spec/**"],
+      "reads": ["repo tree", "CLAUDE.md", "AGENTS.md", ".agents/**", "docs/spec/**"],
       "writes": [],
       "inject": null,
       "next": ["setup.apply", "idle"],
@@ -33,7 +33,7 @@
       "skill": "vibe",
       "delegates": ["spec"],
       "reads": [".agents/skills/vibe/state-machine.json"],
-      "writes": [".agents/**", "CLAUDE.md#active-rules", "AGENTS.md#active-rules", ".spec/lessons.md", ".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md"],
+      "writes": [".agents/**", "CLAUDE.md#active-rules", "AGENTS.md#active-rules", "docs/spec/lessons.md", "docs/spec/product.md", "docs/spec/tech.md", "docs/spec/design.md", "docs/spec/plan.md"],
       "inject": null,
       "next": ["idle"],
       "exit": "instructions block present, .agents/skills/vibe scaffolded, lessons.md exists, never clobbered user content"
@@ -42,7 +42,7 @@
     "strategy.brainstorm": {
       "skill": "vibe",
       "delegates": ["superpowers:brainstorming"],
-      "reads": [".spec/lessons.md"],
+      "reads": ["docs/spec/lessons.md"],
       "writes": [],
       "inject": null,
       "next": ["strategy.spec", "idle"],
@@ -51,8 +51,8 @@
     "strategy.spec": {
       "skill": "vibe",
       "delegates": ["spec"],
-      "reads": [".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md"],
-      "writes": [".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md", ".spec/lessons.md"],
+      "reads": ["docs/spec/product.md", "docs/spec/tech.md", "docs/spec/design.md", "docs/spec/plan.md"],
+      "writes": ["docs/spec/product.md", "docs/spec/tech.md", "docs/spec/design.md", "docs/spec/plan.md", "docs/spec/lessons.md"],
       "inject": null,
       "next": ["strategy.brainstorm", "idle"],
       "exit": "root specs updated and validated; if a durable lesson surfaced, record it before going idle"
@@ -61,8 +61,8 @@
     "feature.design": {
       "skill": "vibe",
       "delegates": ["superpowers:brainstorming", "code-explorer", "code-architect"],
-      "reads": [".spec/lessons.md", ".spec/product.md", ".spec/tech.md"],
-      "writes": ["docs/superpowers/specs/*-<feature>-design.md", ".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/design.md", ".spec/features/<feature>/research.md"],
+      "reads": ["docs/spec/lessons.md", "docs/spec/product.md", "docs/spec/tech.md"],
+      "writes": ["docs/superpowers/specs/*-<feature>-design.md", "docs/spec/features/<feature>/product.md", "docs/spec/features/<feature>/tech.md", "docs/spec/features/<feature>/design.md", "docs/spec/features/<feature>/research.md"],
       "inject": null,
       "next": ["feature.plan", "idle"],
       "exit": "superpowers design doc written (or fallback product.md + tech.md; design.md when full rigor); approach chosen"
@@ -70,8 +70,8 @@
     "feature.plan": {
       "skill": "vibe",
       "delegates": ["superpowers:writing-plans", "code-architect"],
-      "reads": ["docs/superpowers/specs/*-<feature>-design.md", ".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md"],
-      "writes": ["docs/superpowers/plans/*-<feature>.md", ".spec/features/<feature>/plan.md"],
+      "reads": ["docs/superpowers/specs/*-<feature>-design.md", "docs/spec/features/<feature>/product.md", "docs/spec/features/<feature>/tech.md"],
+      "writes": ["docs/superpowers/plans/*-<feature>.md", "docs/spec/features/<feature>/plan.md"],
       "inject": null,
       "next": ["feature.impl", "feature.design", "idle"],
       "exit": "superpowers plan (or fallback plan.md with stable unit IDs) written; human approved moving to impl"
@@ -79,7 +79,7 @@
     "feature.impl": {
       "skill": "vibe",
       "delegates": ["superpowers:executing-plans", "superpowers:subagent-driven-development", "superpowers:test-driven-development", "superpowers:receiving-code-review"],
-      "reads": ["docs/superpowers/plans/*-<feature>.md", ".spec/features/<feature>/plan.md"],
+      "reads": ["docs/superpowers/plans/*-<feature>.md", "docs/spec/features/<feature>/plan.md"],
       "writes": ["src/**", "tests/**"],
       "inject": null,
       "next": ["feature.verify", "idle"],
@@ -88,7 +88,7 @@
     "feature.verify": {
       "skill": "vibe",
       "delegates": ["superpowers:verification-before-completion", "superpowers:requesting-code-review", "superpowers:systematic-debugging", "code-reviewer"],
-      "reads": ["docs/superpowers/plans/*-<feature>.md", ".spec/features/<feature>/plan.md", "src/**", "tests/**"],
+      "reads": ["docs/superpowers/plans/*-<feature>.md", "docs/spec/features/<feature>/plan.md", "src/**", "tests/**"],
       "writes": ["evidence: test/build output, review notes"],
       "inject": null,
       "next": ["feature.compound", "feature.impl", "feature.plan", "idle"],
@@ -97,8 +97,8 @@
     "feature.compound": {
       "skill": "vibe",
       "delegates": ["superpowers:finishing-a-development-branch", "spec"],
-      "reads": ["docs/superpowers/specs/*-<feature>-design.md", "docs/superpowers/plans/*-<feature>.md", ".spec/features/<feature>/product.md", ".spec/features/<feature>/tech.md", ".spec/features/<feature>/plan.md", ".spec/lessons.md"],
-      "writes": [".spec/lessons.md", ".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md", "CLAUDE.md#active-rules", "AGENTS.md#active-rules", ".spec/archive/<feature>/**"],
+      "reads": ["docs/superpowers/specs/*-<feature>-design.md", "docs/superpowers/plans/*-<feature>.md", "docs/spec/features/<feature>/product.md", "docs/spec/features/<feature>/tech.md", "docs/spec/features/<feature>/plan.md", "docs/spec/lessons.md"],
+      "writes": ["docs/spec/lessons.md", "docs/spec/product.md", "docs/spec/tech.md", "docs/spec/design.md", "docs/spec/plan.md", "CLAUDE.md#active-rules", "AGENTS.md#active-rules", "docs/spec/archive/<feature>/**"],
       "inject": null,
       "next": ["idle"],
       "exit": "lesson recorded; cross-cutting decisions promoted; feature archived; digest regenerated"
@@ -107,7 +107,7 @@
     "quick.triage": {
       "skill": "vibe",
       "delegates": ["superpowers:systematic-debugging"],
-      "reads": [".spec/lessons.md"],
+      "reads": ["docs/spec/lessons.md"],
       "writes": [],
       "inject": null,
       "next": ["quick.fix", "feature.design", "idle"],
@@ -116,8 +116,8 @@
     "quick.fix": {
       "skill": "vibe",
       "delegates": ["superpowers:test-driven-development", "superpowers:receiving-code-review"],
-      "reads": [".spec/lessons.md"],
-      "writes": ["src/**", ".spec/quick/<slug>.md"],
+      "reads": ["docs/spec/lessons.md"],
+      "writes": ["src/**", "docs/spec/quick/<slug>.md"],
       "inject": null,
       "next": ["quick.verify", "idle"],
       "exit": "fix implemented with a test that reproduces and resolves the issue"
@@ -126,7 +126,7 @@
       "skill": "vibe",
       "delegates": ["superpowers:verification-before-completion", "code-reviewer"],
       "reads": ["src/**", "tests/**"],
-      "writes": ["evidence: test/build output, review notes", ".spec/lessons.md"],
+      "writes": ["evidence: test/build output, review notes", "docs/spec/lessons.md"],
       "inject": null,
       "next": ["quick.fix", "idle"],
       "exit": "evidence shows fix works and regressions clear; if a durable lesson surfaced, record it before going idle"

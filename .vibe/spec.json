@@ -1,0 +1,26 @@
+{
+  "migrate": {
+    "include": [
+      "spec/**/*.md",
+      "flow/**/*.md",
+      "flow/reference/templates/**",
+      "docs/roadmap/**",
+      ".github/**",
+      "README.md",
+      "AGENTS.md"
+    ],
+    "exclude": [
+      "oracles/**",
+      "spec/scripts/**",
+      "docs/superpowers/**",
+      "CHANGELOG.md",
+      "target/**",
+      "tests/parity/corpus/**",
+      "contracts/fixtures/**"
+    ]
+  },
+  "strictness": {
+    "SF29": "off",
+    "SF15": "off"
+  }
+}

@@ -1,4 +1,5 @@
 #![cfg(unix)]
+// vibe-spec: literal-file
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! `vibe-spec scan-merges` is byte-identical to `scan-merges.sh`.
 mod common;

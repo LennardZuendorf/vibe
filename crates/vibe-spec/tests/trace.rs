@@ -1,4 +1,5 @@
 #![cfg(unix)]
+// vibe-spec: literal-file
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! `vibe-spec trace` over a synthetic repo (P3b-R13).
 mod common;

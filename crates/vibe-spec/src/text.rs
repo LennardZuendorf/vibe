@@ -416,12 +416,12 @@ mod tests {
     #[test]
     fn join_raw_never_replaces_the_base() {
         assert_eq!(
-            join_raw(Path::new(".spec"), b"/x.md"),
-            PathBuf::from(".spec//x.md")
+            join_raw(Path::new(".spec"), b"/x.md"), // literal
+            PathBuf::from(".spec//x.md")            // literal
         );
         assert_eq!(
-            join_raw(Path::new(".spec"), b"a.md"),
-            PathBuf::from(".spec/a.md")
+            join_raw(Path::new(".spec"), b"a.md"), // literal
+            PathBuf::from(".spec/a.md")            // literal
         );
     }
 

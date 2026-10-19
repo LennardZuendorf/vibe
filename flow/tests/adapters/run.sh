@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # flow/tests/adapters/run.sh — behaviour tests for agent-instructions (merge-agents.sh,
 # template, manifest) and platform-adapters (three hooks, settings.json wiring,
 # install.sh). Pure bash; no bats. Each test cites its plan unit ID.

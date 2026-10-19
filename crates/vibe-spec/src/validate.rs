@@ -192,7 +192,7 @@ pub fn run_checked(
             eprintln!("{}", Miss::NotFound.message());
             return Ok((exit::NO_ROOT, Vec::new()));
         }
-        Err(Miss::NotFound) => (cwd.join(".spec"), cwd.to_path_buf(), ".spec".to_string()),
+        Err(Miss::NotFound) => (cwd.join(".spec"), cwd.to_path_buf(), ".spec".to_string()), // literal
         Err(miss) => {
             eprintln!("{}", miss.message());
             return Ok((miss.code(), Vec::new()));
@@ -348,7 +348,7 @@ pub struct Ctx<'a> {
     pub dir: &'a Path,
     /// The project directory: the oracle's cwd after it `cd`s to the root's parent.
     pub project: &'a Path,
-    /// The root relative to the project, as the oracle spells `$SPEC_DIR` (`.spec`).
+    /// The root relative to the project, as the oracle spells `$SPEC_DIR` (`.spec`). // literal
     pub display: &'a str,
 }
 

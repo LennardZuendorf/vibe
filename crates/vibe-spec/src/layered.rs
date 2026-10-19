@@ -16,7 +16,7 @@ use crate::validate::Ctx;
 /// A root's layout.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Layout {
-    /// Legacy `.spec/`-style layout.
+    /// Legacy `.spec/`-style layout. // literal
     Flat,
     /// D44 hubs and kind folders.
     Layered,

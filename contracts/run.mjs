@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 // Validates contracts/: every schema is usable and states the compatibility
 // rule; every Spec JSON golden validates (valid/) or fails (invalid/); the
 // exit-code sets are exact; population floors hold.

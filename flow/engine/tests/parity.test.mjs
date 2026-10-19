@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 // engine/tests/parity.test.mjs — the cross-command parity matrix (js-core/8,
 // R1, R2, R5): every ported command x 5 cursor states x {jq, no-jq}, plus
 // hook.mjs (js-core/7's orchestration layer, not a bash-oracle port itself,

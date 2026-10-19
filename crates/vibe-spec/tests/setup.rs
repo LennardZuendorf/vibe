@@ -1,4 +1,5 @@
 #![cfg(unix)]
+// vibe-spec: literal-file
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! `vibe-spec setup`: git hook, OpenCode files, AGENTS.md router block (P4-R10).
 mod common;

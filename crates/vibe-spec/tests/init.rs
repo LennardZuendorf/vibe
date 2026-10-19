@@ -1,4 +1,5 @@
 #![cfg(unix)]
+// vibe-spec: literal-file
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! `vibe-spec init`: seeds a layered spec root (P4-R11).
 mod common;

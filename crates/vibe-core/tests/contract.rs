@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+// vibe-spec: literal-file
 //! `vibe_core::exit` matches contracts/exit-codes.json, and core holds no tool vocabulary.
 use std::fs;
 use std::path::{Path, PathBuf};

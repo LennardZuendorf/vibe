@@ -30,9 +30,9 @@ directly **from your project root** — they resolve `.spec/` relative to the
 current directory, so cwd must be the project you want to act on:
 
 ```bash
-bash .agents/skills/spec/scripts/setup.sh      # create .spec/ entrypoints from templates
-bash .agents/skills/spec/scripts/validate.sh   # check consistency (run from project root)
-bash ~/.agents/skills/spec/scripts/validate.sh # global install
+vibe-spec init       # create the spec root's entrypoints from templates
+vibe-spec validate   # check consistency (run from the project)
+vibe-spec validate --strict # promote every warning to an error (CI)
 ```
 
 ## The two-layer model

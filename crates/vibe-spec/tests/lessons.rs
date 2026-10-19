@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+// vibe-spec: literal-file
 //! `vibe-spec lessons-for`: legacy formats match `lessons-for.sh`; `--json`
 //! answers Spec JSON v1.
 mod common;

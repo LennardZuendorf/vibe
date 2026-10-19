@@ -124,12 +124,12 @@ if [[ -z "$ROOT" ]]; then
   # upward marker search so detection works from a subdirectory; fall back to cwd.
   ROOT="$PWD"; d="$PWD"
   while [[ "$d" != "/" ]]; do
-    if [[ -d "$d/.spec" || -e "$d/.git" ]]; then ROOT="$d"; break; fi
+    if [[ -d "$d/docs/spec" || -d "$d/.spec" || -e "$d/.git" ]]; then ROOT="$d"; break; fi # literal
     d="$(dirname "$d")"
   done
 fi
-# vibe-enabled = the project carries a .spec/ tree or a flow cursor.
-[[ -d "$ROOT/.spec" || -f "$ROOT/.agents/skills/vibe/state.json" ]] || exit 0
+# vibe-enabled = the project carries a docs/spec/ (or legacy spec) tree or a flow cursor.
+[[ -d "$ROOT/docs/spec" || -d "$ROOT/.spec" || -f "$ROOT/.agents/skills/vibe/state.json" ]] || exit 0 # literal
 
 DOCTRINE="${CLAUDE_PLUGIN_ROOT:-}/skills/vibe/scripts/doctrine.sh"
 [[ -f "$DOCTRINE" ]] || exit 0

@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 // Unit tests for contracts/lib/schema.mjs. Run: node contracts/tests/schema.test.mjs
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

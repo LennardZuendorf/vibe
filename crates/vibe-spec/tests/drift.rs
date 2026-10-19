@@ -1,4 +1,5 @@
 #![cfg(unix)]
+// vibe-spec: literal-file
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! `vibe-spec check-drift` (F18): the oracle's three streams, then the
 //! superpowers artifact gate and JSON (Task 4).

@@ -1,4 +1,5 @@
 #![cfg(unix)]
+// vibe-spec: literal-file
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! The committed spec corpus is exactly what the generator writes, and the
 //! frozen spec oracles are deterministic over it.

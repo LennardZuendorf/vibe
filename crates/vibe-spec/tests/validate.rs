@@ -1,4 +1,5 @@
 #![cfg(unix)]
+// vibe-spec: literal-file
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! `vibe-spec validate` is byte-identical to `validate.sh` (colours, `echo -e`
 //! escapes, counters, exit code).

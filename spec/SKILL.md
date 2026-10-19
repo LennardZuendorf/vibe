@@ -99,7 +99,7 @@ work. Routing is not optional. A reply to the user is not routing.
 2. Read `.spec/lessons.md` and the root doc of the area you touch. No `.spec/` yet → run `/spec setup` first.
 3. Route the work by the table below. Announce the route in one line.
 4. Write only where the route says. Nowhere else.
-5. Finish: bump `updated:` on every spec you edited, then run `scripts/validate.sh`.
+5. Finish: bump `updated:` on every spec you edited, then run `vibe-spec validate`.
 
 ## Routing
 
@@ -130,15 +130,15 @@ its live surface (code, tests, root docs). Never restore the folder.
 | `strategy` | Load [strategy.md](strategy.md) |
 | `feature [<name>]` | Route as a feature (table above); fallback loads [feature.md](feature.md) + `.spec/features/<name>/` |
 | `interview [<name>]` | Fallback only: run `superpowers:brainstorming` for the WHAT phase, steps 1–2, in this skill |
-| `promote <name>` | Run `scripts/promote.sh <name>` through the spec-promoter agent (fallback folders) |
-| `audit` | Run `scripts/validate.sh` |
-| `diff <name>` | Run `scripts/scan-merges.sh <name>` — pending merge blocks |
+| `promote <name>` | Run `vibe-spec promote <name>` through the spec-promoter agent (fallback folders) |
+| `audit` | Run `vibe-spec validate` |
+| `diff <name>` | Run `vibe-spec scan-merges <name>` — pending merge blocks |
 | `health` | Run the spec-health agent — structural assessment |
 | `research <name>` | Fallback only: open `.spec/features/<name>/research.md` |
-| `lessons-for <tag>` | Run `scripts/lessons-for.sh <tag>` |
+| `lessons-for <tag>` | Run `vibe-spec lessons-for <tag>` |
 | `product` · `tech` · `design` · `plan` · `lessons` | Load that root doc and follow its links |
 | `setup` | Run the setup interview (§ Setup) |
-| `validate` | Run `scripts/validate.sh` |
+| `validate` | Run `vibe-spec validate` |
 | _(none)_ | Route from the task (table above) |
 
 ## Red Flags
@@ -186,21 +186,22 @@ Rules:
 
 | Role | Executor | Phase | Constraint |
 |---|---|---|---|
-| spec-promoter | `promote.sh` + `superpowers:finishing-a-development-branch` | feature.compound | `reference/tech.md` merge markers |
-| spec-health | `validate.sh` | any (`/spec health`, `/spec audit`) | validate.sh output |
+| spec-promoter | `vibe-spec promote` + `superpowers:finishing-a-development-branch` | feature.compound | `reference/tech.md` merge markers |
+| spec-health | `vibe-spec validate` | any (`/spec health`, `/spec audit`) | `vibe-spec validate` output |
 
 Agents live under [agents/](agents/). The fallback WHAT interview runs `superpowers:brainstorming` and the HOW trace runs `code-explorer` + `code-architect` from this skill itself.
 
 ## Commands
 
-`scripts/` is this skill's own directory, `${CLAUDE_SKILL_DIR}/scripts/` (`${CLAUDE_SKILL_DIR}` holds
-this file). Run `validate.sh` (structure, links, frontmatter), `list-specs.sh`, `lessons-for.sh <tag>`,
-and `scan-merges.sh <name>` (pending `<!-- merge -->` blocks) from anywhere in the project; they walk
-up to the git root to find `.spec/`. Run `promote.sh <name>` and `setup.sh` from the project root.
+The commands are the `vibe-spec` binary's. Run `vibe-spec validate` (structure, links, frontmatter),
+`vibe-spec list-specs`, `vibe-spec lessons-for <tag>` and `vibe-spec scan-merges <name>` (pending
+`<!-- merge -->` blocks) from anywhere in the project; they walk up to the git root to find the spec
+root (`vibe-spec root` prints it). Run `vibe-spec promote <name>` and `vibe-spec init` from the project
+root. If `vibe-spec` is not on PATH, build it (`cargo build -p vibe-spec`).
 
 ## Current Project State
 
-!`bash "${CLAUDE_SKILL_DIR}/scripts/list-specs.sh"`
+!`vibe-spec list-specs`
 
 ## Config
 
@@ -225,7 +226,7 @@ On `/spec setup`:
    - **Q2 — Available superpowers:** `all`, `none`, or `custom` (per superpower)?
    - **Q3 — Proactive suggestions:** offer optional executors at each step, or stay quiet? Default: yes.
 3. Show the summary. Write nothing before the user confirms.
-4. On confirm: write `.spec/.config.yaml` (always, even with all defaults), then run `scripts/setup.sh`. Report what it created; next is `/spec strategy` or `/spec feature <name>`.
+4. On confirm: write `.spec/.config.yaml` (always, even with all defaults), then run `vibe-spec init`. Report what it created; next is `/spec strategy` or `/spec feature <name>`.
 
 ## Templates
 

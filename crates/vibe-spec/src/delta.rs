@@ -773,7 +773,7 @@ mod tests {
 
     #[test]
     fn targets_resolve_from_the_feature_folder() {
-        let root = Path::new("/p/.spec");
+        let root = Path::new("/p/.spec"); // literal
         let fd = root.join("features").join("auth");
         assert_eq!(
             target(root, &fd, b"---\nparent: ../../product-auth.md\n---\n").unwrap(),

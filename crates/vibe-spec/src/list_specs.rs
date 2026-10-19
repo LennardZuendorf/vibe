@@ -12,7 +12,7 @@ pub fn run(found: &Result<Root, Miss>) -> (u8, Vec<u8>) {
         Err(Miss::NotFound) => {
             return (
                 0,
-                b"No .spec/ directory found in current project\n".to_vec(),
+                b"No .spec/ directory found in current project\n".to_vec(), // literal
             );
         }
         Err(miss) => {

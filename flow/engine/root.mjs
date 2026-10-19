@@ -2,10 +2,10 @@
 // resolveVibeDir(), resolveSkillsDir().
 //
 // Order for each: an explicit override -> CLAUDE_PROJECT_DIR (root only) ->
-// self-relative (import.meta.url) -> upward .spec/.git marker search -> a
+// self-relative (import.meta.url) -> upward docs/spec/.spec/.git marker search -> a // literal
 // final fallback. Self-relative deliberately precedes the marker search: a
-// fresh install target has neither `.git` nor `.spec` (see the "stranger
-// eval" lesson in .spec/lessons.md), so a resolver that only searched for
+// fresh install target has neither `.git` nor `.spec` (see the "stranger // literal
+// eval" lesson in .spec/lessons.md), so a resolver that only searched for // literal
 // markers silently broke there while looking fine in every privileged
 // in-repo test.
 //
@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const MARKERS = ['.spec', '.git'];
+const MARKERS = ['docs/spec', '.spec', '.git']; // literal
 
 function hasMarker(dir) {
   return MARKERS.some((marker) => fs.existsSync(path.join(dir, marker)));

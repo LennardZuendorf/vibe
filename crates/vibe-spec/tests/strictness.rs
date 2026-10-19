@@ -1,4 +1,5 @@
 #![cfg(unix)]
+// vibe-spec: literal-file
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! `.vibe/spec.json` strictness, `--strict`, allow markers (P3b-R5–R8).
 mod common;

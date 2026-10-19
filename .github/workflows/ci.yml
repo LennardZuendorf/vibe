@@ -118,11 +118,16 @@ jobs:
           CLAUDE_PROJECT_DIR: ${{ github.workspace }}
         run: bash tests/run.sh
 
+      # P4-R17: the bash spec scripts hard-code the legacy root, so this repo's own
+      # tree is checked by vibe-spec itself, on whichever root it sits.
+      - name: Toolchain (pinned by rust-toolchain.toml)
+        run: rustup toolchain install
+
       - name: Spec validation
-        run: bash .agents/skills/spec/scripts/validate.sh
+        run: cargo run -q --locked -p vibe-spec -- validate --strict
 
       - name: Drift gate (compound + doc drift)
-        run: bash spec/scripts/check-drift.sh
+        run: cargo run -q --locked -p vibe-spec -- check-drift
 
   macos:
     # js-core/8: stock macOS ships bash 3.2 (Apple freezes it at the last
@@ -217,9 +222,9 @@ jobs:
         run: cargo test --workspace --locked --no-fail-fast
 
   parity:
-    # F3/F16: the frozen spec oracles against themselves, against the
-    # vibe-spec candidate over the generated corpus, and live on this repo's
-    # spec tree. Commands not ported yet stay self-check only.
+    # F3/F16: the frozen spec oracles against themselves and against the
+    # vibe-spec candidate over the generated corpus. The live leg (this repo's
+    # own tree) is retired: oracle bash cannot read docs/spec (P4-R17).
     name: parity — spec oracles vs vibe-spec
     runs-on: ubuntu-latest
     steps:
@@ -231,7 +236,7 @@ jobs:
       - name: Toolchain (pinned by rust-toolchain.toml)
         run: rustup toolchain install
 
-      - name: Spec parity (self-check, candidate, live)
+      - name: Spec parity (self-check, candidate)
         run: bash tests/parity/run.sh
 
   openspec:

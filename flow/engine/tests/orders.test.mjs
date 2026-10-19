@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 // engine/tests/orders.test.mjs — engine/commands/orders.mjs (js-core/4, R2).
 //
 // The oracle is flow/scripts/orders.sh. Never hand-copy its expected output:

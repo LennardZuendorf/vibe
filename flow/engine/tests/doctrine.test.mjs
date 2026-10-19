@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 // engine/tests/doctrine.test.mjs — engine/commands/doctrine.mjs (js-core/5, R2).
 //
 // The oracle is flow/scripts/doctrine.sh. Never hand-copy its expected

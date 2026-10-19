@@ -18,6 +18,14 @@
       ]
     },
     {
+      "id": "lessons-docs-spec",
+      "match": "docs/spec/lessons.md",
+      "arms": [
+        { "states": ["feature.compound", "setup.apply", "strategy.spec", "quick.verify"], "verdict": "allow", "reason": "" },
+        { "states": "*", "verdict": "block", "reason": "docs/spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: {state})" }
+      ]
+    },
+    {
       "id": "root-specs",
       "match": [".spec/product.md", ".spec/tech.md", ".spec/design.md", ".spec/plan.md"],
       "arms": [
@@ -26,10 +34,26 @@
       ]
     },
     {
+      "id": "root-specs-docs-spec",
+      "match": ["docs/spec/product.md", "docs/spec/tech.md", "docs/spec/design.md", "docs/spec/plan.md"],
+      "arms": [
+        { "states": ["strategy.spec", "feature.compound", "setup.apply"], "verdict": "allow", "reason": "" },
+        { "states": "*", "verdict": "block", "reason": "root docs/spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: {state})" }
+      ]
+    },
+    {
       "id": "features-frozen",
       "match": ".spec/features/*",
       "arms": [
         { "states": ["feature.impl", "quick.fix"], "verdict": "warn", "reason": ".spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: {state})" },
+        { "states": "*", "verdict": "allow", "reason": "" }
+      ]
+    },
+    {
+      "id": "features-frozen-docs-spec",
+      "match": "docs/spec/features/*",
+      "arms": [
+        { "states": ["feature.impl", "quick.fix"], "verdict": "warn", "reason": "docs/spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: {state})" },
         { "states": "*", "verdict": "allow", "reason": "" }
       ]
     },

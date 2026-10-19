@@ -1,8 +1,8 @@
-//! Spec root discovery (`.spec/tech-spec.md`, "Root and discovery"). One
+//! Spec root discovery (`.spec/tech-spec.md`, "Root and discovery"). One // literal
 //! function implements the order; every command goes through it.
 //!
 //! Order: `--root`, `$VIBE_SPEC_ROOT`, `.vibe/spec.json` `root`, `docs/spec/`,
-//! `.spec/`; steps 3–5 repeat per parent, up to the directory holding `.git`;
+//! `.spec/`; steps 3–5 repeat per parent, up to the directory holding `.git`; // literal
 //! nothing found → exit 3.
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -21,7 +21,7 @@ pub enum Source {
     Config,
     /// `docs/spec/`.
     DocsSpec,
-    /// `.spec/` (legacy).
+    /// `.spec/` (legacy). // literal
     DotSpec,
 }
 
@@ -53,7 +53,7 @@ pub struct Root {
 }
 
 impl Root {
-    /// `dir` relative to `project`, `/`-joined (`.spec`, `docs/spec`); the
+    /// `dir` relative to `project`, `/`-joined (`.spec`, `docs/spec`); the // literal
     /// absolute path when `dir` lies outside `project`.
     pub fn display(&self) -> String {
         match self.dir.strip_prefix(&self.project) {
@@ -100,7 +100,7 @@ impl Miss {
     /// One stderr line.
     pub fn message(&self) -> String {
         match self {
-            Miss::NotFound => "vibe-spec: no spec root (searched docs/spec/ and .spec/ up to the directory holding .git)".to_string(),
+            Miss::NotFound => "vibe-spec: no spec root (searched docs/spec/ and .spec/ up to the directory holding .git)".to_string(), // literal
             Miss::Missing { source, path } => format!(
                 "vibe-spec: spec root {} (from {}) is not a directory",
                 path.display(),
@@ -171,7 +171,10 @@ fn at(dir: &Path, depth: usize) -> Result<Option<Root>, Miss> {
             depth,
         }));
     }
-    for (rel, source) in [("docs/spec", Source::DocsSpec), (".spec", Source::DotSpec)] {
+    for (rel, source) in [
+        ("docs/spec", Source::DocsSpec),
+        (crate::literal::LEGACY, Source::DotSpec),
+    ] {
         let spec = dir.join(rel);
         if spec.is_dir() {
             return Ok(Some(Root {

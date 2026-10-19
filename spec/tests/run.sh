@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # spec/tests/run.sh — behaviour tests for the spec-framework SF0–SF4 units.
 # Pure bash; no bats dependency. Each test cites its plan unit ID (SF0…SF3, D9).
 #

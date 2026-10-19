@@ -415,12 +415,12 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
         Ok(a) => a,
         Err(msg) => return fail(&msg),
     };
-    // The oracle's paths are cwd-relative under `.spec/`; the port uses the
+    // The oracle's paths are cwd-relative under `.spec/`; the port uses the // literal
     // discovered root (a walk up from the cwd, shared by every subcommand: a
     // deliberate divergence) and prints it relative to the project.
     let (dir, display): (PathBuf, String) = match found {
         Ok(root) => (root.dir.clone(), root.display()),
-        Err(Miss::NotFound) if !a.json => (cwd.join(".spec"), ".spec".to_string()),
+        Err(Miss::NotFound) if !a.json => (cwd.join(".spec"), ".spec".to_string()), // literal
         Err(miss) => {
             eprintln!("{}", miss.message());
             return (miss.code(), Vec::new());

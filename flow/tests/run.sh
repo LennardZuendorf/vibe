@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # flow/tests/run.sh — behaviour tests for the vibe-flow core: the state machine,
 # set-state.sh / validate-state.sh, D12 orders (orders.sh + per-skill blocks),
 # and graceful degradation (check-skills.sh). Pure bash; no bats.
@@ -1226,11 +1227,44 @@ out="$(run_guard "$gsbx" '{"tool_name":"Edit","tool_input":{"file_path":".spec/l
 assert_contains "review-fix" "Edit-tool lessons.md under idle still hard-blocks (exit 2)" "$out" "rc=2"
 assert_contains "review-fix" "Edit-tool behavior unchanged (BLOCKED message)" "$out" "BLOCKED"
 
+# spec-v04 P4-R16: docs/spec is a second spec root; every rule has its twin.
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"echo x >> docs/spec/lessons.md"}}')"
+assert_contains "spec-v04/p4" "bash 'echo >> docs/spec/lessons.md' warns" "$out" "warn"
+assert_contains "spec-v04/p4" "bash docs/spec lessons-write warn names the path" "$out" "docs/spec/lessons.md"
+assert_contains "spec-v04/p4" "bash docs/spec sniffer never blocks (exit 0)" "$out" "rc=0"
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"grep foo docs/spec/lessons.md"}}')"
+assert_not_contains "spec-v04/p4" "bash 'grep docs/spec/lessons.md' (a read) does NOT warn" "$out" "warn"
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"sed -i s/a/b/ docs/spec/product.md"}}')"
+assert_contains "spec-v04/p4" "bash 'sed -i docs/spec/product.md' warns (root spec)" "$out" "warn"
+out="$(run_guard "$gsbx" '{"tool_name":"Edit","tool_input":{"file_path":"docs/spec/lessons.md"}}')"
+assert_contains "spec-v04/p4" "Edit-tool docs/spec/lessons.md under idle hard-blocks (exit 2)" "$out" "rc=2"
+assert_contains "spec-v04/p4" "docs/spec/lessons.md block message names the path" "$out" "docs/spec/lessons.md is writable only"
+dc="$gsbx/.agents/skills/vibe/scripts/detect-context.sh"
+assert_eq "spec-v04/p4" "detect-context blocks docs/spec/lessons.md in idle" \
+  "$(bash "$dc" decide docs/spec/lessons.md idle 2>&1 | cut -c1-31)" "block:docs/spec/lessons.md is w"
+assert_eq "spec-v04/p4" "detect-context allows docs/spec/lessons.md in feature.compound" \
+  "$(bash "$dc" decide docs/spec/lessons.md feature.compound 2>&1)" "allow"
+
 # graceful degrade: empty stdin exits 0 with no warn.
 out="$(printf '' | CLAUDE_PROJECT_DIR="$gsbx" bash "$GUARD" 2>&1; echo "rc=$?")"
 assert_contains "review-fix" "empty stdin exits 0 (graceful)" "$out" "rc=0"
 assert_not_contains "review-fix" "empty stdin does not warn" "$out" "warn"
 rm -rf "$gsbx"
+
+# spec-v04 P4-R16: the per-user plugin's SessionStart detector accepts either
+# spec root (docs/spec, legacy) and stays silent without one.
+PSS="$SRC_ROOT/plugin/hooks/session-start.sh"
+for root_rel in docs/spec .spec; do # literal
+  psb="$(mktemp -d)"; mkdir -p "$psb/$root_rel"
+  out="$(printf '{}' | CLAUDE_PROJECT_DIR="$psb" CLAUDE_PLUGIN_ROOT="$SRC_ROOT/plugin" bash "$PSS" 2>&1; echo "rc=$?")"
+  assert_contains "spec-v04/p4" "plugin session-start detects a $root_rel project (emits the doctrine)" "$out" "vibe flow"
+  assert_contains "spec-v04/p4" "plugin session-start exits 0 for a $root_rel project" "$out" "rc=0"
+  rm -rf "$psb"
+done
+psb="$(mktemp -d)"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$psb" CLAUDE_PLUGIN_ROOT="$SRC_ROOT/plugin" bash "$PSS" 2>&1; echo "rc=$?")"
+assert_eq "spec-v04/p4" "plugin session-start is silent in a project with no spec root" "$out" "rc=0"
+rm -rf "$psb"
 
 echo ""
 echo "=== review-fix — merge-settings.sh Bash matcher + idempotency ==="

@@ -1116,17 +1116,17 @@ mod tests {
                 vec![("no/such/dir.md".to_string(), b"y".to_vec())],
             ),
         ];
-        let err = write_folders(&features, ".spec", &plan).unwrap_err();
+        let err = write_folders(&features, ".spec", &plan).unwrap_err(); // literal
         assert!(
-            err.starts_with(".spec/features/b/no/such/dir.md: "),
+            err.starts_with(".spec/features/b/no/such/dir.md: "), // literal
             "{err}"
         );
         assert!(err.ends_with(" — removed 4 created path(s)"), "{err}");
         assert!(!features.exists());
         // An existing features dir stays, and an existing folder refuses.
         std::fs::create_dir_all(features.join("a")).unwrap();
-        let err = write_folders(&features, ".spec", &plan).unwrap_err();
-        assert_eq!(err, ".spec/features/a/ already exists");
+        let err = write_folders(&features, ".spec", &plan).unwrap_err(); // literal
+        assert_eq!(err, ".spec/features/a/ already exists"); // literal
         assert!(features.join("a").is_dir());
         let _ = std::fs::remove_dir_all(&base);
     }

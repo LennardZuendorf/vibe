@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+// vibe-spec: literal-file
 //! Root discovery: one order, from any directory (tech-spec.md, Root and discovery).
 mod common;
 

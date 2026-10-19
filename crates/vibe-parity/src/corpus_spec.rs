@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 //! Generates the spec parity corpus (`tests/parity/corpus/spec/`).
 //!
 //! Deterministic: the same templates always give the same bytes. Classes:

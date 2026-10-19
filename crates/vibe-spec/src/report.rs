@@ -317,11 +317,11 @@ mod tests {
     #[test]
     fn examined_counts_distinct_files() {
         let mut r = report(&[], false);
-        r.examine(".spec/a.md");
-        r.examine(".spec/a.md");
-        r.at(".spec/b.md");
+        r.examine(".spec/a.md"); // literal
+        r.examine(".spec/a.md"); // literal
+        r.at(".spec/b.md"); // literal
         r.examine("");
-        r.examine(".spec/c.md");
+        r.examine(".spec/c.md"); // literal
         assert_eq!(r.examined(), 2);
     }
 

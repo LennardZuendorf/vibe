@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # Pressure-tests the spec skill: fresh headless sessions with no CLAUDE.md, no user
 # settings and no user plugins (empty CLAUDE_CONFIG_DIR). Org-managed plugins and the
 # hooks of loaded plugins still run. Passes only if the first skill invoked — before

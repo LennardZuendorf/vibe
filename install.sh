@@ -34,7 +34,7 @@
 #   --with-plugins     also install companion plugins (superpowers; feature-dev slot).
 #   --only spec|flow   install (or uninstall) a single half (default: both).
 #   --dry-run          print the action plan and write nothing.
-#   --uninstall        remove managed artifacts; preserve .spec/, user AGENTS.md
+#   --uninstall        remove managed artifacts; preserve docs/spec/ (and a legacy spec tree), user AGENTS.md
 #                      prose, and the flow cursor (cursor removed only with --yes).
 #   --yes, -y          assume yes for the cursor-removal confirm on --uninstall.
 #
@@ -46,6 +46,8 @@
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd)" || SRC=""
+# The legacy spec root name, kept as a value so prose and checks can name it.
+LEGACY_SPEC=".spec" # literal
 
 # ── network bootstrap ────────────────────────────────────────────────────────
 # Run straight from the web (curl … | bash) with no checkout: the skill bundle
@@ -296,14 +298,16 @@ install_global() {
       err "WARN: could not install vibe@vibe — run 'claude plugin install vibe@vibe' by hand."
     fi
   fi
-  # Per-repo home for the spec framework: seed .spec/ in the current repo if it is a
-  # git repo without one (the plugin carries the skills; each repo still needs its
-  # own .spec/ memory). The full stateful flow is a separate --local install.
-  if [[ -e "$TARGET/.git" && ! -d "$TARGET/.spec" ]]; then
-    say "seed .spec/ in $TARGET (spec framework home for this repo)"
+  # Per-repo home for the spec framework: seed the legacy tree in the current repo
+  # if it is a git repo with neither root (docs/spec or the legacy tree); the plugin
+  # carries the skills, each repo still needs its own spec memory. The seed is the
+  # bash setup.sh until F22 retires it. The full stateful flow is a separate --local
+  # install.
+  if [[ -e "$TARGET/.git" && ! -d "$TARGET/docs/spec" && ! -d "$TARGET/$LEGACY_SPEC" ]]; then
+    say "seed $LEGACY_SPEC/ in $TARGET (spec framework home for this repo; docs/spec/ also counts)"
     if [[ "$DRY_RUN" -eq 0 && -f "$SRC/spec/scripts/setup.sh" ]]; then
       ( cd "$TARGET" && bash "$SRC/spec/scripts/setup.sh" ) >/dev/null 2>&1 \
-        || err "WARN: .spec/ seed skipped (run 'bash spec/scripts/setup.sh' in the repo)."
+        || err "WARN: $LEGACY_SPEC/ seed skipped (run 'bash spec/scripts/setup.sh' in the repo)." # literal
     fi
   fi
   [[ "$WITH_PLUGINS" -eq 1 ]] && install_companion_plugins
@@ -314,7 +318,7 @@ install_global() {
 install: done (global / per-user plugin).
 install:   vibe@vibe is installed at user scope — its spec + vibe skills and the
 install:   SessionStart doctrine hook now apply in every vibe-enabled repo (one with
-install:   a .spec/ tree). Restart Claude Code to load it.
+install:   a docs/spec/ or $LEGACY_SPEC/ tree). Restart Claude Code to load it.
 install:   For the FULL stateful flow (cursor, /flow, hooks) in a repo, run:
 install:     ./install.sh <repo> --local
 EOF
@@ -393,13 +397,13 @@ esac
 # uninstall never prompts (backward-compatible with scripted/CI invocations).
 if [[ "$TARGET_GIVEN" -eq 0 ]]; then
   # Bare run: install into the ENCLOSING repo, not just the cwd. Search upward for a
-  # .spec/ or .git marker (same rule as the suites' _find_repo_root; `-e` catches a
+  # docs/spec/, legacy spec or .git marker (same rule as the suites' _find_repo_root; `-e` catches a
   # .git file in worktrees/submodules), so `install.sh` from a subdirectory targets
   # the repo root. No marker at all (a brand-new project) falls back to the cwd.
   TARGET="$PWD"
   _d="$PWD"
   while [[ "$_d" != "/" ]]; do
-    if [[ -d "$_d/.spec" || -e "$_d/.git" ]]; then TARGET="$_d"; break; fi
+    if [[ -d "$_d/docs/spec" || -d "$_d/$LEGACY_SPEC" || -e "$_d/.git" ]]; then TARGET="$_d"; break; fi
     _d="$(dirname "$_d")"
   done
 fi
@@ -449,7 +453,7 @@ if [[ "$MODE" == "global" && "$UNINSTALL" -eq 0 ]]; then
 fi
 
 # ── uninstall ────────────────────────────────────────────────────────────────
-# Remove managed artifacts while preserving user content: .spec/** is never
+# Remove managed artifacts while preserving user content: the spec root (docs/spec/ or the legacy tree) is never
 # touched, user AGENTS.md prose outside the markers is preserved (block removed
 # via merge-agents.sh's marker-pairing guard), and the flow cursor survives
 # unless --yes. Composes with --only (remove one half) and --dry-run (preview).
@@ -581,7 +585,7 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "install: [dry-run] uninstall plan complete — nothing was written."
   else
-    note "uninstall done. Preserved: .spec/ and user AGENTS.md prose."
+    note "uninstall done. Preserved: docs/spec/, $LEGACY_SPEC/ and user AGENTS.md prose."
   fi
   exit 0
 fi
@@ -840,18 +844,18 @@ EOF
   fi
   if [[ "$WANT_SPEC" -eq 1 ]]; then
     echo "install: the spec + vibe skills are installed as project files under .agents/skills/."
-    # A local install deliberately creates NO project content — .spec/ is yours,
-    # and orders.sh's self-location is regression-tested against a target with no
-    # .git/.spec marker at all. But AGENTS.md opens by telling the agent to read
-    # .spec/lessons.md, so name the one command that makes that true.
-    if [[ ! -d "$TARGET/.spec" ]]; then
-      echo "install: next: seed your .spec/ tree —"
+    # A local install deliberately creates NO project content — the spec tree is
+    # yours, and orders.sh's self-location is regression-tested against a target
+    # with no marker at all. But AGENTS.md opens by telling the agent to read the
+    # spec lessons, so name the one command that makes that true.
+    if [[ ! -d "$TARGET/docs/spec" && ! -d "$TARGET/$LEGACY_SPEC" ]]; then
+      echo "install: next: seed your spec tree (docs/spec/ or $LEGACY_SPEC/) —"
       echo "install:   bash .agents/skills/spec/scripts/setup.sh   (or /flow setup.detect)"
     fi
   else
     cat <<EOF
 install: the vibe (flow) skill is installed under .agents/skills/vibe.
-install: no spec framework was installed (--only flow) — the .spec/ authoring
+install: no spec framework was installed (--only flow) — the spec authoring
 install:   commands and spec/scripts/validate.sh are absent in this target.
 EOF
   fi

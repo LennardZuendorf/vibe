@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+// vibe-spec: literal-file
 //! `plan` and `feature` answer Spec JSON v1 from superpowers artifacts, or
 //! from the fallback feature folder.
 mod common;

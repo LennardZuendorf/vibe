@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 // engine/tests/root.test.mjs — engine/root.mjs (js-core/2, R3).
 
 import { mkdirSync, writeFileSync, copyFileSync, readFileSync, rmSync } from 'node:fs';
@@ -45,6 +46,22 @@ test('resolveRoot: marker search walks upward from cwd to find .spec', async () 
   const nested = path.join(projectDir, 'a', 'b', 'c');
   mkdirSync(nested, { recursive: true });
   mkdirSync(path.join(projectDir, '.spec'), { recursive: true });
+  try {
+    assertEqual(resolveRoot({ cwd: nested }), projectDir);
+  } finally {
+    rmSync(projectDir, { recursive: true, force: true });
+    if (prev !== undefined) process.env.CLAUDE_PROJECT_DIR = prev;
+  }
+});
+
+test('resolveRoot: marker search finds a project with only docs/spec/ (no .git, no .spec)', async () => {
+  const { resolveRoot } = await import(pathToFileURL(ROOT_MJS).href + '?c2');
+  const prev = process.env.CLAUDE_PROJECT_DIR;
+  delete process.env.CLAUDE_PROJECT_DIR;
+  const projectDir = mkTempRoot('vibe-root-docsspec-');
+  const nested = path.join(projectDir, 'a', 'b');
+  mkdirSync(nested, { recursive: true });
+  mkdirSync(path.join(projectDir, 'docs', 'spec'), { recursive: true });
   try {
     assertEqual(resolveRoot({ cwd: nested }), projectDir);
   } finally {

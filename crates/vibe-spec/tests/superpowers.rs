@@ -1,4 +1,5 @@
 #![cfg(unix)]
+// vibe-spec: literal-file
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! SF35 artifact names and SF36 plan `**Spec:**` paths (P3b-R11).
 mod common;

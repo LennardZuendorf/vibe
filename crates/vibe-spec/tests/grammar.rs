@@ -1,4 +1,5 @@
 #![cfg(unix)]
+// vibe-spec: literal-file
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Requirement grammar: the substring-bug fixes (P3b-R16, R17, R3), SF24,
 //! SF25 and the OpenSpec samples (P3b-R19).

@@ -1,4 +1,5 @@
 #![cfg(unix)]
+// vibe-spec: literal-file
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! SF26–SF29: frontmatter values, children and backlinks, feature rows, freshness.
 mod common;

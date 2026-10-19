@@ -1,4 +1,5 @@
 #![cfg(unix)]
+// vibe-spec: literal-file
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! The layered layout (D44): detection and SF22/SF30-SF34 (P3b-R10, R11).
 mod common;
