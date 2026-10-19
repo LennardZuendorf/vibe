@@ -31,18 +31,11 @@ context:
   - reference/plan.md
 
 agents:
-  - name: spec-tracer
-    path: agents/spec-tracer/SKILL.md
-    trigger: fallback feature.design step 4 (HOW codebase trace)
-    parallel-safe: true
   - name: spec-promoter
-    path: agents/spec-promoter/SKILL.md
+    path: agents/spec-promoter.md
     trigger: feature.compound promote step
-  - name: spec-interviewer
-    path: agents/spec-interviewer/SKILL.md
-    trigger: fallback feature.design steps 1-2 (WHAT interview)
   - name: spec-health
-    path: agents/spec-health/SKILL.md
+    path: agents/spec-health.md
     trigger: /spec health
     user-invocable: true
 
@@ -78,12 +71,6 @@ reads:
   - .spec/features/<name>/
 
 delegates:
-  - role: spec-interviewer
-    when: fallback feature product.md WHAT phase (steps 1-2)
-    superpowers: [superpowers:brainstorming]
-  - role: spec-tracer
-    when: fallback feature tech.md HOW phase (step 4 codebase trace)
-    superpowers: [code-explorer, code-architect]
   - role: spec-promoter
     when: compound (promote durable facts to root, then delete feature artifacts)
     superpowers: [superpowers:finishing-a-development-branch]
@@ -142,11 +129,11 @@ its live surface (code, tests, root docs). Never restore the folder.
 |---|---|
 | `strategy` | Load [strategy.md](strategy.md) |
 | `feature [<name>]` | Route as a feature (table above); fallback loads [feature.md](feature.md) + `.spec/features/<name>/` |
-| `interview [<name>]` | Fallback only: run the spec-interviewer role, steps 1–2 |
-| `promote <name>` | Run `scripts/promote.sh <name>` through the spec-promoter subagent (fallback folders) |
+| `interview [<name>]` | Fallback only: run `superpowers:brainstorming` for the WHAT phase, steps 1–2, in this skill |
+| `promote <name>` | Run `scripts/promote.sh <name>` through the spec-promoter agent (fallback folders) |
 | `audit` | Run `scripts/validate.sh` |
 | `diff <name>` | Run `scripts/scan-merges.sh <name>` — pending merge blocks |
-| `health` | Run the spec-health subagent — structural assessment |
+| `health` | Run the spec-health agent — structural assessment |
 | `research <name>` | Fallback only: open `.spec/features/<name>/research.md` |
 | `lessons-for <tag>` | Run `scripts/lessons-for.sh <tag>` |
 | `product` · `tech` · `design` · `plan` · `lessons` | Load that root doc and follow its links |
@@ -201,10 +188,8 @@ Rules:
 |---|---|---|---|
 | spec-promoter | `promote.sh` + `superpowers:finishing-a-development-branch` | feature.compound | `reference/tech.md` merge markers |
 | spec-health | `validate.sh` | any (`/spec health`, `/spec audit`) | validate.sh output |
-| spec-interviewer | `superpowers:brainstorming` | fallback feature.design steps 1–2 | `feature.md § Interview for WHAT` |
-| spec-tracer | `code-explorer` + `code-architect` | fallback feature.design step 4 | `reference/tech.md` + feature-tech template |
 
-Subagents live under [agents/](agents/). spec-interviewer and spec-tracer serve the fallback only.
+Agents live under [agents/](agents/). The fallback WHAT interview runs `superpowers:brainstorming` and the HOW trace runs `code-explorer` + `code-architect` from this skill itself.
 
 ## Commands
 

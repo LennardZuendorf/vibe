@@ -101,7 +101,12 @@ fn parses_every_captured_payload() {
         assert!(p.transcript.is_some(), "{name}");
         n += 1;
     }
-    assert_eq!(n, 7);
+    assert_eq!(n, 8);
+
+    let p = hook::parse(&fs::read(fixture("agent-spec-health.json")).unwrap()).unwrap();
+    assert_eq!(p.event, "PreToolUse");
+    assert!(p.agent_id.is_some());
+    assert_eq!(p.tool.as_deref(), Some("Bash"));
 
     let p = hook::parse(&fs::read(fixture("subagent-write-parent-skill.json")).unwrap()).unwrap();
     assert_eq!(p.event, "PreToolUse");

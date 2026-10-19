@@ -15,7 +15,7 @@ Pure `bash` + Markdown, **zero runtime**. Ships to targets as
 | `strategy.md`, `feature.md` | Phase guides (root strategy, feature authoring) |
 | `reference/` | Templates + per-doc authoring references |
 | `scripts/` | `setup.sh`, `validate.sh` — deterministic, shellcheck-clean |
-| `agents/` | Subagent prompts |
+| `agents/` | Claude Code agents (`spec-promoter.md`, `spec-health.md`) |
 | `tests/` | Behaviour suite (`spec/tests/run.sh`) — **source-only, never ships** |
 
 ## Working here

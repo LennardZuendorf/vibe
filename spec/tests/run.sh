@@ -664,8 +664,6 @@ test_skill_v2_frontmatter_fields() {
 test_skill_roles_section() {
   local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
   assert_contains "spec-skill-improvements/2" "SKILL.md has ## Roles" "$skill" "## Roles"
-  assert_contains "spec-skill-improvements/2" "Roles name spec-interviewer" "$skill" "spec-interviewer"
-  assert_contains "spec-skill-improvements/2" "Roles name spec-tracer" "$skill" "spec-tracer"
   assert_contains "spec-skill-improvements/2" "Roles name spec-promoter" "$skill" "spec-promoter"
   assert_contains "spec-skill-improvements/2" "Roles name spec-health" "$skill" "spec-health"
   assert_not_contains "spec-skill-improvements/2" "no phantom spec-architect" "$skill" "spec-architect"
@@ -674,16 +672,16 @@ test_skill_roles_section() {
   assert_not_contains "spec-skill-improvements/2" "no phantom spec-compactor" "$skill" "spec-compactor"
 }
 
-# ── fix-7: every Roles/delegates name has a real agents/<name>/SKILL.md file ──
+# ── fix-7: every Roles/delegates name has a real agents/<name>.md file ──
 test_skill_roles_have_agent_dirs() {
   local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
   local agent
-  for agent in spec-tracer spec-promoter spec-interviewer spec-health; do
+  for agent in spec-promoter spec-health; do
     assert_contains "fix-7" "SKILL.md names real subagent $agent" "$skill" "$agent"
-    if [[ -f "$SPEC_SKILL/agents/$agent/SKILL.md" ]]; then
-      pass "fix-7" "agents/$agent/SKILL.md exists"
+    if [[ -f "$SPEC_SKILL/agents/$agent.md" ]]; then
+      pass "fix-7" "agents/$agent.md exists"
     else
-      fail "fix-7" "agents/$agent/SKILL.md exists"
+      fail "fix-7" "agents/$agent.md exists"
     fi
   done
 }
@@ -1045,32 +1043,16 @@ test_openspec_docs_present() {
   assert_contains "spec-skill-improvements/11" "reference/product.md notes opt-in" "$product_ref" "opt-in"
 }
 
-# ── spec-skill-improvements: Unit 12 — spec-tracer read-only ─────────────────
-test_spec_tracer_read_only() {
-  local tracer; tracer="$(cat "$SPEC_SKILL/agents/spec-tracer/SKILL.md")"
-  assert_contains "spec-skill-improvements/12" "spec-tracer has allowed-tools" "$tracer" "allowed-tools"
-  assert_contains "spec-skill-improvements/12" "spec-tracer lists Read" "$tracer" "Read"
-  assert_not_contains "spec-skill-improvements/12" "spec-tracer has no Edit in allowed-tools" "$(grep -A5 'allowed-tools' "$SPEC_SKILL/agents/spec-tracer/SKILL.md" | head -5)" "Edit"
-  assert_not_contains "spec-skill-improvements/12" "spec-tracer has no Write in allowed-tools" "$(grep -A5 'allowed-tools' "$SPEC_SKILL/agents/spec-tracer/SKILL.md" | head -5)" "Write"
-}
-
 # ── spec-skill-improvements: Unit 13 — spec-promoter diff-first ──────────────
 test_spec_promoter_diff_first() {
-  local promoter; promoter="$(cat "$SPEC_SKILL/agents/spec-promoter/SKILL.md")"
-  assert_contains "spec-skill-improvements/13" "spec-promoter has dry-run language" "$promoter" "dry-run"
+  local promoter; promoter="$(cat "$SPEC_SKILL/agents/spec-promoter.md")"
+  assert_contains "spec-skill-improvements/13" "spec-promoter has dry-run language" "$promoter" "--dry-run"
   assert_contains "spec-skill-improvements/13" "spec-promoter has confirmation language" "$promoter" "confirm"
-}
-
-# ── spec-skill-improvements: Unit 14 — spec-interviewer constraint ────────────
-test_spec_interviewer_constraint_injection() {
-  local interviewer; interviewer="$(cat "$SPEC_SKILL/agents/spec-interviewer/SKILL.md")"
-  assert_contains "spec-skill-improvements/14" "spec-interviewer references Interview for WHAT" "$interviewer" "Interview for WHAT"
-  assert_contains "spec-skill-improvements/14" "spec-interviewer references brainstorming" "$interviewer" "brainstorming"
 }
 
 # ── spec-skill-improvements: Unit 15 — spec-health output levels ─────────────
 test_spec_health_output_levels() {
-  local health; health="$(cat "$SPEC_SKILL/agents/spec-health/SKILL.md")"
+  local health; health="$(cat "$SPEC_SKILL/agents/spec-health.md")"
   assert_contains "spec-skill-improvements/15" "spec-health has CRITICAL level" "$health" "CRITICAL"
   assert_contains "spec-skill-improvements/15" "spec-health has WARN level" "$health" "WARN"
   assert_contains "spec-skill-improvements/15" "spec-health has INFO level" "$health" "INFO"
@@ -1162,15 +1144,15 @@ EOF
 
 # ── spec-skill-improvements: Unit 17 — subagents folder wiring ───────────────
 test_subagents_folder_wiring() {
-  for agent in spec-tracer spec-promoter spec-interviewer spec-health; do
-    if [[ -f "$SPEC_SKILL/agents/$agent/SKILL.md" ]]; then
-      pass "spec-skill-improvements/17" "subagent SKILL.md exists: $agent"
+  for agent in spec-promoter spec-health; do
+    if [[ -f "$SPEC_SKILL/agents/$agent.md" ]]; then
+      pass "spec-skill-improvements/17" "agent file exists: $agent"
     else
-      fail "spec-skill-improvements/17" "subagent SKILL.md exists: $agent"
+      fail "spec-skill-improvements/17" "agent file exists: $agent"
     fi
   done
   local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
-  assert_contains "spec-skill-improvements/17" "root SKILL.md agents: map has spec-tracer" "$skill" "spec-tracer"
+  assert_contains "spec-skill-improvements/17" "root SKILL.md agents: map has spec-health" "$skill" "spec-health"
 }
 
 # ── spec-skill-improvements: Unit 18 — setup interview flow ──────────────────
@@ -1455,9 +1437,7 @@ test_scan_merges_unclosed_exits_nonzero
 test_scan_merges_unclosed_emits_valid_json
 test_scan_merges_empty_feature
 test_openspec_docs_present
-test_spec_tracer_read_only
 test_spec_promoter_diff_first
-test_spec_interviewer_constraint_injection
 test_spec_health_output_levels
 test_sf15_long_root_warns
 test_sf15_under_threshold_silent
@@ -1601,6 +1581,18 @@ test_hooks_suite() {
   if [[ $rc -eq 0 ]]; then pass HOOKS "spec/tests/hooks.sh passes"; else fail HOOKS "spec/tests/hooks.sh passes"; fi
 }
 test_hooks_suite
+
+# ── Task P4-6: agents + plugin validation (own suites) ──────────────────────
+test_agents_suites() {
+  local out rc
+  out="$(bash "$REPO_ROOT/spec/tests/agents.sh" 2>&1)"; rc=$?
+  printf '%s\n' "$out"
+  if [[ $rc -eq 0 ]]; then pass AGENTS "spec/tests/agents.sh passes"; else fail AGENTS "spec/tests/agents.sh passes"; fi
+  out="$(bash "$REPO_ROOT/spec/tests/plugin-validate.sh" 2>&1)"; rc=$?
+  printf '%s\n' "$out"
+  if [[ $rc -eq 0 ]]; then pass PLUGIN "spec/tests/plugin-validate.sh passes"; else fail PLUGIN "spec/tests/plugin-validate.sh passes"; fi
+}
+test_agents_suites
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

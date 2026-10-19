@@ -126,7 +126,7 @@ Everything below is the `spec` skill, addressed at runtime under
 | [scripts/list-specs.sh](scripts/list-specs.sh) | Current-state summary of the `.spec/` tree |
 | [scripts/promote.sh](scripts/promote.sh), [scripts/scan-merges.sh](scripts/scan-merges.sh) | Compound: merge feature blocks into root, preview pending merges |
 | [scripts/lessons-for.sh](scripts/lessons-for.sh) | Extract lessons matching a tag |
-| [agents/](agents/) | Optional subagents: `spec-tracer`, `spec-interviewer`, `spec-promoter`, `spec-health` |
+| [agents/](agents/) | Claude Code agents: `spec-promoter`, `spec-health` |
 
 ## More
 
