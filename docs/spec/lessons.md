@@ -446,4 +446,10 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** tests, fixtures, spec
 **Date:** 2026-10-19
 
+### Local green is not CI green
+**Pattern:** The hook suite passed locally and failed in CI three ways. Under `pipefail`, a payload producer's broken-pipe exit leaked into the shim's exit code. The suite used a binary that existed only on the dev machine. A Windows checkout gave CRLF, so a frontmatter parse failed.
+**Rule:** Feed test stdin by redirect or process substitution, not a pipe. Build or require each binary a suite needs. Normalise CRLF when a test reads repo text.
+**Tags:** tests, ci, hooks, windows
+**Date:** 2026-10-22
+
 <!-- vibe-spec: allow SF15 -->
