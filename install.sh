@@ -1256,14 +1256,23 @@ if [[ "$WANT_FLOW" -eq 1 ]] && host_selected claude; then
     mkdir -p "$TARGET/.claude"
     cp -R "$SRC/.claude/commands" "$TARGET/.claude/"
     cp -R "$SRC/.claude/hooks" "$TARGET/.claude/"
-    # Retire vibe's own plugin manifest: settings.json now owns hook wiring, and a
-    # live vibe plugin beside it would double-fire the hooks. A target's OWN plugin
-    # manifest (a different product shipping one here) is never touched.
-    retire_vibe_plugin_manifest "$TARGET"
-    rmdir "$TARGET/.claude-plugin" 2>/dev/null || true
+    # vibe's own plugin manifest is retired in 2b, outside this host branch.
     chmod +x "$TARGET"/.claude/hooks/*.sh \
              "$TARGET"/.agents/skills/vibe/scripts/*.sh 2>/dev/null || true
   fi
+fi
+
+# 2b. Retire vibe's own legacy plugin manifest whenever the FLOW half is
+# installed — not only when Claude is a selected host. Host detection is a
+# point-in-time answer and the manifest outlives it: the moment Claude Code (or
+# any later install that does select claude) opens this target, a dead vibe
+# plugin beside the settings.json wiring double-fires every hook. Keeping the
+# retire inside the claude-only branch silently skipped it on a host-less
+# machine — including CI, where no host CLI is on PATH. A target's OWN plugin
+# manifest is still never touched (retire_vibe_plugin_manifest checks the name).
+if [[ "$WANT_FLOW" -eq 1 && "$DRY_RUN" -eq 0 ]]; then
+  retire_vibe_plugin_manifest "$TARGET"
+  rmdir "$TARGET/.claude-plugin" 2>/dev/null || true
 fi
 
 # 3. Wire the flow hooks into .claude/settings.json — merge only vibe's three
