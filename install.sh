@@ -103,6 +103,31 @@ note() { echo "install: $1"; }
 # never performed, so the plan reads the same whether or not it is applied.
 say() { if [[ "$DRY_RUN" -eq 1 ]]; then echo "install: [dry-run] would $1"; else echo "install: $1"; fi; }
 
+# retire_vibe_plugin_manifest TARGET — remove a plugin manifest that a prior
+# plugin-based vibe install left at `.claude-plugin/plugin.json`, together with
+# the `.claude/hooks/hooks.json` that pairs with it.
+#
+# It is deleted ONLY when it is demonstrably vibe's (manifest `name` == "vibe").
+# A repo may ship its OWN Claude plugin at those exact paths — indexed does, with
+# an MCP server registration and its own PreToolUse hook — and the previous
+# unconditional `rm -f` destroyed it on install. Absence of the file is not
+# evidence either: a target that never had a plugin is left untouched and silent.
+retire_vibe_plugin_manifest() {
+  local target="$1" manifest="$1/.claude-plugin/plugin.json" name=""
+  [[ -f "$manifest" ]] || return 0
+  if command -v jq >/dev/null 2>&1; then
+    name="$(jq -r '.name // empty' "$manifest" 2>/dev/null || true)"
+  else
+    name="$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest" 2>/dev/null | head -1)"
+  fi
+  if [[ "$name" != "vibe" ]]; then
+    note "preserve ${manifest#"$target"/} — a non-vibe Claude plugin manifest (name: ${name:-unknown})"
+    return 0
+  fi
+  rm -f "$manifest" "$target/.claude/hooks/hooks.json"
+  return 0
+}
+
 # adapter_rows — one "<key>\t<file>\t<target>" line per adapter, read from the
 # adapter catalogue. flow/reference/adapters.json says of itself "Extend this list
 # to add runtimes without editing skill prose", and flow/setup.md calls it data —
@@ -1029,8 +1054,8 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
       if [[ "$UNWIRE_OK" -eq 1 ]]; then
         remove_shipped "$SRC/.claude/commands" "$TARGET/.claude/commands"
         remove_shipped "$SRC/.claude/hooks" "$TARGET/.claude/hooks"
-        # Retire artifacts a prior (plugin-based) install left behind.
-        rm -f "$TARGET/.claude-plugin/plugin.json" "$TARGET/.claude/hooks/hooks.json"
+        # Retire artifacts a prior (plugin-based) install left behind — vibe's only.
+        retire_vibe_plugin_manifest "$TARGET"
         find "$TARGET/.claude/hooks" -type d -empty -delete 2>/dev/null || true
         rmdir "$TARGET/.claude/skills" "$TARGET/.claude-plugin" "$TARGET/.claude" 2>/dev/null || true
       else
@@ -1231,9 +1256,10 @@ if [[ "$WANT_FLOW" -eq 1 ]] && host_selected claude; then
     mkdir -p "$TARGET/.claude"
     cp -R "$SRC/.claude/commands" "$TARGET/.claude/"
     cp -R "$SRC/.claude/hooks" "$TARGET/.claude/"
-    # Retire a plugin manifest left by a prior install: settings.json now owns
-    # hook wiring, and a live plugin beside it would double-fire the hooks.
-    rm -f "$TARGET/.claude-plugin/plugin.json" "$TARGET/.claude/hooks/hooks.json"
+    # Retire vibe's own plugin manifest: settings.json now owns hook wiring, and a
+    # live vibe plugin beside it would double-fire the hooks. A target's OWN plugin
+    # manifest (a different product shipping one here) is never touched.
+    retire_vibe_plugin_manifest "$TARGET"
     rmdir "$TARGET/.claude-plugin" 2>/dev/null || true
     chmod +x "$TARGET"/.claude/hooks/*.sh \
              "$TARGET"/.agents/skills/vibe/scripts/*.sh 2>/dev/null || true

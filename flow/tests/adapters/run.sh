@@ -307,6 +307,34 @@ assert_eq "platform-adapters/4" "all wired hook scripts exist + executable in th
 # auto-wired, not a plugin: neither legacy manifest is shipped.
 [[ ! -e "$SB/.claude-plugin/plugin.json" ]] && pass "platform-adapters/5" "install ships no plugin.json (auto-wired via settings.json)" || fail "platform-adapters/5" "plugin.json must not be shipped"
 [[ ! -e "$SB/.claude/hooks/hooks.json" ]] && pass "platform-adapters/5" "install ships no hooks.json manifest" || fail "platform-adapters/5" "hooks.json must not be shipped"
+
+# install.sh must never delete a repo's OWN Claude plugin. Regression: the
+# unconditional `rm -f .claude-plugin/plugin.json .claude/hooks/hooks.json` ran
+# on every install and destroyed indexed's product plugin (MCP registration plus
+# its own PreToolUse hook). Retire the manifest ONLY when it is demonstrably
+# vibe's — so the population matters: a target that really has a foreign plugin.
+SB_FOREIGN="$(mktmp)"
+mkdir -p "$SB_FOREIGN/.claude-plugin" "$SB_FOREIGN/.claude/hooks"
+printf '%s\n' '{"name":"indexed","version":"0.1.0","description":"semantic search over MCP"}' \
+  >"$SB_FOREIGN/.claude-plugin/plugin.json"
+printf '%s\n' '{"hooks":{"PreToolUse":[{"matcher":"Grep|Glob","hooks":[]}]}}' \
+  >"$SB_FOREIGN/.claude/hooks/hooks.json"
+bash "$INSTALL" "$SB_FOREIGN" >/dev/null 2>&1
+foreign_manifest=0; [[ -f "$SB_FOREIGN/.claude-plugin/plugin.json" ]] && foreign_manifest=1
+assert_eq "platform-adapters/6" "install preserves a target's own plugin.json" "$foreign_manifest" "1"
+foreign_hooks=0; [[ -f "$SB_FOREIGN/.claude/hooks/hooks.json" ]] && foreign_hooks=1
+assert_eq "platform-adapters/6" "install preserves the foreign hooks.json beside it" "$foreign_hooks" "1"
+rm -rf "$SB_FOREIGN"
+
+# ...while a legacy VIBE manifest is still retired, so the double-fire fix holds.
+SB_VIBE="$(mktmp)"
+mkdir -p "$SB_VIBE/.claude-plugin" "$SB_VIBE/.claude/hooks"
+printf '%s\n' '{"name":"vibe","version":"0.2.0"}' >"$SB_VIBE/.claude-plugin/plugin.json"
+printf '%s\n' '{"hooks":{}}' >"$SB_VIBE/.claude/hooks/hooks.json"
+bash "$INSTALL" "$SB_VIBE" >/dev/null 2>&1
+vibe_manifest=0; [[ -f "$SB_VIBE/.claude-plugin/plugin.json" ]] && vibe_manifest=1
+assert_eq "platform-adapters/6" "install retires a legacy vibe plugin.json" "$vibe_manifest" "0"
+rm -rf "$SB_VIBE"
 # idempotent: a second install leaves exactly one vibe group per event.
 bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 dupok=1
