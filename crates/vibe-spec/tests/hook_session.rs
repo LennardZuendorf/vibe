@@ -81,7 +81,10 @@ fn no_root_still_routes() {
 
 #[test]
 fn skill_is_within_budget() {
-    let text = fs::read_to_string(common::repo().join("spec/using-spec/SKILL.md")).unwrap();
+    // A Windows checkout may convert the file to CRLF.
+    let text = fs::read_to_string(common::repo().join("spec/using-spec/SKILL.md"))
+        .unwrap()
+        .replace("\r\n", "\n");
     let rest = text.strip_prefix("---\n").unwrap();
     let (front, body) = rest.split_once("\n---\n").unwrap();
     assert!(front.lines().any(|l| l == "name: using-spec"), "{front}");
