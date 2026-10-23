@@ -26,7 +26,7 @@ never through code. One repo, one installer, three release trains.
 |  | **spec** | **flow** | **instruct** |
 |---|---|---|---|
 | **What it is** | Durable `docs/spec/` planning layer — product / tech / design / plan / lessons — with templates and a validator. | State-machine workflow: routes each phase to the right skills, injects per-turn orders, guards its own write invariants with hooks. | ⏳ Planned — layered, budgeted instruction injection (global → repo → local → session tiers). |
-| **Works with** | Any coding agent, or none. | Claude Code, for the hooks and `/flow`. Other agents read the same rules as prose. | Claude Code + OpenCode, both ⏳ planned. |
+| **Works with** | Any coding agent, or none. | Claude Code, OpenCode, and Factory Droid via `/flow`; Codex via skill invocation. Hooks are Claude Code-only. Other agents read the same rules as prose. | Claude Code + OpenCode, both ⏳ planned. |
 | **Needs** | `bash` | `bash`, plus Node ≥18 for today's engine — a static Rust binary in v0.4. | Nothing today (unbuilt) — a static Rust binary in v0.4. |
 | **Install** | `./install.sh <repo> --only spec` | `./install.sh <repo> --only flow` | ⏳ planned: `./install.sh <repo> --only instruct` |
 | **Deep dive** | [`spec/README.md`](spec/README.md) | [`flow/README.md`](flow/README.md) | [`docs/spec/tech/instruct.md`](docs/spec/tech/instruct.md) |
@@ -63,9 +63,13 @@ git clone https://github.com/LennardZuendorf/vibe.git && cd vibe
 A bare run searches upward for the enclosing repo (a `docs/spec`/`.git` marker)
 and, on a terminal, asks which mode you want.
 
+**Where it installs.** Run from anywhere inside a repository or Git worktree —
+the nearest repo/worktree root is the target, not the directory you ran from. A
+plain directory with no Git ancestor uses the current directory.
+
 | Mode | Command | What you get |
 |---|---|---|
-| **local** (default) | `./install.sh <repo>` | The full **stateful** kit in that repo: both skills, the `/flow` command, the engine, and the four Claude Code hooks wired via `.claude/settings.json`. |
+| **local** (default) | `./install.sh <repo>` | The full **stateful** kit at the resolved root: both skills, the engine, and the native surface of every configured host. For Claude Code that is `/flow` plus the four hooks wired via `.claude/settings.json`. |
 | **global** | `./install.sh --global` | The **per-user plugin** (`vibe@vibe`): the portable, stateless surface only — both skills plus the doctrine hook — in **every** repo. Needs the `claude` CLI. |
 
 ```bash
@@ -75,6 +79,23 @@ and, on a terminal, asks which mode you want.
 ./install.sh <repo> --with-plugins    # also install companion plugins (superpowers)
 ./install.sh <repo> --dry-run         # print the plan, write nothing
 ```
+
+**Host selection.** With no flag, the installer detects the `claude`,
+`opencode`, `codex`, and `droid` CLIs on `PATH` and configures only the hosts it
+finds. If it finds none, the host-neutral core still installs and the summary
+prints the explicit selection syntax. `--platform LIST` overrides detection in
+both directions — the listed hosts are configured whether or not their CLIs are
+present:
+
+```bash
+./install.sh <repo> --platform claude,codex   # only these two hosts
+./install.sh <repo> --platform none           # host-neutral files only
+```
+
+`--platform` takes a comma-separated list of `claude`, `opencode`, `codex`,
+`droid`, or `none`; the **last** `--platform` flag wins, and `none` cannot be
+combined with a host. What each host gets is in
+[Platform support](#platform-support).
 
 The repo is its own plugin marketplace, if you would rather skip the
 installer:
@@ -92,6 +113,13 @@ prose, unrelated hooks, and the flow cursor (unless `--yes`) survive:
 ./install.sh <repo> --uninstall --yes       # also remove the flow cursor
 ./install.sh <repo> --uninstall --only flow # remove one half, leave the other
 ```
+
+Every install records the artifacts it created in `.vibe/install-manifest.json`
+(deliberately not gitignored), which is what makes re-install idempotent and
+`--uninstall` safe: it removes only the recorded vibe-owned paths and preserves
+user files in every shared directory. A repeat run leaves the managed files
+byte-stable and keeps your live cursor and evidence receipts. `--uninstall`
+inverts every host, regardless of `--platform`.
 
 ### spec — the planning layer
 
@@ -170,13 +198,20 @@ your-repo/                     # after install
 ├── .agents/skills/
 │   ├── spec/                  # the spec framework
 │   └── vibe/                  # the flow: router, phase files, state machine, engine
-├── .claude/                   # Claude adapter: /flow + four hooks + settings.json (flow half)
-├── docs/spec/                     # your durable project memory
+├── .claude/                   # Claude adapter: /flow + four hooks + settings.json
+├── .opencode/                 # OpenCode: /flow project command
+├── plugins/vibe/              # Codex: skill package (+ .agents/plugins/marketplace.json)
+├── factory-plugin/            # Factory Droid: /flow + skills (+ .factory-plugin/marketplace.json)
+├── .vibe/install-manifest.json # what this install created; --uninstall reads it
+├── docs/spec/                 # your durable project memory
 └── AGENTS.md                  # merged instructions (CLAUDE.md may symlink here)
 ```
 
-In **this** repo the canonical halves live at [`spec/`](spec/) and
-[`flow/`](flow/); `.agents/skills/{spec,vibe}` are compatibility symlinks.
+Each host surface appears only when that host was configured — a Claude-only
+install writes `.claude/` and nothing under `.opencode/`, `plugins/`, or
+`factory-plugin/`. In **this** repo the canonical halves live at
+[`spec/`](spec/) and [`flow/`](flow/); `.agents/skills/{spec,vibe}` are
+compatibility symlinks.
 
 ## Tests
 
@@ -307,12 +342,24 @@ enabled on the repository.
 
 ## Platform support
 
-| Host | What works | What is absent |
-|---|---|---|
-| **Claude Code** | spec + flow today: both skills, `/flow`, per-turn inject, guard + gate hooks. instruct ⏳ planned. | Budgeted instruction injection beyond the flow's own hooks, until instruct ships. |
-| **OpenCode** | ⏳ planned — spec, flow, and instruct all ship an OpenCode plugin in v0.4. | Nothing today. |
-| **Other `AGENTS.md` readers** (Codex, etc.) | spec framework + committed instruction blocks; agents follow the written flow manually. | Hooks (no per-turn inject / guard / gate). |
-| **Bare git / any editor** | spec framework: `docs/spec/` docs, templates, `validate.sh`. | Flow automation, hooks, instruct. |
+One project install lays down a host-neutral core plus a native surface for each
+configured host. Paths below are relative to the installed root.
+
+| Host | Start the flow workflow | Skills live at | Wired per host |
+|---|---|---|---|
+| **Claude Code** | `/flow` — native project command (`.claude/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `.claude/skills/{spec,vibe}` | All four hooks, via `.claude/settings.json`. |
+| **OpenCode** | `/flow` — native project command (`.opencode/commands/flow.md`) | `.agents/skills/{spec,vibe}` | No hook integration. |
+| **Codex** | Skill invocation only — `$vibe` (or the skill picker `/skills`); there is no synthetic `/flow` command | `.agents/skills/{spec,vibe}` + `plugins/vibe/skills` | No hook integration; no native agent registration. |
+| **Factory Droid** | `/flow` — native project command (`factory-plugin/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `factory-plugin/skills` | No hook integration; no native droid registration. |
+| **Other `AGENTS.md` readers** | Manual — the agent follows the `AGENTS.md` rules as prose | `.agents/skills/{spec,vibe}` (plain files) | No hooks, no native command. |
+| **Bare git / any editor** | — (spec framework only) | — | `docs/spec/` docs, templates, `validate.sh`. |
+
+The **spec** workflow is skill-invoked on every host; there is no `/spec`
+command anywhere. Hooks are **Claude Code-only** in this slice: OpenCode, Codex,
+and Factory Droid get skills and a workflow entry point, not per-turn inject,
+guard, or stop-gate wiring — and no host gets native agent/droid registration.
+The install summary reports a host's hooks only when their wiring actually
+installed. Budgeted instruction injection (`instruct`) remains ⏳ planned.
 
 ## Documentation
 

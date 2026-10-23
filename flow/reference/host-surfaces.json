@@ -1,0 +1,52 @@
+{
+  "$comment": "Supported host surface matrix — the single data source for how the shared spec + vibe workflows are discovered and invoked per host. Repo-root-relative paths; {name} stands for a skill name (spec, vibe). Consumed by flow/tests/adapters/run.sh (host-support/1), so a new/removed host or a moved skill/command path fails there instead of drifting in prose. tech.md's 'Host surface contract' is the authority for the pinned paths; each host records the live doc it was verified against. Edit this file, not prose copies of the matrix.",
+  "version": 1,
+  "workflow": {
+    "skills": ["spec", "vibe"],
+    "skill_entry": "SKILL.md",
+    "shared": {
+      "skill_root": ".agents/skills/vibe",
+      "skill_index": ".agents/skills/vibe/SKILL.md",
+      "machine": ".agents/skills/vibe/state-machine.json",
+      "cursor": ".agents/skills/vibe/state.json",
+      "writer": ".agents/skills/vibe/scripts/set-state.sh"
+    }
+  },
+  "hosts": [
+    {
+      "id": "claude",
+      "host": "Claude Code",
+      "cli": "claude",
+      "skills": ["plugin/skills/{name}", ".claude/skills/{name}"],
+      "entry": { "kind": "command", "path": ".claude/commands/flow.md", "invocation": "/flow" },
+      "package": { "manifest": "plugin/.claude-plugin/plugin.json", "marketplace": ".claude-plugin/marketplace.json" },
+      "docs": "https://docs.claude.com/en/docs/claude-code/plugins, https://docs.claude.com/en/docs/claude-code/skills (custom commands merged into skills; .claude/commands/*.md still works)"
+    },
+    {
+      "id": "opencode",
+      "host": "OpenCode",
+      "cli": "opencode",
+      "skills": [".agents/skills/{name}"],
+      "entry": { "kind": "command", "path": ".opencode/commands/flow.md", "invocation": "/flow" },
+      "docs": "https://opencode.ai/docs/commands/, https://opencode.ai/docs/skills/"
+    },
+    {
+      "id": "codex",
+      "host": "Codex",
+      "cli": "codex",
+      "skills": [".agents/skills/{name}", "plugins/vibe/skills/{name}"],
+      "entry": { "kind": "skill", "skill": "vibe", "invocation": "$vibe", "picker": "/skills" },
+      "package": { "manifest": "plugins/vibe/plugin.json", "marketplace": ".agents/plugins/marketplace.json" },
+      "docs": "https://developers.openai.com/codex/skills, https://developers.openai.com/plugins/build/plugins"
+    },
+    {
+      "id": "droid",
+      "host": "Factory Droid",
+      "cli": "droid",
+      "skills": ["factory-plugin/skills/{name}", ".agents/skills/{name}"],
+      "entry": { "kind": "command", "path": "factory-plugin/commands/flow.md", "invocation": "/flow" },
+      "package": { "manifest": "factory-plugin/.factory-plugin/plugin.json", "marketplace": ".factory-plugin/marketplace.json" },
+      "docs": "https://docs.factory.ai/cli/configuration/plugins, https://docs.factory.ai/cli/configuration/custom-slash-commands, https://docs.factory.ai/cli/configuration/skills"
+    }
+  ]
+}

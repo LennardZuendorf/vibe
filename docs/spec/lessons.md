@@ -109,6 +109,18 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** js-core, install, comments, false-invariants, packaging
 **Date:** 2026-08-13
 
+### Refresh the checkout map after a branch change
+**Pattern:** After switching branches, I queried paths remembered from the previous tree; several had moved or no longer existed, so `rg` emitted avoidable path errors. The first branch switch also failed because this environment mounted `.git` read-only; the user-authorized retry needed an elevated Git write.
+**Rule:** After a branch change or fast-forward, confirm the active ref and enumerate the current paths before running branch-specific commands. If a Git operation is blocked by the sandbox, use an authorized Git-write context instead of retrying the same command unchanged.
+**Tags:** workflow, branches, sandbox, repo-navigation
+**Date:** 2026-10-01
+
+### A manifest merge must refresh what was redeployed, not what was selected
+**Pattern:** The install manifest's merge dropped the records of every host in the `--platform` selection — but a selected host's deployment can be skipped (`--only spec` installs no host entry points), so a `--only spec --platform codex` re-install erased codex's records while its files stayed on disk; the next uninstall took the manifest pass, read the surviving records as the full inventory, and stranded vibe-owned files. The tempting broader fix — refresh only hosts present in this run's action list — was worse: a collision refusal correctly records nothing, so it would have re-admitted stale records and made a later uninstall delete user content.
+**Rule:** An ownership manifest's merge must key its record-refresh on what THIS run actually redeployed, never on the selector and never on the action list: capture the deploy-skip decision (a preserve list the merge consults) and refresh only the rest. Pin the exact stranding scenario (install A+B, re-install one under a deploy-skipping combination, uninstall, assert nothing strands) and the collision corollary in the same pass.
+**Tags:** install, manifest, ownership, idempotency, uninstall, data-safety
+**Date:** 2026-10-02
+
 <!-- Format for each lesson:
 ### [Short description]
 **Pattern:** What went wrong and why

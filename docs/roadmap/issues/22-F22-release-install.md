@@ -31,6 +31,7 @@ F21
 
 ## Notes
 - A check that examines nothing must fail loudly — the uninstall test must assert the recorded-actions list is non-empty before trusting a clean restore; an installer that recorded nothing would "pass" a naive diff.
+- Landed ahead by `host-support` (2026-10-02, v0.3 tree): `install.sh` `--platform claude,opencode,codex,droid,none`, presence-only CLI detection default, per-host deployment, the `.vibe/install-manifest.json` ownership record, and a manifest-primary surgical uninstall — the recorded-actions floor above is live in `flow/tests/adapters/run.sh`. This issue stays open for cargo-dist release trains, signed binaries, and the POSIX-sh rewrite.
 
 Phase: 4 · Tool: all · Source: `docs/spec/plan.md` row F22
 

@@ -328,3 +328,13 @@ It routes the work to the spec root (`vibe-spec root` prints it).
 Check the tree with `vibe-spec validate`.
 If `vibe-spec` is not on PATH, build it (`cargo build -p vibe-spec`) or see the spec skill.
 <!-- vibe-spec:router:end -->
+
+<!-- coding-environment:start -->
+## Coding environment (applies across /home/agent/projects)
+
+This repo is one of the repos in the shared coding environment at `/home/agent/projects`.
+**Read `/home/agent/projects/AGENTS.md` before you touch code — it is not optional.** It carries
+the cross-repo rules: work inside a repo (never in a Paseo worktree), spec first with its two
+human gates, never push to a default branch or open a PR unless explicitly asked, verify before
+claiming, and never commit secrets. Where that file and this one disagree, this repo's rules win.
+<!-- coding-environment:end -->

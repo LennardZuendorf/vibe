@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-10-19
+updated: 2026-10-23
 ---
 
 # Delivered features
@@ -23,6 +23,7 @@ updated: 2026-10-19
 | js-core | `engine/` + `vibe` CLI dispatch; one cursor reader, root resolver, marker grammar | `engine/tests/` + existing suites |
 | content-layer | `content/blocks/**`, typed placeholders, `vibe.json` override layer, `vibe render` | `engine/tests/` |
 | inject-triggers | Level/edge/event trigger classes, `content/policy.json`, `Stop` predicate cut | `engine/tests/` + `flow/tests/adapters/run.sh` |
+| host-support | Four-host native skill/command packages (`flow/reference/host-surfaces.json` matrix) + `install.sh` `--platform` selection, CLI detection, ownership manifest, surgical uninstall | `flow/tests/adapters/run.sh` |
 
 ## Delivered (history)
 
@@ -42,3 +43,4 @@ Cleansed notes for shipped work — detail lives in live surfaces, not this plan
 - **js-core** — `engine/` + `vibe` CLI dispatch, one cursor reader, byte-identical port. DONE.
 - **content-layer** — `content/blocks/**`, typed placeholders, `vibe render` with budgets. DONE.
 - **inject-triggers** — level/edge/event trigger classes, `policy.json`, `Stop` predicate cut. DONE.
+- **host-support** — four-host packages, `--platform` selection, ownership manifest, surgical uninstall. DONE (2026-10-02).
