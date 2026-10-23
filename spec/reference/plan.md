@@ -6,8 +6,8 @@ Plans sequence work. They reference product, tech, design, and feature specs —
 
 | Layer | File | Scope |
 |---|---|---|
-| **Root** | `.spec/plan.md` | Value-prop + architecture links, feature sequence, boundaries, current focus, spec-vs-repo gaps |
-| **Feature** | `.spec/features/<name>/plan.md` | Unit tables (`feature/n`), same-feature dependencies, verification, feature-scoped open questions |
+| **Root** | `docs/spec/plan.md` | Value-prop + architecture links, feature sequence, boundaries, current focus, spec-vs-repo gaps |
+| **Feature** | `docs/spec/features/<name>/plan.md` | Unit tables (`feature/n`), same-feature dependencies, verification, feature-scoped open questions |
 
 **Rule:** root plan = *which whole features ship in what order*. Feature plan = *how this one feature is sliced* into units. If you are writing step-by-step tasks for one feature, they belong in the feature plan.
 
@@ -60,9 +60,9 @@ Units are `feature-slug/n` (e.g. `vibe-flow/1`, `agent-instructions/3`). The pat
 Feature specs are branch-scoped and the repo holds only what is live.
 
 - Lifecycle: **created in DESIGN → consumed in IMPL → wrapped up in the single `compound` phase** (record lessons + promote cross-cutting decisions to root product/tech/plan + move the folder to `archive/` + regen the digest).
-- **Archive is a transient safety net** (e.g. CI fails right after wrapup and the feature context is briefly useful). It is **never** a store for active work — **CODE IS TRUTH**. After validation passes, the agent **prompts the user to delete the archive**; the folder should be gone **before the branch merges**.
+- **Archive is a transient safety net** (e.g. CI fails right after wrapup). It is **never** a store for active work. Never read `archive/` for active work — **CODE IS TRUTH**. After validation passes, **prompt the user to delete the archive**. The folder is gone **before the branch merges**.
 - The **root plan is current-only** and **cleansed after delivery** — delivered features collapse to a one-line historical note; the plan reflects current focus.
-- **Backlog gate:** every plan entry is either work-ready with a clear dependency, or it does not belong in `.spec/`. Long-term / speculative work is tracked **outside** the repo (issue tracker) — a hint to humans, not a workflow artifact. No inline backlog; agents refuse to record speculative future work in specs.
+- **Backlog gate:** every plan entry is either work-ready with a clear dependency, or it does not belong in `docs/spec/`. Long-term / speculative work is tracked **outside** the repo (issue tracker) — a hint to humans, not a workflow artifact. No inline backlog; agents refuse to record speculative future work in specs.
 - **Repo-type split:** app repos cleanse aggressively; single-purpose / greenfield repos keep a longer-lived feature list and may commit to main, but still cleanse once the initial purpose is delivered — future additions get fresh specs when tackled.
 
 ---
@@ -76,7 +76,7 @@ Feature specs are branch-scoped and the repo holds only what is live.
 | Scope changes mid-flight | Revise the relevant plan; add units, never renumber |
 | Compound | Promote cross-cutting sequencing into root `plan.md`; cleanse delivered detail to notes; archive then prompt to delete the feature folder |
 
-Human gate: the root feature sequence and feature unit tables should be approved before `impl`.
+Human gate: the root feature sequence and feature unit tables MUST be approved before `impl`.
 
 ---
 
@@ -97,7 +97,7 @@ Decide where a sub-piece goes:
 | Just implementation steps | `feature/n` units in the same plan |
 | Demoable alone, needs its own product/tech docs | A new **sibling** feature folder |
 
-Heuristic: once a feature exceeds ~5–8 units or wants more than one integration boundary, consider splitting it into siblings. Root plan then carries only whole-feature edges (`ai-input-suggest` depends on `ai-input`), never `ai-input-suggest/1` depends on `ai-input/3`.
+Heuristic: once a feature exceeds ~5–8 units or wants more than one integration boundary, split it into siblings. Root plan then carries only whole-feature edges (`ai-input-suggest` depends on `ai-input`), never `ai-input-suggest/1` depends on `ai-input/3`.
 
 ---
 
@@ -190,7 +190,7 @@ updated: YYYY-MM-DD
 ---
 ```
 
-List feature plans in root `children:` when you want validate to track them (optional but recommended).
+List feature plans in root `children:` so validate tracks them.
 
 ---
 
@@ -198,7 +198,7 @@ List feature plans in root `children:` when you want validate to track them (opt
 
 Plans sequence decisions — they are not implementation dumps.
 
-- **Repo-relative paths only** — link `.spec/features/<name>/plan.md`, not absolute paths.
+- **Repo-relative paths only** — link `docs/spec/features/<name>/plan.md`, not absolute paths.
 - **No process exhaust** — no brainstorming, triage notes, or "how we got here" in the plan file.
 - **No qualifiers or hedges** — units state what ships; delete "maybe", "TBD unless".
 - **No backlog** — every entry is work-ready with a clear dependency, or it lives outside the repo. Delete speculative / long-horizon items.
@@ -218,11 +218,11 @@ Plans sequence decisions — they are not implementation dumps.
 
 ## Example (multi-feature repo)
 
-Root `.spec/plan.md` feature sequence:
+Root `docs/spec/plan.md` feature sequence:
 
 | Order | Feature | Deliverable | Test | Status | Starts when |
 |---:|---|---|---|---|---|
-| 1 | spec | `.spec/` + validate + tests | `tests/spec/run.sh` | DONE | — |
+| 1 | spec | `docs/spec/` + validate + tests | `tests/spec/run.sh` | DONE | — |
 | 2 | vibe-flow | `.agents/skills/vibe/` + `vibe` skill | `tests/flow/run.sh` | ACTIVE | spec DONE |
 | 3 | agent-instructions | `AGENTS.md` template + merge | `tests/agent-instructions/run.sh` | BLOCKED | vibe-flow DONE |
 

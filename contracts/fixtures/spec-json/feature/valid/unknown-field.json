@@ -1,0 +1,1 @@
+{ "v": 1, "feature": "auth", "layer": "fallback", "docs": [ { "kind": "product", "path": "docs/spec/features/auth/product.md", "lines": 40 } ], "openspec": true }

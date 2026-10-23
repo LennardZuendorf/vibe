@@ -447,8 +447,8 @@ export function runInjectHook(root, vibeDir, skillsDir, opts = {}) {
 // ---------------------------------------------------------------------------
 
 const BASH_WRITE_OP_RE = /(>>?|(^|\s)(tee|truncate|mv|cp|rm)(\s|$)|(^|\s)sed(\s|$).*-i)/;
-const LESSONS_RE = /(^|[^A-Za-z0-9_])\.spec\/lessons\.md/;
-const ROOT_SPEC_RE = /(^|[^A-Za-z0-9_])\.spec\/(product|tech|design|plan)\.md/;
+const LESSONS_RE = /(^|[^A-Za-z0-9_])(docs\/spec|\.spec)\/lessons\.md/; // literal
+const ROOT_SPEC_RE = /(^|[^A-Za-z0-9_])(docs\/spec|\.spec)\/(product|tech|design|plan)\.md/; // literal
 const STATE_JSON_RE = /(\.agents\/skills\/vibe\/state\.json|(^|[^A-Za-z0-9_])flow\/state\.json)/;
 const SET_STATE_RE = /set-state\.sh/;
 
@@ -456,8 +456,10 @@ const SET_STATE_RE = /set-state\.sh/;
 // hit" — mirrors sniff_bash()'s three case arms, checked in the same order.
 function sniffBash(cmd) {
   if (!BASH_WRITE_OP_RE.test(cmd)) return undefined;
-  if (LESSONS_RE.test(cmd)) return '.spec/lessons.md';
-  if (ROOT_SPEC_RE.test(cmd)) return 'a root .spec/{product,tech,design,plan}.md doc';
+  const lessons = LESSONS_RE.exec(cmd);
+  if (lessons) return `${lessons[2]}/lessons.md`;
+  const rootSpec = ROOT_SPEC_RE.exec(cmd);
+  if (rootSpec) return `a root ${rootSpec[2]}/{product,tech,design,plan}.md doc`;
   if (STATE_JSON_RE.test(cmd)) {
     if (SET_STATE_RE.test(cmd)) return undefined; // sanctioned writer: never warn
     return '.agents/skills/vibe/state.json (use set-state.sh)';

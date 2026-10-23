@@ -19,7 +19,10 @@
 # What the plugin carries (the STATELESS, portable surface):
 #   - skills/spec -> ../../spec   the spec framework skill
 #   - skills/vibe -> ../../flow   the vibe flow skill (working-model guidance)
+#   - skills/using-spec -> ../../spec/using-spec   the spec session-start skill
+#   - agents -> ../spec/agents    the spec agents
 #   - hooks/                       a self-detecting SessionStart doctrine hook (read-only)
+#                                  plus the four spec hooks (session-start, guard, validate x2)
 # The full STATEFUL flow (cursor writes, the write-guard, the Stop receipt tooth)
 # is delivered per-repo by install.sh, not by the per-user plugin.
 
@@ -56,7 +59,7 @@ case "${1:-}" in
   *) echo "build-plugin: unknown option '$1'" >&2; exit 1 ;;
 esac
 
-# The real files a build generates (everything except the two skill symlinks).
+# The real files a build generates (everything except the symlinks).
 GEN_FILES=(
   ".claude-plugin/marketplace.json"
   "plugin/.claude-plugin/plugin.json"
@@ -91,7 +94,17 @@ JSON
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\"" } ] }
+      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\"", "timeout": 10 } ] },
+      { "matcher": "startup|clear|compact", "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" session-start", "timeout": 10 } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash", "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" guard", "timeout": 10 } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Edit|Write|MultiEdit", "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" validate", "timeout": 10 } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" validate", "timeout": 10 } ] }
     ]
   }
 }
@@ -111,12 +124,12 @@ if [[ -z "$ROOT" ]]; then
   # upward marker search so detection works from a subdirectory; fall back to cwd.
   ROOT="$PWD"; d="$PWD"
   while [[ "$d" != "/" ]]; do
-    if [[ -d "$d/.spec" || -e "$d/.git" ]]; then ROOT="$d"; break; fi
+    if [[ -d "$d/docs/spec" || -d "$d/.spec" || -e "$d/.git" ]]; then ROOT="$d"; break; fi # literal
     d="$(dirname "$d")"
   done
 fi
-# vibe-enabled = the project carries a .spec/ tree or a flow cursor.
-[[ -d "$ROOT/.spec" || -f "$ROOT/.agents/skills/vibe/state.json" ]] || exit 0
+# vibe-enabled = the project carries a docs/spec/ (or legacy spec) tree or a flow cursor.
+[[ -d "$ROOT/docs/spec" || -d "$ROOT/.spec" || -f "$ROOT/.agents/skills/vibe/state.json" ]] || exit 0 # literal
 
 DOCTRINE="${CLAUDE_PLUGIN_ROOT:-}/skills/vibe/scripts/doctrine.sh"
 [[ -f "$DOCTRINE" ]] || exit 0
@@ -150,9 +163,11 @@ if [[ "$MODE" == "check" ]]; then
       drift=1; echo "build-plugin: stale $f" >&2
     fi
   done
-  # The two skill symlinks must point at the canonical trees.
+  # The skill and agents symlinks must point at the canonical trees.
   [[ "$(readlink "$SRC/plugin/skills/spec" 2>/dev/null)" == "../../spec" ]] || { drift=1; echo "build-plugin: plugin/skills/spec is not a symlink -> ../../spec" >&2; }
   [[ "$(readlink "$SRC/plugin/skills/vibe" 2>/dev/null)" == "../../flow" ]] || { drift=1; echo "build-plugin: plugin/skills/vibe is not a symlink -> ../../flow" >&2; }
+  [[ "$(readlink "$SRC/plugin/skills/using-spec" 2>/dev/null)" == "../../spec/using-spec" ]] || { drift=1; echo "build-plugin: plugin/skills/using-spec is not a symlink -> ../../spec/using-spec" >&2; }
+  [[ "$(readlink "$SRC/plugin/agents" 2>/dev/null)" == "../spec/agents" ]] || { drift=1; echo "build-plugin: plugin/agents is not a symlink -> ../spec/agents" >&2; }
   if [[ "$drift" -eq 1 ]]; then
     echo "build-plugin: DRIFT — run ./build-plugin.sh and commit." >&2
     exit 1
@@ -164,17 +179,19 @@ fi
 # Surgical clean, not `rm -rf plugin/ .claude-plugin/`: both are SHARED dirs a
 # user or another tool may also write into, and this repo's own uninstall lesson
 # forbids blanket-removing one. Delete exactly the generated set (already
-# enumerated for --check) plus the two skill symlinks, then prune what that
+# enumerated for --check) plus the symlinks, then prune what that
 # emptied.
 for f in ${GEN_FILES[@]+"${GEN_FILES[@]}"}; do
   rm -f "${SRC:?}/$f"
 done
-rm -f "$SRC/plugin/skills/spec" "$SRC/plugin/skills/vibe"
+rm -f "$SRC/plugin/skills/spec" "$SRC/plugin/skills/vibe" "$SRC/plugin/skills/using-spec" "$SRC/plugin/agents"
 find "$SRC/plugin" "$SRC/.claude-plugin" -type d -empty -delete 2>/dev/null || true
 
 emit_files "$SRC"
 mkdir -p "$SRC/plugin/skills"
 ln -s ../../spec "$SRC/plugin/skills/spec"
 ln -s ../../flow "$SRC/plugin/skills/vibe"
+ln -s ../../spec/using-spec "$SRC/plugin/skills/using-spec"
+ln -s ../spec/agents "$SRC/plugin/agents"
 echo "build-plugin: built ./plugin (vibe $VERSION, symlinked skills) and ./.claude-plugin/marketplace.json"
 echo "build-plugin: validate with  claude plugin validate $SRC"

@@ -1,0 +1,19 @@
+{
+  "session_id": "aec6704c-a613-48df-80b1-1cc422593169",
+  "transcript_path": "/home/u/.claude/projects/p/aec6704c-a613-48df-80b1-1cc422593169.jsonl",
+  "cwd": "/work/project",
+  "prompt_id": "245eaed2-39cb-40d7-b978-d790bcbe0d9d",
+  "permission_mode": "acceptEdits",
+  "agent_id": "a43f5fd4aafd25e36",
+  "agent_type": "spec-health",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "command -v vibe-spec",
+    "description": "Check whether vibe-spec is on PATH"
+  },
+  "tool_use_id": "toolu_017hPp9cFE7o8xuVPYyUM14V"
+}

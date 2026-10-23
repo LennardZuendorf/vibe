@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 // engine/tests/cursor.test.mjs — engine/cursor.mjs (js-core/2, R6).
 //
 // The two load-bearing scenarios: an absent cursor reads as idle, and a

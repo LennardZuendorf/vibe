@@ -1,0 +1,16 @@
+{
+  "v": 1,
+  "root": ".spec",
+  "layout": "flat",
+  "strict": false,
+  "examined": 5,
+  "errors": 0,
+  "warnings": 0,
+  "checks": [
+    {
+      "id": "SF3",
+      "level": "default"
+    }
+  ],
+  "findings": []
+}

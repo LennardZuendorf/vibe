@@ -1,13 +1,13 @@
 # The spec framework
 
 > **Roadmap:** this half becomes the standalone `vibe-spec` Rust binary and
-> plugin in v0.4 — see the root [README](../README.md) and [.spec/plan.md](../.spec/plan.md). Everything below describes what ships today.
+> plugin in v0.4 — see the root [README](../README.md) and [docs/spec/plan.md](../docs/spec/plan.md). Everything below describes what ships today.
 
 > **For humans.** This README is the standalone guide to the spec half of vibe kit.
 > Agents read [SKILL.md](SKILL.md) instead — it is the router they route through.
 
 The **spec framework** is a durable planning layer for a codebase. It teaches an
-agent (or a human) to keep design docs in `.spec/` that are *current*, not a
+agent (or a human) to keep design docs in `docs/spec/` that are *current*, not a
 backlog: what you are building (product), how it is built (tech), the visual /
 interaction language (design), and the order of work (plan). It ships as one
 bundled skill, `spec`, plus a validator. It needs only `bash` — no runtime, no
@@ -19,26 +19,26 @@ It is one of two halves. The other is [the vibe flow](https://github.com/Lennard
 ## Quickstart
 
 ```bash
-/spec setup            # write .spec/ entrypoints from templates (+ .config.yaml)
+/spec setup            # write docs/spec/ entrypoints from templates (+ .config.yaml)
 /spec strategy         # author the root layer: product / tech / design / plan
 /spec feature <name>   # scope and design one named feature
 /spec validate         # check structural consistency
 ```
 
 `/spec …` are Claude Code skill commands. Everywhere else, run the scripts
-directly **from your project root** — they resolve `.spec/` relative to the
+directly **from your project root** — they resolve `docs/spec/` relative to the
 current directory, so cwd must be the project you want to act on:
 
 ```bash
-bash .agents/skills/spec/scripts/setup.sh      # create .spec/ entrypoints from templates
-bash .agents/skills/spec/scripts/validate.sh   # check consistency (run from project root)
-bash ~/.agents/skills/spec/scripts/validate.sh # global install
+vibe-spec init       # create the spec root's entrypoints from templates
+vibe-spec validate   # check consistency (run from the project)
+vibe-spec validate --strict # promote every warning to an error (CI)
 ```
 
 ## The two-layer model
 
 ```
-.spec/
+docs/spec/
 ├── product.md, tech.md, design.md, plan.md, lessons.md   ← ROOT (persistent, high-level)
 ├── product-{topic}.md, tech-{topic}.md                    ← ROOT branch docs (cross-cutting, rare)
 ├── features/<name>/
@@ -95,13 +95,13 @@ documents. They enhance; they never gate.
 The spec skill is self-sufficient. Drive it directly with `/spec …` on any host,
 or let [the vibe flow](https://github.com/LennardZuendorf/vibe/blob/main/flow/README.md) drive its authoring phases
 (`strategy.spec`, `feature.design`, `feature.plan`, the compound promotions). When
-the flow is present, `.spec/.config.yaml` can set `vibe-flow: true` so output
+the flow is present, `docs/spec/.config.yaml` can set `vibe-flow: true` so output
 density follows the flow's single `style` note; absent that, the skill uses its own
 documented style. Either way the docs, templates, and validator are identical.
 
 ## Degrade behavior
 
-- **Bare git / any editor:** the whole framework works — `.spec/` docs, the
+- **Bare git / any editor:** the whole framework works — `docs/spec/` docs, the
   templates in [reference/templates/](reference/templates/), and `validate.sh`
   (pure `bash`, no `jq` required). You lose only the `/spec` command sugar.
 - **Other `AGENTS.md` readers:** agents follow the written authoring flow manually.
@@ -122,11 +122,11 @@ Everything below is the `spec` skill, addressed at runtime under
 | [reference/product.md](reference/product.md), [reference/tech.md](reference/tech.md), [reference/design.md](reference/design.md), [reference/plan.md](reference/plan.md) | Per-doc writing guides |
 | [reference/templates/](reference/templates/) | Copy-in templates for every root, feature, and branch doc |
 | [scripts/validate.sh](scripts/validate.sh) | Structural consistency check (frontmatter, links, folders) |
-| [scripts/setup.sh](scripts/setup.sh) | Create entrypoint templates in `.spec/` |
-| [scripts/list-specs.sh](scripts/list-specs.sh) | Current-state summary of the `.spec/` tree |
+| [scripts/setup.sh](scripts/setup.sh) | Create entrypoint templates in `docs/spec/` |
+| [scripts/list-specs.sh](scripts/list-specs.sh) | Current-state summary of the `docs/spec/` tree |
 | [scripts/promote.sh](scripts/promote.sh), [scripts/scan-merges.sh](scripts/scan-merges.sh) | Compound: merge feature blocks into root, preview pending merges |
 | [scripts/lessons-for.sh](scripts/lessons-for.sh) | Extract lessons matching a tag |
-| [agents/](agents/) | Optional subagents: `spec-tracer`, `spec-interviewer`, `spec-promoter`, `spec-health` |
+| [agents/](agents/) | Claude Code agents: `spec-promoter`, `spec-health` |
 
 ## More
 

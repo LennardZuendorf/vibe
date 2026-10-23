@@ -2,7 +2,7 @@
   "$comment": "vibe shipped injection defaults. A project overrides ANY of this from a root vibe.json — same shape, merged over these values (channels.<c>.blocks replaces, .add/.remove edit, blocks.<id> patches or defines a block, blocks.<id>.enabled=false silences one). Never edit this file in an install; it is replaced on upgrade.",
   "version": 1,
   "sources": {
-    "lessons": ".spec/lessons.md"
+    "lessons": "docs/spec/lessons.md"
   },
   "channels": {
     "user-prompt.level": {

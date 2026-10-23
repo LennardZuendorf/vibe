@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 // engine/tests/hook.test.mjs — engine/commands/hook.mjs (js-core/7).
 //
 // Unlike state/orders/doctrine/doctor, there is no single bash oracle FILE

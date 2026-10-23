@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 // engine/tests/doctor.test.mjs — engine/commands/doctor.mjs (js-core/6, R2).
 //
 // The oracle is flow/scripts/doctor.sh. Never hand-copy its expected output:

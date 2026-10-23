@@ -1,0 +1,30 @@
+# cargo-deny policy (D19). CI runs it via EmbarkStudios/cargo-deny-action.
+# The direct-dependency allowlist (clap, serde, serde_json) is enforced
+# structurally by crates/vibe-parity/tests/workspace_graph.rs; this file
+# bans the named crates anywhere in the graph.
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+allow = ["MIT", "Apache-2.0", "Unicode-3.0"]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+  { crate = "toml", reason = "D19: JSON is the only config format" },
+  { crate = "regex", reason = "D19: matching is hand-written in vibe-core" },
+  { crate = "tokio", reason = "D19: no async runtime" },
+  { crate = "tempfile", reason = "D19: atomic writes are hand-written in vibe-core" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

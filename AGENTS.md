@@ -1,4 +1,5 @@
 # AGENTS.md — vibe kit Engineering Guide
+<!-- vibe-spec: literal-file -->
 
 > This repository builds vibe kit itself. The sections below are this repo's own
 > dogfood guide (user-owned prose). The generic vibe-flow contract that ships to
@@ -14,11 +15,11 @@
 **Spec first. Always.**
 
 1. **ASK** — clarify requirements; no assumptions.
-2. **PLAN** — break down, read `.spec/`, present approach.
+2. **PLAN** — break down, read `docs/spec/`, present approach.
 3. **CONFIRM** — approval happens at the two human gates (plan→impl, verify→ship), not before every action.
 4. **EXECUTE** — implement step-by-step; verify before claiming done.
 
-- MUST read `.spec/` before writing code.
+- MUST read `docs/spec/` before writing code.
 - MUST NOT write code without an approved plan or spec.
 - MUST NOT invent filenames or state files the repo does not have (see **Dogfood status**).
 
@@ -32,7 +33,7 @@ Know what exists before you read or create files.
 
 | Path | Status |
 |---|---|
-| `.spec/` | **Live** — primary source of truth; read every session |
+| `docs/spec/` | **Live** — primary source of truth; read every session |
 | `.agents/skills/spec/` | **Live** — spec skill + `validate.sh` |
 | `AGENTS.md` / `CLAUDE.md` | **Live** — this guide; `CLAUDE.md` → `AGENTS.md` |
 | `.agents/skills/vibe/state-machine.json` | **Present** — static flow definition (data to edit when building flow) |
@@ -45,7 +46,7 @@ Know what exists before you read or create files.
 | **`flow.json`** | **Does not exist** — never expect, read, or create this file |
 | Per-turn inject / D12 orders-in-skills | **Live** — orders sourced from linked `vibe` skill via `orders.sh` |
 
-When in doubt, read [.spec/plan.md](.spec/plan.md) for spec-vs-repo gaps.
+When in doubt, read [docs/spec/plan.md](docs/spec/plan.md) for spec-vs-repo gaps.
 
 ## Task routing
 
@@ -53,22 +54,22 @@ Route by **intent**, not by flow cursor.
 
 | Intent | Load first | Write surface |
 |---|---|---|
-| Understand the project | `.spec/product.md`, `.spec/tech.md` | — |
-| Build a named feature | `.spec/features/<name>/` + root `plan.md` | per feature Scope |
-| Small bounded fix | relevant feature spec or `.spec/quick/<slug>.md` | minimal |
-| Spec / plan work | `.agents/skills/spec/SKILL.md` | `.spec/**` per write rules |
-| Build flow machinery | `.spec/tech.md` + `.agents/skills/vibe/` | `.agents/skills/vibe/`, `vibe` skill |
-| Build adapters / hooks | `.spec/tech.md` + `.claude/` | `.claude/`, `install.sh` |
+| Understand the project | `docs/spec/product.md`, `docs/spec/tech.md` | — |
+| Build a named feature | `docs/spec/features/<name>/` + root `plan.md` | per feature Scope |
+| Small bounded fix | relevant feature spec or `docs/spec/quick/<slug>.md` | minimal |
+| Spec / plan work | `.agents/skills/spec/SKILL.md` | `docs/spec/**` per write rules |
+| Build flow machinery | `docs/spec/tech.md` + `.agents/skills/vibe/` | `.agents/skills/vibe/`, `vibe` skill |
+| Build adapters / hooks | `docs/spec/tech.md` + `.claude/` | `.claude/`, `install.sh` |
 | Build AGENTS.md provisioning | `flow/reference/templates/AGENTS.md` | templates, merge scripts |
 | Set up or repair harness | `.agents/skills/vibe/SKILL.md` | `.agents/**`, managed blocks |
 
 `vibe` skill phases are **helpers** for their domains. Read the matching feature spec first;
-the skill does not override `.spec/`.
+the skill does not override `docs/spec/`.
 
 ## Target harness
 
 This is the **end-state** the repo is building. Reference the root
-[product.md](.spec/product.md) and [tech.md](.spec/tech.md) — not for ordinary feature work.
+[product.md](docs/spec/product.md) and [tech.md](docs/spec/tech.md) — not for ordinary feature work.
 
 - **Cursor:** `.agents/skills/vibe/state.json` — `{flow, phase, feature, updated}`; create from
   `state.example.json` only when testing transitions.
@@ -84,7 +85,7 @@ This is the **end-state** the repo is building. Reference the root
 ## Repo layout
 
 ```text
-.spec/                 # durable memory (product/tech/design/plan/lessons + features/)
+docs/spec/             # durable memory (product/tech/design/plan/lessons + features/)
 .agents/skills/spec/   # bundled spec framework
 .agents/skills/vibe/   # workflow skill: router, phase files, state machine, scripts
 AGENTS.md              # this file (canonical)
@@ -103,7 +104,7 @@ CLAUDE.md              # symlink → AGENTS.md
 ## Boundaries
 
 **Always**
-- Read `.spec/` before code.
+- Read `docs/spec/` before code.
 - Run `validate.sh` before claiming work is done.
 - Cite plan unit IDs in tests and commits during impl.
 - Respect feature **Scope** tables — do not implement another feature's units.
@@ -134,8 +135,8 @@ docs(agents): rewrite instruction set
 
 ## Spec layout
 
-Root: `.spec/{product,tech,design,plan,lessons}.md`.
-Features: `.spec/features/<feature>/{product,tech}.md` required; `design.md`,
+Root: `docs/spec/{product,tech,design,plan,lessons}.md`.
+Features: `docs/spec/features/<feature>/{product,tech}.md` required; `design.md`,
 `plan.md`, `research.md` optional.
 
 <!-- vibe:instructions:start -->
@@ -143,15 +144,15 @@ Features: `.spec/features/<feature>/{product,tech}.md` required; `design.md`,
      replaced on the next setup.apply / install. Content outside the markers
      (above this line, or inside vibe:active-rules) is user-owned. -->
 
-This project runs the **vibe flow** — a spec-first workflow harness. `.spec/` is the
-durable memory; sessions are ephemeral. Read the specs before you write code.
+This project runs the **vibe flow** — a spec-first workflow harness. The spec root is the
+durable memory (`docs/spec/`, or legacy `.spec/`); sessions are ephemeral. Read the specs before you write code.
 
 ## Session start
 
-1. Read `.spec/lessons.md` and `.spec/plan.md`. (The spec half owns `.spec/`; a
+1. Read `lessons.md` and `plan.md` in the spec root (`docs/spec/`, or legacy `.spec/`). (The spec half owns that root; a
    flow-only install has no tree — the flow still runs, the specs are just absent.)
 2. Identify the feature you are working on and load its specs:
-   `.spec/features/<name>/{product,tech,plan}.md`.
+   `docs/superpowers/specs/*-<name>-design.md` + `docs/superpowers/plans/*-<name>.md`, or the fallback `docs/spec/features/<name>/{product,tech,plan}.md`.
 3. If `.agents/skills/vibe/state.json` exists and you are continuing a flow session,
    read `{flow, phase, feature}` and resume the linked `vibe` skill. A missing cursor
    means `idle` — proceed with the specs; a missing cursor is not an error.
@@ -171,7 +172,7 @@ durable memory; sessions are ephemeral. Read the specs before you write code.
 ## Working model
 
 ```
-ASK → read .spec/ → PLAN → CONFIRM → IMPL → verify → compound
+ASK → read the spec root → PLAN → CONFIRM → IMPL → verify → compound
 ```
 
 Most transitions auto-advance. Two edges are **human gates** — stop and get explicit
@@ -215,7 +216,8 @@ never by editing the block, which is regenerated.
 
 ```bash
 # Spec validation — run before claiming done (spec half; absent on --only flow)
-bash .agents/skills/spec/scripts/validate.sh
+# (until F22 ships the binary, `bash .agents/skills/spec/scripts/validate.sh` on a legacy `.spec/` root)
+vibe-spec validate
 # Write policy for a path (works without state.json)
 bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
 # Health-check the harness wiring (hooks, cursor, machine)
@@ -245,16 +247,16 @@ and prefer warn over hard-fail.
 <!-- vibe:instructions:end -->
 
 <!-- vibe:active-rules:start -->
-<!-- Generated from .spec/lessons.md by regen-active-rules.sh. Do not edit by hand;
+<!-- Generated from the spec lessons.md by regen-active-rules.sh. Do not edit by hand;
      edit lessons.md and re-run during compound. Top 5, pinned first. -->
 
 ### Active Rules
 
-- **A check that examines nothing must fail loudly, never pass quietly** — Every guard must assert its own population — a floor on what it examined, and that the things it examined exist. Absence of findings is only evidence when presence of *input* is proven. Extend this to your own verification: after planting a mutant, confirm it actually landed (`git diff --numstat`) before believing the result, and prefer structural floors over hand-written counts, which rot. A green that cannot distinguish "checked and clean" from "checked nothing" is not a green.
-- **A comment asserting a safety property becomes load-bearing — test it or delete it** — Treat a comment that asserts a safety or scope property as an untested claim, and either give it a test or delete it. When a fix proves a comment wrong, correct the comment in the same commit — a stale comment is worse than none, because the next reader (and the next reviewer's reasoning) will rely on it. Prefer assertions that are structural over lists of names: scrub every `tests/` directory at any depth and assert *no test artifact anywhere* reaches a target, rather than naming two directories that the next co-located suite will silently escape.
-- **A control case that depends on an unset variable must delete it, not merely not set it** — A test whose meaning is "variable X is not set" must **delete** X from the child environment, not rely on the parent not having it — and the deletion belongs on the shared spawn helper so every call site can use it. Then run the suite under each ambient variable it reads, in both states, as its own leg. Related: run every CI leg locally, byte-exact, before pushing — the round that shipped this bug ran none of them, and the round that fixed it ran all ten.
-- **A guard is only as strong as the capability it bans, not the spelling it matches** — When a guard is evaded, do not add a pattern for the evasion — that buys exactly one round. Close the *capability*: state the invariant as "no module may obtain X by any means unless allowlisted", then find the mechanical property that makes it true regardless of syntax. Match against the whole comment-stripped file, never per line. Close the scanned set under whatever relation the attacker can traverse (here, module resolution — which covers static `import`, `import()`, `require`, and `createRequire` without naming any of them). Pin exemptions by exact line *and occurrence count*, never by file. And require the implementer to produce the list of evasions it tried against its **own** fix, including the ones that failed — the round that finally held was the first to produce that artifact.
-- **Porting a script destroys the oracle that proves the port — freeze it first** — When replacing an implementation, copy its predecessor into the test tree as a frozen oracle **before** the first line of the replacement is written, and make differential comparison part of the suite. Prioritise by blast radius: anything that can block, delete, or halt gets its oracle frozen first. Where an oracle disagrees with *itself* across its own code paths, follow the fail-safe branch and pin the divergence with a control — losing one turn of enforcement is recoverable, wedging a session is not.
+- 📌 **A guard is only as strong as the capability it bans, not the spelling it matches** — When a guard is evaded, do not add a pattern for the evasion — that buys exactly one round. Close the *capability*: state the invariant as "no module may obtain X by any means unless allowlisted", then find the mechanical property that makes it true regardless of syntax. Match against the whole comment-stripped file, never per line. Close the scanned set under whatever relation the attacker can traverse (here, module resolution — which covers static `import`, `import()`, `require`, and `createRequire` without naming any of them). Pin exemptions by exact line *and occurrence count*, never by file. And require the implementer to produce the list of evasions it tried against its **own** fix, including the ones that failed — the round that finally held was the first to produce that artifact.
+- 📌 **Porting a script destroys the oracle that proves the port — freeze it first** — When replacing an implementation, copy its predecessor into the test tree as a frozen oracle **before** the first line of the replacement is written, and make differential comparison part of the suite. Prioritise by blast radius: anything that can block, delete, or halt gets its oracle frozen first. Where an oracle disagrees with *itself* across its own code paths, follow the fail-safe branch and pin the divergence with a control — losing one turn of enforcement is recoverable, wedging a session is not.
+- **Local green is not CI green** — Feed test stdin by redirect or process substitution, not a pipe. Build or require each binary a suite needs. Normalise CRLF when a test reads repo text.
+- **A hook shim must tell a block from a crash by output** — Pass a block through only when the output proves it was one, such as a single `blocked:` line. Map every other code to allow. Test with a fake binary for each event.
+- **A rewrite tool needs corruption-class tests** — Before a tool rewrites user content, test each corruption class: look-alike tokens, link forms, line endings, duplicate keys and walk pruning. A committed rewrite cannot be undone.
 <!-- vibe:active-rules:end -->
 
 <!-- vibe:rules -->
@@ -269,8 +271,12 @@ disagree. Edit the rules, never this text.
 
 - `.agents/skills/vibe/state.json` — otherwise: block — state.json is written only via set-state.sh, never by direct edit
 - `.spec/lessons.md` — `feature.compound`, `setup.apply`, `strategy.spec`, `quick.verify`: allow; otherwise: block — .spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: the current state)
+- `docs/spec/lessons.md` — `feature.compound`, `setup.apply`, `strategy.spec`, `quick.verify`: allow; otherwise: block — docs/spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: the current state)
 - `.spec/product.md`, `.spec/tech.md`, `.spec/design.md`, `.spec/plan.md` — `strategy.spec`, `feature.compound`, `setup.apply`: allow; otherwise: block — root .spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: the current state)
+- `docs/spec/product.md`, `docs/spec/tech.md`, `docs/spec/design.md`, `docs/spec/plan.md` — `strategy.spec`, `feature.compound`, `setup.apply`: allow; otherwise: block — root docs/spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: the current state)
 - `.spec/features/*` — `feature.impl`, `quick.fix`: warn — .spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: the current state); otherwise: allow
+- `docs/spec/features/*` — `feature.impl`, `quick.fix`: warn — docs/spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: the current state); otherwise: allow
+- `docs/superpowers/specs/*` — `feature.impl`, `quick.fix`: warn — superpowers design docs are frozen during impl/fix — route back to feature.design to change scope (current: the current state); otherwise: allow
 - `CLAUDE.md`, `AGENTS.md` — otherwise: warn — CLAUDE.md/AGENTS.md active-rules block is generated by regen-active-rules.sh; edits inside the markers are overwritten next compound
 - `src/*`, `tests/*` — `feature.verify`: warn — verify writes no src — route findings back to impl (set-state.sh feature.impl); `quick.verify`: warn — verify writes no src — route findings back to fix (set-state.sh quick.fix); `feature.impl`, `quick.fix`, `setup.apply`: allow; otherwise: warn — source/test edits outside an impl/fix state (current: the current state)
 
@@ -314,3 +320,21 @@ Only `haiku`, `sonnet`, or `opus`. If a Fable review is warranted, it happens AF
 the workflow completes, as a standalone Agent-tool call (ask first, per above) —
 never as a workflow stage.
 <!-- /vibe:rules -->
+
+<!-- vibe-spec:router:start -->
+Spec owns where work is recorded; superpowers process skills own how it is done.
+Before changing behaviour, structure or docs, invoke the `spec` skill.
+It routes the work to the spec root (`vibe-spec root` prints it).
+Check the tree with `vibe-spec validate`.
+If `vibe-spec` is not on PATH, build it (`cargo build -p vibe-spec`) or see the spec skill.
+<!-- vibe-spec:router:end -->
+
+<!-- coding-environment:start -->
+## Coding environment (applies across /home/agent/projects)
+
+This repo is one of the repos in the shared coding environment at `/home/agent/projects`.
+**Read `/home/agent/projects/AGENTS.md` before you touch code — it is not optional.** It carries
+the cross-repo rules: work inside a repo (never in a Paseo worktree), spec first with its two
+human gates, never push to a default branch or open a PR unless explicitly asked, verify before
+claiming, and never commit secrets. Where that file and this one disagree, this repo's rules win.
+<!-- coding-environment:end -->

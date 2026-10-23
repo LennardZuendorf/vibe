@@ -1,0 +1,1 @@
+{"v":1,"root":"docs/spec","pre_merge":true,"errors":1,"warnings":1,"features":[{"name":"auth","status":"NO ROW"}],"findings":[{"severity":"error","message":"superpowers artifact remains: docs/superpowers/plans/2026-01-01-auth.md","file":"docs/superpowers/plans/2026-01-01-auth.md"},{"severity":"warning","message":"NOT STARTED unit in docs/spec/features/auth/plan.md:3:x"}]}

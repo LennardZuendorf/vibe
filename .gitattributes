@@ -1,0 +1,5 @@
+# Byte-exact trees: frozen oracles, contract goldens, the parity corpus.
+# No end-of-line conversion on any platform.
+oracles/** -text
+contracts/fixtures/** -text
+tests/parity/corpus/** -text

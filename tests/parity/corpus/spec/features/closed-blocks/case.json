@@ -1,0 +1,40 @@
+{
+  "runs": {
+    "promote": [
+      [
+        "auth",
+        "--dry-run"
+      ],
+      [
+        "auth"
+      ],
+      [
+        "missing"
+      ]
+    ],
+    "scan-merges": [
+      [],
+      [
+        "--format",
+        "json"
+      ],
+      [
+        "--format",
+        "plain"
+      ],
+      [
+        "auth"
+      ],
+      [
+        "nope"
+      ],
+      [
+        "/auth"
+      ],
+      [
+        "//auth"
+      ]
+    ]
+  },
+  "v": 1
+}

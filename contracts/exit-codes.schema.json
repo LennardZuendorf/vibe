@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Exit-code contract v1",
+  "description": "Process exit codes every vibe binary uses, per context. contracts/run.mjs pins the exact code sets.",
+  "x-vibe-compat": "additive-within-major; readers-ignore-unknown-fields",
+  "type": "object",
+  "required": ["v", "contexts"],
+  "properties": {
+    "v": { "const": 1 },
+    "contexts": {
+      "type": "object",
+      "required": ["cli", "vibe-spec-query", "hook"],
+      "properties": {
+        "cli": { "type": "object" },
+        "vibe-spec-query": { "type": "object" },
+        "hook": { "type": "object" }
+      }
+    }
+  }
+}

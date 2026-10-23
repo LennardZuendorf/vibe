@@ -22,10 +22,10 @@
 # stdout and exit code, so the duplication cannot drift silently.
 #
 # The three hard blocks (everything else is allow/warn):
-#   1. .spec/lessons.md            — only during feature.compound, setup.apply,
+#   1. .spec/lessons.md            — only during feature.compound, setup.apply, # literal
 #                                    strategy.spec, or quick.verify (the flow-end
 #                                    states where the conditional lesson step lives)
-#   2. root .spec/{product,tech,design,plan}.md
+#   2. root .spec/{product,tech,design,plan}.md # literal
 #                                  — only during strategy.spec, feature.compound, or setup.apply
 #   3. .agents/skills/vibe/state.json — never by direct edit; only via set-state.sh
 
@@ -47,7 +47,7 @@ have_node() { command -v node >/dev/null 2>&1; }
 find_root() {
   local d="$1"
   while [[ -n "$d" && "$d" != "/" ]]; do
-    if [[ -d "$d/.spec" || -e "$d/.git" ]]; then printf '%s\n' "$d"; return 0; fi
+    if [[ -d "$d/docs/spec" || -d "$d/.spec" || -e "$d/.git" ]]; then printf '%s\n' "$d"; return 0; fi # literal
     d="$(dirname "$d")"
   done
   return 1
@@ -201,10 +201,19 @@ decide_bash() {
 
   # Block 1: lessons.md only during the flow-end states that carry the lesson step.
   case "$path" in
-    .spec/lessons.md|*/.spec/lessons.md)
+    .spec/lessons.md|*/.spec/lessons.md) # literal
       case "$state" in
         feature.compound|setup.apply|strategy.spec|quick.verify) echo "allow" ;;
-        *) echo "block:.spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: $state)" ;;
+        *) echo "block:.spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: $state)" ;; # literal
+      esac
+      return 0
+      ;;
+  esac
+  case "$path" in
+    docs/spec/lessons.md|*/docs/spec/lessons.md)
+      case "$state" in
+        feature.compound|setup.apply|strategy.spec|quick.verify) echo "allow" ;;
+        *) echo "block:docs/spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: $state)" ;;
       esac
       return 0
       ;;
@@ -212,12 +221,21 @@ decide_bash() {
 
   # Block 2: root specs only during strategy.spec or feature.compound.
   case "$path" in
-    .spec/product.md|.spec/tech.md|.spec/design.md|.spec/plan.md|\
-*/.spec/product.md|*/.spec/tech.md|*/.spec/design.md|*/.spec/plan.md)
+    .spec/product.md|.spec/tech.md|.spec/design.md|.spec/plan.md|*/.spec/product.md|*/.spec/tech.md|*/.spec/design.md|*/.spec/plan.md) # literal
       case "$state" in
         strategy.spec|feature.compound) echo "allow" ;;
         setup.apply) echo "allow" ;;
-        *) echo "block:root .spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: $state)" ;;
+        *) echo "block:root .spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: $state)" ;; # literal
+      esac
+      return 0
+      ;;
+  esac
+  case "$path" in
+    docs/spec/product.md|docs/spec/tech.md|docs/spec/design.md|docs/spec/plan.md|\
+*/docs/spec/product.md|*/docs/spec/tech.md|*/docs/spec/design.md|*/docs/spec/plan.md)
+      case "$state" in
+        strategy.spec|feature.compound|setup.apply) echo "allow" ;;
+        *) echo "block:root docs/spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: $state)" ;;
       esac
       return 0
       ;;
@@ -226,9 +244,29 @@ decide_bash() {
   # Warning: feature specs are frozen once implementation begins — feature.impl and
   # quick.fix write code, not spec. feature.design/plan (and setup) still author them.
   case "$path" in
-    .spec/features/*|*/.spec/features/*)
+    .spec/features/*|*/.spec/features/*) # literal
       case "$state" in
-        feature.impl|quick.fix) echo "warn:.spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: $state)" ;;
+        feature.impl|quick.fix) echo "warn:.spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: $state)" ;; # literal
+        *) echo "allow" ;;
+      esac
+      return 0
+      ;;
+  esac
+  case "$path" in
+    docs/spec/features/*|*/docs/spec/features/*)
+      case "$state" in
+        feature.impl|quick.fix) echo "warn:docs/spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: $state)" ;;
+        *) echo "allow" ;;
+      esac
+      return 0
+      ;;
+  esac
+
+  # Warning: superpowers design docs are frozen once implementation begins (D45).
+  case "$path" in
+    docs/superpowers/specs/*|*/docs/superpowers/specs/*)
+      case "$state" in
+        feature.impl|quick.fix) echo "warn:superpowers design docs are frozen during impl/fix — route back to feature.design to change scope (current: $state)" ;;
         *) echo "allow" ;;
       esac
       return 0

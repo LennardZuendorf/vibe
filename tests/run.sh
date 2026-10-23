@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/run.sh — combined test runner: spec + flow + adapters + engine suites.
+# tests/run.sh — combined test runner: spec + flow + adapters + engine + oracles + contracts + literals suites, plus live vibe-spec checks.
 #
 # This is a reporter/aggregator: it runs ALL suites even when one fails, prints a
 # per-suite PASS/FAIL line plus a final summary, and exits non-zero if any suite
@@ -19,17 +19,17 @@
 # suite and break that contract.
 set -uo pipefail
 
-# Repo root by upward marker search (.spec / .git) — depth- and symlink-agnostic:
+# Repo root by upward marker search (docs/spec / .spec / .git) — depth- and symlink-agnostic: # literal
 # resolves the physical path so real and symlinked invocations converge.
 _find_repo_root() {
   local d; d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
   while [[ "$d" != "/" ]]; do
-    [[ -d "$d/.spec" || -e "$d/.git" ]] && { printf '%s\n' "$d"; return 0; }
+    [[ -d "$d/docs/spec" || -d "$d/.spec" || -e "$d/.git" ]] && { printf '%s\n' "$d"; return 0; } # literal
     d="$(dirname "$d")"
   done
   return 1
 }
-ROOT="$(_find_repo_root)" || { echo "cannot locate repo root (.spec/.git)" >&2; exit 1; }
+ROOT="$(_find_repo_root)" || { echo "cannot locate repo root (docs/spec/.spec/.git)" >&2; exit 1; } # literal
 
 # The whole tree must run on the interpreter THIS script was started with.
 # The macOS CI leg invokes `/bin/bash tests/run.sh` precisely to exercise stock
@@ -63,13 +63,16 @@ fi
 # adapters folded under flow/tests/adapters), and the JS engine suite under
 # flow/engine/tests. `engine` runs under `node`, not `bash` — everything else
 # does — so interpreter is its own parallel array rather than assumed.
-SUITE_NAMES=(spec flow adapters engine)
-SUITE_INTERPRETERS=("$SELF_BASH" "$SELF_BASH" "$SELF_BASH" node)
+SUITE_NAMES=(spec flow adapters engine oracles contracts literals)
+SUITE_INTERPRETERS=("$SELF_BASH" "$SELF_BASH" "$SELF_BASH" node "$SELF_BASH" "$SELF_BASH" "$SELF_BASH")
 SUITE_SCRIPTS=(
   "spec/tests/run.sh"
   "flow/tests/run.sh"
   "flow/tests/adapters/run.sh"
   "flow/engine/tests/run.mjs"
+  "tests/oracles/run.sh"
+  "contracts/run.sh"
+  "tests/literals/run.sh"
 )
 
 overall=0
@@ -104,6 +107,28 @@ while [[ "$i" -lt "${#SUITE_NAMES[@]}" ]]; do
 
   i=$((i + 1))
 done
+
+# Live checks (P4-R17): this repo's own spec tree is checked by vibe-spec itself,
+# on whichever root it sits (the bash scripts hard-code the legacy root).
+run_live() { # <name> <command...>
+  local name="$1"; shift
+  echo "########################################"
+  echo "### live: $name"
+  echo "########################################"
+  if (cd "$ROOT" && "$@"); then
+    results+=("PASS  live: $name")
+  else
+    results+=("FAIL  live: $name (exit $?)")
+    overall=1
+  fi
+  echo ""
+}
+if command -v cargo >/dev/null 2>&1; then
+  run_live "vibe-spec validate" cargo run -q --locked -p vibe-spec -- validate --strict
+  run_live "vibe-spec check-drift" cargo run -q --locked -p vibe-spec -- check-drift
+else
+  echo "  note: cargo not found on PATH — live vibe-spec checks skipped" >&2
+fi
 
 echo "========================================"
 echo "=== combined test summary ==="

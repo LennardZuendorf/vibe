@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// vibe-spec: literal-file
 // engine/tests/run.mjs — the JS-suite harness: assert helpers, sandbox fixture
 // builder, process-spawn helpers, and the test runner/discoverer.
 //

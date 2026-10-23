@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "feature": "csv-export",
+  "layer": "superpowers",
+  "docs": [
+    { "kind": "design", "path": "docs/superpowers/specs/2026-10-14-csv-export-design.md" },
+    { "kind": "plan", "path": "docs/superpowers/plans/2026-10-14-csv-export.md" }
+  ],
+  "status": "in progress",
+  "summary": "Export reports as CSV."
+}

@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "name": "fixture",
+  "corpus": "corpus",
+  "oracle_root": "oracle",
+  "commands": [
+    { "name": "echo", "oracle": ["bash", "{oracle}/echo.sh"], "candidate": ["{candidate}"], "classes": ["basic"] }
+  ],
+  "floors": { "basic": 2 }
+}

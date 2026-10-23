@@ -17,7 +17,7 @@ Serves two states:
 2. **Verify.**
 
    > **Delegate — superpowers:verification-before-completion**
-   > - announce: "delegating to `superpowers:verification-before-completion` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - announce: "delegating to `superpowers:verification-before-completion` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (docs/spec/.config.yaml) = standing decline
    > - inject: run the real tests/build; for a feature, tie each result to a plan **unit ID**
    > - redirect: evidence is observed output shown in-turn; no spec writes
    > - skip: any "done"/commit claim on a failing check
@@ -35,7 +35,7 @@ Serves two states:
 
    > **Delegate — superpowers:requesting-code-review + code-reviewer**
    > - model: code-reviewer → opus (review) — pin explicitly, never inherit the default
-   > - announce: "delegating review to `superpowers:requesting-code-review` (dispatch) with `code-reviewer` (reviewer template) — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - announce: "delegating review to `superpowers:requesting-code-review` (dispatch) with `code-reviewer` (reviewer template) — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (docs/spec/.config.yaml) = standing decline
    > - inject: requesting-code-review's dispatch protocol; `code-reviewer`'s 0–100 confidence rubric; keep only findings at confidence ≥ 80
    > - redirect: findings route to `feature.impl` (feature) / `quick.fix` (quick) — NEVER fixed here; verify writes no `src/**`. COPY these redirect/skip lines into the reviewer (Task) prompt — subagents get no per-turn orders
    > - skip: the upstream "fix Critical immediately" step and any self-commit — routing owns the fix
@@ -43,7 +43,7 @@ Serves two states:
 5. **On failure.**
 
    > **Delegate — superpowers:systematic-debugging**
-   > - announce: "delegating to `superpowers:systematic-debugging` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - announce: "delegating to `superpowers:systematic-debugging` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (docs/spec/.config.yaml) = standing decline
    > - inject: produce a fix-plan before any retry; mark nothing done on a failing check
    > - redirect: the fix-plan routes to `feature.impl` / `quick.fix` — no writes here
    > - skip: applying the fix in verify — verify diagnoses and routes only

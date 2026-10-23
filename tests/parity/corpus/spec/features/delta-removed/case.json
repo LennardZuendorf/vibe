@@ -1,0 +1,14 @@
+{
+  "runs": {
+    "promote": [
+      [
+        "auth",
+        "--dry-run"
+      ],
+      [
+        "auth"
+      ]
+    ]
+  },
+  "v": 1
+}

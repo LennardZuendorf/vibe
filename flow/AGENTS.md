@@ -27,7 +27,7 @@ dereferenced copy of this dir); the Claude adapter in `../.claude/` drives it.
   its transitions in prose.
 - Never edit `state.json` by hand — only via
   `bash flow/scripts/set-state.sh <flow.phase> [feature]`.
-- Self-locate by upward marker search (`.spec` / `.git`), not `../` hop counts.
+- Self-locate by upward marker search (`docs/spec` / `.git`), not `../` hop counts.
 - `tests/` and this `AGENTS.md` are pruned by `install.sh` on copy — contributor
   artifacts, not part of the shipped skill.
 

@@ -1,0 +1,1 @@
+../../spec/agents/spec-promoter.md

@@ -17,40 +17,43 @@ change.
    and set it: `bash .agents/skills/vibe/scripts/set-state.sh feature.design <name>`.
    The name is carried in the cursor across all feature states.
 
-2. **Design** (`feature.design`). Follow the spec skill
+2. **Design** (`feature.design`). Read `lessons.md` in the spec root (`docs/spec/`, or legacy `.spec/`) first. On the default <!-- literal -->
+   path, `superpowers:brainstorming` owns the dialogue and the design doc. On the
+   fallback path only, follow the spec skill
    [feature.md authoring flow](.agents/skills/spec/feature.md) steps 1–4:
-   locate & name → interview WHAT → rigor gate → sketch HOW. Read
-   `.spec/lessons.md` first.
+   locate & name → interview WHAT → rigor gate → sketch HOW.
 
    > **Delegate — superpowers:brainstorming**
-   > - announce: "delegating to `superpowers:brainstorming` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
-   > - inject: spec feature.md steps 1–4 as the dialogue format (RFC-2119 WHAT, GWT scenarios, Scope-table boundaries)
+   > - announce: "delegating to `superpowers:brainstorming` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `superpowers.brainstorming: false` (docs/spec/.config.yaml) = fallback
+   > - inject: RFC-2119 WHAT, GWT scenarios, Scope-table boundaries as the dialogue format (the fallback path only adds spec feature.md steps 1–4)
    > - inject: batch clarifying questions into ONE organized list per round (feature-dev Phase 3 pattern); take a SINGLE design approval at the end — no one-question-per-message, no per-section approvals; the flow's only gates are plan and ship
-   > - redirect: design doc → `.spec/features/<name>/{product,tech,design}.md` (design.md only at full rigor)
-   > - skip: its terminal write under `docs/superpowers/specs/`, its self-commit, its writing-plans handoff
+   > - output: superpowers' own design doc at `docs/superpowers/specs/YYYY-MM-DD-<name>-design.md` (topic = `<name>`); keep its self-commit; stop at its writing-plans handoff — `feature.plan` runs it
+   > - fallback → `docs/spec/features/<name>/` only when: superpowers absent, user says *self*, `.vibe/spec.json` `"featureLayer": "vibe"`, or OpenSpec interchange needed — write `{product,tech,design}.md` there (design.md only at full rigor)
 
    > **Delegate — code-explorer / code-architect**
    > - model: code-explorer → sonnet (mechanical/trace); code-architect → opus (architecture) — pin explicitly, never inherit the default
-   > - announce: "dispatching `code-explorer` (trace) + `code-architect` (sketch) — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
+   > - announce: "dispatching `code-explorer` (trace) + `code-architect` (sketch) — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (docs/spec/.config.yaml) = standing decline of these optional executors only
    > - inject: spec feature.md step 4 (which `tech.md` sections to populate, where merge markers go); text-only. Optionally dispatch 2–3 `code-architect` runs in PARALLEL (feature-dev's own pattern — each commits to ONE approach; compare, pick)
-   > - redirect: HOW → `.spec/features/<name>/tech.md` (+ `design.md` at full); the subagents write no files themselves
+   > - redirect: HOW → the superpowers design doc (fallback: `docs/spec/features/<name>/tech.md`, + `design.md` at full); the subagents write no files themselves
    > - skip: any self-commit or chain handoff. COPY these redirect/skip lines into each subagent (Task) prompt — subagents get no per-turn orders
 
-   Write **only** `.spec/features/<name>/product.md`, `tech.md`, and `design.md`
-   when the rigor gate says full. When HOW is sketched, advance to `feature.plan`
+   Write **only** the superpowers design doc (fallback only: `docs/spec/features/<name>/product.md`,
+   `tech.md`, and `design.md` when the rigor gate says full). When HOW is sketched, advance to `feature.plan`
    and continue.
 
-3. **Plan** (`feature.plan`). Follow [feature.md](.agents/skills/spec/feature.md)
-   step 5 (plan units).
+3. **Plan** (`feature.plan`). On the default path, `superpowers:writing-plans`
+   owns the plan. On the fallback path only, follow
+   [feature.md](.agents/skills/spec/feature.md) step 5 (plan units).
 
    > **Delegate — superpowers:writing-plans**
-   > - announce: "delegating to `superpowers:writing-plans` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
-   > - inject: the hybrid plan template (`spec/reference/templates/feature-plan.md`); stable-ID rules (`<name>/n`, never renumber on reorder/split, same-feature deps only); the feature's `product.md` requirements
-   > - redirect: plan → `.spec/features/<name>/plan.md` (writing-plans' documented optional storage-location seam)
-   > - skip: its own `docs/superpowers/plans/` path; its "offer execution" handoff — the plan gate owns advancing to impl
+   > - announce: "delegating to `superpowers:writing-plans` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `superpowers.writing-plans: false` (docs/spec/.config.yaml) = fallback
+   > - inject: the design doc's requirements and scope boundaries; fallback only: the hybrid plan template (`spec/reference/templates/feature-plan.md`), stable-ID rules (`<name>/n`, never renumber on reorder/split, same-feature deps only), and the feature's `product.md` requirements
+   > - output: superpowers' own plan at `docs/superpowers/plans/YYYY-MM-DD-<name>.md`; its `**Spec:**` line points at the design doc
+   > - its execution-choice question IS the plan gate: record the answer, then `/flow feature.impl <name> confirm`
+   > - fallback → `docs/spec/features/<name>/plan.md` with stable `<name>/n` unit IDs, same triggers as design
 
    `code-architect` may sketch the unit decomposition (text-only, same redirect).
-   Write `.spec/features/<name>/plan.md` with **stable unit IDs**; IDs never change
+   Write the superpowers plan (fallback only: `docs/spec/features/<name>/plan.md` with **stable unit IDs**); IDs never change
    on reorder or split. **Human gate:** confirm the plan before impl.
 
    At the plan gate, also **establish the working branch**: `git checkout -b
@@ -63,13 +66,13 @@ change.
    runs against the same tree either way.
 
 4. **Impl** (`feature.impl`). Mode is picked at the plan gate;
-   default **interactive**. Both modes consume the hybrid
-   `.spec/features/<name>/plan.md` (units in Seq order; per-unit **Steps** are the
+   default **interactive**. Both modes consume the superpowers plan
+   `docs/superpowers/plans/YYYY-MM-DD-<name>.md` (fallback: `docs/spec/features/<name>/plan.md`; units in Seq order; per-unit **Steps** are the
    task checklist) and run on the **feature branch established at the plan gate**
    (worktree only if offered+accepted in handover mode), so verify and the receipt
    run against the same tree. `superpowers:test-driven-development`
    applies within either mode (one reproducing test first, then the minimal code).
-   Write `src/**` and `tests/**` only — do **not** edit `.spec/**`. When re-entering
+   Write `src/**` and `tests/**` only — do **not** edit `docs/spec/**`. When re-entering
    impl from verify-routed findings, apply `superpowers:receiving-code-review` —
    verify each finding against the codebase before implementing; push back with
    technical reasoning if a finding is wrong.
@@ -77,18 +80,18 @@ change.
    **interactive** (default) — drive the plan turn by turn:
 
    > **Delegate — superpowers:executing-plans**
-   > - announce: "delegating to `superpowers:executing-plans` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
-   > - inject: the hybrid `.spec/features/<name>/plan.md` as its plan input (units in Seq order; per-unit **Steps** are the task checklist); work on the feature branch from the plan gate, no worktree
-   > - redirect: write `src/**` and `tests/**` only; cite plan unit IDs (`<name>/n`) in commits
+   > - announce: "delegating to `superpowers:executing-plans` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `superpowers.executing-plans: false` (docs/spec/.config.yaml) = executor unavailable
+   > - inject: the superpowers plan `docs/superpowers/plans/YYYY-MM-DD-<name>.md` (fallback: `docs/spec/features/<name>/plan.md`) as its plan input (tasks in order; per-task steps are the checklist); work on the feature branch from the plan gate, no worktree
+   > - redirect: write `src/**` and `tests/**` only; cite plan task numbers (fallback: unit IDs `<name>/n`) in commits
    > - skip: its `finishing-a-development-branch` exit handoff — the flow advances to `feature.verify` instead
 
    **handover** — dispatch the plan to subagents:
 
    > **Delegate — superpowers:subagent-driven-development**
    > - model: pin each impl subagent per task — mechanical units → sonnet, architecture-bearing units → opus (SDD mandates explicit choice; never inherit)
-   > - announce: "delegating to `superpowers:subagent-driven-development` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `suggest-superpowers: false` (.spec/.config.yaml) = standing decline
-   > - inject: the hybrid `.spec/features/<name>/plan.md`; work on the feature branch from the plan gate (worktree only if offered+accepted); runtime artifacts stay under `.superpowers/**` (gitignored runtime, not memory)
-   > - redirect: write `src/**` and `tests/**` only; cite plan unit IDs (`<name>/n`) in commits. COPY these redirect/skip lines into every subagent (Task) prompt — subagents get no per-turn orders
+   > - announce: "delegating to `superpowers:subagent-driven-development` — say *self* to keep it inline" — proceed without waiting; self-execute from this file if declined/absent; `superpowers.subagent-driven-development: false` (docs/spec/.config.yaml) = executor unavailable
+   > - inject: the superpowers plan `docs/superpowers/plans/YYYY-MM-DD-<name>.md` (fallback: `docs/spec/features/<name>/plan.md`); work on the feature branch from the plan gate (worktree only if offered+accepted); runtime artifacts stay under `.superpowers/**` (gitignored runtime, not memory)
+   > - redirect: write `src/**` and `tests/**` only; cite plan task numbers (fallback: unit IDs `<name>/n`) in commits. COPY these redirect/skip lines into every subagent (Task) prompt — subagents get no per-turn orders
    > - skip: its `finishing-a-development-branch` exit — stop after the final review; the flow advances to `feature.verify`, which audits regardless
 
 5. **Verify** (`feature.verify`). Hand to `verify.md` /
@@ -98,8 +101,10 @@ change.
    `feature.plan`.
 
 6. **Compound** (`feature.compound`). Hand to
-   `compound.md`: record a tagged lesson, promote cross-cutting decisions to
-   root specs, archive the feature folder, regenerate the active-rules digest.
+   `compound.md`: record a tagged lesson, promote durable facts from
+   `docs/superpowers/{specs,plans}/*-<name>*` and cross-cutting decisions into root specs,
+   then `git rm` the superpowers docs (fallback: archive the feature folder), regenerate
+   the active-rules digest.
 
 ## Rules
 

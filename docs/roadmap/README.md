@@ -1,8 +1,8 @@
 # v0.4 roadmap
 
 The v0.4 re-architecture ("three tools, one language, no bundle") as a GitHub
-issue set, authored from `.spec/plan.md` rows F1–F24. `issues/` holds one
-Markdown file per issue (`00-epic.md`, `01-F1-*.md` … `24-F24-*.md`), each
+issue set, authored from `docs/spec/plan.md` rows F1–F25. `issues/` holds one
+Markdown file per issue (`00-epic.md`, `01-F1-*.md` … `25-F25-*.md`), each
 with YAML frontmatter (`id`, `tool`, `phase`, `depends_on`, `parent`, plus
 `issue`/`hold` once posted or held — see below) and the same body template
 GitHub issues get: Deliverable, Scope, Acceptance, Depends on, Decisions this
@@ -10,18 +10,19 @@ implements, Notes.
 
 ## Status
 
-The epic and 19 of the 24 features are posted to GitHub. Five features are
-**held** — their architecture is still being designed in the originating
-conversation, so no issue exists for them yet.
+The epic and 19 of the 25 features are posted to GitHub. Three features
+(F9, F10, F11) are **held** — their architecture is still being designed in
+the originating conversation, so no issue exists for them yet. Three more
+(F2, F4, F25) are to file.
 
 **Epic:** [#22 — v0.4 — three tools, one language, no bundle (tracking)](https://github.com/LennardZuendorf/vibe/issues/22)
 
 | F | Title | Issue |
 |---|---|---|
 | F1  | spec-path-hotfix    | [#23](https://github.com/LennardZuendorf/vibe/issues/23) |
-| F2  | contracts           | held |
+| F2  | contracts           | to file |
 | F3  | oracles-parity      | [#24](https://github.com/LennardZuendorf/vibe/issues/24) |
-| F4  | workspace-core      | held |
+| F4  | workspace-core      | to file |
 | F5  | flow-core           | [#25](https://github.com/LennardZuendorf/vibe/issues/25) |
 | F6  | flow-teeth-hooks    | [#26](https://github.com/LennardZuendorf/vibe/issues/26) |
 | F7  | machine-teeth       | [#27](https://github.com/LennardZuendorf/vibe/issues/27) |
@@ -42,8 +43,9 @@ conversation, so no issue exists for them yet.
 | F22 | release-install     | [#39](https://github.com/LennardZuendorf/vibe/issues/39) |
 | F23 | retire-legacy       | [#40](https://github.com/LennardZuendorf/vibe/issues/40) |
 | F24 | doc-truth           | [#41](https://github.com/LennardZuendorf/vibe/issues/41) |
+| F25 | spec-superpowers-default | to file |
 
-F2, F4, F9, F10, and F11 are held for architecture design in-thread — each
+F9, F10, and F11 are held for architecture design in-thread — each
 file carries `hold: architecture` in its frontmatter and a `> **Held.**`
 notice under the title until an issue is opened for it.
 
@@ -56,17 +58,17 @@ milestone — each spans every phase in its arc.
 
 | Milestone | Phase | Issues |
 |---|---|---|
-| [v0.4 Phase 0 — foundations](https://github.com/LennardZuendorf/vibe/milestone/1) | F1–F4 | #23, #24 (F2, F4 held) |
+| [v0.4 Phase 0 — foundations](https://github.com/LennardZuendorf/vibe/milestone/1) | F1–F4 | #23, #24 (F2, F4 to file) |
 | [v0.4 Phase 1 — flow](https://github.com/LennardZuendorf/vibe/milestone/2) | F5–F10 | #25–#28 (F9, F10 held) |
 | [v0.4 Phase 2 — instruct](https://github.com/LennardZuendorf/vibe/milestone/3) | F11–F15 | #29–#32 (F11 held) |
-| [v0.4 Phase 3 — spec](https://github.com/LennardZuendorf/vibe/milestone/4) | F16–F20 | #33–#37 |
+| [v0.4 Phase 3 — spec](https://github.com/LennardZuendorf/vibe/milestone/4) | F16–F20, F25 | #33–#37 |
 | [v0.4 Phase 4 — distribution + retirement](https://github.com/LennardZuendorf/vibe/milestone/5) | F21–F24 | #38–#41 |
 | [v0.5 — CLI front door](https://github.com/LennardZuendorf/vibe/milestone/6) | C1–C6 | #43–#48 |
 
 ## Why files instead of issues
 
 These Markdown files remain the source of truth even after posting: they are
-what gets regenerated from `.spec/plan.md` if the plan changes, and what a
+what gets regenerated from `docs/spec/plan.md` if the plan changes, and what a
 disabled-Issues repo would fall back to. Each posted file's frontmatter now
 carries `issue: <number>` linking it to the GitHub issue it became.
 
@@ -82,7 +84,7 @@ continuing to the next file.
 
 **Idempotent:** an agent following this doc skips any file whose frontmatter
 already has `issue:` set (already posted) or `hold:` set (held for
-architecture design). Today: 19 already posted, 5 held, 0 to create — safe
+architecture design). Today: 19 already posted, 3 held, 3 to create (F2, F4, F25) — safe
 to re-run any time, including once the held features gain their own issue
 files.
 
@@ -90,12 +92,12 @@ files.
 
 When a held feature's architecture is settled: remove its `hold:` line and
 the `> **Held.**` notice from the file, fill in its real `## Depends on`
-section (the five held features' real dependents already reference them —
+section (the held features' real dependents already reference them —
 update those bodies too once the new issue number exists), and ask the agent
 to post it. It will pick up only that one file; the rest stay untouched.
 
 ## Source of truth
 
-`.spec/plan.md` is canonical. If the plan changes, regenerate these files —
-never hand-edit a posted GitHub issue without updating `.spec/plan.md` first,
+`docs/spec/plan.md` is canonical. If the plan changes, regenerate these files —
+never hand-edit a posted GitHub issue without updating `docs/spec/plan.md` first,
 and never hand-edit these files to drift from the plan.

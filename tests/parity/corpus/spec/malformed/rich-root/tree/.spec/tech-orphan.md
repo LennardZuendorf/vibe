@@ -1,0 +1,4 @@
+---
+type: tech-topic
+updated: 2026-01-15
+---

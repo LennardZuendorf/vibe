@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 // engine/tests/orders.test.mjs — engine/commands/orders.mjs (js-core/4, R2).
 //
 // The oracle is flow/scripts/orders.sh. Never hand-copy its expected output:
@@ -601,7 +602,7 @@ test('CLI: `vibe orders` with an explicit state arg on the install-layout fixtur
       { cwd: unrelatedCwd },
     );
     assertEqual(result.code, 0, `stderr: ${result.stderr}`);
-    assertMatch(result.stdout, /^skill=vibe · READ \.spec\/lessons\.md first/);
+    assertMatch(result.stdout, /^skill=vibe · READ the spec root's lessons\.md first/);
   } finally {
     rmSync(installRoot, { recursive: true, force: true });
     rmSync(unrelatedCwd, { recursive: true, force: true });
@@ -624,7 +625,7 @@ test('parity: a numeric feature of 0 is interpolated (jq truthy, JS-falsy mismat
   try {
     const engineResult = runEngine(sandbox, ['feature.plan']);
     assertEqual(engineResult.code, 0);
-    assertIncludes(engineResult.stdout, '.spec/features/0/plan.md', 'feature=0 must interpolate, not leave the placeholder');
+    assertIncludes(engineResult.stdout, 'docs/spec/features/0/plan.md', 'feature=0 must interpolate, not leave the placeholder');
     assert(!engineResult.stdout.includes('<feature>'), 'no literal placeholder should survive');
     if (JQ_PRESENT) {
       const oracleResult = runOracle(sandbox.scriptPath, ['feature.plan']);

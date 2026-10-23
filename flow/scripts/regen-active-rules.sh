@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# regen-active-rules.sh — project a capped top-5 digest of .spec/lessons.md into
+# regen-active-rules.sh — project a capped top-5 digest of .spec/lessons.md into # literal
 # the managed active-rules block of CLAUDE.md and AGENTS.md.
 #
 # This is generated output (like a committed lockfile), NOT a second source of
@@ -23,13 +23,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Walk up for a .spec/.git marker rather than counting `..` hops: the skill dir
+# Walk up for a docs/spec, .spec or .git marker rather than counting `..` hops: the skill dir # literal
 # sits one level under the repo root on the canonical flow/ path but three levels
 # under it via the .agents/skills/vibe symlink alias (and in the test sandbox).
 find_repo_root() {
   local d="$1"
   while [[ -n "$d" && "$d" != "/" ]]; do
-    if [[ -d "$d/.spec" || -e "$d/.git" ]]; then printf '%s\n' "$d"; return 0; fi
+    if [[ -d "$d/docs/spec" || -d "$d/.spec" || -e "$d/.git" ]]; then printf '%s\n' "$d"; return 0; fi # literal
     d="$(dirname "$d")"
   done
   return 1
@@ -37,9 +37,9 @@ find_repo_root() {
 # Self-relative first, marker walk second. In an installed target the skill sits
 # at <root>/.agents/skills/vibe, so the skills dir is the skill's own parent and
 # the root is two levels above it — knowable with no marker at all. The old order
-# asked for a .spec/.git marker first and fell back to "$SKILL_DIR/.." on a target
+# asked for a .spec/.git marker first and fell back to "$SKILL_DIR/.." on a target # literal
 # that has neither, which resolves to .agents/skills: every path below then
-# pointed at .agents/skills/{.spec,AGENTS.md,CLAUDE.md}, so the digest silently
+# pointed at .agents/skills/{.spec,AGENTS.md,CLAUDE.md}, so the digest silently # literal
 # regenerated nothing while exiting 0. Same shape as orders.sh / doctrine.sh.
 SKILL_PARENT="$(cd "$SKILL_DIR/.." && pwd)"
 if [[ -f "$SKILL_PARENT/vibe/SKILL.md" ]]; then
@@ -48,7 +48,20 @@ else
   REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")" || REPO_ROOT="$SKILL_PARENT"
 fi
 
-LESSONS="$REPO_ROOT/.spec/lessons.md"
+# The lessons file: the root `vibe-spec root` names (when the binary is on PATH),
+# then docs/spec/lessons.md, then the legacy .spec/lessons.md. # literal
+LESSONS=""
+if command -v vibe-spec >/dev/null 2>&1; then
+  spec_root="$(cd "$REPO_ROOT" && vibe-spec root 2>/dev/null)" || spec_root=""
+  [[ -n "$spec_root" && -f "$spec_root/lessons.md" ]] && LESSONS="$spec_root/lessons.md"
+fi
+if [[ -z "$LESSONS" ]]; then
+  if [[ -f "$REPO_ROOT/docs/spec/lessons.md" ]]; then
+    LESSONS="$REPO_ROOT/docs/spec/lessons.md"
+  else
+    LESSONS="$REPO_ROOT/.spec/lessons.md" # literal
+  fi
+fi
 TARGETS=("$REPO_ROOT/CLAUDE.md" "$REPO_ROOT/AGENTS.md")
 CAP=5
 START="<!-- vibe:active-rules:start -->"
@@ -114,7 +127,7 @@ write_block() {
 
   local block
   block="$START
-<!-- Generated from .spec/lessons.md by regen-active-rules.sh. Do not edit by hand;
+<!-- Generated from the spec lessons.md by regen-active-rules.sh. Do not edit by hand;
      edit lessons.md and re-run during compound. Top $CAP, pinned first. -->
 
 ### Active Rules

@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 // engine/tests/json.test.mjs — engine/json.mjs (js-core/2).
 
 import { readdirSync, readFileSync, existsSync, writeFileSync, mkdirSync, linkSync, statSync } from 'node:fs';

@@ -1,0 +1,12 @@
+{
+  "name": "vibe",
+  "interface": { "displayName": "vibe" },
+  "plugins": [
+    {
+      "name": "vibe",
+      "source": { "source": "local", "path": "./plugins/vibe" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}

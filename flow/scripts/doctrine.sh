@@ -34,7 +34,7 @@ SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 find_repo_root() {
   local d="$1"
   while [[ -n "$d" && "$d" != "/" ]]; do
-    if [[ -d "$d/.spec" || -e "$d/.git" ]]; then printf '%s\n' "$d"; return 0; fi
+    if [[ -d "$d/docs/spec" || -d "$d/.spec" || -e "$d/.git" ]]; then printf '%s\n' "$d"; return 0; fi # literal
     d="$(dirname "$d")"
   done
   return 1

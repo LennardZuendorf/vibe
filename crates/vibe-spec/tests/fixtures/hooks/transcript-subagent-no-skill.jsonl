@@ -1,0 +1,5 @@
+{"type":"user","isSidechain":true,"message":{"role":"user","content":"Use the Write tool to create docs/spec/b.md containing the single line: sub. Do not invoke any skill. Then reply done."}}
+{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"tool_use","name":"Write","input":{"file_path":"/work/project/docs/spec/b.md"}}]}}
+{"type":"user","isSidechain":true,"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_019eusVHPqC6dFHxFfthJseG"}]}}
+{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"thinking","text":""}]}}
+{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}

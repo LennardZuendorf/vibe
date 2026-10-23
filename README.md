@@ -25,11 +25,11 @@ never through code. One repo, one installer, three release trains.
 
 |  | **spec** | **flow** | **instruct** |
 |---|---|---|---|
-| **What it is** | Durable `.spec/` planning layer — product / tech / design / plan / lessons — with templates and a validator. | State-machine workflow: routes each phase to the right skills, injects per-turn orders, guards its own write invariants with hooks. | ⏳ Planned — layered, budgeted instruction injection (global → repo → local → session tiers). |
-| **Works with** | Any coding agent, or none. | Claude Code, for the hooks and `/flow`. Other agents read the same rules as prose. | Claude Code + OpenCode, both ⏳ planned. |
+| **What it is** | Durable `docs/spec/` planning layer — product / tech / design / plan / lessons — with templates and a validator. | State-machine workflow: routes each phase to the right skills, injects per-turn orders, guards its own write invariants with hooks. | ⏳ Planned — layered, budgeted instruction injection (global → repo → local → session tiers). |
+| **Works with** | Any coding agent, or none. | Claude Code, OpenCode, and Factory Droid via `/flow`; Codex via skill invocation. Hooks are Claude Code-only. Other agents read the same rules as prose. | Claude Code + OpenCode, both ⏳ planned. |
 | **Needs** | `bash` | `bash`, plus Node ≥18 for today's engine — a static Rust binary in v0.4. | Nothing today (unbuilt) — a static Rust binary in v0.4. |
 | **Install** | `./install.sh <repo> --only spec` | `./install.sh <repo> --only flow` | ⏳ planned: `./install.sh <repo> --only instruct` |
-| **Deep dive** | [`spec/README.md`](spec/README.md) | [`flow/README.md`](flow/README.md) | [`.spec/tech-instruct.md`](.spec/tech-instruct.md) |
+| **Deep dive** | [`spec/README.md`](spec/README.md) | [`flow/README.md`](flow/README.md) | [`docs/spec/tech/instruct.md`](docs/spec/tech/instruct.md) |
 
 This repo builds itself with its own harness, so what you install is what is
 dogfooded here.
@@ -60,12 +60,16 @@ git clone https://github.com/LennardZuendorf/vibe.git && cd vibe
 ./install.sh <target-repo>
 ```
 
-A bare run searches upward for the enclosing repo (a `.spec`/`.git` marker)
+A bare run searches upward for the enclosing repo (a `docs/spec`/`.git` marker)
 and, on a terminal, asks which mode you want.
+
+**Where it installs.** Run from anywhere inside a repository or Git worktree —
+the nearest repo/worktree root is the target, not the directory you ran from. A
+plain directory with no Git ancestor uses the current directory.
 
 | Mode | Command | What you get |
 |---|---|---|
-| **local** (default) | `./install.sh <repo>` | The full **stateful** kit in that repo: both skills, the `/flow` command, the engine, and the four Claude Code hooks wired via `.claude/settings.json`. |
+| **local** (default) | `./install.sh <repo>` | The full **stateful** kit at the resolved root: both skills, the engine, and the native surface of every configured host. For Claude Code that is `/flow` plus the four hooks wired via `.claude/settings.json`. |
 | **global** | `./install.sh --global` | The **per-user plugin** (`vibe@vibe`): the portable, stateless surface only — both skills plus the doctrine hook — in **every** repo. Needs the `claude` CLI. |
 
 ```bash
@@ -76,6 +80,23 @@ and, on a terminal, asks which mode you want.
 ./install.sh <repo> --dry-run         # print the plan, write nothing
 ```
 
+**Host selection.** With no flag, the installer detects the `claude`,
+`opencode`, `codex`, and `droid` CLIs on `PATH` and configures only the hosts it
+finds. If it finds none, the host-neutral core still installs and the summary
+prints the explicit selection syntax. `--platform LIST` overrides detection in
+both directions — the listed hosts are configured whether or not their CLIs are
+present:
+
+```bash
+./install.sh <repo> --platform claude,codex   # only these two hosts
+./install.sh <repo> --platform none           # host-neutral files only
+```
+
+`--platform` takes a comma-separated list of `claude`, `opencode`, `codex`,
+`droid`, or `none`; the **last** `--platform` flag wins, and `none` cannot be
+combined with a host. What each host gets is in
+[Platform support](#platform-support).
+
 The repo is its own plugin marketplace, if you would rather skip the
 installer:
 
@@ -84,7 +105,7 @@ claude plugin marketplace add LennardZuendorf/vibe
 claude plugin install vibe@vibe
 ```
 
-Uninstall removes only what the installer created — `.spec/**`, `AGENTS.md`
+Uninstall removes only what the installer created — `docs/spec/**`, `AGENTS.md`
 prose, unrelated hooks, and the flow cursor (unless `--yes`) survive:
 
 ```bash
@@ -93,13 +114,20 @@ prose, unrelated hooks, and the flow cursor (unless `--yes`) survive:
 ./install.sh <repo> --uninstall --only flow # remove one half, leave the other
 ```
 
+Every install records the artifacts it created in `.vibe/install-manifest.json`
+(deliberately not gitignored), which is what makes re-install idempotent and
+`--uninstall` safe: it removes only the recorded vibe-owned paths and preserves
+user files in every shared directory. A repeat run leaves the managed files
+byte-stable and keeps your live cursor and evidence receipts. `--uninstall`
+inverts every host, regardless of `--platform`.
+
 ### spec — the planning layer
 
-Every vibe project gets a `.spec/` tree, the single source of truth for what
+Every vibe project gets a `docs/spec/` tree, the single source of truth for what
 you are building, why, and how:
 
 ```text
-.spec/
+docs/spec/
 ├── product.md, tech.md, design.md, plan.md, lessons.md   ← ROOT: persistent role, current content
 └── features/<name>/
     ├── product.md    required     what this feature does
@@ -113,7 +141,7 @@ Root files carry no backlog. Feature folders are branch-scoped: written at
 design, consumed at impl, merged at compound, then deleted. **Code is truth.**
 
 ```bash
-/spec setup            # initialise .spec/ with templates
+/spec setup            # initialise docs/spec/ with templates
 /spec strategy         # write root product/tech/design/plan
 /spec feature <name>   # scope and design a named feature
 /spec validate         # check structural consistency
@@ -170,13 +198,20 @@ your-repo/                     # after install
 ├── .agents/skills/
 │   ├── spec/                  # the spec framework
 │   └── vibe/                  # the flow: router, phase files, state machine, engine
-├── .claude/                   # Claude adapter: /flow + four hooks + settings.json (flow half)
-├── .spec/                     # your durable project memory
+├── .claude/                   # Claude adapter: /flow + four hooks + settings.json
+├── .opencode/                 # OpenCode: /flow project command
+├── plugins/vibe/              # Codex: skill package (+ .agents/plugins/marketplace.json)
+├── factory-plugin/            # Factory Droid: /flow + skills (+ .factory-plugin/marketplace.json)
+├── .vibe/install-manifest.json # what this install created; --uninstall reads it
+├── docs/spec/                 # your durable project memory
 └── AGENTS.md                  # merged instructions (CLAUDE.md may symlink here)
 ```
 
-In **this** repo the canonical halves live at [`spec/`](spec/) and
-[`flow/`](flow/); `.agents/skills/{spec,vibe}` are compatibility symlinks.
+Each host surface appears only when that host was configured — a Claude-only
+install writes `.claude/` and nothing under `.opencode/`, `plugins/`, or
+`factory-plugin/`. In **this** repo the canonical halves live at
+[`spec/`](spec/) and [`flow/`](flow/); `.agents/skills/{spec,vibe}` are
+compatibility symlinks.
 
 ## Tests
 
@@ -190,10 +225,14 @@ macOS `bash` 3.2, the engine suite jq-less and from a space-containing path, a
 
 ## v0.4 target
 
-The re-architecture in progress. Nothing in this section is runnable today —
-every command and path below is ⏳ **planned**. Detail lives in
-[`.spec/tech.md`](.spec/tech.md) and its branch docs, including
-[`.spec/tech-instruct.md`](.spec/tech-instruct.md) for the instruct tool.
+The re-architecture in progress. Nothing in this section is runnable from an
+install today — every command and path below is ⏳ **planned**. The exceptions
+are the `vibe-spec` commands that already exist in a dev build (`cargo run -p
+vibe-spec -- <command>`), among them `check-drift`, `promote`, `export|import
+--openspec`, `hook {session-start,guard,validate}`, `setup`, `init` and `migrate`; skills, CI and the flow scripts still call the bash scripts and do
+not use them yet. Detail lives in
+[`docs/spec/tech.md`](docs/spec/tech.md) and its branch docs, including
+[`docs/spec/tech/instruct.md`](docs/spec/tech/instruct.md) for the instruct tool.
 
 ### Three binaries, one contract layer
 
@@ -224,11 +263,11 @@ The cursor moves from `.agents/skills/vibe/state.json` to
 
 ### spec root moves to `docs/spec/`
 
-Default `docs/spec/`, legacy `.spec/` still resolved. `vibe-spec migrate --to
-docs/spec` rewrites this repo in one commit. spec also adopts **OpenSpec
+Default `docs/spec/`, legacy `.spec/` still resolved. `vibe-spec migrate --to docs/spec` <!-- literal -->
+rewrites this repo in one commit. spec also adopts **OpenSpec
 grammar** (`### Requirement: <ID>`, `#### Scenario:` GIVEN/WHEN/THEN,
 `## ADDED|MODIFIED|REMOVED Requirements`) inside vibe's own document model —
-grammar-compatible, not layout-adoption — plus `vibe-spec export|import --openspec <dir>`.
+grammar-compatible, not layout-adoption — plus `vibe-spec export|import --openspec <dir>` (dev build only; not yet wired into skills or CI scripts).
 
 ### flow TUI
 
@@ -277,7 +316,7 @@ vibe/
 ├── .claude-plugin/marketplace.json
 ├── install.sh
 ├── .vibe/       # this repo's own config + blocks (+ run/, local/ ignored)
-├── docs/spec/   # this repo's memory (after migration; .spec/ until then)
+├── docs/spec/   # this repo's memory
 └── .agents/skills/{spec,flow,instruct} → ../../<tool>/skills/<tool>  (compat)
 ```
 
@@ -296,24 +335,36 @@ foundations land: flow (F5→F10), instruct (F11→F15), spec (F16→F20).
 
 F1 (the spec path-resolution hotfix) is a same-week fix on the current bash
 tree, ahead of the phases above. Full sequence and evidence criteria:
-[`.spec/plan.md`](.spec/plan.md). The issue set — one tracking epic plus one
+[`docs/spec/plan.md`](docs/spec/plan.md). The issue set — one tracking epic plus one
 issue per feature — is authored under [`docs/roadmap/`](docs/roadmap/) and
 posts to GitHub with `bash docs/roadmap/create-issues.sh` once Issues are
 enabled on the repository.
 
 ## Platform support
 
-| Host | What works | What is absent |
-|---|---|---|
-| **Claude Code** | spec + flow today: both skills, `/flow`, per-turn inject, guard + gate hooks. instruct ⏳ planned. | Budgeted instruction injection beyond the flow's own hooks, until instruct ships. |
-| **OpenCode** | ⏳ planned — spec, flow, and instruct all ship an OpenCode plugin in v0.4. | Nothing today. |
-| **Other `AGENTS.md` readers** (Codex, etc.) | spec framework + committed instruction blocks; agents follow the written flow manually. | Hooks (no per-turn inject / guard / gate). |
-| **Bare git / any editor** | spec framework: `.spec/` docs, templates, `validate.sh`. | Flow automation, hooks, instruct. |
+One project install lays down a host-neutral core plus a native surface for each
+configured host. Paths below are relative to the installed root.
+
+| Host | Start the flow workflow | Skills live at | Wired per host |
+|---|---|---|---|
+| **Claude Code** | `/flow` — native project command (`.claude/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `.claude/skills/{spec,vibe}` | All four hooks, via `.claude/settings.json`. |
+| **OpenCode** | `/flow` — native project command (`.opencode/commands/flow.md`) | `.agents/skills/{spec,vibe}` | No hook integration. |
+| **Codex** | Skill invocation only — `$vibe` (or the skill picker `/skills`); there is no synthetic `/flow` command | `.agents/skills/{spec,vibe}` + `plugins/vibe/skills` | No hook integration; no native agent registration. |
+| **Factory Droid** | `/flow` — native project command (`factory-plugin/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `factory-plugin/skills` | No hook integration; no native droid registration. |
+| **Other `AGENTS.md` readers** | Manual — the agent follows the `AGENTS.md` rules as prose | `.agents/skills/{spec,vibe}` (plain files) | No hooks, no native command. |
+| **Bare git / any editor** | — (spec framework only) | — | `docs/spec/` docs, templates, `validate.sh`. |
+
+The **spec** workflow is skill-invoked on every host; there is no `/spec`
+command anywhere. Hooks are **Claude Code-only** in this slice: OpenCode, Codex,
+and Factory Droid get skills and a workflow entry point, not per-turn inject,
+guard, or stop-gate wiring — and no host gets native agent/droid registration.
+The install summary reports a host's hooks only when their wiring actually
+installed. Budgeted instruction injection (`instruct`) remains ⏳ planned.
 
 ## Documentation
 
 - [`spec/README.md`](spec/README.md) · [`flow/README.md`](flow/README.md) — each half, standalone.
-- [`.spec/product.md`](.spec/product.md) · [`.spec/tech.md`](.spec/tech.md) · [`.spec/plan.md`](.spec/plan.md) — the harness's own specs, a living worked example.
+- [`docs/spec/product.md`](docs/spec/product.md) · [`docs/spec/tech.md`](docs/spec/tech.md) · [`docs/spec/plan.md`](docs/spec/plan.md) — the harness's own specs, a living worked example.
 - [`CHANGELOG.md`](CHANGELOG.md) — release notes.
 
 ## License

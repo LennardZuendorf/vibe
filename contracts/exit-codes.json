@@ -1,0 +1,8 @@
+{
+  "v": 1,
+  "contexts": {
+    "cli": { "0": "ok", "1": "findings or refused", "2": "usage error" },
+    "vibe-spec-query": { "3": "no spec tree found" },
+    "hook": { "0": "pass, or degraded", "2": "block" }
+  }
+}

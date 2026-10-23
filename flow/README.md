@@ -1,13 +1,14 @@
 # The vibe flow
 
 > **Roadmap:** this half becomes the standalone `vibe-flow` Rust binary and
-> plugin in v0.4 — see the root [README](../README.md) and [.spec/plan.md](../.spec/plan.md). Everything below describes what ships today.
+> plugin in v0.4 — see the root [README](../README.md) and [docs/spec/plan.md](../docs/spec/plan.md). Everything below describes what ships today.
 
 > **For humans.** This README is the standalone guide to the flow half of vibe kit.
 > Agents route through [SKILL.md](SKILL.md) — the `vibe` skill router — instead.
 
-The **vibe flow** is a state-machine workflow for **Claude Code**. It turns a
-loose "coding with an agent" session into a disciplined arc: it routes each phase
+The **vibe flow** is a state-machine workflow that installs into **Claude Code,
+OpenCode, Codex, and Factory Droid**. It turns a loose "coding with an agent"
+session into a disciplined arc: it routes each phase
 (strategy / feature / quick) to the right skills and subagents, injects per-turn
 "orders" so the agent always knows the one job for the current state, and guards
 its own write invariants with hooks. It is Markdown and JSON, driven by bash hook
@@ -18,7 +19,9 @@ fall back to the frozen bash implementations in
 
 It is one of two halves. The other is [the spec framework](https://github.com/LennardZuendorf/vibe/blob/main/spec/README.md),
 which the flow drives for its authoring phases; the [root README](https://github.com/LennardZuendorf/vibe#readme)
-explains the split. This half needs Claude Code for the hooks to fire.
+explains the split. The hooks that give the flow its teeth fire on **Claude Code
+only**; on the other hosts the flow runs on its project files and skill entry
+point — see [Host entry points](#host-entry-points).
 
 ## Quickstart
 
@@ -28,17 +31,40 @@ explains the split. This half needs Claude Code for the hooks to fire.
 ```
 
 The installer copies the flow core into `<repo>/.agents/skills/vibe/`, merges the
-`AGENTS.md` instructions block, seeds + gitignores the flow cursor, and writes
-`.claude/settings.json` with four auto-wired hooks (`SessionStart`,
-`UserPromptSubmit`, `PreToolUse`, `Stop`). The `vibe` skill works as plain project
-files immediately;
+`AGENTS.md` instructions block, seeds + gitignores the flow cursor, and — on
+Claude Code — writes `.claude/settings.json` with four auto-wired hooks
+(`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `Stop`). The `vibe` skill works
+as plain project files immediately;
 the flow hooks activate as soon as the settings.json wiring is in place. `/flow`
-is a native project command — the local install needs no plugin registration (a
+is a native project command on Claude Code, OpenCode, and Factory Droid — the
+local install needs no plugin registration (a
 per-user plugin is available separately: `install.sh --global`). Check health any time:
 
 ```bash
 bash .agents/skills/vibe/scripts/doctor.sh   # warn-only, always exits 0
 ```
+
+## Host entry points
+
+One project install (`./install.sh <repo>`) configures the detected host CLIs on
+`PATH`; `--platform claude,opencode,codex,droid,none` selects hosts explicitly
+(comma-separated, last `--platform` wins, `none` exclusive, and an explicit list
+overrides detection). The state machine, the cursor, and the spec-root artifact
+paths are identical on every host — only the entry point differs.
+
+| Host | Start the flow workflow | Skill discovery | Wired per host |
+|---|---|---|---|
+| **Claude Code** | `/flow` (`.claude/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `.claude/skills/{spec,vibe}` | all four hooks, via `.claude/settings.json` |
+| **OpenCode** | `/flow` (`.opencode/commands/flow.md`) | `.agents/skills/{spec,vibe}` | no hooks |
+| **Codex** | skill invocation only: `$vibe` (or the skill picker `/skills`) — no synthetic `/flow` command | `.agents/skills/{spec,vibe}` + `plugins/vibe/skills` | no hooks; no native agent registration |
+| **Factory Droid** | `/flow` (`factory-plugin/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `factory-plugin/skills` | no hooks; no native droid registration |
+
+The **spec** half is skill-invoked on every host; no `/spec` command exists. Hooks
+are Claude Code-only in this slice: OpenCode, Codex, and Factory Droid get the
+skills and a workflow entry point, but the per-turn inject, the `PreToolUse`
+guard, and the `Stop` gate do not fire there, and no host gets native
+agent/droid registration. On a hookless host the flow still runs — `AGENTS.md`
+carries the rules as prose and the agent drives the state machine by hand.
 
 ## Day-to-day usage
 
@@ -232,7 +258,7 @@ Thin shells over `scripts/`; the allow/warn/block policy lives once in
 | `pre-tool-use-guard.sh` | `PreToolUse` (Edit/Write/NotebookEdit/Bash) | hard-blocks the three write invariants on **file-tool** calls; on `Bash` it only **warns** when a command looks like it writes a guarded path (see caveats below) |
 | `stop-gate.sh` | `Stop` | warn-first exit checks; blocks in `*.verify` without a fresh evidence receipt — with or without `jq` |
 
-Wired automatically by `install.sh` into `.claude/settings.json`; hook scripts resolve their data via `$CLAUDE_PROJECT_DIR`.
+Wired automatically by `install.sh` into `.claude/settings.json`; hook scripts resolve their data via `$CLAUDE_PROJECT_DIR`. Claude Code only — no other host gets hook wiring in this slice.
 
 The `SessionStart` hook single-sources the doctrine from the
 `<!-- vibe:doctrine -->` block in [SKILL.md](SKILL.md) — the one surface that
@@ -244,8 +270,9 @@ than the only carrier. Scope this honestly: the hook ships two ways — through 
 committed `.claude/settings.json` a local install writes, and through the
 **per-user plugin** (`install.sh --global` / `claude plugin install vibe@vibe`),
 whose self-detecting SessionStart hook carries the doctrine in every vibe-enabled
-repo. So `AGENTS.md` is optional **on Claude Code**; on hookless hosts (Codex,
-Warp) there are no hooks at all, so `AGENTS.md` stays the carrier there.
+repo. So `AGENTS.md` is optional **on Claude Code**; on hookless hosts (OpenCode,
+Codex, Factory Droid, Warp) there are no hooks at all, so `AGENTS.md` stays the
+carrier there.
 
 ## Write invariants (`content/policy.json`)
 
@@ -260,7 +287,7 @@ Neither restates the other, so the shipped text cannot drift from the enforcer.
 ```jsonc
 {
   "id": "lessons",
-  "match": ".spec/lessons.md",              // a literal path or a glob; an array is allowed
+  "match": "docs/spec/lessons.md",              // a literal path or a glob; an array is allowed
   "arms": [                                  // read top to bottom, first match wins
     { "states": ["feature.compound", "setup.apply", "strategy.spec", "quick.verify"],
       "verdict": "allow", "reason": "" },
@@ -273,8 +300,8 @@ Neither restates the other, so the shipped text cannot drift from the enforcer.
 Ask the policy anything, without a hook in the loop:
 
 ```bash
-node .agents/skills/vibe/engine/cli.mjs policy decide .spec/lessons.md          # verdict for the CURRENT cursor
-node .agents/skills/vibe/engine/cli.mjs policy decide .spec/product.md feature.impl  # …or for a named state
+node .agents/skills/vibe/engine/cli.mjs policy decide docs/spec/lessons.md          # verdict for the CURRENT cursor
+node .agents/skills/vibe/engine/cli.mjs policy decide docs/spec/product.md feature.impl  # …or for a named state
 node .agents/skills/vibe/engine/cli.mjs policy list                             # the loaded rules, one per line
 node .agents/skills/vibe/engine/cli.mjs policy render                           # the {{invariants}} prose
 ```
@@ -293,28 +320,28 @@ The shipped rules, in one sentence each:
 
 1. **`.agents/skills/vibe/state.json`** — blocked in every state; the cursor is
    written only by `set-state.sh`.
-2. **`.spec/lessons.md`** — blocked outside the flow-end states that carry the
+2. **`docs/spec/lessons.md`** — blocked outside the flow-end states that carry the
    conditional lesson step.
-3. **Root `.spec/{product,tech,design,plan}.md`** — blocked outside the states
+3. **Root `docs/spec/{product,tech,design,plan}.md`** — blocked outside the states
    that own the root specs.
-4. **`.spec/features/*`**, **`CLAUDE.md` / `AGENTS.md`**, **`src/*` + `tests/*`** —
+4. **`docs/spec/features/*`**, **`CLAUDE.md` / `AGENTS.md`**, **`src/*` + `tests/*`** —
    warn-only bands.
 
 The *authoritative* state lists are in the file, and `policy render` prints them;
 this README deliberately does not copy them.
 
 ```bash
-bash .agents/skills/vibe/scripts/detect-context.sh decide .spec/product.md
+bash .agents/skills/vibe/scripts/detect-context.sh decide docs/spec/product.md
 ```
 
 **What the teeth actually reach — three honest caveats:**
 
 1. **File tools only, plus a Bash warn.** The three hard blocks intercept
-   `Edit` / `Write` / `NotebookEdit`. A raw shell write (`echo >> .spec/lessons.md`,
+   `Edit` / `Write` / `NotebookEdit`. A raw shell write (`echo >> docs/spec/lessons.md`,
    `sed -i`, `tee`, `mv`/`cp`/`rm`) does **not** hit that path, so the guard also
    runs a warn-only Bash **sniffer**: it text-scans the command for a write-shaped
    op aimed at a guarded path and nudges. It never blocks (false positives are
-   certain), a pure read like `grep .spec/lessons.md` never warns, and a command
+   certain), a pure read like `grep docs/spec/lessons.md` never warns, and a command
    driving `set-state.sh` is never warned about `state.json`.
 2. **`set-state.sh` is a writer, not a gate.** It validates the target state
    *name* and writes the cursor; it does not enforce which edges are legal. Edge

@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 // engine/tests/policy.test.mjs — engine/policy.mjs (loadPolicy/decide/
 // renderInvariants) and its CLI surface, engine/commands/policy.mjs
 // (inject-triggers/1, fix round 1; inject-triggers/2 adds the last three
@@ -14,8 +15,8 @@
 // rather than a hand-copied sentence.
 //
 // Four things are under test:
-//   1. THE SHIPPED SIX ARMS — content/policy.json must model all six guarded
-//      arms of detect-context.sh's decide() (three block, three warn), each
+//   1. THE SHIPPED SEVEN RULES — content/policy.json must model all seven guarded
+//      arms of detect-context.sh's decide() (three block, four warn), each
 //      reproducing the oracle's own states AND reason string (including its
 //      `(current: $state)` suffix, interpolated) element for element.
 //   2. BASH-FAITHFUL MATCHING — a literal or glob pattern matches on any
@@ -87,13 +88,38 @@ const ALWAYS_RULE = (id, match, verdict, reason = `${id} always`) => ({
 const ARMS_RULE = (id, match, arms) => ({ id, match, arms });
 
 // ---------------------------------------------------------------------------
-// The shipped policy.json — all six guarded arms, byte-faithful to the oracle.
+// The shipped policy.json — all seven guarded arms, byte-faithful to the oracle.
 // ---------------------------------------------------------------------------
 
-test('shipped: content/policy.json loads with no errors and exactly six rules', () => {
+test('shipped: content/policy.json loads with no errors and exactly ten rules', () => {
   const { rules, errors } = loadPolicy(REPO_VIBE_DIR);
   assertEqual(errors, []);
-  assertEqual(rules.length, 6, `expected 6 shipped rules, got ${rules.length}`);
+  assertEqual(rules.length, 10, `expected 10 shipped rules, got ${rules.length}`);
+});
+
+test('shipped: every protected spec path is guarded under both roots (docs/spec and legacy)', () => {
+  const { rules } = loadPolicy(REPO_VIBE_DIR);
+  const policy = { rules };
+  const roots = ['docs/spec', '.spec']; // literal
+  for (const root of roots) {
+    for (const file of ['lessons.md']) {
+      assertEqual(decide(policy, `${root}/${file}`, 'idle').verdict, 'block', `${root}/${file} idle`);
+      assertEqual(decide(policy, `/abs/proj/${root}/${file}`, 'feature.impl').verdict, 'block', `abs ${root}/${file}`);
+      assertEqual(decide(policy, `${root}/${file}`, 'feature.compound').verdict, 'allow', `${root}/${file} compound`);
+    }
+    for (const file of ['product.md', 'tech.md', 'design.md', 'plan.md']) {
+      assertEqual(decide(policy, `${root}/${file}`, 'feature.impl').verdict, 'block', `${root}/${file} impl`);
+      assertEqual(decide(policy, `../${root}/${file}`, 'idle').verdict, 'block', `../${root}/${file} idle`);
+      assertEqual(decide(policy, `${root}/${file}`, 'strategy.spec').verdict, 'allow', `${root}/${file} strategy`);
+    }
+    for (const file of ['features/x/plan.md', 'features/x/y/z.md']) {
+      assertEqual(decide(policy, `${root}/${file}`, 'feature.impl').verdict, 'warn', `${root}/${file} impl`);
+      assertEqual(decide(policy, `${root}/${file}`, 'quick.fix').verdict, 'warn', `${root}/${file} fix`);
+      assertEqual(decide(policy, `${root}/${file}`, 'feature.design').verdict, 'allow', `${root}/${file} design`);
+    }
+    const reason = decide(policy, `${root}/lessons.md`, 'idle').reason;
+    assert(reason.startsWith(`${root}/lessons.md is writable only`), `reason names ${root}: ${reason}`);
+  }
 });
 
 test('shipped: state.json always blocks — no state admits a direct edit', () => {
@@ -150,6 +176,23 @@ test('shipped: .spec/features/* warns during impl/fix (nested paths too), allows
     assertEqual(decide(policy, file, 'feature.design').verdict, 'allow');
     assertEqual(decide(policy, file, 'idle').verdict, 'allow');
   }
+});
+
+test('shipped: docs/superpowers/specs/* warns during impl/fix (nested too), allows otherwise', () => {
+  const { rules } = loadPolicy(REPO_VIBE_DIR);
+  const policy = { rules };
+  for (const file of ['docs/superpowers/specs/2026-10-13-x-design.md', 'docs/superpowers/specs/sub/y-design.md']) {
+    const warned = decide(policy, file, 'feature.impl');
+    assertEqual(warned.verdict, 'warn');
+    assertEqual(
+      warned.reason,
+      'superpowers design docs are frozen during impl/fix — route back to feature.design to change scope (current: feature.impl)',
+    );
+    assertEqual(decide(policy, file, 'quick.fix').verdict, 'warn');
+    assertEqual(decide(policy, file, 'feature.design').verdict, 'allow');
+    assertEqual(decide(policy, file, 'idle').verdict, 'allow');
+  }
+  assertEqual(decide(policy, 'docs/superpowers/plans/2026-10-13-x.md', 'feature.impl').verdict, 'allow');
 });
 
 test('shipped: CLAUDE.md/AGENTS.md warns unconditionally, in every state', () => {
@@ -477,10 +520,12 @@ test('renderInvariants: an empty policy renders an empty string', () => {
 test('shipped: renderInvariants on content/policy.json produces one line per rule, in order', () => {
   const { rules } = loadPolicy(REPO_VIBE_DIR);
   const lines = renderInvariants({ rules }).split('\n');
-  assertEqual(lines.length, 6);
+  assertEqual(lines.length, 10);
   assertIncludes(lines[0], 'state.json');
-  assertIncludes(lines[1], 'lessons.md');
-  assertIncludes(lines[5], 'src/*');
+  assertIncludes(lines[1], '.spec/lessons.md'); // literal
+  assertIncludes(lines[2], 'docs/spec/lessons.md');
+  assertIncludes(lines[7], 'docs/superpowers/specs/*');
+  assertIncludes(lines[9], 'src/*');
 });
 
 // ---------------------------------------------------------------------------
@@ -597,11 +642,11 @@ test('cli end-to-end: `vibe policy --help` exits 0 and shows usage', () => {
   assertIncludes(result.stdout, 'usage: vibe policy');
 });
 
-test('cli end-to-end: `vibe policy list` against the real repo prints six rules', () => {
+test('cli end-to-end: `vibe policy list` against the real repo prints ten rules', () => {
   const result = runCli(['policy', 'list']);
   assertEqual(result.code, 0, `stderr: ${result.stderr}`);
-  assertIncludes(result.stdout, '6 rule(s)');
-  for (const id of ['cursor', 'lessons', 'root-specs', 'features-frozen', 'generated-docs', 'src-tests']) {
+  assertIncludes(result.stdout, '10 rule(s)');
+  for (const id of ['cursor', 'lessons', 'lessons-docs-spec', 'root-specs', 'root-specs-docs-spec', 'features-frozen', 'features-frozen-docs-spec', 'superpowers-frozen', 'generated-docs', 'src-tests']) {
     assertIncludes(result.stdout, id);
   }
 });
@@ -893,7 +938,8 @@ test('differential matrix: node absent changes nothing about the exit-code contr
 // the FIRST arm wins; the engine ranks every exact match above every glob
 // match irrespective of file order (policy.mjs, pinned by its own tests). The
 // two orders only ever disagree on a path that two rules both claim —
-// `.spec/features/AGENTS.md` is the only such shape the shipped six produce.
+// `.spec/features/AGENTS.md` and `docs/superpowers/specs/AGENTS.md` are the
+// two such shapes the shipped seven produce (the set is derived by `crossRulePaths`).
 //
 // This is pinned, not papered over, and the direction is what makes it
 // acceptable: the engine's verdict is never LESS strict than bash's. The

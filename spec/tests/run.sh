@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # spec/tests/run.sh — behaviour tests for the spec-framework SF0–SF4 units.
 # Pure bash; no bats dependency. Each test cites its plan unit ID (SF0…SF3, D9).
 #
@@ -664,8 +665,6 @@ test_skill_v2_frontmatter_fields() {
 test_skill_roles_section() {
   local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
   assert_contains "spec-skill-improvements/2" "SKILL.md has ## Roles" "$skill" "## Roles"
-  assert_contains "spec-skill-improvements/2" "Roles name spec-interviewer" "$skill" "spec-interviewer"
-  assert_contains "spec-skill-improvements/2" "Roles name spec-tracer" "$skill" "spec-tracer"
   assert_contains "spec-skill-improvements/2" "Roles name spec-promoter" "$skill" "spec-promoter"
   assert_contains "spec-skill-improvements/2" "Roles name spec-health" "$skill" "spec-health"
   assert_not_contains "spec-skill-improvements/2" "no phantom spec-architect" "$skill" "spec-architect"
@@ -674,16 +673,16 @@ test_skill_roles_section() {
   assert_not_contains "spec-skill-improvements/2" "no phantom spec-compactor" "$skill" "spec-compactor"
 }
 
-# ── fix-7: every Roles/delegates name has a real agents/<name>/SKILL.md file ──
+# ── fix-7: every Roles/delegates name has a real agents/<name>.md file ──
 test_skill_roles_have_agent_dirs() {
   local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
   local agent
-  for agent in spec-tracer spec-promoter spec-interviewer spec-health; do
+  for agent in spec-promoter spec-health; do
     assert_contains "fix-7" "SKILL.md names real subagent $agent" "$skill" "$agent"
-    if [[ -f "$SPEC_SKILL/agents/$agent/SKILL.md" ]]; then
-      pass "fix-7" "agents/$agent/SKILL.md exists"
+    if [[ -f "$SPEC_SKILL/agents/$agent.md" ]]; then
+      pass "fix-7" "agents/$agent.md exists"
     else
-      fail "fix-7" "agents/$agent/SKILL.md exists"
+      fail "fix-7" "agents/$agent.md exists"
     fi
   done
 }
@@ -1045,32 +1044,16 @@ test_openspec_docs_present() {
   assert_contains "spec-skill-improvements/11" "reference/product.md notes opt-in" "$product_ref" "opt-in"
 }
 
-# ── spec-skill-improvements: Unit 12 — spec-tracer read-only ─────────────────
-test_spec_tracer_read_only() {
-  local tracer; tracer="$(cat "$SPEC_SKILL/agents/spec-tracer/SKILL.md")"
-  assert_contains "spec-skill-improvements/12" "spec-tracer has allowed-tools" "$tracer" "allowed-tools"
-  assert_contains "spec-skill-improvements/12" "spec-tracer lists Read" "$tracer" "Read"
-  assert_not_contains "spec-skill-improvements/12" "spec-tracer has no Edit in allowed-tools" "$(grep -A5 'allowed-tools' "$SPEC_SKILL/agents/spec-tracer/SKILL.md" | head -5)" "Edit"
-  assert_not_contains "spec-skill-improvements/12" "spec-tracer has no Write in allowed-tools" "$(grep -A5 'allowed-tools' "$SPEC_SKILL/agents/spec-tracer/SKILL.md" | head -5)" "Write"
-}
-
 # ── spec-skill-improvements: Unit 13 — spec-promoter diff-first ──────────────
 test_spec_promoter_diff_first() {
-  local promoter; promoter="$(cat "$SPEC_SKILL/agents/spec-promoter/SKILL.md")"
-  assert_contains "spec-skill-improvements/13" "spec-promoter has dry-run language" "$promoter" "dry-run"
+  local promoter; promoter="$(cat "$SPEC_SKILL/agents/spec-promoter.md")"
+  assert_contains "spec-skill-improvements/13" "spec-promoter has dry-run language" "$promoter" "--dry-run"
   assert_contains "spec-skill-improvements/13" "spec-promoter has confirmation language" "$promoter" "confirm"
-}
-
-# ── spec-skill-improvements: Unit 14 — spec-interviewer constraint ────────────
-test_spec_interviewer_constraint_injection() {
-  local interviewer; interviewer="$(cat "$SPEC_SKILL/agents/spec-interviewer/SKILL.md")"
-  assert_contains "spec-skill-improvements/14" "spec-interviewer references Interview for WHAT" "$interviewer" "Interview for WHAT"
-  assert_contains "spec-skill-improvements/14" "spec-interviewer references brainstorming" "$interviewer" "brainstorming"
 }
 
 # ── spec-skill-improvements: Unit 15 — spec-health output levels ─────────────
 test_spec_health_output_levels() {
-  local health; health="$(cat "$SPEC_SKILL/agents/spec-health/SKILL.md")"
+  local health; health="$(cat "$SPEC_SKILL/agents/spec-health.md")"
   assert_contains "spec-skill-improvements/15" "spec-health has CRITICAL level" "$health" "CRITICAL"
   assert_contains "spec-skill-improvements/15" "spec-health has WARN level" "$health" "WARN"
   assert_contains "spec-skill-improvements/15" "spec-health has INFO level" "$health" "INFO"
@@ -1162,15 +1145,15 @@ EOF
 
 # ── spec-skill-improvements: Unit 17 — subagents folder wiring ───────────────
 test_subagents_folder_wiring() {
-  for agent in spec-tracer spec-promoter spec-interviewer spec-health; do
-    if [[ -f "$SPEC_SKILL/agents/$agent/SKILL.md" ]]; then
-      pass "spec-skill-improvements/17" "subagent SKILL.md exists: $agent"
+  for agent in spec-promoter spec-health; do
+    if [[ -f "$SPEC_SKILL/agents/$agent.md" ]]; then
+      pass "spec-skill-improvements/17" "agent file exists: $agent"
     else
-      fail "spec-skill-improvements/17" "subagent SKILL.md exists: $agent"
+      fail "spec-skill-improvements/17" "agent file exists: $agent"
     fi
   done
   local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
-  assert_contains "spec-skill-improvements/17" "root SKILL.md agents: map has spec-tracer" "$skill" "spec-tracer"
+  assert_contains "spec-skill-improvements/17" "root SKILL.md agents: map has spec-health" "$skill" "spec-health"
 }
 
 # ── spec-skill-improvements: Unit 18 — setup interview flow ──────────────────
@@ -1455,9 +1438,7 @@ test_scan_merges_unclosed_exits_nonzero
 test_scan_merges_unclosed_emits_valid_json
 test_scan_merges_empty_feature
 test_openspec_docs_present
-test_spec_tracer_read_only
 test_spec_promoter_diff_first
-test_spec_interviewer_constraint_injection
 test_spec_health_output_levels
 test_sf15_long_root_warns
 test_sf15_under_threshold_silent
@@ -1469,36 +1450,153 @@ test_config_section_present
 test_config_defaults_documented
 test_flow_mvp_4_template_hybrid_grammar
 
-# ── install-agnostic paths: skill files reference the validator skill-relative ──
-# Per agentskills.io, a SKILL.md references its bundled scripts relative to the
-# SKILL.md (e.g. `scripts/validate.sh`) so the reference is correct in EVERY install
-# model — vendored `.agents/skills/spec/`, `~/.agents/…` global, or a plugin cache.
-# A hard-coded `.agents/skills/spec/scripts/validate.sh` (or a `~/.agents/…`
-# enumeration) only resolves in one layout and silently breaks in the others.
-# Discriminating guard: fail if any spec skill doc reintroduces the absolute form.
-test_skill_validator_paths_relative() {
-  local docs=(
-    "$REPO_ROOT/spec/SKILL.md"
-    "$REPO_ROOT/spec/strategy.md"
-    "$REPO_ROOT/spec/feature.md"
-    "$REPO_ROOT/spec/agents/spec-health/SKILL.md"
-  )
-  local f bad=0
-  for f in ${docs[@]+"${docs[@]}"}; do
-    [[ -f "$f" ]] || continue
-    # The literal ~ is the offender pattern we search for, not a path to expand.
+# ── install-agnostic paths: skill files reference their scripts skill-relative ──
+# Per agentskills.io, skill docs reference bundled scripts/files relative to the skill
+# (`scripts/validate.sh`, or `${CLAUDE_SKILL_DIR}/scripts/…` in `!` commands), correct in
+# EVERY install model. Ban what the matcher catches: `.agents/skills/spec` and `~/.agents/skills/` paths.
+# R1: spec/README.md and spec/AGENTS.md are human-facing install/layout docs, excluded by exact path.
+test_skill_script_paths_relative() {
+  local f rel bad=0 scanned=0 excluded=0 total floor names=()
+  local s; for s in "$REPO_ROOT"/spec/scripts/*.sh; do names+=("$(basename "$s")"); done
+  total="$(find "$REPO_ROOT/spec" -name '*.md' -not -path '*/tests/*' | wc -l | tr -d ' ')"
+  while IFS= read -r f; do
+    rel="${f#"$REPO_ROOT"/}"
+    case "$rel" in
+      spec/README.md|spec/AGENTS.md) excluded=$((excluded + 1)); continue ;;
+    esac
+    scanned=$((scanned + 1))
     # shellcheck disable=SC2088
-    if grep -qF '.agents/skills/spec/scripts/validate.sh' "$f" || grep -qF '~/.agents/skills/' "$f"; then
-      bad=$((bad + 1)); echo "        offender: ${f#"$REPO_ROOT"/}"
+    if grep -qF '.agents/skills/spec' "$f" || grep -qF '~/.agents/skills/' "$f"; then
+      bad=$((bad + 1)); echo "        offender: $rel"
     fi
-  done
-  if [[ "$bad" -eq 0 ]]; then
-    pass "install-agnostic-paths" "spec skill files reference validate.sh skill-relative (no install-absolute path)"
+  done < <(find "$REPO_ROOT/spec" -name '*.md' -not -path '*/tests/*')
+  floor=10
+  if [[ ${#names[@]} -lt 7 || $scanned -lt $floor || $((scanned + excluded)) -ne $total || $excluded -ne 2 ]]; then
+    fail "install-agnostic-paths" "guard examined too little (scanned=$scanned excluded=$excluded total=$total, scripts=${#names[@]})"
+  elif [[ $bad -eq 0 ]]; then
+    pass "install-agnostic-paths" "$scanned spec docs reference ${#names[@]} scripts skill-relative ($excluded install docs excluded)"
   else
-    fail "install-agnostic-paths" "spec skill files still hard-code an install-absolute validate.sh path"
+    fail "install-agnostic-paths" "$bad spec doc(s) hard-code an install-absolute script path"
   fi
 }
-test_skill_validator_paths_relative
+test_skill_script_paths_relative
+
+# ── F1: spec scripts resolve the project root from cwd, never from their own path ──
+test_f1_subdir_invocation() {
+  local out rc
+  # The legacy bash validator reads only `.spec/`; probe a fixture project, not this repo.
+  local fx; fx="$(mktemp -d)"; mkdir -p "$fx/.git" "$fx/.spec" "$fx/flow"
+  out="$(cd "$fx/flow" && bash "$REPO_ROOT/spec/scripts/validate.sh" 2>&1)"; rc=$?
+  rm -rf "$fx"
+  if grep -qF "Validating .spec/" <<<"$out" && ! grep -qF "No .spec/ directory found" <<<"$out"; then
+    pass F1 "validate.sh from flow/ resolves the project .spec/"
+  else
+    fail F1 "validate.sh from flow/ resolves the project .spec/ (rc=$rc)"
+  fi
+}
+test_f1_subdir_invocation
+
+test_f1_plugin_cache_layout() {
+  local tmp proj cache s out rc bad=0 marker
+  tmp="$(mktemp -d)"; proj="$tmp/proj"; cache="$tmp/cache/spec"
+  mkdir -p "$proj/src/deep" "$cache"
+  cp -R "${F1_SCRIPTS_DIR:-$REPO_ROOT/spec/scripts}" "$cache/scripts"
+  (cd "$proj" && git init -q . && bash "$cache/scripts/setup.sh" >/dev/null 2>&1)
+  if [[ ! -d "$proj/.spec" ]]; then
+    rm -rf "$tmp"; fail F1 "fixture setup failed: git init + setup.sh did not create .spec/"; return
+  fi
+  mkdir -p "$proj/.spec/features/f1feat"
+  printf '%s\n' '# Lessons' '' '### f1-fixture-lesson' '**Tags:** alpha' >"$proj/.spec/lessons.md"
+  printf '%s\n' '# Tech' '' '<!-- merge -->' 'f1-merge-preview' '<!-- /merge -->' >"$proj/.spec/features/f1feat/tech.md"
+  for s in validate list-specs lessons-for scan-merges; do
+    case "$s" in
+      validate) marker="lessons.md: checked" ;;
+      list-specs) marker="- lessons.md [lessons]" ;;
+      lessons-for) marker="f1-fixture-lesson" ;;
+      scan-merges) marker="f1-merge-preview" ;;
+    esac
+    if [[ "$s" == lessons-for ]]; then
+      out="$(cd "$proj/src/deep" && bash "$cache/scripts/$s.sh" alpha 2>&1)"; rc=$?
+    else
+      out="$(cd "$proj/src/deep" && bash "$cache/scripts/$s.sh" 2>&1)"; rc=$?
+    fi
+    if [[ "$out" != *"$marker"* ]] || grep -qF "No .spec/ directory found" <<<"$out"; then
+      bad=$((bad + 1)); echo "        offender: $s (rc=$rc, missing marker: $marker)"
+    fi
+  done
+  rm -rf "$tmp"
+  if [[ $bad -eq 0 ]]; then pass F1 "4 scripts from a plugin-cache path + nested cwd read the project .spec/ (positive markers)"
+  else fail F1 "$bad script(s) failed to read the project .spec/ from a nested cwd"
+  fi
+}
+test_f1_plugin_cache_layout
+
+test_f1_git_boundary() {
+  local tmp out s bad=0
+  tmp="$(mktemp -d)"; mkdir -p "$tmp/outer/.spec/features/f1feat" "$tmp/outer/inner/sub"
+  printf '%s\n' '<!-- merge -->' 'f1-merge-preview' '<!-- /merge -->' >"$tmp/outer/.spec/features/f1feat/tech.md"
+  printf '%s\n' '### f1-fixture-lesson' '**Tags:** alpha' >"$tmp/outer/.spec/lessons.md"
+  (cd "$tmp/outer/inner" && git init -q .)
+  for s in validate list-specs lessons-for scan-merges; do
+    out="$(cd "$tmp/outer/inner/sub" && bash "$REPO_ROOT/spec/scripts/$s.sh" alpha 2>&1)" || true
+    case "$s" in
+      validate|list-specs) [[ "$out" == *"No .spec/ directory found"* ]] || { bad=$((bad + 1)); echo "        offender: $s"; } ;;
+      *) [[ "$out" != *"f1-merge-preview"* && "$out" != *"f1-fixture-lesson"* ]] || { bad=$((bad + 1)); echo "        offender: $s"; } ;;
+    esac
+  done
+  rm -rf "$tmp"
+  if [[ $bad -eq 0 ]]; then pass F1 "root search stops at the .git boundary for all 4 scripts"
+  else fail F1 "root search crossed the .git boundary in $bad script(s)"
+  fi
+}
+test_f1_git_boundary
+
+# ── SF17/F25: description is trigger-first (superpowers style) and within budget ──
+test_sf17_description_budget() {
+  local desc chars
+  desc="$(awk '/^description:/{f=1; sub(/^description:[[:space:]]*\|?[[:space:]]*/,""); if(length) print; next} f && /^[a-z_-]+:/{exit} f{sub(/^[[:space:]]+/,""); print}' "$SPEC_SKILL/SKILL.md" | tr '\n' ' ')"
+  chars="${#desc}"
+  if [[ $chars -gt 20 && $chars -le 1024 ]] && grep -qE '^(You MUST use this|Use when)' <<<"$desc" && ! grep -qF 'Maintains' <<<"$desc"; then
+    pass SF17 "description is trigger-first and within budget ($chars chars)"
+  else
+    fail SF17 "description is trigger-first and within budget ($chars chars)"
+  fi
+}
+test_sf17_description_budget
+
+test_f25_voice() {
+  local f hits=0 scanned=0
+  for f in "$SPEC_SKILL"/SKILL.md "$SPEC_SKILL"/feature.md "$SPEC_SKILL"/strategy.md "$SPEC_SKILL"/reference/*.md; do
+    [[ -f "$f" ]] || continue; scanned=$((scanned + 1))
+    hits=$((hits + $(grep -ciE '\b(you may want to|consider (using|adding)|it might be|feel free|optionally consider)\b' "$f" || true)))
+  done
+  grep -qxF 'Fallback feature flow. Run this only when the spec skill'"'"'s Routing table sends you here.' "$SPEC_SKILL/feature.md" || hits=$((hits + 1))
+  if [[ $scanned -lt 7 ]]; then fail F25 "voice check examined $scanned files (floor 7)"
+  elif [[ $hits -eq 0 ]]; then pass F25 "skill docs use imperative voice ($scanned files)"
+  else fail F25 "$hits hedge phrase(s) or missing fallback header"; fi
+}
+test_f25_voice
+
+# ── Task P4-5: spec hook shim + generated plugin hooks (own suite) ──────────
+test_hooks_suite() {
+  local out rc
+  out="$(bash "$REPO_ROOT/spec/tests/hooks.sh" 2>&1)"; rc=$?
+  printf '%s\n' "$out"
+  if [[ $rc -eq 0 ]]; then pass HOOKS "spec/tests/hooks.sh passes"; else fail HOOKS "spec/tests/hooks.sh passes"; fi
+}
+test_hooks_suite
+
+# ── Task P4-6: agents + plugin validation (own suites) ──────────────────────
+test_agents_suites() {
+  local out rc
+  out="$(bash "$REPO_ROOT/spec/tests/agents.sh" 2>&1)"; rc=$?
+  printf '%s\n' "$out"
+  if [[ $rc -eq 0 ]]; then pass AGENTS "spec/tests/agents.sh passes"; else fail AGENTS "spec/tests/agents.sh passes"; fi
+  out="$(bash "$REPO_ROOT/spec/tests/plugin-validate.sh" 2>&1)"; rc=$?
+  printf '%s\n' "$out"
+  if [[ $rc -eq 0 ]]; then pass PLUGIN "spec/tests/plugin-validate.sh passes"; else fail PLUGIN "spec/tests/plugin-validate.sh passes"; fi
+}
+test_agents_suites
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

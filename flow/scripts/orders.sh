@@ -31,15 +31,15 @@ SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Resolve the skills dir (where sibling skills like vibe + spec live) from the
 # script's own location — never from a repo-root marker, which a freshly-installed
-# target may not have yet (no .git, no .spec). In an installed target and via the
+# target may not have yet (no .git, no .spec). In an installed target and via the # literal
 # .agents/skills/vibe symlink alias, the skill's own parent IS the skills dir. Only
 # the source repo's canonical flow/ path is different (SKILL_DIR is flow/, whose
 # parent is the repo root) — detected because its parent does not contain vibe/ —
-# and there the .spec/.git marker is always present, so fall back to a marker walk.
+# and there the .spec/.git marker is always present, so fall back to a marker walk. # literal
 find_repo_root() {
   local d="$1"
   while [[ -n "$d" && "$d" != "/" ]]; do
-    if [[ -d "$d/.spec" || -e "$d/.git" ]]; then printf '%s\n' "$d"; return 0; fi
+    if [[ -d "$d/docs/spec" || -d "$d/.spec" || -e "$d/.git" ]]; then printf '%s\n' "$d"; return 0; fi # literal
     d="$(dirname "$d")"
   done
   return 1

@@ -1,0 +1,1 @@
+{"v":1,"from":".spec","to":"docs/spec","moves":[{"from":".spec","to":"docs/spec"}],"rewrites":[{"file":"docs/spec/product.md","line":9,"old":"See .spec/tech.md","new":"See docs/spec/tech.md"}],"created":[],"markers":[],"dry_run":true}

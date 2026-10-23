@@ -1,0 +1,11 @@
+{
+  "cwd": "src/deep",
+  "runs": {
+    "lessons-for": [
+      [
+        "bash"
+      ]
+    ]
+  },
+  "v": 1
+}

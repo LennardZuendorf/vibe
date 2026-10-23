@@ -1,0 +1,1 @@
+{"v":1,"from":"docs/spec","to":"docs/spec","moves":[],"rewrites":[{"file":"README.md","line":3,"old":"see .spec/x.md","new":"see docs/spec/x.md"}],"created":[],"markers":[],"dry_run":false,"check":true}

@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 // engine/tests/content.test.mjs — the content & injection layer (content.mjs)
 // plus the write half of the marker grammar it leans on (blocks.mjs).
 //
@@ -462,6 +463,35 @@ test('content: {{lessons:TAG}} pulls tagged lesson titles from the configured le
     assertEqual(renderChannel('user-prompt', sb.ctx).text, '- First lesson\n');
   } finally {
     sb.cleanup();
+  }
+});
+
+test('content: the docs/spec lessons source reads docs/spec first and falls back to the legacy root', () => {
+  const body = '### First lesson\n**Tags:** inject\n';
+  const make = () =>
+    makeContentSandbox({
+      defaults: {
+        version: 1,
+        sources: { lessons: 'docs/spec/lessons.md' },
+        channels: { 'user-prompt': { render: 'summary', blocks: ['a.one'] } },
+      },
+      blocks: { 'a/one.md': BLOCK('a.one', '{{lessons:inject}}') },
+    });
+  const legacy = make();
+  try {
+    writeFileSync(path.join(legacy.dir, '.spec', 'lessons.md'), body); // literal
+    assertEqual(renderChannel('user-prompt', legacy.ctx).text, '- First lesson\n');
+  } finally {
+    legacy.cleanup();
+  }
+  const both = make();
+  try {
+    mkdirSync(path.join(both.dir, 'docs', 'spec'), { recursive: true });
+    writeFileSync(path.join(both.dir, 'docs', 'spec', 'lessons.md'), '### New root\n**Tags:** inject\n');
+    writeFileSync(path.join(both.dir, '.spec', 'lessons.md'), body); // literal
+    assertEqual(renderChannel('user-prompt', both.ctx).text, '- New root\n');
+  } finally {
+    both.cleanup();
   }
 });
 

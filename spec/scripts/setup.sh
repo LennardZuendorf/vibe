@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # Initialize a .spec/ directory in the current project
 # Copies templates as starting points for product, tech, design, and plan entrypoints
 
@@ -140,5 +141,5 @@ echo "    Root entrypoints:        $TEMPLATE_DIR/{product,tech,design,plan}.md"
 echo "    Feature specs:           $TEMPLATE_DIR/feature-{product,tech}.md plus optional design.md"
 echo "    Cross-cutting branches:  derive from root templates and rename product-/tech-/plan-<topic>.md"
 echo ""
-echo "  Validate anytime: bash .agents/skills/spec/scripts/validate.sh"
+echo "  Validate anytime: bash $SCRIPT_DIR/validate.sh"
 echo ""

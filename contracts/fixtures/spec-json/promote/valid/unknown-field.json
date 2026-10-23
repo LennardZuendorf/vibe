@@ -1,0 +1,1 @@
+{"v":1,"feature":"auth","dry_run":false,"artifacts":["docs/superpowers/plans/2026-01-14-auth.md"],"checklist":[{"what":"rules","target":".spec/tech.md"}],"deleted":[],"took_ms":1}

@@ -1,3 +1,4 @@
+// vibe-spec: literal-file
 // engine/tests/runner.test.mjs — the runner must fail loud, not report green
 // on a broken selection: a filter matching zero tests, or discovery finding
 // zero test files at all, must both exit non-zero with a stated reason.

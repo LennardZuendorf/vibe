@@ -1,9 +1,24 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # Validate .spec/ documents for consistency
 # Checks: frontmatter, cross-references, naming conventions, orphaned files,
 #         feature-folder structure, design tokens (SF3), optional design lint (SF4)
 
 set -euo pipefail
+
+# Resolve the project's spec root from the caller's cwd (never from this
+# script's own path — under a plugin install the script lives in a cache).
+# Walk up to the directory holding .git, no further (D33).
+find_spec_root() {
+  local d; d="$(pwd -P)"
+  while :; do
+    if [[ -d "$d/.spec" ]]; then printf '%s\n' "$d"; return 0; fi
+    [[ -e "$d/.git" || "$d" == "/" ]] && return 1
+    d="$(dirname "$d")"
+  done
+}
+SELF_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if SPEC_ROOT_DIR="$(find_spec_root)"; then cd "$SPEC_ROOT_DIR"; fi
 
 SPEC_DIR=".spec"
 ERRORS=0
@@ -421,7 +436,7 @@ echo "Validating $SPEC_DIR/..."
 echo ""
 
 if [[ ! -d "$SPEC_DIR" ]]; then
-  red "No .spec/ directory found. Run setup first: bash .agents/skills/spec/scripts/setup.sh"
+  red "No .spec/ directory found. Run setup first: bash $SELF_DIR/setup.sh"
   exit 1
 fi
 

@@ -23,7 +23,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.19'
 
       - name: No runtime dependencies (zero-dep engine contract)
         run: |
@@ -41,8 +41,18 @@ jobs:
           fi
           shellcheck --version
 
-      - name: Shellcheck (all tracked *.sh)
-        run: git ls-files '*.sh' | xargs shellcheck
+      # oracles/bash and oracles/js are byte-frozen (F3): a newer shellcheck
+      # must never force an edit there, so the frozen copies are excluded.
+      # oracles/check.sh is live code and stays linted. The live originals of
+      # the frozen copies are linted until they are retired.
+      - name: Shellcheck (all tracked *.sh except frozen oracles)
+        run: git ls-files '*.sh' | grep -Ev '^oracles/(bash|js)/' | xargs shellcheck
+
+      - name: Frozen oracles match MANIFEST.sha256
+        run: bash oracles/check.sh
+
+      - name: Contracts (schemas, goldens, exit codes)
+        run: bash contracts/run.sh
 
       # js-core/8 fix round 2 (re-review Finding 5): this leg is the one that is
       # SUPPOSED to have jq — the whole jq half of the parity matrix (30 legs
@@ -59,8 +69,13 @@ jobs:
           fi
           jq --version
 
-      # Runs all four suites (spec, flow, adapters, engine) via the combined
-      # aggregator — see tests/run.sh.
+      # tests/run.sh builds and runs vibe-spec (literals suite, live checks), so
+      # the pinned toolchain must be installed before its first run.
+      - name: Toolchain (pinned by rust-toolchain.toml)
+        run: rustup toolchain install
+
+      # Runs all six suites (spec, flow, adapters, engine, oracles,
+      # contracts) via the combined aggregator — see tests/run.sh.
       - name: Test suites
         run: bash tests/run.sh
 
@@ -108,11 +123,17 @@ jobs:
           CLAUDE_PROJECT_DIR: ${{ github.workspace }}
         run: bash tests/run.sh
 
+      # P4-R17: the bash spec scripts hard-code the legacy root, so this repo's own
+      # tree is checked by vibe-spec itself, on whichever root it sits.
       - name: Spec validation
-        run: bash .agents/skills/spec/scripts/validate.sh
+        run: cargo run -q --locked -p vibe-spec -- validate --strict
 
       - name: Drift gate (compound + doc drift)
-        run: bash spec/scripts/check-drift.sh
+        run: cargo run -q --locked -p vibe-spec -- check-drift
+
+      # F20: zero legacy-root literals in the configured migrate set.
+      - name: Migrate sweep (zero literals)
+        run: cargo run -q --locked -p vibe-spec -- migrate --to docs/spec --check
 
   macos:
     # js-core/8: stock macOS ships bash 3.2 (Apple freezes it at the last
@@ -133,7 +154,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '20.19'
 
       - name: System bash is really 3.2 (sanity — this job is pointless otherwise)
         # Asserts, not just prints: if Apple or the runner image ever ships a
@@ -150,5 +171,101 @@ jobs:
       - name: Ensure jq (not preinstalled on every macOS image)
         run: command -v jq >/dev/null 2>&1 || brew install jq
 
+      - name: Toolchain (pinned by rust-toolchain.toml)
+        run: rustup toolchain install
+
       - name: Test suites (via the real macOS /bin/bash, not Homebrew's)
         run: /bin/bash tests/run.sh
+
+  rust-check:
+    # F4: format, lint and dependency policy. cargo-deny enforces deny.toml:
+    # banned crates, licenses, sources, duplicate versions, advisories.
+    name: rust — fmt, clippy, deny
+    runs-on: ubuntu-latest
+    env:
+      # fmt and clippy run on stable, the toolchain they were authored
+      # against; rust-test's 1.88 leg proves MSRV.
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+
+  rust-test:
+    # F4: unit + integration tests on 3 OS × stable + MSRV. RUSTUP_TOOLCHAIN
+    # overrides rust-toolchain.toml so the stable leg really runs stable.
+    # Tests that spawn bash or compare the corpus byte-for-byte are
+    # cfg(unix); Windows runs the rest.
+    name: rust — test (${{ matrix.os }}, ${{ matrix.toolchain }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        toolchain: [stable, '1.88']
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Toolchain
+        run: rustup toolchain install ${{ matrix.toolchain }} --profile minimal
+
+      - name: Test
+        run: cargo test --workspace --locked --no-fail-fast
+
+  parity:
+    # F3/F16: the frozen spec oracles against themselves and against the
+    # vibe-spec candidate over the generated corpus. The live leg (this repo's
+    # own tree) is retired: oracle bash cannot read docs/spec (P4-R17).
+    name: parity — spec oracles vs vibe-spec
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Toolchain (pinned by rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - name: Spec parity (self-check, candidate)
+        run: bash tests/parity/run.sh
+
+  openspec:
+    # F18 (P3c-R17): OpenSpec's own validator accepts vibe-spec's export of
+    # tests/openspec/fixture and rejects a broken one. Pinned CLI via npx.
+    name: openspec — validate an export
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
+      - name: Toolchain (pinned by rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - name: OpenSpec gate
+        run: bash tests/openspec/run.sh

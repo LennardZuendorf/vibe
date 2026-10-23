@@ -1,4 +1,4 @@
-// engine/policy.mjs — loadPolicy()/decide()/renderInvariants(): the six
+// engine/policy.mjs — loadPolicy()/decide()/renderInvariants(): the seven
 // guarded-path arms of flow/scripts/detect-context.sh's `decide()` as data,
 // replacing a hardcoded bash guard. A later unit wires that guard to
 // delegate here and adds a differential matrix over every guarded path; this
@@ -18,7 +18,7 @@
 //
 // A LITERAL pattern additionally matches on any PATH-BOUNDARY SUFFIX of the
 // queried path, not only a full-string match. detect-context.sh guards every
-// one of its six arms with the same `PATTERN|*/PATTERN` idiom — "the bare
+// one of its seven arms with the same `PATTERN|*/PATTERN` idiom — "the bare
 // path, or the bare path preceded by anything and a `/`" — so an absolute
 // path, a `../`-prefixed one, or one sitting under an extra directory all
 // still hit the rule the bare relative path hits. Reproducing that here as a
@@ -289,8 +289,8 @@ export function decide(policy, relPath, state) {
   const rules = policy && Array.isArray(policy.rules) ? policy.rules : [];
   if (rules.length === 0) return ALLOW_UNMATCHED;
 
-  // Normalize before matching: `.spec/./lessons.md` and `.spec//lessons.md` name
-  // the same file as `.spec/lessons.md`, and a hard block any of those spellings
+  // Normalize before matching: `.spec/./lessons.md` and `.spec//lessons.md` name // literal
+  // the same file as `.spec/lessons.md`, and a hard block any of those spellings // literal
   // walks around is not a block.
   const rawPath = typeof relPath === 'string' ? relPath : '';
   const normalizedPath = rawPath ? posixNormalize(rawPath) : '';

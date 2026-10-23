@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # flow/tests/run.sh — behaviour tests for the vibe-flow core: the state machine,
 # set-state.sh / validate-state.sh, D12 orders (orders.sh + per-skill blocks),
 # and graceful degradation (check-skills.sh). Pure bash; no bats.
@@ -355,7 +356,7 @@ assert_eq "flow-mvp/5" "every machine delegate appears verbatim in its phase fil
 # now lives inline in quick.verify, not a separate per-phase compound state): it appends
 # to .spec/lessons.md and refreshes the digest before going idle.
 quick_body="$(cat "$FLOW/quick.md")"
-assert_contains "simplify/dead-states" "quick.md carries the inline lesson step (lessons.md)" "$quick_body" ".spec/lessons.md"
+assert_contains "simplify/dead-states" "quick.md carries the inline lesson step (lessons.md)" "$quick_body" "docs/spec/lessons.md"
 assert_contains "simplify/dead-states" "quick.md refreshes the digest inline" "$quick_body" "regen-active-rules.sh"
 assert_not_contains "simplify/dead-states" "quick.md no longer names the dead quick compound state" "$quick_body" "$dead_qc"
 
@@ -458,6 +459,23 @@ assert_contains "flow-legibility/3" "code-architect pinned to opus (feature.md)"
 assert_contains "flow-legibility/3" "code-reviewer pinned to opus (verify.md)" "$verify_body" "code-reviewer → opus"
 assert_contains "flow-legibility/3" "SKILL.md carries the subagent model-tier policy" "$skill_body" "mechanical/exploration → sonnet"
 
+feat_body="$(cat "$FLOW/feature.md")"
+assert_not_contains "spec-v04/F25" "feature.md no longer skips the superpowers spec write" "$feat_body" "skip: its terminal write under \`docs/superpowers/specs/\`"
+assert_not_contains "spec-v04/F25" "feature.md no longer skips the superpowers plan path" "$feat_body" "skip: its own \`docs/superpowers/plans/\` path"
+assert_contains "spec-v04/F25" "feature.md names the fallback triggers" "$feat_body" "fallback → \`docs/spec/features/<name>/\` only when"
+machine="$(cat "$FLOW/state-machine.json")"
+assert_contains "spec-v04/F25" "feature.design writes the superpowers spec" "$machine" "docs/superpowers/specs/*-<feature>-design.md"
+assert_contains "spec-v04/F25" "feature.plan writes the superpowers plan" "$machine" "docs/superpowers/plans/*-<feature>.md"
+assert_not_contains "spec-v04/F25" "feature.md has no unqualified .spec/features write rule" "$feat_body" "Write **only** \`.spec/features/"
+unq_steps="$(grep -F 'feature.md steps' "$FLOW/feature.md" | grep -vF 'fallback' || true)"
+assert_eq "spec-v04/F25" "feature.md injects no unqualified spec feature.md steps" "$unq_steps" ""
+unq_prod="$(grep -F 'product.md' "$FLOW/feature.md" | grep -F 'requirements' | grep -vF 'fallback' || true)"
+assert_eq "spec-v04/F25" "feature.md injects no unqualified product.md requirements" "$unq_prod" ""
+assert_contains "spec-v04/F25" "feature.impl orders forbid editing the superpowers spec" "$(bash "$SCRIPTS/orders.sh" feature.impl)" "docs/superpowers/specs/**"
+assert_contains "spec-v04/F25" "feature.compound orders promote then git rm" "$(bash "$SCRIPTS/orders.sh" feature.compound)" "root specs, git rm them"
+assert_contains "spec-v04/F25" "template carries the superpowers feature lookup" "$(cat "$FLOW/reference/templates/AGENTS.md")" "docs/superpowers/specs/*-<name>-design.md"
+assert_contains "spec-v04/F25" "AGENTS.md managed block carries the superpowers feature lookup" "$(cat "$SRC_ROOT/AGENTS.md")" "docs/superpowers/specs/*-<name>-design.md"
+
 echo ""
 echo "=== flow-legibility/4 — doctrine block + resolver ==="
 # Hermeticity precondition for everything below. doctrine.sh (and detect-context.sh)
@@ -473,7 +491,7 @@ rm -f "$STATE"
 doc="$(bash "$SCRIPTS/doctrine.sh")"
 assert_contains "flow-legibility/4" "doctrine names the two human gates" "$doc" "plan → impl, and verify → ship"
 assert_contains "flow-legibility/4" "doctrine carries the durable/ephemeral framing" "$doc" "sessions are ephemeral"
-assert_contains "flow-legibility/4" "doctrine states the session-start reads" "$doc" ".spec/lessons.md"
+assert_contains "flow-legibility/4" "doctrine states the session-start reads" "$doc" "docs/spec/lessons.md"
 assert_contains "flow-legibility/4" "doctrine states the state.json write invariant" "$doc" ".agents/skills/vibe/state.json"
 # inject-triggers/5 (R4): NO live state rides SessionStart output — Claude Code
 # replays that output verbatim on --resume, so a cursor line printed here is
@@ -835,7 +853,7 @@ echo ""
 echo "=== install-tooling/4 — doctor adapter.activation (settings.json wiring) ==="
 # A full install wires the three hooks into settings.json — doctor reports ok.
 SBA="$(mktemp -d)"
-bash "$SRC_ROOT/install.sh" "$SBA" >/dev/null 2>&1
+bash "$SRC_ROOT/install.sh" "$SBA" --platform claude >/dev/null 2>&1
 out="$(bash "$DOCTOR" "$SBA" 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/4" "doctor reports adapter.activation ok when settings.json wires the hooks" "$out" "ok   adapter.activation"
 assert_contains "install-tooling/4" "doctor exits 0 on a wired install" "$out" "rc=0"
@@ -898,6 +916,12 @@ out="$(bash "$DETECT" decide .spec/features/widget/tech.md feature.design)"
 assert_eq "flow-mvp/3" "decide .spec/features still allows under feature.design" "$out" "allow"
 out="$(bash "$DETECT" decide .spec/features/widget/plan.md feature.plan)"
 assert_eq "flow-mvp/3" "decide .spec/features still allows under feature.plan" "$out" "allow"
+out="$(bash "$DETECT" decide docs/superpowers/specs/2026-10-13-w-design.md feature.impl)"
+assert_contains "spec-v04/F25" "decide superpowers spec warns under feature.impl" "$out" "warn:"
+out="$(bash "$DETECT" decide docs/superpowers/specs/sub/w-design.md quick.fix)"
+assert_contains "spec-v04/F25" "decide nested superpowers spec warns under quick.fix" "$out" "warn:"
+out="$(bash "$DETECT" decide docs/superpowers/specs/2026-10-13-w-design.md feature.design)"
+assert_eq "spec-v04/F25" "decide superpowers spec allows under feature.design" "$out" "allow"
 
 echo ""
 echo "=== detect-context.sh — no-jq cursor read stays state-aware ==="
@@ -950,7 +974,7 @@ echo "=== orders.sh on a fresh non-git install (stranger-eval regression) ==="
 # resolve the linked skill's block by self-locating the skills dir from its own
 # path — not degrade to 'state=unknown' for want of a repo-root marker.
 SBI="$(mktemp -d)"
-bash "$SRC_ROOT/install.sh" "$SBI" >/dev/null 2>&1
+bash "$SRC_ROOT/install.sh" "$SBI" --platform none >/dev/null 2>&1
 [[ ! -e "$SBI/.git" && ! -e "$SBI/.spec" ]] \
   && pass "orders-fresh" "fresh install has no .git/.spec marker (precondition)" \
   || fail "orders-fresh" "precondition: fresh install unexpectedly has a marker"
@@ -995,6 +1019,7 @@ mk_gate_sbx() {
     git -C "$s" init -q
     git -C "$s" config user.email t@t.test
     git -C "$s" config user.name test
+    git -C "$s" config commit.gpgsign false
     git -C "$s" add -A
     git -C "$s" commit -q -m init
   fi
@@ -1202,11 +1227,44 @@ out="$(run_guard "$gsbx" '{"tool_name":"Edit","tool_input":{"file_path":".spec/l
 assert_contains "review-fix" "Edit-tool lessons.md under idle still hard-blocks (exit 2)" "$out" "rc=2"
 assert_contains "review-fix" "Edit-tool behavior unchanged (BLOCKED message)" "$out" "BLOCKED"
 
+# spec-v04 P4-R16: docs/spec is a second spec root; every rule has its twin.
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"echo x >> docs/spec/lessons.md"}}')"
+assert_contains "spec-v04/p4" "bash 'echo >> docs/spec/lessons.md' warns" "$out" "warn"
+assert_contains "spec-v04/p4" "bash docs/spec lessons-write warn names the path" "$out" "docs/spec/lessons.md"
+assert_contains "spec-v04/p4" "bash docs/spec sniffer never blocks (exit 0)" "$out" "rc=0"
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"grep foo docs/spec/lessons.md"}}')"
+assert_not_contains "spec-v04/p4" "bash 'grep docs/spec/lessons.md' (a read) does NOT warn" "$out" "warn"
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"sed -i s/a/b/ docs/spec/product.md"}}')"
+assert_contains "spec-v04/p4" "bash 'sed -i docs/spec/product.md' warns (root spec)" "$out" "warn"
+out="$(run_guard "$gsbx" '{"tool_name":"Edit","tool_input":{"file_path":"docs/spec/lessons.md"}}')"
+assert_contains "spec-v04/p4" "Edit-tool docs/spec/lessons.md under idle hard-blocks (exit 2)" "$out" "rc=2"
+assert_contains "spec-v04/p4" "docs/spec/lessons.md block message names the path" "$out" "docs/spec/lessons.md is writable only"
+dc="$gsbx/.agents/skills/vibe/scripts/detect-context.sh"
+assert_eq "spec-v04/p4" "detect-context blocks docs/spec/lessons.md in idle" \
+  "$(bash "$dc" decide docs/spec/lessons.md idle 2>&1 | cut -c1-31)" "block:docs/spec/lessons.md is w"
+assert_eq "spec-v04/p4" "detect-context allows docs/spec/lessons.md in feature.compound" \
+  "$(bash "$dc" decide docs/spec/lessons.md feature.compound 2>&1)" "allow"
+
 # graceful degrade: empty stdin exits 0 with no warn.
 out="$(printf '' | CLAUDE_PROJECT_DIR="$gsbx" bash "$GUARD" 2>&1; echo "rc=$?")"
 assert_contains "review-fix" "empty stdin exits 0 (graceful)" "$out" "rc=0"
 assert_not_contains "review-fix" "empty stdin does not warn" "$out" "warn"
 rm -rf "$gsbx"
+
+# spec-v04 P4-R16: the per-user plugin's SessionStart detector accepts either
+# spec root (docs/spec, legacy) and stays silent without one.
+PSS="$SRC_ROOT/plugin/hooks/session-start.sh"
+for root_rel in docs/spec .spec; do # literal
+  psb="$(mktemp -d)"; mkdir -p "$psb/$root_rel"
+  out="$(printf '{}' | CLAUDE_PROJECT_DIR="$psb" CLAUDE_PLUGIN_ROOT="$SRC_ROOT/plugin" bash "$PSS" 2>&1; echo "rc=$?")"
+  assert_contains "spec-v04/p4" "plugin session-start detects a $root_rel project (emits the doctrine)" "$out" "vibe flow"
+  assert_contains "spec-v04/p4" "plugin session-start exits 0 for a $root_rel project" "$out" "rc=0"
+  rm -rf "$psb"
+done
+psb="$(mktemp -d)"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$psb" CLAUDE_PLUGIN_ROOT="$SRC_ROOT/plugin" bash "$PSS" 2>&1; echo "rc=$?")"
+assert_eq "spec-v04/p4" "plugin session-start is silent in a project with no spec root" "$out" "rc=0"
+rm -rf "$psb"
 
 echo ""
 echo "=== review-fix — merge-settings.sh Bash matcher + idempotency ==="
@@ -1669,7 +1727,7 @@ echo 'echo fine' > "$B32SUB/host/top.sh"
 git -C "$B32SUB/host" init -q >/dev/null 2>&1 || true
 git -C "$B32SUB/host/nested" init -q >/dev/null 2>&1 || true
 git -C "$B32SUB/host/nested" add -A >/dev/null 2>&1 || true
-git -C "$B32SUB/host/nested" -c user.email=t@t -c user.name=t commit -qm x >/dev/null 2>&1 || true
+git -C "$B32SUB/host/nested" -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -qm x >/dev/null 2>&1 || true
 git -C "$B32SUB/host" add -A >/dev/null 2>&1 || true
 b32_sub2_out="$(b32_bad=0; b32_broken=0; b32_lint "$B32SUB/host" 2>&1; echo "bad=$b32_bad broken=$b32_broken")"
 assert_contains "js-core/8" "bash-3.2 lint reports a nested-repo script its git enumeration cannot see" \
@@ -1805,6 +1863,107 @@ while IFS= read -r -d '' f; do mjs_nogit_list="$mjs_nogit_list${f#"$MJSPROBE"/}"
 assert_eq "js-core/8" ".mjs enumeration degrades to a find walk with no .git" \
   "$(printf '%s\n' "$mjs_nogit_list" | grep -qxF "tracked dir/nested/probe.mjs" && echo found || echo "MISSED")" "found"
 rm -rf "$MJSPROBE"
+
+echo ""
+echo "=== spec-v04/p4 — dual-root shell scripts (a project with only docs/spec) ==="
+# Each sandbox puts the scripts at <sb>/pkg/flow/scripts so the marker walk is the
+# only thing that can find <sb> (the no-marker fallback lands on <sb>/pkg). The
+# project carries docs/spec and nothing else: no .git, no legacy root.
+dr="$(mktemp -d)"
+mkdir -p "$dr/docs/spec" "$dr/pkg/flow/scripts" "$dr/.agents/skills/vibe"
+for f in regen-active-rules.sh orders.sh doctor.sh doctrine.sh detect-context.sh; do
+  cp "$SCRIPTS/$f" "$dr/pkg/flow/scripts/"
+done
+cp "$FLOW/state-machine.json" "$dr/pkg/flow/"
+
+# regen-active-rules.sh: digest from docs/spec/lessons.md
+cat > "$dr/docs/spec/lessons.md" <<'EOF'
+# Lessons
+
+### Docs root lesson
+**Pattern:** p.
+**Rule:** the docs-spec rule body.
+**Tags:** t
+**Date:** 2026-10-19
+EOF
+printf '# T\n<!-- vibe:active-rules:start -->\nold\n<!-- vibe:active-rules:end -->\n' > "$dr/AGENTS.md"
+bash "$dr/pkg/flow/scripts/regen-active-rules.sh" >/dev/null 2>&1
+assert_contains "spec-v04/p4" "regen reads docs/spec/lessons.md in a docs/spec-only project" "$(cat "$dr/AGENTS.md")" "the docs-spec rule body"
+
+# regen precedence: vibe-spec root, then docs/spec, then the legacy root.
+mkdir -p "$dr/.spec" "$dr/custom" "$dr/bin"
+cat > "$dr/.spec/lessons.md" <<'EOF'
+### Legacy root lesson
+**Rule:** the legacy rule body.
+**Tags:** t
+**Date:** 2026-10-19
+EOF
+cat > "$dr/custom/lessons.md" <<'EOF'
+### Custom root lesson
+**Rule:** the vibe-spec-root rule body.
+**Tags:** t
+**Date:** 2026-10-19
+EOF
+printf '# T\n<!-- vibe:active-rules:start -->\nold\n<!-- vibe:active-rules:end -->\n' > "$dr/AGENTS.md"
+bash "$dr/pkg/flow/scripts/regen-active-rules.sh" >/dev/null 2>&1
+out="$(cat "$dr/AGENTS.md")"
+assert_contains "spec-v04/p4" "regen prefers docs/spec over the legacy root when both exist" "$out" "the docs-spec rule body"
+assert_not_contains "spec-v04/p4" "regen ignores the legacy lessons when docs/spec has one" "$out" "the legacy rule body"
+printf '#!/usr/bin/env bash\necho "%s"\n' "$dr/custom" > "$dr/bin/vibe-spec"; chmod +x "$dr/bin/vibe-spec"
+printf '# T\n<!-- vibe:active-rules:start -->\nold\n<!-- vibe:active-rules:end -->\n' > "$dr/AGENTS.md"
+PATH="$dr/bin:$PATH" bash "$dr/pkg/flow/scripts/regen-active-rules.sh" >/dev/null 2>&1
+out="$(cat "$dr/AGENTS.md")"
+assert_contains "spec-v04/p4" "regen prefers the root vibe-spec names (stub on PATH) over docs/spec" "$out" "the vibe-spec-root rule body"
+assert_not_contains "spec-v04/p4" "regen ignores docs/spec when vibe-spec names another root" "$out" "the docs-spec rule body"
+rm -rf "${dr:?}/.spec" "${dr:?}/custom" "${dr:?}/bin"
+
+# orders.sh and doctrine.sh: the skills dir comes from the project root.
+cat > "$dr/.agents/skills/vibe/SKILL.md" <<'EOF'
+<!-- vibe:orders:strategy.spec -->
+DOCS-ROOT-ORDERS
+<!-- /vibe:orders -->
+<!-- vibe:doctrine -->
+DOCS-ROOT-DOCTRINE
+<!-- /vibe:doctrine -->
+EOF
+assert_contains "spec-v04/p4" "orders.sh finds the project skills dir in a docs/spec-only project" "$(bash "$dr/pkg/flow/scripts/orders.sh" strategy.spec 2>&1)" "DOCS-ROOT-ORDERS"
+assert_contains "spec-v04/p4" "doctrine.sh finds the project skills dir in a docs/spec-only project" "$(bash "$dr/pkg/flow/scripts/doctrine.sh" 2>&1)" "DOCS-ROOT-DOCTRINE"
+
+# doctor.sh: the reported root is the docs/spec project, not the fallback.
+# (its own sandbox: the .agents/skills tree above is a second root marker for doctor)
+dd="$(mktemp -d)"; mkdir -p "$dd/docs/spec" "$dd/pkg/flow/scripts"
+cp "$SCRIPTS/doctor.sh" "$dd/pkg/flow/scripts/"
+assert_eq "spec-v04/p4" "doctor.sh reports the docs/spec project as its root" "$(bash "$dd/pkg/flow/scripts/doctor.sh" 2>&1 | head -n1)" "# vibe doctor — $dd"
+rm -rf "${dd:?}"
+
+# detect-context.sh decide: the root-specs and features twins, shell branch.
+dc="$dr/pkg/flow/scripts/detect-context.sh"
+assert_eq "spec-v04/p4" "detect-context blocks docs/spec/plan.md in feature.impl" \
+  "$(bash "$dc" decide docs/spec/plan.md feature.impl 2>&1 | cut -c1-34)" "block:root docs/spec specs are wri"
+assert_eq "spec-v04/p4" "detect-context allows docs/spec/plan.md in strategy.spec" \
+  "$(bash "$dc" decide docs/spec/plan.md strategy.spec 2>&1)" "allow"
+assert_eq "spec-v04/p4" "detect-context warns on docs/spec/features/x/plan.md in feature.impl" \
+  "$(bash "$dc" decide docs/spec/features/x/plan.md feature.impl 2>&1 | cut -c1-37)" "warn:docs/spec/features edits are fro"
+assert_eq "spec-v04/p4" "detect-context allows docs/spec/features/x/plan.md in feature.design" \
+  "$(bash "$dc" decide docs/spec/features/x/plan.md feature.design 2>&1)" "allow"
+rm -rf "${dr:?}"
+
+# install.sh: bare run from a subdirectory targets a docs/spec-only project; the
+# global seed is skipped when docs/spec exists; uninstall names both roots.
+ib="$(mktemp -d)"; mkdir -p "$ib/docs/spec" "$ib/sub"
+out="$(cd "$ib/sub" && bash "$SRC_ROOT/install.sh" --dry-run --local 2>&1)"
+assert_contains "spec-v04/p4" "install.sh bare run finds a docs/spec-only project from a subdirectory" "$out" "$ib/.agents/skills/"
+mkdir -p "$ib/.git"
+out="$(cd "$ib/sub" && bash "$SRC_ROOT/install.sh" --dry-run --global 2>&1)"
+assert_not_contains "spec-v04/p4" "install.sh --global does not seed when docs/spec exists" "$out" "would seed"
+rmdir "$ib/docs/spec" "$ib/docs"
+out="$(cd "$ib/sub" && bash "$SRC_ROOT/install.sh" --dry-run --global 2>&1)"
+assert_contains "spec-v04/p4" "install.sh --global seeds a git repo that has no spec root" "$out" "would seed"
+mkdir -p "$ib/docs/spec"
+out="$(cd "$ib/sub" && bash "$SRC_ROOT/install.sh" --local --uninstall --yes 2>&1)"
+assert_contains "spec-v04/p4" "install.sh uninstall preserves docs/spec and says so" "$out" "Preserved: docs/spec/"
+assert_eq "spec-v04/p4" "install.sh uninstall leaves docs/spec in place" "$([[ -d "$ib/docs/spec" ]] && echo kept || echo GONE)" "kept"
+rm -rf "${ib:?}"
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

@@ -10,7 +10,7 @@
     "repo.evidence": {
       "title": "Evidence before done",
       "channels": ["session-start"],
-      "summary": "evidence: run `bash tests/run.sh` and `bash .agents/skills/spec/scripts/validate.sh` before claiming any work is done — quote the output, never the intent"
+      "summary": "evidence: run `bash tests/run.sh` and `vibe-spec validate` before claiming any work is done — quote the output, never the intent"
     }
   },
   "placeholders": {}

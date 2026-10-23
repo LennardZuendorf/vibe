@@ -1,0 +1,34 @@
+{
+  "root": "docs/spec",
+  "migrate": {
+    "include": [
+      "spec/**/*.md",
+      "flow/**/*.md",
+      "flow/reference/templates/**",
+      "docs/roadmap/**",
+      ".github/**",
+      "README.md",
+      "AGENTS.md"
+    ],
+    "exclude": [
+      "oracles/**",
+      "spec/scripts/**",
+      "docs/superpowers/**",
+      "CHANGELOG.md",
+      "target/**",
+      "tests/parity/corpus/**",
+      "contracts/fixtures/**",
+      "tests/openspec/**",
+      "flow/reference/templates/AGENTS.md"
+    ]
+  },
+  "strictness": {
+    "SF22": "error",
+    "SF29": "off",
+    "SF30": "error",
+    "SF31": "error",
+    "SF32": "error",
+    "SF33": "error",
+    "SF34": "error"
+  }
+}

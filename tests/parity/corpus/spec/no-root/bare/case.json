@@ -1,0 +1,17 @@
+{
+  "runs": {
+    "lessons-for": [
+      [
+        "bash"
+      ]
+    ],
+    "scan-merges": [
+      [],
+      [
+        "--format",
+        "json"
+      ]
+    ]
+  },
+  "v": 1
+}

@@ -1,6 +1,6 @@
 # Writing Tech Specs
 
-Tech specs answer **how**. Architecture, code patterns, data flow, file paths, code examples — all welcome. UX opinions are not — reference the product spec instead.
+Tech specs answer **how**. Include architecture, code patterns, data flow, file paths, and code examples. Exclude UX opinions — reference the product spec instead.
 
 There are three places tech content goes. Pick the right one.
 
@@ -15,13 +15,13 @@ Sections:
 - **Architecture overview** — directory tree with annotations (NEW / inherited / extended)
 - **Tech stack** — inherited and added, with versions
 - **State / data contracts** — file formats, protocols, invariants that span features
-- **Build vs Inherit** — table of LOC by source so you know what you're actually writing
+- **Build vs Inherit** — table of LOC by source to show what you write
 - **Basic implementation** — small support pieces that don't warrant their own feature (installer scripts, conventions)
 - **Build sequence** — table mapping components to features and milestones
 - **Risks & mitigations** — technical risks at the project level
 - **Features index** — table linking to `features/<name>/tech.md`
 
-If you're describing how one feature is implemented, you're in the wrong file. Move to `features/<name>/tech.md`.
+Describing how one feature is implemented? Move it to `features/<name>/tech.md`.
 
 ---
 
@@ -83,14 +83,14 @@ If the topic is really about one feature, it's not a branch doc — it's a featu
 - Use tables for API surfaces, channels, configuration
 - Reference actual codebase paths
 - Describe data flow with concrete steps
-- List what already exists and should NOT be rebuilt
+- List what already exists and MUST NOT be rebuilt
 - State decisions with trade-off rationale
 
 **Don't:**
 - Describe user experience or interaction design
 - Use words like "intuitive", "clean", "user-friendly"
 - Make UX decisions — reference the product spec instead
-- Write aspirational architecture — describe what you're actually building
+- Write aspirational architecture — describe what you build
 
 **Example — Describing an Implementation:**
 ```markdown

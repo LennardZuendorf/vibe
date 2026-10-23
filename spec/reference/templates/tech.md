@@ -15,7 +15,7 @@ updated: {YYYY-MM-DD}
 
 # {Project Name} — Technical Architecture
 
-{One paragraph: project-level architecture summary. Feature implementation detail lives under `.spec/features/<name>/`.}
+{One paragraph: project-level architecture summary. Feature implementation detail lives under `docs/spec/features/<name>/`.}
 
 ---
 
@@ -35,7 +35,7 @@ updated: {YYYY-MM-DD}
 │   ├── {directory}/          # {annotation: NEW / inherited / extended}
 │   └── {directory}/          # {annotation}
 ├── {other dirs}/
-└── .spec/                    # Design docs
+└── docs/spec/                    # Design docs
 ```
 
 ---
@@ -63,7 +63,7 @@ updated: {YYYY-MM-DD}
 | Source | Approx. Lines | What |
 |---|---|---|
 | **{Upstream}** (inherited) | ~{N}k | {What it provides} |
-| **{New code}** (this project) | ~{N} | {What we actually write} |
+| **{New code}** (this project) | ~{N} | {What you write} |
 
 ---
 
