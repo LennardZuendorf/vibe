@@ -1416,6 +1416,127 @@ test('review-hardening/9: floor — the stat-error pins ran all three legs', () 
 });
 
 // ---------------------------------------------------------------------------
+// review-hardening/9 — the rename origin, on real git. A `-z` rename record is
+// `R  new\0origin\0`, and both `-z` readers (the engine and the live fallback)
+// must consume the origin field whatever the record is, a deletion-flagged `RD`
+// included. Each row is shaped so a reader that skips that step goes wrong:
+//   - not judged: the origin `xx-src.txt`, misread as a record, names the
+//     committed `src.txt` (its text after the three xy-and-space columns),
+//     which is newer than the receipt. The rename only touched `b-new.txt`
+//     (backdated, or deleted for `RD`), so every leg must pass.
+//   - read on: the origin `aR-old.txt` has an `R` in its xy columns. Misread as
+//     a record, it would swallow the stale ` M z.txt` record after it as ITS
+//     origin; every leg must still block on `z.txt`.
+// The frozen oracle reads plain porcelain (`R  origin -> new`) and agrees on
+// each row; it is run as the third leg, not pinned.
+// ---------------------------------------------------------------------------
+
+function makeRenameFixture() {
+  const sb = makeThreeWayFlatFixture();
+  writeFileSync(path.join(sb.dir, 'xx-src.txt'), 'renamed, not judged\n');
+  writeFileSync(path.join(sb.dir, 'aR-old.txt'), 'renamed, read on\n');
+  writeFileSync(path.join(sb.dir, 'z.txt'), 'v1\n');
+  for (const gitArgs of [['-C', sb.dir, 'add', '-A'], ['-C', sb.dir, 'commit', '-qm', 'rename fixture']]) {
+    const r = runCommand('git', gitArgs, { cwd: sb.dir });
+    assert(r.code === 0, `rename fixture: \`git ${gitArgs.join(' ')}\` exited ${r.code}: ${r.stderr}`);
+  }
+  return sb;
+}
+
+function gitMvBackdated(sb, from, to) {
+  const mv = runCommand('git', ['-C', sb.dir, 'mv', from, to], { cwd: sb.dir });
+  assert(mv.code === 0, `git mv ${from} ${to} exited ${mv.code}: ${mv.stderr}`);
+  utimesSync(path.join(sb.dir, to), RH9_TREE_TS, RH9_TREE_TS);
+}
+
+function porcelainZ(sb) {
+  return runCommand('git', ['-C', sb.dir, 'status', '--porcelain', '-z', '-uall', '--', '.'], { cwd: sb.dir }).stdout;
+}
+
+let rh9RenameRowsRun = 0;
+
+for (const mode of JQ_MODES) {
+  test(`review-hardening/9: three-way — a rename origin is not judged as a changed path x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeRenameFixture();
+    try {
+      gitMvBackdated(sb, 'xx-src.txt', 'b-new.txt');
+      assertEqual(porcelainZ(sb), 'R  b-new.txt\0xx-src.txt\0', 'floor: the rename is the only record');
+      const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+      for (const leg of ['engine', 'live', 'oracle']) {
+        assertEqual(legs[leg].code, 0, `${leg} must not judge the origin as a path; got:\n${legs[leg].stderr}`);
+      }
+      rh9RenameRowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/9: three-way — a deletion-flagged rename (RD) still consumes its origin x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeRenameFixture();
+    try {
+      gitMvBackdated(sb, 'xx-src.txt', 'b-new.txt');
+      rmSync(path.join(sb.dir, 'b-new.txt'));
+      assertEqual(porcelainZ(sb), 'RD b-new.txt\0xx-src.txt\0', 'floor: one deletion-flagged rename record');
+      const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+      for (const leg of ['engine', 'live', 'oracle']) {
+        assertEqual(legs[leg].code, 0, `${leg} must skip the RD record and its origin; got:\n${legs[leg].stderr}`);
+      }
+      rh9RenameRowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/9: three-way — a worktree rename ( R) still consumes its origin x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeRenameFixture();
+    try {
+      // An intent-to-add copy plus a deleted source is a rename git reports in
+      // the worktree column only, so a reader that looks for R in column 0
+      // alone misreads the origin.
+      writeFileSync(path.join(sb.dir, 'b-new.txt'), readFileSync(path.join(sb.dir, 'xx-src.txt')));
+      const add = runCommand('git', ['-C', sb.dir, 'add', '-N', 'b-new.txt'], { cwd: sb.dir });
+      assert(add.code === 0, `git add -N exited ${add.code}: ${add.stderr}`);
+      rmSync(path.join(sb.dir, 'xx-src.txt'));
+      utimesSync(path.join(sb.dir, 'b-new.txt'), RH9_TREE_TS, RH9_TREE_TS);
+      assertEqual(porcelainZ(sb), ' R b-new.txt\0xx-src.txt\0', 'floor: one worktree rename record');
+      const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+      for (const leg of ['engine', 'live', 'oracle']) {
+        assertEqual(legs[leg].code, 0, `${leg} must not judge the origin as a path; got:\n${legs[leg].stderr}`);
+      }
+      rh9RenameRowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/9: three-way — the record after a rename is still read x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeRenameFixture();
+    try {
+      gitMvBackdated(sb, 'aR-old.txt', 'b-new.txt');
+      writeFileSync(path.join(sb.dir, 'z.txt'), 'v2\n');
+      assertEqual(porcelainZ(sb), 'R  b-new.txt\0aR-old.txt\0 M z.txt\0', 'floor: a rename, then the stale z.txt');
+      const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+      for (const leg of ['engine', 'live', 'oracle']) {
+        assertEqual(legs[leg].code, 2, `${leg} must block on z.txt; got:\n${legs[leg].stderr}`);
+        assert(legs[leg].stderr.includes('changed after it was written: z.txt'), `${leg} names z.txt; got:\n${legs[leg].stderr}`);
+      }
+      rh9RenameRowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+}
+
+test('review-hardening/9: floor — the rename-origin rows ran all three legs', () => {
+  const modesRun = JQ_PRESENT ? 2 : 1;
+  assert(rh9RenameRowsRun >= 4 * modesRun, `only ${rh9RenameRowsRun} rename-origin row(s) ran, floor ${4 * modesRun}`);
+});
+
+// ---------------------------------------------------------------------------
 // KNOWN DIVERGENCE (PLATFORM) — `stop_hook_active: true` on a sed WITHOUT GNU
 // BRE alternation. Direction, stated once: THE ENGINE IS RIGHT. THE ORACLE'S
 // no-jq SED LEG IS WRONG ON THIS PLATFORM.

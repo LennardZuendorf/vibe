@@ -311,6 +311,14 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   carrying `status.showUntrackedFiles=all` turned the untracked-directory pins
   falsely red. It now deletes them. `parity.test.mjs` runs the pin under each
   injection and checks every deleted variable by name. (review-hardening/9)
+- **The gate's rename-origin read is tested (review-hardening/9)** — no test
+  gave a rename record a second record after it, so removing the origin step
+  from `decodePorcelainZ` or `skip_origin=1` from `stop-gate.sh` stayed green.
+  `hook.test.mjs` now feeds `R `, `RD`, ` R` and `C ` records whose misread
+  origin would either swallow the next stale record or name a stale file, and
+  pins `ENOTDIR` as a gone path; `parity.test.mjs` runs the same rename, ` R`,
+  `RD` and rename-then-stale shapes on real git through the engine, the live
+  fallback and the frozen oracle.
 - **The no-node Stop gate fallback reads every changed path, and only the
   project's** (review-hardening/10) — `flow/hooks-fallback/stop-gate.sh` had the
   same quoting and nested-project holes as the engine. Its staleness scan now

@@ -1614,6 +1614,45 @@ test('review-hardening/9: a path that did not decode as UTF-8 (U+FFFD) and canno
   }
 });
 
+test('review-hardening/9: a changed path below a parent that is now a file (ENOTDIR) is gone, not a block', () => {
+  const sb = makeStalenessFixture(RECEIPT_EPOCH, RECEIPT_EPOCH + 60);
+  try {
+    // src/app.sh is a regular file, so stat('src/app.sh/inner.txt') is ENOTDIR:
+    // the reported path is not there, and there is nothing to compare.
+    assertEqual(gateWithPorcelain(sb, [['??', 'src/app.sh/inner.txt']]).code, 0, 'ENOTDIR reads as gone');
+    // Control: the parent itself is stale and does block.
+    assertEqual(gateWithPorcelain(sb, [[' M', 'src/app.sh']]).code, 2, 'control: the stale file blocks');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// review-hardening/9 — a rename or copy record's second field, the origin, is
+// consumed whatever the record is (a deletion-flagged `RD` included). Each row
+// is shaped so a decoder that skips that step for the record goes wrong one of
+// two ways. The new path `new.txt` does not exist, so only `src/app.sh` (stale)
+// can block.
+//   - read on: the origin `aR-old.txt` has an `R` in its xy columns. Misread as
+//     a record, it swallows the stale `src/app.sh` record that follows as ITS
+//     origin, and a stale receipt passes.
+//   - not judged: the origin `xx-src/app.sh`, misread as a record, names the
+//     stale `src/app.sh` (its text after the three xy-and-space columns), and a
+//     rename that touched only `new.txt` blocks.
+for (const xy of ['R ', 'RD', ' R', 'C ']) {
+  test(`review-hardening/9: a ${JSON.stringify(xy)} record's origin is consumed — the next record is read, the origin is not judged`, () => {
+    const sb = makeStalenessFixture(RECEIPT_EPOCH, RECEIPT_EPOCH + 60);
+    try {
+      const readOn = gateWithPorcelain(sb, [[xy, 'new.txt', 'aR-old.txt'], [' M', 'src/app.sh']]);
+      assertEqual(readOn.code, 2, `the stale record after a ${JSON.stringify(xy)} record must still block`);
+      assertIncludes(readOn.stderr, 'changed after it was written: src/app.sh');
+      const notJudged = gateWithPorcelain(sb, [[xy, 'new.txt', 'xx-src/app.sh']]);
+      assertEqual(notJudged.code, 0, `the origin of a ${JSON.stringify(xy)} record is not a changed path; got:\n${notJudged.stderr}`);
+    } finally {
+      sb.cleanup();
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // FIX ROUND 2 — `-uall` made the blocking tooth fail OPEN at scale, and the
 // fix is to fail CLOSED on an undeterminable working tree.
