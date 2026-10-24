@@ -909,7 +909,7 @@ test('review-hardening/6: differential matrix: alias spellings of a guarded path
   }
 });
 
-test('differential matrix: glob characters and leading ../ or / normalise literally, whatever the cwd holds', () => {
+test('review-hardening/6: differential matrix: glob characters and leading ../ or / normalise literally, whatever the cwd holds', () => {
   // review-hardening/6: the bash normaliser must not pathname-expand segments
   // against the cwd. The cwd below holds files every glob here would match.
   const cwd = mkTempRoot('vibe-policy-glob-');
@@ -937,7 +937,7 @@ test('differential matrix: glob characters and leading ../ or / normalise litera
   }
 });
 
-test('differential: a path holding a newline is split whole, so the bash branch blocks like the engine', () => {
+test('review-hardening/6: differential: a path holding a newline is split whole, so the bash branch blocks like the engine', () => {
   // review-hardening/6: the matrix driver is newline-separated, so these paths
   // are decided one spawn each. `read` stops at the first newline; the bash
   // normaliser must still see every segment.
@@ -958,7 +958,7 @@ test('differential: a path holding a newline is split whole, so the bash branch 
   }
 });
 
-test('differential: a path ending in a newline gets the same verdict from both branches', () => {
+test('review-hardening/6: differential: a path ending in a newline gets the same verdict from both branches', () => {
   // review-hardening/6: `$(...)` strips trailing newlines, so a bash normaliser
   // returned through command substitution decided `.spec/lessons.md` for a
   // different file the engine keeps whole. Both branches must agree byte-exact.
@@ -978,7 +978,7 @@ test('differential: a path ending in a newline gets the same verdict from both b
   }
 });
 
-test('differential: a glob rule matches a path holding a newline in both branches', () => {
+test('review-hardening/6: differential: a glob rule matches a path holding a newline in both branches', () => {
   // review-hardening/6: bash `case` lets `*` span a newline; the engine's glob
   // must too, or a glob rule (.spec/features/*, src/*) allows what bash warns on.
   const harness = makeMatrixHarness();
