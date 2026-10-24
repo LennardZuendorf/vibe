@@ -2423,6 +2423,93 @@ assert_contains "review-hardening/16" "control: a real-file CLAUDE.md prints a n
 assert_eq "review-hardening/16" "control: the real-file CLAUDE.md is untouched" "$(cat "$t/CLAUDE.md")" "mine"
 rm -rf "$t"
 
+# review-hardening/15 — every uninstall delete stays inside the target: host
+# files, host packages, the manifest, .gitignore and the empty-dir prunes never
+# act through a symlinked ancestor.
+echo ""
+echo "=== review-hardening/15 — every uninstall delete stays inside the target ==="
+# rh_snap DIR — every file (with its checksum) and link (with its target) under DIR.
+rh_snap() {
+  (cd "$1" && find . \( -type f -o -type l \) | LC_ALL=C sort | while IFS= read -r p; do
+    if [[ -L "$p" ]]; then printf '%s -> %s\n' "$p" "$(readlink "$p")"; else printf '%s %s\n' "$p" "$(cksum < "$p")"; fi
+  done)
+}
+RH15_HOSTS="opencode,codex,droid"
+# (a) manifest file row, (b) manifest package, (e) manifest record, (f) .gitignore
+T="$(mktmp)"; OA="$(mktmp)"; OB="$(mktmp)"; OE="$(mktmp)"; OF="$(mktmp)"
+bash "$INSTALL" "$T" --platform "$RH15_HOSTS" >/dev/null 2>&1
+[[ -f "$T/.opencode/commands/flow.md" && -L "$T/factory-plugin/skills/spec" && -f "$T/.vibe/install-manifest.json" && -f "$T/.gitignore" ]] \
+  && pass "review-hardening/15" "precondition: the host install wrote the manifest-recorded surfaces" \
+  || fail "review-hardening/15" "precondition: the host install wrote the manifest-recorded surfaces"
+mv "$T/.opencode/commands" "$OA/commands"; ln -s "$OA/commands" "$T/.opencode/commands"
+mv "$T/factory-plugin" "$OB/factory-plugin"; ln -s "$OB/factory-plugin" "$T/factory-plugin"
+mv "$T/.vibe" "$OE/vibe"; ln -s "$OE/vibe" "$T/.vibe"
+mv "$T/.gitignore" "$OF/gi"; ln -s "$OF/gi" "$T/.gitignore"
+sa="$(rh_snap "$OA")"; sb="$(rh_snap "$OB")"; se="$(rh_snap "$OE")"; sf="$(rh_snap "$OF")"
+out="$(bash "$INSTALL" "$T" --uninstall --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/15" "uninstall with symlinked host surfaces exits 0" "$rc" "0"
+assert_eq "review-hardening/15" "(a) a manifest-recorded host file behind a symlinked dir survives" "$(rh_snap "$OA")" "$sa"
+assert_eq "review-hardening/15" "(b) a manifest-recorded host package behind a symlink survives, links included" "$(rh_snap "$OB")" "$sb"
+assert_eq "review-hardening/15" "(e) the install manifest behind a symlinked .vibe survives" "$(rh_snap "$OE")" "$se"
+assert_eq "review-hardening/15" "(f) the .gitignore a symlink points at is unchanged" "$(rh_snap "$OF")" "$sf"
+[[ -L "$T/.gitignore" && "$(readlink "$T/.gitignore")" == "$OF/gi" ]] \
+  && pass "review-hardening/15" "(f) .gitignore is still the same symlink" \
+  || fail "review-hardening/15" "(f) .gitignore is still the same symlink"
+assert_contains "review-hardening/15" "(a) the skipped host file is reported" "$out" "WARN: .opencode/commands/flow.md is outside the target"
+assert_contains "review-hardening/15" "(b) the skipped host package is reported" "$out" "WARN: factory-plugin/commands/flow.md is outside the target"
+assert_contains "review-hardening/15" "(e) the skipped manifest is reported" "$out" "WARN: .vibe/install-manifest.json is outside the target"
+assert_contains "review-hardening/15" "(f) the symlinked .gitignore is reported" "$out" "WARN: .gitignore is a symlink"
+[[ ! -e "$T/plugins/vibe/plugin.json" && ! -e "$T/.agents/plugins/marketplace.json" ]] \
+  && pass "review-hardening/15" "the in-target recorded files are still removed" \
+  || fail "review-hardening/15" "the in-target recorded files are still removed"
+rm -rf "$T" "$OA" "$OB" "$OE" "$OF"
+# (c) no usable manifest: the shipped-source fallback, a symlinked package dir
+# and a symlinked marketplace dir.
+T="$(mktmp)"; OC="$(mktmp)"
+bash "$INSTALL" "$T" --platform "$RH15_HOSTS" >/dev/null 2>&1
+rm -f "$T/.vibe/install-manifest.json"
+mv "$T/.opencode" "$OC/opencode"; ln -s "$OC/opencode" "$T/.opencode"
+mv "$T/.factory-plugin" "$OC/fpm"; ln -s "$OC/fpm" "$T/.factory-plugin"
+sc="$(rh_snap "$OC")"
+out="$(bash "$INSTALL" "$T" --uninstall --dry-run 2>&1)"
+assert_contains "review-hardening/15" "(c) --dry-run shows the skipped fallback package" "$out" "skip .opencode (outside the target"
+assert_not_contains "review-hardening/15" "(c) --dry-run does not plan to remove the outside file" "$out" "remove .opencode/commands/flow.md"
+assert_eq "review-hardening/15" "(c) --dry-run changes nothing outside" "$(rh_snap "$OC")" "$sc"
+out="$(bash "$INSTALL" "$T" --uninstall --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/15" "(c) fallback uninstall exits 0" "$rc" "0"
+assert_eq "review-hardening/15" "(c) a symlinked package and marketplace dir survive the fallback" "$(rh_snap "$OC")" "$sc"
+assert_contains "review-hardening/15" "(c) the skipped fallback package is reported" "$out" "WARN: .opencode is outside the target"
+assert_contains "review-hardening/15" "(c) the skipped marketplace file is reported" "$out" "WARN: .factory-plugin/marketplace.json is outside the target"
+[[ ! -e "$T/factory-plugin/commands/flow.md" ]] \
+  && pass "review-hardening/15" "(c) the in-target fallback package is still removed" \
+  || fail "review-hardening/15" "(c) the in-target fallback package is still removed"
+rm -rf "$T" "$OC"
+# (g) empty-dir prunes: a vendored vibe checkout reached through .claude, with
+# empty .claude/skills and .claude/hooks, and plugins -> an outside dir holding
+# an empty vibe/. The vendored copy's own install.sh runs, so it is the SRC.
+RV="$(mktmp)"; O4="$(mktmp)"; mkdir -p "$RV/vendor" "$O4/vibe"; RVS="$(rh_copy)"; mv "$RVS" "$RV/vendor/vibe"
+rm -rf "$RV/vendor/vibe/.claude/skills" "$RV/vendor/vibe/.claude/hooks"
+mkdir -p "$RV/vendor/vibe/.claude/skills" "$RV/vendor/vibe/.claude/hooks"
+ln -s vendor/vibe/.claude "$RV/.claude"; ln -s "$O4" "$RV/plugins"
+ndirs="$(find "$RV/vendor/vibe" "$O4" -type d | wc -l | tr -d ' ')"
+bash "$RV/vendor/vibe/install.sh" "$RV" --uninstall --yes >/dev/null 2>&1; rc=$?
+assert_eq "review-hardening/15" "(g) the vendored uninstall exits 0" "$rc" "0"
+assert_eq "review-hardening/15" "(g) no empty directory behind a symlinked ancestor is pruned" "$(find "$RV/vendor/vibe" "$O4" -type d | wc -l | tr -d ' ')" "$ndirs"
+rm -rf "$RV" "$O4"
+# control: the same host install with no symlink uninstalls cleanly.
+T="$(mktmp)"; bash "$INSTALL" "$T" --platform "$RH15_HOSTS" >/dev/null 2>&1
+out="$(bash "$INSTALL" "$T" --uninstall --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/15" "control: a plain host uninstall exits 0" "$rc" "0"
+left=""
+for p in .agents/plugins/marketplace.json plugins/vibe/plugin.json plugins/vibe/skills/spec plugins/vibe/skills/vibe \
+         .factory-plugin/marketplace.json factory-plugin/.factory-plugin/plugin.json factory-plugin/commands/flow.md \
+         factory-plugin/skills/spec factory-plugin/skills/vibe .opencode/commands/flow.md .vibe/install-manifest.json; do
+  [[ -e "$T/$p" || -L "$T/$p" ]] && left="$left $p"
+done
+assert_eq "review-hardening/15" "control: every recorded file and the manifest are removed" "$left" ""
+assert_not_contains "review-hardening/15" "control: a plain uninstall reports nothing outside the target" "$out" "outside the target"
+rm -rf "$T"
+
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

@@ -112,6 +112,8 @@ export function validFeature(name) // -> boolean
 | :678 | `remove_host_package` file rm | uninstall, source walk (no-manifest fallback) | unit 15 |
 | :686 | `remove_host_package` link rm | uninstall, source walk | unit 15 |
 | :688 | prune of `$TARGET/$pkg` | uninstall | unit 15: skipped when the package dir fails `inside_target` |
+| new (unit 15) | `prune_empty` helper: `find "$d" -type d -empty -delete` | uninstall | unit 15: runs only when `inside_target "$d/."` passes; carries the prunes of :688, :1063 and :1124 |
+| new (unit 15) | `rmdir_inside` helper: `rmdir "$d"` | uninstall | unit 15: runs only when `inside_target "$d/."` passes; carries the rmdirs of :1064, :1125, :1140, :1148 and :1162-1163 |
 | :1016-1019 | `--yes` runtime state rm | uninstall | unit 1 wrap: not a symlinked `.agents/skills/vibe`, and `inside_target` |
 | :1023-1024 | `.vibe/last-inject` rm and rmdir | uninstall | unit 1 wrap: `inside_target` |
 | :1044 | `.gitignore` rewrite (`mv -f`) or rm | uninstall | unit 15: skip with WARN when `.gitignore` is a symlink |

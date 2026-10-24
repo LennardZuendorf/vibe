@@ -237,6 +237,14 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   refusal (reversed markers) is a warning, `AGENTS.md not merged`, and the
   render, adapter and banner steps still run. A held adapter link names the
   file it points at instead of guessing `real file?` (review-hardening/16).
+- **Every uninstall delete stays inside the target** — the host-surface
+  removals (manifest file and link rows, the no-manifest source-walk fallback,
+  the marketplace files), the install-manifest delete and every empty-dir prune
+  or `rmdir` now skip a path whose parent resolves outside the target or into
+  the vibe source, with a `WARN` (a skip line under `--dry-run`); prunes skip
+  silently. A symlinked `.gitignore` is no longer replaced by a regular file:
+  uninstall leaves it alone and names the vibe lines to remove by hand
+  (review-hardening/15).
 
 ## [0.1.0] - 2026-07-03
 

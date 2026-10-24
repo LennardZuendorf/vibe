@@ -694,15 +694,55 @@ deploy_package() {
 # remove_host_file REL — remove one recorded vibe artifact. Never a directory:
 # the caller prunes emptied dirs afterwards, and only ever ones the shipped
 # package (or the manifest) proves were vibe's.
-remove_host_file() { rm -f "$TARGET/$1"; }
+remove_host_file() { if target_owned "$1"; then rm -f "$TARGET/$1"; fi; }
+
+# target_owned REL — true when TARGET/REL may be deleted: its parent resolves
+# physically inside TARGET and outside the vibe source (inside_target). On a
+# miss it warns, but only for a path that is really there, so an absent record
+# stays silent.
+target_owned() {
+  local p="$TARGET/$1"
+  inside_target "$p" && return 0
+  if [[ -e "$p" || -L "$p" ]]; then
+    err "WARN: $1 is outside the target; left alone"
+  fi
+  return 1
+}
+
+# prune_empty DIR... — delete the empty directories under each DIR (DIR too),
+# but only for a DIR that resolves inside TARGET: a symlinked ancestor would
+# route the prune into another tree. Best-effort and silent.
+prune_empty() {
+  local d
+  for d in "$@"; do
+    inside_target "$d/." || continue
+    find "$d" -type d -empty -delete 2>/dev/null || true
+  done
+  return 0
+}
+
+# rmdir_inside DIR... — rmdir each DIR that resolves inside TARGET; silent.
+rmdir_inside() {
+  local d
+  for d in "$@"; do
+    inside_target "$d/." || continue
+    rmdir "$d" 2>/dev/null || true
+  done
+  return 0
+}
 
 # dry_remove_rel REL — the dry-run half of a removal pass: print the exact target
 # path that would be removed, and only when the path is really there (`-L` too,
 # so a dangling symlink we would delete still appears). The plan therefore names
-# concrete project paths and never invents one.
+# concrete project paths and never invents one. A path outside the target is
+# shown as the skip a real run would make.
 dry_remove_rel() {
   local p="$TARGET/$1"
   [[ -e "$p" || -L "$p" ]] || return 0
+  if ! inside_target "$p"; then
+    say "skip $1 (outside the target; left alone)"
+    return 0
+  fi
   say "remove $1"
 }
 
@@ -711,10 +751,20 @@ dry_remove_rel() {
 # user's co-located file survives), and removes a skill link only while it is a
 # symlink still pointing at the rewrite deploy_package created — a user's real
 # directory, or a link they aimed elsewhere, is never touched. Then prunes dirs
-# this emptied. In dry-run it removes nothing and prints the paths it would.
+# this emptied. In dry-run it removes nothing and prints the paths it would. A
+# package dir that resolves outside the target (a symlink to a shared copy) is
+# left whole with a warning, and so is any file behind a symlinked subdirectory.
 remove_host_package() {
   local pkg="$1" src="$SRC/$1" rel l f name d want dst
   [[ -d "$src" ]] || return 0
+  if [[ -e "$TARGET/$pkg" || -L "$TARGET/$pkg" ]] && ! inside_target "$TARGET/$pkg/."; then
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+      say "skip $pkg (outside the target; left alone)"
+    else
+      err "WARN: $pkg is outside the target; left alone"
+    fi
+    return 0
+  fi
   if [[ "$DRY_RUN" -eq 1 ]]; then
     while IFS= read -r f; do
       dry_remove_rel "${f#"$SRC"/}"
@@ -732,7 +782,7 @@ remove_host_package() {
   [[ -d "$TARGET/$pkg" ]] || return 0
   while IFS= read -r f; do
     rel="${f#"$src"/}"
-    rm -f "$TARGET/$pkg/$rel"
+    if target_owned "$pkg/$rel"; then rm -f "$TARGET/$pkg/$rel"; fi
   done < <(find "$src" -type f 2>/dev/null)
   while IFS= read -r l; do
     rel="${l#"$src"/}"
@@ -740,9 +790,9 @@ remove_host_package() {
     d="$(dirname "$pkg/$rel")"
     want="$(rel_up "$(count_components "$d")").agents/skills/$name"
     dst="$TARGET/$pkg/$rel"
-    if [[ -L "$dst" && "$(readlink "$dst")" == "$want" ]]; then rm -f "$dst"; fi
+    if [[ -L "$dst" && "$(readlink "$dst")" == "$want" ]] && target_owned "$pkg/$rel"; then rm -f "$dst"; fi
   done < <(find "$src" -type l 2>/dev/null)
-  find "$TARGET/$pkg" -type d -empty -delete 2>/dev/null || true
+  prune_empty "$TARGET/$pkg"
 }
 
 # host_entry HOST — set HOST_KIND / HOST_INV / HOST_PATH from the SHIPPED surface
@@ -1107,7 +1157,12 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     fi
     # --yes removes the cursor + receipts, so fully invert install: strip every
     # stanza install appended to .gitignore, leaving other ignore rules intact.
-    if [[ "$ASSUME_YES" -eq 1 && -f "$TARGET/.gitignore" ]]; then
+    # A symlinked .gitignore is not rewritten: the rename would replace the link
+    # with a regular file, and the file it points at may be shared. Name the
+    # lines to remove by hand instead.
+    if [[ "$ASSUME_YES" -eq 1 && -L "$TARGET/.gitignore" ]]; then
+      err "WARN: .gitignore is a symlink; left alone. Remove the vibe lines by hand: .agents/skills/vibe/state.json, .agents/skills/vibe/evidence/, .agents/skills/vibe/warnings.log, .vibe/last-inject (and the '# vibe' comment above each)."
+    elif [[ "$ASSUME_YES" -eq 1 && -f "$TARGET/.gitignore" ]]; then
       say "strip the vibe cursor, evidence, and warnings stanzas from .gitignore"
       if [[ "$DRY_RUN" -eq 0 ]]; then
         GI="$TARGET/.gitignore"; GI_TMP="$(mktemp)"
@@ -1147,8 +1202,8 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
         remove_shipped "$SRC/.claude/hooks" "$TARGET/.claude/hooks"
         # Retire artifacts a prior (plugin-based) install left behind — vibe's only.
         retire_vibe_plugin_manifest "$TARGET"
-        find "$TARGET/.claude/hooks" -type d -empty -delete 2>/dev/null || true
-        rmdir "$TARGET/.claude/skills" "$TARGET/.claude-plugin" "$TARGET/.claude" 2>/dev/null || true
+        prune_empty "$TARGET/.claude/hooks"
+        rmdir_inside "$TARGET/.claude/skills" "$TARGET/.claude-plugin" "$TARGET/.claude"
       else
         err "WARN: settings.json still wires the flow hooks (jq unavailable) — leaving .claude/hooks/*.sh and .claude/commands in place so the wiring keeps pointing at real files. Remove the vibe hook entries from .claude/settings.json by hand, then delete .claude/hooks and .claude/commands."
       fi
@@ -1196,7 +1251,8 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
         case "$mkind" in
           file)    if [[ "$DRY_RUN" -eq 1 ]]; then dry_remove_rel "$mpath"; else remove_host_file "$mpath"; fi ;;
           symlink) if [[ -L "$TARGET/$mpath" && "$(readlink "$TARGET/$mpath")" == "$mtarget" ]]; then
-                     if [[ "$DRY_RUN" -eq 1 ]]; then dry_remove_rel "$mpath"; else rm -f "$TARGET/$mpath"; fi
+                     if [[ "$DRY_RUN" -eq 1 ]]; then dry_remove_rel "$mpath"
+                     elif target_owned "$mpath"; then rm -f "$TARGET/$mpath"; fi
                    fi ;;
           merge)   : ;;
         esac
@@ -1205,11 +1261,11 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
         # Prune the directories that removal emptied — a co-located user file
         # keeps its directory alive. `plugins/` is only ever the PARENT of our
         # package, so it is not a root above; prune it here too, and only here (a
-        # `plugins/` we never wrote into is never touched).
-        find "$TARGET/.opencode" "$TARGET/plugins/vibe" "$TARGET/factory-plugin" \
-             "$TARGET/.agents/plugins" "$TARGET/.factory-plugin" \
-             -type d -empty -delete 2>/dev/null || true
-        rmdir "$TARGET/plugins" 2>/dev/null || true
+        # `plugins/` we never wrote into is never touched). A directory behind a
+        # symlinked ancestor is not ours to prune.
+        prune_empty "$TARGET/.opencode" "$TARGET/plugins/vibe" "$TARGET/factory-plugin" \
+             "$TARGET/.agents/plugins" "$TARGET/.factory-plugin"
+        rmdir_inside "$TARGET/plugins"
       fi
     else
       note "no usable install manifest — falling back to the shipped-source inverse for host surfaces."
@@ -1221,18 +1277,19 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
       remove_host_package "factory-plugin"
       for mp in ".agents/plugins/marketplace.json" ".factory-plugin/marketplace.json"; do
         [[ -f "$SRC/$mp" ]] || continue
-        if [[ "$DRY_RUN" -eq 1 ]]; then dry_remove_rel "$mp"; else rm -f "$TARGET/$mp"; fi
+        if [[ "$DRY_RUN" -eq 1 ]]; then dry_remove_rel "$mp"
+        elif target_owned "$mp"; then rm -f "$TARGET/$mp"; fi
       done
       if [[ "$DRY_RUN" -eq 0 ]]; then
-        rmdir "$TARGET/.agents/plugins" "$TARGET/.factory-plugin" "$TARGET/plugins" 2>/dev/null || true
+        rmdir_inside "$TARGET/.agents/plugins" "$TARGET/.factory-plugin" "$TARGET/plugins"
       fi
     fi
     # The install record goes with the install. `.vibe/blocks/**` is the
     # project's own authored content and is never install's to delete.
     say "remove the install manifest (.vibe/install-manifest.json)"
     if [[ "$DRY_RUN" -eq 0 ]]; then
-      rm -f "$MANIFEST"
-      rmdir "$TARGET/.vibe" 2>/dev/null || true
+      if target_owned "${MANIFEST#"$TARGET"/}"; then rm -f "$MANIFEST"; fi
+      rmdir_inside "$TARGET/.vibe"
     fi
   fi
 
@@ -1246,8 +1303,8 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   fi
 
   if [[ "$DRY_RUN" -eq 0 ]]; then
-    rmdir "$TARGET/.claude/skills" "$TARGET/.claude" 2>/dev/null || true
-    rmdir "$TARGET/.agents/skills" "$TARGET/.agents" 2>/dev/null || true
+    rmdir_inside "$TARGET/.claude/skills" "$TARGET/.claude"
+    rmdir_inside "$TARGET/.agents/skills" "$TARGET/.agents"
   fi
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
