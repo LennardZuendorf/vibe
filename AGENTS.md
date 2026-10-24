@@ -34,7 +34,7 @@ Know what exists before you read or create files.
 | Path | Status |
 |---|---|
 | `docs/spec/` | **Live** — primary source of truth; read every session |
-| `.agents/skills/spec/` | **Live** — spec skill + `validate.sh` |
+| `.agents/skills/spec/` | **Live** — spec skill; validation runs `vibe-spec` (`crates/vibe-spec/`) |
 | `AGENTS.md` / `CLAUDE.md` | **Live** — this guide; `CLAUDE.md` → `AGENTS.md` |
 | `.agents/skills/vibe/state-machine.json` | **Present** — static flow definition (data to edit when building flow) |
 | `.agents/skills/vibe/scripts/` | **Present** — `set-state.sh`, `detect-context.sh`, etc. |
@@ -42,7 +42,7 @@ Know what exists before you read or create files.
 | `.agents/skills/vibe/state.json` | **Often absent** — gitignored runtime cursor; missing is normal |
 | `.agents/skills/vibe/evidence/` (`flow/evidence/`) | **Often absent** — gitignored `*.verify` receipts (`feature-<feature>.md`, `quick.md`); written during verify, missing is normal |
 | `.agents/skills/vibe/` | **Present** — workflow skill (SKILL.md router + phase files) |
-| `.claude/commands/`, `.claude/hooks/`, `.claude/settings.json` | **Present** — Claude Code adapter (`/flow` command + three hook scripts wired via `settings.json`) |
+| `.claude/commands/`, `.claude/hooks/`, `.claude/settings.json` | **Present** — Claude Code adapter (`/flow` command + hook scripts wired via `settings.json`) |
 | **`flow.json`** | **Does not exist** — never expect, read, or create this file |
 | Per-turn inject / D12 orders-in-skills | **Live** — orders sourced from linked `vibe` skill via `orders.sh` |
 
@@ -55,8 +55,8 @@ Route by **intent**, not by flow cursor.
 | Intent | Load first | Write surface |
 |---|---|---|
 | Understand the project | `docs/spec/product.md`, `docs/spec/tech.md` | — |
-| Build a named feature | `docs/spec/features/<name>/` + root `plan.md` | per feature Scope |
-| Small bounded fix | relevant feature spec or `docs/spec/quick/<slug>.md` | minimal |
+| Build a named feature | `docs/superpowers/specs/*-<feature>-design.md` + `docs/superpowers/plans/*-<feature>.md` (default); `docs/spec/features/<feature>/` only as the fallback | per feature Scope |
+| Small bounded fix | the relevant feature spec; a quick fix needs no new doc | minimal |
 | Spec / plan work | `.agents/skills/spec/SKILL.md` | `docs/spec/**` per write rules |
 | Build flow machinery | `docs/spec/tech.md` + `.agents/skills/vibe/` | `.agents/skills/vibe/`, `vibe` skill |
 | Build adapters / hooks | `docs/spec/tech.md` + `.claude/` | `.claude/`, `install.sh` |
@@ -85,9 +85,15 @@ This is the **end-state** the repo is building. Reference the root
 ## Repo layout
 
 ```text
-docs/spec/             # durable memory (product/tech/design/plan/lessons + features/)
-.agents/skills/spec/   # bundled spec framework
-.agents/skills/vibe/   # workflow skill: router, phase files, state machine, scripts
+flow/                  # vibe skill source: router, procedure files, machine, scripts, engine, content
+spec/                  # spec skill source: guides, reference, agents, tests
+crates/                # Rust workspace: vibe-core, vibe-spec, vibe-parity
+contracts/             # schemas and golden fixtures
+oracles/               # frozen JS and bash oracles — never edited
+tests/                 # umbrella suite, parity corpus, skills lint
+docs/spec/             # durable memory (hubs, lessons.md, kind folders, features/)
+docs/superpowers/      # superpowers-layer specs and plans (the default feature layer)
+.agents/skills/        # compatibility symlinks to spec/ and flow/
 AGENTS.md              # this file (canonical)
 CLAUDE.md              # symlink → AGENTS.md
 ```
@@ -105,7 +111,7 @@ CLAUDE.md              # symlink → AGENTS.md
 
 **Always**
 - Read `docs/spec/` before code.
-- Run `validate.sh` before claiming work is done.
+- Run `vibe-spec validate --strict` before claiming work is done.
 - Cite plan unit IDs in tests and commits during impl.
 - Respect feature **Scope** tables — do not implement another feature's units.
 
@@ -135,9 +141,12 @@ docs(agents): rewrite instruction set
 
 ## Spec layout
 
-Root: `docs/spec/{product,tech,design,plan,lessons}.md`.
-Features: `docs/spec/features/<feature>/{product,tech}.md` required; `design.md`,
-`plan.md`, `research.md` optional.
+Hubs: `docs/spec/{product,tech,design,plan}.md`; each lists its notes in `children:`.
+`docs/spec/lessons.md` is the append-only lessons file.
+Kind folders hold the notes: `areas/`, `concepts/`, `decisions/`, `parts/`,
+`platform/`, `questions/`, `tech/`.
+Fallback features: `docs/spec/features/<feature>/{product,tech}.md` required;
+`design.md`, `plan.md`, `research.md` optional.
 
 <!-- vibe:instructions:start -->
 <!-- Managed by vibe (merge-agents.sh). Edits inside these markers are

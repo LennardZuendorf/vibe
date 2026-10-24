@@ -344,7 +344,7 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 - Track B (spec guides and references): the fallback feature guide, root strategy guide, reference templates and `spec/` README and AGENTS now match v0.4 and the validator; `tests/skills/cases/spec-docs.sh` pins them, including a docs-to-validator fixture (skill-revision/8-11).
 - Track C (`vibe-spec`): `-h`/`--help` on `list-specs`, `lessons-for`, `scan-merges` and `promote`; usage errors on those exit 2; a missing root or lessons file is named on stderr; `lessons-for` matches whole tags; `init` seeds the lesson format and a plan without a backlog; `check-drift` reads the notes a layered plan lists; the SessionStart router is silent without a spec root (skill-revision/12-17).
 - Track D (flow skill): pending (skill-revision/18-24).
-- Track E (shipped instructions and repo docs): pending (skill-revision/25-27).
+- Track E (shipped instructions and repo docs): neutral delegation defaults with the maintainer policy in `vibe.json`; true gate and validate facts in the AGENTS.md template; README, AGENTS, flow README and flow AGENTS state the v0.4 tree (skill-revision/25-27).
 - Tail (`flow/setup.md`): pending (skill-revision/28, conditional).
 - Close (consistency sweep, final verification, compound): pending (skill-revision/29-31).
 
