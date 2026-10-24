@@ -2488,9 +2488,10 @@ assert_contains "review-hardening/15" "(f) the symlinked .gitignore is reported"
 rm -rf "$T" "$OA" "$OB" "$OE" "$OF"
 # (e2) the --only spec manifest prune: a half-uninstall leaves the manifest in
 # place and rewrites it, so a symlinked .vibe must stop that rewrite as well.
-# The plain --only spec prune (host-support/2) is the control.
+# The plain --only spec prune (host-support/2) is the control. --platform
+# claude pins the host set, so the install never reads the ambient PATH.
 T="$(mktmp)"; OE="$(mktmp)"
-bash "$INSTALL" "$T" >/dev/null 2>&1
+bash "$INSTALL" "$T" --platform claude >/dev/null 2>&1
 mv "$T/.vibe" "$OE/vibe"; ln -s "$OE/vibe" "$T/.vibe"
 grep -qF '.claude/skills/spec' "$OE/vibe/install-manifest.json" \
   && pass "review-hardening/15" "(e2) precondition: the outside manifest records the spec half" \

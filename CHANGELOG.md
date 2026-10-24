@@ -287,6 +287,10 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   `.vibe/install-manifest.json`, and that rewrite followed a symlinked `.vibe`
   into another tree. It now takes the full uninstall's guard: a `WARN` names the
   manifest and leaves it byte-identical (review-hardening/15).
+- **The `--only spec` manifest-prune test pins its host set** — the adapters
+  case `(e2)` installed with no `--platform`, so host detection read the
+  ambient PATH and the precondition failed on a runner without the `claude`
+  CLI. It now installs with `--platform claude` (review-hardening/15).
 - **The engine Stop gate reads every changed path, and only the project's**
   (review-hardening/9) — it read `git status --porcelain`, whose C-quoted names
   (a space, a non-ASCII byte, a newline, a renamed file) never matched a file on
