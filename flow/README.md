@@ -14,7 +14,7 @@ session into a disciplined arc: it routes each phase
 its own write invariants with hooks. It is Markdown and JSON, driven by bash hook
 shims over a zero-dependency Node engine ([engine/](engine)) — Node ≥18, no
 dependencies, no build step. Without node the two hooks that carry a hard block
-fall back to the frozen bash implementations in
+fall back to the pre-port bash implementations in
 [hooks-fallback/](hooks-fallback); the two that only inject text no-op.
 
 It is one of two halves. The other is [the spec framework](https://github.com/LennardZuendorf/vibe/blob/main/spec/README.md),

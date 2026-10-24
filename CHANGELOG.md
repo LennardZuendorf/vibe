@@ -282,6 +282,14 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   the git root. A stale receipt passed in both cases. It now reads
   `--porcelain -z -uall -- .`, strips the `rev-parse --show-prefix`, and blocks
   when a changed path cannot be stat'ed for any reason but "not found".
+- **The no-node Stop gate fallback reads every changed path, and only the
+  project's** (review-hardening/10) — `flow/hooks-fallback/stop-gate.sh` had the
+  same quoting and nested-project holes as the engine. Its staleness scan now
+  reads `git status --porcelain -z -- .` through `read -d ''`, strips the project
+  prefix, skips a rename's origin field, and excludes the inject marker and the
+  warnings log as the engine does. It is no longer the parity oracle: the frozen
+  copy under `oracles/` is, and the engine, the fallback and the oracle run side
+  by side in `parity.test.mjs`.
 
 ## [0.1.0] - 2026-07-03
 

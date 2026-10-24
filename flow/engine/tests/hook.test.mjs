@@ -47,7 +47,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 // ---------------------------------------------------------------------------
 // Fixture — makeHookSandbox() now lives in run.mjs so parity.test.mjs's
 // guard/gate ORACLE differential builds the byte-identical install-shaped
-// layout the frozen bash hooks self-locate through (js-core/8 final review,
+// layout the bash hooks self-locate through (js-core/8 final review,
 // I3). Two hand-copied fixtures would let the two suites be honest about
 // different layouts.
 // ---------------------------------------------------------------------------

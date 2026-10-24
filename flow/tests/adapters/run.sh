@@ -639,7 +639,7 @@ for h in session-start-doctrine user-prompt-submit-inject; do
   assert_eq "js-core/7" "node-absent: $h exits 0 silently" "$out" "rc=0"
 done
 # The two HARD-BLOCK hooks must NOT lose their teeth without node. They fall back
-# to flow/hooks-fallback/*.sh — the frozen pre-port bash implementations, which
+# to flow/hooks-fallback/*.sh — the pre-port bash implementations, which
 # install ships into the target — so a node-less machine is still enforced.
 # `command -v node || exit 0` used to drop both blocks silently while
 # detect-context.sh's header still promised "a target without node must still be
