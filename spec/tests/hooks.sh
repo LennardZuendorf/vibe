@@ -115,8 +115,21 @@ test_block_without_tmpdir() { # review-hardening/17
   fake crash17.sh 3 'boom\n'
   out="$(TMPDIR="$SCRATCH/none" VIBE_SPEC_BIN="$SCRATCH/crash17.sh" bash "$SHIM" guard < <(payload main-write.json) 2>&1 >/dev/null)"; rc=$?
   check review-hardening/17 "guard crash still allows" "0" "$rc"
+  # The shim may not create a temp file at all. A capture file removed after the
+  # run leaves nothing to count, so the probe binary counts while it runs, and
+  # the shim relays its stderr on exit 0.
+  cat > "$SCRATCH/probe17.sh" <<'PROBE'
+#!/usr/bin/env bash
+cat >/dev/null
+printf 'probe: %s\n' "$(find "$TMPDIR" -name 'vibe-spec-hook.*' | wc -l | tr -d ' ')" >&2
+exit 0
+PROBE
+  chmod +x "$SCRATCH/probe17.sh"
+  out="$(TMPDIR="$tdir" VIBE_SPEC_BIN="$SCRATCH/probe17.sh" bash "$SHIM" guard < <(payload main-write.json) 2>&1 >/dev/null)"; rc=$?
+  check review-hardening/17 "no temp file exists while the binary runs" "0|probe: 0" "$rc|$out"
+  out="$(TMPDIR="$tdir" VIBE_SPEC_BIN="$SCRATCH/crash17.sh" bash "$SHIM" guard < <(payload main-write.json) 2>&1 >/dev/null)"; rc=$?
   left="$(find "$tdir" -name 'vibe-spec-hook.*' | wc -l | tr -d ' ')"
-  check review-hardening/17 "no temp file left behind" "0" "$left"
+  check review-hardening/17 "no temp file left after a crash" "0|0" "$rc|$left"
 }
 
 test_newer_binary() {
