@@ -526,11 +526,15 @@ write_manifest() {
 # in place (--only spec removes one half) must not keep a record claiming a path
 # it just deleted: a stale record is a false ownership claim. Records for paths
 # that survive (the flow half's host artifacts) stay, so a later full uninstall
-# can still remove them.
+# can still remove them. This is an uninstall-time write, so it takes the same
+# target_owned guard as the full uninstall's manifest rm: a `.vibe` that links out
+# of the target holds someone else's manifest, which is warned about and left
+# byte-identical (review-hardening/15).
 prune_manifest_dead() {
   local m body ahost akind apath atarget
   m="$(manifest_path)"
   [[ -f "$m" ]] || return 0
+  target_owned "${m#"$TARGET"/}" || return 0
   body="$(mktemp)"
   while IFS=$'\t' read -r ahost akind apath atarget; do
     [[ -n "$ahost" ]] || continue
@@ -1309,6 +1313,8 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   # spec half only) must not leave records naming paths this pass deleted: a stale
   # record is a false claim of vibe ownership. Records whose path survives (the
   # flow half's host artifacts) stay, so a later full uninstall still removes them.
+  # A manifest behind a symlinked `.vibe` is left alone with a WARN, as the full
+  # uninstall leaves it.
   if [[ "$WANT_FLOW" -eq 0 && -f "$(manifest_path)" ]]; then
     say "prune the install manifest of records for paths this pass removed"
     [[ "$DRY_RUN" -eq 1 ]] || prune_manifest_dead

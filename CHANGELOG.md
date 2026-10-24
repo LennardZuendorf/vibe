@@ -277,6 +277,11 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   silently. A symlinked `.gitignore` is no longer replaced by a regular file:
   uninstall leaves it alone and names the vibe lines to remove by hand
   (review-hardening/15).
+- **`--uninstall --only spec` no longer rewrites a manifest outside the
+  target** — the half-uninstall prunes dead records from
+  `.vibe/install-manifest.json`, and that rewrite followed a symlinked `.vibe`
+  into another tree. It now takes the full uninstall's guard: a `WARN` names the
+  manifest and leaves it byte-identical (review-hardening/15).
 - **The engine Stop gate reads every changed path, and only the project's**
   (review-hardening/9) — it read `git status --porcelain`, whose C-quoted names
   (a space, a non-ASCII byte, a newline, a renamed file) never matched a file on

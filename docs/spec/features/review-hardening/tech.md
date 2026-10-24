@@ -106,7 +106,7 @@ export function validFeature(name) // -> boolean
 | :178, :180 | `remove_shipped` rm and empty-dir prune | uninstall, source-relative | unit 1 (hunk `@@ -156`) |
 | :214-224 | `scrub_source_only` rm of tests, `AGENTS.md`, `evidence`, `warnings.log` | install, inside the dir install just wrote with `cp -RL` | none in this feature; install-time writes through a symlinked skill dir are Deferred |
 | :270 | `unregister_skill` rm of the skill link | uninstall | unit 1 (hunk `@@ -247`) |
-| :425 | `render_manifest` `mv -f "$tmp" "$m"` | install-time write of `.vibe/install-manifest.json` | none; Deferred with :214 |
+| :425 | `render_manifest` `mv -f "$tmp" "$m"` | install-time write of `.vibe/install-manifest.json` (`write_manifest`); also uninstall-time, through `prune_manifest_dead` on `--uninstall --only spec` | install-time: none, Deferred with :214. Uninstall-time: unit 15 follow-up, `prune_manifest_dead` returns early with a WARN when `target_owned .vibe/install-manifest.json` fails, as :1147 does |
 | :452, :473 | rm of `$body` | own temp file | none |
 | :640 | `remove_host_file` | uninstall, manifest-driven (`file` rows) | unit 15 |
 | :678 | `remove_host_package` file rm | uninstall, source walk (no-manifest fallback) | unit 15 |

@@ -2486,6 +2486,24 @@ assert_contains "review-hardening/15" "(f) the symlinked .gitignore is reported"
   && pass "review-hardening/15" "the in-target recorded files are still removed" \
   || fail "review-hardening/15" "the in-target recorded files are still removed"
 rm -rf "$T" "$OA" "$OB" "$OE" "$OF"
+# (e2) the --only spec manifest prune: a half-uninstall leaves the manifest in
+# place and rewrites it, so a symlinked .vibe must stop that rewrite as well.
+# The plain --only spec prune (host-support/2) is the control.
+T="$(mktmp)"; OE="$(mktmp)"
+bash "$INSTALL" "$T" >/dev/null 2>&1
+mv "$T/.vibe" "$OE/vibe"; ln -s "$OE/vibe" "$T/.vibe"
+grep -qF '.claude/skills/spec' "$OE/vibe/install-manifest.json" \
+  && pass "review-hardening/15" "(e2) precondition: the outside manifest records the spec half" \
+  || fail "review-hardening/15" "(e2) precondition: the outside manifest records the spec half"
+se="$(rh_snap "$OE")"
+out="$(bash "$INSTALL" "$T" --uninstall --only spec --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/15" "(e2) --only spec uninstall with a symlinked .vibe exits 0" "$rc" "0"
+assert_eq "review-hardening/15" "(e2) --only spec leaves the manifest behind a symlinked .vibe unchanged" "$(rh_snap "$OE")" "$se"
+assert_contains "review-hardening/15" "(e2) the skipped manifest prune is reported" "$out" "WARN: .vibe/install-manifest.json is outside the target"
+[[ -L "$T/.vibe" && "$(readlink "$T/.vibe")" == "$OE/vibe" ]] \
+  && pass "review-hardening/15" "(e2) .vibe is still the same symlink" \
+  || fail "review-hardening/15" "(e2) .vibe is still the same symlink"
+rm -rf "$T" "$OE"
 # (c) no usable manifest: the shipped-source fallback, a symlinked package dir
 # and a symlinked marketplace dir.
 T="$(mktmp)"; OC="$(mktmp)"
