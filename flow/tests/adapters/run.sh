@@ -2572,6 +2572,13 @@ d="$(mktmp)"; printf 'plain\n' > "$d/AGENTS.md"
 bash "$MERGE" "$d" >/dev/null 2>&1; rc=$?
 [[ $rc -eq 0 && ! -L "$d/AGENTS.md" ]] && grep -qF 'plain' "$d/AGENTS.md" && grep -qF 'vibe:instructions:start' "$d/AGENTS.md" \
   && pass "review-hardening/4" "control: regular AGENTS.md merges as today" || fail "review-hardening/4" "control regressed"
+# install level (R11): a dangling AGENTS.md is refused, and the install continues
+t="$(mktmp)"; ln -s /nonexistent "$t/AGENTS.md"
+out="$(bash "$INSTALL" "$t" 2>&1)"; rc=$?
+assert_eq "review-hardening/4" "install with a dangling AGENTS.md exits 0" "$rc" "0"
+assert_contains "review-hardening/4" "install warns that AGENTS.md was not merged" "$out" "AGENTS.md not merged"
+[[ -L "$t/AGENTS.md" && "$(readlink "$t/AGENTS.md")" == "/nonexistent" ]] \
+  && pass "review-hardening/4" "install keeps the dangling AGENTS.md link" || fail "review-hardening/4" "install replaced the dangling AGENTS.md link"
 
 # review-hardening/3 — link_adapter never rewrites a symlink that points elsewhere.
 echo ""
