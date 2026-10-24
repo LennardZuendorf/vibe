@@ -1,115 +1,38 @@
 # AGENTS.md — vibe Engineering Guide
 
 <!-- vibe:instructions:start -->
-<!-- Managed by vibe (merge-agents.sh). Edits inside these markers are
-     replaced on the next setup.apply / install. Content outside the markers
-     (above this line, or inside vibe:active-rules) is user-owned. -->
-
-This project runs the **vibe flow** — a spec-first workflow harness. The spec root is the
-durable memory (`docs/spec/`, or legacy `.spec/`); sessions are ephemeral. Read the specs before you write code.
+<!-- Managed by vibe (merge-agents.sh). Edit only inside these markers. -->
 
 ## Session start
 
-1. Read `lessons.md` and `plan.md` in the spec root (`docs/spec/`, or legacy `.spec/`). (The spec half owns that root; a
-   flow-only install has no tree — the flow still runs, the specs are just absent.)
-2. Identify the feature you are working on and load its specs:
-   `docs/superpowers/specs/*-<name>-design.md` + `docs/superpowers/plans/*-<name>.md`, or the fallback `docs/spec/features/<name>/{product,tech,plan}.md`.
-3. If `.agents/skills/vibe/state.json` exists and you are continuing a flow session,
-   read `{flow, phase, feature}` and resume the linked `vibe` skill. A missing cursor
-   means `idle` — proceed with the specs; a missing cursor is not an error.
+Read root `lessons.md` and `plan.md`; read active design and plan from `docs/superpowers/`.
+Read `.vibe/run/flow/state.json` when present; absence means `idle`.
 
-## Driving the flow
+## Flow
 
-- `/flow <flow.phase> [feature] [confirm]` transitions the state machine. Pass the feature
-  name to carry it into the cursor; add the literal `confirm` token to cross a gated edge
-  (the two human gates below). Never edit `state.json` by hand.
-- Under the hood `/flow` runs
-  `bash .agents/skills/vibe/scripts/set-state.sh <flow.phase> [feature]`. That script is a
-  *writer*, not a gate — it moves the cursor but enforces no approval. The gate teeth live
-  in the `/flow` command and the hooks, not the writer.
-- Per-turn **orders** for the current state come from the linked `vibe` skill, resolved by
-  `orders.sh`. Follow the current state's orders over any delegated skill's own prose.
+Gates: `feature.plan>feature.impl` and `feature.verify>feature.compound` need approval + `--confirm`. Style: brief technical English; see `flow/SKILL.md`.
 
-## Working model
-
-```
-ASK → read the spec root → PLAN → CONFIRM → IMPL → verify → compound
-```
-
-Most transitions auto-advance. Two edges are **human gates** — stop and get explicit
-approval before crossing: plan → impl, and verify → ship. Everything else flows without
-pausing to ask.
-
-**Output: brief technical English** — answer first, then the detail. One idea per
-sentence, active voice, no filler or hedging; compress receipts and subagent
-summaries. Never compress security warnings, irreversible-action confirmations, or
-code/paths/commands — those stay full and byte-exact.
+Use `vibe-flow state set`; `/flow` and GSD aliases wrap it.
 
 ## Write policy
 
-Which paths this harness restricts, and in which states, is **data**:
-`content/policy.json`, read by `detect-context.sh decide` (which defaults to `idle`
-when `state.json` is absent). The rules are rendered rule-by-rule into the
-`vibe:rules` block below — this section states no state list of its own, because a
-second hand-written copy is a copy that can disagree with the enforcer. Check any
-path before writing it:
-
-```bash
-bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
-```
-
-## Precedence
-
-The cursor owns sequencing and artifact destinations; delegated skills own method. When a
-delegated skill's text names its own artifact path or hands off elsewhere, the current
-state's orders win: write to the state's surface, transition only via `set-state.sh`. Scope
-edits are not a state — edit within the current state's write surface and stay put.
-`set-state.sh idle` is always legal: abort ends any flow.
-
-## Injected rules
-
-Standing rules are authored as content blocks and composed into channels: the
-per-turn prompt, session start, and the `vibe:rules` block below. Configure them in
-this repo's root `vibe.json` — add, remove, reorder, disable, or define your own —
-never by editing the block, which is regenerated.
+`content/policy.json` owns write rules. The `vibe:rules` block below is rendered from it; do not edit it. Check paths with `vibe-flow policy decide <path>`.
 
 ## Commands
 
 ```bash
-# Spec validation — run before claiming done (spec half; absent on --only flow)
-# (until F22 ships the binary, `bash .agents/skills/spec/scripts/validate.sh` on a legacy `.spec/` root)
-vibe-spec validate
-# Write policy for a path (works without state.json)
-bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
-# Health-check the harness wiring (hooks, cursor, machine)
-bash .agents/skills/vibe/scripts/doctor.sh
-# Injection config: what each channel composes, and lint it
-node .agents/skills/vibe/engine/cli.mjs render --list
-node .agents/skills/vibe/engine/cli.mjs render --check
-# Re-render the AGENTS.md rules block after editing vibe.json
-node .agents/skills/vibe/engine/cli.mjs render agents-md --write
+vibe-flow state set <state> [feature] [--confirm]; vibe-flow policy decide <path>
+vibe-spec validate; bash .agents/skills/vibe/scripts/doctor.sh
+node .agents/flow/engine/cli.mjs render --check
 ```
-
-## Enforcement is partial — do not trust it blindly
-
-- The `pre-tool-use-guard` hook only intercepts `Edit`, `Write`, and `NotebookEdit` tool
-  calls. Shell redirection (`>`, `tee`, `sed -i`) bypasses it — honoring the write
-  invariants there is a **convention**, backed only by a warn-only Bash sniffer.
-- `set-state.sh` writes the cursor; it does not gate. Approvals are enforced by `/flow` and
-  the hooks, not by the writer.
-- The Stop receipt tooth (a `*.verify` state needs a fresh evidence receipt) fires only when
-  the hooks are wired into the platform (e.g. `.claude/settings.json`). No wiring, no tooth.
 
 ## Degrade
 
-Scripts graceful-degrade: `jq` is recommended but optional (a pure-bash path keeps the
-cursor byte-identical), and other agents may edit concurrently — touch only your own files
-and prefer warn over hard-fail.
+Optional tools warn. Shell writes bypass guards; follow policy.
 <!-- vibe:instructions:end -->
 
 <!-- vibe:active-rules:start -->
-<!-- Generated from the spec lessons.md by regen-active-rules.sh. Do not edit by hand;
-     edit lessons.md and re-run during compound. Top 5, pinned first. -->
+<!-- Generated from lessons.md by regen-active-rules.sh. Do not edit by hand. -->
 
 ### Active Rules
 

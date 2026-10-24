@@ -6,16 +6,15 @@ is local to this half. Read the root guide first.
 
 ## What lives here
 
-The `vibe` flow skill. Ships to targets as `.agents/skills/vibe/` (a `-L`
-dereferenced copy of this dir); the Claude adapter in `../.claude/` drives it.
+The `vibe` flow skill. Ships to targets at `.agents/flow/`; this repo links that
+path to `flow/`. The Claude adapter in `../.claude/` drives it.
 
 | Path | Role |
 |---|---|
-| `SKILL.md` | Router + `## Orders` (D12 per-turn orders) |
-| `setup.md`, `strategy.md`, `feature.md`, `quick.md`, `verify.md`, `compound.md` | Phase guides |
+| `SKILL.md` | Flow procedures, doctrine, and D12 per-turn orders |
 | `state-machine.json` | **Data** — states, skills, legal `next`. Edit this, not prose |
 | `state.example.json` | Template for the runtime cursor |
-| `state.json` | Gitignored runtime cursor — seed only when testing transitions |
+| `.vibe/run/flow/state.json` | Runtime cursor — write through `vibe-flow state set` |
 | `scripts/` | `set-state.sh`, `detect-context.sh`, `orders.sh`, `doctor.sh`, `merge-*.sh` |
 | `reference/` | `deps.json`, `adapters.json`, templates |
 | `tests/` | Behaviour suites (`flow/tests/run.sh` + `tests/adapters/`) — **source-only, never ships** |
@@ -25,8 +24,7 @@ dereferenced copy of this dir); the Claude adapter in `../.claude/` drives it.
 - Bash MUST use `set -euo pipefail`; MUST be shellcheck-clean.
 - The state machine is **data** — change `state-machine.json`, never duplicate
   its transitions in prose.
-- Never edit `state.json` by hand — only via
-  `bash flow/scripts/set-state.sh <flow.phase> [feature]`.
+- Never edit the runtime cursor by hand — use `vibe-flow state set <state> [feature] [--confirm]`.
 - Self-locate by upward marker search (`docs/spec` / `.git`), not `../` hop counts.
 - `tests/` and this `AGENTS.md` are pruned by `install.sh` on copy — contributor
   artifacts, not part of the shipped skill.

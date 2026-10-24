@@ -385,8 +385,7 @@ The flow half. Addressed at runtime under `.agents/skills/vibe/`.
 
 | Path | What it is |
 |---|---|
-| [SKILL.md](SKILL.md) | `vibe` router — routing table + the D12 orders blocks |
-| [setup.md](setup.md), [strategy.md](strategy.md), [feature.md](feature.md), [quick.md](quick.md), [verify.md](verify.md), [compound.md](compound.md) | per-phase procedure files |
+| [SKILL.md](SKILL.md) | the `vibe` flow procedures, doctrine, and D12 orders blocks |
 | [state-machine.json](state-machine.json) | static machine — states, skills, `style`, `next` (data, not prose) |
 | [state.example.json](state.example.json) | cursor template; copy to `state.json` to test transitions |
 | `state.json` | runtime cursor — gitignored; created by the installer / `set-state.sh` |
