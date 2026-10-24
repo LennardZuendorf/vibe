@@ -27,10 +27,6 @@ fn legacy_formats_match_the_oracle() {
         &["--format", "xml", "bash"],
         &["nomatch"],
         &[""],
-        &["--bogus"],
-        &["--format"],
-        &["--"],
-        &[],
     ] {
         assert_parity(&p, "lessons-for", "lessons-for.sh", args);
     }
@@ -114,4 +110,25 @@ fn json_mode_rejects_an_empty_tag() {
         assert!(out.stdout.is_empty(), "{args:?}: {}", out.text());
         assert!(out.stderr.contains("empty"), "{args:?}: {}", out.stderr);
     }
+}
+
+#[test]
+fn usage_errors_exit_2() {
+    // skill-revision/13: the contract's usage code, messages unchanged.
+    let p = project("lessons-usage");
+    write(&p, ".spec/lessons.md", LESSONS);
+    for (args, msg) in [
+        (&["lessons-for", "--bogus"][..], "Unknown option: --bogus"),
+        (&["lessons-for", "--"], "Unknown option: --"),
+        (&["lessons-for"], "usage: vibe-spec lessons-for"),
+        (&["lessons-for", "--format"], "--format requires a value"),
+    ] {
+        let out = spec(&p, args, &[]);
+        assert_eq!(out.code, 2, "{args:?}: {}", out.stderr);
+        assert!(out.stdout.is_empty(), "{args:?}: {}", out.text());
+        assert!(out.stderr.contains(msg), "{args:?}: {}", out.stderr);
+    }
+    // Controls: no match is still success.
+    let out = spec(&p, &["lessons-for", "nomatch"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
 }

@@ -33,6 +33,20 @@
     { "command": "promote", "case": "features/delta-removed", "args": ["auth"], "field": "files", "reason": "the port removes Legacy login (R9) from product-auth.md (P3c-R9); the oracle never reads product.md" },
     { "command": "check-drift", "case": "features/superpowers-artifact", "args": [], "field": "stdout", "reason": "the port warns on superpowers artifacts left under docs/superpowers/ (D46, P3c-R4); the oracle does not look there" },
     { "command": "promote", "case": "features/superpowers-artifact", "args": ["auth"], "field": "exit", "reason": "the port prints the superpowers promotion checklist (P3c-R12); the oracle fails on the missing fallback folder" },
-    { "command": "promote", "case": "features/superpowers-artifact", "args": ["auth"], "field": "stdout", "reason": "the port prints the superpowers promotion checklist (P3c-R12); the oracle prints nothing" }
+    { "command": "promote", "case": "features/superpowers-artifact", "args": ["auth"], "field": "stdout", "reason": "the port prints the superpowers promotion checklist (P3c-R12); the oracle prints nothing" },
+    { "command": "lessons-for", "case": "lessons/edge-args", "args": ["--format"], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "lessons-for", "case": "lessons/tagged", "args": ["--bogus"], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "lessons-for", "case": "lessons/tagged", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/empty-feature", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/long-preview", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/no-trailing-newline", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/quoted-preview", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/regex-feature", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/rfc-boundary", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/rich-features", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/rid-prefix", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/scope-section", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/sf14-awk", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/table-preview", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" }
   ]
 }

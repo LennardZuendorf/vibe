@@ -418,7 +418,10 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
     }
     let a = match parse(args) {
         Ok(a) => a,
-        Err(msg) => return fail(&msg),
+        Err(msg) => {
+            eprintln!("{msg}");
+            return (exit::USAGE, Vec::new());
+        }
     };
     // The oracle's paths are cwd-relative under `.spec/`; the port uses the // literal
     // discovered root (a walk up from the cwd, shared by every subcommand: a

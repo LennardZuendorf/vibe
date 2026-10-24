@@ -39,14 +39,14 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
                 }
                 None => {
                     eprintln!("scan-merges: --format requires table|json|plain");
-                    return (exit::FINDINGS, Vec::new());
+                    return (exit::USAGE, Vec::new());
                 }
             }
         } else if let Some(v) = a.strip_prefix("--format=") {
             format = v.to_string();
         } else if a.starts_with('-') {
             eprintln!("Unknown option: {a}");
-            return (exit::FINDINGS, Vec::new());
+            return (exit::USAGE, Vec::new());
         } else {
             feature = Some(a.to_string()).filter(|f| !f.is_empty());
         }

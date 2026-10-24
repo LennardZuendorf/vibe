@@ -52,7 +52,7 @@ pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
                 }
                 None => {
                     eprintln!("lessons-for: --format requires a value (markdown|inject|json)");
-                    return (exit::FINDINGS, Vec::new());
+                    return (exit::USAGE, Vec::new());
                 }
             },
             "--json" => spec_json = true,
@@ -75,7 +75,7 @@ pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
             _ if a.starts_with("--format=") => format = Format::parse(&a["--format=".len()..]),
             _ if a.starts_with('-') => {
                 eprintln!("Unknown option: {a}");
-                return (exit::FINDINGS, Vec::new());
+                return (exit::USAGE, Vec::new());
             }
             _ => tags.push(a.to_string()),
         }
@@ -97,7 +97,7 @@ pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
     }
     if tags.is_empty() {
         eprintln!("usage: vibe-spec lessons-for <tag> [<tag>...] [--format markdown|inject|json]");
-        return (exit::FINDINGS, Vec::new());
+        return (exit::USAGE, Vec::new());
     }
     let text = std::fs::read(&file).unwrap_or_default();
     let matched: Vec<Vec<u8>> = blocks(&text)

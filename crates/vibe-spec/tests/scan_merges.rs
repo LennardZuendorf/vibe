@@ -33,12 +33,8 @@ fn matches_the_oracle_across_formats_and_errors() {
         &["--format=table"],
         &["auth"],
         &["missing"],
-        &["--bogus"],
-        &["--format"],
         &[""],
         &["auth", ""],
-        &["--"],
-        &["--", "auth"],
         &["auth/"],
         &["/auth"],
         &["//auth"],
@@ -72,4 +68,22 @@ fn sorts_prefix_named_features_like_the_glob() {
         );
     }
     assert_parity(&p, "scan-merges", "scan-merges.sh", &[]);
+}
+
+#[test]
+fn usage_errors_exit_2() {
+    // skill-revision/13: the contract's usage code, messages unchanged.
+    let p = project("merges-usage");
+    write(&p, ".spec/features/auth/tech.md", &format!("{HEAD}x\n"));
+    for (args, msg) in [
+        (&["scan-merges", "--bogus"][..], "Unknown option: --bogus"),
+        (&["scan-merges", "--format"], "--format requires"),
+        (&["scan-merges", "--"], "Unknown option: --"),
+        (&["scan-merges", "--", "auth"], "Unknown option: --"),
+    ] {
+        let out = common::spec(&p, args, &[]);
+        assert_eq!(out.code, 2, "{args:?}: {}", out.stderr);
+        assert!(out.stdout.is_empty(), "{args:?}: {}", out.text());
+        assert!(out.stderr.contains(msg), "{args:?}: {}", out.stderr);
+    }
 }
