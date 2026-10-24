@@ -8,7 +8,7 @@
 # both ask content/policy.json through `detect-context.sh decide`.
 #
 # DEGRADE (no node, no engine, or an unexpected engine exit code):
-# `.agents/skills/vibe/hooks-fallback/pre-tool-use-guard.sh` — the frozen pre-port
+# `.agents/skills/vibe/hooks-fallback/pre-tool-use-guard.sh` — the pre-port bash
 # implementation — answers instead. This hook carries a HARD BLOCK, so losing it
 # to a missing runtime is not acceptable: enforcement degrades to bash, never to
 # nothing. It still never inverts an allow into a spurious exit 2.

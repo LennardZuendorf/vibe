@@ -578,10 +578,12 @@ for (const fixture of CURSOR_FIXTURES) {
 // merges `main` does not hold them either. The final review had to reconstruct
 // them from git history to run the differential once.
 //
-// flow/hooks-fallback/pre-tool-use-guard.sh and
-// oracles/bash/flow/hooks-fallback/stop-gate.sh are those bash originals,
-// restored verbatim and frozen (the live flow/hooks-fallback/stop-gate.sh was
-// forked from its oracle in review-hardening/10 and runs as a third leg). This section is the differential made
+// oracles/bash/flow/hooks-fallback/{pre-tool-use-guard,stop-gate}.sh are those
+// bash originals, restored verbatim and byte-frozen. The guard leg still spawns
+// the live flow/hooks-fallback/pre-tool-use-guard.sh, which began as the same
+// copy and has since been edited (see its banner); the live
+// flow/hooks-fallback/stop-gate.sh was forked from its oracle in
+// review-hardening/10 and runs as a third leg. This section is the differential made
 // PERMANENT: every comparison below is regenerable by anyone, in the suite, on
 // every run — which is the property the branch was missing, not the parity.
 //
@@ -1936,14 +1938,25 @@ test('parity oracles: the differential\'s input tables have not been trimmed to 
 // each must carry the FROZEN banner, must still contain the load-bearing
 // spellings the port had to reproduce, and must contain no trace of the Node
 // shim that replaced it.
-test('parity oracles: the guard oracle and oracles/…/stop-gate.sh are the frozen bash originals, not shims', () => {
+test('parity oracles: the guard oracle and oracles/…/stop-gate.sh are the bash originals, not shims', () => {
   const guard = readFileSync(GUARD_ORACLE, 'utf8');
   const gate = readFileSync(GATE_ORACLE, 'utf8');
   for (const [name, src] of [['pre-tool-use-guard.sh', guard], ['stop-gate.sh', gate]]) {
-    assertMatch(src, /FROZEN PARITY ORACLE/, `${name} lost its frozen-oracle banner`);
+    assertMatch(src, /PARITY ORACLE/, `${name} lost its parity-oracle banner`);
     assert(!/cli\.mjs/.test(src), `${name} has been overwritten with the Node shim — the oracle is gone again`);
     assert(!/exec node/.test(src), `${name} has been overwritten with the Node shim — the oracle is gone again`);
   }
+  assertMatch(gate, /FROZEN PARITY ORACLE/, 'oracles/…/stop-gate.sh lost its frozen-oracle banner');
+  // GUARD_ORACLE is the live fallback, which has been edited since it was
+  // restored (the v0.4 docs/spec path classes, review-hardening/19's matcher
+  // comment). Its banner must not claim to be a frozen verbatim copy, and must
+  // name the byte-frozen original under oracles/.
+  assert(!/FROZEN PARITY ORACLE/.test(guard), 'pre-tool-use-guard.sh still calls itself frozen, but it has been edited');
+  assert(!/restored\s*(?:#\s*)?verbatim/.test(guard), 'pre-tool-use-guard.sh still claims a verbatim copy of the pre-port hook');
+  assert(
+    guard.includes('oracles/bash/flow/hooks-fallback/pre-tool-use-guard.sh'),
+    'pre-tool-use-guard.sh must name the byte-frozen original under oracles/',
+  );
   assertMatch(guard, /detect-context\.sh|"\$DETECT" decide/, 'the guard oracle no longer delegates to detect-context.sh');
   assertMatch(guard, /sniff_bash/, 'the guard oracle lost its warn-only Bash sniffer');
   assertMatch(gate, /stop_hook_active/, 'the gate oracle lost its re-entry guard');

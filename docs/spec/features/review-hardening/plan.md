@@ -732,7 +732,7 @@ crates/vibe-spec/tests/setup.rs    # new cases beside the symlinked .git/hooks t
 - [ ] Rust, only if unit 18 landed: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`.
 - [ ] Reproduce finding 1 on a tar copy: `install.sh <copy> --uninstall --yes` exits 1 and the spec file count is unchanged.
 - [ ] `grep -n 'rm -f\|rm -rf\|-delete\|mv -f\|rmdir' install.sh` matches the [tech.md](tech.md) R1 table row for row.
-- [ ] `grep -rn "relinks a wrong target\|this project's cursor\|symlink-free\|FROZEN PARITY ORACLE" flow/setup.md flow/engine/content.mjs flow/hooks-fallback/stop-gate.sh build-plugin.sh plugin/hooks`. Expected: no output. (`pre-tool-use-guard.sh` keeps its banner, because it stays the guard oracle.)
+- [ ] `grep -rn "relinks a wrong target\|this project's cursor\|symlink-free\|FROZEN PARITY ORACLE" flow/setup.md flow/engine/content.mjs flow/hooks-fallback/stop-gate.sh build-plugin.sh plugin/hooks`. Expected: no output. (`pre-tool-use-guard.sh` keeps a guard-oracle banner, because it stays the guard oracle; that banner no longer claims a frozen copy and names the byte-frozen original under `oracles/`.)
 - [ ] Whole-branch review: one `opus` reviewer over `git diff <step-0 base>..HEAD -- <port-owned files>`; fix must-fix findings in their unit's files and re-run the affected rows above.
 
 **Verification:** each command above, with its real output pasted into the verify receipt.
