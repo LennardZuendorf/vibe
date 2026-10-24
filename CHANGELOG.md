@@ -155,7 +155,7 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   to an outside file injected that file into every prompt. The new
   `confineRealWhy` checks the resolved real path; refused paths are reported as
   errors that `render --check` exits non-zero on. In-repo symlinks still work,
-  and an absent lessons file stays silent (rh/11).
+  and an absent lessons file stays silent (review-hardening/11).
 - **`render --write` writes through in-repo symlinks** — the write
   target was confined lexically and renamed onto the configured path, so a
   symlinked document (or one under a linked directory) was either replaced by a
@@ -163,8 +163,8 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   `confineRealWhy`: an in-repo link is written through and stays a link; an
   outside or dangling link is refused with exit 1. The temp file beside the
   target gets an unpredictable name and is opened exclusively (`wx`), so a link a
-  repo plants at the temp name is never followed (rh/12).
-- Spec hook shim (`spec/hooks/run-hook.sh`): `guard` keeps a real `blocked:` exit 2 when the temp directory is missing. The shim captures stderr with a descriptor swap and no longer creates a temp file. (review-hardening/17)
+  repo plants at the temp name is never followed (review-hardening/12).
+- **The spec hook shim keeps a guard block without a temp file** — `spec/hooks/run-hook.sh` `guard` keeps a real `blocked:` exit 2 when the temp directory is missing. The shim captures stderr with a descriptor swap and no longer creates a temp file. (review-hardening/17)
 - **The hard blocks survive a node-less target** — the hook shims were
   `command -v node || exit 0`, so a machine without node silently lost the
   PreToolUse write guard and the Stop evidence gate, while the docs still called
