@@ -596,14 +596,13 @@ test_sf17_templates() {
   done
 }
 
-# ── SF17: SKILL.md stays within skill size budget ────────────────────────────
+# ── SF17, skill-revision/5: SKILL.md stays within its word budget; detail lives in reference/setup.md ──
 test_sf17_skill_size() {
-  local lines; lines="$(wc -l < "$SPEC_SKILL/SKILL.md" | tr -d ' ')"
-  if [[ "$lines" -lt 500 ]]; then
-    pass SF17 "SKILL.md under 500 lines ($lines)"
-  else
-    fail SF17 "SKILL.md under 500 lines ($lines)"
-  fi
+  local words; words="$(wc -w < "$SPEC_SKILL/SKILL.md" | tr -d ' ')"
+  if [[ "$words" -le 1400 ]]; then pass SF17 "SKILL.md at most 1400 words ($words)"
+  else fail SF17 "SKILL.md at most 1400 words ($words)"; fi
+  if [[ -f "$SPEC_SKILL/reference/setup.md" ]]; then pass SF17 "setup, config and templates live in reference/setup.md"
+  else fail SF17 "setup, config and templates live in reference/setup.md"; fi
 }
 
 # ── SF17: companion entrypoints exist ────────────────────────────────────────
@@ -1162,29 +1161,32 @@ test_subagents_folder_wiring() {
   assert_contains "spec-skill-improvements/17" "root SKILL.md agents: map has spec-health" "$skill" "spec-health"
 }
 
-# ── spec-skill-improvements: Unit 18 — setup interview flow ──────────────────
+# ── skill-revision/5: the setup interview lives in reference/setup.md ───────
 test_setup_section_has_interview_flow() {
-  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
-  assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q1" "$skill" "Q1"
-  assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q2" "$skill" "Q2"
-  assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q3" "$skill" "Q3"
-  assert_not_contains "spec-skill-improvements/18" "SKILL.md Setup dropped the caveman-level question (now 3 questions)" "$skill" "Q4"
-  assert_contains "spec-skill-improvements/18" "SKILL.md Setup references .config.yaml" "$skill" ".config.yaml"
+  local setup; setup="$(cat "$SPEC_SKILL/reference/setup.md" 2>/dev/null)"
+  assert_contains "skill-revision/5" "reference/setup.md Setup has Q1" "$setup" "Q1"
+  assert_contains "skill-revision/5" "reference/setup.md Setup has Q2" "$setup" "Q2"
+  assert_contains "skill-revision/5" "reference/setup.md Setup has Q3" "$setup" "Q3"
+  assert_not_contains "skill-revision/5" "reference/setup.md Setup keeps three questions" "$setup" "Q4"
+  assert_contains "skill-revision/5" "reference/setup.md Setup writes .vibe/spec.json" "$setup" ".vibe/spec.json"
 }
 
-# ── spec-skill-improvements: Unit 19 — config section + defaults ─────────────
+# ── skill-revision/5: one config file; SKILL.md § Config points to reference/setup.md ──
 test_config_section_present() {
-  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
-  assert_contains "spec-skill-improvements/19" "SKILL.md has ## Config section" "$skill" "## Config"
-  assert_contains "spec-skill-improvements/19" "SKILL.md Config references .config.yaml" "$skill" ".config.yaml"
-  assert_contains "spec-skill-improvements/19" "SKILL.md Config has suggest-superpowers" "$skill" "suggest-superpowers"
+  local setup skill; setup="$(cat "$SPEC_SKILL/reference/setup.md" 2>/dev/null)"; skill="$(cat "$SPEC_SKILL/SKILL.md")"
+  assert_contains "skill-revision/5" "SKILL.md has ## Config" "$skill" "## Config"
+  assert_contains "skill-revision/5" "SKILL.md Config points to reference/setup.md" "$skill" "(reference/setup.md)"
+  assert_contains "skill-revision/5" "reference/setup.md has ## Config" "$setup" "## Config"
+  assert_contains "skill-revision/5" "reference/setup.md Config names .vibe/spec.json" "$setup" ".vibe/spec.json"
 }
 
+# shellcheck disable=SC2016 # literal backticks
 test_config_defaults_documented() {
-  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
-  assert_contains "spec-skill-improvements/19" "SKILL.md Config documents vibe-flow key" "$skill" "vibe-flow"
-  assert_not_contains "spec-skill-improvements/19" "SKILL.md Config dropped the retired caveman key" "$skill" "caveman"
-  assert_contains "spec-skill-improvements/19" "SKILL.md Config documents suggest-superpowers key" "$skill" "suggest-superpowers"
+  local setup; setup="$(cat "$SPEC_SKILL/reference/setup.md" 2>/dev/null)"
+  assert_contains "skill-revision/5" "reference/setup.md documents featureLayer" "$setup" '`featureLayer`'
+  assert_contains "skill-revision/5" "reference/setup.md documents suggest" "$setup" '`suggest`'
+  assert_contains "skill-revision/5" "reference/setup.md documents superpowers" "$setup" '`superpowers`'
+  assert_not_contains "skill-revision/5" "reference/setup.md dropped the retired caveman key" "$setup" "caveman"
 }
 
 # ── flow-mvp/4: hybrid plan template gains agentic-workers grammar ──────────

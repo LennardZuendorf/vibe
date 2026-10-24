@@ -80,4 +80,59 @@ assert_population "skill-revision/4" "Rule + Routing lines examined" "$_n" 30
 out="$(fixed_root_hits "$_sa/rule-routing.md")"
 assert_eq "skill-revision/4" "Rule and Routing name no fixed spec root" "" "$out"
 
+# --- skill-revision/5: layers, root-neutral paths, no-binary truth, setup move --
+_R="$REPO_ROOT/spec/reference"
+out="$(fixed_root_hits "$_S")"
+assert_eq "skill-revision/5" "SKILL.md names no fixed spec root" "" "$out"
+_w="$(wc -w < "$_S" | tr -d ' ')"
+if [[ "$_w" -le 1400 ]]; then pass "skill-revision/5" "SKILL.md is $_w words (ceiling 1400)"
+else fail "skill-revision/5" "SKILL.md is $_w words (ceiling 1400)"; fi
+for _x in '.config.yaml' 'build it'; do
+  if grep -qF "$_x" "$_S"; then fail "skill-revision/5" "SKILL.md does not say '$_x'"
+  else pass "skill-revision/5" "SKILL.md does not say '$_x'"; fi
+done
+_inj="$(grep -E '^!`vibe-spec list-specs' "$_S" || true)"
+assert_contains "skill-revision/5" "the injection line falls back when the binary is missing" "$_inj" '2>/dev/null ||'
+assert_contains "skill-revision/5" "SKILL.md links reference/layered.md" "$(cat "$_S")" "(reference/layered.md)"
+assert_contains "skill-revision/5" "SKILL.md links reference/setup.md" "$(cat "$_S")" "(reference/setup.md)"
+_su="$(cat "$_R/setup.md" 2>/dev/null)"
+for _x in featureLayer suggest superpowers; do
+  assert_contains "skill-revision/5" "reference/setup.md names the $_x key" "$_su" "\`$_x\`"
+done
+if grep -qF 'vibe-flow' "$_R/setup.md" 2>/dev/null; then fail "skill-revision/5" "reference/setup.md drops the vibe-flow key"
+else pass "skill-revision/5" "reference/setup.md drops the vibe-flow key"; fi
+_ly="$_R/layered.md"
+if [[ -f "$_ly" && "$(wc -l < "$_ly" | tr -d ' ')" -le 100 ]]; then pass "skill-revision/5" "reference/layered.md exists, at most 100 lines"
+else fail "skill-revision/5" "reference/layered.md exists, at most 100 lines"; fi
+
+# Application check: a vibe-spec init root plus the notes layered.md's example writes.
+_vsb="${VIBE_SPEC_BIN:-$REPO_ROOT/target/debug/vibe-spec}"
+[[ -x "$_vsb" ]] || (cd "$REPO_ROOT" && cargo build -q --locked -p vibe-spec >/dev/null 2>&1) || true
+if [[ ! -x "$_vsb" ]]; then
+  fail "skill-revision/5" "vibe-spec binary available for the application check ($_vsb)"
+else
+  _p="$_sa/layered"; mkdir -p "$_p"
+  (cd "$_p" && git init -q . && "$_vsb" init >/dev/null 2>&1)
+  mkdir -p "$_p/.vibe"
+  printf '{"featureLayer": "vibe", "superpowers": {"writing-plans": false}, "suggest": false}\n' > "$_p/.vibe/spec.json"
+  (cd "$_p" && "$_vsb" root >/dev/null 2>&1); rc=$?
+  assert_rc "skill-revision/5" "control: the three skill keys in .vibe/spec.json leave vibe-spec root at exit 0" 0 "$rc"
+  # Write every `<root>/<path>`: block of the example; "Add to" appends.
+  awk -v R="$_p/docs/spec" '
+    /^(Add to )?`<root>\/[^`]+`/ { p = $0; sub(/^[^`]*`<root>\//, "", p); sub(/`.*$/, "", p); app = ($0 ~ /^Add to/); next }
+    /^```markdown$/ && p != "" { inb = 1; f = R "/" p; d = f; sub(/\/[^\/]*$/, "", d); system("mkdir -p \"" d "\""); if (!app) printf "" > f; next }
+    /^```$/ && inb { inb = 0; close(f); p = ""; next }
+    inb { print >> f }
+  ' "$_ly"
+  _notes="$(cd "$_p/docs/spec" && find . -path './*/*.md' -type f | grep -c .)"
+  assert_population "skill-revision/5" "notes written from the layered.md example" "$_notes" 2
+  out="$(cd "$_p" && "$_vsb" validate --strict --json 2>&1)"; rc=$?
+  assert_rc "skill-revision/5" "the example validates strictly" 0 "$rc"
+  if grep -qE '"check":"SF3[013]"' <<<"$out"; then fail "skill-revision/5" "the example raises no SF30, SF31 or SF33"
+  else pass "skill-revision/5" "the example raises no SF30, SF31 or SF33"; fi
+  printf -- '---\ntype: tech-topic\nupdated: 2026-10-24\n---\n# Storage\n' > "$_p/docs/spec/tech-storage.md"
+  out="$(cd "$_p" && "$_vsb" validate --strict --json 2>&1)"
+  assert_contains "skill-revision/5" "control: a root topic file raises SF30" "$out" '"check":"SF30"'
+fi
+
 rm -rf "$_sa"
