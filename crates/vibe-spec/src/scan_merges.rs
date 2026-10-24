@@ -18,8 +18,13 @@ struct Block {
     preview: Vec<u8>,
 }
 
+const USAGE: &str = "Usage: vibe-spec scan-merges [<feature>] [--format table|json|plain]\n\nReport pending merge blocks in feature tech docs.\n";
+
 /// Runs the command.
 pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<u8>) {
+    if crate::wants_help(args) {
+        return (exit::OK, USAGE.as_bytes().to_vec());
+    }
     let mut feature: Option<String> = None;
     let mut format = String::from("table");
     let mut i = 0;

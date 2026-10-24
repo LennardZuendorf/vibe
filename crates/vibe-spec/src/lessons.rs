@@ -30,8 +30,13 @@ impl Format {
     }
 }
 
+const USAGE: &str = "Usage: vibe-spec lessons-for <tag> [<tag>...] [--format markdown|inject|json] [--tag <tag>] [--json]\n\nPrint the lessons whose Tags line matches a tag. --json prints Spec JSON v1.\n";
+
 /// Runs the command.
 pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
+    if crate::wants_help(args) {
+        return (exit::OK, USAGE.as_bytes().to_vec());
+    }
     let mut format = Format::Markdown;
     let mut tags: Vec<String> = Vec::new();
     let mut spec_json = false;
