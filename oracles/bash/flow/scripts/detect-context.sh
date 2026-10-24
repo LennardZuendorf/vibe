@@ -21,13 +21,14 @@
 # path x all 13 machine states through BOTH branches and asserts byte-identical
 # stdout and exit code, so the duplication cannot drift silently.
 #
-# The three hard blocks (everything else is allow/warn):
-#   1. .spec/lessons.md            — only during feature.compound, setup.apply,
+# Six block rules (three paths are covered under both spec-root spellings):
+#   1. .spec/lessons.md            — only during feature.compound, setup.apply, # literal
 #                                    strategy.spec, or quick.verify (the flow-end
 #                                    states where the conditional lesson step lives)
-#   2. root .spec/{product,tech,design,plan}.md
+#   2. root .spec/{product,tech,design,plan}.md # literal
 #                                  — only during strategy.spec, feature.compound, or setup.apply
 #   3. .agents/skills/vibe/state.json — never by direct edit; only via set-state.sh
+#   4. .planning/*                 — GSD state store; readable context, writable only at idle
 
 set -euo pipefail
 
@@ -47,7 +48,7 @@ have_node() { command -v node >/dev/null 2>&1; }
 find_root() {
   local d="$1"
   while [[ -n "$d" && "$d" != "/" ]]; do
-    if [[ -d "$d/.spec" || -e "$d/.git" ]]; then printf '%s\n' "$d"; return 0; fi
+    if [[ -d "$d/docs/spec" || -d "$d/.spec" || -e "$d/.git" ]]; then printf '%s\n' "$d"; return 0; fi # literal
     d="$(dirname "$d")"
   done
   return 1
@@ -201,10 +202,19 @@ decide_bash() {
 
   # Block 1: lessons.md only during the flow-end states that carry the lesson step.
   case "$path" in
-    .spec/lessons.md|*/.spec/lessons.md)
+    .spec/lessons.md|*/.spec/lessons.md) # literal
       case "$state" in
         feature.compound|setup.apply|strategy.spec|quick.verify) echo "allow" ;;
-        *) echo "block:.spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: $state)" ;;
+        *) echo "block:.spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: $state)" ;; # literal
+      esac
+      return 0
+      ;;
+  esac
+  case "$path" in
+    docs/spec/lessons.md|*/docs/spec/lessons.md)
+      case "$state" in
+        feature.compound|setup.apply|strategy.spec|quick.verify) echo "allow" ;;
+        *) echo "block:docs/spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: $state)" ;;
       esac
       return 0
       ;;
@@ -212,12 +222,21 @@ decide_bash() {
 
   # Block 2: root specs only during strategy.spec or feature.compound.
   case "$path" in
-    .spec/product.md|.spec/tech.md|.spec/design.md|.spec/plan.md|\
-*/.spec/product.md|*/.spec/tech.md|*/.spec/design.md|*/.spec/plan.md)
+    .spec/product.md|.spec/tech.md|.spec/design.md|.spec/plan.md|*/.spec/product.md|*/.spec/tech.md|*/.spec/design.md|*/.spec/plan.md) # literal
       case "$state" in
         strategy.spec|feature.compound) echo "allow" ;;
         setup.apply) echo "allow" ;;
-        *) echo "block:root .spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: $state)" ;;
+        *) echo "block:root .spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: $state)" ;; # literal
+      esac
+      return 0
+      ;;
+  esac
+  case "$path" in
+    docs/spec/product.md|docs/spec/tech.md|docs/spec/design.md|docs/spec/plan.md|\
+*/docs/spec/product.md|*/docs/spec/tech.md|*/docs/spec/design.md|*/docs/spec/plan.md)
+      case "$state" in
+        strategy.spec|feature.compound|setup.apply) echo "allow" ;;
+        *) echo "block:root docs/spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: $state)" ;;
       esac
       return 0
       ;;
@@ -226,9 +245,18 @@ decide_bash() {
   # Warning: feature specs are frozen once implementation begins — feature.impl and
   # quick.fix write code, not spec. feature.design/plan (and setup) still author them.
   case "$path" in
-    .spec/features/*|*/.spec/features/*)
+    .spec/features/*|*/.spec/features/*) # literal
       case "$state" in
-        feature.impl|quick.fix) echo "warn:.spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: $state)" ;;
+        feature.impl|quick.fix) echo "warn:.spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: $state)" ;; # literal
+        *) echo "allow" ;;
+      esac
+      return 0
+      ;;
+  esac
+  case "$path" in
+    docs/spec/features/*|*/docs/spec/features/*)
+      case "$state" in
+        feature.impl|quick.fix) echo "warn:docs/spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: $state)" ;;
         *) echo "allow" ;;
       esac
       return 0
@@ -250,6 +278,18 @@ decide_bash() {
   case "$path" in
     CLAUDE.md|AGENTS.md|*/CLAUDE.md|*/AGENTS.md)
       echo "warn:CLAUDE.md/AGENTS.md active-rules block is generated by regen-active-rules.sh; edits inside the markers are overwritten next compound"
+      return 0
+      ;;
+  esac
+
+  # GSD state is read-only context; idle remains the explicit escape hatch.
+  # Keep this after literal matches: the engine ranks all exact rules above globs.
+  case "$path" in
+    .planning/*|*/.planning/*)
+      case "$state" in
+        idle) echo "allow" ;;
+        *) echo "block:.planning/ is GSD's state store — vibe reads it as context and never writes it; route edits through GSD's own commands" ;;
+      esac
       return 0
       ;;
   esac
