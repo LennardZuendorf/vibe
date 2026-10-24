@@ -3,8 +3,8 @@
 //!
 //! Deterministic: the same templates always give the same bytes. Classes:
 //! `no-root`, `seeded` (the frozen setup templates), `filled`, `lessons`,
-//! `features` (merge blocks, promote) and `malformed`. Flow classes arrive
-//! with F5.
+//! `features` (merge blocks, promote) and `malformed`. The flow half's
+//! classes are `corpus_flow.rs`'s.
 use std::fs;
 use std::path::Path;
 

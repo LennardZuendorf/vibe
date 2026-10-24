@@ -1,0 +1,59 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        "src/a.rs",
+        "feature.compound"
+      ],
+      [
+        "src/a.rs",
+        "feature.design"
+      ],
+      [
+        "src/a.rs",
+        "feature.impl"
+      ],
+      [
+        "src/a.rs",
+        "feature.plan"
+      ],
+      [
+        "src/a.rs",
+        "feature.verify"
+      ],
+      [
+        "src/a.rs",
+        "idle"
+      ],
+      [
+        "src/a.rs",
+        "quick.fix"
+      ],
+      [
+        "src/a.rs",
+        "quick.triage"
+      ],
+      [
+        "src/a.rs",
+        "quick.verify"
+      ],
+      [
+        "src/a.rs",
+        "setup.apply"
+      ],
+      [
+        "src/a.rs",
+        "setup.detect"
+      ],
+      [
+        "src/a.rs",
+        "strategy.brainstorm"
+      ],
+      [
+        "src/a.rs",
+        "strategy.spec"
+      ]
+    ]
+  },
+  "v": 1
+}

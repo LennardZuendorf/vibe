@@ -209,8 +209,15 @@ fn first_line_diff(a: &[u8], b: &[u8]) -> String {
     )
 }
 
-/// Lists the fields on which `oracle` and `candidate` differ, each with a message.
-pub fn compare(oracle: &Outcome, candidate: &Outcome) -> Vec<(Field, String)> {
+/// Lists the fields on which `oracle` and `candidate` differ, each with a
+/// message. File keys are first passed through the suite's aliases and file
+/// bytes through its normalizers, on both sides, so the same logical file
+/// written to different paths or with nondeterministic bytes compares equal.
+pub fn compare(
+    suite: &Suite,
+    oracle: &Outcome,
+    candidate: &Outcome,
+) -> Result<Vec<(Field, String)>, String> {
     let mut diffs = Vec::new();
     if oracle.exit != candidate.exit {
         diffs.push((
@@ -227,16 +234,18 @@ pub fn compare(oracle: &Outcome, candidate: &Outcome) -> Vec<(Field, String)> {
             first_line_diff(&oracle.stdout, &candidate.stdout),
         ));
     }
-    if oracle.files != candidate.files {
-        let keys: BTreeSet<&String> = oracle.files.keys().chain(candidate.files.keys()).collect();
+    let oracle_files = suite.canonical_files(oracle.files.clone())?;
+    let candidate_files = suite.canonical_files(candidate.files.clone())?;
+    if oracle_files != candidate_files {
+        let keys: BTreeSet<&String> = oracle_files.keys().chain(candidate_files.keys()).collect();
         let differing: Vec<&str> = keys
             .into_iter()
-            .filter(|k| oracle.files.get(*k) != candidate.files.get(*k))
+            .filter(|k| oracle_files.get(*k) != candidate_files.get(*k))
             .map(String::as_str)
             .collect();
         diffs.push((Field::Files, format!("files differ: {differing:?}")));
     }
-    diffs
+    Ok(diffs)
 }
 
 fn check_floors(suite: &Suite, errors: &mut Vec<String>) {
@@ -349,7 +358,10 @@ fn run_command(
                         run_side(suite, case, &with(&candidate_argv), work, limit).map(|c| (o, c))
                     });
                 let status = match outcome {
-                    Ok((o, c)) => judge(compare(&o, &c), &pins, hits),
+                    Ok((o, c)) => match compare(suite, &o, &c) {
+                        Ok(diffs) => judge(diffs, &pins, hits),
+                        Err(e) => Status::Fail(vec![e]),
+                    },
                     Err(e) => Status::Fail(vec![e]),
                 };
                 report.results.push(RunResult {
