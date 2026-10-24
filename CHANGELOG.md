@@ -283,7 +283,10 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   disk, and whose toplevel-relative paths missed every change in a project below
   the git root. A stale receipt passed in both cases. It now reads
   `--porcelain -z -uall -- .`, strips the `rev-parse --show-prefix`, and blocks
-  when a changed path cannot be stat'ed for any reason but "not found".
+  when a changed path cannot be stat'ed for any reason but "not found", or
+  when a not-found name decoded to U+FFFD. The no-node fallback still skips
+  those paths (ELOOP, EACCES) and judges a non-UTF-8 name by its raw bytes;
+  `parity.test.mjs` pins each case as a KNOWN DIVERGENCE.
 - **The no-node Stop gate fallback reads every changed path, and only the
   project's** (review-hardening/10) — `flow/hooks-fallback/stop-gate.sh` had the
   same quoting and nested-project holes as the engine. Its staleness scan now

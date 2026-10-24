@@ -181,8 +181,12 @@ if [[ "$STATE" == "feature.verify" || "$STATE" == "quick.verify" ]]; then
     # Still fail-OPEN where the engine is not: no `-uall`, so a wholly-untracked
     # directory (the project included) is one row and only its own mtime is
     # compared, which an in-place edit of a file inside it does not move; and a
-    # path that exists but cannot be compared is skipped by -e rather than
-    # blocking.
+    # path that cannot be stat'ed (a symlink loop, ELOOP; a file in a directory
+    # it may not search, EACCES) fails -e and is skipped rather than blocking.
+    # The engine blocks on both, and also on a name git printed in bytes that
+    # are not UTF-8 (it decodes them to U+FFFD), which this file reads raw and
+    # judges by mtime. Each is pinned in parity.test.mjs as KNOWN DIVERGENCE
+    # (STAT ERROR), review-hardening/9.
     stale=""
     prefix="$(git -C "$ROOT" rev-parse --show-prefix 2>/dev/null || true)"
     skip_origin=0

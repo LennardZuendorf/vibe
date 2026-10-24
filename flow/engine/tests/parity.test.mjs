@@ -34,6 +34,8 @@ import {
   utimesSync,
   symlinkSync,
   readdirSync,
+  chmodSync,
+  statSync,
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1306,6 +1308,103 @@ test('review-hardening/10: floor — every three-way row and control ran all thr
   // jq mode that actually executed (a mode skipped for a missing jq counts 0).
   const modesRun = JQ_PRESENT ? 2 : 1;
   assert(rh10RowsRun >= 8 * modesRun, `only ${rh10RowsRun} three-way row(s) ran, floor ${8 * modesRun}`);
+});
+
+// ---------------------------------------------------------------------------
+// review-hardening/9 — KNOWN DIVERGENCE (STAT ERROR): the engine fails CLOSED on
+// a changed path it cannot stat (any code but a plain not-found, and a
+// not-found whose name decoded to U+FFFD). The live no-node fallback and the
+// frozen oracle probe with `-e` and skip such a path, so they pass. Pinned, not
+// fixed: bash `-e` cannot tell ELOOP or EACCES from ENOENT without a stat(1)
+// whose flags differ between BSD and GNU. If a bash leg ever starts blocking a
+// row below, its probe changed — re-derive the pin.
+// ---------------------------------------------------------------------------
+
+const STAT_ERROR_WHY =
+  'ENGINE FAIL-CLOSED / BASH FAIL-OPEN (review-hardening/9): the engine blocks on a changed path it cannot stat, ' +
+  'while both bash gates probe it with -e (or see only its collapsed parent directory) and pass';
+const RH9_TREE_TS = new Date('2019-01-01T00:00:00Z');
+
+function assertStatErrorRow(label, legs, name, code) {
+  assertEqual(legs.engine.code, 2, `${label}: the engine must block; got:\n${legs.engine.stderr}`);
+  assert(
+    legs.engine.stderr.includes(`could not stat: ${name} (${code})`),
+    `${label}: engine names ${name} (${code}); got:\n${legs.engine.stderr}`,
+  );
+  assertEqual(legs.live.code, 0, `${label}: ${STAT_ERROR_WHY}. If the live fallback now blocks, re-derive this pin; got:\n${legs.live.stderr}`);
+  assertEqual(legs.oracle.code, 0, `${label}: ${STAT_ERROR_WHY}. If the frozen oracle now blocks, re-derive this pin; got:\n${legs.oracle.stderr}`);
+}
+
+let rh9RowsRun = 0;
+
+for (const mode of JQ_MODES) {
+  test(`review-hardening/9: three-way — untracked symlink loop: engine blocks (ELOOP), live and oracle pinned x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeThreeWayFlatFixture();
+    try {
+      symlinkSync('loop', path.join(sb.dir, 'loop'));
+      const rows = runCommand('git', ['status', '--porcelain', '-z', '-uall', '--', '.'], { cwd: sb.dir }).stdout;
+      assertEqual(rows, '?? loop\0', 'floor: git reports the loop as one untracked record');
+      assertStatErrorRow('loop', threeWay(sb, mode, () => resetWarnLog(sb)), 'loop', 'ELOOP');
+      rh9RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/9: three-way — untracked file in a non-searchable dir: engine blocks (EACCES), live and oracle pinned x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeThreeWayFlatFixture();
+    const locked = path.join(sb.dir, 'locked');
+    try {
+      mkdirSync(locked);
+      writeFileSync(path.join(locked, 'f.txt'), 'new\n');
+      utimesSync(path.join(locked, 'f.txt'), RH9_TREE_TS, RH9_TREE_TS);
+      utimesSync(locked, RH9_TREE_TS, RH9_TREE_TS);
+      chmodSync(locked, 0o644); // readable, not searchable: readdir works, stat of an entry fails
+      let statable = true;
+      try {
+        statSync(path.join(locked, 'f.txt'));
+      } catch {
+        statable = false;
+      }
+      if (statable) skip('stat inside a mode-644 directory succeeds here (running as root?)');
+      assertStatErrorRow('locked', threeWay(sb, mode, () => resetWarnLog(sb)), 'locked/f.txt', 'EACCES');
+      rh9RowsRun += 1;
+    } finally {
+      chmodSync(locked, 0o755);
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/9: three-way — untracked name that is not UTF-8: engine blocks (U+FFFD), live and oracle pinned x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeThreeWayFlatFixture();
+    try {
+      // a<0xff>b.txt. APFS refuses names that are not UTF-8 (EILSEQ), so this
+      // row runs on Linux CI and skips on macOS.
+      const raw = Buffer.concat([Buffer.from(path.join(sb.dir, 'a')), Buffer.from([0xff]), Buffer.from('b.txt')]);
+      try {
+        writeFileSync(raw, 'old\n');
+      } catch (err) {
+        skip(`this filesystem refuses a name that is not UTF-8 (${err && err.code})`);
+      }
+      // Older than the receipt: the bash legs judge the raw bytes (or miss the
+      // C-quoted name) and pass; only the engine's decoded name is unjudgeable.
+      utimesSync(raw, RH9_TREE_TS, RH9_TREE_TS);
+      assertStatErrorRow('non-UTF-8', threeWay(sb, mode, () => resetWarnLog(sb)), 'a�b.txt', 'ENOENT');
+      rh9RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+}
+
+test('review-hardening/9: floor — the stat-error pins ran all three legs', () => {
+  // The ELOOP row runs everywhere; EACCES and non-UTF-8 may skip (root,
+  // APFS). Each counts once per jq mode that actually executed.
+  const modesRun = JQ_PRESENT ? 2 : 1;
+  assert(rh9RowsRun >= modesRun, `only ${rh9RowsRun} stat-error row(s) ran, floor ${modesRun}`);
 });
 
 // ---------------------------------------------------------------------------
