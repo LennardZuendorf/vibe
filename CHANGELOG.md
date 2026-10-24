@@ -338,6 +338,16 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   `docs/spec/lessons.md` records what the port taught, the `AGENTS.md`
   active-rules digest is regenerated, and the root plan row reads DONE.
 
+### skill-revision
+
+- Track A (spec skill): pending (skill-revision/2-7).
+- Track B (spec guides and references): pending (skill-revision/8-11).
+- Track C (`vibe-spec`): pending (skill-revision/12-17).
+- Track D (flow skill): pending (skill-revision/18-24).
+- Track E (shipped instructions and repo docs): pending (skill-revision/25-27).
+- Tail (`flow/setup.md`): pending (skill-revision/28, conditional).
+- Close (consistency sweep, final verification, compound): pending (skill-revision/29-31).
+
 ## [0.1.0] - 2026-07-03
 
 First public release of vibe — a self-hosting bash/Markdown/JSON workflow harness.
