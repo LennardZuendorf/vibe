@@ -21,3 +21,16 @@ for _c in list-specs lessons-for scan-merges promote; do
   esac
 done
 assert_population "skill-revision/12" "raw-tail commands with help" "$_n" 4
+
+# --- skill-revision/17: the SessionStart router is silent without a spec root --
+_tmp="$(mktemp -d)"
+mkdir "$_tmp/.git"
+_bin="$REPO_ROOT/target/debug/vibe-spec"
+[[ -x "$_bin" ]] || { cargo build -q --locked -p vibe-spec 2>/dev/null; }
+_out="$(cd "$_tmp" && printf '{}' | "$_bin" hook session-start 2>/dev/null)"
+assert_eq "skill-revision/17" "session-start prints {} in a repo with no spec root" "{}" "$_out"
+mkdir -p "$_tmp/docs/spec"
+printf '# Spec\n' > "$_tmp/docs/spec/README.md"
+_out="$(cd "$_tmp" && printf '{}' | "$_bin" hook session-start 2>/dev/null)"
+assert_contains "skill-revision/17" "session-start routes when a spec root exists" "$_out" "using-spec"
+rm -rf "$_tmp"

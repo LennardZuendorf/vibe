@@ -342,7 +342,7 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 - Track A (spec skill): pending (skill-revision/2-7).
 - Track B (spec guides and references): pending (skill-revision/8-11).
-- Track C (`vibe-spec`): pending (skill-revision/12-17).
+- Track C (`vibe-spec`): `-h`/`--help` on `list-specs`, `lessons-for`, `scan-merges` and `promote`; usage errors on those exit 2; a missing root or lessons file is named on stderr; `lessons-for` matches whole tags; `init` seeds the lesson format and a plan without a backlog; `check-drift` reads the notes a layered plan lists; the SessionStart router is silent without a spec root (skill-revision/12-17).
 - Track D (flow skill): pending (skill-revision/18-24).
 - Track E (shipped instructions and repo docs): pending (skill-revision/25-27).
 - Tail (`flow/setup.md`): pending (skill-revision/28, conditional).
