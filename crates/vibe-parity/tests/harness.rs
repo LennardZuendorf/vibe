@@ -7,8 +7,9 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use vibe_parity::harness::{Mode, Report, Status, execute, run_suite};
-use vibe_parity::suite::Suite;
+use vibe_parity::suite::{Suite, normalize_bytes};
 
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixture")
@@ -460,4 +461,104 @@ fn the_cli_prints_skipped_commands() {
         "{text}"
     );
     assert!(text.contains(", 1 skipped ("), "{text}");
+}
+
+#[test]
+fn cursor_updated_blanks_both_spellings() {
+    let blanked = |bytes: &[u8]| normalize_bytes("cursor-updated", bytes).unwrap();
+    assert_eq!(
+        blanked(b"{\"updated\": \"2026-01-01T00:00:00Z\"}\n"),
+        b"{\"updated\": \"T\"}\n"
+    );
+    assert_eq!(
+        blanked(b"{\"updated\":\"2030-01-01T00:00:00Z\"}"),
+        b"{\"updated\":\"T\"}"
+    );
+    assert_eq!(blanked(b"{\"updated\": null}"), b"{\"updated\": null}");
+    assert_eq!(blanked(b"updated keys stay"), b"updated keys stay");
+    // an escaped quote inside the value does not end it
+    assert_eq!(blanked(b"x\"updated\":\"a\\\"b\"y"), b"x\"updated\":\"T\"y");
+    // an unterminated value is left alone
+    assert_eq!(blanked(b"{\"updated\": \"open"), b"{\"updated\": \"open");
+    // a second value on the same file blanks too
+    assert_eq!(
+        blanked(b"{\"a\": \"x\"}\n{\"updated\": \"y\"}"),
+        b"{\"a\": \"x\"}\n{\"updated\": \"T\"}"
+    );
+}
+
+#[test]
+fn an_unknown_normalizer_name_fails_suite_load() {
+    let dir = work("unknown-normalizer");
+    let mut suite = base();
+    suite["normalize"] = json!(["bogus"]);
+    let path = dir.join("suite.json");
+    fs::write(&path, serde_json::to_vec(&suite).unwrap()).unwrap();
+    let err = Suite::load(&path).unwrap_err();
+    assert!(err.contains("unknown normalizer \"bogus\""), "{err}");
+    assert!(err.contains("cursor-updated"), "{err}");
+}
+
+#[test]
+fn cursor_updated_normalizes_written_files_on_both_sides() {
+    let mut suite = base();
+    suite["normalize"] = json!(["cursor-updated"]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=updated"]);
+    let report = run("normalize", suite.clone(), &candidate());
+    assert!(report.ok(), "{report:#?}");
+    assert_eq!(report.passed(), 3);
+
+    let mut suite = base();
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=updated"]);
+    let report = run("normalize-control", suite, &candidate());
+    assert_eq!(report.failed(), 3, "{report:#?}");
+}
+
+#[test]
+fn a_file_alias_renames_the_key_on_both_sides() {
+    let mut suite = base();
+    suite["file_aliases"] = json!({ "out.txt": "renamed.txt" });
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=path"]);
+    let report = run("alias", suite.clone(), &Mode::SelfCheck);
+    assert!(report.ok(), "{report:#?}");
+    let report = run("alias-candidate", suite, &candidate());
+    assert!(report.ok(), "{report:#?}");
+    assert_eq!(report.passed(), 3);
+
+    let mut suite = base();
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=path"]);
+    let report = run("alias-control", suite, &candidate());
+    assert_eq!(report.failed(), 3, "{report:#?}");
+    for r in &report.results {
+        let Status::Fail(msgs) = &r.status else {
+            panic!("{r:?}")
+        };
+        assert!(
+            msgs.iter()
+                .any(|m| m.contains("[\"out.txt\", \"renamed.txt\"]")),
+            "{msgs:?}"
+        );
+    }
+}
+
+#[test]
+fn an_alias_never_clobbers_a_key_the_side_already_holds() {
+    let mut suite = base();
+    suite["file_aliases"] = json!({ "out.txt": "seed.txt" });
+    let dir = work("alias-clobber");
+    let path = dir.join("suite.json");
+    fs::write(&path, serde_json::to_vec(&suite).unwrap()).unwrap();
+    let suite = Suite::load(&path).unwrap();
+    let mut files = BTreeMap::new();
+    files.insert("out.txt".to_string(), b"written".to_vec());
+    files.insert("seed.txt".to_string(), b"staged".to_vec());
+    let canon = suite.canonical_files(files).unwrap();
+    assert_eq!(
+        canon.get("out.txt").map(Vec::as_slice),
+        Some(b"written".as_slice())
+    );
+    assert_eq!(
+        canon.get("seed.txt").map(Vec::as_slice),
+        Some(b"staged".as_slice())
+    );
 }

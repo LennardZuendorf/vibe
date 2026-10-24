@@ -1,0 +1,15 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        "src/a.rs",
+        "idle"
+      ],
+      [
+        "src/a.rs",
+        "feature.impl"
+      ]
+    ]
+  },
+  "v": 1
+}
