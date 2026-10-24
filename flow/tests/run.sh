@@ -688,6 +688,7 @@ echo "=== regen-active-rules.sh — digest from lessons ==="
 d="$(mktemp -d)"
 mkdir -p "$d/.spec" "$d/.agents/skills/vibe/scripts"
 cp "$SCRIPTS/regen-active-rules.sh" "$d/.agents/skills/vibe/scripts/"
+mkdir -p "$d/.agents/skills/vibe/scripts/lib"; cp "$SCRIPTS/lib/resolve-target.sh" "$d/.agents/skills/vibe/scripts/lib/"
 cat > "$d/.spec/lessons.md" <<'EOF'
 # Lessons
 
@@ -757,6 +758,7 @@ assert_eq "path-parity" "doctrine identical via both paths" "$a" "$b"
 pr="$(mktemp -d)"
 mkdir -p "$pr/flow/scripts" "$pr/.agents/skills" "$pr/.spec"
 cp "$SCRIPTS/regen-active-rules.sh" "$pr/flow/scripts/"
+mkdir -p "$pr/flow/scripts/lib"; cp "$SCRIPTS/lib/resolve-target.sh" "$pr/flow/scripts/lib/"
 ( cd "$pr/.agents/skills" && ln -s ../../flow vibe )
 cat > "$pr/.spec/lessons.md" <<'EOF'
 # Lessons
@@ -1874,6 +1876,7 @@ mkdir -p "$dr/docs/spec" "$dr/pkg/flow/scripts" "$dr/.agents/skills/vibe"
 for f in regen-active-rules.sh orders.sh doctor.sh doctrine.sh detect-context.sh; do
   cp "$SCRIPTS/$f" "$dr/pkg/flow/scripts/"
 done
+mkdir -p "$dr/pkg/flow/scripts/lib"; cp "$SCRIPTS/lib/resolve-target.sh" "$dr/pkg/flow/scripts/lib/"
 cp "$FLOW/state-machine.json" "$dr/pkg/flow/"
 
 # regen-active-rules.sh: digest from docs/spec/lessons.md

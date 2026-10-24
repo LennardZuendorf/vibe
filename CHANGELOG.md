@@ -134,6 +134,13 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Fixed
 
+- **Managed AGENTS.md writes keep a symlink a symlink** — `merge-agents.sh`
+  (merge, unmerge, rules seed) and `regen-active-rules.sh` wrote with temp +
+  rename onto the link path, which replaced a symlinked `AGENTS.md` with a
+  regular file, and followed a link to a file outside the repo. A new
+  `flow/scripts/lib/resolve-target.sh` resolves the physical target; writes land
+  beside it, and a dangling or outside-repo link is refused with exit 1 and
+  nothing written. (review-hardening/4)
 - **The hard blocks survive a node-less target** — the hook shims were
   `command -v node || exit 0`, so a machine without node silently lost the
   PreToolUse write guard and the Stop evidence gate, while the docs still called

@@ -47,6 +47,9 @@ R_END="<!-- /vibe:rules -->"
 # the file alive. Exact-match only — a user's own heading is never touched.
 TITLE_LINE="# AGENTS.md — vibe Engineering Guide"
 
+# shellcheck source-path=SCRIPTDIR source=lib/resolve-target.sh
+. "$SCRIPT_DIR/lib/resolve-target.sh"
+
 warn() { echo "merge-agents: WARN — $1" >&2; }
 note() { echo "merge-agents: $1"; }
 die()  { echo "merge-agents: ERROR — $1" >&2; exit 1; }
@@ -80,7 +83,10 @@ assert_not_reversed() {
 # strip_managed_block FILE START END — remove the inclusive START..END region in
 # place via grep -n + sed range delete (awk-free, so unmerge runs on an awk-less
 # target). Assumes assert_not_reversed already validated the pair; no-ops when the
-# block is absent or the markers are not exact lines. Writes via temp + rename.
+# block is absent or the markers are not exact lines. FILE must already be a
+# resolve_target path (every caller resolves once at its own entry), so the temp
+# file sits beside the REAL file and the rename keeps a symlinked document a
+# symlink. Writes via temp + rename.
 strip_managed_block() {
   local file="$1" start="$2" end="$3"
   grep -qF "$start" "$file" && grep -qF "$end" "$file" || return 0
@@ -190,7 +196,9 @@ link_adapter() {
 # (vibe.json can add, remove or reorder blocks), which is the engine's to
 # manage, not this script's.
 seed_rules_block() {
-  local target="$1"
+  local target
+  target="$(resolve_target "$1" "$2")" \
+    || die "refusing to write $1 (dangling or outside $2)"
   [[ -f "$target" ]] || return 0
   grep -qxF "$R_START" "$target" && return 0
   local block; block="$(mktemp "${target}.rules.XXXXXX")"
@@ -212,12 +220,14 @@ seed_rules_block() {
 merge() {
   local root="${1:-.}"
   ( merge_instructions "$root" )
-  seed_rules_block "$root/AGENTS.md"
+  seed_rules_block "$root/AGENTS.md" "$root"
 }
 
 merge_instructions() {
   local root="${1:-.}"
-  local target="$root/AGENTS.md"
+  local target
+  target="$(resolve_target "$root/AGENTS.md" "$root")" \
+    || die "refusing to write $root/AGENTS.md (dangling or outside $root)"
   [[ -f "$TEMPLATE" ]] || die "template not found at $TEMPLATE"
 
   if [[ ! -f "$target" ]]; then
@@ -285,7 +295,9 @@ merge_instructions() {
 # trace. Writes go via temp + atomic rename.
 unmerge() {
   local root="${1:-.}"
-  local target="$root/AGENTS.md"
+  local orig="$root/AGENTS.md" target
+  target="$(resolve_target "$orig" "$root")" \
+    || die "refusing to touch $orig (dangling or outside $root)"
   [[ -f "$target" ]] || { note "no AGENTS.md at $target — nothing to remove"; return 0; }
 
   local had_i=0 had_ar=0 had_r=0
@@ -308,6 +320,7 @@ unmerge() {
   # remove it wholesale, the clean inverse of the fresh install that created it.
   if [[ -f "$TEMPLATE" ]] && same_normalized "$target" "$TEMPLATE"; then
     rm -f "$target"
+    if [[ -L "$orig" ]]; then rm -f "$orig"; fi   # no dangling link left behind
     note "removed vibe-created AGENTS.md stub at $target (untouched template — target had none)"
     return 0
   fi
@@ -345,6 +358,7 @@ unmerge() {
   # A file now holding only whitespace was created entirely by vibe — remove it.
   if ! grep -q '[^[:space:]]' "$target"; then
     rm -f "$target"
+    if [[ -L "$orig" ]]; then rm -f "$orig"; fi   # no dangling link left behind
     note "removed vibe-created AGENTS.md stub at $target (no user content remained)"
     return 0
   fi

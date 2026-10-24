@@ -2510,6 +2510,69 @@ assert_eq "review-hardening/15" "control: every recorded file and the manifest a
 assert_not_contains "review-hardening/15" "control: a plain uninstall reports nothing outside the target" "$out" "outside the target"
 rm -rf "$T"
 
+# review-hardening/4 — resolve_target: managed writes go through symlinks, inside
+# the repo only. A symlinked AGENTS.md stays a symlink and the real file carries
+# the block; a dangling or outside-repo link is refused and nothing is written.
+echo ""
+echo "=== review-hardening/4 — write-through for bash writers ==="
+RH4_SCRIPTS="$REPO_ROOT/flow/scripts"
+rh4_regen_sandbox() {  # prints a sandbox root with regen + lib + one lesson
+  local r; r="$(mktmp)"
+  mkdir -p "$r/docs/spec" "$r/.agents/skills/vibe/scripts/lib"
+  cp "$RH4_SCRIPTS/regen-active-rules.sh" "$r/.agents/skills/vibe/scripts/"
+  cp "$RH4_SCRIPTS/lib/resolve-target.sh" "$r/.agents/skills/vibe/scripts/lib/"
+  printf '# Lessons\n\n### One\n**Rule:** keep it.\n**Date:** 2026-06-18\n' > "$r/docs/spec/lessons.md"
+  printf '%s\n' "$r"
+}
+RH4_REGEN="/.agents/skills/vibe/scripts/regen-active-rules.sh"
+# (a) merge writes through a symlinked AGENTS.md
+d="$(mktmp)"; mkdir "$d/docs"
+{ printf 'user prose\n\n<!-- vibe:instructions:start -->\nstale\n<!-- vibe:instructions:end -->\n'; } > "$d/docs/AGENTS.real.md"
+ln -s docs/AGENTS.real.md "$d/AGENTS.md"
+bash "$MERGE" "$d" >/dev/null 2>&1; rc=$?
+assert_eq "review-hardening/4" "merge through a symlinked AGENTS.md exits 0" "$rc" "0"
+[[ -L "$d/AGENTS.md" && "$(readlink "$d/AGENTS.md")" == "docs/AGENTS.real.md" ]] \
+  && pass "review-hardening/4" "merge keeps the AGENTS.md symlink" || fail "review-hardening/4" "merge replaced the symlink"
+grep -qF '<!-- vibe:instructions:start -->' "$d/docs/AGENTS.real.md" && grep -qF 'user prose' "$d/docs/AGENTS.real.md" \
+  && pass "review-hardening/4" "real file carries the block and the user prose" || fail "review-hardening/4" "real file lacks block or prose"
+assert_eq "review-hardening/4" "no stray temp files in the real file's directory" "$(find "$d/docs" -type f | wc -l | tr -d ' ')" "1"
+# (d) unmerge on a symlinked AGENTS.md keeps the link
+bash "$MERGE" unmerge "$d" >/dev/null 2>&1
+[[ -L "$d/AGENTS.md" && -f "$d/docs/AGENTS.real.md" ]] && ! grep -qF 'vibe:instructions' "$d/docs/AGENTS.real.md" \
+  && grep -qF 'user prose' "$d/docs/AGENTS.real.md" \
+  && pass "review-hardening/4" "unmerge keeps the symlink and strips the block through it" || fail "review-hardening/4" "unmerge broke the symlink"
+# (a) regen writes through a symlinked AGENTS.md
+r="$(rh4_regen_sandbox)"; printf 'user prose\n<!-- vibe:active-rules:start -->\nold\n<!-- vibe:active-rules:end -->\n' > "$r/docs/AGENTS.real.md"; ln -s docs/AGENTS.real.md "$r/AGENTS.md"
+bash "$r$RH4_REGEN" >/dev/null 2>&1
+[[ -L "$r/AGENTS.md" ]] && pass "review-hardening/4" "regen keeps the AGENTS.md symlink" || fail "review-hardening/4" "regen replaced the symlink"
+grep -qF 'vibe:active-rules:start' "$r/docs/AGENTS.real.md" && grep -qF 'user prose' "$r/docs/AGENTS.real.md" \
+  && pass "review-hardening/4" "regen block lands in the real file, prose intact" || fail "review-hardening/4" "regen did not write through"
+# (b) dangling link: refused, nothing created
+d="$(mktmp)"; ln -s missing.md "$d/AGENTS.md"
+errtxt="$(bash "$MERGE" "$d" 2>&1 >/dev/null)"; rc=$?
+[[ $rc -ne 0 ]] && pass "review-hardening/4" "merge refuses a dangling AGENTS.md link" || fail "review-hardening/4" "dangling link accepted"
+assert_contains "review-hardening/4" "dangling refusal names the link" "$errtxt" "AGENTS.md"
+[[ ! -e "$d/missing.md" ]] && pass "review-hardening/4" "dangling link target not created" || fail "review-hardening/4" "dangling target was created"
+r="$(rh4_regen_sandbox)"; ln -s missing.md "$r/AGENTS.md"
+errtxt="$(bash "$r$RH4_REGEN" 2>&1 >/dev/null)"; rc=$?
+[[ $rc -ne 0 && ! -e "$r/missing.md" ]] && pass "review-hardening/4" "regen refuses a dangling link, creates nothing" || fail "review-hardening/4" "regen dangling rc=$rc"
+assert_contains "review-hardening/4" "regen dangling refusal names the link" "$errtxt" "AGENTS.md"
+# (c) link to a file outside the repo: refused, outside file byte-identical
+o="$(mktmp)"; printf 'outside\n' > "$o/x.md"; cp "$o/x.md" "$o/x.orig"
+d="$(mktmp)"; ln -s "$o/x.md" "$d/AGENTS.md"
+bash "$MERGE" "$d" >/dev/null 2>&1; rc=$?
+[[ $rc -ne 0 ]] && cmp -s "$o/x.md" "$o/x.orig" && pass "review-hardening/4" "merge refuses an outside link, file untouched" || fail "review-hardening/4" "outside link clobbered (rc=$rc)"
+bash "$MERGE" unmerge "$d" >/dev/null 2>&1; rc=$?
+[[ $rc -ne 0 ]] && cmp -s "$o/x.md" "$o/x.orig" && pass "review-hardening/4" "unmerge refuses an outside link, file untouched" || fail "review-hardening/4" "unmerge outside link (rc=$rc)"
+r="$(rh4_regen_sandbox)"; ln -s "$o/x.md" "$r/AGENTS.md"
+bash "$r$RH4_REGEN" >/dev/null 2>&1; rc=$?
+[[ $rc -ne 0 ]] && cmp -s "$o/x.md" "$o/x.orig" && pass "review-hardening/4" "regen refuses an outside link, file untouched" || fail "review-hardening/4" "regen outside link (rc=$rc)"
+# control: a regular AGENTS.md behaves as before
+d="$(mktmp)"; printf 'plain\n' > "$d/AGENTS.md"
+bash "$MERGE" "$d" >/dev/null 2>&1; rc=$?
+[[ $rc -eq 0 && ! -L "$d/AGENTS.md" ]] && grep -qF 'plain' "$d/AGENTS.md" && grep -qF 'vibe:instructions:start' "$d/AGENTS.md" \
+  && pass "review-hardening/4" "control: regular AGENTS.md merges as today" || fail "review-hardening/4" "control regressed"
+
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]
