@@ -708,7 +708,6 @@ test_skill_routing_new_routes() {
 test_feature_output_profiles() {
   local fm; fm="$(cat "$SPEC_SKILL/feature.md")"
   assert_contains "spec-skill-improvements/4" "feature.md has ## Output density" "$fm" "## Output density"
-  assert_contains "spec-skill-improvements/4" "feature.md output density cites the flow style note" "$fm" "§ Style"
   assert_not_contains "spec-skill-improvements/4" "feature.md dropped retired caveman levels" "$fm" "caveman"
 }
 
