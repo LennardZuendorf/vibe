@@ -1,6 +1,6 @@
 ---
 name: spec-health
-description: Read-only health check of the spec tree. Runs vibe-spec validate and check-drift and returns the findings. Use for an audit or structural assessment.
+description: Use when your human partner asks for /spec health, a spec audit, or a structural check of the spec tree deeper than one validate run.
 tools: Read, Bash
 model: haiku
 ---
@@ -13,7 +13,8 @@ Read-only: never write files.
 Orders:
 1. Run `vibe-spec validate --json`.
 2. Run `vibe-spec check-drift --json`.
-3. Reply with the findings, grouped CRITICAL, WARN, INFO. Give the rule id, the file and the message for each.
-4. End with one line: `health: <n> critical, <n> warn, <n> info`.
-
-If both commands report no findings, reply `health: clean`.
+3. Reply with every finding grouped by `severity` (`error`, then `warning`): for validate
+   findings give `check`, `file`, `message`; for check-drift findings give `file` (when
+   present) and `message`.
+4. First line `STATUS: DONE` (or `BLOCKED` when a command could not run); last line
+   `health: <n> error, <n> warning`.

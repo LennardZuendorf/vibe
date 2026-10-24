@@ -60,7 +60,7 @@ work. Routing is not optional. A reply to the user is not routing.
 | Typo, rename, new flag (no behaviour question) | Edit directly; run `vibe-spec validate` if a spec changed | code |
 | Implementing an approved plan | Follow the plan task by task. The design doc is frozen. | code and tests |
 | Question or investigation (not design: "how should we build X" is a feature) | Answer from the spec and the code | nothing |
-| Feature wrap-up (compound) | Promote durable facts into root specs + `lessons.md`, then delete the feature's artifacts | `<root>` root docs, `lessons.md` |
+| Feature wrap-up | Follow § Wrap-up | `<root>` root docs, `lessons.md` |
 | Fallback | Load [feature.md](feature.md) and run it | `<root>/features/<feature>/` |
 
 **Not for:** explaining code with no change planned, running tests, git housekeeping, formatting data.
@@ -71,22 +71,20 @@ required. No other trigger exists.
 
 One named buildable unit → feature. Spans every feature → strategy. Two rows fit → the heavier one.
 
-A wrapped-up feature (DONE in root `plan.md`) has no feature folder. Route to
-its live surface (code, tests, root docs). Never restore the folder.
+A wrapped-up feature has no folder: route to its live surface, never restore the folder.
 
 **$ARGUMENTS:**
 
 | Argument | Action |
 |---|---|
-| `strategy` · `feature [<feature>]` | Route by the table above |
 | `interview [<feature>]` | Fallback only: run [feature.md](feature.md) steps 1–2 yourself (the WHAT interview) |
 | `research <feature>` | Fallback only: open `<root>/features/<feature>/research.md` |
-| `promote <feature>` | Run `vibe-spec promote <feature>` through the spec-promoter agent |
+| `promote <feature>` | Run § Wrap-up step 1 |
 | `diff <feature>` · `lessons-for <tag>` · `validate` | Run `vibe-spec scan-merges <feature>` · `vibe-spec lessons-for <tag>` · `vibe-spec validate` |
 | `health` | Run the spec-health agent (`vibe-spec validate` + `vibe-spec check-drift`) |
 | `product` · `tech` · `design` · `plan` · `lessons` | Load that root doc and follow its links |
 | `setup` | Run the setup interview in [reference/setup.md](reference/setup.md) |
-| _(none)_ | Route from the task |
+| `strategy` · `feature [<feature>]` · _(none)_ | Route by the table above |
 
 ## Red Flags
 
@@ -114,36 +112,47 @@ its live surface (code, tests, root docs). Never restore the folder.
   Read [reference/layered.md](reference/layered.md) before you add a note.
 - **flat** (legacy): the root docs and templates in [reference/setup.md](reference/setup.md) § Flat layout apply.
 
-Root layer — persistent, high level, current only; long-term ideas go to an external tracker.
-What each root doc holds: [product](reference/product.md) · [tech](reference/tech.md) · [design](reference/design.md) · [plan](reference/plan.md).
+Root layer — persistent, high level, current only. Guides: [product](reference/product.md) · [tech](reference/tech.md) · [design](reference/design.md) · [plan](reference/plan.md).
 
 Feature layer — branch-scoped, deleted before the branch merges:
 
-- Default: `docs/superpowers/specs/YYYY-MM-DD-<feature>-design.md` + `docs/superpowers/plans/YYYY-MM-DD-<feature>.md`.
-- Fallback: `<root>/features/<feature>/{product,tech}.md`, optional `design.md`, `plan.md` (stable `<feature>/n` unit IDs), `research.md`. Rules: [feature.md](feature.md).
+- Default: `docs/superpowers/{specs,plans}/YYYY-MM-DD-<feature>*.md` (design, plan).
+- Fallback: `<root>/features/<feature>/{product,tech}.md`, optional `design.md`, `plan.md` (unit IDs `<feature>/n`), `research.md`; rules in [feature.md](feature.md).
 
-Rules:
+Rules: read before write; root specs stay high level; one concern per doc (product
+docs hold no code, tech docs no UX opinion); link parent ↔ child both ways; load
+only what the task needs.
 
-1. Read before write: edit only specs you read this session.
-2. Root specs stay high level; feature detail lives in the feature layer.
-3. One concern per doc: product docs hold no code, tech docs no UX opinion.
-4. Bump `updated:` on every edit.
-5. Link parent ↔ child both ways. Load only what the task needs.
-6. Compound order: promote durable facts → record lessons → mark the feature DONE in root `plan.md` as a one-line note linking its live surface → delete the feature artifacts. A fallback folder moves to `archive/<name>/`; prompt the user to delete it once validation passes, before merge. Never read `archive/` for active work.
+## Wrap-up
 
-## Roles
+Create a todo for EACH step before starting; mark one done only after its check passes.
+1. Preview: `vibe-spec promote <feature> --dry-run`. Show the output to your human
+   partner and get their yes. Apply through spec-promoter (§ Roles and dispatch).
+2. Lesson: append one tagged entry to `<root>/lessons.md` only when a durable rule
+   surfaced (format: [strategy.md](strategy.md) § Lessons).
+3. Row: mark the feature DONE in the root Feature Sequence (the `plan.md` hub or the
+   sequence note it links), one line, linking the live surface.
+4. Remove the feature layer: superpowers → `vibe-spec promote <feature> --done`;
+   fallback → `git mv <root>/features/<feature> <root>/archive/<feature>`.
+5. Check: `vibe-spec validate` and `vibe-spec check-drift --pre-merge`. Fix and
+   re-run until both exit 0.
+6. Fallback only: ask your human partner to delete `<root>/archive/<feature>/`.
+7. Last: invoke `superpowers:finishing-a-development-branch` for the git close-out only.
 
-| Role | Executor | Phase | Constraint |
-|---|---|---|---|
-| spec-promoter | `vibe-spec promote` + `superpowers:finishing-a-development-branch` | feature.compound | `reference/tech.md` merge markers |
-| spec-health | `vibe-spec validate` | any (`/spec health`, `/spec audit`) | `vibe-spec validate` output |
+## Roles and dispatch
 
-Agents live under [agents/](agents/). The fallback WHAT interview runs `superpowers:brainstorming` and the HOW trace runs `code-explorer` + `code-architect` from this skill itself.
+- spec-promoter ([agents/spec-promoter.md](agents/spec-promoter.md), model sonnet): Wrap-up step 1.
+- spec-health ([agents/spec-health.md](agents/spec-health.md), model haiku): `/spec health`.
+
+Dispatch `spec-promoter` with the feature name; show its dry run; after your human
+partner's yes, dispatch it again with "apply: yes". `DONE` or `DONE_WITH_CONCERNS` →
+use the report; `NEEDS_CONTEXT` → supply it, re-dispatch once; `BLOCKED` or a second
+`NEEDS_CONTEXT` → do the step yourself. You run `--done` (step 4).
 
 ## Commands
 
-Every command is `vibe-spec <command>`; it finds the spec root from anywhere in the
-project. Run `vibe-spec promote <feature>` and `vibe-spec init` from the project root.
+Run `vibe-spec promote` and `vibe-spec init` from the project root; every other
+`vibe-spec` command finds the spec root from any directory.
 
 If `vibe-spec` is not on PATH, say "vibe-spec is not installed" and point your
 human partner to the README Install section. On a flat legacy root you may run
@@ -153,9 +162,8 @@ in your finish line and never claim the tree validated.
 
 ## Config
 
-The keys `featureLayer`, `suggest` and `superpowers` live in `.vibe/spec.json`. Read
-[reference/setup.md](reference/setup.md) § Config before you route; it also holds
-`/spec setup` and the flat-layout templates.
+Read [reference/setup.md](reference/setup.md) § Config (`.vibe/spec.json` keys `featureLayer`,
+`suggest`, `superpowers`) before you route. It also holds `/spec setup` and the flat templates.
 
 ## Current Project State
 

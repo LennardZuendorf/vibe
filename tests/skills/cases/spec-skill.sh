@@ -135,4 +135,24 @@ else
   assert_contains "skill-revision/5" "control: a root topic file raises SF30" "$out" '"check":"SF30"'
 fi
 
+# --- skill-revision/6: one wrap-up sequence; agents that never wait -----------
+awk '/^## Wrap-up/{f=1; next} /^## /{f=0} f' "$_S" > "$_sa/wrapup.md"
+_n="$(grep -cE '^[0-9]+\. ' "$_sa/wrapup.md")"
+assert_eq "skill-revision/6" "§ Wrap-up has 7 numbered steps" 7 "$_n"
+_order=""
+for _x in 'promote <feature> --dry-run' 'promote <feature> --done' 'check-drift --pre-merge' 'finishing-a-development-branch'; do
+  _l="$(grep -nF -- "$_x" "$_sa/wrapup.md" | head -n 1 | cut -d: -f1)"
+  _order="$_order ${_l:-0}"
+done
+_sorted="$(tr ' ' '\n' <<<"$_order" | grep . | sort -n | tr '\n' ' ')"
+if [[ "$_order" != *" 0"* && " $_sorted" == "$_order " ]]; then
+  pass "skill-revision/6" "§ Wrap-up names dry-run, --done, check-drift --pre-merge, finishing in order (lines$_order)"
+else fail "skill-revision/6" "§ Wrap-up names dry-run, --done, check-drift --pre-merge, finishing in order (lines$_order)"; fi
+_n="$(awk '/^## Wrap-up/{f=1; next} /^## /{f=0} !f' "$_S" | grep -cF 'superpowers:finishing-a-development-branch')"
+assert_eq "skill-revision/6" "SKILL.md names superpowers:finishing-a-development-branch only in § Wrap-up" 0 "$_n"
+for _a in spec-promoter spec-health; do
+  out="$(lint_description "$REPO_ROOT/spec/agents/$_a.md")"; rc=$?
+  assert_rc "skill-revision/6" "$_a description passes the lint ${out:+— $out}" 0 "$rc"
+done
+
 rm -rf "$_sa"

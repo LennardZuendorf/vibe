@@ -667,7 +667,7 @@ test_skill_v2_frontmatter_fields() {
 # names (spec-architect/planner/auditor/compactor) must not reappear anywhere in SKILL.md.
 test_skill_roles_section() {
   local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
-  assert_contains "spec-skill-improvements/2" "SKILL.md has ## Roles" "$skill" "## Roles"
+  assert_contains "skill-revision/6" "SKILL.md has ## Roles and dispatch" "$skill" "## Roles and dispatch"
   assert_contains "spec-skill-improvements/2" "Roles name spec-promoter" "$skill" "spec-promoter"
   assert_contains "spec-skill-improvements/2" "Roles name spec-health" "$skill" "spec-health"
   assert_not_contains "spec-skill-improvements/2" "no phantom spec-architect" "$skill" "spec-architect"
@@ -1049,19 +1049,26 @@ test_openspec_docs_present() {
   assert_contains "spec-skill-improvements/11" "reference/product.md notes opt-in" "$product_ref" "opt-in"
 }
 
-# ── spec-skill-improvements: Unit 13 — spec-promoter diff-first ──────────────
+# ── spec-skill-improvements/13, skill-revision/6: spec-promoter previews first, applies on "apply: yes" ──
 test_spec_promoter_diff_first() {
   local promoter; promoter="$(cat "$SPEC_SKILL/agents/spec-promoter.md")"
   assert_contains "spec-skill-improvements/13" "spec-promoter has dry-run language" "$promoter" "--dry-run"
-  assert_contains "spec-skill-improvements/13" "spec-promoter has confirmation language" "$promoter" "confirm"
+  assert_contains "skill-revision/6" "spec-promoter applies only on 'apply: yes'" "$promoter" "apply: yes"
 }
 
-# ── spec-skill-improvements: Unit 15 — spec-health output levels ─────────────
+# ── skill-revision/6: every field spec-health cites is a key or value its commands emit ──
 test_spec_health_output_levels() {
-  local health; health="$(cat "$SPEC_SKILL/agents/spec-health.md")"
-  assert_contains "spec-skill-improvements/15" "spec-health has CRITICAL level" "$health" "CRITICAL"
-  assert_contains "spec-skill-improvements/15" "spec-health has WARN level" "$health" "WARN"
-  assert_contains "spec-skill-improvements/15" "spec-health has INFO level" "$health" "INFO"
+  local f tok bad=0 n=0 emit
+  emit="$(cat "$REPO_ROOT/crates/vibe-spec/src/report.rs" "$REPO_ROOT/crates/vibe-spec/src/drift.rs")"
+  f="$SPEC_SKILL/agents/spec-health.md"
+  # shellcheck disable=SC2016 # literal backticks
+  for tok in $(grep -E '^[0-9]+\. Reply with' -A3 "$f" | grep -oE '`[a-z]+`' | tr -d '`' | sort -u); do
+    n=$((n + 1))
+    if ! grep -qF "\"$tok\"" <<<"$emit"; then bad=$((bad + 1)); echo "        not emitted: $tok"; fi
+  done
+  if [[ $n -lt 4 ]]; then fail "skill-revision/6" "spec-health cites the emitted fields (examined $n, floor 4)"
+  elif [[ $bad -eq 0 ]]; then pass "skill-revision/6" "spec-health cites only fields report.rs/drift.rs emit ($n)"
+  else fail "skill-revision/6" "spec-health cites $bad field(s) no command emits"; fi
 }
 
 # ── spec-skill-improvements: Unit 16 — SF15 + SF16 ───────────────────────────
