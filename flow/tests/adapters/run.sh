@@ -2363,7 +2363,11 @@ assert_contains "review-hardening/1" "the link into the vendored checkout is rep
 rm -rf "$RV"
 # Control: an installed target holds no directory carrying both source markers,
 # so the marker walk can never refuse a normal install's own files.
-RT="$(mktmp)"; bash "$INSTALL" "$RT" --platform "claude,opencode,codex,droid" >/dev/null 2>&1
+RT="$(mktmp)"; bash "$INSTALL" "$RT" --platform "claude,opencode,codex,droid" >/dev/null 2>&1; rc=$?
+assert_eq "review-hardening/1" "control: the marker-walk install exits 0" "$rc" "0"
+[[ -f "$RT/.agents/skills/vibe/state-machine.json" && -f "$RT/.agents/skills/spec/SKILL.md" ]] \
+  && pass "review-hardening/1" "control: the install shipped both markers under .agents/skills" \
+  || fail "review-hardening/1" "control: the install shipped both markers under .agents/skills"
 assert_eq "review-hardening/1" "control: no directory of an installed target carries flow/state-machine.json" \
   "$(find "$RT" -path '*/flow/state-machine.json' | wc -l | tr -d ' ')" "0"
 rm -rf "$RT"
