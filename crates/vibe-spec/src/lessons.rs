@@ -2,15 +2,14 @@
 //! `--json` (Spec JSON v1 `lessons-for`) and `--tag <t>`.
 //!
 //! Deliberate divergences (pinned in tests/parity/spec.json): tags match as
-//! case-insensitive literal substrings, not as regexes; the legacy
+//! whole, case-insensitive tags, not as regexes or substrings; the legacy
 //! `--format json` array escapes its strings.
 use serde_json::{Value, json};
 use vibe_core::exit;
 
 use crate::root::{Miss, Root};
 use crate::text::{
-    contains_ci, is_date, is_space, json_str, lines, lossy, remove_first, strip_prefix_or,
-    trim_space,
+    is_date, is_space, json_str, lines, lossy, remove_first, strip_prefix_or, trim_space,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -164,13 +163,27 @@ fn blocks(text: &[u8]) -> Vec<Vec<u8>> {
     out
 }
 
-/// The first `**Tags:**` line contains any tag (an empty tag always matches).
-fn matches(block: &[u8], tags: &[String]) -> bool {
-    let tags_line = lines(block)
+/// The first `**Tags:**` line, split on `,`: trimmed (CR included), lower-cased, empty entries dropped.
+fn tags_of(block: &[u8]) -> Vec<String> {
+    let line = lines(block)
         .into_iter()
         .find(|l| l.starts_with(b"**Tags:**"))
         .unwrap_or_default();
-    tags.iter().any(|t| contains_ci(tags_line, t.as_bytes()))
+    line.get(b"**Tags:**".len()..)
+        .unwrap_or_default()
+        .split(|&c| c == b',')
+        .map(trim_space)
+        .filter(|t| !t.is_empty())
+        .map(|t| lossy(t).to_ascii_lowercase())
+        .collect()
+}
+
+/// Any requested tag equals one of the lesson's tags, ignoring ASCII case
+/// (an empty tag always matches).
+fn matches(block: &[u8], tags: &[String]) -> bool {
+    let own = tags_of(block);
+    tags.iter()
+        .any(|t| t.is_empty() || own.contains(&t.to_ascii_lowercase()))
 }
 
 /// Every line starting with `key`, `strip` removed once, joined by `\n`, trailing newlines dropped.
