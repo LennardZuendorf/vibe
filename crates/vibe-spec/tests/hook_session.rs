@@ -106,7 +106,7 @@ fn skill_is_within_budget() {
     let (front, body) = rest.split_once("\n---\n").unwrap();
     assert!(front.lines().any(|l| l == "name: using-spec"), "{front}");
     let words = body.split_whitespace().count();
-    assert!(words <= 150, "{words} words");
+    assert!(words <= 250, "{words} words");
 }
 
 const LINE_SYMLINK: &str = "vibe-spec hook session-start: marker skipped — ";

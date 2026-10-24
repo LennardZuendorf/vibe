@@ -155,4 +155,19 @@ for _a in spec-promoter spec-health; do
   assert_rc "skill-revision/6" "$_a description passes the lint ${out:+— $out}" 0 "$rc"
 done
 
+# --- skill-revision/7: using-spec precedence ---------------------------------
+_U="$REPO_ROOT/spec/using-spec/SKILL.md"
+_sc="$_P/using-spec-precedence.md"
+if pressure_ok "$_sc"; then pass "skill-revision/7" "using-spec-precedence.md carries RED and GREEN (or NO-RED) evidence"
+else fail "skill-revision/7" "using-spec-precedence.md carries RED and GREEN (or NO-RED) evidence: $_sc"; fi
+# The body after the frontmatter, counted as hook_session.rs skill_is_within_budget counts it.
+_w="$(awk 'NR == 1 && $0 == "---" { fm = 1; next } fm && $0 == "---" { fm = 0; next } !fm' "$_U" | wc -w | tr -d ' ')"
+if [[ "$_w" -le 250 ]]; then pass "skill-revision/7" "using-spec body is $_w words (ceiling 250)"
+else fail "skill-revision/7" "using-spec body is $_w words (ceiling 250)"; fi
+out="$(lint_description "$_U")"; rc=$?
+assert_rc "skill-revision/7" "using-spec description passes the lint ${out:+— $out}" 0 "$rc"
+if grep -qE 'words <= 250\b' "$REPO_ROOT/crates/vibe-spec/tests/hook_session.rs"; then
+  pass "skill-revision/7" "hook_session.rs caps the using-spec body at the same 250 words"
+else fail "skill-revision/7" "hook_session.rs caps the using-spec body at the same 250 words"; fi
+
 rm -rf "$_sa"

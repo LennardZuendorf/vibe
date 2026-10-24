@@ -340,7 +340,7 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### skill-revision
 
-- Track A (spec skill): pending (skill-revision/2-7).
+- Track A (spec skill): the description passes the validator (498 chars, no angle brackets) and the frontmatter keeps only keys a harness reads; the skill gains `<SUBAGENT-STOP>`, a core principle, a **Not for** line and routing rows for modes that exist (`audit` is gone); it names `<root>` instead of a fixed path, teaches the layered layout (`reference/layered.md`), says "vibe-spec is not installed" instead of "build it", and moves config (one file, `.vibe/spec.json`), `/spec setup` and the flat templates to `reference/setup.md`; one 7-step wrap-up sequence; `spec-promoter` never waits for a human and reports a `STATUS:` line; `spec-health` reports the real JSON fields; the pressure harness seeds with `vibe-spec init` and scores six near-misses; selection evals and pressure records ship with the skill (skill-revision/2-7).
 - Track B (spec guides and references): pending (skill-revision/8-11).
 - Track C (`vibe-spec`): `-h`/`--help` on `list-specs`, `lessons-for`, `scan-merges` and `promote`; usage errors on those exit 2; a missing root or lessons file is named on stderr; `lessons-for` matches whole tags; `init` seeds the lesson format and a plan without a backlog; `check-drift` reads the notes a layered plan lists; the SessionStart router is silent without a spec root (skill-revision/12-17).
 - Track D (flow skill): pending (skill-revision/18-24).
