@@ -132,3 +132,22 @@ fn usage_errors_exit_2() {
     let out = spec(&p, &["lessons-for", "nomatch"], &[]);
     assert_eq!(out.code, 0, "{}", out.stderr);
 }
+
+#[test]
+fn a_missing_root_or_lessons_file_is_named_on_stderr() {
+    // skill-revision/14
+    let none = project("lessons-noroot");
+    let out = spec(&none, &["lessons-for", "bash"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(out.stdout.is_empty());
+    assert_eq!(out.stderr.trim_end().lines().count(), 1, "{}", out.stderr);
+    assert!(out.stderr.contains("no spec root"), "{}", out.stderr);
+    assert!(!out.stderr.contains(".spec"), "{}", out.stderr);
+    let bare = project("lessons-nofile");
+    write(&bare, "docs/spec/product.md", "# P\n");
+    let out = spec(&bare, &["lessons-for", "bash"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(out.stdout.is_empty());
+    assert_eq!(out.stderr.trim_end().lines().count(), 1, "{}", out.stderr);
+    assert!(out.stderr.contains("lessons.md"), "{}", out.stderr);
+}

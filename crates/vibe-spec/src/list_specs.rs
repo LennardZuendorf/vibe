@@ -17,10 +17,10 @@ pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
     let root = match found {
         Ok(root) => root,
         Err(Miss::NotFound) => {
-            return (
-                0,
-                b"No .spec/ directory found in current project\n".to_vec(), // literal
+            eprintln!(
+                "vibe-spec list-specs: WARN: no spec root (searched docs/spec/ and the legacy root up to .git). Run: vibe-spec init"
             );
+            return (0, Vec::new());
         }
         Err(miss) => {
             eprintln!("{}", miss.message());

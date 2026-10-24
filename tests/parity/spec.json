@@ -47,6 +47,8 @@
     { "command": "promote", "case": "features/rid-prefix", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
     { "command": "promote", "case": "features/scope-section", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
     { "command": "promote", "case": "features/sf14-awk", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
-    { "command": "promote", "case": "features/table-preview", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" }
+    { "command": "promote", "case": "features/table-preview", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "list-specs", "case": "no-root/bare", "args": [], "field": "stdout", "reason": "the oracle prints its legacy-root sentence on stdout; the port names both searched roots on stderr (skill-revision/14)" },
+    { "command": "list-specs", "case": "no-root/subdir", "args": [], "field": "stdout", "reason": "the oracle prints its legacy-root sentence on stdout; the port names both searched roots on stderr (skill-revision/14)" }
   ]
 }

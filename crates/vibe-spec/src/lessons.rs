@@ -86,13 +86,20 @@ pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
     }
     let file = match found {
         Ok(root) => root.dir.join("lessons.md"),
-        Err(Miss::NotFound) => return (exit::OK, Vec::new()),
+        Err(Miss::NotFound) => {
+            eprintln!(
+                "vibe-spec lessons-for: no spec root (searched docs/spec/ and the legacy root up to .git)"
+            );
+            return (exit::OK, Vec::new());
+        }
         Err(miss) => {
             eprintln!("{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };
     if !file.is_file() {
+        let show = found.as_ref().map(Root::display).unwrap_or_default();
+        eprintln!("vibe-spec lessons-for: {show}/lessons.md not found");
         return (exit::OK, Vec::new());
     }
     if tags.is_empty() {
