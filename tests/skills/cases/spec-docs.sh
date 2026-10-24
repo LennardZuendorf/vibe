@@ -1,4 +1,5 @@
 # shellcheck shell=bash
+# shellcheck disable=SC2016  # needles are literal markdown, backticks included
 # tests/skills/cases/spec-docs.sh — Track B lints: spec docs (skill-revision/8-11).
 # Sourced by run.sh after lib.sh. Bash 3.2 safe.
 
@@ -80,3 +81,53 @@ else
   fail "skill-revision/8" "size check comes before step 1"
 fi
 sd_links_ok "$_f8" "skill-revision/8"
+
+# sd_bin — path of the built vibe-spec binary (built once; empty when cargo is absent).
+sd_bin() {
+  local b="$REPO_ROOT/target/debug/vibe-spec"
+  if [[ ! -x "$b" ]] && command -v cargo >/dev/null 2>&1; then
+    (cd "$REPO_ROOT" && cargo build -q --locked -p vibe-spec) >/dev/null 2>&1 || true
+  fi
+  [[ -x "$b" ]] && printf '%s\n' "$b"
+}
+# sd_lessons_fence FILE — the first fenced block under "## Lessons".
+sd_lessons_fence() {
+  awk '
+    /^## / { s = $0; next }
+    s == "## Lessons" && /^```/ { if (f) exit; f = 1; next }
+    s == "## Lessons" && f { print }
+  ' "$1"
+}
+
+# --- skill-revision/9 — spec/strategy.md and the lesson format ----------------
+_f9="spec/strategy.md"
+sd_absent "skill-revision/9" "$_f9" 'merge: true' 'merge-feature.sh' 'scripts/validate.sh' 'Superpower tip' \
+  'suggest-superpowers' '.config.yaml' 'SKILL.md#config' 'docs/spec/'
+if grep -qiF 'branch doc' "$_f9"; then fail "skill-revision/9" "$_f9 must not say 'branch doc'"; else pass "skill-revision/9" "$_f9 has no 'branch doc'"; fi
+sd_present "skill-revision/9" "$_f9" 'Wrap-up: spec SKILL.md § Wrap-up.' 'Config: spec reference/setup.md § Config.' \
+  '**Pinned-by:**' '`vibe-spec validate`' '`<!-- merge -->`' '`<!-- /merge -->`' '`vibe-spec promote <feature>`' \
+  'superpowers specs and plans by default' '`vibe:rules`'
+_fence="$(sd_lessons_fence "$_f9")"
+for _k in '### ' '**Pattern:**' '**Rule:**' '**Tags:**' '**Date:**'; do
+  assert_contains "skill-revision/9" "§ Lessons example shows $_k" "$_fence" "$_k"
+done
+sd_links_ok "$_f9" "skill-revision/9"
+
+# Behaviour: the § Lessons example, filled in, passes the validator and the lessons query.
+_vs="$(sd_bin || true)"
+if [[ -z "$_vs" ]]; then
+  fail "skill-revision/9" "lesson round-trip needs the vibe-spec binary (cargo build -p vibe-spec)"
+else
+  _rt="$(mktemp -d)"
+  (
+    cd "$_rt" && git init -q . && "$_vs" init >/dev/null
+    printf '\n%s\n' "$_fence" \
+      | sed -e 's/^\*\*Tags:\*\*.*/**Tags:** roundtrip/' -e 's/YYYY-MM-DD/2026-10-24/' -e 's/<[^>]*>/filled/g' \
+      >> docs/spec/lessons.md
+  )
+  _val="$(cd "$_rt" && "$_vs" validate 2>&1 || true)"
+  _got="$(cd "$_rt" && "$_vs" lessons-for roundtrip 2>&1 || true)"
+  if [[ "$_val" == *SF16* ]]; then fail "skill-revision/9" "filled example trips SF16"; else pass "skill-revision/9" "filled example passes SF16"; fi
+  assert_contains "skill-revision/9" "lessons-for returns the filled example" "$_got" "**Tags:** roundtrip"
+  rm -rf "$_rt"
+fi
