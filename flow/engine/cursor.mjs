@@ -86,6 +86,13 @@ export function readCursor(vibeDir) {
   return { flow, phase, feature, updated, state: stateKey(flow, phase) };
 }
 
+// validFeature(value) — the feature charset both cursor writers accept, the twin
+// of set-state.sh's valid_feature: a non-empty string with no C0 control byte,
+// no DEL, no double quote and no backslash.
+export function validFeature(value) {
+  return typeof value === 'string' && value !== '' && !/[\u0000-\u001f\u007f"\\]/.test(value);
+}
+
 // Atomic; preserves the cursor's shape (key order flow, phase, feature,
 // updated) so byte parity with the bash writer's hand-rolled printf holds.
 export function writeCursor(vibeDir, { flow, phase, feature = null }) {

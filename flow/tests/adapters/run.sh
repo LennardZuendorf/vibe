@@ -2600,6 +2600,73 @@ bash "$MERGE" link CLAUDE.md "$d" >/dev/null 2>&1; rc=$?
 [[ $rc -eq 0 && "$(readlink "$d/CLAUDE.md")" == "AGENTS.md" ]] \
   && pass "review-hardening/3" "control: absent adapter is linked" || fail "review-hardening/3" "control: absent adapter not linked"
 assert_not_contains "review-hardening/3" "setup.md no longer says it relinks" "$(cat "$REPO_ROOT/flow/setup.md")" "relinks a wrong target"
+# review-hardening/5
+echo ""
+echo "=== review-hardening/5 — set-state.sh validates its arguments ==="
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SS="$SB/.agents/skills/vibe/scripts/set-state.sh"
+CUR="$SB/.agents/skills/vibe/state.json"
+RH5_NOJQ="$(mkshim jq)"
+# The jq leg runs `bash "$SS"` on the ambient PATH: without jq it would test the
+# no-jq writer twice under a "(jq)" label. Run it only where jq exists, and fail
+# loudly when it cannot run unless the skip is declared (VIBE_NO_JQ=1).
+RH5_LEGS=(nojq)
+if command -v jq >/dev/null 2>&1; then
+  RH5_LEGS=(jq nojq)
+elif [[ "${VIBE_NO_JQ:-}" == 1 ]]; then
+  pass "review-hardening/5" "jq legs deliberately skipped (VIBE_NO_JQ=1)"
+else
+  fail "review-hardening/5" "jq is not on PATH, so the jq legs cannot run (set VIBE_NO_JQ=1 to declare the skip)"
+fi
+rh5_reject() { # label state [feature] — both paths must exit 1, cursor bytes unchanged
+  local label="$1"; shift
+  local leg before rc after
+  for leg in ${RH5_LEGS[@]+"${RH5_LEGS[@]}"}; do
+    bash "$SS" feature.design keepme >/dev/null 2>&1
+    before="$(cat "$CUR")"; rc=0
+    if [[ "$leg" == jq ]]; then bash "$SS" "$@" >/dev/null 2>&1 || rc=$?
+    else PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" "$@" >/dev/null 2>&1 || rc=$?; fi
+    after="$(cat "$CUR")"
+    assert_eq "review-hardening/5" "$label rejected ($leg): exit 1" "$rc" "1"
+    assert_eq "review-hardening/5" "$label rejected ($leg): cursor bytes unchanged" "$after" "$before"
+    if command -v jq >/dev/null 2>&1; then
+      jq -e . "$CUR" >/dev/null 2>&1 && pass "review-hardening/5" "$label ($leg): cursor still parses" \
+        || fail "review-hardening/5" "$label ($leg): cursor still parses"
+    fi
+  done
+}
+rh5_reject "pattern state idle|x" 'idle|x'
+rh5_reject "quote in feature" feature.design 'a"b'
+rh5_reject "backslash in feature" feature.design 'a\b'
+rh5_reject "newline in feature" feature.design $'a\nb'
+# control: an empty-string feature means "no feature argument" (carry forward),
+# as in the engine writer — never an error and never the literal feature "".
+for leg in ${RH5_LEGS[@]+"${RH5_LEGS[@]}"}; do
+  bash "$SS" feature.design keepme >/dev/null 2>&1; rc=0
+  if [[ "$leg" == jq ]]; then bash "$SS" feature.plan '' >/dev/null 2>&1 || rc=$?
+  else PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" feature.plan '' >/dev/null 2>&1 || rc=$?; fi
+  assert_eq "review-hardening/5" "control ($leg): empty-string feature exits 0" "$rc" "0"
+  assert_contains "review-hardening/5" "control ($leg): empty-string feature still moves the cursor" "$(cat "$CUR")" '"phase": "plan"'
+  assert_contains "review-hardening/5" "control ($leg): empty-string feature carries the current one" "$(cat "$CUR")" '"feature": "keepme"'
+done
+# controls: legal names still work, hostile-looking-but-legal names land literally
+# shellcheck disable=SC2016  # '$(touch x)' is a literal feature name on purpose
+for leg in ${RH5_LEGS[@]+"${RH5_LEGS[@]}"}; do
+  rm -f "$SB/x" "$CUR"; ( cd "$SB" || exit 1
+    if [[ "$leg" == jq ]]; then bash "$SS" feature.impl demo >/dev/null 2>&1; bash "$SS" feature.impl '$(touch x)' >/dev/null 2>&1
+    else PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" feature.impl demo >/dev/null 2>&1; PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" feature.impl '$(touch x)' >/dev/null 2>&1; fi )
+  assert_contains "review-hardening/5" "control ($leg): shell-hostile feature written literally" "$(cat "$CUR")" '"feature": "$(touch x)"'
+  [[ ! -e "$SB/x" && ! -e "$PWD/x" ]] && pass "review-hardening/5" "control ($leg): no file x created" || fail "review-hardening/5" "control ($leg): no file x created"
+  rc=0
+  if [[ "$leg" == jq ]]; then bash "$SS" quick.fix >/dev/null 2>&1 || rc=$?
+  else PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" quick.fix >/dev/null 2>&1 || rc=$?; fi
+  assert_eq "review-hardening/5" "control ($leg): quick.fix accepted" "$rc" "0"
+done
+# a corrupt cursor feature must not be re-emitted without jq
+printf '{\n  "flow": "feature",\n  "phase": "impl",\n  "feature": "a\\"b",\n  "updated": "t"\n}\n' > "$CUR"
+PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" feature.verify >/dev/null 2>&1 || true
+assert_contains "review-hardening/5" "no-jq: corrupt carried feature falls back to null" "$(cat "$CUR")" '"feature": null'
+rm -rf "$RH5_NOJQ" "$SB"
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

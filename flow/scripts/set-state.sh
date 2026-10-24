@@ -44,11 +44,45 @@ fi
 
 TARGET="${1:-}"
 NEW_FEATURE="${2:-}"
+# An empty feature argument means "no feature argument" (carry forward / clear),
+# exactly as in the engine writer (`vibe state set`).
+FEATURE_GIVEN=0
+[[ -n "$NEW_FEATURE" ]] && FEATURE_GIVEN=1
+
+# valid_feature VALUE — the charset both cursor writers accept (the engine's
+# validFeature in engine/cursor.mjs is the twin): non-empty, no control byte, no
+# double quote, no backslash. Slug-shaped and spaced names pass; anything that
+# would need JSON escaping (or break the cursor re-read without jq) does not.
+# LC_ALL=C pins [[:cntrl:]] to C0 and DEL: under a UTF-8 locale it also matches
+# C1 code points, which the engine's check (and JSON) treat as ordinary text.
+valid_feature() {
+  local LC_ALL=C
+  [[ -n "$1" ]] || return 1
+  case "$1" in
+    *[[:cntrl:]]*|*\"*|*\\*) return 1 ;;
+  esac
+  return 0
+}
+
+# validate_args — reject a malformed state or feature before anything is read or
+# written, so the cursor is never rewritten to invalid JSON.
+validate_args() {
+  if [[ -n "$TARGET" && ! "$TARGET" =~ ^[a-z]+(\.[a-z]+)?$ ]]; then
+    err "ERROR: invalid state '$TARGET' (expected <flow>.<phase> or a single lowercase word)."
+    exit 1
+  fi
+  if [[ "$FEATURE_GIVEN" -eq 1 ]] && ! valid_feature "$NEW_FEATURE"; then
+    err "ERROR: invalid feature name (no control character, double quote or backslash allowed)."
+    exit 1
+  fi
+}
 
 if [[ -z "$TARGET" ]]; then
   err "ERROR: no target state given. Usage: set-state.sh <flow.phase> [feature]"
   exit 1
 fi
+
+validate_args
 
 # Validate target exists in the machine.
 if [[ "$HAVE_JQ" -eq 1 ]]; then
@@ -82,8 +116,8 @@ else
 fi
 
 # json_string VALUE — emit VALUE as a JSON string literal. Uses jq when present
-# (full escaping); without jq, escapes backslash and double-quote — enough for the
-# slug-shaped feature names the cursor carries.
+# (full escaping); without jq, escapes backslash and double-quote — enough because
+# validate_args already rejects a feature with a control byte, `"` or `\`.
 json_string() {
   if [[ "$HAVE_JQ" -eq 1 ]]; then
     jq -n --arg f "$1" '$f'
@@ -105,9 +139,15 @@ if [[ -f "$STATE" ]]; then
     CUR_FEATURE="$(sed -n 's/^[[:space:]]*"feature"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' "$STATE" | head -n1 || true)"
     [[ -n "$CUR_FEATURE" ]] || CUR_FEATURE="null"
   fi
+  # A corrupt cursor must not be re-emitted: reuse only a feature that passes the
+  # same check as a new one.
+  if [[ "$CUR_FEATURE" != "null" ]] && ! valid_feature "$CUR_FEATURE"; then
+    err "WARN: ignoring an invalid feature in the existing cursor."
+    CUR_FEATURE="null"
+  fi
 fi
 
-if [[ -n "$NEW_FEATURE" ]]; then
+if [[ "$FEATURE_GIVEN" -eq 1 ]]; then
   FEATURE_JSON=$(json_string "$NEW_FEATURE")
 elif [[ "$FLOW" == "idle" ]]; then
   FEATURE_JSON="null"   # leaving all flows clears the feature pointer

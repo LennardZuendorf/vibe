@@ -20,7 +20,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSy
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, assert, assertEqual, assertMatch, makeSandbox, mkTempRoot, runCommand } from './run.mjs';
+import { test, assert, assertEqual, assertIncludes, assertMatch, makeSandbox, mkTempRoot, runCommand } from './run.mjs';
 import runState, { runSet, runGet } from '../commands/state.mjs';
 import { readCursor } from '../cursor.mjs';
 
@@ -41,8 +41,8 @@ function makeOracleSandbox({ cursor } = {}) {
   return { ...sandbox, scriptPath };
 }
 
-function runOracle(scriptPath, args) {
-  return runCommand('bash', [scriptPath, ...args]);
+function runOracle(scriptPath, args, env) {
+  return runCommand('bash', [scriptPath, ...args], env ? { env } : undefined);
 }
 
 // Cursor bytes with the `updated` timestamp blanked out, for a
@@ -70,6 +70,30 @@ function assertStdoutParity(engineStdout, oracleStdout, msg) {
     assertEqual(engineArrow, oracleArrow, `${msg} (arrow line only — no jq on this runner)`);
   }
 }
+
+// The C1 fixture below checks something only where bash's [[:cntrl:]] really
+// matches U+0085. Pick that locale by behaviour, not by name: a locale the
+// runner lacks falls back (to LANG, or to C) and the fixture would then pass
+// while checking nothing. A setlocale warning on stderr marks a fallback.
+const C1_PROBE = "c=$'\\xc2\\x85'; [[ $c == *[[:cntrl:]]* ]] && echo cntrl || echo none";
+function probeC1(lcAll) {
+  const r = runCommand('bash', ['-c', C1_PROBE], { env: { LC_ALL: lcAll } });
+  return r.code === 0 && r.stderr === '' ? r.stdout.trim() : 'unusable';
+}
+const UTF8_CANDIDATES = ['en_US.UTF-8', 'C.UTF-8', 'C.utf8', 'en_US.utf8'];
+const UTF8_LOCALE = UTF8_CANDIDATES.find((l) => probeC1(l) === 'cntrl');
+
+test('parity locale guard: a UTF-8 locale where bash [[:cntrl:]] matches U+0085 exists', () => {
+  assert(
+    UTF8_LOCALE !== undefined,
+    `none of ${UTF8_CANDIDATES.join(', ')} makes bash's [[:cntrl:]] match U+0085, so the C1 fixture ` +
+      'would check nothing. Install a UTF-8 locale (e.g. C.UTF-8) on this runner.',
+  );
+});
+
+test('parity locale guard: under LC_ALL=C bash [[:cntrl:]] does not match U+0085', () => {
+  assertEqual(probeC1('C'), 'none', 'the C-locale control must see U+0085 as non-control bytes');
+});
 
 // ---------------------------------------------------------------------------
 // Parity matrix — set, with and without an existing cursor. Every fixture
@@ -110,12 +134,51 @@ const FIXTURES = [
     explicitArgs: (fx) => [fx.target, ''],
   },
   {
-    // Adversarial: escaping-sensitive characters must survive both jq's
-    // --arg quoting and JSON.stringify's escaping identically.
-    name: 'feature name with quotes, backslash, and non-ASCII characters',
+    // Legal special characters (space, non-ASCII) must survive both jq's
+    // --arg quoting and JSON.stringify's escaping byte-identically: no \u
+    // escapes, no mangled UTF-8.
+    name: 'feature name with spaces and non-ASCII characters',
     start: null,
     target: 'feature.design',
+    feature: 'Brien path name — π',
+  },
+  {
+    // One rule in every locale: a C1 control (U+0085) is legal to the engine's
+    // C0/DEL check, and set-state.sh must agree under a UTF-8 locale too, where
+    // bash's [[:cntrl:]] would otherwise also match C1 code points.
+    // UTF8_LOCALE is proven by the locale guard above; without one that guard
+    // fails, and this row still runs under the first candidate.
+    name: 'feature name with a C1 control code point, under a UTF-8 locale',
+    start: null,
+    target: 'feature.design',
+    feature: 'a\u0085b',
+    env: { LC_ALL: UTF8_LOCALE ?? UTF8_CANDIDATES[0] },
+  },
+  {
+    // Control: the same name under the C locale, where [[:cntrl:]] never
+    // matched C1. Both writers accept it there too.
+    name: 'feature name with a C1 control code point, under the C locale',
+    start: null,
+    target: 'feature.design',
+    feature: 'a\u0085b',
+    env: { LC_ALL: 'C' },
+  },
+  {
+    // review-hardening/5: both writers apply ONE charset rule. A feature holding
+    // `"` or `\` is rejected by each (exit 1, cursor untouched).
+    name: 'feature name with quotes and backslash is rejected by both writers',
+    rejects: true,
+    start: { flow: 'feature', phase: 'design', feature: 'kept', updated: '2020-01-01T00:00:00Z' },
+    target: 'feature.design',
     feature: 'o"Brien\\path\\name — π',
+  },
+  {
+    // An invalid feature already in the cursor (a hand edit, an older writer)
+    // is dropped to null by both writers, never carried forward.
+    name: 'an invalid carried feature is dropped to null by both writers',
+    start: { flow: 'feature', phase: 'design', feature: 'o"Brien', updated: '2020-01-01T00:00:00Z' },
+    target: 'feature.plan',
+    feature: undefined,
   },
 ];
 
@@ -126,7 +189,20 @@ for (const fx of FIXTURES) {
     try {
       const args = fx.explicitArgs ? fx.explicitArgs(fx) : fx.feature ? [fx.target, fx.feature] : [fx.target];
 
-      const oracleResult = runOracle(oracle.scriptPath, args);
+      const oracleBefore = readFileSync(oracle.cursorPath, 'utf8');
+      const engineBefore = readFileSync(engine.cursorPath, 'utf8');
+      const oracleResult = runOracle(oracle.scriptPath, args, fx.env);
+      if (fx.rejects) {
+        assertEqual(oracleResult.code, 1, `oracle must reject ${fx.name}: ${oracleResult.stderr}`);
+        assertIncludes(oracleResult.stderr, 'invalid feature name');
+        assertEqual(readFileSync(oracle.cursorPath, 'utf8'), oracleBefore, 'oracle cursor bytes must be unchanged');
+        const engineResult = runSet(engine.flowDir, args);
+        assertEqual(engineResult.code, 1, `engine must reject ${fx.name}: ${engineResult.stderr}`);
+        assertIncludes(engineResult.stderr, 'invalid feature name');
+        assertEqual(engineResult.stdout, '', 'a rejected set prints nothing on stdout');
+        assertEqual(readFileSync(engine.cursorPath, 'utf8'), engineBefore, 'engine cursor bytes must be unchanged');
+        return;
+      }
       assertEqual(oracleResult.code, 0, `oracle failed: ${oracleResult.stderr}`);
 
       const engineResult = runSet(engine.flowDir, args);

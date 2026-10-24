@@ -20,7 +20,7 @@
 // (unit 2) are the only primitives for that.
 
 import { resolveVibeDir } from '../root.mjs';
-import { readCursor, writeCursor } from '../cursor.mjs';
+import { readCursor, validFeature, writeCursor } from '../cursor.mjs';
 import { loadMachine, stateOf } from '../machine.mjs';
 
 // Splits "<flow>.<phase>" on the FIRST dot only, matching the oracle's
@@ -65,6 +65,19 @@ export function runSet(vibeDir, args) {
       stdout: '',
       stderr: line(
         'vibe state: ERROR: no target state given. Usage: vibe state set <flow.phase> [feature]',
+      ),
+    };
+  }
+
+  // One charset rule for both writers (review-hardening/5): a feature the bash
+  // writer would refuse is refused here too, before anything is read or
+  // written. An empty string is no feature argument, in both.
+  if (newFeature !== undefined && newFeature !== '' && !validFeature(newFeature)) {
+    return {
+      code: 1,
+      stdout: '',
+      stderr: line(
+        'vibe state: ERROR: invalid feature name (no control character, double quote or backslash allowed).',
       ),
     };
   }
@@ -115,6 +128,12 @@ export function runSet(vibeDir, args) {
   } catch {
     curFeature = null;
   }
+  // A corrupt carried feature is dropped, never re-emitted — as set-state.sh.
+  let stderr = '';
+  if (curFeature !== null && curFeature !== undefined && curFeature !== '' && !validFeature(curFeature)) {
+    stderr += line('vibe state: WARN: ignoring an invalid feature in the existing cursor.');
+    curFeature = null;
+  }
 
   let feature;
   if (newFeature) {
@@ -127,7 +146,6 @@ export function runSet(vibeDir, args) {
     feature = null;
   }
 
-  let stderr = '';
   if (flow === 'feature' && feature === null) {
     stderr += line(
       `vibe state: WARN: entering '${target}' with no feature set. Pass one: vibe state set ${target} <feature>`,

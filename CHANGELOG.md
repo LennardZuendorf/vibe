@@ -145,6 +145,7 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   `flow/scripts/lib/resolve-target.sh` resolves the physical target; writes land
   beside it, and a dangling or outside-repo link is refused with exit 1 and
   nothing written. (review-hardening/4)
+- **Cursor writers refuse invalid state (review-hardening/5)** — `set-state.sh` and `vibe state set` both validate their arguments with one rule: a state holding a pattern character (`idle|x`) or a feature holding a control byte, `"` or `\` exits 1 and leaves the cursor untouched; an invalid feature already in the cursor is dropped to null instead of re-emitted.
 - **The hard blocks survive a node-less target** — the hook shims were
   `command -v node || exit 0`, so a machine without node silently lost the
   PreToolUse write guard and the Stop evidence gate, while the docs still called
