@@ -639,13 +639,19 @@ if command -v node >/dev/null 2>&1; then
   # safe while it cannot drift: it must equal, byte for byte, what
   # `render agents-md` composes from content/policy.json — which is also what
   # makes an install WITH node re-render it to "no change".
+  # skill-revision/25: the maintainer's own `vibe.json` adds a policy block to
+  # THIS repo's render, so the shipped copy is compared with a shipped-defaults-only
+  # render (a temp project with no `vibe.json`).
+  ship_proj="$(mktemp -d)"; mkdir -p "$ship_proj/.agents/skills"; ln -s "$FLOW" "$ship_proj/.agents/skills/vibe"
+  ship_rend="$( cd "$ship_proj" && CLAUDE_PROJECT_DIR="$ship_proj" node "$FLOW/engine/cli.mjs" render agents-md 2>/dev/null )"
+  rm -rf "$ship_proj"
   tmpl_rules="$(awk '/^<!-- vibe:rules -->$/{f=1;next} /^<!-- \/vibe:rules -->$/{f=0} f' "$FLOW/reference/templates/AGENTS.md")"
   tmpl_rules_note="$(printf '%s\n' "$tmpl_rules" | head -n1)"
   tmpl_rules_body="$(printf '%s\n' "$tmpl_rules" | sed '1,2d')"
   assert_contains "inject-triggers/6" "the template ships a vibe:rules block with the managed-region note" \
     "$tmpl_rules_note" "_Managed by vibe"
   assert_eq "inject-triggers/6" "the template's shipped vibe:rules body IS the agents-md render (no drift possible)" \
-    "$tmpl_rules_body" "$rend"
+    "$tmpl_rules_body" "$ship_rend"
   # Floor for that equality: neither side is empty, and the body really carries
   # the generated rules (an empty-vs-empty comparison would pass just as well).
   assert_contains "inject-triggers/6" "floor: the shipped block carries the generated invariants" \

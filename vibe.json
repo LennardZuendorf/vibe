@@ -3,14 +3,31 @@
   "version": 1,
   "channels": {
     "session-start": {
-      "add": ["repo.evidence"]
+      "add": [
+        "repo.evidence"
+      ]
+    },
+    "agents-md": {
+      "add": [
+        "local.delegation-policy"
+      ]
     }
   },
   "blocks": {
     "repo.evidence": {
       "title": "Evidence before done",
-      "channels": ["session-start"],
+      "channels": [
+        "session-start"
+      ],
       "summary": "evidence: run `bash tests/run.sh` and `vibe-spec validate` before claiming any work is done — quote the output, never the intent"
+    },
+    "local.delegation-policy": {
+      "title": "Delegation policy (maintainer)",
+      "channels": [
+        "agents-md"
+      ],
+      "summary": "policy: `fable` sub-agents only with the maintainer's prior approval, never inside a workflow · without ultracode, propose a workflow and wait for the maintainer's yes",
+      "body": "Maintainer rules on top of the shipped tiers.\n\n- `fable` — rare; only when independence from your context is the point (e.g. adversarial review of your own plan or a large diff). ALWAYS check with the maintainer first — never spawn one unprompted.\n- Never use `fable` agents in a dynamic workflow, not even with approval. A Fable review happens AFTER the workflow completes, as a standalone Agent-tool call (ask first).\n- If ultracode is NOT on for the session (no \"ultracode\" keyword, no toggle, no orchestration request in the maintainer's own words), plan first — propose the workflow with rough shape and cost, and wait for the maintainer's reply; their \"yes\" is the opt-in. If ultracode IS on, invoke directly."
     }
   },
   "placeholders": {}

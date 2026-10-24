@@ -25,15 +25,15 @@ durable memory (`docs/spec/`, or legacy `.spec/`); sessions are ephemeral. Read 
   (the two human gates below). Never edit `state.json` by hand.
 - Under the hood `/flow` runs
   `bash .agents/skills/vibe/scripts/set-state.sh <flow.phase> [feature]`. That script is a
-  *writer*, not a gate — it moves the cursor but enforces no approval. The gate teeth live
-  in the `/flow` command and the hooks, not the writer.
+  *writer*, not a gate — it moves the cursor but enforces no approval. Gates are a
+  convention today: `/flow` asks for a `confirm` token, and no hook or script checks it.
 - Per-turn **orders** for the current state come from the linked `vibe` skill, resolved by
   `orders.sh`. Follow the current state's orders over any delegated skill's own prose.
 
 ## Working model
 
 ```
-ASK → read the spec root → PLAN → CONFIRM → IMPL → verify → compound
+design → plan →[gate] impl → verify →[gate] compound
 ```
 
 Most transitions auto-advance. Two edges are **human gates** — stop and get explicit
@@ -77,7 +77,6 @@ never by editing the block, which is regenerated.
 
 ```bash
 # Spec validation — run before claiming done (spec half; absent on --only flow)
-# (until F22 ships the binary, `bash .agents/skills/spec/scripts/validate.sh` on a legacy `.spec/` root)
 vibe-spec validate
 # Write policy for a path (works without state.json)
 bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
@@ -96,8 +95,8 @@ node .agents/skills/vibe/engine/cli.mjs render agents-md --write
   `NotebookEdit` tool calls. Shell redirection (`>`, `tee`, `sed -i`) bypasses it —
   honoring the write invariants there is a **convention**, backed only by a warn-only
   Bash sniffer.
-- `set-state.sh` writes the cursor; it does not gate. Approvals are enforced by `/flow` and
-  the hooks, not by the writer.
+- `set-state.sh` writes the cursor; it does not gate. No hook enforces the two approvals;
+  honor them yourself.
 - The Stop receipt tooth (a `*.verify` state needs a fresh evidence receipt) fires only when
   the hooks are wired into the platform (e.g. `.claude/settings.json`). No wiring, no tooth.
 
@@ -118,7 +117,7 @@ _No lessons recorded yet._
 <!-- vibe:active-rules:end -->
 
 <!-- vibe:rules -->
-_Managed by vibe — rendered from the `agents-md` channel by `vibe render agents-md --write`. Edit the blocks or `vibe.json`, not this region._
+_Managed by vibe — rendered from the `agents-md` channel by `node .agents/skills/vibe/engine/cli.mjs render agents-md --write`. Edit the blocks or `vibe.json`, not this region._
 
 ## Write invariants
 
@@ -151,12 +150,9 @@ calls alike. Set the `model` parameter explicitly on every call; never omit it
 (omission silently inherits the session model):
 
 - `haiku` — mechanical bulk work: renames, boilerplate, format conversion, log triage.
-- `sonnet` — default for well-specified implementation with clear acceptance criteria.
-- `opus` — genuinely tricky work: concurrency, subtle algorithms, adversarial
-  verify/judge panels, gnarly debugging.
-- `fable` — rare; only when independence from your context is the point (e.g.
-  adversarial review of your own plan or a large diff). If the complexity of the task
-  warrants a Fable sub-agent, ALWAYS check with me first — never spawn one unprompted.
+- `sonnet` — default for well-specified implementation, exploration and per-task review.
+- `opus` — architecture, adversarial or final review, genuinely tricky work:
+  concurrency, subtle algorithms, gnarly debugging.
 
 When unsure between tiers, pick the cheaper and escalate on failure.
 
@@ -166,15 +162,11 @@ Applies to ALL sessions, any model. Dynamic workflows do not need to be avoided 
 reach for the Workflow tool when a task has 3+ independent parallelizable subtasks or
 would benefit from a pipeline/judge panel.
 
-Standing rule on opt-in: if ultracode is NOT on for the session (no "ultracode"
-keyword, no toggle, no orchestration request in my own words), plan first — propose
-the workflow in one or two sentences with the rough shape and cost, and wait for my
-reply; my "yes" is the opt-in. If ultracode IS on, invoke directly.
+Opt-in: unless your human partner already asked for orchestration in their own words,
+plan first — propose the workflow in one or two sentences with the rough shape and
+cost, and wait for their reply; their "yes" is the opt-in.
 
 **Agent models inside workflow scripts:** every `agent()` call MUST set the `model`
-parameter explicitly, chosen per "Delegating to sub-agents" above — with one
-tightening: NEVER use `fable` agents in a dynamic workflow, not even with approval.
-Only `haiku`, `sonnet`, or `opus`. If a Fable review is warranted, it happens AFTER
-the workflow completes, as a standalone Agent-tool call (ask first, per above) —
-never as a workflow stage.
+parameter explicitly, chosen per "Delegating to sub-agents" above. Only `haiku`,
+`sonnet`, or `opus`.
 <!-- /vibe:rules -->
