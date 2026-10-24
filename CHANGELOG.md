@@ -149,6 +149,13 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 - **The flow guard sees MultiEdit (review-hardening/19)** — the PreToolUse matcher was `Edit|Write|NotebookEdit|Bash`, so a `MultiEdit` write skipped the write-invariant guard. `merge-settings.sh` and this repo's `.claude/settings.json` now ship `Edit|Write|MultiEdit|NotebookEdit|Bash`; a re-merge upgrades an older matcher in place.
 - **The no-node policy fallback decides like the engine (review-hardening/6)** — `detect-context.sh` now normalises a path (empty and `.` segments, `..`, trailing `/`, a newline) before its case patterns, so `docs/spec//lessons.md` and `docs/spec/x/../lessons.md` block without node as they do with it; the engine glob matches across a newline like bash `case`. The differential matrix derives alias spellings of every guarded path.
 - **Cursor writers refuse invalid state (review-hardening/5)** — `set-state.sh` and `vibe state set` both validate their arguments with one rule: a state holding a pattern character (`idle|x`) or a feature holding a control byte, `"` or `\` exits 1 and leaves the cursor untouched; an invalid feature already in the cursor is dropped to null instead of re-emitted.
+- **Content reads stay inside the repo physically** — `confinePath` was
+  lexical, so a `.vibe/blocks` file or directory, a `blocks.*.file`, a
+  `sources.lessons`, or the legacy `.spec/lessons.md` fallback that was a symlink
+  to an outside file injected that file into every prompt. The new
+  `confineRealWhy` checks the resolved real path; refused paths are reported as
+  errors that `render --check` exits non-zero on. In-repo symlinks still work,
+  and an absent lessons file stays silent (rh/11).
 - **The hard blocks survive a node-less target** — the hook shims were
   `command -v node || exit 0`, so a machine without node silently lost the
   PreToolUse write guard and the Stop evidence gate, while the docs still called
