@@ -43,4 +43,23 @@ _score none present superpowers:brainstorming 0
 _score none absent none 0
 _score none absent spec 1
 
+# --- skill-revision/3: description, frontmatter, selection evals -------------
+_S="$REPO_ROOT/spec/SKILL.md"
+out="$(lint_description "$_S" assertive)"; rc=$?
+assert_rc "skill-revision/3" "spec description passes the lint (assertive) ${out:+— $out}" 0 "$rc"
+out="$(lint_frontmatter "$_S" "name description user-invocable argument-hint allowed-tools compatibility" spec)"; rc=$?
+assert_rc "skill-revision/3" "spec frontmatter keys are the allowlist ${out:+— $(printf '%s' "$out" | tr '\n' ' ')}" 0 "$rc"
+_J="$REPO_ROOT/spec/tests/evals/selection.json"
+_n="$(grep -c '"expect": "spec"' "$_J" 2>/dev/null)"
+assert_population "skill-revision/3" "selection evals should-select queries" "${_n:-0}" 10
+_n="$(grep -c '"expect": "none"' "$_J" 2>/dev/null)"
+assert_population "skill-revision/3" "selection evals near-miss queries" "${_n:-0}" 10
+_bad=0
+while IFS=$'\t' read -r _id _acc _q; do
+  [[ "$_acc" == none ]] || continue
+  _q="${_q//\"/\\\"}"
+  grep -F "\"query\": \"$_q\"" "$_J" 2>/dev/null | grep -qF '"expect": "none"' || { _bad=1; echo "        missing near-miss: $_q"; }
+done < "$_P/scenarios.tsv"
+assert_rc "skill-revision/3" "every harness near-miss is a selection-eval near-miss" 0 "$_bad"
+
 rm -rf "$_sa"

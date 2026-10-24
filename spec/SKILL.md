@@ -2,14 +2,14 @@
 name: spec
 description: |
   You MUST use this before changing what the product does, how it is built,
-  or any file under docs/spec, .spec or docs/superpowers — features, <!-- literal -->
+  or any file under the spec root (docs/spec) or docs/superpowers: features,
   refactors, architecture, decisions, PRDs, plans, roadmaps, and also
   one-line fixes, typos and new flags. "Quick" and "just fix it" still
   route here first. Invoke it before reading files, before writing code,
-  before brainstorming alone, before answering "how should we build X",
+  before brainstorming alone, before answering "how should X be built",
   and whenever the user mentions spec, PRD, design doc, plan, or roadmap.
 user-invocable: true
-argument-hint: "[strategy|feature [<name>]|interview [<name>]|promote <name>|audit|diff <name>|health|research <name>|lessons-for <tag>|product|tech|design|plan|lessons|setup|validate]"
+argument-hint: "[strategy|feature [<name>]|interview [<name>]|promote <name>|diff <name>|health|research <name>|lessons-for <tag>|product|tech|design|plan|lessons|setup|validate]"
 allowed-tools:
   - Read
   - Edit
@@ -18,72 +18,7 @@ allowed-tools:
   - Grep
   - Bash
   - Agent
-compatibility: Requires bash. macOS and Linux.
-metadata:
-  author: lennarddib
-  version: 2.0
-
-context:
-  - feature.md
-  - strategy.md
-  - reference/product.md
-  - reference/tech.md
-  - reference/plan.md
-
-agents:
-  - name: spec-promoter
-    path: agents/spec-promoter.md
-    trigger: feature.compound promote step
-  - name: spec-health
-    path: agents/spec-health.md
-    trigger: /spec health
-    user-invocable: true
-
-superpowers:
-  - superpowers:brainstorming          # feature design (default layer)
-  - superpowers:writing-plans          # feature plan (default layer)
-  - code-explorer                      # HOW codebase trace (fallback)
-  - code-architect                     # HOW approach sketch (fallback)
-  - superpowers:verification-before-completion  # audit quality framing
-  - superpowers:finishing-a-development-branch  # compound lesson narrative
-
-outputs:
-  - docs/superpowers/specs/YYYY-MM-DD-<name>-design.md   # default feature layer
-  - docs/superpowers/plans/YYYY-MM-DD-<name>.md          # default feature layer
-  - <spec root>/features/<name>/product.md   # fallback
-  - <spec root>/features/<name>/tech.md      # fallback
-  - <spec root>/features/<name>/design.md    # fallback
-  - <spec root>/features/<name>/plan.md      # fallback
-  - <spec root>/product.md            # strategy + compound only
-  - <spec root>/tech.md               # strategy + compound only
-  - <spec root>/lessons.md            # compound only
-  - <spec root>/.config.yaml          # setup only
-
-reads:
-  - <spec root>/product.md
-  - <spec root>/tech.md
-  - <spec root>/design.md
-  - <spec root>/lessons.md
-  - <spec root>/plan.md
-  - <spec root>/.config.yaml
-  - docs/superpowers/specs/
-  - docs/superpowers/plans/
-  - <spec root>/features/<name>/
-
-delegates:
-  - role: spec-promoter
-    when: compound (promote durable facts to root, then delete feature artifacts)
-    superpowers: [superpowers:finishing-a-development-branch]
-  - role: spec-health
-    when: audit / structural assessment (/spec health)
-    superpowers: []
-
-phases:
-  - setup.apply
-  - strategy.spec
-  - feature.design
-  - feature.plan
-  - feature.compound
+compatibility: Requires the vibe-spec binary on PATH (see the README Install section). Without it, the legacy scripts check a flat legacy root only. macOS and Linux.
 ---
 
 # spec

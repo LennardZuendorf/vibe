@@ -105,3 +105,14 @@ Haiku (`haiku`), `pressure: 23/24 passed`. Every near-miss passed
 
 Near-miss result: no near-miss routed to `spec` or `vibe` on either model, so
 unit 4 has no verbatim near-miss quote to turn into a Red Flags row.
+
+## skill-revision/3
+
+GREEN after the frontmatter change (description 498 characters with no angle
+brackets and no literal tag, "how should X be built" in place of "how should we
+build X"; dead frontmatter keys removed). Same harness, isolation and
+superpowers 7.0.0 as `## skill-revision/2`. Sonnet (`claude-sonnet-5-5`), both
+legs `pressure: 12/12 passed`: the six original should-trigger rows route to
+`spec` in both `sp` legs (12/12), including `howbuild`, and no near-miss routes
+to `spec` or `vibe` (`nm-review` present → `code-review`; every other near-miss
+→ `none`). Selection evals: [../evals/RESULTS.md](../evals/RESULTS.md).

@@ -647,16 +647,20 @@ test_sf17_templates
 test_sf17_skill_size
 test_sf17_companion_docs
 
-# ── spec-skill-improvements: Unit 1 — SKILL.md v2.0 frontmatter ─────────────
+# ── skill-revision/3: SKILL.md frontmatter holds only keys a harness reads ───
 test_skill_v2_frontmatter_fields() {
-  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
-  assert_contains "spec-skill-improvements/1" "SKILL.md version 2.0" "$skill" "version: 2.0"
-  assert_contains "spec-skill-improvements/1" "SKILL.md has allowed-tools:" "$skill" "allowed-tools:"
-  assert_contains "spec-skill-improvements/1" "SKILL.md has context:" "$skill" "context:"
-  assert_contains "spec-skill-improvements/1" "SKILL.md has agents:" "$skill" "agents:"
-  assert_contains "spec-skill-improvements/1" "SKILL.md has superpowers:" "$skill" "superpowers:"
-  assert_contains "spec-skill-improvements/1" "SKILL.md has delegates:" "$skill" "delegates:"
-  assert_not_contains "spec-skill-improvements/1" "SKILL.md frontmatter dropped retired caveman machinery" "$skill" "caveman"
+  local fm keys bad="" k compat
+  local allowed=" name description user-invocable argument-hint allowed-tools compatibility "
+  fm="$(awk 'NR==1&&$0!="---"{exit} NR>1&&$0=="---"{exit} NR>1{print}' "$SPEC_SKILL/SKILL.md")"
+  keys="$(grep -Eo '^[A-Za-z][A-Za-z0-9_-]*:' <<<"$fm" | sed 's/:$//' | tr '\n' ' ')"
+  for k in $keys; do
+    [[ "$allowed" == *" $k "* ]] || bad="$bad $k"
+  done
+  if [[ -z "$bad" && -n "$keys" ]]; then pass "skill-revision/3" "SKILL.md frontmatter keys are the allowlist ($keys)"
+  else fail "skill-revision/3" "SKILL.md frontmatter keys are the allowlist (unexpected:$bad)"; fi
+  compat="$(sed -n 's/^compatibility:[[:space:]]*//p' <<<"$fm")"
+  assert_contains "skill-revision/3" "compatibility names the vibe-spec binary" "$compat" "vibe-spec"
+  assert_not_contains "skill-revision/3" "SKILL.md frontmatter dropped retired caveman machinery" "$fm" "caveman"
 }
 
 # ── spec-skill-improvements: Unit 2 — ## Roles section reconciled to real subagents ─
@@ -1551,15 +1555,16 @@ test_f1_git_boundary() {
 }
 test_f1_git_boundary
 
-# ── SF17/F25: description is trigger-first (superpowers style) and within budget ──
+# ── SF17/F25, skill-revision/3: description is trigger-first, ≤500 chars, no angle brackets ──
 test_sf17_description_budget() {
   local desc chars
-  desc="$(awk '/^description:/{f=1; sub(/^description:[[:space:]]*\|?[[:space:]]*/,""); if(length) print; next} f && /^[a-z_-]+:/{exit} f{sub(/^[[:space:]]+/,""); print}' "$SPEC_SKILL/SKILL.md" | tr '\n' ' ')"
+  desc="$(awk '/^description:/{f=1; sub(/^description:[[:space:]]*\|?[[:space:]]*/,""); if(length) print; next} f && /^[a-z_-]+:/{exit} f{sub(/^[[:space:]]+/,""); print}' "$SPEC_SKILL/SKILL.md" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
   chars="${#desc}"
-  if [[ $chars -gt 20 && $chars -le 1024 ]] && grep -qE '^(You MUST use this|Use when)' <<<"$desc" && ! grep -qF 'Maintains' <<<"$desc"; then
-    pass SF17 "description is trigger-first and within budget ($chars chars)"
+  if [[ $chars -gt 20 && $chars -le 500 ]] && grep -qE '^(You MUST use this|Use when)' <<<"$desc" \
+    && ! grep -qF 'Maintains' <<<"$desc" && ! grep -q '[<>]' <<<"$desc"; then
+    pass SF17 "description is trigger-first, within 500 chars, no angle brackets ($chars chars)"
   else
-    fail SF17 "description is trigger-first and within budget ($chars chars)"
+    fail SF17 "description is trigger-first, within 500 chars, no angle brackets ($chars chars)"
   fi
 }
 test_sf17_description_budget
