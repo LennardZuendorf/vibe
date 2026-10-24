@@ -320,11 +320,11 @@ The shipped rules, in one sentence each:
 
 1. **`.agents/skills/vibe/state.json`** — blocked in every state; the cursor is
    written only by `set-state.sh`.
-2. **Lessons under `docs/spec/` and legacy `.spec/`** — blocked outside the
+2. **Lessons under `docs/spec/` and the legacy dot-spec root** — blocked outside the
    flow-end states that carry the conditional lesson step.
-3. **Root specs under `docs/spec/` and legacy `.spec/`** — blocked outside the
+3. **Root specs under `docs/spec/` and the legacy dot-spec root** — blocked outside the
    states that own the root specs.
-4. **Feature specs under `docs/spec/` and legacy `.spec/`**, plus
+4. **Feature specs under `docs/spec/` and the legacy dot-spec root**, plus
    **`docs/superpowers/specs/*`**, **`CLAUDE.md` / `AGENTS.md`**, and
    **`src/*` + `tests/*`** — warn-only bands.
 5. **`.planning/*`** — GSD's read-only state store; writes block except at idle.
