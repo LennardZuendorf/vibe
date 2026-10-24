@@ -62,4 +62,22 @@ while IFS=$'\t' read -r _id _acc _q; do
 done < "$_P/scenarios.tsv"
 assert_rc "skill-revision/3" "every harness near-miss is a selection-eval near-miss" 0 "$_bad"
 
+# --- skill-revision/4: Rule, Routing and Red Flags ---------------------------
+_sk="$(cat "$_S")"
+if grep -qF 'bounded path' "$_S"; then fail "skill-revision/4" "SKILL.md names no 'bounded path' (superpowers has none)"
+else pass "skill-revision/4" "SKILL.md names no 'bounded path' (superpowers has none)"; fi
+if grep -qE '^\| `audit` \|' "$_S"; then fail "skill-revision/4" "SKILL.md has no audit argument row"
+else pass "skill-revision/4" "SKILL.md has no audit argument row"; fi
+assert_contains "skill-revision/4" "SKILL.md has a SUBAGENT-STOP block" "$_sk" "<SUBAGENT-STOP>"
+assert_contains "skill-revision/4" "SKILL.md has a Not-for line" "$_sk" "**Not for:**"
+assert_contains "skill-revision/4" "SKILL.md states the core principle" "$_sk" "**Core principle:**"
+assert_contains "skill-revision/4" "Red Flags end with the consequence line" "$_sk" "**Any of these thoughts means: stop, invoke this skill, route.**"
+awk '/^## The Rule/{f=1} /^## Routing/{f=2} f==1' "$_S" > "$_sa/rule.md"
+awk '/^## The Rule/{f=1} /^## Red Flags/{f=0} f' "$_S" > "$_sa/rule-routing.md"
+assert_contains "skill-revision/4" "The Rule runs vibe-spec lessons-for" "$(cat "$_sa/rule.md")" "vibe-spec lessons-for"
+_n="$(grep -c . "$_sa/rule-routing.md")"
+assert_population "skill-revision/4" "Rule + Routing lines examined" "$_n" 30
+out="$(fixed_root_hits "$_sa/rule-routing.md")"
+assert_eq "skill-revision/4" "Rule and Routing name no fixed spec root" "" "$out"
+
 rm -rf "$_sa"

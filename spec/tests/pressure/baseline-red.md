@@ -116,3 +116,17 @@ legs `pressure: 12/12 passed`: the six original should-trigger rows route to
 `spec` in both `sp` legs (12/12), including `howbuild`, and no near-miss routes
 to `spec` or `vibe` (`nm-review` present → `code-review`; every other near-miss
 → `none`). Selection evals: [../evals/RESULTS.md](../evals/RESULTS.md).
+
+## skill-revision/4
+
+RED: the `## skill-revision/3` GREEN run is this unit's baseline (same skill
+text before the change). Change: `<SUBAGENT-STOP>`, Overview with the core
+principle, Rule step 2 (`vibe-spec lessons-for`), the bounded / bug / typo
+Routing rows, the **Not for** line, the `audit` row removed, the Red Flags
+consequence line. No Red Flags row was added: no near-miss failed in the unit 2
+record, so there is no verbatim quote to answer.
+
+GREEN, sonnet (`claude-sonnet-5-5`), same harness and isolation, both legs
+`pressure: 12/12 passed`: 12/12 should-trigger runs routed to `spec`, and 12/12
+near-miss runs had a first skill outside {`spec`, `vibe`} (`nm-review` present →
+`code-review`; every other near-miss → `none`).

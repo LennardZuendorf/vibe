@@ -9,7 +9,7 @@ description: |
   before brainstorming alone, before answering "how should X be built",
   and whenever the user mentions spec, PRD, design doc, plan, or roadmap.
 user-invocable: true
-argument-hint: "[strategy|feature [<name>]|interview [<name>]|promote <name>|diff <name>|health|research <name>|lessons-for <tag>|product|tech|design|plan|lessons|setup|validate]"
+argument-hint: "[strategy|feature [<feature>]|interview [<feature>]|promote <feature>|diff <feature>|health|research <feature>|lessons-for <tag>|product|tech|design|plan|lessons|setup|validate]"
 allowed-tools:
   - Read
   - Edit
@@ -23,6 +23,17 @@ compatibility: Requires the vibe-spec binary on PATH (see the README Install sec
 
 # spec
 
+<SUBAGENT-STOP>
+If you were dispatched as a subagent for a specific task, skip this skill. Your dispatch
+prompt holds your orders.
+</SUBAGENT-STOP>
+
+## Overview
+
+**Core principle:** the spec holds current decisions, never history or backlog;
+code is truth, so when spec and code disagree, fix the spec in the same change.
+`<root>` is the directory `vibe-spec root` prints. Bundled commands are run, not read.
+
 <HARD-GATE>
 Do not write code, plans, or design docs until this skill has routed the
 work. Routing is not optional. A reply to the user is not routing.
@@ -31,7 +42,9 @@ work. Routing is not optional. A reply to the user is not routing.
 ## The Rule
 
 1. Invoke this skill before you act on any change to behaviour, structure, or docs.
-2. Read `docs/spec/lessons.md` and the root doc of the area you touch. No spec root yet (`vibe-spec root` exits 3) → run `/spec setup` first.
+2. Run `vibe-spec lessons-for <area tags>` for the area you touch, and read that
+   area's hub. Read the whole `<root>/lessons.md` only at strategy and wrap-up.
+   No spec root (`vibe-spec root` exits 3) → run `/spec setup` first.
 3. Route the work by the table below. Announce the route in one line.
 4. Write only where the route says. Nowhere else.
 5. Finish: bump `updated:` on every spec you edited, then run `vibe-spec validate`.
@@ -40,16 +53,19 @@ work. Routing is not optional. A reply to the user is not routing.
 
 | Work | Do this | Writes |
 |---|---|---|
-| Strategy: product direction, architecture, decisions, root `plan.md` sequence, `design.md`, branch docs | Load [strategy.md](strategy.md). Edit the root spec yourself (dialogue via `superpowers:brainstorming` allowed) | `docs/spec/` root only |
+| Strategy: product direction, architecture, decisions, root `plan.md` sequence, `design.md`, branch docs | Load [strategy.md](strategy.md). Edit the root spec yourself (dialogue via `superpowers:brainstorming` allowed) | `<root>` root docs only |
 | Feature, new or structural | Invoke `superpowers:brainstorming`, then `superpowers:writing-plans`. Topic = feature name. | `docs/superpowers/specs/`, `docs/superpowers/plans/` |
-| Feature, bounded | Invoke `superpowers:brainstorming` (bounded path) | code; root-doc drift is fixed via strategy.spec |
-| Bug or quick fix | Invoke `superpowers:systematic-debugging`; fix in place | code; root-doc drift is fixed via strategy.spec |
+| Feature, bounded (one file, no new requirement) | Invoke `superpowers:brainstorming` and ask for a short in-chat design, no design doc | code; root-doc drift goes through the Strategy row |
+| Bug | Invoke `superpowers:systematic-debugging`; fix in place | code; root-doc drift goes through the Strategy row |
+| Typo, rename, new flag (no behaviour question) | Edit directly; run `vibe-spec validate` if a spec changed | code |
 | Implementing an approved plan | Follow the plan task by task. The design doc is frozen. | code and tests |
 | Question or investigation (not design: "how should we build X" is a feature) | Answer from the spec and the code | nothing |
-| Feature wrap-up (compound) | Promote durable facts into root specs + `lessons.md`, then delete the feature's artifacts | root `docs/spec/`, `lessons.md` |
-| Fallback | Load [feature.md](feature.md) and run it | `docs/spec/features/<name>/` |
+| Feature wrap-up (compound) | Promote durable facts into root specs + `lessons.md`, then delete the feature's artifacts | `<root>` root docs, `lessons.md` |
+| Fallback | Load [feature.md](feature.md) and run it | `<root>/features/<feature>/` |
 
-Fallback only when: superpowers is not installed, the user says *self*,
+**Not for:** explaining code with no change planned, running tests, git housekeeping, formatting data.
+
+Fallback only when: superpowers is not installed, your human partner says *self*,
 `.vibe/spec.json` sets `"featureLayer": "vibe"`, or OpenSpec interchange is
 required. No other trigger exists.
 
@@ -63,13 +79,12 @@ its live surface (code, tests, root docs). Never restore the folder.
 | Argument | Action |
 |---|---|
 | `strategy` | Load [strategy.md](strategy.md) |
-| `feature [<name>]` | Route as a feature (table above); fallback loads [feature.md](feature.md) + `docs/spec/features/<name>/` |
-| `interview [<name>]` | Fallback only: run `superpowers:brainstorming` for the WHAT phase, steps 1–2, in this skill |
-| `promote <name>` | Run `vibe-spec promote <name>` through the spec-promoter agent (fallback folders) |
-| `audit` | Run `vibe-spec validate` |
-| `diff <name>` | Run `vibe-spec scan-merges <name>` — pending merge blocks |
-| `health` | Run the spec-health agent — structural assessment |
-| `research <name>` | Fallback only: open `docs/spec/features/<name>/research.md` |
+| `feature [<feature>]` | Route as a feature (table above); fallback loads [feature.md](feature.md) + `<root>/features/<feature>/` |
+| `interview [<feature>]` | Fallback only: run [feature.md](feature.md) steps 1–2 yourself (the WHAT interview) |
+| `promote <feature>` | Run `vibe-spec promote <feature>` through the spec-promoter agent (fallback folders) |
+| `diff <feature>` | Run `vibe-spec scan-merges <feature>` — pending merge blocks |
+| `health` | Run the spec-health agent (`vibe-spec validate` + `vibe-spec check-drift`) |
+| `research <feature>` | Fallback only: open `<root>/features/<feature>/research.md` |
 | `lessons-for <tag>` | Run `vibe-spec lessons-for <tag>` |
 | `product` · `tech` · `design` · `plan` · `lessons` | Load that root doc and follow its links |
 | `setup` | Run the setup interview (§ Setup) |
@@ -89,6 +104,8 @@ its live surface (code, tests, root docs). Never restore the folder.
 | "Superpowers will handle it" | Superpowers designs. This skill decides where it is recorded. Invoke both. |
 | "I'll write the feature spec into `docs/spec/features/`" | Only on a fallback trigger. Default is superpowers' own artifacts. |
 | "The plan already exists, I can edit the design doc" | Design docs are frozen during impl. Route back to design. |
+
+**Any of these thoughts means: stop, invoke this skill, route.**
 
 ## Layers
 

@@ -696,7 +696,9 @@ test_skill_routing_new_routes() {
   local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
   assert_contains "spec-skill-improvements/3" "SKILL.md routing has interview" "$skill" "interview"
   assert_contains "spec-skill-improvements/3" "SKILL.md routing has promote" "$skill" "promote"
-  assert_contains "spec-skill-improvements/3" "SKILL.md routing has audit" "$skill" "audit"
+  # shellcheck disable=SC2016 # literal backticks
+  if grep -qE '^\| `audit` \|' "$SPEC_SKILL/SKILL.md"; then fail "skill-revision/4" "SKILL.md has no audit argument row (health runs validate + check-drift)"
+  else pass "skill-revision/4" "SKILL.md has no audit argument row (health runs validate + check-drift)"; fi
   assert_contains "spec-skill-improvements/3" "SKILL.md routing has lessons-for" "$skill" "lessons-for"
   assert_contains "spec-skill-improvements/3" "SKILL.md routing has diff" "$skill" "diff"
   assert_contains "spec-skill-improvements/3" "SKILL.md routing has health" "$skill" "health"
