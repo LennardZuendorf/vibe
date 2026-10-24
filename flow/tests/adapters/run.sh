@@ -2581,10 +2581,13 @@ errtxt="$(bash "$MERGE" link CLAUDE.md "$d" 2>&1 >/dev/null)"; rc=$?
 assert_eq "review-hardening/3" "foreign symlink: link exits 1" "$rc" "1"
 assert_eq "review-hardening/3" "foreign symlink left pointing at other.md" "$(readlink "$d/CLAUDE.md")" "other.md"
 assert_contains "review-hardening/3" "refusal names the foreign target" "$errtxt" "other.md"
-# install.sh must leave the foreign symlink alone (the held-link message itself is unit 1 install.sh)
-t="$(mktmp)"; printf 'other\n' > "$t/other.md"; ln -s other.md "$t/CLAUDE.md"
-bash "$INSTALL" "$t" --adapters claude >/dev/null 2>&1 || true
-assert_eq "review-hardening/3" "install leaves the foreign symlink alone" "$(readlink "$t/CLAUDE.md")" "other.md"
+# install level: the install continues, names the held link, and leaves it alone
+t="$(mktmp)"; mkdir "$t/docs"; printf 'other\n' > "$t/docs/other.md"; ln -s docs/other.md "$t/CLAUDE.md"
+out="$(bash "$INSTALL" "$t" --adapters claude 2>&1)"; rc=$?
+assert_eq "review-hardening/3" "install with a foreign CLAUDE.md symlink exits 0" "$rc" "0"
+assert_contains "review-hardening/3" "install names the held link's target" "$out" "docs/other.md"
+assert_not_contains "review-hardening/3" "install does not call the held link a real file" "$out" "real file?"
+assert_eq "review-hardening/3" "install leaves the foreign symlink alone" "$(readlink "$t/CLAUDE.md")" "docs/other.md"
 # controls: correct link skipped, real file refused, absent file linked
 d="$(mktmp)"; ln -s AGENTS.md "$d/CLAUDE.md"
 bash "$MERGE" link CLAUDE.md "$d" >/dev/null 2>&1; rc=$?
