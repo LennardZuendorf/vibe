@@ -180,7 +180,7 @@ feature.compound` are **gated** and need an explicit confirm token.
 |---|---|---|
 | `SessionStart` | Re-injects the working-model doctrine each session (and on `compact`). | quiet |
 | `UserPromptSubmit` | Every turn, two byte-stable lines naming the state and its transition command; full orders on the turn after the cursor moves. | quiet |
-| `PreToolUse` | Guards the write invariants on file-tool calls (Edit/Write/NotebookEdit/Bash); on `Bash` it only warns. | **still blocks**, via `flow/hooks-fallback/` |
+| `PreToolUse` | Guards the write invariants on file-tool calls (Edit/Write/MultiEdit/NotebookEdit/Bash); on `Bash` it only warns. | **still blocks**, via `flow/hooks-fallback/` |
 | `Stop` | Warn-first exit checks; blocks in `*.verify` without a fresh evidence receipt. | **still blocks**, via `flow/hooks-fallback/` |
 
 The flow runs on a zero-dependency Node engine ([`flow/engine/`](flow/engine/)).

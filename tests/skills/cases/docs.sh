@@ -123,7 +123,7 @@ done
 # The file-tool list given for the flow guard equals the matcher in merge-settings.sh.
 _matcher="$(sed -n 's/^#.*PreToolUse .*(matcher \([A-Za-z|]*\)).*/\1/p' "$REPO_ROOT/flow/scripts/merge-settings.sh" | head -n 1)"
 _want="($(printf '%s' "$_matcher" | tr '|' '/'))"
-assert_eq "skill-revision/27" "matcher read from merge-settings.sh" "(Edit/Write/NotebookEdit/Bash)" "$_want"
+assert_eq "skill-revision/27" "matcher read from merge-settings.sh" "(Edit/Write/MultiEdit/NotebookEdit/Bash)" "$_want"
 _lists=0; _bad=""
 for _f in "$_README" "$_AGENTS" "$_FREADME" "$_FAGENTS"; do
   while IFS= read -r _l; do
@@ -131,7 +131,7 @@ for _f in "$_README" "$_AGENTS" "$_FREADME" "$_FAGENTS"; do
     _lists=$((_lists + 1))
     [[ "$_l" == "$_want" ]] || _bad="$_bad $_f:$_l"
   done <<EOL
-$(grep -Eo '\((Edit|Write|NotebookEdit|Bash)(/(Edit|Write|NotebookEdit|Bash))+\)' "$_f")
+$(grep -Eo '\((Edit|Write|MultiEdit|NotebookEdit|Bash)(/(Edit|Write|MultiEdit|NotebookEdit|Bash))+\)' "$_f")
 EOL
 done
 assert_population "skill-revision/27" "guard file-tool lists examined" "$_lists" 2
