@@ -134,6 +134,10 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Fixed
 
+- **`merge-agents.sh link` never rewrites a symlink that points elsewhere** — an
+  adapter such as `CLAUDE.md` that already links to another file was silently
+  relinked to `AGENTS.md`. It now exits 1 and leaves the link, the same as for a
+  real file; `flow/setup.md` says so. (review-hardening/3)
 - **Managed AGENTS.md writes keep a symlink a symlink** — `merge-agents.sh`
   (merge, unmerge, rules seed) and `regen-active-rules.sh` wrote with temp +
   rename onto the link path, which replaced a symlinked `AGENTS.md` with a

@@ -2573,6 +2573,31 @@ bash "$MERGE" "$d" >/dev/null 2>&1; rc=$?
 [[ $rc -eq 0 && ! -L "$d/AGENTS.md" ]] && grep -qF 'plain' "$d/AGENTS.md" && grep -qF 'vibe:instructions:start' "$d/AGENTS.md" \
   && pass "review-hardening/4" "control: regular AGENTS.md merges as today" || fail "review-hardening/4" "control regressed"
 
+# review-hardening/3 — link_adapter never rewrites a symlink that points elsewhere.
+echo ""
+echo "=== review-hardening/3 — link_adapter refuses a foreign symlink ==="
+d="$(mktmp)"; printf 'other\n' > "$d/other.md"; ln -s other.md "$d/CLAUDE.md"
+errtxt="$(bash "$MERGE" link CLAUDE.md "$d" 2>&1 >/dev/null)"; rc=$?
+assert_eq "review-hardening/3" "foreign symlink: link exits 1" "$rc" "1"
+assert_eq "review-hardening/3" "foreign symlink left pointing at other.md" "$(readlink "$d/CLAUDE.md")" "other.md"
+assert_contains "review-hardening/3" "refusal names the foreign target" "$errtxt" "other.md"
+# install.sh must leave the foreign symlink alone (the held-link message itself is unit 1 install.sh)
+t="$(mktmp)"; printf 'other\n' > "$t/other.md"; ln -s other.md "$t/CLAUDE.md"
+bash "$INSTALL" "$t" --adapters claude >/dev/null 2>&1 || true
+assert_eq "review-hardening/3" "install leaves the foreign symlink alone" "$(readlink "$t/CLAUDE.md")" "other.md"
+# controls: correct link skipped, real file refused, absent file linked
+d="$(mktmp)"; ln -s AGENTS.md "$d/CLAUDE.md"
+bash "$MERGE" link CLAUDE.md "$d" >/dev/null 2>&1; rc=$?
+assert_eq "review-hardening/3" "control: correct link skipped (exit 0)" "$rc" "0"
+d="$(mktmp)"; printf 'real\n' > "$d/WARP.md"
+bash "$MERGE" link WARP.md "$d" >/dev/null 2>&1; rc=$?
+assert_eq "review-hardening/3" "control: real file refused (exit 1)" "$rc" "1"
+d="$(mktmp)"
+bash "$MERGE" link CLAUDE.md "$d" >/dev/null 2>&1; rc=$?
+[[ $rc -eq 0 && "$(readlink "$d/CLAUDE.md")" == "AGENTS.md" ]] \
+  && pass "review-hardening/3" "control: absent adapter is linked" || fail "review-hardening/3" "control: absent adapter not linked"
+assert_not_contains "review-hardening/3" "setup.md no longer says it relinks" "$(cat "$REPO_ROOT/flow/setup.md")" "relinks a wrong target"
+
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]

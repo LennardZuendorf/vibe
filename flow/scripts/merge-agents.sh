@@ -17,8 +17,8 @@
 # touched. Re-running with an up-to-date template is a no-op (byte compare).
 #
 # Graceful: missing template -> exit 1 with a clear message (this is a setup
-# prerequisite, not a session-time degrade). A real-file adapter is reported, not
-# clobbered.
+# prerequisite, not a session-time degrade). An existing adapter that is a real
+# file or a symlink to anything but AGENTS.md is reported (exit 1), never replaced.
 
 set -euo pipefail
 
@@ -165,8 +165,8 @@ link_adapter() {
       if [[ "$(readlink "$adapter")" == "$target" ]]; then
         note "skip: $adapter already symlinks $target"; exit 0
       fi
-      warn "$adapter symlinks $(readlink "$adapter"), not $target — relinking."
-      ln -sf "$target" "$adapter"; note "relinked $adapter -> $target"; exit 0
+      warn "$adapter symlinks $(readlink "$adapter"), not $target — refusing to replace it. Repoint or remove it yourself."
+      exit 1
     fi
     if [[ -e "$adapter" ]]; then
       warn "$adapter is a real file — not replacing. Show a diff and confirm before symlinking."
