@@ -178,6 +178,8 @@ const FIXTURES = [
     target: 'feature.design',
     feature: 'o"Brien\\path\\name — π',
   },
+  // `carried` and `dropWarn` are asserted on BOTH legs, so a regression in
+  // both writers at once still fails here, not only a one-sided one.
   {
     // An invalid feature already in the cursor (a hand edit, an older writer)
     // is dropped to null by both writers, never carried forward.
@@ -186,8 +188,12 @@ const FIXTURES = [
     start: { flow: 'feature', phase: 'design', feature: 'o"Brien', updated: '2020-01-01T00:00:00Z' },
     target: 'feature.plan',
     feature: undefined,
+    carried: null,
+    dropWarn: true,
   },
 ];
+
+const DROP_WARN = 'WARN: ignoring an invalid feature in the existing cursor.';
 
 for (const fx of FIXTURES) {
   test(`${fx.id ? `${fx.id}: ` : ''}parity: cursor bytes + stdout match oracle — ${fx.name}`, () => {
@@ -225,6 +231,20 @@ for (const fx of FIXTURES) {
       );
 
       assertStdoutParity(engineResult.stdout, oracleResult.stdout, `stdout diverges for ${fx.name}`);
+
+      if ('carried' in fx) {
+        for (const [leg, bytes, stderr] of [
+          ['oracle', oracleBytes, oracleResult.stderr],
+          ['engine', engineBytes, engineResult.stderr],
+        ]) {
+          assertEqual(JSON.parse(bytes).feature, fx.carried, `${leg} cursor feature for ${fx.name}`);
+          assertEqual(
+            stderr.includes(DROP_WARN),
+            fx.dropWarn,
+            `${leg} ${fx.dropWarn ? 'must' : 'must not'} print the drop WARN for ${fx.name}; stderr:\n${stderr}`,
+          );
+        }
+      }
 
       const engineTs = JSON.parse(engineBytes).updated;
       assertMatch(engineTs, TIMESTAMP_RE, `engine 'updated' must match bash date -u format, got ${engineTs}`);
