@@ -131,3 +131,76 @@ else
   assert_contains "skill-revision/9" "lessons-for returns the filled example" "$_got" "**Tags:** roundtrip"
   rm -rf "$_rt"
 fi
+
+# --- skill-revision/10 — reference guides and templates agree with the validator ---
+# sd_fence FILE HEADING [FENCE] — the first fenced block under the exact "## HEADING" line.
+# FENCE is the fence string (default three backticks); a four-backtick fence holds inner fences.
+sd_fence() {
+  awk -v h="## $2" -v fence="${3:-\`\`\`}" '
+    !f && /^## / { s = $0; next }
+    s == h && index($0, fence) == 1 && substr($0, length(fence) + 1, 1) != "`" { if (f) exit; f = 1; next }
+    s == h && f { print }
+  ' "$1"
+}
+# sd_tpl_fill TEMPLATE FEATURE — a template with its placeholders replaced by fixed words.
+sd_tpl_fill() {
+  sed -e "s/{name}/$2/g" -e 's/{Name}/Demo/g' -e 's/{topic}/demo/g' -e 's/{YYYY-MM-DD}/2026-10-24/g' -e 's/{[^}]*}/filled/g' "$1"
+}
+
+_ref="spec/reference"
+_tpl="$_ref/templates"
+for _t in product tech design plan product-topic tech-topic plan-topic; do
+  if awk '/<!--/ { f = 1 } f { print } f && /-->/ { exit }' "$_tpl/$_t.md" | grep -qF 'flat layout only'; then
+    pass "skill-revision/10" "$_tpl/$_t.md is marked flat layout only"
+  else
+    fail "skill-revision/10" "$_tpl/$_t.md must carry a 'flat layout only' mark"
+  fi
+done
+sd_present "skill-revision/10" "$_tpl/feature-product.md" "Do NOT: code, APIs, algorithms, plan units. File paths appear only in the Scope table's Owns row."
+sd_present "skill-revision/10" "$_tpl/product-topic.md" '{topic}' 'updated: {YYYY-MM-DD}'
+sd_present "skill-revision/10" "$_tpl/tech-topic.md" '{topic}' 'updated: {YYYY-MM-DD}'
+sd_present "skill-revision/10" "$_tpl/plan-topic.md" '{topic}' 'updated: {YYYY-MM-DD}'
+sd_absent "skill-revision/10" "$_tpl/product-topic.md" '<topic>' '2026-06-29'
+sd_absent "skill-revision/10" "$_ref/product.md" 'warn-only check compares' 'validate.sh'
+sd_present "skill-revision/10" "$_ref/product.md" 'No tool reads this list.'
+sd_present "skill-revision/10" "$_ref/plan.md" 'NOT STARTED | IN PROGRESS | BLOCKED | DONE'
+sd_absent "skill-revision/10" "$_ref/plan.md" 'validate.sh'
+for _p in "$_ref/plan.md" "$_tpl/plan.md"; do
+  if grep -qE '\|[[:space:]]*ACTIVE[[:space:]]*\||/ ACTIVE /' "$_p"; then fail "skill-revision/10" "$_p uses ACTIVE as a status value"; else pass "skill-revision/10" "$_p has no ACTIVE status value"; fi
+done
+sd_absent "skill-revision/10" "$_ref/design.md" 'same template'
+sd_links_ok "$_ref/design.md" "skill-revision/10"
+sd_links_ok "$_ref/plan.md" "skill-revision/10"
+sd_links_ok "$_ref/product.md" "skill-revision/10"
+
+# Behaviour: files written as the docs teach pass the validator.
+_vs="$(sd_bin || true)"
+if [[ -z "$_vs" ]]; then
+  fail "skill-revision/10" "docs-to-validator fixture needs the vibe-spec binary (cargo build -p vibe-spec)"
+else
+  _fx="$(mktemp -d)"
+  (
+    cd "$_fx" && git init -q . && "$_vs" init >/dev/null
+    _r="docs/spec"
+    mkdir -p "$_r/features/demo" "$_r/features/example"
+    for _k in product tech plan; do
+      sd_tpl_fill "$REPO_ROOT/$_tpl/feature-$_k.md" demo > "$_r/features/demo/$_k.md"
+      sed -e 's/demo/example/g' -e 's/filled/other/g' "$_r/features/demo/$_k.md" > "$_r/features/example/$_k.md"
+    done
+    sd_tpl_fill "$REPO_ROOT/$_tpl/research.md" demo > "$_r/features/demo/research.md"
+    sd_fence "$REPO_ROOT/$_ref/plan.md" 'Example (feature plan)' '````' > "$_r/features/example/plan.md"
+    printf '\n## Feature Sequence\n\n| Order | Feature | Deliverable | Test | Status | Starts when |\n|---:|---|---|---|---|---|\n| 1 | demo | files | `t` | IN PROGRESS | — |\n| 2 | example | files | `t` | IN PROGRESS | demo DONE |\n' >> "$_r/plan.md"
+  )
+  _val="$(cd "$_fx" && "$_vs" validate 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true)"
+  _warns="$(printf '%s\n' "$_val" | grep -E 'WARN|ERROR' || true)"
+  assert_eq "skill-revision/10" "validate prints no warning for a root built from the docs" "" "$_warns"
+  (cd "$_fx" && "$_vs" check-drift >/dev/null 2>&1); assert_rc "skill-revision/10" "check-drift exits 0 on the fixture" 0 "$?"
+  _sm="$(cd "$_fx" && "$_vs" scan-merges demo 2>&1 | grep -c 'features/demo' || true)"
+  assert_eq "skill-revision/10" "the filled feature tech template has no live merge block" "0" "$_sm"
+  # The token example of reference/design.md validates as the root design.md.
+  _tok="$(awk '/Example — token frontmatter/ { f = 1 } f && /^```yaml/ { g = 1; next } g && /^```/ { exit } g { print }' "$REPO_ROOT/$_ref/design.md")"
+  (cd "$_fx" && { printf '%s\n' "$_tok"; printf '\n# Design\n\nProse.\n'; } > docs/spec/design.md)
+  _dv="$(cd "$_fx" && "$_vs" validate 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'WARN|ERROR' || true)"
+  assert_eq "skill-revision/10" "the design token example passes as the root design.md" "" "$_dv"
+  rm -rf "$_fx"
+fi

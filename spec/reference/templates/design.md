@@ -29,6 +29,7 @@ spacing:
   Do NOT: feature-specific interaction detail, code, plan units, implementation paths.
   Omit optional sections entirely when empty — placeholder prose is worse than absence.
   Non-visual projects: delete unused token groups from frontmatter; keep prose sections that apply.
+  Use in a flat layout only; a layered root keeps the hubs that `vibe-spec init` writes.
 -->
 
 # {Project Name} — Design
