@@ -297,7 +297,7 @@ for pair in "SessionStart:session-start-doctrine.sh" "UserPromptSubmit:user-prom
   assert_contains "platform-adapters/4" "$ev command is \$CLAUDE_PROJECT_DIR-relative" "$cmd" '$CLAUDE_PROJECT_DIR/.claude/hooks/'
 done
 matcher="$(jq -r '.hooks.PreToolUse[0].matcher' "$SETTINGS")"
-assert_eq "platform-adapters/4" "PreToolUse matcher is Edit|Write|NotebookEdit|Bash" "$matcher" "Edit|Write|NotebookEdit|Bash"
+assert_eq "platform-adapters/4" "PreToolUse matcher is Edit|Write|MultiEdit|NotebookEdit|Bash" "$matcher" "Edit|Write|MultiEdit|NotebookEdit|Bash"
 # every wired command points at a hook script that exists and is executable.
 allok=1
 while IFS= read -r script; do
@@ -2667,6 +2667,48 @@ printf '{\n  "flow": "feature",\n  "phase": "impl",\n  "feature": "a\\"b",\n  "u
 PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" feature.verify >/dev/null 2>&1 || true
 assert_contains "review-hardening/5" "no-jq: corrupt carried feature falls back to null" "$(cat "$CUR")" '"feature": null'
 rm -rf "$RH5_NOJQ" "$SB"
+
+# review-hardening/19
+echo ""
+echo "=== review-hardening/19 — the flow guard matcher covers MultiEdit ==="
+MERGE_SETTINGS="$REPO_ROOT/flow/scripts/merge-settings.sh"
+RH19_MATCHER="Edit|Write|MultiEdit|NotebookEdit|Bash"
+RH19_GROUP='[.hooks.PreToolUse[] | select([.hooks[]?.command // empty] | any(test("pre-tool-use-guard")))]'
+SB="$(mktmp)"; bash "$MERGE_SETTINGS" merge "$SB" >/dev/null 2>&1
+assert_eq "review-hardening/19" "a fresh merge writes the MultiEdit matcher" \
+  "$(jq -r "$RH19_GROUP"' | .[0].matcher' "$SB/.claude/settings.json")" "$RH19_MATCHER"
+jq '.hooks.PreToolUse = [{"matcher":"Edit|Write|NotebookEdit|Bash","hooks":[{"type":"command","command":"bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-tool-use-guard.sh\"","timeout":10}]}]' \
+  "$SB/.claude/settings.json" > "$SB/s.tmp" && mv "$SB/s.tmp" "$SB/.claude/settings.json"
+bash "$MERGE_SETTINGS" merge "$SB" >/dev/null 2>&1
+assert_eq "review-hardening/19" "an old matcher is upgraded in place: one vibe group" "$(jq -r "$RH19_GROUP | length" "$SB/.claude/settings.json")" "1"
+assert_eq "review-hardening/19" "the upgraded group carries MultiEdit" "$(jq -r "$RH19_GROUP"' | .[0].matcher' "$SB/.claude/settings.json")" "$RH19_MATCHER"
+rh19_before="$(cat "$SB/.claude/settings.json")"
+bash "$MERGE_SETTINGS" merge "$SB" >/dev/null 2>&1
+assert_eq "review-hardening/19" "a second merge changes nothing (idempotent)" "$(cat "$SB/.claude/settings.json")" "$rh19_before"
+rm -rf "$SB"
+# a MultiEdit payload reaches the guard on both paths (engine, and the bash fallback without node)
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+RH19_SS="$SB/.agents/skills/vibe/scripts/set-state.sh"; bash "$RH19_SS" idle >/dev/null 2>&1
+RH19_NONODE="$(mkshim)"
+for leg in engine fallback; do
+  for tool in MultiEdit Edit; do
+    rc=0
+    if [[ "$leg" == engine ]]; then
+      printf '{"tool_name":"%s","tool_input":{"file_path":"docs/spec/lessons.md"}}' "$tool" | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
+    else
+      printf '{"tool_name":"%s","tool_input":{"file_path":"docs/spec/lessons.md"}}' "$tool" | PATH="$RH19_NONODE" "$RH19_NONODE/bash" "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
+    fi
+    assert_eq "review-hardening/19" "$tool on a guarded path blocks ($leg guard, idle)" "$rc" "2"
+  done
+  rc=0
+  if [[ "$leg" == engine ]]; then
+    printf '{"tool_name":"MultiEdit","tool_input":{"file_path":"docs/notes.md"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
+  else
+    printf '{"tool_name":"MultiEdit","tool_input":{"file_path":"docs/notes.md"}}' | PATH="$RH19_NONODE" "$RH19_NONODE/bash" "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
+  fi
+  assert_eq "review-hardening/19" "control: MultiEdit on an unguarded path allows ($leg guard)" "$rc" "0"
+done
+rm -rf "$SB" "$RH19_NONODE"
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

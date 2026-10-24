@@ -1275,7 +1275,7 @@ guard_group='[.hooks.PreToolUse[] | select([.hooks[]?.command // empty] | any(te
 # The shipped adapter wires Bash into the PreToolUse matcher (file tools kept).
 shipped_m="$(jq -r '.hooks.PreToolUse[0].matcher' "$SRC_ROOT/.claude/settings.json")"
 assert_contains "review-fix" "shipped .claude/settings.json PreToolUse matcher includes Bash" "$shipped_m" "Bash"
-assert_contains "review-fix" "shipped matcher keeps the file tools" "$shipped_m" "Edit|Write|NotebookEdit"
+assert_contains "review-fix" "shipped matcher keeps the file tools" "$shipped_m" "Edit|Write|MultiEdit|NotebookEdit"
 
 mt="$(mktemp -d)"
 bash "$MS" merge "$mt" >/dev/null 2>&1

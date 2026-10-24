@@ -27,7 +27,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # pre-tool-use-guard.sh — vibe flow guard hook (platform-adapters/2).
 #
-# Event: PreToolUse, matcher Edit|Write|NotebookEdit|Bash. For the file tools it
+# Event: PreToolUse, matcher Edit|Write|MultiEdit|NotebookEdit|Bash. For the file tools it
 # reads the target path from stdin and asks the shared decision policy whether the
 # write is allowed in the current flow state. NO path policy lives here (R8) — it
 # all lives once in .agents/skills/vibe/scripts/detect-context.sh decide.
