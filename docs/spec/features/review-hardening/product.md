@@ -67,7 +67,7 @@ delete the cursor, receipts or evidence through a symlinked skill directory.
 #### Scenario: target links into a vendored vibe checkout
 
 - **Given** a target holding `vendor/vibe` with `.claude -> vendor/vibe/.claude`
-- **When** `vendor/vibe/install.sh <target> --uninstall --yes` runs
+- **When** `vendor/vibe/install.sh <target> --uninstall --yes` runs, or another vibe copy's `install.sh` does
 - **Then** every file under `vendor/vibe` survives and a warning names the vibe source
 
 #### Scenario: control

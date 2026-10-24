@@ -2348,6 +2348,25 @@ assert_eq "review-hardening/1" "uninstall through a link into a vendored vibe so
 assert_eq "review-hardening/1" "uninstall through a link into a vendored vibe source leaves its settings.json unchanged" "$(cksum < "$RV/vendor/vibe/.claude/settings.json")" "$ssrc"
 assert_contains "review-hardening/1" "the link into the vibe source is reported" "$out" "vibe source"
 rm -rf "$RV"
+# The same vendored layout, uninstalled by ANOTHER vibe copy (this checkout's
+# install.sh): the vendored checkout is not the running SRC, so only its own
+# source markers (flow/state-machine.json + spec/SKILL.md) can protect it.
+RV="$(mktmp)"; mkdir -p "$RV/vendor"; RVS="$(rh_copy)"; mv "$RVS" "$RV/vendor/vibe"
+ln -s vendor/vibe/.claude "$RV/.claude"
+nsrc="$(rh_files "$RV/vendor/vibe")"
+ssrc="$(cksum < "$RV/vendor/vibe/.claude/settings.json")"
+out="$(bash "$INSTALL" "$RV" --uninstall --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/1" "uninstall by another vibe copy through a link into a vendored checkout exits 0" "$rc" "0"
+assert_eq "review-hardening/1" "uninstall by another vibe copy deletes none of the vendored checkout's files" "$(rh_files "$RV/vendor/vibe")" "$nsrc"
+assert_eq "review-hardening/1" "uninstall by another vibe copy leaves the vendored settings.json unchanged" "$(cksum < "$RV/vendor/vibe/.claude/settings.json")" "$ssrc"
+assert_contains "review-hardening/1" "the link into the vendored checkout is reported" "$out" "vibe source"
+rm -rf "$RV"
+# Control: an installed target holds no directory carrying both source markers,
+# so the marker walk can never refuse a normal install's own files.
+RT="$(mktmp)"; bash "$INSTALL" "$RT" --platform "claude,opencode,codex,droid" >/dev/null 2>&1
+assert_eq "review-hardening/1" "control: no directory of an installed target carries flow/state-machine.json" \
+  "$(find "$RT" -path '*/flow/state-machine.json' | wc -l | tr -d ' ')" "0"
+rm -rf "$RT"
 # A skill dir linked to an in-repo directory (not a vibe checkout): remove_shipped
 # leaves the link alone, so --yes must not delete the runtime files through it.
 RL="$(mktmp)"; bash "$INSTALL" "$RL" --platform claude >/dev/null 2>&1; rm -rf "$RL/.agents/skills/vibe"

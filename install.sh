@@ -168,16 +168,28 @@ adapter_rows() {
 }
 
 # inside_target PATH — true when PATH's parent directory resolves physically
-# inside TARGET (TARGET itself is physical, `pwd -P`) and NOT inside the vibe
-# source SRC. An ancestor between TARGET and PATH that is a symlink out of the
-# repo (`.agents`, `.agents/skills` or `.claude` shared through a dotfiles dir)
-# makes it false; so does an in-repo link into a vibe checkout vendored inside
-# TARGET (`.claude -> vendor/vibe/.claude`), whose files are the source's own.
+# inside TARGET (TARGET itself is physical, `pwd -P`), NOT inside the vibe
+# source SRC, and NOT inside any other vibe checkout below TARGET. An ancestor
+# between TARGET and PATH that is a symlink out of the repo (`.agents`,
+# `.agents/skills` or `.claude` shared through a dotfiles dir) makes it false;
+# so does an in-repo link into a vibe checkout vendored inside TARGET
+# (`.claude -> vendor/vibe/.claude`), whose files are that checkout's own. The
+# vendored checkout is recognised whichever vibe copy runs: by being SRC, or by
+# carrying the same top-level source markers the uninstall guard checks
+# (`flow/state-machine.json` and `spec/SKILL.md`) on any directory between
+# TARGET and the resolved parent. An install target never has both: it ships
+# them under `.agents/skills/vibe/` and `.agents/skills/spec/`.
 inside_target() {
-  local parent
+  local parent d
   parent="$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)" || return 1
   [[ "$parent" == "$TARGET" || "$parent" == "$TARGET"/* ]] || return 1
-  [[ -z "$SRC" || ( "$parent" != "$SRC" && "$parent" != "$SRC"/* ) ]]
+  [[ -z "$SRC" || ( "$parent" != "$SRC" && "$parent" != "$SRC"/* ) ]] || return 1
+  d="$parent"
+  while [[ "$d" == "$TARGET"/* ]]; do
+    [[ -f "$d/flow/state-machine.json" && -f "$d/spec/SKILL.md" ]] && return 1
+    d="$(dirname "$d")"
+  done
+  return 0
 }
 
 # remove_shipped SRC_DIR DST_DIR [EXCLUDE_REL...] — delete from DST_DIR only the

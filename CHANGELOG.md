@@ -258,7 +258,8 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   deletes through a symlinked skill dir, subdirectory or ancestor (`.agents`,
   `.agents/skills`, `.claude`, `.claude-plugin`, `.vibe`) that resolves outside
   the target or into a vibe checkout vendored inside it; each is left alone with
-  a warning. `--yes` never deletes the cursor, warnings log, receipts or
+  a warning. The vendored checkout is protected whichever vibe copy runs the
+  uninstall: it is recognised by the same two top-level markers. `--yes` never deletes the cursor, warnings log, receipts or
   `.vibe/last-inject` through such a link (review-hardening/1).
 - **Jq-less plugin retirement reads the first key** — without jq,
   `retire_vibe_plugin_manifest` retires a manifest only when `name` is the first
