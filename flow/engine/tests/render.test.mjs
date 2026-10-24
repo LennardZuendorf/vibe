@@ -9,6 +9,8 @@
 
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync, lstatSync, readlinkSync, rmSync } from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
+import { syncBuiltinESMExports } from 'node:module';
 import { test, assert, assertEqual, assertIncludes, assertMatch, makeHookSandbox, mkTempRoot, runCli } from './run.mjs';
 import { runRender } from '../commands/render.mjs';
 
@@ -385,6 +387,7 @@ test('review-hardening/12: --write never follows a link planted at a temp-file n
   // The temp name used to be `.<base>.<pid>.tmp`, opened with flag 'w': a repo
   // shipping that name as a link to an outside file had the outside file
   // truncated and rewritten. The planted link must survive and point where it did.
+  // This pins the unpredictable name only; the next test pins flag 'wx'.
   const out = makeOutside();
   const sb = docSandbox('AGENTS.md');
   try {
@@ -401,6 +404,40 @@ test('review-hardening/12: --write never follows a link planted at a temp-file n
     assertIncludes(readFileSync(agents, 'utf8'), 'BODY');
     assertIncludes(readFileSync(agents, 'utf8'), 'user prose');
   } finally {
+    sb.cleanup();
+    out.cleanup();
+  }
+});
+
+test('review-hardening/12: --write opens the temp file exclusively, so a link at the exact temp name fails the write', () => {
+  // The random temp name alone avoids a planted link, so it hides flag 'wx'.
+  // Stub randomUUID (the builtin's named export, re-synced into ESM importers)
+  // so the link is planted at the exact name render picks. With 'wx' the open
+  // fails with EEXIST; with 'w' it would follow the link and write outside.
+  const STUB = '00000000-0000-4000-8000-00000000beef';
+  const realUUID = crypto.randomUUID;
+  const out = makeOutside();
+  const sb = docSandbox('AGENTS.md');
+  try {
+    const agents = path.join(sb.dir, 'AGENTS.md');
+    const original = '# AGENTS.md\n\nuser prose\n';
+    writeFileSync(agents, original);
+    const planted = path.join(sb.dir, `.AGENTS.md.${process.pid}.${STUB}.tmp`);
+    symlinkSync(out.file, planted);
+    crypto.randomUUID = () => STUB;
+    syncBuiltinESMExports();
+    const result = runRender(sb.ctx, ['doc', '--write']);
+    assertEqual(result.code, 1, `expected a refused write; stderr: ${result.stderr}`);
+    assertIncludes(result.stderr, 'cannot write');
+    assertIncludes(result.stderr, 'EEXIST');
+    assertEqual(readFileSync(out.file, 'utf8'), OUTSIDE_BYTES, 'outside bytes changed through the planted link');
+    assert(lstatSync(planted).isSymbolicLink(), 'the planted link was removed or replaced');
+    assertEqual(readlinkSync(planted), out.file);
+    assert(!lstatSync(agents).isSymbolicLink(), 'AGENTS.md became the planted link');
+    assertEqual(readFileSync(agents, 'utf8'), original, 'AGENTS.md changed although the write failed');
+  } finally {
+    crypto.randomUUID = realUUID;
+    syncBuiltinESMExports();
     sb.cleanup();
     out.cleanup();
   }
