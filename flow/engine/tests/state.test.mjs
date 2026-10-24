@@ -83,7 +83,7 @@ function probeC1(lcAll) {
 const UTF8_CANDIDATES = ['en_US.UTF-8', 'C.UTF-8', 'C.utf8', 'en_US.utf8'];
 const UTF8_LOCALE = UTF8_CANDIDATES.find((l) => probeC1(l) === 'cntrl');
 
-test('parity locale guard: a UTF-8 locale where bash [[:cntrl:]] matches U+0085 exists', () => {
+test('review-hardening/5: parity locale guard: a UTF-8 locale where bash [[:cntrl:]] matches U+0085 exists', () => {
   assert(
     UTF8_LOCALE !== undefined,
     `none of ${UTF8_CANDIDATES.join(', ')} makes bash's [[:cntrl:]] match U+0085, so the C1 fixture ` +
@@ -91,13 +91,15 @@ test('parity locale guard: a UTF-8 locale where bash [[:cntrl:]] matches U+0085 
   );
 });
 
-test('parity locale guard: under LC_ALL=C bash [[:cntrl:]] does not match U+0085', () => {
+test('review-hardening/5: parity locale guard: under LC_ALL=C bash [[:cntrl:]] does not match U+0085', () => {
   assertEqual(probeC1('C'), 'none', 'the C-locale control must see U+0085 as non-control bytes');
 });
 
 // ---------------------------------------------------------------------------
 // Parity matrix — set, with and without an existing cursor. Every fixture
-// now also parity-checks stdout, not just cursor bytes.
+// now also parity-checks stdout, not just cursor bytes. A fixture's `id` (the
+// plan unit that added it) prefixes its test name, so a per-unit filter
+// (`run.mjs "review-hardening/5:"`) selects it.
 // ---------------------------------------------------------------------------
 
 const FIXTURES = [
@@ -137,6 +139,7 @@ const FIXTURES = [
     // Legal special characters (space, non-ASCII) must survive both jq's
     // --arg quoting and JSON.stringify's escaping byte-identically: no \u
     // escapes, no mangled UTF-8.
+    id: 'review-hardening/5',
     name: 'feature name with spaces and non-ASCII characters',
     start: null,
     target: 'feature.design',
@@ -148,6 +151,7 @@ const FIXTURES = [
     // bash's [[:cntrl:]] would otherwise also match C1 code points.
     // UTF8_LOCALE is proven by the locale guard above; without one that guard
     // fails, and this row still runs under the first candidate.
+    id: 'review-hardening/5',
     name: 'feature name with a C1 control code point, under a UTF-8 locale',
     start: null,
     target: 'feature.design',
@@ -157,6 +161,7 @@ const FIXTURES = [
   {
     // Control: the same name under the C locale, where [[:cntrl:]] never
     // matched C1. Both writers accept it there too.
+    id: 'review-hardening/5',
     name: 'feature name with a C1 control code point, under the C locale',
     start: null,
     target: 'feature.design',
@@ -166,6 +171,7 @@ const FIXTURES = [
   {
     // review-hardening/5: both writers apply ONE charset rule. A feature holding
     // `"` or `\` is rejected by each (exit 1, cursor untouched).
+    id: 'review-hardening/5',
     name: 'feature name with quotes and backslash is rejected by both writers',
     rejects: true,
     start: { flow: 'feature', phase: 'design', feature: 'kept', updated: '2020-01-01T00:00:00Z' },
@@ -175,6 +181,7 @@ const FIXTURES = [
   {
     // An invalid feature already in the cursor (a hand edit, an older writer)
     // is dropped to null by both writers, never carried forward.
+    id: 'review-hardening/5',
     name: 'an invalid carried feature is dropped to null by both writers',
     start: { flow: 'feature', phase: 'design', feature: 'o"Brien', updated: '2020-01-01T00:00:00Z' },
     target: 'feature.plan',
@@ -183,7 +190,7 @@ const FIXTURES = [
 ];
 
 for (const fx of FIXTURES) {
-  test(`parity: cursor bytes + stdout match oracle — ${fx.name}`, () => {
+  test(`${fx.id ? `${fx.id}: ` : ''}parity: cursor bytes + stdout match oracle — ${fx.name}`, () => {
     const oracle = makeOracleSandbox({ cursor: fx.start ?? undefined });
     const engine = makeSandbox({ cursor: fx.start ?? undefined });
     try {
