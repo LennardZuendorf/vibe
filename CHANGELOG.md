@@ -299,6 +299,12 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   `parity.test.mjs` pins each case as a KNOWN DIVERGENCE. The engine suite
   deletes an ambient `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`, so its git
   fixtures never act on the repo of a hook that runs it.
+- **The engine suite ignores env-injected git config** — `run.mjs` redirected
+  the config files but kept `GIT_CONFIG_PARAMETERS` (exported by `git -c` to
+  hooks) and `GIT_CONFIG_COUNT` with `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`. One
+  carrying `status.showUntrackedFiles=all` turned the untracked-directory pins
+  falsely red. It now deletes them. `parity.test.mjs` runs the pin under each
+  injection and checks every deleted variable by name. (review-hardening/9)
 - **The no-node Stop gate fallback reads every changed path, and only the
   project's** (review-hardening/10) — `flow/hooks-fallback/stop-gate.sh` had the
   same quoting and nested-project holes as the engine. Its staleness scan now

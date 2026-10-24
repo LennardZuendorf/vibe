@@ -38,7 +38,7 @@ import {
   statSync,
 } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   test,
   assert,
@@ -1563,6 +1563,68 @@ test('review-hardening/9: hermetic: an ambient GIT_DIR, GIT_WORK_TREE or GIT_IND
   } finally {
     rmSync(decoy, { recursive: true, force: true });
   }
+});
+
+// review-hardening/9 — git also takes config from the environment, not only from
+// files: `git -c k=v` exports GIT_CONFIG_PARAMETERS to the hooks it runs, and
+// GIT_CONFIG_COUNT with GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n does the same job.
+// Either one carrying status.showUntrackedFiles=all makes the frozen oracle
+// enumerate, exactly like a hostile ~/.gitconfig, and the untracked-directory
+// pins go falsely red. The child runner gets each injection and must stay green.
+const ENV_CONFIG_INJECTIONS = [
+  ['GIT_CONFIG_PARAMETERS', { GIT_CONFIG_PARAMETERS: "'status.showuntrackedfiles'='all'" }],
+  ['GIT_CONFIG_COUNT', { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'status.showUntrackedFiles', GIT_CONFIG_VALUE_0: 'all' }],
+];
+test('review-hardening/9: hermetic: env-injected git config (GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT) never reaches the fixtures', () => {
+  const fixture = GATE_FIXTURES.find((f) => f.untracked);
+  assert(fixture, 'floor: the untracked-directory fixture must exist for this test to guard anything');
+  const sb = buildGateSandbox(fixture);
+  try {
+    for (const [label, env] of ENV_CONFIG_INJECTIONS) {
+      // Floor: the injection really reaches a git that inherits it.
+      const injected = runCommand('git', ['-C', sb.dir, 'status', '--porcelain'], { env }).stdout;
+      assert(
+        injected.includes(UNTRACKED_FILE_REL),
+        `floor: ${label} must make plain --porcelain enumerate ${UNTRACKED_FILE_REL}, or this test reproduces nothing:\n${injected}`,
+      );
+      const child = runCommand(
+        process.execPath,
+        [path.join(REPO_ROOT, 'flow', 'engine', 'tests', 'run.mjs'), 'untracked nested project, deep in-place edit: engine blocks, live pinned x no-jq'],
+        { env },
+      );
+      assertEqual(child.code, 0, `${label}: the untracked-directory pin must pass with env-injected config:\n${child.stdout}\n${child.stderr}`);
+      assert(child.stdout.includes('1 passed'), `${label}: floor: the child runner must run exactly the one row:\n${child.stdout}`);
+    }
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// review-hardening/9 — the exact delete list, one variable at a time. Several of
+// these leave no trace a decoy repo could show (GIT_NAMESPACE,
+// GIT_ALTERNATE_OBJECT_DIRECTORIES), so a child imports run.mjs with every one
+// set and reports which survive. The list is spelled here, not imported, so
+// dropping a name from run.mjs turns this red.
+test('review-hardening/9: run.mjs deletes every ambient repo-location and env-config variable', () => {
+  const KEYS = [
+    'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_NAMESPACE', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT',
+    'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', 'GIT_CONFIG_KEY_12', 'GIT_CONFIG_VALUE_12',
+  ];
+  const env = Object.fromEntries(KEYS.map((k) => [k, `/nonexistent/${k}`]));
+  const probe = [
+    `const keys = ${JSON.stringify(KEYS)};`,
+    "const before = keys.filter((k) => k in process.env);",
+    `await import(${JSON.stringify(pathToFileURL(path.join(REPO_ROOT, 'flow', 'engine', 'tests', 'run.mjs')).href)});`,
+    "const after = keys.filter((k) => k in process.env);",
+    "console.log(JSON.stringify({ before, after, nosystem: process.env.GIT_CONFIG_NOSYSTEM ?? null }));",
+  ].join('\n');
+  const r = runCommand(process.execPath, ['--input-type=module', '-e', probe], { env });
+  assertEqual(r.code, 0, `the probe must run:\n${r.stdout}\n${r.stderr}`);
+  const out = JSON.parse(r.stdout.trim().split('\n').pop());
+  assertEqual(out.before, KEYS, 'floor: every variable must be set before run.mjs loads');
+  assertEqual(out.after, [], `run.mjs must delete each of these; survivors: ${out.after.join(', ')}`);
+  assertEqual(out.nosystem, '1', 'the GIT_CONFIG_(KEY|VALUE)_n sweep must not touch the neutralizers run.mjs sets');
 });
 
 test("KNOWN DIVERGENCE (BSD sed): stop_hook_active true — the ENGINE returns early (right); the ORACLE's no-jq sed leg misses the token because \\| is GNU-only", () => {

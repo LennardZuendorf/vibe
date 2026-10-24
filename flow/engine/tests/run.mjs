@@ -55,9 +55,10 @@ const CLI_PATH = path.join(REPO_ROOT, 'flow', 'engine', 'cli.mjs');
 // `HOME=<fake with that config> node run.mjs` -> 659 passed, 2 failed.
 //
 // Neutralized here, once, on the SHARED harness rather than at the one call
-// site that noticed. Three variables because git's own precedence needs all
-// three: GIT_CONFIG_GLOBAL/SYSTEM redirect the two config files (git >= 2.32),
-// GIT_CONFIG_NOSYSTEM covers older gits that ignore GIT_CONFIG_SYSTEM.
+// site that noticed. Three variables for the config FILES because git's own
+// precedence needs all three: GIT_CONFIG_GLOBAL/SYSTEM redirect the two config
+// files (git >= 2.32), GIT_CONFIG_NOSYSTEM covers older gits that ignore
+// GIT_CONFIG_SYSTEM. Config carried in the environment itself is deleted below.
 //
 // Set on process.env, not merely passed to runCommand: the engine's own
 // `spawnSync('git', …)` runs IN THIS PROCESS and inherits from here, and
@@ -81,7 +82,7 @@ process.env.GIT_CONFIG_NOSYSTEM = '1';
 // GIT_INDEX_FILE, and both beat `-C` and `cwd`: every fixture `git init`,
 // `git config` and `git commit` would then act on the developer's own repo, and
 // every `git status` would read it. GIT_CEILING_DIRECTORIES does not stop that.
-// Asserted with a decoy repo in parity.test.mjs.
+// Asserted with a decoy repo in parity.test.mjs, and each name one at a time.
 for (const key of [
   'GIT_DIR',
   'GIT_WORK_TREE',
@@ -92,6 +93,18 @@ for (const key of [
   'GIT_NAMESPACE',
 ]) {
   delete process.env[key];
+}
+// Git also reads config from the environment, and no file redirect reaches it:
+// `git -c k=v` exports GIT_CONFIG_PARAMETERS to the hooks it runs, and
+// GIT_CONFIG_COUNT with GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n does the same.
+// Either one can carry status.showUntrackedFiles=all, so both are deleted
+// (review-hardening/9). The KEY/VALUE sweep is exact: it never matches the
+// GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM or GIT_CONFIG_NOSYSTEM set above.
+// Asserted per variable, and with a child runner, in parity.test.mjs.
+delete process.env.GIT_CONFIG_PARAMETERS;
+delete process.env.GIT_CONFIG_COUNT;
+for (const key of Object.keys(process.env)) {
+  if (/^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(key)) delete process.env[key];
 }
 
 // ---------------------------------------------------------------------------
