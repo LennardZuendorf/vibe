@@ -204,3 +204,26 @@ else
   assert_eq "skill-revision/10" "the design token example passes as the root design.md" "" "$_dv"
   rm -rf "$_fx"
 fi
+
+# --- skill-revision/11 — spec/README.md and spec/AGENTS.md ---------------------
+_rd="spec/README.md"
+_ag="spec/AGENTS.md"
+for _f in "$_rd" "$_ag"; do
+  sd_absent "skill-revision/11" "$_f" 'needs only' 'zero runtime' 'no build step' 'offered not required' 'validate.sh'
+  if grep -qE 'becomes.*v0\.4|v0\.4.*becomes' "$_f"; then fail "skill-revision/11" "$_f still says it becomes something in v0.4"; else pass "skill-revision/11" "$_f has no future-v0.4 roadmap"; fi
+done
+sd_present "skill-revision/11" "$_rd" 'vibe-spec' 'using-spec' 'hooks/' 'agents/' 'docs/superpowers' 'layered' \
+  'legacy (flat root only)'
+if grep -E '^\|.*scripts/' "$_rd" | grep -qF 'legacy (flat root only)'; then
+  pass "skill-revision/11" "README marks scripts/ legacy (flat root only)"
+else
+  fail "skill-revision/11" "README must mark scripts/ legacy (flat root only)"
+fi
+sd_present "skill-revision/11" "$_ag" 'cargo test -p vibe-spec' 'bash spec/tests/run.sh' 'bash spec/tests/agents.sh' \
+  'bash spec/tests/pressure/run.sh'
+if grep -F 'bash spec/tests/pressure/run.sh' "$_ag" | grep -qF 'claude CLI'; then
+  pass "skill-revision/11" "AGENTS says the pressure run needs the claude CLI"
+else
+  fail "skill-revision/11" "AGENTS must say the pressure run needs the claude CLI"
+fi
+sd_links_ok "$_rd" "skill-revision/11"
