@@ -219,6 +219,24 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   `examples/todo-api` sample and the manual gh-metadata step as deferred. Retired a
   drifting hand-maintained state table in favour of pointing at the canonical
   `flow/state-machine.json`.
+- **Uninstall never deletes the vibe source or outside the target** —
+  `install.sh --uninstall` refuses to run in the vibe source repo (also through
+  a symlink or with `--dry-run`) and in any other vibe checkout, recognised by
+  its top-level `flow/state-machine.json` and `spec/SKILL.md`; a local install
+  there is refused too. `SRC` and `TARGET` are physical paths. Uninstall never
+  deletes through a symlinked skill dir, subdirectory or ancestor (`.agents`,
+  `.agents/skills`, `.claude`, `.claude-plugin`, `.vibe`) that resolves outside
+  the target or into a vibe checkout vendored inside it; each is left alone with
+  a warning. `--yes` never deletes the cursor, warnings log, receipts or
+  `.vibe/last-inject` through such a link (review-hardening/1).
+- **Jq-less plugin retirement reads the first key** — without jq,
+  `retire_vibe_plugin_manifest` retires a manifest only when `name` is the first
+  key and its value is `vibe`, so a nested `author.name` no longer decides; a
+  manifest whose first key is not `name` is kept (review-hardening/2).
+- **Install continues past a refused AGENTS.md merge** — a `merge-agents.sh`
+  refusal (reversed markers) is a warning, `AGENTS.md not merged`, and the
+  render, adapter and banner steps still run. A held adapter link names the
+  file it points at instead of guessing `real file?` (review-hardening/16).
 
 ## [0.1.0] - 2026-07-03
 
