@@ -1253,16 +1253,22 @@ assert_contains "review-fix" "empty stdin exits 0 (graceful)" "$out" "rc=0"
 assert_not_contains "review-fix" "empty stdin does not warn" "$out" "warn"
 rm -rf "$gsbx"
 
-# spec-v04 P4-R16: the per-user plugin's SessionStart detector accepts either
-# spec root (docs/spec, legacy) and stays silent without one.
+# spec-v04 P4-R16, flipped by review-hardening/7: the per-user plugin's
+# SessionStart detector fires only where the flow is installed
+# (.agents/skills/vibe/state-machine.json). A spec-only repo, whichever root, stays
+# silent: the doctrine is flow doctrine, so it never fires in every spec repo.
 PSS="$SRC_ROOT/plugin/hooks/session-start.sh"
 for root_rel in docs/spec .spec; do # literal
   psb="$(mktemp -d)"; mkdir -p "$psb/$root_rel"
   out="$(printf '{}' | CLAUDE_PROJECT_DIR="$psb" CLAUDE_PLUGIN_ROOT="$SRC_ROOT/plugin" bash "$PSS" 2>&1; echo "rc=$?")"
-  assert_contains "spec-v04/p4" "plugin session-start detects a $root_rel project (emits the doctrine)" "$out" "vibe flow"
-  assert_contains "spec-v04/p4" "plugin session-start exits 0 for a $root_rel project" "$out" "rc=0"
+  assert_eq "spec-v04/p4" "plugin session-start is silent in a $root_rel repo without the flow" "$out" "rc=0"
   rm -rf "$psb"
 done
+psb="$(mktemp -d)"; mkdir -p "$psb/.agents/skills/vibe"; : > "$psb/.agents/skills/vibe/state-machine.json"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$psb" CLAUDE_PLUGIN_ROOT="$SRC_ROOT/plugin" bash "$PSS" 2>&1; echo "rc=$?")"
+assert_contains "spec-v04/p4" "plugin session-start emits the doctrine where the flow is installed" "$out" "vibe flow"
+assert_contains "spec-v04/p4" "plugin session-start exits 0 where the flow is installed" "$out" "rc=0"
+rm -rf "$psb"
 psb="$(mktemp -d)"
 out="$(printf '{}' | CLAUDE_PROJECT_DIR="$psb" CLAUDE_PLUGIN_ROOT="$SRC_ROOT/plugin" bash "$PSS" 2>&1; echo "rc=$?")"
 assert_eq "spec-v04/p4" "plugin session-start is silent in a project with no spec root" "$out" "rc=0"

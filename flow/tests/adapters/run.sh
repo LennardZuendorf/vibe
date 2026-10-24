@@ -2687,7 +2687,7 @@ bash "$MERGE_SETTINGS" merge "$SB" >/dev/null 2>&1
 assert_eq "review-hardening/19" "a second merge changes nothing (idempotent)" "$(cat "$SB/.claude/settings.json")" "$rh19_before"
 rm -rf "$SB"
 # a MultiEdit payload reaches the guard on both paths (engine, and the bash fallback without node)
-SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 RH19_SS="$SB/.agents/skills/vibe/scripts/set-state.sh"; bash "$RH19_SS" idle >/dev/null 2>&1
 RH19_NONODE="$(mkshim)"
 for leg in engine fallback; do
@@ -2709,6 +2709,75 @@ for leg in engine fallback; do
   assert_eq "review-hardening/19" "control: MultiEdit on an unguarded path allows ($leg guard)" "$rc" "0"
 done
 rm -rf "$SB" "$RH19_NONODE"
+
+# review-hardening/7
+echo ""
+echo "=== review-hardening/7 — plugin SessionStart hook defers to the repo-local hook ==="
+RH7_HOOK="$REPO_ROOT/plugin/hooks/session-start.sh"
+rh7_run() { env -u VIBE_ENGINE CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" CLAUDE_PROJECT_DIR="$1" bash "$RH7_HOOK" </dev/null 2>/dev/null || true; }
+# (a) a repo with only docs/spec/ has no flow installed: the plugin stays silent
+RH7="$(mktmp)"; mkdir -p "$RH7/docs/spec"
+assert_eq "review-hardening/7" "spec-only repo (no flow installed): plugin hook is silent" "$(rh7_run "$RH7")" ""
+rm -rf "$RH7"
+# (a2) the same with the legacy root
+RH7="$(mktmp)"; mkdir -p "$RH7/.spec" # literal
+assert_eq "review-hardening/7" "legacy-root spec-only repo: plugin hook is silent" "$(rh7_run "$RH7")" ""
+rm -rf "$RH7"
+# (b) a real install target: the repo-local hook emits it, the plugin stays silent
+RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1
+assert_eq "review-hardening/7" "install target: plugin hook is silent" "$(rh7_run "$RH7")" ""
+rm -rf "$RH7"
+# (c) script present, no settings wiring: the repo-local hook never fires, so the
+# plugin must still emit the doctrine (once, not zero times).
+RH7="$(mktmp)"; mkdir -p "$RH7/.claude/hooks"; : > "$RH7/.claude/hooks/session-start-doctrine.sh"
+mkdir -p "$RH7/.agents/skills/vibe"; : > "$RH7/.agents/skills/vibe/state-machine.json"
+assert_contains "review-hardening/7" "script present, no settings: plugin hook emits the doctrine" "$(rh7_run "$RH7")" "sessions are ephemeral"
+rm -rf "$RH7"
+# (c2) a jq-less install copies the hooks but cannot wire settings.json
+RH7="$(mktmp)"; RH7_NOJQ="$(mkshim jq)"
+PATH="$RH7_NOJQ" "$RH7_NOJQ/bash" "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1
+[[ -f "$RH7/.claude/hooks/session-start-doctrine.sh" ]] || fail "review-hardening/7" "precondition: jq-less install copied the hook script"
+assert_contains "review-hardening/7" "jq-less install (hooks unwired): plugin hook emits the doctrine" "$(rh7_run "$RH7")" "sessions are ephemeral"
+rm -rf "$RH7" "$RH7_NOJQ"
+# (d) settings.json wired, script absent: a real install (a working engine) with
+# the script removed, so the wiring is the only signal under test. The plugin
+# probes the engine, so an empty stub cli.mjs no longer stands in for one.
+RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1; rm -f "$RH7/.claude/hooks/session-start-doctrine.sh"
+assert_eq "review-hardening/7" "settings.json wired, script absent: plugin hook is silent" "$(rh7_run "$RH7")" ""
+rm -rf "$RH7"
+# (e) settings.local.json wired
+RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1
+mv "$RH7/.claude/settings.json" "$RH7/.claude/settings.local.json"
+assert_eq "review-hardening/7" "settings.local.json wired: plugin hook is silent" "$(rh7_run "$RH7")" ""
+# (e2) the same wiring with no engine: the repo hook cannot answer, so emit
+rm -rf "$RH7/.agents/skills/vibe/engine"
+assert_contains "review-hardening/7" "wired, engine absent: plugin hook emits the doctrine" "$(rh7_run "$RH7")" "sessions are ephemeral"
+rm -rf "$RH7"
+# (e3) wired install, broken engine: the repo hook exits 0 with no output on a
+# crash, so the plugin must emit the doctrine (once, not zero times).
+RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1
+printf '%s\n' "throw new Error('broken engine');" > "$RH7/.agents/skills/vibe/engine/cli.mjs"
+assert_contains "review-hardening/7" "wired, broken engine: plugin hook emits the doctrine" "$(rh7_run "$RH7")" "sessions are ephemeral"
+rm -rf "$RH7"
+# (e4) wired install, a node that cannot run the engine (older than engines.node
+# >=18): stand-in node that fails like a too-old one.
+RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1; RH7_OLDNODE="$(mkshim)"
+printf '%s\n' '#!/bin/sh' 'echo "SyntaxError: Unexpected token (node v16)" >&2' 'exit 1' > "$RH7_OLDNODE/node"; chmod +x "$RH7_OLDNODE/node"
+assert_contains "review-hardening/7" "wired, node cannot run the engine: plugin hook emits the doctrine" \
+  "$(env -u VIBE_ENGINE CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" CLAUDE_PROJECT_DIR="$RH7" PATH="$RH7_OLDNODE" "$RH7_OLDNODE/bash" "$RH7_HOOK" </dev/null 2>/dev/null || true)" "sessions are ephemeral"
+rm -rf "$RH7" "$RH7_OLDNODE"
+# (f) wired install on a node-less host: the repo-local hook (engine-only, no
+# fallback) prints nothing, so the plugin must emit the doctrine (once, not zero).
+RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1; RH7_NONODE="$(mkshim)"
+grep -qF 'session-start-doctrine.sh' "$RH7/.claude/settings.json" 2>/dev/null \
+  || fail "review-hardening/7" "precondition: install wired session-start-doctrine.sh"
+assert_eq "review-hardening/7" "no node: the repo-local doctrine hook prints nothing" \
+  "$(cd "$RH7" && CLAUDE_PROJECT_DIR="$RH7" PATH="$RH7_NONODE" "$RH7_NONODE/bash" .claude/hooks/session-start-doctrine.sh </dev/null 2>/dev/null || true)" ""
+assert_contains "review-hardening/7" "no node, wired install: plugin hook emits the doctrine" \
+  "$(env -u VIBE_ENGINE CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" CLAUDE_PROJECT_DIR="$RH7" PATH="$RH7_NONODE" "$RH7_NONODE/bash" "$RH7_HOOK" </dev/null 2>/dev/null || true)" "sessions are ephemeral"
+rm -rf "$RH7" "$RH7_NONODE"
+assert_eq "review-hardening/7" "generated hook carries no stale cursor comment" \
+  "$(grep -c "this project's cursor" "$RH7_HOOK" || true)" "0"
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
