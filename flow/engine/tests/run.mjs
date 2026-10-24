@@ -76,6 +76,23 @@ const CLI_PATH = path.join(REPO_ROOT, 'flow', 'engine', 'cli.mjs');
 process.env.GIT_CONFIG_GLOBAL = '/dev/null';
 process.env.GIT_CONFIG_SYSTEM = '/dev/null';
 process.env.GIT_CONFIG_NOSYSTEM = '1';
+// The repository-location variables are deleted for the same reason
+// (review-hardening/9). A git hook or a pre-commit wrapper exports GIT_DIR and
+// GIT_INDEX_FILE, and both beat `-C` and `cwd`: every fixture `git init`,
+// `git config` and `git commit` would then act on the developer's own repo, and
+// every `git status` would read it. GIT_CEILING_DIRECTORIES does not stop that.
+// Asserted with a decoy repo in parity.test.mjs.
+for (const key of [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_COMMON_DIR',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_NAMESPACE',
+]) {
+  delete process.env[key];
+}
 
 // ---------------------------------------------------------------------------
 // Assert helpers

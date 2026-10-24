@@ -1519,6 +1519,44 @@ test('hermetic: an ambient status.showUntrackedFiles cannot change what the gate
   }
 });
 
+// review-hardening/9 — an ambient GIT_DIR (a git hook or a pre-commit wrapper
+// exports it) beats both `-C` and `cwd`, so without run.mjs deleting it every
+// fixture `git init`, `git config` and `git commit` would act on THAT repo. The
+// suite runs a git-backed row in a child runner with GIT_DIR, GIT_WORK_TREE and
+// GIT_INDEX_FILE pointing at a decoy, and asserts the decoy is untouched.
+test('review-hardening/9: hermetic: an ambient GIT_DIR, GIT_WORK_TREE or GIT_INDEX_FILE never reaches the fixtures', () => {
+  const decoy = mkTempRoot('vibe-parity-decoy-');
+  try {
+    writeFileSync(path.join(decoy, 'decoy.txt'), 'decoy\n');
+    for (const gitArgs of [
+      ['init', '-q'],
+      ['config', 'user.email', 'd@d'],
+      ['config', 'user.name', 'd'],
+      ['config', 'commit.gpgsign', 'false'],
+      ['config', 'tag.gpgsign', 'false'],
+      ['add', '-A'],
+      ['commit', '-qm', 'decoy'],
+    ]) {
+      const r = runCommand('git', gitArgs, { cwd: decoy });
+      assert(r.code === 0, `decoy: \`git ${gitArgs.join(' ')}\` exited ${r.code}: ${r.stderr}`);
+    }
+    const gitDir = path.join(decoy, '.git');
+    const configBefore = readFileSync(path.join(gitDir, 'config'), 'utf8');
+    const headBefore = runCommand('git', ['rev-parse', 'HEAD'], { cwd: decoy }).stdout;
+    const child = runCommand(
+      process.execPath,
+      [path.join(REPO_ROOT, 'flow', 'engine', 'tests', 'run.mjs'), 'three-way control — a plain name blocks on all three legs x no-jq'],
+      { env: { GIT_DIR: gitDir, GIT_WORK_TREE: decoy, GIT_INDEX_FILE: path.join(gitDir, 'index') } },
+    );
+    assertEqual(child.code, 0, `the git-backed row must pass with a hostile GIT_DIR in the env:\n${child.stdout}\n${child.stderr}`);
+    assert(child.stdout.includes('1 passed'), `floor: the child runner must run exactly the one row:\n${child.stdout}`);
+    assertEqual(readFileSync(path.join(gitDir, 'config'), 'utf8'), configBefore, "the fixtures rewrote the decoy repo's config");
+    assertEqual(runCommand('git', ['rev-parse', 'HEAD'], { cwd: decoy }).stdout, headBefore, 'the fixtures committed into the decoy repo');
+  } finally {
+    rmSync(decoy, { recursive: true, force: true });
+  }
+});
+
 test("KNOWN DIVERGENCE (BSD sed): stop_hook_active true — the ENGINE returns early (right); the ORACLE's no-jq sed leg misses the token because \\| is GNU-only", () => {
   const sb = buildGateSandbox({
     name: 'quick.verify',
