@@ -67,11 +67,19 @@ const SET_STATE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'set-state.sh');
 const DOCTOR_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'doctor.sh');
 const VALIDATE_STATE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'validate-state.sh');
 const ADAPTERS_RUN_SH = path.join(REPO_ROOT, 'flow', 'tests', 'adapters', 'run.sh');
-// The two FROZEN pre-port bash hooks (flow/hooks-fallback/, restored verbatim from
-// `main`) — the only oracles guard/gate have, because js-core/7 replaced the
-// real hooks with Node shims IN PLACE. See those files' own headers.
+// The two FROZEN pre-port bash hooks — the only oracles guard/gate have, because
+// js-core/7 replaced the real hooks with Node shims IN PLACE. See those files'
+// own headers.
+//
+// GUARD_ORACLE is still the live flow/hooks-fallback/ copy: the frozen copy under
+// oracles/ differs from it, so a repoint would change behaviour.
+// GATE_ORACLE is the byte-frozen copy under oracles/ (pinned by
+// oracles/MANIFEST.sha256), and GATE_LIVE is the shipped no-node fallback
+// (review-hardening/9). The live file is the one that gets fixed; the oracle
+// never does.
 const GUARD_ORACLE = path.join(REPO_ROOT, 'flow', 'hooks-fallback', 'pre-tool-use-guard.sh');
-const GATE_ORACLE = path.join(REPO_ROOT, 'flow', 'hooks-fallback', 'stop-gate.sh');
+const GATE_ORACLE = path.join(REPO_ROOT, 'oracles', 'bash', 'flow', 'hooks-fallback', 'stop-gate.sh');
+const GATE_LIVE = path.join(REPO_ROOT, 'flow', 'hooks-fallback', 'stop-gate.sh');
 const REAL_SKILL_MD = readFileSync(path.join(REPO_ROOT, 'flow', 'SKILL.md'), 'utf8');
 const REAL_MACHINE_SRC = path.join(REPO_ROOT, 'flow', 'state-machine.json');
 const REAL_DEPS_SRC = path.join(REPO_ROOT, 'flow', 'reference', 'deps.json');
@@ -1128,13 +1136,14 @@ test('hermetic: an ambient status.showUntrackedFiles cannot change what the gate
     );
 
     // (d) And the engine is unaffected in every state — it passes `-uall`
-    // explicitly, so it enumerates no matter what the config says.
+    // explicitly, so it enumerates no matter what the config says. The argv is
+    // the engine's own (`-z` and the `-- .` project scope, review-hardening/9).
     for (const [label, opts] of [
       ['hostile HOME', { env: { HOME: home } }],
       ['empty HOME', { env: { HOME: emptyHome } }],
       ['hostile HOME, neutralization deleted', { env: { HOME: home }, unsetEnv: NEUTRALIZERS }],
     ]) {
-      const engineView = runCommand('git', ['-C', sb.dir, 'status', '--porcelain', '-uall'], opts).stdout;
+      const engineView = runCommand('git', ['-C', sb.dir, 'status', '--porcelain', '-z', '-uall', '--', '.'], opts).stdout;
       assert(
         engineView.includes(UNTRACKED_FILE_REL),
         `${label}: the engine's own argv must enumerate regardless of config; got:\n${engineView}`,
@@ -1526,7 +1535,7 @@ test('parity oracles: the differential\'s input tables have not been trimmed to 
 // each must carry the FROZEN banner, must still contain the load-bearing
 // spellings the port had to reproduce, and must contain no trace of the Node
 // shim that replaced it.
-test('parity oracles: flow/hooks-fallback/*.sh are the frozen bash originals, not shims', () => {
+test('parity oracles: the guard oracle and oracles/…/stop-gate.sh are the frozen bash originals, not shims', () => {
   const guard = readFileSync(GUARD_ORACLE, 'utf8');
   const gate = readFileSync(GATE_ORACLE, 'utf8');
   for (const [name, src] of [['pre-tool-use-guard.sh', guard], ['stop-gate.sh', gate]]) {
@@ -1538,4 +1547,10 @@ test('parity oracles: flow/hooks-fallback/*.sh are the frozen bash originals, no
   assertMatch(guard, /sniff_bash/, 'the guard oracle lost its warn-only Bash sniffer');
   assertMatch(gate, /stop_hook_active/, 'the gate oracle lost its re-entry guard');
   assertMatch(gate, /-nt "\$receipt"/, 'the gate oracle lost its receipt staleness comparison');
+
+  // The live fallback is the no-node path, so it must never become the Node
+  // shim either — that would leave a node-less target with no Stop gate at all.
+  const live = readFileSync(GATE_LIVE, 'utf8');
+  assert(!/cli\.mjs/.test(live), 'flow/hooks-fallback/stop-gate.sh has been overwritten with the Node shim');
+  assert(!/exec node/.test(live), 'flow/hooks-fallback/stop-gate.sh has been overwritten with the Node shim');
 });

@@ -275,6 +275,13 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   silently. A symlinked `.gitignore` is no longer replaced by a regular file:
   uninstall leaves it alone and names the vibe lines to remove by hand
   (review-hardening/15).
+- **The engine Stop gate reads every changed path, and only the project's**
+  (review-hardening/9) — it read `git status --porcelain`, whose C-quoted names
+  (a space, a non-ASCII byte, a newline, a renamed file) never matched a file on
+  disk, and whose toplevel-relative paths missed every change in a project below
+  the git root. A stale receipt passed in both cases. It now reads
+  `--porcelain -z -uall -- .`, strips the `rev-parse --show-prefix`, and blocks
+  when a changed path cannot be stat'ed for any reason but "not found".
 
 ## [0.1.0] - 2026-07-03
 

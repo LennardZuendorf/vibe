@@ -110,6 +110,11 @@ function toPosix(p) {
 // so editing one after the receipt was written IS a change the receipt no
 // longer describes, and it must still block.
 //
+// The paths compared here are PROJECT-relative: gitPorcelain() strips the
+// `rev-parse --show-prefix` of a project that sits below the git toplevel
+// (review-hardening/9). Before that, a nested project's own marker arrived as
+// `sub/.vibe/last-inject` and never matched.
+//
 // That precision is only real because gitPorcelain() asks for `-uall` (see its
 // own note). Without it git collapses a wholly-untracked `.vibe/` to a single
 // `?? .vibe/` row, and there is no way to exclude the marker without excluding
@@ -663,7 +668,7 @@ function cursorStateFeature(vibeDir) {
 // `.vibe/blocks/team.md` blocks, on the porcelain git really emits.
 //
 // It also makes the engine STRICTER than the frozen bash oracle
-// (flow/hooks-fallback/stop-gate.sh), which has no `-uall` — a deliberate divergence
+// (oracles/bash/flow/hooks-fallback/stop-gate.sh), which has no `-uall` — a deliberate divergence
 // in the fail-safe direction for a blocking tooth, pinned as an executable
 // KNOWN DIVERGENCE in parity.test.mjs (the `untracked directory` gate fixture)
 // alongside the tests named in isOwnRuntimeState()'s note.
@@ -683,8 +688,21 @@ function cursorStateFeature(vibeDir) {
 // messiest. Gitignored trees never counted (node_modules is fine); an un-ignored
 // `vendor/` or build directory did.
 //
+// `-z` AND THE PROJECT SCOPE (review-hardening/9). Plain porcelain C-quotes any
+// path holding a space, a non-ASCII byte or a control character
+// (`?? "my file.txt"`), and the scan stat'ed the quoted spelling, missed, and
+// passed a stale receipt. `-z` gives raw, NUL-terminated paths. Porcelain paths
+// are also toplevel-relative, so a project below the git root stat'ed
+// `<root>/sub/sub/...` and passed everything; the scan now runs
+// `status ... -- .` and strips the `rev-parse --show-prefix`. Decoding lives in
+// decodePorcelainZ().
+//
 // So: raise the ceiling AND stop conflating the two zero-length answers.
-//   { determined: true,  text }  — git answered; `text` is the truth, '' means clean
+//   { determined: true,  entries, text }
+//                                — git answered; `entries` are the decoded
+//                                  project-relative paths, [] means clean;
+//                                  `text` is the same rows in non-`-z` form,
+//                                  for the warn-only TDD predicate
 //   { determined: false }        — this IS a work tree but its state could not be
 //                                  read (ENOBUFS, a killed process, a git that
 //                                  rejects a flag, anything else)
@@ -704,23 +722,74 @@ function cursorStateFeature(vibeDir) {
 // at a threshold a test suite can reach in a second instead of a minute.
 const PORCELAIN_MAX_BUFFER = 32 * 1024 * 1024;
 
+// Decode `git status --porcelain -z` (review-hardening/9). Each record is
+// `XY path` ended by NUL, with the path's raw bytes — no C-quoting, so a space,
+// a non-ASCII byte or a newline in a name survives. A rename or copy record
+// carries a SECOND NUL-terminated field, the origin, AFTER the new path; it is
+// consumed whatever the record turns out to be (a deletion included), or every
+// later record would be read one field off.
+//
+// Paths are toplevel-relative. `prefix` is `rev-parse --show-prefix` for the
+// project root: an entry under it is made project-relative, and an entry
+// outside it is dropped (the `-- .` pathspec already keeps them out; this is
+// the belt for a git that reports one anyway).
+function decodePorcelainZ(stdout, prefix) {
+  const recs = stdout.split('\0');
+  const entries = [];
+  const strip = (p) => {
+    if (!prefix) return p;
+    return p.startsWith(prefix) ? p.slice(prefix.length) : undefined;
+  };
+  for (let i = 0; i < recs.length; i += 1) {
+    const rec = recs[i];
+    if (!rec) continue;
+    const xy = rec.slice(0, 2);
+    let origin;
+    if (/[RC]/.test(xy)) {
+      i += 1;
+      origin = recs[i];
+    }
+    const p = strip(rec.slice(3));
+    if (p === undefined || p === '') continue;
+    const entry = { xy, path: p };
+    if (origin !== undefined) entry.origin = strip(origin) ?? origin;
+    entries.push(entry);
+  }
+  return entries;
+}
+
+// The legacy `text` view predicateTdd() reads, rebuilt from the decoded
+// entries in git's own non-`-z` row shape (`XY path`, `XY origin -> path`), so
+// its regexes — and the top-level `src/` quirk it pins — see the same rows as
+// before.
+function porcelainText(entries) {
+  return entries
+    .map((e) => (e.origin === undefined ? `${e.xy} ${e.path}` : `${e.xy} ${e.origin} -> ${e.path}`))
+    .join('\n');
+}
+
 function gitPorcelain(root, opts) {
   const spawnGit =
     opts.spawnGit || ((args, spawnOpts) => spawnSync('git', args, { encoding: 'utf8', ...spawnOpts }));
   const maxBuffer = typeof opts.porcelainMaxBuffer === 'number' ? opts.porcelainMaxBuffer : PORCELAIN_MAX_BUFFER;
   try {
-    const check = spawnGit(['-C', root, 'rev-parse', '--is-inside-work-tree']);
-    if (!check || check.error || check.status !== 0) return { determined: false, noGit: true, text: '' };
-    const res = spawnGit(['-C', root, 'status', '--porcelain', '-uall'], { maxBuffer });
+    // One call answers both questions: line 1 is `true` inside a work tree,
+    // line 2 is the project's path below the toplevel ('' at the toplevel).
+    // A stub that answers only `true\n` gives an empty prefix.
+    const check = spawnGit(['-C', root, 'rev-parse', '--is-inside-work-tree', '--show-prefix']);
+    if (!check || check.error || check.status !== 0) return { determined: false, noGit: true, text: '', entries: [] };
+    const prefix = typeof check.stdout === 'string' ? (check.stdout.split('\n')[1] ?? '') : '';
+    const res = spawnGit(['-C', root, 'status', '--porcelain', '-z', '-uall', '--', '.'], { maxBuffer });
     if (!res || res.error || res.status !== 0 || typeof res.stdout !== 'string') {
       const why = res && res.error && res.error.code ? res.error.code : 'git status failed';
-      return { determined: false, text: '', why };
+      return { determined: false, text: '', entries: [], why };
     }
-    return { determined: true, text: res.stdout.replace(/\n+$/, ''), why: undefined };
+    const entries = decodePorcelainZ(res.stdout, prefix);
+    return { determined: true, text: porcelainText(entries), entries, why: undefined };
   } catch (err) {
     // A throw from the spawn itself is the same class of answer as ENOBUFS —
     // the tree state is unknown, and this function still never throws.
-    return { determined: false, text: '', why: (err && err.code) || 'spawn threw' };
+    return { determined: false, text: '', entries: [], why: (err && err.code) || 'spawn threw' };
   }
 }
 
@@ -743,7 +812,6 @@ function predicateTdd(state, changed) {
 // its own warn-only line without this function owning stderr accumulation.
 function evidenceReceiptCheck(root, state, feature, tree, warn) {
   if (state !== 'feature.verify' && state !== 'quick.verify') return undefined;
-  const changed = tree.text;
 
   let receipt;
   if (state === 'feature.verify') {
@@ -793,32 +861,39 @@ function evidenceReceiptCheck(root, state, feature, tree, warn) {
       stderr:
         line('vibe-gate: BLOCKED — the working tree state could not be determined, so the receipt cannot be trusted.') +
         line(`  receipt: ${receipt}`) +
-        line(`  git status --porcelain -uall did not answer (${tree.why}).`) +
+        line(`  git status --porcelain -z -uall did not answer (${tree.why}).`) +
         line('  a huge UN-IGNORED untracked tree is the usual cause — gitignore it (or commit it) and re-run the Stop.') +
         line('  "I could not look" is not "nothing changed", so this blocks rather than passing you through.') +
         line(ABORT_HINT),
     };
   }
 
-  if (!changed) return undefined;
-
-  for (const raw of changed.split('\n')) {
-    if (!raw) continue;
-    const xy = raw.slice(0, 2);
-    let p = raw.slice(3);
+  for (const { xy, path: p } of tree.entries || []) {
     if (xy.includes('D')) continue; // skip deletions
-    if (xy[0] === 'R' || xy[0] === 'C') {
-      const idx = p.lastIndexOf(' -> ');
-      if (idx !== -1) p = p.slice(idx + 4); // rename/copy -> new path
-    }
     if (isOwnRuntimeState(root, p)) continue; // this harness's own writes
 
     const f = path.join(root, p);
     let st;
     try {
       st = fs.statSync(f);
-    } catch {
-      continue; // matches bash's `-e "$f"` guard
+    } catch (err) {
+      // FAIL CLOSED on a path the gate cannot judge (review-hardening/9). Only
+      // "it is not there" (ENOENT, or ENOTDIR for a parent that became a file)
+      // is a path with nothing to compare — and even that is not, when the
+      // name holds U+FFFD: git printed bytes that are not UTF-8, the decoded
+      // name cannot exist on disk, and the real file may well be stale. Any
+      // other code (ELOOP, EACCES, ...) is "I could not look".
+      const code = (err && err.code) || 'stat failed';
+      const gone = code === 'ENOENT' || code === 'ENOTDIR';
+      if (gone && !p.includes('\uFFFD')) continue;
+      return {
+        stderr:
+          line('vibe-gate: BLOCKED — a changed path could not be checked, so the receipt cannot be trusted.') +
+          line(`  receipt: ${receipt}`) +
+          line(`  could not stat: ${p} (${code})`) +
+          line('  fix or remove that path, then re-run verification and rewrite the receipt.') +
+          line(ABORT_HINT),
+      };
     }
     if (st.mtimeMs > receiptStat.mtimeMs) {
       return {

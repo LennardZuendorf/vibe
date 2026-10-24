@@ -27,6 +27,7 @@ import {
   copyFileSync,
   realpathSync,
   rmSync,
+  utimesSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -391,6 +392,8 @@ export function makeHookSandbox({ cursor, includeDetect = true, gitInit = false 
       ['init', '-q'],
       ['-C', dir, 'config', 'user.email', 't@t'],
       ['-C', dir, 'config', 'user.name', 't'],
+      ['-C', dir, 'config', 'commit.gpgsign', 'false'],
+      ['-C', dir, 'config', 'tag.gpgsign', 'false'],
     ]) {
       const r = runCommand('git', gitArgs, { cwd: dir });
       assert(
@@ -411,6 +414,99 @@ export function makeHookSandbox({ cursor, includeDetect = true, gitInit = false 
   }
 
   return { dir, root: dir, vibeDir, skillsDir, scriptsDir, cursorPath, warnLogPath, cleanup };
+}
+
+// makeNestedSandbox — review-hardening/9 and /10. The project is NOT the git
+// toplevel: git is initialised in `<outer>`, and the install-shaped project
+// lives at `<outer>/sub`. Porcelain paths are toplevel-relative, so a gate that
+// neither scopes to the project nor strips `rev-parse --show-prefix` looks for
+// `<outer>/sub/sub/...` and sees nothing.
+//
+// Layout (all committed, then the receipt is stamped 2020 so anything written
+// later is newer):
+//   <outer>/sub/.agents/skills/vibe/{state.json, state-machine.json, SKILL.md,
+//     scripts/detect-context.sh, evidence/quick.md}
+//   <outer>/sub/src.txt
+//   <outer>/sub/.vibe/last-inject   tracked, so an edit reports the FILE (a
+//                                   wholly-untracked .vibe/ collapses to one
+//                                   directory row without -uall)
+//
+// Signing is off and every setup command's exit status is checked (lesson
+// "Sandbox git repos set commit.gpgsign false"). `ceilingEnv` stops git from
+// walking above the sandbox, so no enclosing repository can leak in; a caller
+// runs its git-reading code inside `sb.withCeiling(fn)`, which sets it on
+// process.env (the engine's own spawnSync and every runCommand child inherit
+// from there) and restores the previous value.
+export function makeNestedSandbox({ cursor } = {}) {
+  const outer = mkTempRoot('vibe-nested-test-');
+  const dir = path.join(outer, 'sub');
+  const vibeDir = path.join(dir, '.agents', 'skills', 'vibe');
+  const scriptsDir = path.join(vibeDir, 'scripts');
+  mkdirSync(scriptsDir, { recursive: true });
+  copyFileSync(path.join(REPO_ROOT, 'flow', 'state-machine.json'), path.join(vibeDir, 'state-machine.json'));
+  copyFileSync(path.join(REPO_ROOT, 'flow', 'SKILL.md'), path.join(vibeDir, 'SKILL.md'));
+  copyFileSync(
+    path.join(REPO_ROOT, 'flow', 'scripts', 'detect-context.sh'),
+    path.join(scriptsDir, 'detect-context.sh'),
+  );
+  const cursorPath = path.join(vibeDir, 'state.json');
+  const cursorBody = cursor ?? { flow: 'quick', phase: 'verify', feature: null, updated: '2026-01-01T00:00:00Z' };
+  writeFileSync(cursorPath, `${JSON.stringify(cursorBody, null, 2)}\n`);
+  mkdirSync(path.join(vibeDir, 'evidence'), { recursive: true });
+  const receipt = path.join(vibeDir, 'evidence', 'quick.md');
+  writeFileSync(receipt, 'commands + output\n');
+  writeFileSync(path.join(dir, 'src.txt'), 'v1\n');
+  mkdirSync(path.join(dir, '.vibe'), { recursive: true });
+  writeFileSync(path.join(dir, '.vibe', 'last-inject'), 'idle\n');
+
+  const ceilingEnv = { GIT_CEILING_DIRECTORIES: path.dirname(outer) };
+  for (const gitArgs of [
+    ['init', '-q'],
+    ['config', 'user.email', 't@t'],
+    ['config', 'user.name', 't'],
+    ['config', 'commit.gpgsign', 'false'],
+    ['config', 'tag.gpgsign', 'false'],
+    ['add', '-A'],
+    ['commit', '-qm', 'init'],
+  ]) {
+    const r = runCommand('git', gitArgs, { cwd: outer, env: ceilingEnv });
+    assert(r.code === 0, `makeNestedSandbox: \`git ${gitArgs.join(' ')}\` exited ${r.code}: ${r.stderr}`);
+  }
+  const past = new Date('2020-01-01T00:00:00Z');
+  utimesSync(receipt, past, past);
+
+  function withCeiling(fn) {
+    const had = Object.prototype.hasOwnProperty.call(process.env, 'GIT_CEILING_DIRECTORIES');
+    const prev = process.env.GIT_CEILING_DIRECTORIES;
+    process.env.GIT_CEILING_DIRECTORIES = ceilingEnv.GIT_CEILING_DIRECTORIES;
+    try {
+      return fn();
+    } finally {
+      if (had) process.env.GIT_CEILING_DIRECTORIES = prev;
+      else delete process.env.GIT_CEILING_DIRECTORIES;
+    }
+  }
+
+  let cleaned = false;
+  function cleanup() {
+    if (cleaned) return;
+    cleaned = true;
+    rmSync(outer, { recursive: true, force: true });
+  }
+
+  return {
+    outer,
+    dir,
+    root: dir,
+    vibeDir,
+    scriptsDir,
+    cursorPath,
+    receipt,
+    warnLogPath: path.join(vibeDir, 'warnings.log'),
+    ceilingEnv,
+    withCeiling,
+    cleanup,
+  };
 }
 
 // makeContentSandbox — a hook-shaped sandbox (root + installed vibeDir) PLUS a
