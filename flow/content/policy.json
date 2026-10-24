@@ -1,5 +1,5 @@
 {
-  "$comment": "The six guarded-path arms of flow/scripts/detect-context.sh's decide() as data — three blocks, three warns. Every `arms[].reason` is copied verbatim from the bash oracle, including its own `(current: $state)` suffix where it has one; the engine substitutes the literal token `{state}` with the actually-queried state. `match` entries may be literal paths or globs (`*`/`?`, matching any run of / any one character INCLUDING `/`, same as bash's own case-pattern matching) — every entry additionally matches on any path-boundary suffix of the queried path (an absolute path, a `../`-prefixed one, or one nested under an extra directory), reproducing the oracle's own `PATTERN|*/PATTERN` idiom without needing it spelled out here. `arms` is read top to bottom; the first arm whose `states` admits the queried state wins, `states: \"*\"` being the else/catch-all. Never edit this file in an install; it is replaced on upgrade — override from a project's own policy layer instead.",
+  "$comment": "The eleven guarded-path rules in flow/scripts/detect-context.sh's decide() as data: six block rules (cursor, both lessons spellings, both root-spec spellings, and GSD's .planning/ store) plus five warn rules. .planning/ is read-only context except in idle. Every `arms[].reason` is copied verbatim from the bash branch, including `(current: $state)` where present; the engine substitutes `{state}` with the queried state. `match` entries may be literal paths or globs (`*`/`?`, matching any run of / any one character INCLUDING `/`, same as bash case-pattern matching); each also matches path-boundary suffixes, reproducing `PATTERN|*/PATTERN`. `arms` is read top to bottom; the first matching state wins, with `states: \"*\"` as catch-all. Never edit this file in an install; it is replaced on upgrade — override from a project's own policy layer instead.",
   "version": 1,
   "rules": [
     {
@@ -39,6 +39,14 @@
       "arms": [
         { "states": ["strategy.spec", "feature.compound", "setup.apply"], "verdict": "allow", "reason": "" },
         { "states": "*", "verdict": "block", "reason": "root docs/spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: {state})" }
+      ]
+    },
+    {
+      "id": "gsd-planning",
+      "match": ".planning/*",
+      "arms": [
+        { "states": ["idle"], "verdict": "allow", "reason": "" },
+        { "states": "*", "verdict": "block", "reason": ".planning/ is GSD's state store — vibe reads it as context and never writes it; route edits through GSD's own commands" }
       ]
     },
     {

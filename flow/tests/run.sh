@@ -515,6 +515,17 @@ d5="$(bash "$DETECT" infer "" idle)"
 assert_eq "flow-legibility/6" "idle + clean tree is not drift" "$d5" ""
 db="$(bash "$DETECT" decide .spec/lessons.md idle)"
 assert_contains "flow-legibility/6" "decide still hard-blocks lessons.md at idle (unchanged)" "$db" "block:"
+planning_idle="$(bash "$DETECT" decide .planning/STATE.md idle)"
+planning_impl="$(bash "$DETECT" decide .planning/STATE.md feature.impl)"
+planning_strategy="$(bash "$DETECT" decide .planning/STATE.md strategy.spec)"
+assert_eq "skills-v2" "GSD planning state is allowed as context at idle" "$planning_idle" "allow"
+assert_contains "skills-v2" "GSD planning writes block during feature.impl" "$planning_impl" "block:.planning/ is GSD's state store"
+assert_contains "skills-v2" "GSD planning writes block during strategy.spec" "$planning_strategy" "block:.planning/ is GSD's state store"
+for planning_state in idle feature.impl; do
+  bash_result="$(bash "$DETECT" decide .planning/x "$planning_state")"
+  engine_result="$(node "$FLOW/engine/cli.mjs" policy --vibe-dir "$FLOW" decide .planning/x "$planning_state")"
+  assert_eq "skills-v2" "GSD planning policy branches agree at $planning_state" "$engine_result" "$bash_result"
+done
 # no-jq: infer with state passed needs neither jq nor git
 pnojq6="$(mktemp -d)"; for t in dirname sed head cat grep; do ln -sf "$(command -v "$t")" "$pnojq6/$t"; done
 d6="$(PATH="$pnojq6" "$BASH_BIN" "$DETECT" infer $' M tests/t.sh' idle 2>/dev/null)"
@@ -1022,7 +1033,7 @@ rm -rf "$gnojq"
 
 echo ""
 echo "=== review-fix — PreToolUse Bash write sniffer (warn-only) ==="
-# The three hard blocks intercept file tools only; a raw `echo >> .spec/lessons.md`
+# The hard-block rules intercept file tools only; a raw `echo >> .spec/lessons.md`
 # would slip past undocumented. The guard now warn-sniffs Bash commands. Discriminating:
 # with the sniffer removed the Bash payload carries no file_path, so the hook exits 0
 # with NO warn — the lessons-write assertion below flips.

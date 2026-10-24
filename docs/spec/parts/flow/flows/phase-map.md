@@ -1,6 +1,6 @@
 ---
 type: flow
-updated: 2026-10-19
+updated: 2026-10-24
 ---
 
 # Phase map
@@ -16,13 +16,13 @@ Delegates, write surfaces, and legal edges are **data** — read them from `stat
 | `setup.apply` | Write/merge the bootstrap without clobbering: AGENTS.md block, flow scaffold, baseline specs. |
 | `strategy.brainstorm` | Shape project direction in dialogue; scratch only, no writes yet. |
 | `strategy.spec` | Commit the agreed direction into the root specs and validate. |
-| `feature.design` | Trace the codebase and sketch approaches, then write the feature's product + tech specs. |
-| `feature.plan` | Turn the design into stable unit IDs (`<feature>/1`, `/2`…). Human gate before impl. |
-| `feature.impl` | Build the plan units test-first, citing unit IDs. |
-| `feature.verify` | Gather real evidence per unit ID and review. Human gate before ship. |
-| `feature.compound` | Record the lesson, promote cross-cutting decisions to root, archive the feature. |
+| `feature.design` | Trace the codebase and sketch approaches, then write a superpowers design doc. |
+| `feature.plan` | Turn the design into a verified task plan. Human gate before impl. |
+| `feature.impl` | Execute the plan test-first. |
+| `feature.verify` | Gather evidence per plan task and review. Human gate before ship. |
+| `feature.compound` | Record the lesson, promote cross-cutting decisions to root, finish the branch. |
 | `quick.triage` | Diagnose the small issue; don't fix yet. Escalate to `feature.design` if scope balloons. |
 | `quick.fix` | Implement the bounded fix test-first. |
 | `quick.verify` | Prove the fix works and breaks nothing. |
 
-Each phase also emits per-turn **orders**, authored once as content blocks in the linked skill's phase file and resolved by `flow` at the cursor (`.vibe/run/flow/state.json` in v0.4; `.agents/skills/vibe/state.json` today). `instruct` composes these orders into the level/edge/event channels; `flow` works standalone off its own `AGENTS.md` block when `instruct` is absent.
+Each state also emits per-turn **orders**, authored as `<!-- vibe:orders:<state> -->` blocks in the linked skill's `SKILL.md` and resolved by `flow` at the cursor (`.vibe/run/flow/state.json`). `instruct` composes these orders into the level/edge/event channels; `flow` works standalone off its own `AGENTS.md` block when `instruct` is absent. The six former phase files are removed.
