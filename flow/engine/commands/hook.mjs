@@ -445,10 +445,10 @@ export function runInjectHook(root, vibeDir, skillsDir, opts = {}) {
 
 // ---------------------------------------------------------------------------
 // pre-tool-use-guard — Bash commands get a warn-only text sniff; Edit/Write/
-// NotebookEdit get their target path decided against the write-invariant
-// policy, whose verdict (allow|warn:<reason>|block:<reason>) is translated to
-// this hook's exit-code convention (block -> stderr + exit 2, warn -> stderr
-// + relay + exit 0, allow -> exit 0).
+// MultiEdit/NotebookEdit get their target path decided against the
+// write-invariant policy, whose verdict (allow|warn:<reason>|block:<reason>)
+// is translated to this hook's exit-code convention (block -> stderr + exit 2,
+// warn -> stderr + relay + exit 0, allow -> exit 0).
 // ---------------------------------------------------------------------------
 
 const BASH_WRITE_OP_RE = /(>>?|(^|\s)(tee|truncate|mv|cp|rm)(\s|$)|(^|\s)sed(\s|$).*-i)/;

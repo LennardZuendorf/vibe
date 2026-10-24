@@ -255,7 +255,7 @@ Thin shells over `scripts/`; the allow/warn/block policy lives once in
 |---|---|---|
 | `session-start-doctrine.sh` | `SessionStart` (all sources, incl. `compact` re-inject) | emits the working-model doctrine each session, single-sourced from the `<!-- vibe:doctrine -->` block via `doctrine.sh`; wired with no matcher (all sources). Carries **no live state** — this output replays verbatim after `--resume`, so a cursor line printed here is stale by construction |
 | `user-prompt-submit-inject.sh` | `UserPromptSubmit` | injects the trigger-classed channels: the two-line level payload every turn, the full orders on the turn after the cursor moves, event text only when an event occurred |
-| `pre-tool-use-guard.sh` | `PreToolUse` (Edit/Write/NotebookEdit/Bash) | hard-blocks the three write invariants on **file-tool** calls; on `Bash` it only **warns** when a command looks like it writes a guarded path (see caveats below) |
+| `pre-tool-use-guard.sh` | `PreToolUse` (Edit/Write/MultiEdit/NotebookEdit/Bash) | hard-blocks the three write invariants on **file-tool** calls; on `Bash` it only **warns** when a command looks like it writes a guarded path (see caveats below) |
 | `stop-gate.sh` | `Stop` | warn-first exit checks; blocks in `*.verify` without a fresh evidence receipt — with or without `jq` |
 
 Wired automatically by `install.sh` into `.claude/settings.json`; hook scripts resolve their data via `$CLAUDE_PROJECT_DIR`. Claude Code only — no other host gets hook wiring in this slice.
@@ -337,7 +337,7 @@ bash .agents/skills/vibe/scripts/detect-context.sh decide docs/spec/product.md
 **What the teeth actually reach — three honest caveats:**
 
 1. **File tools only, plus a Bash warn.** The three hard blocks intercept
-   `Edit` / `Write` / `NotebookEdit`. A raw shell write (`echo >> docs/spec/lessons.md`,
+   `Edit` / `Write` / `MultiEdit` / `NotebookEdit`. A raw shell write (`echo >> docs/spec/lessons.md`,
    `sed -i`, `tee`, `mv`/`cp`/`rm`) does **not** hit that path, so the guard also
    runs a warn-only Bash **sniffer**: it text-scans the command for a write-shaped
    op aimed at a guarded path and nudges. It never blocks (false positives are

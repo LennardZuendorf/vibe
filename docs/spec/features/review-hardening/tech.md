@@ -261,7 +261,7 @@ Two critiques of 2026-10-24: the builder review (B1-B33) and the completeness re
 | B33 two writers of `## Branch work` | accept | First writer creates the section, the other appends; keep both rows on conflict. |
 | A1 resolve-target sandboxes | accept | Same as B4; the third sandbox (`spec-v04/p4`) is included. |
 | A2 plugin doctrine in spec-only repos (V-09, C-04) | accept as Open Question 4 | Default: emit only with `.agents/skills/vibe/state-machine.json`; R10 and the :1255-1263 pin flip in unit 7. |
-| A3 MultiEdit missing from the flow matcher (C-05) | accept | New unit 19; it owns both pins (`adapters/run.sh:300`, `flow/tests/run.sh:1276`); doc text stays with skill-revision unit 27, checked from code in unit 29. |
+| A3 MultiEdit missing from the flow matcher (C-05) | accept | New unit 19; it owns both pins (`adapters/run.sh:300`, `flow/tests/run.sh:1276`); it also fixes the doc text that states the matcher; skill-revision unit 27 checks that text from code, and unit 29 re-runs the check. |
 | A8 tool:W2 cursor in the plugin cache | reject here | Locating the cursor is new behaviour; Deferred to F7. |
 | A10 V-01, V-06 follow-ups | route | skill-revision unit 31 adds the `NOT STARTED` rows; this plan references them. |
 | A11 tool:T2 cut reason | accept the correction | The fix lives in `merge-settings.sh` and `doctor`, not port files; routed to the `spec-hooks-install` row because unit 19 edits the same matcher lines and `doctor.mjs` parity is out of both features' surface. |

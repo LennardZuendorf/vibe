@@ -92,9 +92,10 @@ node .agents/skills/vibe/engine/cli.mjs render agents-md --write
 
 ## Enforcement is partial — do not trust it blindly
 
-- The `pre-tool-use-guard` hook only intercepts `Edit`, `Write`, and `NotebookEdit` tool
-  calls. Shell redirection (`>`, `tee`, `sed -i`) bypasses it — honoring the write
-  invariants there is a **convention**, backed only by a warn-only Bash sniffer.
+- The `pre-tool-use-guard` hook only intercepts `Edit`, `Write`, `MultiEdit`, and
+  `NotebookEdit` tool calls. Shell redirection (`>`, `tee`, `sed -i`) bypasses it —
+  honoring the write invariants there is a **convention**, backed only by a warn-only
+  Bash sniffer.
 - `set-state.sh` writes the cursor; it does not gate. Approvals are enforced by `/flow` and
   the hooks, not by the writer.
 - The Stop receipt tooth (a `*.verify` state needs a fresh evidence receipt) fires only when
