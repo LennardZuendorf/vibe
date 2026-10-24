@@ -4,7 +4,7 @@
 #   orders.sh                 # orders for the current cursor state (default idle)
 #   orders.sh <flow.phase>    # orders for an explicit state (testing)
 #
-# D12: the orders live in the linked vibe skill (the state's phase file) as a
+# D12: the orders live in the linked vibe skill's SKILL.md as a
 #   <!-- vibe:orders:<state> -->
 #   skill=... · ... · next: ...
 #   <!-- /vibe:orders -->
