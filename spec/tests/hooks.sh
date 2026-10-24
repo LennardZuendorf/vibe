@@ -104,6 +104,21 @@ test_usage_errors() {
   check HOOK-USAGE "PATH binary without hook subcommand fails open" "0" "$rc"
 }
 
+test_block_without_tmpdir() { # review-hardening/17
+  local out rc tdir="$SCRATCH/tmp17" left
+  mkdir -p "$tdir"
+  fake block17.sh 2 'blocked: invoke Skill(spec) first\n'
+  out="$(TMPDIR="$SCRATCH/none" VIBE_SPEC_BIN="$SCRATCH/block17.sh" bash "$SHIM" guard < <(payload main-write.json) 2>&1 >/dev/null)"; rc=$?
+  check review-hardening/17 "guard block survives a missing TMPDIR" "2|blocked: invoke Skill(spec) first" "$rc|$out"
+  out="$(TMPDIR="$tdir" VIBE_SPEC_BIN="$SCRATCH/block17.sh" bash "$SHIM" guard < <(payload main-write.json) 2>&1 >/dev/null)"; rc=$?
+  check review-hardening/17 "guard block with a working TMPDIR" "2|blocked: invoke Skill(spec) first" "$rc|$out"
+  fake crash17.sh 3 'boom\n'
+  out="$(TMPDIR="$SCRATCH/none" VIBE_SPEC_BIN="$SCRATCH/crash17.sh" bash "$SHIM" guard < <(payload main-write.json) 2>&1 >/dev/null)"; rc=$?
+  check review-hardening/17 "guard crash still allows" "0" "$rc"
+  left="$(find "$tdir" -name 'vibe-spec-hook.*' | wc -l | tr -d ' ')"
+  check review-hardening/17 "no temp file left behind" "0" "$left"
+}
+
 test_newer_binary() {
   local proj="$SCRATCH/proj-bins" out
   mkdir -p "$proj/target/release" "$proj/target/debug"
@@ -140,6 +155,7 @@ test_pass_through
 test_crash
 test_nonexistent_binary
 test_usage_errors
+test_block_without_tmpdir
 test_newer_binary
 test_generated_hooks
 test_drift

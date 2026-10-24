@@ -164,6 +164,7 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   outside or dangling link is refused with exit 1. The temp file beside the
   target gets an unpredictable name and is opened exclusively (`wx`), so a link a
   repo plants at the temp name is never followed (rh/12).
+- Spec hook shim (`spec/hooks/run-hook.sh`): `guard` keeps a real `blocked:` exit 2 when the temp directory is missing. The shim captures stderr with a descriptor swap and no longer creates a temp file. (review-hardening/17)
 - **The hard blocks survive a node-less target** — the hook shims were
   `command -v node || exit 0`, so a machine without node silently lost the
   PreToolUse write guard and the Stop evidence gate, while the docs still called
