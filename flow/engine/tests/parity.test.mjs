@@ -1371,10 +1371,16 @@ for (const mode of JQ_MODES) {
         statable = false;
       }
       if (statable) skip('stat inside a mode-644 directory succeeds here (running as root?)');
+      const rows = runCommand('git', ['status', '--porcelain', '-z', '-uall', '--', '.'], { cwd: sb.dir }).stdout;
+      assertEqual(rows, '?? locked/f.txt\0', 'floor: git -uall reports the file inside the non-searchable directory');
       assertStatErrorRow('locked', threeWay(sb, mode, () => resetWarnLog(sb)), 'locked/f.txt', 'EACCES');
       rh9RowsRun += 1;
     } finally {
-      chmodSync(locked, 0o755);
+      try {
+        chmodSync(locked, 0o755);
+      } catch {
+        // mkdirSync never ran; nothing to restore
+      }
       sb.cleanup();
     }
   });

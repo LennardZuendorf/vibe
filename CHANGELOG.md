@@ -286,7 +286,9 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   when a changed path cannot be stat'ed for any reason but "not found", or
   when a not-found name decoded to U+FFFD. The no-node fallback still skips
   those paths (ELOOP, EACCES) and judges a non-UTF-8 name by its raw bytes;
-  `parity.test.mjs` pins each case as a KNOWN DIVERGENCE.
+  `parity.test.mjs` pins each case as a KNOWN DIVERGENCE. The engine suite
+  deletes an ambient `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`, so its git
+  fixtures never act on the repo of a hook that runs it.
 - **The no-node Stop gate fallback reads every changed path, and only the
   project's** (review-hardening/10) — `flow/hooks-fallback/stop-gate.sh` had the
   same quoting and nested-project holes as the engine. Its staleness scan now
