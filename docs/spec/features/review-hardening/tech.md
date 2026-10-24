@@ -136,6 +136,7 @@ export function validFeature(name) // -> boolean
 ### R5, R6, R11 — bash writers
 
 - `merge-agents.sh` is byte-identical to the pre-fix base. `link_adapter` refuses any non-matching symlink with exit 1 (:162-163 today relinks). Each `mv -f "$tmp" "$file"` site, plus `strip_managed_block` and `seed_rules_block`, calls `resolve_target` once at function entry and writes beside the resolved path.
+- `unmerge` deletes neither a symlinked `AGENTS.md` nor its target file, even when no user content is left (the pure-stub and the whitespace-only paths). `resolve_target` refuses a dangling link, so a link that merge wrote through was there before vibe. Follow-up to unit 4.
 - `regen-active-rules.sh`: the 4 old hunks apply at `-F0`. The result keeps `REPO_ROOT`, the v0.4 lessons lookup, the "Generated from the spec lessons.md" text and every `# literal` tag, and it holds `REFUSED=0` and the end-of-script `exit 1`. Check each after the apply.
 - `resolve-target.sh` ships through `flow/`. Install copies `flow/` into `.agents/skills/vibe`, and uninstall enumerates the source. Verify both on a temp target.
 - R11 (install.sh :1423, hunk `@@ -788`): `bash "$MERGE" "$TARGET" || err "WARN: AGENTS.md not merged (see message above); the rest of the install continues."` Without it, the new exit 1 from `resolve_target` aborts the install under `set -e`. At :1465 (hunk `@@ -830`) the `(real file?)` text becomes the message that names the held link target (`readlink`).

@@ -1236,7 +1236,7 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
       fi
     done <<< "$(adapter_rows)"
     if [[ -f "$TARGET/AGENTS.md" ]]; then
-      say "remove the managed vibe blocks from AGENTS.md (user prose preserved; a vibe-only stub is deleted)"
+      say "remove the managed vibe blocks from AGENTS.md (user prose preserved; a vibe-only stub is deleted unless AGENTS.md is a symlink)"
       [[ "$DRY_RUN" -eq 1 ]] || bash "$SRC_MERGE" unmerge "$TARGET" \
         || err "WARN: AGENTS.md blocks not removed (reversed markers?); left untouched."
     fi

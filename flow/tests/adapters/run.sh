@@ -2582,6 +2582,39 @@ bash "$MERGE" unmerge "$d" >/dev/null 2>&1
 [[ -L "$d/AGENTS.md" && -f "$d/docs/AGENTS.real.md" ]] && ! grep -qF 'vibe:instructions' "$d/docs/AGENTS.real.md" \
   && grep -qF 'user prose' "$d/docs/AGENTS.real.md" \
   && pass "review-hardening/4" "unmerge keeps the symlink and strips the block through it" || fail "review-hardening/4" "unmerge broke the symlink"
+# (d2) a symlinked AGENTS.md with no user content left: merge refuses a dangling
+# link, so the link and its target file were there before vibe. unmerge strips
+# the blocks and keeps both, on the whitespace-only path and the pure-stub path.
+rh4_kept() {  # DIR LABEL NOTE — the link, its target and no vibe marker remain
+  [[ -L "$1/AGENTS.md" && "$(readlink "$1/AGENTS.md")" == "docs/agents.md" && -f "$1/docs/agents.md" ]] \
+    && ! grep -qF 'vibe:' "$1/docs/agents.md" \
+    && pass "review-hardening/4" "$2" || fail "review-hardening/4" "$2"
+}
+d="$(mktmp)"; mkdir "$d/docs"; : > "$d/docs/agents.md"; ln -s docs/agents.md "$d/AGENTS.md"
+bash "$MERGE" "$d" >/dev/null 2>&1
+grep -qF '<!-- vibe:instructions:start -->' "$d/docs/agents.md" \
+  && pass "review-hardening/4" "(d2) precondition: merge wrote the block into the empty linked file" \
+  || fail "review-hardening/4" "(d2) precondition: merge wrote the block into the empty linked file"
+out="$(bash "$MERGE" unmerge "$d" 2>&1)"; rc=$?
+assert_eq "review-hardening/4" "(d2) unmerge of an emptied linked AGENTS.md exits 0" "$rc" "0"
+rh4_kept "$d" "(d2) whitespace-only: unmerge keeps the user's AGENTS.md link and its target file"
+assert_not_contains "review-hardening/4" "(d2) whitespace-only: unmerge reports no removed stub" "$out" "removed vibe-created AGENTS.md stub"
+d="$(mktmp)"; mkdir "$d/docs"; cp "$REPO_ROOT/flow/reference/templates/AGENTS.md" "$d/docs/agents.md"; ln -s docs/agents.md "$d/AGENTS.md"
+out="$(bash "$MERGE" unmerge "$d" 2>&1)"; rc=$?
+assert_eq "review-hardening/4" "(d2) unmerge of a linked template copy exits 0" "$rc" "0"
+rh4_kept "$d" "(d2) pure stub: unmerge keeps the user's AGENTS.md link and its target file"
+assert_not_contains "review-hardening/4" "(d2) pure stub: unmerge reports no removed stub" "$out" "removed vibe-created AGENTS.md stub"
+# install level: install then full uninstall through a linked empty placeholder
+t="$(mktmp)"; mkdir "$t/docs"; : > "$t/docs/agents.md"; ln -s docs/agents.md "$t/AGENTS.md"
+bash "$INSTALL" "$t" >/dev/null 2>&1
+bash "$INSTALL" "$t" --uninstall --yes >/dev/null 2>&1; rc=$?
+assert_eq "review-hardening/4" "(d2) uninstall with a linked empty AGENTS.md exits 0" "$rc" "0"
+rh4_kept "$t" "(d2) uninstall keeps the user's AGENTS.md link and its target file"
+# control: a regular vibe-created stub is still deleted
+d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null 2>&1; bash "$MERGE" unmerge "$d" >/dev/null 2>&1
+[[ ! -e "$d/AGENTS.md" && ! -L "$d/AGENTS.md" ]] \
+  && pass "review-hardening/4" "(d2) control: a regular vibe-created stub is still removed" \
+  || fail "review-hardening/4" "(d2) control: a regular vibe-created stub is still removed"
 # (a) regen writes through a symlinked AGENTS.md
 r="$(rh4_regen_sandbox)"; printf 'user prose\n<!-- vibe:active-rules:start -->\nold\n<!-- vibe:active-rules:end -->\n' > "$r/docs/AGENTS.real.md"; ln -s docs/AGENTS.real.md "$r/AGENTS.md"
 bash "$r$RH4_REGEN" >/dev/null 2>&1

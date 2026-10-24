@@ -292,7 +292,9 @@ merge_instructions() {
 # reversed markers in EITHER block are refused before any write, so a refusal
 # leaves the file byte-identical. If nothing but whitespace remains, the file was
 # a vibe-created stub (target had no AGENTS.md) — delete it so uninstall leaves no
-# trace. Writes go via temp + atomic rename.
+# trace. A symlinked AGENTS.md is never such a stub: merge refuses a dangling
+# link, so the link and its target file were there before vibe. Unmerge strips
+# the blocks through it and keeps both. Writes go via temp + atomic rename.
 unmerge() {
   local root="${1:-.}"
   local orig="$root/AGENTS.md" target
@@ -318,9 +320,9 @@ unmerge() {
   # user content added around the managed blocks — including the template's own
   # title line, which sits above the markers. This is the "target had none" case:
   # remove it wholesale, the clean inverse of the fresh install that created it.
-  if [[ -f "$TEMPLATE" ]] && same_normalized "$target" "$TEMPLATE"; then
+  # A symlinked AGENTS.md predates vibe (see above): strip it below instead.
+  if [[ ! -L "$orig" && -f "$TEMPLATE" ]] && same_normalized "$target" "$TEMPLATE"; then
     rm -f "$target"
-    if [[ -L "$orig" ]]; then rm -f "$orig"; fi   # no dangling link left behind
     note "removed vibe-created AGENTS.md stub at $target (untouched template — target had none)"
     return 0
   fi
@@ -356,9 +358,13 @@ unmerge() {
   fi
 
   # A file now holding only whitespace was created entirely by vibe — remove it.
+  # Not through a symlink: the link and its target are the user's, so both stay.
   if ! grep -q '[^[:space:]]' "$target"; then
+    if [[ -L "$orig" ]]; then
+      note "removed vibe managed blocks from $target; kept it and the $orig link (they predate vibe)"
+      return 0
+    fi
     rm -f "$target"
-    if [[ -L "$orig" ]]; then rm -f "$orig"; fi   # no dangling link left behind
     note "removed vibe-created AGENTS.md stub at $target (no user content remained)"
     return 0
   fi
