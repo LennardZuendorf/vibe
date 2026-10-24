@@ -239,7 +239,7 @@ CHANGELOG.md                         # ### skill-revision with stub lines A–E,
 **Files:**
 
 ```
-spec/tests/pressure/run.sh          # make_sandbox seeds with vibe-spec init (replaces the :49 .spec/ check); --root legacy leg; PRESSURE_MODEL leg; near-miss scoring (:59)
+spec/tests/pressure/run.sh          # make_sandbox seeds with vibe-spec init (replaces the :49 .spec/ check); --root legacy leg; PRESSURE_MODEL leg; near-miss scoring (:59) <!-- literal -->
 spec/tests/pressure/scenarios.tsv   # 6 near-miss rows, accept = none
 spec/tests/pressure/baseline-red.md # ## skill-revision/2 section
 tests/skills/cases/spec-skill.sh    # harness structure checks
@@ -247,7 +247,7 @@ tests/skills/cases/spec-skill.sh    # harness structure checks
 
 **Steps:**
 
-- [ ] Write failing checks in `spec-skill.sh`: `scenarios.tsv` has ≥6 rows whose accept column is exactly `none`; `run.sh` seeds with `vibe-spec init` (binary from `$VIBE_SPEC_BIN`, else `cargo build -q -p vibe-spec` and `target/debug/vibe-spec`), and its sandbox check asks `vibe-spec root` (exit 0) instead of testing for `.spec/` (:49); `run.sh` has a legacy-root leg selected by `--root legacy` that seeds with the frozen `spec/scripts/setup.sh`; scoring: `accept=none` means a near-miss, and a near-miss PASSes only when first-skill ∉ {`spec`, `vibe`}; the `sp=absent` override at :59 (`accept="spec"`) applies only to rows whose accept is not `none`. Behaviour check of the scorer: feed it canned `first` values (`spec`, `none`, `superpowers:brainstorming`) for one should-trigger and one near-miss row.
+- [ ] Write failing checks in `spec-skill.sh`: `scenarios.tsv` has ≥6 rows whose accept column is exactly `none`; `run.sh` seeds with `vibe-spec init` (binary from `$VIBE_SPEC_BIN`, else `cargo build -q -p vibe-spec` and `target/debug/vibe-spec`), and its sandbox check asks `vibe-spec root` (exit 0) instead of testing for `.spec/` (:49); `run.sh` has a legacy-root leg selected by `--root legacy` that seeds with the frozen `spec/scripts/setup.sh`; scoring: `accept=none` means a near-miss, and a near-miss PASSes only when first-skill ∉ {`spec`, `vibe`}; the `sp=absent` override at :59 (`accept="spec"`) applies only to rows whose accept is not `none`. Behaviour check of the scorer: feed it canned `first` values (`spec`, `none`, `superpowers:brainstorming`) for one should-trigger and one near-miss row. <!-- literal -->
 - [ ] Run the skills suite. Expected FAIL on all four.
 - [ ] Implement. Near-miss rows: `Explain what src/cli.sh prints.`, `Run the test suite.`, `What does git status show?`, `Summarise the last commit.`, `Format this JSON: {"a":1}`, `Review PR 12 for bugs.`
 - [ ] [orchestrator] RED record: `bash spec/tests/pressure/run.sh --sp both` on the current skill: 12 rows × 2 `sp` legs = 24 runs. Plus one run with `PRESSURE_MODEL` set to a haiku model. Paste the PASS/FAIL lines under `## skill-revision/2` in `baseline-red.md`, with the agent's words for each near-miss FAIL.

@@ -664,7 +664,7 @@ reason in `tests/parity/spec.json`.
 | flow:V-06 code half: SessionStart re-arm of `.vibe/last-inject` | needs the payload `source`, seen only in `hook.mjs` (port-owned) | `NOT STARTED` row `session-start-rearm` (unit 31) |
 | cons:C-05 flow guard matcher misses `MultiEdit` | code in `merge-settings.sh` and pins in port-owned `flow/tests/adapters/run.sh` | port unit 19; unit 27 states the matcher from the script, unit 29 re-checks it |
 | tool:W2 cursor resolves into the plugin cache | `set-state.sh` (port-owned); new cursor-location behaviour | F7 |
-| spec:N-16(c) `list-specs` lists top-level files only; tool:U7 validate text-mode fallback to `cwd/.spec`; tool:U4 flow-script exit codes missing from the contract | new tool behaviour or a per-script audit, outside the help/exit/no-root/tag changes | `NOT STARTED` row `spec-tool-followups` (unit 31) |
+| spec:N-16(c) `list-specs` lists top-level files only; tool:U7 validate text-mode fallback to `cwd/.spec`; tool:U4 flow-script exit codes missing from the contract | new tool behaviour or a per-script audit, outside the help/exit/no-root/tag changes | `NOT STARTED` row `spec-tool-followups` (unit 31) | <!-- literal -->
 | flow:V-47 drop the doctrine's invariants clause | pinned by the parity test; owner ruling | Open Question |
 | mig:M-04, M-06 … M-10 custom roots, anchoring, migrate scan set | enforcement and migrate behaviour | follow-up |
 | cons:C-01 / tool:T4 version strings | release decision | release step |
@@ -680,7 +680,7 @@ Two critiques of 2026-10-24: the builder review (B1-B33) and the completeness re
 | B17 `using-spec` budget conflict | accept, corrected | The crate counts the body (150 words, capped at 150); 175 is the whole file. Unit 7 raises the pin to the R14 ceiling of 250; `hook_session.rs` is in Track A's Files and the overlap table. |
 | B18 parity corpus is generated | accept | Unit 15 edits `corpus_spec.rs`, regenerates with `gen-spec-corpus`, raises `floors.lessons` to 5, runs `tests/parity/run.sh` and `cargo test -p vibe-parity`. |
 | B19 open-ended divergence list | accept, corrected | Derived from the corpus Tags lines: every existing run returns today's lessons under whole-tag matching; only `lessons/whole-tag ["ci"]` diverges. Any other failing row stops the unit. |
-| B20 pressure near-miss logic | accept | `accept=none` defines a near-miss (first skill not `spec` or `vibe`), exempt from the :59 override; 24 runs; the :49 `.spec/` check becomes `vibe-spec root`. |
+| B20 pressure near-miss logic | accept | `accept=none` defines a near-miss (first skill not `spec` or `vibe`), exempt from the :59 override; 24 runs; the :49 `.spec/` check becomes `vibe-spec root`. | <!-- literal -->
 | B21 bare `finishing-a-development-branch` | accept | `feature.compound` orders name `superpowers:finishing-a-development-branch`; 280 bytes. |
 | B22 order count, contract path, baseline method, state count | accept | 8 blocks in unit 22; orders cite `.agents/skills/vibe/contract.md`; bytes measured as `flow/tests/run.sh:414-422` does; 13 states. |
 | B23 plugin validator never run | accept | `spec/tests/plugin-validate.sh` runs in units 1 (baseline), 3, 5, 6, 7, 18, 20, 29, 30. |
