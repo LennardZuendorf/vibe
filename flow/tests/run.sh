@@ -92,7 +92,7 @@ while IFS= read -r s; do
   if [[ -z "$block" ]] || [[ "$block" == *"state=unknown"* ]]; then
     all_block=0; echo "        $s resolved no orders block (skill=$skill)"
   fi
-  grep -qF "<!-- vibe:orders:$s -->" "$SKILLS/$skill/SKILL.md" || { all_block=0; echo "        $skill missing block for $s"; }
+  grep -qF "<!-- vibe:orders:$s -->" "$FLOW/SKILL.md" || { all_block=0; echo "        flow/SKILL.md missing block for $s"; }
 done <<< "$states"
 assert_eq "vibe-flow/1" "all skill-owning states carry inject:null" "$all_null" "1"
 assert_eq "vibe-flow/1" "all skill-owning states resolve a non-empty orders block from the linked skill" "$all_block" "1"
@@ -102,13 +102,13 @@ idle_inj="$(jq -r '.states.idle.inject' "$MACHINE")"
 assert_not_contains "vibe-flow/1" "idle retains inline inject (not null)" "$idle_inj" "null"
 
 # <feature> interpolation is stable and substitutes from the cursor.
-out="$(bash "$SCRIPTS/orders.sh" feature.impl)"
-assert_contains "vibe-flow/1" "orders without cursor feature keep <feature> placeholder" "$out" "<feature>/n"
+out="$(bash "$SCRIPTS/orders.sh" feature.verify)"
+assert_contains "vibe-flow/1" "orders without cursor feature keep <feature> placeholder" "$out" "feature-<feature>.md"
 cp "$FLOW/state.example.json" "$STATE"
-bash "$SCRIPTS/set-state.sh" feature.impl widget >/dev/null
+bash "$SCRIPTS/set-state.sh" feature.verify widget >/dev/null
 out="$(bash "$SCRIPTS/orders.sh")"
-assert_contains "vibe-flow/1" "orders interpolate cursor feature" "$out" "widget/n"
-assert_not_contains "vibe-flow/1" "no leftover placeholder after interpolation" "$out" "<feature>/n"
+assert_contains "vibe-flow/1" "orders interpolate cursor feature" "$out" "feature-widget.md"
+assert_not_contains "vibe-flow/1" "no leftover placeholder after interpolation" "$out" "feature-<feature>.md"
 
 # orders.sh degrades when jq is absent (still exits 0, prints fallback). Build a
 # throwaway PATH carrying only the coreutils orders.sh needs (dirname) but NOT jq,
@@ -140,12 +140,12 @@ rm -f "$STATE"
 orders_parity "idle (no cursor)"
 cp "$FLOW/state.example.json" "$STATE"; bash "$SCRIPTS/set-state.sh" idle >/dev/null
 orders_parity "idle (cursor)"
-bash "$SCRIPTS/set-state.sh" feature.impl demo >/dev/null
-orders_parity "feature.impl (feature=demo from cursor)"
+bash "$SCRIPTS/set-state.sh" feature.verify demo >/dev/null
+orders_parity "feature.verify (feature=demo from cursor)"
 # ...and the interpolation actually happened on the no-jq path (demo, no placeholder).
 nojq_impl="$(PATH="$pnojq" "$BASH_BIN" "$SCRIPTS/orders.sh" 2>/dev/null)"
-assert_contains "vibe-flow/1" "no-jq orders interpolate cursor feature (demo)" "$nojq_impl" "demo/n"
-assert_not_contains "vibe-flow/1" "no-jq orders leave no <feature> placeholder" "$nojq_impl" "<feature>/n"
+assert_contains "vibe-flow/1" "no-jq orders interpolate cursor feature (demo)" "$nojq_impl" "feature-demo.md"
+assert_not_contains "vibe-flow/1" "no-jq orders leave no <feature> placeholder" "$nojq_impl" "feature-<feature>.md"
 assert_not_contains "vibe-flow/1" "no-jq orders do not degrade to state=unknown" "$nojq_impl" "state=unknown"
 orders_parity "quick.verify (explicit arg)" quick.verify
 rm -f "$STATE"; rm -rf "$pnojq"
@@ -257,7 +257,7 @@ assert_eq "flow-legibility/1" "feature.plan loops back to feature.design" "$fp_d
 fp_impl="$(jq -r '[.states."feature.plan".next[]] | index("feature.impl") != null' "$MACHINE")"
 assert_eq "flow-legibility/1" "feature.plan still routes to feature.impl (gate intact)" "$fp_impl" "true"
 fd_research="$(jq -r '[.states."feature.design".writes[]] | any(test("research\\.md"))' "$MACHINE")"
-assert_eq "flow-legibility/1" "research.md is a first-class feature.design write" "$fd_research" "true"
+assert_eq "skills-v2" "legacy research.md is not a feature.design write" "$fd_research" "false"
 qv_ok="$(jq -r --arg qc "$dead_qc" '[.states."quick.verify".next[]] | (index("quick.fix") != null) and (index("idle") != null) and (index($qc) == null)' "$MACHINE")"
 assert_eq "simplify/dead-states" "quick.verify.next is quick.fix + idle, no dead compound state" "$qv_ok" "true"
 # No per-state caveman field survives; a single top-level style note replaces them.
@@ -320,161 +320,121 @@ setup_deleg="$(jq -c '.states."setup.apply".delegates' "$MACHINE")"
 assert_eq "flow-mvp/3" "setup.apply delegates is exactly [spec]" "$setup_deleg" '["spec"]'
 
 echo ""
-echo "=== flow-mvp/5,6 — machine delegates ⊆ phase-file prose ==="
-# Subagents receive no per-turn orders, so every delegate's contract must live in
-# the phase file that documents its state. For each state with a non-empty
-# delegates array, assert each delegate name appears verbatim in the mapped phase
-# file. Suffix rules (*.verify, *.compound) win over the flow prefix so verify.md
-# and compound.md own those states.
-phase_file_for() {
-  case "$1" in
-    *.verify)   echo "verify.md" ;;
-    *.compound) echo "compound.md" ;;
-    setup.*)    echo "setup.md" ;;
-    strategy.*) echo "strategy.md" ;;
-    feature.*)  echo "feature.md" ;;
-    quick.*)    echo "quick.md" ;;
-    *)          echo "" ;;
-  esac
-}
-deleg_ok=1
-while IFS= read -r st; do
-  [[ -z "$st" ]] && continue
-  pf="$(phase_file_for "$st")"
-  if [[ -z "$pf" || ! -f "$FLOW/$pf" ]]; then
-    deleg_ok=0; echo "        no phase file mapped for $st"; continue
-  fi
-  body="$(cat "$FLOW/$pf")"
-  while IFS= read -r dg; do
-    [[ -z "$dg" ]] && continue
-    [[ "$body" == *"$dg"* ]] || { deleg_ok=0; echo "        $st: delegate '$dg' missing from $pf"; }
-  done < <(jq -r --arg s "$st" '.states[$s].delegates[]?' "$MACHINE")
-done < <(jq -r '.states | to_entries[] | select((.value.delegates | length) > 0) | .key' "$MACHINE")
-assert_eq "flow-mvp/5" "every machine delegate appears verbatim in its phase file" "$deleg_ok" "1"
+echo "=== skills-v2 — one skill file, procedures, gates, and budgets ==="
 
-# quick.md carries the inline conditional lesson step (the optional quick-fix lesson
-# now lives inline in quick.verify, not a separate per-phase compound state): it appends
-# to .spec/lessons.md and refreshes the digest before going idle.
-quick_body="$(cat "$FLOW/quick.md")"
-assert_contains "simplify/dead-states" "quick.md carries the inline lesson step (lessons.md)" "$quick_body" "docs/spec/lessons.md"
-assert_contains "simplify/dead-states" "quick.md refreshes the digest inline" "$quick_body" "regen-active-rules.sh"
-assert_not_contains "simplify/dead-states" "quick.md no longer names the dead quick compound state" "$quick_body" "$dead_qc"
+skill_body="$(cat "$FLOW/SKILL.md")"
+assert_contains "skills-v2" "single skill carries feature design delegation" "$skill_body" "superpowers:brainstorming"
+assert_contains "skills-v2" "single skill carries planning delegation" "$skill_body" "superpowers:writing-plans"
+assert_contains "skills-v2" "single skill carries verification delegation" "$skill_body" "verification-before-completion"
+for gone in setup.md strategy.md feature.md quick.md verify.md compound.md; do
+  [[ ! -e "$SRC_ROOT/flow/$gone" ]] && pass "skills-v2" "phase file removed: $gone" || fail "skills-v2" "phase file still exists: $gone"
+done
 
-# Router hygiene: the compound row serves feature.compound only; the quick row lists
-# quick.verify and no longer claims a dead per-phase compound state anywhere.
-SKILL_MD="$FLOW/SKILL.md"
-quick_router_row="$(grep -F '](quick.md)' "$SKILL_MD" | head -1)"
-compound_router_row="$(grep -F '](compound.md)' "$SKILL_MD" | head -1)"
-assert_contains "simplify/dead-states" "SKILL.md quick row lists quick.verify" "$quick_router_row" "quick.verify"
-assert_not_contains "simplify/dead-states" "SKILL.md quick row no longer claims the dead quick compound state" "$quick_router_row" "$dead_qc"
-assert_contains "simplify/dead-states" "SKILL.md compound row lists feature.compound" "$compound_router_row" "feature.compound"
-assert_not_contains "simplify/dead-states" "SKILL.md compound row no longer claims the dead strategy compound state" "$compound_router_row" "$dead_sc"
-assert_not_contains "simplify/dead-states" "SKILL.md compound row no longer claims the dead quick compound state" "$compound_router_row" "$dead_qc"
+# The machine's 13 states map to a flow heading in the one skill file.
+assert_eq "skills-v2" "machine keeps all 13 states" "$(jq '.states | length' "$MACHINE")" "13"
+missing_flow=""
+while IFS= read -r flow; do
+  [[ -z "$flow" ]] && continue
+  grep -qx "## $flow" "$FLOW/SKILL.md" || missing_flow="$missing_flow $flow"
+done < <(jq -r '.states | keys[] | split(".")[0] | select(. != "idle")' "$MACHINE" | sort -u)
+assert_eq "skills-v2" "every active flow has a level-two section" "$missing_flow" ""
 
-# compound.md no longer implies finishing-a-development-branch performs the archive
-# move: the finishing delegate block is sequenced AFTER the Archive step.
-comp="$FLOW/compound.md"
-arch_ln="$(grep -n '\*\*Archive' "$comp" | head -1 | cut -d: -f1)"
-fin_ln="$(grep -n 'finishing-a-development-branch' "$comp" | head -1 | cut -d: -f1)"
-if [[ -n "$arch_ln" && -n "$fin_ln" && "$fin_ln" -gt "$arch_ln" ]]; then
-  pass "flow-mvp/6" "compound.md sequences finishing after the archive step"
-else
-  fail "flow-mvp/6" "compound.md sequences finishing after the archive step"
-  echo "        archive line: ${arch_ln:-none}, finishing line: ${fin_ln:-none}"
-fi
+# All state delegates and every order resolve from SKILL.md only.
+delegate_missing=0
+while IFS= read -r delegate; do
+  [[ -z "$delegate" ]] && continue
+  [[ "$skill_body" == *"$delegate"* ]] || delegate_missing=$((delegate_missing + 1))
+done < <(jq -r '.states[].delegates[]?' "$MACHINE" | sort -u)
+assert_eq "skills-v2" "all machine delegates appear in the single skill" "$delegate_missing" "0"
 
-echo ""
-echo "=== flow-mvp/7 — auto-advance: gate markers <-> machine gates, orders byte budget ==="
-# Auto-advance is prose; the only stop-and-ask points are the two `gates` edges in
-# the machine. Their SOURCE states must carry a `gate:` marker in their orders block,
-# and no other state may. Extraction is the suite's own orders.sh; with the cursor
-# removed the <feature> placeholder stays literal, so the byte measurement is stable.
+# Doctrine is compact and contains no per-state write enumeration.
+doctrine="$(awk '/^<!-- vibe:doctrine -->$/{f=1;next} /^<!-- \/vibe:doctrine -->$/{f=0} f' "$FLOW/SKILL.md")"
+doctrine_bytes="$(printf '%s' "$doctrine" | wc -c | tr -d ' ')"
+assert_contains "skills-v2" "doctrine names vibe-flow policy decide" "$doctrine" "vibe-flow policy decide"
+doctrine_without_gates="$(printf '%s\n' "$doctrine" | sed '/^At non-gated edges/d')"
+doctrine_states="$(printf '%s\n' "$doctrine_without_gates" | grep -oE '(feature|strategy|setup|quick)\.[a-z]+' | sort -u)"
+assert_eq "skills-v2" "doctrine has no state-key write enumeration" "$doctrine_states" ""
+assert_eq "skills-v2" "doctrine stays within 700 bytes" "$([[ "$doctrine_bytes" -le 700 ]] && echo ok)" "ok"
+
+# Orders stay under the per-block cap; only gated sources carry confirmation.
 rm -f "$STATE"
 gate_sources="$(jq -r '(.gates // {}) | keys[] | split(">")[0]' "$MACHINE" | sort -u)"
-
-# Each gates-edge source state carries `gate:` in its orders block.
-gate_marker_ok=1
-while IFS= read -r gs; do
-  [[ -z "$gs" ]] && continue
-  blk="$(bash "$SCRIPTS/orders.sh" "$gs")"
-  [[ "$blk" == *"gate:"* ]] || { gate_marker_ok=0; echo "        gate source $gs orders block lacks 'gate:'"; }
-done <<< "$gate_sources"
-assert_eq "flow-mvp/7" "every gates-edge source state carries 'gate:' in its orders" "$gate_marker_ok" "1"
-
-# No OTHER state's orders block carries `gate:`.
-extra_gate=""
-while IFS= read -r st; do
-  [[ -z "$st" ]] && continue
-  printf '%s\n' "$gate_sources" | grep -qxF "$st" && continue
-  blk="$(bash "$SCRIPTS/orders.sh" "$st")"
-  [[ "$blk" == *"gate:"* ]] && extra_gate="$extra_gate $st"
-done <<< "$(jq -r '.states | keys[]' "$MACHINE")"
-assert_eq "flow-mvp/7" "no non-gate state carries 'gate:' in its orders" "$extra_gate" ""
-
-# Every orders block resolves within the 400-byte budget.
-over_budget=""
+over_budget=""; total_bytes=0; order_count=0; bad_gate=""
 while IFS= read -r st; do
   [[ -z "$st" ]] && continue
   blk="$(bash "$SCRIPTS/orders.sh" "$st")"
   n="$(printf '%s' "$blk" | wc -c | tr -d ' ')"
+  total_bytes=$((total_bytes + n)); order_count=$((order_count + 1))
   [[ "$n" -le 400 ]] || over_budget="$over_budget $st($n)"
-done <<< "$(jq -r '.states | keys[]' "$MACHINE")"
-assert_eq "flow-mvp/7" "every orders block is within the 400-byte budget" "$over_budget" ""
-
-# flow-legibility/2 — self-carrying imperative orders: every block names its own
-# transition command (not just a `next:` label). Non-gated states carry
-# `set-state.sh <next>`; gated-source states carry the `/flow <next> confirm` gate.
-imperative_missing=""
-while IFS= read -r st; do
-  [[ -z "$st" ]] && continue
-  blk="$(bash "$SCRIPTS/orders.sh" "$st")"
   if printf '%s\n' "$gate_sources" | grep -qxF "$st"; then
-    { [[ "$blk" == *"/flow"* ]] && [[ "$blk" == *"confirm"* ]]; } || imperative_missing="$imperative_missing $st(gate)"
+    [[ "$blk" == *"confirm"* || "$blk" == *"--confirm"* ]] || bad_gate="$bad_gate $st(missing)"
   else
-    [[ "$blk" == *"set-state.sh"* ]] || imperative_missing="$imperative_missing $st"
+    [[ "$blk" != *"confirm"* ]] || bad_gate="$bad_gate $st(unexpected)"
   fi
-done <<< "$(jq -r '.states | keys[]' "$MACHINE")"
-assert_eq "flow-legibility/2" "every orders block states its transition command (set-state.sh, or /flow confirm at a gate)" "$imperative_missing" ""
-# Every set-state.sh target named in a block must be a LEGAL next for that state —
-# catches a wrong-target regression (naming a non-successor), not just presence.
+done < <(jq -r '.states | keys[]' "$MACHINE")
+avg_bytes=$((total_bytes / order_count))
+assert_eq "skills-v2" "all orders blocks stay within 400 bytes" "$over_budget" ""
+assert_eq "skills-v2" "average orders block stays within 250 bytes" "$([[ "$avg_bytes" -le 250 ]] && echo ok)" "ok"
+assert_eq "skills-v2" "confirm appears only in gate orders" "$bad_gate" ""
+
+# Every imperative target is a legal successor in the state machine.
 bad_target=""
 while IFS= read -r st; do
   [[ -z "$st" ]] && continue
   blk="$(bash "$SCRIPTS/orders.sh" "$st")"
-  nexts="$(jq -r --arg s "$st" '.states[$s].next[]?' "$MACHINE" 2>/dev/null)"
+  nexts="$(jq -r --arg s "$st" '.states[$s].next[]?' "$MACHINE")"
   while IFS= read -r tgt; do
     [[ -z "$tgt" ]] && continue
     printf '%s\n' "$nexts" | grep -qxF "$tgt" || bad_target="$bad_target $st->$tgt"
-  done < <(printf '%s\n' "$blk" | grep -oE 'set-state\.sh [a-z][a-z.]*' | sed 's/set-state\.sh //')
-done <<< "$(jq -r '.states | keys[]' "$MACHINE")"
-assert_eq "flow-legibility/2" "every set-state.sh target in an orders block is a legal next" "$bad_target" ""
+  done < <(printf '%s\n' "$blk" | grep -oE 'vibe-flow state set [a-z.]*' | sed 's/vibe-flow state set //')
+done < <(jq -r '.states | keys[]' "$MACHINE")
+assert_eq "skills-v2" "every vibe-flow state set target is a legal next" "$bad_target" ""
 
-echo ""
-echo "=== flow-legibility/3 — model-tier pins in delegation contracts ==="
-feat_body="$(cat "$FLOW/feature.md")"
-verify_body="$(cat "$FLOW/verify.md")"
-skill_body="$(cat "$FLOW/SKILL.md")"
-assert_contains "flow-legibility/3" "code-explorer pinned to sonnet (feature.md)" "$feat_body" "code-explorer → sonnet"
-assert_contains "flow-legibility/3" "code-architect pinned to opus (feature.md)" "$feat_body" "code-architect → opus"
-assert_contains "flow-legibility/3" "code-reviewer pinned to opus (verify.md)" "$verify_body" "code-reviewer → opus"
-assert_contains "flow-legibility/3" "SKILL.md carries the subagent model-tier policy" "$skill_body" "mechanical/exploration → sonnet"
+protocol="$(sed -n '/^## Delegation protocol$/,/^## Flows$/p' "$FLOW/SKILL.md")"
+assert_contains "skills-v2" "delegation protocol pins sonnet" "$protocol" "sonnet"
+assert_contains "skills-v2" "delegation protocol pins opus" "$protocol" "opus"
+assert_contains "skills-v2" "orders pin sonnet" "$skill_body" "sonnet"
+assert_contains "skills-v2" "orders pin opus" "$skill_body" "opus"
 
-feat_body="$(cat "$FLOW/feature.md")"
-assert_not_contains "spec-v04/F25" "feature.md no longer skips the superpowers spec write" "$feat_body" "skip: its terminal write under \`docs/superpowers/specs/\`"
-assert_not_contains "spec-v04/F25" "feature.md no longer skips the superpowers plan path" "$feat_body" "skip: its own \`docs/superpowers/plans/\` path"
-assert_contains "spec-v04/F25" "feature.md names the fallback triggers" "$feat_body" "fallback → \`docs/spec/features/<name>/\` only when"
-machine="$(cat "$FLOW/state-machine.json")"
-assert_contains "spec-v04/F25" "feature.design writes the superpowers spec" "$machine" "docs/superpowers/specs/*-<feature>-design.md"
-assert_contains "spec-v04/F25" "feature.plan writes the superpowers plan" "$machine" "docs/superpowers/plans/*-<feature>.md"
-assert_not_contains "spec-v04/F25" "feature.md has no unqualified .spec/features write rule" "$feat_body" "Write **only** \`.spec/features/"
-unq_steps="$(grep -F 'feature.md steps' "$FLOW/feature.md" | grep -vF 'fallback' || true)"
-assert_eq "spec-v04/F25" "feature.md injects no unqualified spec feature.md steps" "$unq_steps" ""
-unq_prod="$(grep -F 'product.md' "$FLOW/feature.md" | grep -F 'requirements' | grep -vF 'fallback' || true)"
-assert_eq "spec-v04/F25" "feature.md injects no unqualified product.md requirements" "$unq_prod" ""
-assert_contains "spec-v04/F25" "feature.impl orders forbid editing the superpowers spec" "$(bash "$SCRIPTS/orders.sh" feature.impl)" "docs/superpowers/specs/**"
-assert_contains "spec-v04/F25" "feature.compound orders promote then git rm" "$(bash "$SCRIPTS/orders.sh" feature.compound)" "root specs, git rm them"
-assert_contains "spec-v04/F25" "template carries the superpowers feature lookup" "$(cat "$FLOW/reference/templates/AGENTS.md")" "docs/superpowers/specs/*-<name>-design.md"
-assert_contains "spec-v04/F25" "AGENTS.md managed block carries the superpowers feature lookup" "$(cat "$SRC_ROOT/AGENTS.md")" "docs/superpowers/specs/*-<name>-design.md"
+# Negative prose sweeps prevent the retired feature fallback from returning.
+assert_not_contains "spec-v04/F25" "skill prose contains no fallback arrow" "$skill_body" "fallback →"
+assert_not_contains "spec-v04/F25" "skill prose contains no feature.md steps" "$skill_body" "spec feature.md steps"
+assert_not_contains "spec-v04/F25" "skill prose contains no unit ID rules" "$skill_body" "unit IDs"
+assert_not_contains "spec-v04/F25" "skill prose contains no legacy feature path" "$skill_body" "docs/spec/features/"
+assert_contains "spec-v04/F25" "feature.design machine write is superpowers-only" "$(jq -r '.states["feature.design"].writes[]' "$MACHINE")" "docs/superpowers/specs/*-<feature>-design.md"
+assert_eq "spec-v04/F25" "feature.design has one write surface" "$(jq -c '.states["feature.design"].writes' "$MACHINE")" '["docs/superpowers/specs/*-<feature>-design.md"]'
+assert_eq "spec-v04/F25" "feature.plan has one write surface" "$(jq -c '.states["feature.plan"].writes' "$MACHINE")" '["docs/superpowers/plans/*-<feature>.md"]'
+assert_eq "skills-v2" "feature.plan reads only its design doc" "$(jq -c '.states["feature.plan"].reads' "$MACHINE")" '["docs/superpowers/specs/*-<feature>-design.md"]'
+assert_eq "skills-v2" "feature.verify writes its runtime receipt and review notes" "$(jq -c '.states["feature.verify"].writes' "$MACHINE")" '[".vibe/run/flow/evidence/feature-<feature>.md","evidence: review notes"]'
+assert_eq "skills-v2" "quick.verify writes its runtime receipt and lesson file" "$(jq -c '.states["quick.verify"].writes' "$MACHINE")" '[".vibe/run/flow/evidence/quick.md","docs/spec/lessons.md"]'
+assert_eq "skills-v2" "feature.compound no longer writes an archive" "$(jq -c '.states["feature.compound"].writes | any(test("archive"))' "$MACHINE")" "false"
+assert_not_contains "skills-v2" "feature.compound delegates no spec promotion" "$(jq -r '.states["feature.compound"].delegates[]' "$MACHINE")" "spec"
+assert_contains "skills-v2" "idle inline inject uses the canonical writer" "$(jq -r '.states.idle.inject' "$MACHINE")" "vibe-flow state set"
+
+# The template keeps its one-line gates and the generated rules remain exact.
+tmpl="$(cat "$FLOW/reference/templates/AGENTS.md")"
+assert_contains "skills-v2" "template carries the single gate statement" "$tmpl" "feature.plan>feature.impl"
+assert_contains "skills-v2" "template carries the style pointer" "$tmpl" "flow/SKILL.md"
+assert_contains "inject-triggers/6" "template has the managed instructions block" "$tmpl" "<!-- vibe:instructions:start -->"
+assert_contains "inject-triggers/6" "template points to the policy enforcer" "$tmpl" "vibe-flow policy decide"
+template_gate_lines="$(printf '%s\n' "$tmpl" | grep -c '^Gates:')"
+assert_eq "skills-v2" "template states the gates on exactly one line" "$template_gate_lines" "1"
+tmpl_hand="$(awk '/^<!-- vibe:rules -->$/{skip=1} !skip{print} /^<!-- \/vibe:rules -->$/{skip=0}' "$FLOW/reference/templates/AGENTS.md" | grep -v '^Gates:')"
+tmpl_states="$(printf '%s\n' "$tmpl_hand" | grep -oE '(feature|strategy|setup|quick)\.[a-z]+' | sort -u | paste -sd, -)"
+assert_eq "inject-triggers/6" "template hand-authored half names no state outside marker comment" "$tmpl_states" ""
+if command -v node >/dev/null 2>&1; then
+  rend="$(cd "$REPO_ROOT" && node "$FLOW/engine/cli.mjs" render agents-md 2>/dev/null)"
+  tmpl_rules="$(awk '/^<!-- vibe:rules -->$/{f=1;next} /^<!-- \/vibe:rules -->$/{f=0} f' "$FLOW/reference/templates/AGENTS.md")"
+  tmpl_rules_body="$(printf '%s\n' "$tmpl_rules" | sed '1,2d')"
+  assert_eq "inject-triggers/6" "template rules are byte-identical to agents-md render" "$tmpl_rules_body" "$rend"
+fi
+
+# The style block summary has a hard byte cap and the orders source is one file.
+summary="$(awk '/^<!-- vibe:summary -->$/{f=1;next} /^<!-- \/vibe:summary -->$/{f=0} f' "$FLOW/content/blocks/style/ste100.md")"
+summary_bytes="$(printf '%s' "$summary" | wc -c | tr -d ' ')"
+assert_eq "skills-v2" "style summary stays within 220 bytes" "$([[ "$summary_bytes" -le 220 ]] && echo ok)" "ok"
+assert_eq "skills-v2" "orders are sourced from one SKILL.md" "$(grep -c '^<!-- vibe:orders:' "$FLOW/SKILL.md")" "12"
+assert_eq "skills-v2" "no phase procedure files remain" "$(find "$FLOW" -maxdepth 1 -name 'setup.md' -o -name 'strategy.md' -o -name 'feature.md' -o -name 'quick.md' -o -name 'verify.md' -o -name 'compound.md' | wc -l | tr -d ' ')" "0"
 
 echo ""
 echo "=== flow-legibility/4 — doctrine block + resolver ==="
@@ -489,10 +449,12 @@ assert_eq "flow-legibility/4" "suite is hermetic: no ambient CLAUDE_PROJECT_DIR 
   "${CLAUDE_PROJECT_DIR-<unset>}" "<unset>"
 rm -f "$STATE"
 doc="$(bash "$SCRIPTS/doctrine.sh")"
-assert_contains "flow-legibility/4" "doctrine names the two human gates" "$doc" "plan → impl, and verify → ship"
-assert_contains "flow-legibility/4" "doctrine carries the durable/ephemeral framing" "$doc" "sessions are ephemeral"
-assert_contains "flow-legibility/4" "doctrine states the session-start reads" "$doc" "docs/spec/lessons.md"
-assert_contains "flow-legibility/4" "doctrine states the state.json write invariant" "$doc" ".agents/skills/vibe/state.json"
+assert_contains "flow-legibility/4" "doctrine names the plan gate" "$doc" "feature.plan>feature.impl"
+assert_contains "flow-legibility/4" "doctrine names the ship gate" "$doc" "feature.verify>feature.compound"
+assert_contains "flow-legibility/4" "doctrine names session-start lessons" "$doc" "lessons.md"
+assert_contains "flow-legibility/4" "doctrine names the runtime cursor" "$doc" ".vibe/run/flow/state.json"
+assert_contains "flow-legibility/4" "doctrine names the canonical writer" "$doc" "vibe-flow state set"
+assert_contains "flow-legibility/4" "doctrine names the policy command" "$doc" "vibe-flow policy decide"
 # inject-triggers/5 (R4): NO live state rides SessionStart output — Claude Code
 # replays that output verbatim on --resume, so a cursor line printed here is
 # stale by construction, and the per-turn level channel names the state anyway.
@@ -503,7 +465,7 @@ assert_not_contains "inject-triggers/5" "doctrine prints no cursor summary (idle
 # before R4 this printed 'Cursor: feature.impl (feature=widget).'
 cp "$FLOW/state.example.json" "$STATE"; bash "$SCRIPTS/set-state.sh" feature.impl widget >/dev/null
 doc2="$(bash "$SCRIPTS/doctrine.sh")"
-assert_contains "inject-triggers/5" "doctrine still emits the block with a live cursor set" "$doc2" "sessions are ephemeral"
+assert_contains "inject-triggers/5" "doctrine still emits the block with a live cursor set" "$doc2" "vibe-flow state set"
 assert_not_contains "inject-triggers/5" "doctrine names no state, whatever the cursor says" "$doc2" "Cursor:"
 assert_not_contains "inject-triggers/5" "doctrine leaks no feature name either" "$doc2" "widget"
 assert_eq "inject-triggers/5" "doctrine output is a function of SKILL.md alone (cursor-independent)" "$doc2" "$doc"
@@ -524,135 +486,11 @@ projd="$(mktemp -d)"
 mkdir -p "$projd/.agents/skills/vibe"
 printf '{"flow":"quick","phase":"triage","feature":"","updated":"x"}\n' > "$projd/.agents/skills/vibe/state.json"
 docp="$(CLAUDE_PROJECT_DIR="$projd" bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
-assert_contains "inject-triggers/5" "doctrine still emits the block under CLAUDE_PROJECT_DIR" "$docp" "sessions are ephemeral"
+assert_contains "inject-triggers/5" "doctrine still emits the block under CLAUDE_PROJECT_DIR" "$docp" "vibe-flow state set"
 assert_not_contains "inject-triggers/5" "CLAUDE_PROJECT_DIR no longer selects a cursor to print" "$docp" "Cursor:"
 assert_not_contains "inject-triggers/5" "the project cursor's state does not leak either" "$docp" "quick.triage"
 rm -rf "$projd"
-# single-source parity, tied to the CODE: both prose texts must state the same
-# per-rule writable-state sets that detect-context.sh `decide` actually enforces.
-# Comparing PER-RULE sets against `decide` (not the union of both rules, not
-# prose-vs-prose) catches a rule reassignment (moving a state between the lessons
-# and root rules) and a prose/code drift — the holes a union or two-substring check
-# leaves open.
-#
-# inject-triggers/2 briefly retired these and was WRONG to (review, Important 2):
-# a guard may only be retired once the surface it guards has stopped being
-# hand-authored. inject-triggers/6 retires HALF of them, one for one:
-#
-#   * the AGENTS.md TEMPLATE no longer enumerates any state. `flow.invariants`
-#     is composed into the shipped `agents-md` channel, so the states reach a
-#     target's AGENTS.md rendered from `content/policy.json` — the same data
-#     `decide` reads. The two template assertions are replaced below by the
-#     same per-rule comparison run against the RENDER, plus a floor proving the
-#     template really stopped enumerating (a deletion that is only a deletion
-#     would otherwise read as a pass).
-#   * the `vibe:doctrine` block in the vibe SKILL.md is STILL hand-authored —
-#     doctrine.sh emits that block verbatim and nothing generates it. Its two
-#     assertions therefore STAY. Retiring them would leave the SessionStart
-#     payload free to drift from the enforcer with nothing watching.
-#
-# The `decide` ground-truth pins added below are ADDITIVE, not a replacement:
-# they check the enforcer itself (once against the engine with node present, once
-# against the permanent bash branch in the no-node leg), where these four check
-# the shipped prose against it.
-tmpl="$(cat "$FLOW/reference/templates/AGENTS.md")"
-assert_contains "flow-legibility/4" "AGENTS.md template shares the gate line" "$tmpl" "plan → impl, and verify → ship"
-assert_contains "flow-legibility/4" "AGENTS.md template shares the ephemeral framing" "$tmpl" "sessions are ephemeral"
-states_of() { grep -oE '(feature|strategy|setup|quick)\.[a-z]+' | sort -u | paste -sd, -; }
-# ground truth: the states for which `decide` returns allow, straight from the code.
-allowed_for() {
-  local p="$1" s r=""
-  while IFS= read -r s; do
-    [[ -z "$s" ]] && continue
-    [[ "$(bash "$SCRIPTS/detect-context.sh" decide "$p" "$s")" == allow ]] && r="$r$s"$'\n'
-  done < <(jq -r '.states|keys[]' "$MACHINE")
-  printf '%s' "$r" | states_of
-}
-lessons_truth="$(allowed_for .spec/lessons.md)"
-root_truth="$(allowed_for .spec/product.md)"
-src_truth="$(allowed_for src/app.js)"
-features_truth="$(allowed_for .spec/features/x/plan.md)"
-assert_eq "flow-legibility/4" "decide lessons-rule set is the expected non-trivial set" "$lessons_truth" "feature.compound,quick.verify,setup.apply,strategy.spec"
-assert_eq "inject-triggers/2" "decide root-spec rule set is the expected non-trivial set" "$root_truth" "feature.compound,setup.apply,strategy.spec"
-assert_eq "inject-triggers/2" "decide src/tests rule allows exactly the impl/fix states" "$src_truth" "feature.impl,quick.fix,setup.apply"
-# The features rule is the one whose allow band is the COMPLEMENT of a warn band —
-# every state except the two building ones — so it discriminates a rule whose
-# arms were inverted, which a same-shape "small allow set" pin cannot.
-assert_eq "inject-triggers/2" "decide features rule freezes exactly the two building states" "$features_truth" "feature.compound,feature.design,feature.plan,feature.verify,quick.triage,quick.verify,setup.apply,setup.detect,strategy.brainstorm,strategy.spec"
-# The cursor rule has no allow arm at all, so its ground truth is the EMPTY set —
-# which an `allowed_for` that examined nothing would produce just as happily. Pin
-# the POPULATION alongside the verdict: every one of the machine's states must
-# come back a block.
-cursor_blocked=0; cursor_seen=0
-while IFS= read -r s; do
-  [[ -z "$s" ]] && continue
-  cursor_seen=$((cursor_seen + 1))
-  [[ "$(bash "$SCRIPTS/detect-context.sh" decide .agents/skills/vibe/state.json "$s")" == block:* ]] \
-    && cursor_blocked=$((cursor_blocked + 1))
-done < <(jq -r '.states|keys[]' "$MACHINE")
-assert_eq "inject-triggers/2" "decide blocks a direct state.json edit in every machine state" "$cursor_blocked/$cursor_seen" "13/13"
-doc="$(bash "$SCRIPTS/doctrine.sh")"   # no Cursor: line to filter out since R4
-doc_lessons="$(printf '%s\n' "$doc" | tr ';' '\n' | grep 'lessons.md' | states_of)"
-doc_root="$(printf '%s\n' "$doc" | tr ';' '\n' | grep 'product,tech' | states_of)"
-assert_eq "flow-legibility/4" "doctrine lessons rule matches decide" "$doc_lessons" "$lessons_truth"
-assert_eq "flow-legibility/4" "doctrine root-spec rule matches decide" "$doc_root" "$root_truth"
-# The template's replacement, in two halves.
-#
-# Half 1 — the template states no rule of its own any more. A bare
-# assert_not_contains would pass just as happily against a DELETED template, so
-# the negative carries a floor: the template is still there, still the
-# instructions block, and still names the enforcer command.
-# Structural, not phrase-matched: every `<flow>.<phase>` token in the template's
-# HAND-AUTHORED half — the whole file minus the generated `vibe:rules` region
-# (which the template now ships pre-rendered; see Important 2 below) — not just
-# the ones inside a section a rename could move out from under. Exactly one
-# survives, `setup.apply`, in the managed-marker comment that says when the
-# block is replaced. Any re-added rule enumeration by hand, in any section and
-# any wording, fails this; the generated block is checked for equality with the
-# render instead, which is a stronger property than "says nothing".
-tmpl_hand="$(awk '/^<!-- vibe:rules -->$/{skip=1} !skip{print} /^<!-- \/vibe:rules -->$/{skip=0}' "$FLOW/reference/templates/AGENTS.md")"
-tmpl_states="$(printf '%s\n' "$tmpl_hand" | states_of)"
-tmpl_state_lines="$(printf '%s\n' "$tmpl_hand" | grep -cE '(feature|strategy|setup|quick)\.[a-z]+')"
-assert_contains "inject-triggers/6" "floor: the template is present and is the instructions block" "$tmpl" "<!-- vibe:instructions:start -->"
-assert_contains "inject-triggers/6" "floor: the template still points at the enforcer" "$tmpl" "detect-context.sh decide <path>"
-assert_contains "inject-triggers/6" "floor: the hand-authored half is most of the template" "$tmpl_hand" "## Write policy"
-assert_eq "inject-triggers/6" "the template's hand-authored half names no flow state outside the marker comment" "$tmpl_states" "setup.apply"
-assert_eq "inject-triggers/6" "... and it does so on exactly one line (the marker comment)" "$tmpl_state_lines" "1"
-assert_contains "inject-triggers/6" "... which is the managed-marker comment, not a write rule" \
-  "$(printf '%s\n' "$tmpl_hand" | grep -E '(feature|strategy|setup|quick)\.[a-z]+')" "replaced on the next setup.apply"
-# Half 2 — the states a target now READS come from the render, and the render
-# agrees with `decide` per rule. Same comparison the two retired assertions
-# made, moved onto the generated text.
-if command -v node >/dev/null 2>&1; then
-  rend="$( cd "$REPO_ROOT" && node "$FLOW/engine/cli.mjs" render agents-md 2>/dev/null )"
-  rend_lessons="$(printf '%s\n' "$rend" | grep -F ".spec/lessons.md" | states_of)"
-  rend_root="$(printf '%s\n' "$rend" | grep -F ".spec/product.md" | states_of)"
-  assert_contains "inject-triggers/6" "floor: the agents-md render carries the invariants block" "$rend" "Write invariants"
-  assert_eq "inject-triggers/6" "floor: each rule is rendered on exactly one line" \
-    "$(printf '%s\n' "$rend" | grep -cF ".spec/lessons.md")/$(printf '%s\n' "$rend" | grep -cF ".spec/product.md")" "1/1"
-  assert_eq "inject-triggers/6" "rendered lessons rule matches decide" "$rend_lessons" "$lessons_truth"
-  assert_eq "inject-triggers/6" "rendered root-spec rule matches decide" "$rend_root" "$root_truth"
-  # Fix round 1, Important 2 — the template SHIPS a pre-rendered copy of this
-  # block, so a target with no node (a hookless host, where AGENTS.md is the
-  # only carrier there is) still receives the real enumerated rules instead of
-  # two sections pointing at a block that was never written. That copy is only
-  # safe while it cannot drift: it must equal, byte for byte, what
-  # `render agents-md` composes from content/policy.json — which is also what
-  # makes an install WITH node re-render it to "no change".
-  tmpl_rules="$(awk '/^<!-- vibe:rules -->$/{f=1;next} /^<!-- \/vibe:rules -->$/{f=0} f' "$FLOW/reference/templates/AGENTS.md")"
-  tmpl_rules_note="$(printf '%s\n' "$tmpl_rules" | head -n1)"
-  tmpl_rules_body="$(printf '%s\n' "$tmpl_rules" | sed '1,2d')"
-  assert_contains "inject-triggers/6" "the template ships a vibe:rules block with the managed-region note" \
-    "$tmpl_rules_note" "_Managed by vibe"
-  assert_eq "inject-triggers/6" "the template's shipped vibe:rules body IS the agents-md render (no drift possible)" \
-    "$tmpl_rules_body" "$rend"
-  # Floor for that equality: neither side is empty, and the body really carries
-  # the generated rules (an empty-vs-empty comparison would pass just as well).
-  assert_contains "inject-triggers/6" "floor: the shipped block carries the generated invariants" \
-    "$tmpl_rules_body" ".spec/lessons.md"
-else
-  echo "  SKIP [inject-triggers/6] rendered write invariants (node not on PATH)"
-fi
+# Doctrine and template structural pins are asserted in the skills-v2 section above.
 
 echo ""
 echo "=== flow-legibility/6 — drift inference (detect-context.sh infer) ==="
@@ -906,7 +744,7 @@ out="$(bash "$DETECT" decide src/app.js quick.fix)"
 assert_eq "flow-mvp/3" "decide src still allows under quick.fix" "$out" "allow"
 
 # Feature specs are frozen once impl/fix begins: decide warns instead of silently
-# allowing (feature.md forbids .spec edits in impl). Design/plan (and setup) still author.
+# allowing (the flow skill freezes spec edits during impl). Design/plan (and setup) still author.
 out="$(bash "$DETECT" decide .spec/features/widget/tech.md feature.impl)"
 assert_contains "flow-mvp/3" "decide .spec/features warns under feature.impl" "$out" "warn:"
 assert_not_contains "flow-mvp/3" "decide .spec/features does not allow under feature.impl" "$out" "allow"
@@ -1293,23 +1131,21 @@ assert_eq "review-fix" "re-merge over an old-matcher entry leaves exactly one vi
 assert_contains "review-fix" "re-merge upgrades the old matcher to include Bash" "$pm2" "Bash"
 rm -rf "$mt"
 
-echo "=== install-agnostic-paths — validator refs in flow skill files ==="
-# The flow skill's phase files must reference the spec validator portably (the
+echo "=== install-agnostic-paths — validator refs in the flow skill ==="
+# The flow skill must reference the spec validator portably (the
 # `/spec validate` route), never a hard-coded `.agents/skills/spec/scripts/validate.sh`
 # — that only resolves in the vendored install and breaks under a global/plugin layout.
 # Two deliberate exemptions: (1) the flow skill's OWN vibe-script commands stay
 # project-root-relative because they are injected as prompt text, not run from a skill
 # dir; (2) the AGENTS.md template's Commands block is the local-install project contract
 # (all three commands use vendored paths; the plugin install never creates AGENTS.md),
-# so it is left whole. Scan the real source phase files.
+# so it is left whole. Scan the one real source skill file.
 flow_validator_bad=0
-for f in "$SRC_ROOT"/flow/*.md; do
-  [[ -f "$f" ]] || continue
-  if grep -qF '.agents/skills/spec/scripts/validate.sh' "$f"; then
-    flow_validator_bad=$((flow_validator_bad + 1)); echo "        offender: ${f#"$SRC_ROOT"/}"
-  fi
-done
-assert_eq "install-agnostic-paths" "flow phase files reference the validator portably" "$flow_validator_bad" "0"
+f="$SRC_ROOT/flow/SKILL.md"
+if grep -qF '.agents/skills/spec/scripts/validate.sh' "$f"; then
+  flow_validator_bad=1; echo "        offender: ${f#"$SRC_ROOT"/}"
+fi
+assert_eq "install-agnostic-paths" "the flow skill references the validator portably" "$flow_validator_bad" "0"
 
 echo ""
 echo "=== js-core/8 — tests/run.sh dispatches sub-suites on ITS OWN interpreter ==="
