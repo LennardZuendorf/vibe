@@ -1,0 +1,19 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        ".planning/a/b.md",
+        "feature.impl"
+      ],
+      [
+        ".planning/a/b.json",
+        "feature.impl"
+      ],
+      [
+        ".planning/x.md",
+        "idle"
+      ]
+    ]
+  },
+  "v": 1
+}

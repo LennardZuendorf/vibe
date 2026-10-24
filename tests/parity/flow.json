@@ -1,0 +1,17 @@
+{
+  "v": 1,
+  "name": "flow",
+  "corpus": "corpus/flow",
+  "oracle_root": "../../oracles/js",
+  "file_aliases": { ".agents/skills/vibe/state.json": ".vibe/run/flow/state.json" },
+  "normalize": ["cursor-updated"],
+  "commands": [
+    { "name": "policy-decide", "oracle": ["node", "{oracle}/cli.mjs", "policy", "--vibe-dir", ".agents/skills/vibe", "decide"], "candidate": ["{candidate}", "policy", "--vibe-dir", ".agents/skills/vibe", "decide"], "classes": ["paths", "mutated", "corrupt"] },
+    { "name": "policy-list", "oracle": ["node", "{oracle}/cli.mjs", "policy", "--vibe-dir", ".agents/skills/vibe", "list"], "candidate": ["{candidate}", "policy", "--vibe-dir", ".agents/skills/vibe", "list"], "classes": ["paths", "mutated", "corrupt"] },
+    { "name": "policy-render", "oracle": ["node", "{oracle}/cli.mjs", "policy", "--vibe-dir", ".agents/skills/vibe", "render"], "candidate": ["{candidate}", "policy", "--vibe-dir", ".agents/skills/vibe", "render"], "classes": ["paths", "mutated", "corrupt"] },
+    { "name": "state-get", "oracle": ["node", "{oracle}/cli.mjs", "state", "get"], "candidate": ["{candidate}", "state", "get"], "classes": ["cursors"] },
+    { "name": "state-set", "oracle": ["node", "{oracle}/cli.mjs", "state", "set"], "candidate": ["{candidate}", "state", "set"], "classes": ["edges", "errors"] }
+  ],
+  "floors": { "paths": 25, "mutated": 10, "corrupt": 2, "cursors": 20, "edges": 30, "errors": 3 },
+  "divergences": []
+}

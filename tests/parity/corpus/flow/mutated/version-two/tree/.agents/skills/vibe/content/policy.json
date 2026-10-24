@@ -1,0 +1,235 @@
+{
+  "$comment": "The eleven guarded-path rules in flow/scripts/detect-context.sh's decide() as data: six block rules (cursor, both lessons spellings, both root-spec spellings, and GSD's .planning/ store) plus five warn rules. .planning/ is read-only context except in idle. Every `arms[].reason` is copied verbatim from the bash branch, including `(current: $state)` where present; the engine substitutes `{state}` with the queried state. `match` entries may be literal paths or globs (`*`/`?`, matching any run of / any one character INCLUDING `/`, same as bash case-pattern matching); each also matches path-boundary suffixes, reproducing `PATTERN|*/PATTERN`. `arms` is read top to bottom; the first matching state wins, with `states: \"*\"` as catch-all. Never edit this file in an install; it is replaced on upgrade — override from a project's own policy layer instead.",
+  "rules": [
+    {
+      "arms": [
+        {
+          "reason": "state.json is written only via set-state.sh, never by direct edit",
+          "states": "*",
+          "verdict": "block"
+        }
+      ],
+      "id": "cursor",
+      "match": ".agents/skills/vibe/state.json"
+    },
+    {
+      "arms": [
+        {
+          "reason": "",
+          "states": [
+            "feature.compound",
+            "setup.apply",
+            "strategy.spec",
+            "quick.verify"
+          ],
+          "verdict": "allow"
+        },
+        {
+          "reason": ".spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: {state})",
+          "states": "*",
+          "verdict": "block"
+        }
+      ],
+      "id": "lessons",
+      "match": ".spec/lessons.md"
+    },
+    {
+      "arms": [
+        {
+          "reason": "",
+          "states": [
+            "feature.compound",
+            "setup.apply",
+            "strategy.spec",
+            "quick.verify"
+          ],
+          "verdict": "allow"
+        },
+        {
+          "reason": "docs/spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: {state})",
+          "states": "*",
+          "verdict": "block"
+        }
+      ],
+      "id": "lessons-docs-spec",
+      "match": "docs/spec/lessons.md"
+    },
+    {
+      "arms": [
+        {
+          "reason": "",
+          "states": [
+            "strategy.spec",
+            "feature.compound",
+            "setup.apply"
+          ],
+          "verdict": "allow"
+        },
+        {
+          "reason": "root .spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: {state})",
+          "states": "*",
+          "verdict": "block"
+        }
+      ],
+      "id": "root-specs",
+      "match": [
+        ".spec/product.md",
+        ".spec/tech.md",
+        ".spec/design.md",
+        ".spec/plan.md"
+      ]
+    },
+    {
+      "arms": [
+        {
+          "reason": "",
+          "states": [
+            "strategy.spec",
+            "feature.compound",
+            "setup.apply"
+          ],
+          "verdict": "allow"
+        },
+        {
+          "reason": "root docs/spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: {state})",
+          "states": "*",
+          "verdict": "block"
+        }
+      ],
+      "id": "root-specs-docs-spec",
+      "match": [
+        "docs/spec/product.md",
+        "docs/spec/tech.md",
+        "docs/spec/design.md",
+        "docs/spec/plan.md"
+      ]
+    },
+    {
+      "arms": [
+        {
+          "reason": "",
+          "states": [
+            "idle"
+          ],
+          "verdict": "allow"
+        },
+        {
+          "reason": ".planning/ is GSD's state store — vibe reads it as context and never writes it; route edits through GSD's own commands",
+          "states": "*",
+          "verdict": "block"
+        }
+      ],
+      "id": "gsd-planning",
+      "match": ".planning/*"
+    },
+    {
+      "arms": [
+        {
+          "reason": ".spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: {state})",
+          "states": [
+            "feature.impl",
+            "quick.fix"
+          ],
+          "verdict": "warn"
+        },
+        {
+          "reason": "",
+          "states": "*",
+          "verdict": "allow"
+        }
+      ],
+      "id": "features-frozen",
+      "match": ".spec/features/*"
+    },
+    {
+      "arms": [
+        {
+          "reason": "docs/spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: {state})",
+          "states": [
+            "feature.impl",
+            "quick.fix"
+          ],
+          "verdict": "warn"
+        },
+        {
+          "reason": "",
+          "states": "*",
+          "verdict": "allow"
+        }
+      ],
+      "id": "features-frozen-docs-spec",
+      "match": "docs/spec/features/*"
+    },
+    {
+      "arms": [
+        {
+          "reason": "superpowers design docs are frozen during impl/fix — route back to feature.design to change scope (current: {state})",
+          "states": [
+            "feature.impl",
+            "quick.fix"
+          ],
+          "verdict": "warn"
+        },
+        {
+          "reason": "",
+          "states": "*",
+          "verdict": "allow"
+        }
+      ],
+      "id": "superpowers-frozen",
+      "match": "docs/superpowers/specs/*"
+    },
+    {
+      "arms": [
+        {
+          "reason": "CLAUDE.md/AGENTS.md active-rules block is generated by regen-active-rules.sh; edits inside the markers are overwritten next compound",
+          "states": "*",
+          "verdict": "warn"
+        }
+      ],
+      "id": "generated-docs",
+      "match": [
+        "CLAUDE.md",
+        "AGENTS.md"
+      ]
+    },
+    {
+      "arms": [
+        {
+          "reason": "verify writes no src — route findings back to impl (set-state.sh feature.impl)",
+          "states": [
+            "feature.verify"
+          ],
+          "verdict": "warn"
+        },
+        {
+          "reason": "verify writes no src — route findings back to fix (set-state.sh quick.fix)",
+          "states": [
+            "quick.verify"
+          ],
+          "verdict": "warn"
+        },
+        {
+          "reason": "",
+          "states": [
+            "feature.impl",
+            "quick.fix",
+            "setup.apply"
+          ],
+          "verdict": "allow"
+        },
+        {
+          "reason": "source/test edits outside an impl/fix state (current: {state})",
+          "states": "*",
+          "verdict": "warn"
+        }
+      ],
+      "id": "src-tests",
+      "match": [
+        "src/*",
+        "tests/*"
+      ]
+    }
+  ],
+  "version": 2
+}

@@ -1,0 +1,10 @@
+{
+  "runs": {
+    "state-set": [
+      [
+        "quick.verify"
+      ]
+    ]
+  },
+  "v": 1
+}

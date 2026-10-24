@@ -1,0 +1,59 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        "docs/superpowers/specs/auth-design.md",
+        "feature.compound"
+      ],
+      [
+        "docs/superpowers/specs/auth-design.md",
+        "feature.design"
+      ],
+      [
+        "docs/superpowers/specs/auth-design.md",
+        "feature.impl"
+      ],
+      [
+        "docs/superpowers/specs/auth-design.md",
+        "feature.plan"
+      ],
+      [
+        "docs/superpowers/specs/auth-design.md",
+        "feature.verify"
+      ],
+      [
+        "docs/superpowers/specs/auth-design.md",
+        "idle"
+      ],
+      [
+        "docs/superpowers/specs/auth-design.md",
+        "quick.fix"
+      ],
+      [
+        "docs/superpowers/specs/auth-design.md",
+        "quick.triage"
+      ],
+      [
+        "docs/superpowers/specs/auth-design.md",
+        "quick.verify"
+      ],
+      [
+        "docs/superpowers/specs/auth-design.md",
+        "setup.apply"
+      ],
+      [
+        "docs/superpowers/specs/auth-design.md",
+        "setup.detect"
+      ],
+      [
+        "docs/superpowers/specs/auth-design.md",
+        "strategy.brainstorm"
+      ],
+      [
+        "docs/superpowers/specs/auth-design.md",
+        "strategy.spec"
+      ]
+    ]
+  },
+  "v": 1
+}

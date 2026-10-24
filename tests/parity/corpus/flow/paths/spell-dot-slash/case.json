@@ -1,0 +1,59 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        "./docs/spec/lessons.md",
+        "feature.compound"
+      ],
+      [
+        "./docs/spec/lessons.md",
+        "feature.design"
+      ],
+      [
+        "./docs/spec/lessons.md",
+        "feature.impl"
+      ],
+      [
+        "./docs/spec/lessons.md",
+        "feature.plan"
+      ],
+      [
+        "./docs/spec/lessons.md",
+        "feature.verify"
+      ],
+      [
+        "./docs/spec/lessons.md",
+        "idle"
+      ],
+      [
+        "./docs/spec/lessons.md",
+        "quick.fix"
+      ],
+      [
+        "./docs/spec/lessons.md",
+        "quick.triage"
+      ],
+      [
+        "./docs/spec/lessons.md",
+        "quick.verify"
+      ],
+      [
+        "./docs/spec/lessons.md",
+        "setup.apply"
+      ],
+      [
+        "./docs/spec/lessons.md",
+        "setup.detect"
+      ],
+      [
+        "./docs/spec/lessons.md",
+        "strategy.brainstorm"
+      ],
+      [
+        "./docs/spec/lessons.md",
+        "strategy.spec"
+      ]
+    ]
+  },
+  "v": 1
+}

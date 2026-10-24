@@ -1,0 +1,59 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        "docs/spec/tech.md",
+        "feature.compound"
+      ],
+      [
+        "docs/spec/tech.md",
+        "feature.design"
+      ],
+      [
+        "docs/spec/tech.md",
+        "feature.impl"
+      ],
+      [
+        "docs/spec/tech.md",
+        "feature.plan"
+      ],
+      [
+        "docs/spec/tech.md",
+        "feature.verify"
+      ],
+      [
+        "docs/spec/tech.md",
+        "idle"
+      ],
+      [
+        "docs/spec/tech.md",
+        "quick.fix"
+      ],
+      [
+        "docs/spec/tech.md",
+        "quick.triage"
+      ],
+      [
+        "docs/spec/tech.md",
+        "quick.verify"
+      ],
+      [
+        "docs/spec/tech.md",
+        "setup.apply"
+      ],
+      [
+        "docs/spec/tech.md",
+        "setup.detect"
+      ],
+      [
+        "docs/spec/tech.md",
+        "strategy.brainstorm"
+      ],
+      [
+        "docs/spec/tech.md",
+        "strategy.spec"
+      ]
+    ]
+  },
+  "v": 1
+}

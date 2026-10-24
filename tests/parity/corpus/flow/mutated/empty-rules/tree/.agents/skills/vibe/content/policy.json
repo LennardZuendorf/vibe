@@ -1,0 +1,5 @@
+{
+  "$comment": "The eleven guarded-path rules in flow/scripts/detect-context.sh's decide() as data: six block rules (cursor, both lessons spellings, both root-spec spellings, and GSD's .planning/ store) plus five warn rules. .planning/ is read-only context except in idle. Every `arms[].reason` is copied verbatim from the bash branch, including `(current: $state)` where present; the engine substitutes `{state}` with the queried state. `match` entries may be literal paths or globs (`*`/`?`, matching any run of / any one character INCLUDING `/`, same as bash case-pattern matching); each also matches path-boundary suffixes, reproducing `PATTERN|*/PATTERN`. `arms` is read top to bottom; the first matching state wins, with `states: \"*\"` as catch-all. Never edit this file in an install; it is replaced on upgrade — override from a project's own policy layer instead.",
+  "rules": [],
+  "version": 1
+}

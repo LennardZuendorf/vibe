@@ -4,6 +4,7 @@
 //!   vibe-parity run <suite.json> --self
 //!   vibe-parity run <suite.json> --candidate <binary>
 //!   vibe-parity gen-spec-corpus <templates-dir> <out-dir>
+//!   vibe-parity gen-flow-corpus <flow-dir> <out-dir>
 //!
 //! Exit 0 when every run passes or is pinned, 1 on any failure or suite
 //! error, 2 on a usage error or a suite file that fails to load (unreadable,
@@ -15,7 +16,7 @@ use vibe_core::exit;
 use vibe_parity::harness::{Mode, Status, run_suite};
 use vibe_parity::suite::Suite;
 
-const USAGE: &str = "usage: vibe-parity run <suite.json> (--self | --candidate <binary>)\n       vibe-parity gen-spec-corpus <templates-dir> <out-dir>";
+const USAGE: &str = "usage: vibe-parity run <suite.json> (--self | --candidate <binary>)\n       vibe-parity gen-spec-corpus <templates-dir> <out-dir>\n       vibe-parity gen-flow-corpus <flow-dir> <out-dir>";
 
 fn usage(msg: &str) -> ExitCode {
     eprintln!("vibe-parity: {msg}\n{USAGE}");
@@ -35,6 +36,18 @@ fn main() -> ExitCode {
             match vibe_parity::corpus_spec::generate(Path::new(templates), Path::new(out)) {
                 Ok(n) => {
                     println!("gen-spec-corpus: {n} cases written to {out}");
+                    ExitCode::from(exit::OK)
+                }
+                Err(e) => {
+                    eprintln!("vibe-parity: {e}");
+                    ExitCode::from(exit::FINDINGS)
+                }
+            }
+        }
+        ["gen-flow-corpus", flow_dir, out] => {
+            match vibe_parity::corpus_flow::generate(Path::new(flow_dir), Path::new(out)) {
+                Ok(n) => {
+                    println!("gen-flow-corpus: {n} cases written to {out}");
                     ExitCode::from(exit::OK)
                 }
                 Err(e) => {
