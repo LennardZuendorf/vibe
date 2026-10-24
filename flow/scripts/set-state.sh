@@ -129,29 +129,58 @@ json_string() {
   fi
 }
 
-# Determine the feature to carry forward.
-CUR_FEATURE="null"
-if [[ -f "$STATE" ]]; then
+# read_cur_feature — classify the existing cursor's feature, as the engine
+# writer does (engine/commands/state.mjs). Prints `n` for a missing, null or
+# empty-string feature (nothing to carry, no WARN), `x` for any other non-string
+# value (number, boolean, object, array), or `s<value>.` for a string. The
+# trailing `.` keeps a trailing newline in the value from being stripped by the
+# command substitution. An unreadable cursor reads as `n`, as in the engine.
+read_cur_feature() {
+  local line val
   if [[ "$HAVE_JQ" -eq 1 ]]; then
-    CUR_FEATURE=$(jq -r '.feature // "null"' "$STATE" 2>/dev/null || echo "null")
-  else
-    # Flat cursor: read the feature string; a null (unquoted) value yields empty.
-    CUR_FEATURE="$(sed -n 's/^[[:space:]]*"feature"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' "$STATE" | head -n1 || true)"
-    [[ -n "$CUR_FEATURE" ]] || CUR_FEATURE="null"
+    jq -r 'if .feature == null or .feature == "" then "n"
+           elif (.feature | type) == "string" then "s" + .feature + "."
+           else "x" end' "$STATE" 2>/dev/null || printf 'n'
+    return 0
   fi
-  # A corrupt cursor must not be re-emitted: reuse only a feature that passes the
-  # same check as a new one.
-  if [[ "$CUR_FEATURE" != "null" ]] && ! valid_feature "$CUR_FEATURE"; then
-    err "WARN: ignoring an invalid feature in the existing cursor."
-    CUR_FEATURE="null"
-  fi
+  # No jq: the flat cursor holds the feature on one `"feature": <value>` line.
+  line="$(sed -n '/^[[:space:]]*"feature"[[:space:]]*:/p' "$STATE" | head -n1 || true)"
+  val="${line#*:}"
+  val="${val#"${val%%[![:space:]]*}"}"
+  case "$val" in
+    '' | null | null,) printf 'n' ;;
+    \"*)
+      val="$(printf '%s\n' "$line" | sed -n 's/^[[:space:]]*"feature"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p')"
+      if [[ -n "$val" ]]; then printf 's%s.' "$val"; else printf 'n'; fi
+      ;;
+    *) printf 'x' ;;
+  esac
+}
+
+# Determine the feature to carry forward. CUR_FEATURE stays empty when there is
+# none. A corrupt cursor must not be re-emitted: reuse only a string feature
+# that passes the same check as a new one; drop any other value with a WARN.
+CUR_FEATURE=""
+if [[ -f "$STATE" ]]; then
+  CUR_RAW="$(read_cur_feature)"
+  case "$CUR_RAW" in
+    s*)
+      CUR_FEATURE="${CUR_RAW#s}"
+      CUR_FEATURE="${CUR_FEATURE%.}"
+      if ! valid_feature "$CUR_FEATURE"; then
+        err "WARN: ignoring an invalid feature in the existing cursor."
+        CUR_FEATURE=""
+      fi
+      ;;
+    x) err "WARN: ignoring an invalid feature in the existing cursor." ;;
+  esac
 fi
 
 if [[ "$FEATURE_GIVEN" -eq 1 ]]; then
   FEATURE_JSON=$(json_string "$NEW_FEATURE")
 elif [[ "$FLOW" == "idle" ]]; then
   FEATURE_JSON="null"   # leaving all flows clears the feature pointer
-elif [[ "$CUR_FEATURE" != "null" && -n "$CUR_FEATURE" ]]; then
+elif [[ -n "$CUR_FEATURE" ]]; then
   FEATURE_JSON=$(json_string "$CUR_FEATURE")
 else
   FEATURE_JSON="null"

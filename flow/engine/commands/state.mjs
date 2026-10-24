@@ -117,9 +117,9 @@ export function runSet(vibeDir, args) {
   // throwing contract is correct for READERS (a malformed cursor is a real
   // problem `get` must surface) but wrong here — the writer only needs the
   // previous `feature` value, and `vibe state set idle` is the only CLI
-  // path that can ever fix a corrupt cursor. The oracle's own jq path
-  // already recovers silently (`jq -r '.feature // "null"' 2>/dev/null ||
-  // echo "null"`) and goes on to write a fresh, valid cursor; degrading to
+  // path that can ever fix a corrupt cursor. set-state.sh's
+  // read_cur_feature already reads an unparseable cursor as "no feature",
+  // silently, and goes on to write a fresh, valid cursor; degrading to
   // null here and proceeding matches that, instead of bricking the one
   // recovery path bash has.
   let curFeature = null;
@@ -129,6 +129,8 @@ export function runSet(vibeDir, args) {
     curFeature = null;
   }
   // A corrupt carried feature is dropped, never re-emitted — as set-state.sh.
+  // Null, absent and '' carry nothing silently; any other value that is not a
+  // valid feature string (a number, a boolean, an object) warns and drops.
   let stderr = '';
   if (curFeature !== null && curFeature !== undefined && curFeature !== '' && !validFeature(curFeature)) {
     stderr += line('vibe state: WARN: ignoring an invalid feature in the existing cursor.');

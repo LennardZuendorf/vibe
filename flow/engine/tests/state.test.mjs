@@ -178,8 +178,13 @@ const FIXTURES = [
     target: 'feature.design',
     feature: 'o"Brien\\path\\name — π',
   },
-  // `carried` and `dropWarn` are asserted on BOTH legs, so a regression in
-  // both writers at once still fails here, not only a one-sided one.
+  // Carry-forward rule, one for both writers: a missing, null or empty-string
+  // feature in the cursor carries nothing and warns nothing; any other value
+  // that is not a valid feature string (a bad charset, a number, a boolean, an
+  // object) is dropped to null with one `ignoring an invalid feature` WARN. A
+  // valid string carries, the word "null" included. `carried` and `dropWarn`
+  // are asserted on BOTH legs, so a regression in both writers at once still
+  // fails here, not only a one-sided one.
   {
     // An invalid feature already in the cursor (a hand edit, an older writer)
     // is dropped to null by both writers, never carried forward.
@@ -190,6 +195,71 @@ const FIXTURES = [
     feature: undefined,
     carried: null,
     dropWarn: true,
+  },
+  {
+    // A trailing newline is a control byte: the bash writer must not lose it to
+    // a command substitution and carry the trimmed name.
+    id: 'review-hardening/5',
+    name: 'a carried feature with a trailing newline is dropped to null by both writers',
+    start: { flow: 'feature', phase: 'design', feature: 'demo\n', updated: '2020-01-01T00:00:00Z' },
+    target: 'feature.plan',
+    feature: undefined,
+    carried: null,
+    dropWarn: true,
+  },
+  {
+    id: 'review-hardening/5',
+    name: 'a carried number feature is dropped to null with a WARN by both writers',
+    start: { flow: 'feature', phase: 'impl', feature: 5, updated: '2020-01-01T00:00:00Z' },
+    target: 'feature.verify',
+    feature: undefined,
+    carried: null,
+    dropWarn: true,
+  },
+  {
+    id: 'review-hardening/5',
+    name: 'a carried true feature is dropped to null with a WARN by both writers',
+    start: { flow: 'feature', phase: 'impl', feature: true, updated: '2020-01-01T00:00:00Z' },
+    target: 'feature.verify',
+    feature: undefined,
+    carried: null,
+    dropWarn: true,
+  },
+  {
+    id: 'review-hardening/5',
+    name: 'a carried false feature is dropped to null with a WARN by both writers',
+    start: { flow: 'feature', phase: 'impl', feature: false, updated: '2020-01-01T00:00:00Z' },
+    target: 'feature.verify',
+    feature: undefined,
+    carried: null,
+    dropWarn: true,
+  },
+  {
+    id: 'review-hardening/5',
+    name: 'a carried object feature is dropped to null with a WARN by both writers',
+    start: { flow: 'feature', phase: 'impl', feature: { name: 'x' }, updated: '2020-01-01T00:00:00Z' },
+    target: 'feature.verify',
+    feature: undefined,
+    carried: null,
+    dropWarn: true,
+  },
+  {
+    id: 'review-hardening/5',
+    name: 'a carried empty-string feature becomes null with no drop WARN in both writers',
+    start: { flow: 'feature', phase: 'impl', feature: '', updated: '2020-01-01T00:00:00Z' },
+    target: 'feature.verify',
+    feature: undefined,
+    carried: null,
+    dropWarn: false,
+  },
+  {
+    id: 'review-hardening/5',
+    name: 'a carried feature named "null" is a valid string and carries in both writers',
+    start: { flow: 'feature', phase: 'impl', feature: 'null', updated: '2020-01-01T00:00:00Z' },
+    target: 'feature.verify',
+    feature: undefined,
+    carried: 'null',
+    dropWarn: false,
   },
 ];
 
