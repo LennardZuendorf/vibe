@@ -439,7 +439,11 @@ export function makeHookSandbox({ cursor, includeDetect = true, gitInit = false 
 // runs its git-reading code inside `sb.withCeiling(fn)`, which sets it on
 // process.env (the engine's own spawnSync and every runCommand child inherit
 // from there) and restores the previous value.
-export function makeNestedSandbox({ cursor } = {}) {
+//
+// `trackProject: false` commits only `<outer>/README.md` and leaves the whole
+// project untracked, as a new monorepo package is: `git status --porcelain -- .`
+// run in `<outer>/sub` then reports the project as ONE `?? sub/` record.
+export function makeNestedSandbox({ cursor, trackProject = true } = {}) {
   const outer = mkTempRoot('vibe-nested-test-');
   const dir = path.join(outer, 'sub');
   const vibeDir = path.join(dir, '.agents', 'skills', 'vibe');
@@ -461,6 +465,8 @@ export function makeNestedSandbox({ cursor } = {}) {
   mkdirSync(path.join(dir, '.vibe'), { recursive: true });
   writeFileSync(path.join(dir, '.vibe', 'last-inject'), 'idle\n');
 
+  if (!trackProject) writeFileSync(path.join(outer, 'README.md'), 'outer\n');
+
   const ceilingEnv = { GIT_CEILING_DIRECTORIES: path.dirname(outer) };
   for (const gitArgs of [
     ['init', '-q'],
@@ -468,7 +474,7 @@ export function makeNestedSandbox({ cursor } = {}) {
     ['config', 'user.name', 't'],
     ['config', 'commit.gpgsign', 'false'],
     ['config', 'tag.gpgsign', 'false'],
-    ['add', '-A'],
+    trackProject ? ['add', '-A'] : ['add', 'README.md'],
     ['commit', '-qm', 'init'],
   ]) {
     const r = runCommand('git', gitArgs, { cwd: outer, env: ceilingEnv });

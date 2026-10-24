@@ -175,9 +175,14 @@ if [[ "$STATE" == "feature.verify" || "$STATE" == "quick.verify" ]]; then
     # whatever the record is, or every later record is read one field off.
     # Paths are toplevel-relative, so the project's prefix is stripped and an
     # entry outside it is dropped: a project below the git root is gated too.
+    # When the outer repo tracks nothing of the project, git reports it as one
+    # `?? <prefix>` record and the strip leaves an empty path; that record is
+    # the project directory itself, so it is compared and named as `.`.
     # Still fail-OPEN where the engine is not: no `-uall`, so a wholly-untracked
-    # directory is one row and its own mtime is compared; and a path that exists
-    # but cannot be compared is skipped by -e rather than blocking.
+    # directory (the project included) is one row and only its own mtime is
+    # compared, which an in-place edit of a file inside it does not move; and a
+    # path that exists but cannot be compared is skipped by -e rather than
+    # blocking.
     stale=""
     prefix="$(git -C "$ROOT" rev-parse --show-prefix 2>/dev/null || true)"
     skip_origin=0
@@ -193,6 +198,7 @@ if [[ "$STATE" == "feature.verify" || "$STATE" == "quick.verify" ]]; then
           "$prefix"*) path="${path#"$prefix"}" ;;
           *) continue ;;                                     # outside the project
         esac
+        [[ -n "$path" ]] || path=.                           # the project dir itself
       fi
       case "$path" in
         "$EVID_REL"/*|.vibe/last-inject|.agents/skills/vibe/warnings.log) continue ;;

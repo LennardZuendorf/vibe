@@ -33,6 +33,7 @@ import {
   rmSync,
   utimesSync,
   symlinkSync,
+  readdirSync,
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1116,6 +1117,34 @@ function assertDivergentRow(label, legs, name) {
   );
 }
 
+// A nested project the outer repo does not track at all (a new monorepo
+// package): `git status --porcelain -z -- .` in `<outer>/sub` prints the one
+// record `?? sub/`, and stripping the `sub/` prefix leaves an empty path. Every
+// file and directory under `sub/` is backdated to 2019 (`sub/` itself last, as
+// a child's utime does not move it) and the receipt is stamped 2020, so a row
+// starts from a tree no leg may call stale. `extra(sb)` adds files first.
+const RH10_TREE_TS = new Date('2019-01-01T00:00:00Z');
+function backdateTree(dir, ts) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) backdateTree(p, ts);
+    else utimesSync(p, ts, ts);
+  }
+  utimesSync(dir, ts, ts);
+}
+function makeUntrackedNestedFixture(extra = () => {}) {
+  const sb = makeNestedSandbox({ trackProject: false });
+  extra(sb);
+  backdateTree(sb.dir, RH10_TREE_TS);
+  const past = new Date('2020-01-01T00:00:00Z');
+  utimesSync(sb.receipt, past, past);
+  return sb;
+}
+function assertOneDirectoryRecord(sb) {
+  const rows = runCommand('git', ['status', '--porcelain', '-z', '--', '.'], { cwd: sb.dir }).stdout;
+  assertEqual(rows, '?? sub/\0', 'floor: git reports the untracked project as one directory record');
+}
+
 let rh10RowsRun = 0;
 
 for (const mode of JQ_MODES) {
@@ -1206,13 +1235,77 @@ for (const mode of JQ_MODES) {
       sb.cleanup();
     }
   });
+
+  // review-hardening/10 fix round — the empty path left by the prefix strip.
+  // The fallback must compare `sub/` itself and name it `.`, not skip it.
+  test(`review-hardening/10: three-way — untracked nested project, a new file in it: engine and live block x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeUntrackedNestedFixture();
+    try {
+      sb.withCeiling(() => {
+        writeFileSync(path.join(sb.dir, 'newroot.txt'), 'new\n'); // moves the mtime of sub/ past the receipt
+        assertOneDirectoryRecord(sb);
+        const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+        assertEqual(legs.engine.code, 2, `the engine (-uall) blocks; got:\n${legs.engine.stderr}`);
+        assert(legs.engine.stderr.includes('changed after it was written: newroot.txt'), `engine names newroot.txt; got:\n${legs.engine.stderr}`);
+        assertEqual(legs.live.code, 2, `the live fallback compares the project directory and blocks; got:\n${legs.live.stderr}`);
+        assert(legs.live.stderr.includes('changed after it was written: .\n'), `live names the project directory "."; got:\n${legs.live.stderr}`);
+        assertEqual(legs.oracle.code, 0, `${RH10_WHY}. If the frozen oracle now blocks, its git or its bytes changed — re-derive this pin`);
+      });
+      rh10RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/10: three-way control — untracked nested project, nothing newer: all three pass x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeUntrackedNestedFixture();
+    try {
+      sb.withCeiling(() => {
+        assertOneDirectoryRecord(sb);
+        const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+        for (const leg of ['engine', 'live', 'oracle']) {
+          assertEqual(legs[leg].code, 0, `control: ${leg} passes an unchanged untracked project; got:\n${legs[leg].stderr}`);
+        }
+      });
+      rh10RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  // KNOWN DIVERGENCE (UNTRACKED DIRECTORY) on the untracked project itself: an
+  // in-place edit deep inside it does not move the mtime of `sub/`, and the
+  // fallback has no `-uall`, so it passes. Pinned, not fixed (tech.md R2/R3).
+  test(`review-hardening/10: three-way — untracked nested project, deep in-place edit: engine blocks, live pinned x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeUntrackedNestedFixture((s) => {
+      mkdirSync(path.join(s.dir, 'src', 'deep'), { recursive: true });
+      writeFileSync(path.join(s.dir, 'src', 'deep', 'x.txt'), 'v1\n');
+    });
+    try {
+      sb.withCeiling(() => {
+        writeFileSync(path.join(sb.dir, 'src', 'deep', 'x.txt'), 'v2\n');
+        assertOneDirectoryRecord(sb);
+        const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+        assertEqual(legs.engine.code, 2, `the engine (-uall) blocks; got:\n${legs.engine.stderr}`);
+        assert(legs.engine.stderr.includes('changed after it was written: src/deep/x.txt'), `engine names src/deep/x.txt; got:\n${legs.engine.stderr}`);
+        assertEqual(legs.live.code, 0, `${UNTRACKED_WHY}. If the live fallback now blocks, it enumerates files — re-derive this pin`);
+        assertEqual(legs.oracle.code, 0, `${UNTRACKED_WHY}. If the frozen oracle now blocks, re-derive this pin`);
+      });
+      rh10RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
 }
 
-test('review-hardening/10: floor — the three divergent rows and the control each ran all three legs', () => {
+test('review-hardening/10: floor — every three-way row and control ran all three legs', () => {
   // Registered after the rows, so it runs after them. Each row counts once per
   // jq mode that actually executed (a mode skipped for a missing jq counts 0).
   const modesRun = JQ_PRESENT ? 2 : 1;
-  assert(rh10RowsRun >= 5 * modesRun, `only ${rh10RowsRun} three-way row(s) ran, floor ${5 * modesRun}`);
+  assert(rh10RowsRun >= 8 * modesRun, `only ${rh10RowsRun} three-way row(s) ran, floor ${8 * modesRun}`);
 });
 
 // ---------------------------------------------------------------------------

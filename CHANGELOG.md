@@ -288,7 +288,11 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   same quoting and nested-project holes as the engine. Its staleness scan now
   reads `git status --porcelain -z -- .` through `read -d ''`, strips the project
   prefix, skips a rename's origin field, and excludes the inject marker and the
-  warnings log as the engine does. It is no longer the parity oracle: the frozen
+  warnings log as the engine does. A project the outer repo does not track at all
+  arrives as one `?? sub/` record whose stripped path is empty; the fallback
+  compares that project directory and names it `.` instead of passing (it still
+  has no `-uall`, so an in-place edit deep inside such a project passes, as for
+  any wholly-untracked directory). It is no longer the parity oracle: the frozen
   copy under `oracles/` is, and the engine, the fallback and the oracle run side
   by side in `parity.test.mjs`.
 
