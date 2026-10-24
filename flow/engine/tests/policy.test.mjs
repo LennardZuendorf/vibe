@@ -15,8 +15,8 @@
 // rather than a hand-copied sentence.
 //
 // Four things are under test:
-//   1. THE SHIPPED SEVEN RULES — content/policy.json must model all seven guarded
-//      arms of detect-context.sh's decide() (three block, four warn), each
+//   1. THE SHIPPED ELEVEN RULES — content/policy.json models all eleven guarded
+//      rules of detect-context.sh's decide() (six block, five warn), each
 //      reproducing the oracle's own states AND reason string (including its
 //      `(current: $state)` suffix, interpolated) element for element.
 //   2. BASH-FAITHFUL MATCHING — a literal or glob pattern matches on any
@@ -88,13 +88,24 @@ const ALWAYS_RULE = (id, match, verdict, reason = `${id} always`) => ({
 const ARMS_RULE = (id, match, arms) => ({ id, match, arms });
 
 // ---------------------------------------------------------------------------
-// The shipped policy.json — all seven guarded arms, byte-faithful to the oracle.
+// The shipped policy.json — all eleven guarded rules, byte-faithful to the oracle.
 // ---------------------------------------------------------------------------
 
-test('shipped: content/policy.json loads with no errors and exactly ten rules', () => {
+test('shipped: content/policy.json loads with no errors and exactly eleven rules', () => {
   const { rules, errors } = loadPolicy(REPO_VIBE_DIR);
   assertEqual(errors, []);
-  assertEqual(rules.length, 10, `expected 10 shipped rules, got ${rules.length}`);
+  assertEqual(rules.length, 11, `expected 11 shipped rules, got ${rules.length}`);
+});
+
+test('shipped: GSD .planning context allows idle and blocks every active state', () => {
+  const { rules } = loadPolicy(REPO_VIBE_DIR);
+  const policy = { rules };
+  assertEqual(decide(policy, '.planning/STATE.md', 'idle').verdict, 'allow');
+  for (const state of ['feature.impl', 'strategy.spec']) {
+    const result = decide(policy, '.planning/STATE.md', state);
+    assertEqual(result.verdict, 'block', `${state} blocks GSD state writes`);
+    assertEqual(result.reason, ".planning/ is GSD's state store — vibe reads it as context and never writes it; route edits through GSD's own commands");
+  }
 });
 
 test('shipped: every protected spec path is guarded under both roots (docs/spec and legacy)', () => {
@@ -520,12 +531,13 @@ test('renderInvariants: an empty policy renders an empty string', () => {
 test('shipped: renderInvariants on content/policy.json produces one line per rule, in order', () => {
   const { rules } = loadPolicy(REPO_VIBE_DIR);
   const lines = renderInvariants({ rules }).split('\n');
-  assertEqual(lines.length, 10);
+  assertEqual(lines.length, 11);
   assertIncludes(lines[0], 'state.json');
   assertIncludes(lines[1], '.spec/lessons.md'); // literal
   assertIncludes(lines[2], 'docs/spec/lessons.md');
-  assertIncludes(lines[7], 'docs/superpowers/specs/*');
-  assertIncludes(lines[9], 'src/*');
+  assertIncludes(lines[5], '.planning/*');
+  assertIncludes(lines[8], 'docs/superpowers/specs/*');
+  assertIncludes(lines[10], 'src/*');
 });
 
 // ---------------------------------------------------------------------------
@@ -642,11 +654,11 @@ test('cli end-to-end: `vibe policy --help` exits 0 and shows usage', () => {
   assertIncludes(result.stdout, 'usage: vibe policy');
 });
 
-test('cli end-to-end: `vibe policy list` against the real repo prints ten rules', () => {
+test('cli end-to-end: `vibe policy list` against the real repo prints eleven rules', () => {
   const result = runCli(['policy', 'list']);
   assertEqual(result.code, 0, `stderr: ${result.stderr}`);
-  assertIncludes(result.stdout, '10 rule(s)');
-  for (const id of ['cursor', 'lessons', 'lessons-docs-spec', 'root-specs', 'root-specs-docs-spec', 'features-frozen', 'features-frozen-docs-spec', 'superpowers-frozen', 'generated-docs', 'src-tests']) {
+  assertIncludes(result.stdout, '11 rule(s)');
+  for (const id of ['cursor', 'lessons', 'lessons-docs-spec', 'root-specs', 'root-specs-docs-spec', 'gsd-planning', 'features-frozen', 'features-frozen-docs-spec', 'superpowers-frozen', 'generated-docs', 'src-tests']) {
     assertIncludes(result.stdout, id);
   }
 });
@@ -918,6 +930,9 @@ test('differential matrix: node absent changes nothing about the exit-code contr
       for (const [target, state, expected] of [
         ['.spec/lessons.md', 'idle', /^block:/],
         ['.spec/lessons.md', 'feature.compound', /^allow$/],
+        ['.planning/x', 'idle', /^allow$/],
+        ['.planning/x', 'feature.impl', /^block:/],
+        ['.planning/x', 'strategy.spec', /^block:/],
         ['src/a.js', 'feature.verify', /^warn:/],
       ]) {
         const result = runCommand('bash', [DETECT_SH, 'decide', target, state], { env, unsetEnv: ['CLAUDE_PROJECT_DIR'] });
@@ -939,7 +954,7 @@ test('differential matrix: node absent changes nothing about the exit-code contr
 // match irrespective of file order (policy.mjs, pinned by its own tests). The
 // two orders only ever disagree on a path that two rules both claim —
 // `.spec/features/AGENTS.md` and `docs/superpowers/specs/AGENTS.md` are the
-// two such shapes the shipped seven produce (the set is derived by `crossRulePaths`).
+// two such shapes the shipped rules produce (the set is derived by `crossRulePaths`).
 //
 // This is pinned, not papered over, and the direction is what makes it
 // acceptable: the engine's verdict is never LESS strict than bash's. The
