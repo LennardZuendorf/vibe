@@ -37,5 +37,5 @@ Single-purpose repo: build the self-hosting vibe workflow harness. This plan is 
 
 | Feature | Scope | Status |
 |---|---|---|
-| review-hardening | Port of the pre-v0.4 review-hardening fixes onto the live JS/bash harness | IN PROGRESS |
+| review-hardening | Port of the pre-v0.4 review-hardening fixes onto the live JS/bash harness; pins in [rust-parity-pins](tech/rust/rust-parity-pins.md) | DONE |
 | skill-revision | Spec and flow skills, toolset, instructions and cross-file consistency to the superpowers standard | IN PROGRESS |

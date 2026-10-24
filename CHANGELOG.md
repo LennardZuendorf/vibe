@@ -331,6 +331,12 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   any wholly-untracked directory). It is no longer the parity oracle: the frozen
   copy under `oracles/` is, and the engine, the fallback and the oracle run side
   by side in `parity.test.mjs`.
+- **The Rust ports inherit the hardened gate and content rules
+  (review-hardening/14)** — `docs/spec/tech/rust/rust-parity-pins.md` now states
+  the engine Stop gate's `-z` project-scoped scan, the bash fallback's three
+  pinned divergences, and physical content confinement, for F6 and F11 to keep.
+  `docs/spec/lessons.md` records what the port taught, the `AGENTS.md`
+  active-rules digest is regenerated, and the root plan row reads DONE.
 
 ## [0.1.0] - 2026-07-03
 
