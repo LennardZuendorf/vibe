@@ -269,6 +269,8 @@ flow/tests/adapters/run.sh    # section review-hardening/15
 
 ### review-hardening/4 — resolve_target and write-through for bash writers
 
+> Track D note: the install-level R11 case (AGENTS.md -> /nonexistent exits 0, prints `AGENTS.md not merged`) is deferred until track A (unit 1) lands that message in `install.sh`.
+
 **Goal:** a symlinked managed document stays a symlink; dangling or outside links are refused.
 
 **Requirements:** R6, R11
@@ -312,6 +314,8 @@ flow/README.md                       # the "temp + rename / never clobber" line,
 ---
 
 ### review-hardening/3 — link_adapter refuses a foreign symlink
+
+> Track D note: the install-level assertion that output names `docs/other.md` and omits `real file?` is deferred until unit 1 lands the held-link message; the current test only checks the CLAUDE.md symlink is unchanged.
 
 **Goal:** `link` never rewrites a symlink that points elsewhere, and the install names the held link.
 
