@@ -2693,27 +2693,33 @@ rh19_before="$(cat "$SB/.claude/settings.json")"
 bash "$MERGE_SETTINGS" merge "$SB" >/dev/null 2>&1
 assert_eq "review-hardening/19" "a second merge changes nothing (idempotent)" "$(cat "$SB/.claude/settings.json")" "$rh19_before"
 rm -rf "$SB"
-# a MultiEdit payload reaches the guard on both paths (engine, and the bash fallback without node)
+# a MultiEdit payload reaches the guard on both paths (engine, and the bash fallback without node).
+# The guard roots itself at ${CLAUDE_PROJECT_DIR:-$PWD}, so every call names $SB: without it the
+# legs read whatever cursor the caller's cwd holds, not this sandbox's.
 SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 RH19_SS="$SB/.agents/skills/vibe/scripts/set-state.sh"; bash "$RH19_SS" idle >/dev/null 2>&1
 RH19_NONODE="$(mkshim)"
+rh19_guard() { # leg tool file_path -> guard exit code
+  local rc=0 payload
+  payload="$(printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$2" "$3")"
+  if [[ "$1" == engine ]]; then
+    printf '%s' "$payload" | CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
+  else
+    printf '%s' "$payload" | CLAUDE_PROJECT_DIR="$SB" PATH="$RH19_NONODE" "$RH19_NONODE/bash" "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
+  fi
+  echo "$rc"
+}
 for leg in engine fallback; do
   for tool in MultiEdit Edit; do
-    rc=0
-    if [[ "$leg" == engine ]]; then
-      printf '{"tool_name":"%s","tool_input":{"file_path":"docs/spec/lessons.md"}}' "$tool" | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
-    else
-      printf '{"tool_name":"%s","tool_input":{"file_path":"docs/spec/lessons.md"}}' "$tool" | PATH="$RH19_NONODE" "$RH19_NONODE/bash" "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
-    fi
-    assert_eq "review-hardening/19" "$tool on a guarded path blocks ($leg guard, idle)" "$rc" "2"
+    assert_eq "review-hardening/19" "$tool on a guarded path blocks ($leg guard, idle)" "$(rh19_guard "$leg" "$tool" docs/spec/lessons.md)" "2"
   done
-  rc=0
-  if [[ "$leg" == engine ]]; then
-    printf '{"tool_name":"MultiEdit","tool_input":{"file_path":"docs/notes.md"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
-  else
-    printf '{"tool_name":"MultiEdit","tool_input":{"file_path":"docs/notes.md"}}' | PATH="$RH19_NONODE" "$RH19_NONODE/bash" "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
-  fi
-  assert_eq "review-hardening/19" "control: MultiEdit on an unguarded path allows ($leg guard)" "$rc" "0"
+  assert_eq "review-hardening/19" "control: MultiEdit on an unguarded path allows ($leg guard)" "$(rh19_guard "$leg" MultiEdit docs/notes.md)" "0"
+done
+# control: the sandbox's own cursor decides. feature.compound may write the lessons file, so the
+# same MultiEdit now allows; a leg that read another cursor would not follow this change.
+printf '{\n  "flow": "feature",\n  "phase": "compound",\n  "feature": "demo",\n  "updated": "t"\n}\n' > "$SB/.agents/skills/vibe/state.json"
+for leg in engine fallback; do
+  assert_eq "review-hardening/19" "control: MultiEdit on docs/spec/lessons.md allows in the sandbox's feature.compound ($leg guard)" "$(rh19_guard "$leg" MultiEdit docs/spec/lessons.md)" "0"
 done
 rm -rf "$SB" "$RH19_NONODE"
 
