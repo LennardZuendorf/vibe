@@ -156,6 +156,14 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   `confineRealWhy` checks the resolved real path; refused paths are reported as
   errors that `render --check` exits non-zero on. In-repo symlinks still work,
   and an absent lessons file stays silent (rh/11).
+- **`render --write` writes through in-repo symlinks** — the write
+  target was confined lexically and renamed onto the configured path, so a
+  symlinked document (or one under a linked directory) was either replaced by a
+  regular file or written outside the repo. The target now resolves through
+  `confineRealWhy`: an in-repo link is written through and stays a link; an
+  outside or dangling link is refused with exit 1. The temp file beside the
+  target gets an unpredictable name and is opened exclusively (`wx`), so a link a
+  repo plants at the temp name is never followed (rh/12).
 - **The hard blocks survive a node-less target** — the hook shims were
   `command -v node || exit 0`, so a machine without node silently lost the
   PreToolUse write guard and the Stop evidence gate, while the docs still called

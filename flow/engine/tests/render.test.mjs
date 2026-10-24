@@ -7,9 +7,9 @@
 // clobber, never rewrite when unchanged, refuse rather than write garbage" are
 // assertions, not intentions.
 
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync, lstatSync, readlinkSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { test, assert, assertEqual, assertIncludes, assertMatch, makeHookSandbox, runCli } from './run.mjs';
+import { test, assert, assertEqual, assertIncludes, assertMatch, makeHookSandbox, mkTempRoot, runCli } from './run.mjs';
 import { runRender } from '../commands/render.mjs';
 
 function makeRenderSandbox({ defaults, project, blocks = {}, cursor } = {}) {
@@ -319,4 +319,154 @@ test('CLI: `vibe render --check` on THIS repo is clean', () => {
   const result = runCli(['render', '--check'], { unsetEnv: ['CLAUDE_PROJECT_DIR'] });
   assertEqual(result.code, 0, `${result.stdout}${result.stderr}`);
   assertMatch(result.stdout, /0 error\(s\)/);
+});
+
+// ---------------------------------------------------------------------------
+// review-hardening/12 — `render --write` resolves its target physically. A
+// symlinked AGENTS.md (CLAUDE.md -> AGENTS.md is the house shape) is written
+// THROUGH, so the link survives; a link that leaves the repo, dangles, or sits
+// under an outside-linked directory is refused. Symlink targets are absolute.
+// ---------------------------------------------------------------------------
+
+const OUTSIDE_BYTES = '# outside\n\nuntouched\n';
+
+function makeOutside() {
+  const dir = mkTempRoot('vibe-render-outside-');
+  const file = path.join(dir, 'outside.md');
+  writeFileSync(file, OUTSIDE_BYTES);
+  return { dir, file, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+function docSandbox(file) {
+  return makeRenderSandbox({
+    defaults: { version: 1, channels: { doc: { render: 'body', blocks: ['a.one'], write: { file, block: 'vibe:rules' } } } },
+    blocks: { 'a/one.md': BLOCK('a.one', 'S', 'BODY') },
+  });
+}
+
+test('review-hardening/12: --write writes THROUGH an in-repo symlink and keeps the link', () => {
+  const sb = docSandbox('AGENTS.md');
+  try {
+    mkdirSync(path.join(sb.dir, 'docs'));
+    const real = path.join(sb.dir, 'docs', 'real.md');
+    writeFileSync(real, '# real\n\nuser prose\n');
+    const link = path.join(sb.dir, 'AGENTS.md');
+    symlinkSync(real, link);
+    const result = runRender(sb.ctx, ['doc', '--write']);
+    assertEqual(result.code, 0, result.stderr);
+    assert(lstatSync(link).isSymbolicLink(), 'the symlink was replaced by a regular file');
+    assertEqual(readlinkSync(link), real);
+    const text = readFileSync(real, 'utf8');
+    assertIncludes(text, 'user prose');
+    assertIncludes(text, 'BODY');
+    assertEqual(readdirSync(path.join(sb.dir, 'docs')).filter((n) => n.endsWith('.tmp')), [], 'no temp file left');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('review-hardening/12: --write refuses a symlink to an outside file and leaves it unchanged', () => {
+  const out = makeOutside();
+  const sb = docSandbox('AGENTS.md');
+  try {
+    symlinkSync(out.file, path.join(sb.dir, 'AGENTS.md'));
+    const result = runRender(sb.ctx, ['doc', '--write']);
+    assertEqual(result.code, 1);
+    assertIncludes(result.stderr, 'escapes');
+    assertEqual(readFileSync(out.file, 'utf8'), OUTSIDE_BYTES, 'outside bytes changed');
+    assertEqual(readdirSync(out.dir), ['outside.md'], 'something was created outside the repo');
+  } finally {
+    sb.cleanup();
+    out.cleanup();
+  }
+});
+
+test('review-hardening/12: --write never follows a link planted at a temp-file name', () => {
+  // The temp name used to be `.<base>.<pid>.tmp`, opened with flag 'w': a repo
+  // shipping that name as a link to an outside file had the outside file
+  // truncated and rewritten. The planted link must survive and point where it did.
+  const out = makeOutside();
+  const sb = docSandbox('AGENTS.md');
+  try {
+    writeFileSync(path.join(sb.dir, 'AGENTS.md'), '# AGENTS.md\n\nuser prose\n');
+    const planted = path.join(sb.dir, `.AGENTS.md.${process.pid}.tmp`);
+    symlinkSync(out.file, planted);
+    const result = runRender(sb.ctx, ['doc', '--write']);
+    assertEqual(result.code, 0, result.stderr);
+    assertEqual(readFileSync(out.file, 'utf8'), OUTSIDE_BYTES, 'outside bytes changed through the planted link');
+    assert(lstatSync(planted).isSymbolicLink(), 'the planted link was consumed');
+    assertEqual(readlinkSync(planted), out.file);
+    const agents = path.join(sb.dir, 'AGENTS.md');
+    assert(!lstatSync(agents).isSymbolicLink(), 'AGENTS.md became the planted link');
+    assertIncludes(readFileSync(agents, 'utf8'), 'BODY');
+    assertIncludes(readFileSync(agents, 'utf8'), 'user prose');
+  } finally {
+    sb.cleanup();
+    out.cleanup();
+  }
+});
+
+test('review-hardening/12: --write refuses a dangling symlink and creates nothing', () => {
+  const out = makeOutside();
+  const sb = docSandbox('AGENTS.md');
+  try {
+    const missing = path.join(out.dir, 'not-yet.md');
+    symlinkSync(missing, path.join(sb.dir, 'AGENTS.md'));
+    const result = runRender(sb.ctx, ['doc', '--write']);
+    assertEqual(result.code, 1);
+    assertIncludes(result.stderr, 'dangling');
+    assert(!existsSync(missing), 'the dangling link target was created');
+    assert(lstatSync(path.join(sb.dir, 'AGENTS.md')).isSymbolicLink(), 'the dangling link was replaced');
+  } finally {
+    sb.cleanup();
+    out.cleanup();
+  }
+});
+
+test('review-hardening/12: --write refuses a target under an in-repo directory linked outside', () => {
+  const out = makeOutside();
+  const sb = docSandbox('linked/AGENTS.md');
+  try {
+    symlinkSync(out.dir, path.join(sb.dir, 'linked'));
+    const result = runRender(sb.ctx, ['doc', '--write']);
+    assertEqual(result.code, 1);
+    assertIncludes(result.stderr, 'escapes');
+    assertEqual(readdirSync(out.dir), ['outside.md'], 'a file was written outside the repo');
+  } finally {
+    sb.cleanup();
+    out.cleanup();
+  }
+});
+
+test('review-hardening/12 control: a regular file and a missing file in an existing in-repo dir are written', () => {
+  const sb = docSandbox('docs/NEW.md');
+  try {
+    mkdirSync(path.join(sb.dir, 'docs'));
+    assertEqual(runRender(sb.ctx, ['doc', '--write']).code, 0);
+    const file = path.join(sb.dir, 'docs', 'NEW.md');
+    assert(!lstatSync(file).isSymbolicLink());
+    assertIncludes(readFileSync(file, 'utf8'), 'BODY');
+    writeFileSync(file, 'above\n<!-- vibe:rules -->\nstale\n<!-- /vibe:rules -->\n');
+    assertEqual(runRender(sb.ctx, ['doc', '--write']).code, 0);
+    assertIncludes(readFileSync(file, 'utf8'), 'BODY');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('review-hardening/12 control: a root reached through a symlinked temp dir writes normally', () => {
+  const sb = docSandbox('AGENTS.md');
+  const aliasDir = mkTempRoot('vibe-render-alias-');
+  const alias = path.join(aliasDir, 'root');
+  try {
+    symlinkSync(sb.dir, alias);
+    const vibeDir = path.join(alias, path.relative(sb.dir, sb.vibeDir));
+    const ctx = { root: alias, vibeDir, skillsDir: path.dirname(vibeDir) };
+    const result = runRender(ctx, ['doc', '--write']);
+    assertEqual(result.code, 0, result.stderr);
+    assertIncludes(readFileSync(path.join(sb.dir, 'AGENTS.md'), 'utf8'), 'BODY');
+  } finally {
+    rmSync(aliasDir, { recursive: true, force: true });
+    sb.cleanup();
+  }
 });
