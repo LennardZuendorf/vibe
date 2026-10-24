@@ -19,6 +19,7 @@ flow/warnings.log
 # reason as the cursor and evidence dir above.
 .vibe/last-inject
 .vibe/spec-session
+.vibe/run/
 .serena/
 # Overnight run artifact (local morning report, not merged)
 REPORT.md

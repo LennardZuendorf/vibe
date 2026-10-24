@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "$comment": "GSD compatibility aliases (additive). vibe's state machine and two human gates stay authoritative; .planning/ is read-only context. Unknown GSD flags are accepted-and-ignored with a one-line note, never reinterpreted.",
+  "aliases": [
+    { "alias": "gsd-new-project", "action": "transition", "target": "setup.detect", "feature_arg": null, "gate": null },
+    { "alias": "gsd-onboard", "action": "transition", "target": "setup.detect", "feature_arg": null, "gate": null },
+    { "alias": "gsd-spec-phase", "action": "transition", "target": "feature.design", "feature_arg": "phase-number → slug of ROADMAP phase N (.planning/ROADMAP.md); ask if absent", "gate": null },
+    { "alias": "gsd-discuss-phase", "action": "transition", "target": "feature.design", "feature_arg": "same as gsd-spec-phase", "gate": null },
+    { "alias": "gsd-plan-phase", "action": "transition", "target": "feature.plan", "feature_arg": "same as gsd-spec-phase", "gate": null },
+    { "alias": "gsd-execute-phase", "action": "transition", "target": "feature.impl", "feature_arg": "same as gsd-spec-phase", "gate": "confirm" },
+    { "alias": "gsd-verify-work", "action": "transition", "target": "feature.verify", "feature_arg": "optional phase-number; default cursor feature", "gate": null },
+    { "alias": "gsd-ship", "action": "transition", "target": "feature.compound", "feature_arg": "optional phase-number; default cursor feature", "gate": "confirm+verdict-passed" },
+    { "alias": "gsd-quick", "action": "transition", "target": "quick.triage", "feature_arg": null, "gate": null },
+    { "alias": "gsd-fast", "action": "transition", "target": "quick.triage", "feature_arg": null, "gate": null, "note": "fast path: ≤3 files, no unknowns" },
+    { "alias": "gsd-next", "action": "status", "target": null },
+    { "alias": "gsd-resume-work", "action": "status", "target": null },
+    { "alias": "gsd-progress", "action": "status", "target": null, "note": "--next advances the sole legal next; gated edges print the gate requirement and refuse" },
+    { "alias": "gsd-autonomous", "action": "refuse", "reason": "vibe's gates are human; run gsd-execute-phase <N> with the confirm token per phase" }
+  ],
+  "no-mapping": ["gsd-new-milestone", "gsd-complete-milestone", "gsd-milestone-summary", "gsd-ui-phase", "gsd-ui-review", "gsd-workspace", "gsd-phase", "gsd-quick-batch", "gsd-review", "gsd-capture", "namespace routers", "--wave", "--cross-ai"]
+}

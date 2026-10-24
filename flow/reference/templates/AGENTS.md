@@ -22,7 +22,7 @@ Use `vibe-flow state set`; `/flow` and GSD aliases wrap it.
 
 ```bash
 vibe-flow state set <state> [feature] [--confirm]; vibe-flow policy decide <path>
-vibe-spec validate; bash .agents/skills/vibe/scripts/doctor.sh
+vibe-spec validate (docs/spec requires the binary; the bash fallback resolves only legacy .spec roots); bash .agents/skills/vibe/scripts/doctor.sh
 node .agents/flow/engine/cli.mjs render --check
 ```
 
@@ -54,6 +54,7 @@ disagree. Edit the rules, never this text.
 - `docs/spec/lessons.md` — `feature.compound`, `setup.apply`, `strategy.spec`, `quick.verify`: allow; otherwise: block — docs/spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: the current state)
 - `.spec/product.md`, `.spec/tech.md`, `.spec/design.md`, `.spec/plan.md` — `strategy.spec`, `feature.compound`, `setup.apply`: allow; otherwise: block — root .spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: the current state)
 - `docs/spec/product.md`, `docs/spec/tech.md`, `docs/spec/design.md`, `docs/spec/plan.md` — `strategy.spec`, `feature.compound`, `setup.apply`: allow; otherwise: block — root docs/spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: the current state)
+- `.planning/*` — `idle`: allow; otherwise: block — .planning/ is GSD's state store — vibe reads it as context and never writes it; route edits through GSD's own commands
 - `.spec/features/*` — `feature.impl`, `quick.fix`: warn — .spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: the current state); otherwise: allow
 - `docs/spec/features/*` — `feature.impl`, `quick.fix`: warn — docs/spec/features edits are frozen during impl/fix — route back to feature.design/plan to change scope (current: the current state); otherwise: allow
 - `docs/superpowers/specs/*` — `feature.impl`, `quick.fix`: warn — superpowers design docs are frozen during impl/fix — route back to feature.design to change scope (current: the current state); otherwise: allow

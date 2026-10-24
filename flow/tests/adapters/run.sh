@@ -502,7 +502,7 @@ assert_eq "platform-adapters/1" "relay truncated after draining (warn not repeat
 rc=0
 printf '' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
 assert_eq "platform-adapters/2" "guard exits 0 on empty stdin" "$rc" "0"
-# guard no-jq degrade: the three hard blocks still fire without jq (detect-context
+# guard no-jq degrade: hard-block rules still fire without jq (detect-context
 # is pure bash; the path is extracted via sed). Assert exit 2 on a state.json edit.
 # `node` is included (js-core/7): the hook is node-first now, so a farm that
 # omits it would accidentally test the UNRELATED "Node absent" degrade (R4,

@@ -942,7 +942,19 @@ test('shipped: every channel renders inside its own budget', () => {
   }
 });
 
-test("shipped: AGENTS.md's vibe:rules block is in sync with the agents-md channel", () => {
+test("shipped: template AGENTS.md's vibe:rules block is in sync with the agents-md channel", () => {
+  const rendered = renderChannel('agents-md', repoCtx).text.replace(/\n+$/, '');
+  const templatePath = path.join(REPO_ROOT, 'flow', 'reference', 'templates', 'AGENTS.md');
+  const inFile = extractBlock(readFileSync(templatePath, 'utf8'), 'vibe:rules');
+  assert(inFile !== undefined, 'AGENTS.md template carries no vibe:rules block');
+  assertIncludes(inFile, rendered, 'AGENTS.md template is stale — refresh it from the agents-md channel');
+});
+
+test("shipped: the repo's own AGENTS.md vibe:rules block is in sync with the agents-md channel", () => {
+  // The template is what every INSTALL ships; this repo's AGENTS.md is the
+  // dogfood instance of the same single-source rule. Both must match the
+  // renderer — prose↔enforcer parity, pinned per the spec lessons — so a
+  // policy rule landing without a re-render reddens here, not in a review.
   const rendered = renderChannel('agents-md', repoCtx).text.replace(/\n+$/, '');
   const inFile = extractBlock(readFileSync(path.join(REPO_ROOT, 'AGENTS.md'), 'utf8'), 'vibe:rules');
   assert(inFile !== undefined, 'AGENTS.md carries no vibe:rules block — run: vibe render agents-md --write');
