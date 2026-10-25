@@ -3,7 +3,7 @@ type: tech
 applies:
   - "crates/vibe/**"
   - "vibe/**"
-updated: 2026-10-19
+updated: 2026-10-24
 ---
 
 # The vibe binary
@@ -22,5 +22,8 @@ The three tool binaries remain independently installable with their own
 plugins and release trains; `vibe` is a convenience front door, never a
 requirement (D40). The installer's default target becomes `vibe` (which pulls
 the three tools along); `--only` subsets are unchanged. The `vibe` plugin
-carries the front-door command surface only — no hooks of its own; spec,
-flow, and instruct keep their hook ownership (D25).
+carries the front-door command surface only and registers no plugin hook. The
+front door is a fourth, user-level hook owner for SessionStart projection only,
+one entry per harness, merged by `vibe install` (D48, amending D25 and D40;
+[Global store and projection](cli-store.md)); spec, flow, and instruct keep
+their hook ownership (D25).

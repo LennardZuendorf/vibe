@@ -1,0 +1,1 @@
+{ "v": 1, "harnesses": { "codex": { "enabled": false }, "droid": { "enabled": true } }, "skills": { "sources": ["~/skills", "/opt/skills"] } }

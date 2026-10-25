@@ -227,6 +227,11 @@ jobs:
       - name: Toolchain
         run: rustup toolchain install ${{ matrix.toolchain }} --profile minimal
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
       - name: Test
         run: cargo test --workspace --locked --no-fail-fast
 

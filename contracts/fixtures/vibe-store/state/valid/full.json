@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "store_hash": "0123456789abcdef",
+  "mcp_hash": "fedcba9876543210",
+  "targets": { "codex:mcp": { "hash": "0123456789abcdef" }, "claude:instructions": { "hash": "89abcdef01234567" } },
+  "owned": {
+    "mcp": { "claude": { "docs": { "type": "http", "url": "https://example.com/mcp" } }, "droid": ["docs"] },
+    "hooks": { "claude": "\"/usr/local/bin/vibe\" hook session-start --harness claude" },
+    "plugins": { "opencode": "/home/u/.config/opencode/plugins/vibe-store.js" },
+    "links": [ { "path": "/home/u/.claude/skills/a", "target": "/home/u/.config/vibe/skills/a" } ],
+    "created": ["/home/u/.claude/skills"]
+  }
+}

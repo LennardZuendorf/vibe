@@ -50,5 +50,16 @@ check('a missing query def fails', (d) => edit(d, SPEC, (s) => { delete s.$defs.
 check('a dropped required field fails', (d) => edit(d, SPEC, (s) => { s.$defs.root.required = ['v', 'source']; return s; }), 1, /requires/);
 check('unparseable JSON fails', (d) => writeFileSync(join(d, `${FX}/root/valid/dot-spec.json`), '{ nope'), 1, /dot-spec\.json/);
 
+const STORE = 'vibe-store.schema.json';
+const SFX = 'fixtures/vibe-store';
+check('a missing vibe-store schema fails', (d) => unlinkSync(join(d, STORE)), 1, /vibe-store\.schema\.json missing/);
+check('a vibe-store schema without compat fails', (d) => edit(d, STORE, ({ ['x-vibe-compat']: _, ...rest }) => rest), 1, /vibe-store\.schema\.json: x-vibe-compat must be/);
+check('an invalid store golden that validates fails', (d) => writeFileSync(join(d, `${SFX}/state/invalid/v2.json`), readFileSync(join(d, `${SFX}/state/valid/full.json`))), 1, /state\/invalid\/v2\.json: validates, but must fail/);
+check('a store unknown-field golden without one fails', (d) => writeFileSync(join(d, `${SFX}/store/valid/unknown-field.json`), '{ "v": 1 }\n'), 1, /store\/valid\/unknown-field\.json: holds no field outside/);
+check('a dropped store-state required field fails', (d) => edit(d, STORE, (s) => { s.$defs.state.required = ['v', 'targets', 'owned']; return s; }), 1, /state requires/);
+check('a store def without v const fails', (d) => edit(d, STORE, (s) => { s.$defs.sync.properties.v.const = 2; return s; }), 1, /sync must require "v"/);
+check('too few invalid mcp goldens fails the floor', (d) => unlinkSync(join(d, `${SFX}/mcp/invalid/servers-array.json`)), 1, /vibe-store mcp: 1 invalid golden\(s\) \(floor 2\)/);
+check('an empty store_hash golden fails when the pattern is strict', (d) => edit(d, STORE, (s) => { s.$defs.state.properties.store_hash.pattern = '^[0-9a-f]{16}$'; return s; }), 1, /state\/valid\/empty-store-hash\.json/);
+
 console.log(`\n=== results: ${passed} passed, ${failed} failed ===`);
 process.exit(failed === 0 ? 0 : 1);

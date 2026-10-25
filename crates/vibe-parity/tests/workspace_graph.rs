@@ -31,16 +31,21 @@ fn metadata(extra: &[&str]) -> Value {
 fn member_graph_holds() {
     let meta = metadata(&["--no-deps"]);
     let n = check_graph(&meta).unwrap_or_else(|e| panic!("{e:#?}"));
-    assert_eq!(n, 3);
+    assert_eq!(n, 4);
     let edges = meta["packages"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|p| matches!(p["name"].as_str(), Some("vibe-spec" | "vibe-parity")))
+        .filter(|p| {
+            matches!(
+                p["name"].as_str(),
+                Some("vibe" | "vibe-spec" | "vibe-parity")
+            )
+        })
         .flat_map(|p| p["dependencies"].as_array().unwrap())
         .filter(|d| d["name"] == "vibe-core")
         .count();
-    assert!(edges >= 2, "examined only {edges} edges to vibe-core");
+    assert!(edges >= 3, "examined only {edges} edges to vibe-core");
 }
 
 #[test]
@@ -49,9 +54,9 @@ fn every_resolved_package_builds_at_msrv() {
     assert!(n >= 10, "examined only {n} packages");
 }
 
-/// Every package `Cargo.lock` resolves today: 3 members plus the reviewed
+/// Every package `Cargo.lock` resolves today: 4 members plus the reviewed
 /// transitive closure of clap, serde and serde_json. Sorted; duplicates kept.
-const REVIEWED_PACKAGES: [&str; 20] = [
+const REVIEWED_PACKAGES: [&str; 21] = [
     "anstyle",
     "clap",
     "clap_builder",
@@ -68,6 +73,7 @@ const REVIEWED_PACKAGES: [&str; 20] = [
     "serde_json",
     "syn",
     "unicode-ident",
+    "vibe",
     "vibe-core",
     "vibe-parity",
     "vibe-spec",
