@@ -562,3 +562,166 @@ fn an_alias_never_clobbers_a_key_the_side_already_holds() {
         Some(b"staged".as_slice())
     );
 }
+
+// ---------------------------------------------------------------------------
+// Hook-shaped case fields: stdin, stderr, env, stamps, git. The mechanism is
+// proven directly on run_child/apply_stamps/sandbox_git; the suite-level
+// failure paths (a bad stamp, a failed setup commit) are proven through a
+// one-case run — a green that cannot distinguish "checked" from "checked
+// nothing" is not a green.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn run_child_feeds_stdin_from_a_file_and_captures_stderr() {
+    let dir = work("run-child-io");
+    let stdin = dir.join("stdin.bin");
+    fs::write(&stdin, b"payload line\n").unwrap();
+    let mut env = BTreeMap::new();
+    env.insert("PROBE".to_string(), "yes".to_string());
+    let argv = vec![
+        "bash".to_string(),
+        "-c".to_string(),
+        "cat; printf '%s' \"$PROBE\" >&2".to_string(),
+    ];
+    let (exit, stdout, stderr) =
+        vibe_parity::harness::run_child_for_tests(&argv, &dir, &dir, Some(&stdin), &env).unwrap();
+    assert_eq!(exit, Some(0));
+    assert_eq!(stdout, b"payload line\n");
+    assert_eq!(stderr, b"yes");
+}
+
+#[test]
+fn run_child_without_stdin_sees_an_empty_stream() {
+    let dir = work("run-child-empty");
+    let argv = vec!["bash".to_string(), "-c".to_string(), "cat".to_string()];
+    let (exit, stdout, stderr) =
+        vibe_parity::harness::run_child_for_tests(&argv, &dir, &dir, None, &BTreeMap::new())
+            .unwrap();
+    assert_eq!(exit, Some(0));
+    assert!(stdout.is_empty());
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn rfc3339_parsing_accepts_real_timestamps_and_rejects_garbage() {
+    use vibe_parity::suite::parse_rfc3339;
+    assert_eq!(parse_rfc3339("1970-01-01T00:00:00Z").unwrap(), 0);
+    assert_eq!(
+        parse_rfc3339("2026-10-24T12:34:56Z").unwrap(),
+        1_792_845_296
+    );
+    for bad in [
+        "",
+        "2026-10-24",
+        "2026-13-01T00:00:00Z",
+        "2026-00-10T00:00:00Z",
+        "2026-10-32T00:00:00Z",
+        "2026-10-24 12:00:00Z",
+        "2026-10-24T12:00:00",
+        "2026-10-24T25:00:00Z",
+        "x026-10-24T12:00:00Z",
+    ] {
+        assert!(parse_rfc3339(bad).is_err(), "{bad:?} parsed");
+    }
+}
+
+#[test]
+fn stamps_set_the_mtime_and_a_missing_path_fails_loudly() {
+    use vibe_parity::harness::apply_stamps_for_tests;
+    let dir = work("stamps");
+    let file = dir.join("receipt.md");
+    fs::write(&file, b"x").unwrap();
+    let mut stamps = BTreeMap::new();
+    stamps.insert("receipt.md".to_string(), "2026-10-01T00:00:00Z".to_string());
+    apply_stamps_for_tests(&dir, &stamps).unwrap();
+    let secs = fs::metadata(&file)
+        .unwrap()
+        .modified()
+        .unwrap()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    assert_eq!(secs, 1_790_812_800);
+    let mut missing = BTreeMap::new();
+    missing.insert("absent.md".to_string(), "2026-10-01T00:00:00Z".to_string());
+    assert!(apply_stamps_for_tests(&dir, &missing).is_err());
+}
+
+#[test]
+fn git_sandboxing_commits_and_a_commit_of_nothing_fails_loudly() {
+    let dir = work("git-ok");
+    fs::write(dir.join("seed.txt"), b"x").unwrap();
+    vibe_parity::harness::sandbox_git_for_tests(&dir, true).unwrap();
+    assert!(dir.join(".git").is_dir());
+    let log = Command::new("git")
+        .args(["log", "--oneline"])
+        .current_dir(&dir)
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .output()
+        .unwrap();
+    assert!(log.status.success());
+    assert!(!log.stdout.is_empty());
+    let empty = work("git-empty");
+    fs::create_dir_all(&empty).unwrap();
+    assert!(vibe_parity::harness::sandbox_git_for_tests(&empty, true).is_err());
+}
+
+#[test]
+fn a_case_with_an_unparsable_stamp_fails_the_run() {
+    // The stamp is validated at case-load time: a case whose stamp cannot
+    // parse never runs — the error is a suite error naming the case file,
+    // never a silently skipped or silently passing run.
+    let report = one_case(
+        "stamp-garbage",
+        r#"{ "v": 1, "stamps": { "out.txt": "not-a-time" } }"#,
+    );
+    assert!(report.results.is_empty(), "the case must not run");
+    assert!(
+        report
+            .errors
+            .iter()
+            .any(|e| e.contains("not-a-time") && e.contains("stamps")),
+        "{:?}",
+        report.errors
+    );
+}
+
+#[test]
+fn a_case_can_feed_stdin_and_compare_stderr_through_a_full_run() {
+    // A one-case suite whose oracle copies stdin into out.txt and prints to
+    // stderr: the self-check proves the plumbing delivers the payload to
+    // both sides, byte-exactly.
+    let dir = work("stdin-suite");
+    let oracle = dir.join("oracle");
+    fs::create_dir_all(&oracle).unwrap();
+    fs::write(
+        oracle.join("cat.sh"),
+        "#!/usr/bin/env bash\nset -euo pipefail\ncat >out.txt\necho hook-noise >&2\n",
+    )
+    .unwrap();
+    let case = dir.join("corpus/basic/one");
+    fs::create_dir_all(case.join("tree")).unwrap();
+    fs::write(
+        case.join("case.json"),
+        r#"{ "v": 1, "stdin": "{\"tool_name\":\"Bash\"}\n", "stderr": true }"#,
+    )
+    .unwrap();
+    let suite = json!({
+        "v": 1, "name": "stdin",
+        "corpus": dir.join("corpus"),
+        "oracle_root": dir.join("oracle"),
+        "commands": [
+            { "name": "cat", "oracle": ["bash", "{oracle}/cat.sh"], "candidate": ["bash", "{oracle}/cat.sh"], "classes": ["basic"] }
+        ],
+        "floors": { "basic": 1 }
+    });
+    let path = dir.join("suite.json");
+    fs::write(&path, serde_json::to_vec(&suite).unwrap()).unwrap();
+    let loaded = Suite::load(&path).unwrap();
+    let report = run_suite(&loaded, &Mode::SelfCheck, &dir.join("work"));
+    assert!(report.ok(), "{:?}", report.errors);
+    assert_eq!(report.passed(), 1);
+}

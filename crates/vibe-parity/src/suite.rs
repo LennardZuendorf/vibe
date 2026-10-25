@@ -163,6 +163,8 @@ pub enum Field {
     Exit,
     /// The stdout bytes.
     Stdout,
+    /// The stderr bytes. Compared only for cases that set `stderr: true`.
+    Stderr,
     /// The bytes of every file left in the sandbox.
     Files,
 }
@@ -198,6 +200,21 @@ impl Divergence {
     }
 }
 
+/// Per-case git sandboxing. An empty `.git/` stub bounds marker-based
+/// root searches but NOT git's own repository discovery, so any case whose
+/// child may run git needs a real repository (and a discovery ceiling).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GitCfg {
+    /// Run `git init` in the sandbox after staging. Exit status asserted.
+    pub init: bool,
+    /// Commit the staged tree once after init, with signing and hooks off
+    /// (`user.email`/`user.name` set, `commit.gpgsign=false`,
+    /// `tag.gpgsign=false`, `core.hooksPath=/dev/null`). Exit asserted.
+    #[serde(default)]
+    pub commit: bool,
+}
+
 /// A corpus case's `case.json`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -210,6 +227,29 @@ pub struct CaseSpec {
     /// Extra argument lists per command. A command without an entry runs once with none.
     #[serde(default)]
     pub runs: BTreeMap<String, Vec<Vec<String>>>,
+    /// Stdin bytes for the run, fed to BOTH sides by file redirect (never a
+    /// pipe — a broken-pipe producer must not leak into the exit status).
+    /// Empty means no stdin, same as before.
+    #[serde(default)]
+    pub stdin: String,
+    /// Also compare stderr bytes (`Field::Stderr`). Block and warn messages
+    /// are the hook contract, so hook cases set this.
+    #[serde(default)]
+    pub stderr: bool,
+    /// Extra environment variables for the child, added on top of the
+    /// harness's cleared environment. Everything else stays deleted — the
+    /// delete-not-unset discipline is structural.
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+    /// Sandbox-relative path → RFC3339 `YYYY-MM-DDTHH:MM:SSZ` timestamp.
+    /// Applied to both sides after staging, before the run, so freshness
+    /// ordering is deterministic without sleeps. The timestamp must parse;
+    /// an unreadable or unparsable path fails the case loudly.
+    #[serde(default)]
+    pub stamps: BTreeMap<String, String>,
+    /// Git sandboxing for this case.
+    #[serde(default)]
+    pub git: Option<GitCfg>,
 }
 
 /// A corpus case on disk.
@@ -246,6 +286,52 @@ impl Case {
     }
 }
 
+/// Seconds since the unix epoch for an RFC3339 `YYYY-MM-DDTHH:MM:SSZ`
+/// timestamp. Hand-written (no chrono): days-from-civil (Howard Hinnant).
+pub fn parse_rfc3339(text: &str) -> Result<u64, String> {
+    let bytes = text.as_bytes();
+    let bad = || format!("stamp {text:?} is not YYYY-MM-DDTHH:MM:SSZ");
+    let digits = |from: usize, len: usize| -> Result<u64, String> {
+        let part = bytes
+            .get(from..from + len)
+            .ok_or_else(bad)?
+            .iter()
+            .try_fold(0u64, |acc, b| {
+                b.is_ascii_digit()
+                    .then(|| acc * 10 + u64::from(b - b'0'))
+                    .ok_or_else(bad)
+            })?;
+        Ok(part)
+    };
+    if bytes.len() != 20
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[10] != b'T'
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+        || bytes[19] != b'Z'
+    {
+        return Err(bad());
+    }
+    let (year, month, day) = (digits(0, 4)?, digits(5, 2)?, digits(8, 2)?);
+    let (hour, minute, second) = (digits(11, 2)?, digits(14, 2)?, digits(17, 2)?);
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return Err(bad());
+    }
+    if hour > 23 || minute > 59 || second > 59 {
+        return Err(bad());
+    }
+    let y = year as i64;
+    let y = if month <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy as i64;
+    let days = era * 146_097 + doe - 719_468;
+    Ok(days as u64 * 86_400 + hour * 3_600 + minute * 60 + second)
+}
+
 fn validate_spec(spec: &CaseSpec) -> Result<(), String> {
     let confined = Path::new(&spec.cwd)
         .components()
@@ -260,6 +346,12 @@ fn validate_spec(spec: &CaseSpec) -> Result<(), String> {
         if sets.is_empty() {
             return Err(format!("runs for command {command} has no argument lists"));
         }
+    }
+    for (path, stamp) in &spec.stamps {
+        parse_rfc3339(stamp).map_err(|e| {
+            let _ = path;
+            format!("stamps[{path:?}]: {e}")
+        })?;
     }
     Ok(())
 }
