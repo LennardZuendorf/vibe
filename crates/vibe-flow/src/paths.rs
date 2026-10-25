@@ -96,6 +96,36 @@ impl FlowPaths {
         self.data.join("SKILL.md")
     }
 
+    /// `<data>/scripts/detect-context.sh` — the hook keystone: the guard and
+    /// the stop gate no-op when it is absent, and the guard's spawn fallback
+    /// runs it.
+    pub fn detect_script(&self) -> PathBuf {
+        self.data.join("scripts").join("detect-context.sh")
+    }
+
+    /// `<data>/warnings.log` — the warnings relay the inject hook drains.
+    pub fn warnings_log(&self) -> PathBuf {
+        self.data.join("warnings.log")
+    }
+
+    /// The legacy evidence directory the frozen oracle's receipt tooth reads.
+    pub fn legacy_evidence_dir(&self) -> PathBuf {
+        self.legacy_data.join("evidence")
+    }
+
+    /// The posix-relative spelling of a sandbox path, `/`-joined, for the
+    /// stop gate's own-runtime comparison.
+    pub fn posix_relative(&self, path: &Path) -> String {
+        let rel = path
+            .strip_prefix(&self.root)
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|_| path.to_path_buf());
+        rel.components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/")
+    }
+
     /// The cursor write path, always the new one.
     pub fn cursor_path(&self) -> PathBuf {
         self.run_dir().join("state.json")
