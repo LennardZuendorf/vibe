@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "{\n  \"flow\": \"feature\",\n  \"phase\": \"compound\",\n  \"feature\": \"auth\",\n  \"updated\": \"2026-01-01T00:00:00Z\",\n  \"state\": \"feature.compound\"\n}\n",
+  "stderr": ""
+}

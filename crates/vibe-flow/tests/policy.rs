@@ -167,9 +167,9 @@ fn the_matrix_covers_every_rule_every_state_and_every_spelling() {
             }
         }
     }
-    assert_eq!(patterns, 19);
-    assert_eq!(cases, 19 * 13);
-    assert_eq!(spelled, 19 * 13 * 7);
+    assert_eq!(patterns, 20);
+    assert_eq!(cases, 20 * 13);
+    assert_eq!(spelled, 20 * 13 * 7);
 }
 
 #[test]

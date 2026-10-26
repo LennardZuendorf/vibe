@@ -4,7 +4,7 @@
   "rules": [
     {
       "id": "cursor",
-      "match": ".agents/skills/vibe/state.json",
+      "match": [".agents/skills/vibe/state.json", ".vibe/run/flow/state.json"],
       "arms": [
         { "states": "*", "verdict": "block", "reason": "state.json is written only via set-state.sh, never by direct edit" }
       ]

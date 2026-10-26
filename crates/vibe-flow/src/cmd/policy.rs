@@ -309,7 +309,7 @@ mod tests {
         );
         assert!(
             out.stdout
-                .contains("cursor  match=.agents/skills/vibe/state.json  arms=[*->block]"),
+                .contains("cursor  match=.agents/skills/vibe/state.json, .vibe/run/flow/state.json  arms=[*->block]"),
             "{}",
             out.stdout
         );
@@ -327,8 +327,9 @@ mod tests {
         assert_eq!(out.code, 0);
         assert_eq!(out.stdout.lines().count(), 11);
         assert!(
-            out.stdout
-                .starts_with("- `.agents/skills/vibe/state.json` — otherwise: block"),
+            out.stdout.starts_with(
+                "- `.agents/skills/vibe/state.json`, `.vibe/run/flow/state.json` — otherwise: block"
+            ),
             "{}",
             out.stdout
         );

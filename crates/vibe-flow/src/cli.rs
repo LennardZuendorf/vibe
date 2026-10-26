@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 
 use crate::cmd::{self, Outcome};
+use crate::hook;
 use crate::paths::{Env, FlowPaths};
 
 const VIBE_DIR_FLAG: &str = "--vibe-dir";
@@ -39,6 +40,12 @@ enum Command {
     Policy {
         #[command(subcommand)]
         command: PolicyCommand,
+    },
+    /// Run one hook event over the stdin payload (the platform's exit-code
+    /// convention: 0 pass or degrade, 2 block).
+    Hook {
+        /// The event name, e.g. `pre-tool-use-guard` or `stop-gate`.
+        event: Option<String>,
     },
 }
 
@@ -124,6 +131,20 @@ fn dispatch(paths: &FlowPaths, command: Command) -> Outcome {
             PolicyCommand::List => cmd::policy::run(paths, cmd::policy::Sub::List, &[]),
             PolicyCommand::Render => cmd::policy::run(paths, cmd::policy::Sub::Render, &[]),
         },
+        Command::Hook { event } => {
+            // Only the guard and the stop gate read stdin. The composition
+            // events are D25 no-ops here until F12, and an absent or unknown
+            // name from a terminal must not block on EOF.
+            match event.as_deref() {
+                Some(name @ (hook::GUARD | hook::STOP)) => {
+                    hook::run(paths, name, &hook::read_stdin())
+                }
+                Some(name @ (hook::SESSION_START | hook::USER_PROMPT_SUBMIT)) => {
+                    hook::run(paths, name, "")
+                }
+                _ => Outcome::new(0, String::new(), String::new()),
+            }
+        }
     }
 }
 

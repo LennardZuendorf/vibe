@@ -98,13 +98,15 @@ JSON
       { "matcher": "startup|clear|compact", "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" session-start", "timeout": 10 } ] }
     ],
     "PreToolUse": [
-      { "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash", "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" guard", "timeout": 10 } ] }
+      { "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash", "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" guard", "timeout": 10 } ] },
+      { "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash", "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/vibe/bin/hook.sh\" pre-tool-use-guard", "timeout": 10 } ] }
     ],
     "PostToolUse": [
       { "matcher": "Edit|Write|MultiEdit", "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" validate", "timeout": 10 } ] }
     ],
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" validate", "timeout": 10 } ] }
+      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/spec/hooks/run-hook.sh\" validate", "timeout": 10 } ] },
+      { "hooks": [ { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/vibe/bin/hook.sh\" stop-gate", "timeout": 10 } ] }
     ]
   }
 }

@@ -143,6 +143,27 @@ test('shipped: state.json always blocks — no state admits a direct edit', () =
   }
 });
 
+test('shipped: the live cursor .vibe/run/flow/state.json always blocks — every state, every spelling', () => {
+  const { rules } = loadPolicy(REPO_VIBE_DIR);
+  const policy = { rules };
+  const machine = JSON.parse(readFileSync(path.join(REPO_VIBE_DIR, 'state-machine.json'), 'utf8'));
+  const states = Object.keys(machine.states);
+  assert(states.length >= 13, `expected every machine state, got ${states.length}`);
+  const spellings = [
+    '.vibe/run/flow/state.json',
+    '/abs/proj/.vibe/run/flow/state.json',
+    'worktree/.vibe/run/flow/state.json',
+    '../.vibe/run/flow/state.json',
+  ];
+  for (const state of states) {
+    for (const target of spellings) {
+      const result = decide(policy, target, state);
+      assertEqual(result.verdict, 'block', `${target} must block in ${state}`);
+      assertEqual(result.reason, 'state.json is written only via set-state.sh, never by direct edit');
+    }
+  }
+});
+
 test('shipped: lessons.md blocks outside its states with the oracle\'s exact reason, allows inside them', () => {
   const { rules } = loadPolicy(REPO_VIBE_DIR);
   const policy = { rules };
@@ -850,9 +871,18 @@ function guardedPathsFor(rules) {
 // branches agree" from "both branches block everything".
 const CONTROL_PATHS = ['README.md', 'docs/x.md', 'flow/engine/policy.mjs', 'srcx/a.js'];
 
+// FV-R6: the live cursor moved to `.vibe/run/flow/state.json`, which the
+// frozen gen-2 bash branch cannot know. The engine guard for it is asserted by
+// its own test above; the matrix excludes exactly that path family and pins the
+// count, so a second engine-only divergence fails here.
+const ENGINE_ONLY_CURSOR_SUFFIX = '.vibe/run/flow/state.json';
+
 test('differential matrix: every guarded path x all 13 states is byte-identical through the engine and the bash branch', () => {
   const { rules } = loadPolicy(REPO_VIBE_DIR);
-  const paths = [...guardedPathsFor(rules), ...CONTROL_PATHS];
+  const allPaths = [...guardedPathsFor(rules), ...CONTROL_PATHS];
+  const engineOnly = allPaths.filter((p) => p.endsWith(ENGINE_ONLY_CURSOR_SUFFIX));
+  assertEqual(engineOnly.length, 4, `engine-only cursor paths changed: ${engineOnly.join(', ')}`);
+  const paths = allPaths.filter((p) => !p.endsWith(ENGINE_ONLY_CURSOR_SUFFIX));
   const harness = makeMatrixHarness();
   try {
     const engineRows = harness.runLeg(paths, MACHINE_STATES, { noNode: false });

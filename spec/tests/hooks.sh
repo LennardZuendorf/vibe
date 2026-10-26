@@ -121,12 +121,22 @@ test_generated_hooks() {
   check HOOK-GEN "SessionStart matcher" "startup|clear|compact" "$v"
   v="$(jq -r '.hooks.PreToolUse[0].matcher' "$f" 2>/dev/null)"
   check HOOK-GEN "PreToolUse matcher" "Edit|Write|MultiEdit|NotebookEdit|Bash" "$v"
+  v="$(jq -r '.hooks.PreToolUse[1].matcher' "$f" 2>/dev/null)"
+  check HOOK-GEN "flow PreToolUse matcher" "Edit|Write|MultiEdit|NotebookEdit|Bash" "$v"
+  v="$(jq -r '.hooks.PreToolUse[1].hooks[0].timeout' "$f" 2>/dev/null)"
+  check HOOK-GEN "flow PreToolUse timeout" "10" "$v"
+  v="$(jq -r '.hooks.PreToolUse[1].hooks[0].command' "$f" 2>/dev/null)"
+  check HOOK-GEN "flow PreToolUse command" 'bash "${CLAUDE_PLUGIN_ROOT}/skills/vibe/bin/hook.sh" pre-tool-use-guard' "$v"
   v="$(jq -r '.hooks.PostToolUse[0].matcher' "$f" 2>/dev/null)"
   check HOOK-GEN "PostToolUse matcher" "Edit|Write|MultiEdit" "$v"
   v="$(jq -r '.hooks.SessionStart[] | select(.matcher == null) | .hooks[0].timeout' "$f" 2>/dev/null)"
   check HOOK-GEN "doctrine SessionStart timeout" "10" "$v"
   v="$(jq -r '.hooks.Stop | length' "$f" 2>/dev/null)"
-  check HOOK-GEN "Stop entry" "1" "$v"
+  check HOOK-GEN "Stop entries" "2" "$v"
+  v="$(jq -r '.hooks.Stop[1].hooks[0].timeout' "$f" 2>/dev/null)"
+  check HOOK-GEN "flow Stop timeout" "10" "$v"
+  v="$(jq -r '.hooks.Stop[1].hooks[0].command' "$f" 2>/dev/null)"
+  check HOOK-GEN "flow Stop command" 'bash "${CLAUDE_PLUGIN_ROOT}/skills/vibe/bin/hook.sh" stop-gate' "$v"
 }
 
 test_drift() {

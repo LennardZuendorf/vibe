@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "vibe state: ERROR: cursor at <ROOT>/.agents/skills/vibe/state.json is malformed: key must be a string at line 1 column 3\n"
+}

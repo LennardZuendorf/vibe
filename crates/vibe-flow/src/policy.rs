@@ -416,36 +416,67 @@ fn posix_normalize(path: &str) -> String {
     }
 }
 
+/// One token of a parsed glob pattern.
+enum GlobToken {
+    /// Zero or more UTF-16 code units, none a JS line terminator.
+    Star,
+    /// Exactly one UTF-16 code unit, not a JS line terminator.
+    Any,
+    /// An exact run of UTF-16 code units.
+    Literal(Vec<u16>),
+}
+
+/// Parses by `char` (a JS `for...of` iterates code points), so an astral
+/// literal becomes its surrogate pair. Runs of `*` collapse first, exactly as
+/// the oracle collapses `/\*+/g` before translating.
+fn glob_tokens(pattern: &str) -> Vec<GlobToken> {
+    let mut tokens = Vec::new();
+    let mut previous_star = false;
+    for ch in pattern.chars() {
+        if ch == '*' {
+            if !previous_star {
+                tokens.push(GlobToken::Star);
+            }
+            previous_star = true;
+            continue;
+        }
+        previous_star = false;
+        if ch == '?' {
+            tokens.push(GlobToken::Any);
+            continue;
+        }
+        let mut buffer = [0u16; 2];
+        tokens.push(GlobToken::Literal(ch.encode_utf16(&mut buffer).to_vec()));
+    }
+    tokens
+}
+
+/// The four line terminators JS `.` refuses to match without the `s` flag.
+fn is_line_terminator(unit: u16) -> bool {
+    matches!(unit, 0x000A | 0x000D | 0x2028 | 0x2029)
+}
+
 /// Whether `pattern` matches `path` in full, with `*` spanning `/`.
 ///
-/// Memoized on failed positions, so a hostile pattern costs
+/// Matching is over UTF-16 code units, mirroring the oracle's `new RegExp`
+/// without the `u` flag: `?` is one code unit, and neither wildcard crosses a
+/// line terminator. Memoized on failed positions, so a hostile pattern costs
 /// `pattern length * path length * path length` at worst, never exponential
 /// backtracking.
 pub fn glob_match(pattern: &str, path: &str) -> bool {
-    let pattern = collapse_stars(pattern.as_bytes());
-    let path = path.as_bytes();
+    let pattern = glob_tokens(pattern);
+    let path: Vec<u16> = path.encode_utf16().collect();
     let mut failed = vec![false; (pattern.len() + 1) * (path.len() + 1)];
-    matches_at(&pattern, 0, path, 0, &mut failed)
+    matches_at(&pattern, 0, &path, 0, &mut failed)
 }
 
-fn collapse_stars(bytes: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut previous_star = false;
-    for &byte in bytes {
-        if byte == b'*' {
-            if previous_star {
-                continue;
-            }
-            previous_star = true;
-        } else {
-            previous_star = false;
-        }
-        out.push(byte);
-    }
-    out
-}
-
-fn matches_at(pattern: &[u8], pi: usize, path: &[u8], si: usize, failed: &mut [bool]) -> bool {
+fn matches_at(
+    pattern: &[GlobToken],
+    pi: usize,
+    path: &[u16],
+    si: usize,
+    failed: &mut [bool],
+) -> bool {
     let key = pi * (path.len() + 1) + si;
     if failed[key] {
         return false;
@@ -457,16 +488,28 @@ fn matches_at(pattern: &[u8], pi: usize, path: &[u8], si: usize, failed: &mut [b
     hit
 }
 
-fn step(pattern: &[u8], pi: usize, path: &[u8], si: usize, failed: &mut [bool]) -> bool {
+fn step(pattern: &[GlobToken], pi: usize, path: &[u16], si: usize, failed: &mut [bool]) -> bool {
     match pattern.get(pi) {
         None => si == path.len(),
-        Some(b'*') => (si..=path.len()).any(|next| matches_at(pattern, pi + 1, path, next, failed)),
-        Some(b'?') => {
-            matches!(path.get(si), Some(&byte) if byte != b'\n' && byte != b'\r')
+        Some(GlobToken::Star) => {
+            for next in si..=path.len() {
+                if next > si && is_line_terminator(path[next - 1]) {
+                    break;
+                }
+                if matches_at(pattern, pi + 1, path, next, failed) {
+                    return true;
+                }
+            }
+            false
+        }
+        Some(GlobToken::Any) => {
+            matches!(path.get(si), Some(&unit) if !is_line_terminator(unit))
                 && matches_at(pattern, pi + 1, path, si + 1, failed)
         }
-        Some(&byte) => {
-            path.get(si) == Some(&byte) && matches_at(pattern, pi + 1, path, si + 1, failed)
+        Some(GlobToken::Literal(units)) => {
+            let end = si.saturating_add(units.len());
+            path.get(si..end) == Some(units.as_slice())
+                && matches_at(pattern, pi + 1, path, end, failed)
         }
     }
 }
@@ -581,7 +624,7 @@ mod tests {
     }
 
     #[test]
-    fn glob_crosses_slashes_and_questions_match_one_byte() {
+    fn glob_crosses_slashes_and_questions_match_one_utf16_unit() {
         let cases: &[(&str, &str, bool)] = &[
             ("*", "", true),
             ("*", "a/b/c", true),
@@ -603,6 +646,36 @@ mod tests {
                 *want,
                 "glob({pattern:?}, {path:?})"
             );
+        }
+    }
+
+    #[test]
+    fn a_question_measures_utf16_code_units_not_bytes() {
+        // é is one UTF-16 unit (two Rust bytes); 😀 is a surrogate pair.
+        assert!(glob_match("?.md", "é.md"));
+        assert!(!glob_match("?.md", "😀.md"));
+        assert!(!glob_match("?", "😀"));
+        assert!(glob_match("??", "😀"));
+    }
+
+    #[test]
+    fn a_literal_astral_character_matches_its_surrogate_pair() {
+        assert!(glob_match("😀", "😀"));
+        assert!(glob_match("a😀b", "a😀b"));
+        assert!(glob_match("*😀*", "x😀y"));
+        assert!(!glob_match("a?b", "a😀b"));
+    }
+
+    #[test]
+    fn wildcards_do_not_match_js_line_terminators() {
+        for terminator in ['\n', '\r', '\u{2028}', '\u{2029}'] {
+            let text = terminator.to_string();
+            assert!(!glob_match("?", &text), "? matched {terminator:?}");
+            assert!(!glob_match("*", &text), "* matched {terminator:?}");
+            let wrapped = format!("a{terminator}b");
+            assert!(!glob_match("a?b", &wrapped), "a?b matched {terminator:?}");
+            assert!(!glob_match("a*b", &wrapped), "a*b matched {terminator:?}");
+            assert!(glob_match(&wrapped, &wrapped), "literal {terminator:?}");
         }
     }
 
@@ -640,7 +713,7 @@ mod tests {
         assert_eq!(lines.len(), 11);
         assert_eq!(
             lines[0],
-            "- `.agents/skills/vibe/state.json` — otherwise: block — state.json is written only via set-state.sh, never by direct edit"
+            "- `.agents/skills/vibe/state.json`, `.vibe/run/flow/state.json` — otherwise: block — state.json is written only via set-state.sh, never by direct edit"
         );
         assert!(
             lines[1].contains("otherwise: block")

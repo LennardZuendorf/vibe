@@ -175,7 +175,7 @@ fn policy_list_prints_one_line_per_rule() {
     assert_eq!(stdout.lines().count(), 12);
     assert_eq!(stdout.lines().next(), Some("policy: 11 rule(s)"));
     assert!(
-        stdout.contains("cursor  match=.agents/skills/vibe/state.json  arms=[*->block]"),
+        stdout.contains("cursor  match=.agents/skills/vibe/state.json, .vibe/run/flow/state.json  arms=[*->block]"),
         "{stdout}"
     );
     assert!(

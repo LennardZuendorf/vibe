@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-10-23
+updated: 2026-10-25
 ---
 
 # Delivered features
@@ -24,6 +24,7 @@ updated: 2026-10-23
 | content-layer | `content/blocks/**`, typed placeholders, `vibe.json` override layer, `vibe render` | `engine/tests/` |
 | inject-triggers | Level/edge/event trigger classes, `content/policy.json`, `Stop` predicate cut | `engine/tests/` + `flow/tests/adapters/run.sh` |
 | host-support | Four-host native skill/command packages (`flow/reference/host-surfaces.json` matrix) + `install.sh` `--platform` selection, CLI detection, ownership manifest, surgical uninstall | `flow/tests/adapters/run.sh` |
+| flow-core | `vibe-flow` machine/cursor/policy/state get/policy check | `cargo test -p vibe-flow` + `tests/parity/run.sh` |
 
 ## Delivered (history)
 
@@ -44,3 +45,4 @@ Cleansed notes for shipped work — detail lives in live surfaces, not this plan
 - **content-layer** — `content/blocks/**`, typed placeholders, `vibe render` with budgets. DONE.
 - **inject-triggers** — level/edge/event trigger classes, `policy.json`, `Stop` predicate cut. DONE.
 - **host-support** — four-host packages, `--platform` selection, ownership manifest, surgical uninstall. DONE (2026-10-02).
+- **flow-core** (F5) — Rust machine/cursor/policy port with flow parity suite. DONE (2026-10-25).

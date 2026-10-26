@@ -1,12 +1,12 @@
 {
-  "$comment": "vibe flow state machine. Static source of truth for the flow. States are compound <flow>.<phase> keys. Under D12 the per-turn orders are NOT stored here: skill-owning states carry inject:null and the orders live in the linked vibe skill's SKILL.md `## Orders (D12)` section (a <!-- vibe:orders:<state> --> block), resolved by .agents/skills/vibe/scripts/orders.sh. Only `idle` keeps an inline inject (skill-less fallback). The orders block is byte-stable; only <feature> interpolates, so the per-turn inject stays prompt-cache safe. set-state.sh is the only sanctioned writer of state.json. A single top-level `style` note governs output density for every state.",
+  "$comment": "vibe flow state machine. Static source of truth for the flow. States are compound <flow>.<phase> keys. Under D12 the per-turn orders are NOT stored here: skill-owning states carry inject:null and the orders live in the linked vibe skill's SKILL.md `## Orders (D12)` section (a <!-- vibe:orders:<state> --> block), resolved by .agents/flow/scripts/orders.sh. Only `idle` keeps an inline inject (skill-less fallback). The orders block is byte-stable; only <feature> interpolates, so the per-turn inject stays prompt-cache safe. vibe-flow state set is the only sanctioned writer of the cursor. A single top-level `style` note governs output density for every state.",
   "version": "1",
   "initial": "idle",
   "flows": ["idle", "setup", "strategy", "feature", "quick"],
   "phases": ["idle", "detect", "apply", "brainstorm", "spec", "design", "plan", "impl", "verify", "compound", "triage", "fix"],
   "gates": {
-    "feature.plan>feature.impl": "human approves plan units + picks impl mode",
-    "feature.verify>feature.compound": "human approves ship"
+    "feature.plan>feature.impl": "human approves plan units + picks impl mode (`--confirm`)",
+    "feature.verify>feature.compound": "human approves ship (`--confirm`)"
   },
   "style": "No filler or hedging. Compress receipts and subagent summaries. Security warnings and irreversible-action confirmations always stay in full prose. Compression never reduces reasoning depth; code, paths, commands stay byte-exact.",
   "states": {
@@ -17,7 +17,7 @@
       "writes": [],
       "inject": "state=idle · no active flow · pick a flow → vibe-flow state set {setup.detect | strategy.brainstorm | feature.design | quick.triage}",
       "next": ["setup.detect", "strategy.brainstorm", "feature.design", "quick.triage"],
-      "exit": "user has named the work; agent has chosen a flow and called set-state.sh"
+      "exit": "user has named the work; agent has chosen a flow and called vibe-flow state set"
     },
 
     "setup.detect": {

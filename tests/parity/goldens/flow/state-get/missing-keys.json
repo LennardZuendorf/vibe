@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "stdout": "{\n  \"flow\": \"quick\",\n  \"phase\": \"idle\",\n  \"feature\": null,\n  \"updated\": null,\n  \"state\": \"quick.idle\"\n}\n",
+  "stderr": ""
+}

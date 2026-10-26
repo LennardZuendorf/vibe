@@ -1,0 +1,5 @@
+{
+  "code": 1,
+  "stdout": "",
+  "stderr": "vibe state: ERROR: cursor at <ROOT>/.agents/skills/vibe/state.json is malformed: top-level JSON value is not an object\n"
+}
