@@ -19,12 +19,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Resolve the repo root by upward marker search (never fixed hop counts — the
 # script is reachable via the .agents/skills/vibe symlink and the canonical
-# flow/ path; both must agree). A repo/install is marked by .spec, .git, or the
+# flow/ path; both must agree). A repo/install is marked by .spec, .git, or the # literal
 # .agents/skills tree an install lays down.
 find_root() {
   local d="$1"
   while [[ -n "$d" && "$d" != "/" ]]; do
-    if [[ -d "$d/.spec" || -e "$d/.git" || -d "$d/.agents/skills" ]]; then
+    if [[ -d "$d/docs/spec" || -d "$d/.spec" || -e "$d/.git" || -d "$d/.agents/skills" ]]; then # literal
       printf '%s\n' "$d"; return 0
     fi
     d="$(dirname "$d")"

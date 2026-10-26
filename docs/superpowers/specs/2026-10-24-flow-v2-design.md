@@ -19,7 +19,7 @@ Rebase the entire flow half on one Rust CLI (`vibe-flow`), make the shipped skil
 - **FV-R7 Runtime writes.** `state set` order: validate (pure) → write cursor → append one ledger `transition` event → rewrite payload (seq+1). Ledger/payload failures warn and continue (advisory, D28); cursor failure fails the transition. Ledger: `O_APPEND`, rotate at 5 MB keeping one generation, kinds `transition|hook|signal`.
 - **FV-R8 GSD compat is additive-only.** Alias commands in the `/gsd-*` grammar mapping onto `vibe-flow state set`/`status`; `.planning/` is read-only context (never state, never written); disk-strict verification verdicts (`passed|gaps_found|human_needed`) ride the evidence receipt; no GSD state machine, no `--auto`, no milestone layer, no Node (D19). vibe's gates and D12 orders stay authoritative.
 - **FV-R9 F11 un-held, parallel.** `vibe-instruct` builds in parallel with F5–F8 (option a). D25 ownership: instruct composes SessionStart/UserPromptSubmit; flow keeps guard/Stop. The JS engine keeps running until F23; the shim flip happens once, at F12.
-- **FV-R10 Freeze ordering.** Generation-2 oracle re-freeze is the **last** commit of Track 0 (flow + js halves; the spec half stays gen-1 as vibe-spec's port record). The Rust parity target is post-sweep live behavior; defects found later are expected-divergence pins fixed in Rust only.
+- **FV-R10 Freeze ordering.** Generation-2 oracle re-freeze is the **last** commit of Track 0, and it is **whole**: every frozen path is re-copied, spec half included — a spec-half left at gen-1 would have the port reproduce pre-sweep behaviour (`.spec/` routes in the setup templates that ship to users) with nothing going red. The freeze is not a per-half choice: `oracles/freeze.sh` copies all of it, and `oracles/check.sh` asserts *freshness* against the live sources, not only integrity, so a freeze that lags cannot pass. The Rust parity target is post-sweep live behavior; defects found later are expected-divergence pins fixed in Rust only.
 - **FV-R11 Parity mechanism.** `vibe-parity` gains additive case fields (`stdin`, `env`, `stderr`, `normalize`, `stamps`, `git`, PATH placeholders) and a new `tests/parity/flow.json` suite over a generated corpus. Illegal-edge/gate refusals are pure-Rust negative tests with machine-derived counts (the bash oracle is toothless there); legal edges are byte-parity.
 
 ## Architecture
@@ -82,7 +82,7 @@ Rust 1.88 / edition 2024; deps unchanged (`vibe-core`, `clap`, `serde_json`; no 
 1. Receipts at `.vibe/run/flow/evidence/` (cluster conflict resolved: all flow runtime under one dir). *Default: yes.*
 2. `verdict` required for all new receipts vs only when GSD sources are cited. *Default: all new; legacy grandfathered.*
 3. `.planning/**` block vs warn. *Default: block; `state set idle` is the escape.*
-4. Spec-half oracles re-freeze too? *Default: keep gen-1 for `bash/spec/**`; re-freeze flow + js only.*
+4. Spec-half oracles re-freeze too? **Decided: yes — all halves (2026-10-26).** Keeping `bash/spec/**` at gen-1 makes the port reproduce pre-sweep behaviour, including the `.spec/` routes the setup templates ship to users, with nothing going red; a partial freeze is what the freeze tooling now makes unexpressible.
 5. Source stays in `flow/` with `.agents/flow` symlink. *Default: yes (mirrors `.agents/skills/vibe`).*
 6. macOS parity leg now. *Default: ubuntu-only until F23; os-pins stay dormant.*
 7. Codex `$gsd-*` alias derivation in v1. *Default: table-only; derivation is mechanical later.*

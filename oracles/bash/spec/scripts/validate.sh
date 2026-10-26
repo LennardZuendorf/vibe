@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # Validate .spec/ documents for consistency
 # Checks: frontmatter, cross-references, naming conventions, orphaned files,
 #         feature-folder structure, design tokens (SF3), optional design lint (SF4)
