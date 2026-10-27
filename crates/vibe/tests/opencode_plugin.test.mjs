@@ -83,7 +83,10 @@ function withEnv(vars, fn) {
 
 // The plugin branches on `process.platform`, so a test that means to exercise one branch must
 // pin it: inheriting the host's platform makes a POSIX assertion mean something else on Windows.
+// An omitted platform means "the host's" — pinning it to `undefined` would make every branch
+// fall through to the default one and hide the caller's mistake.
 function withPlatform(platform, fn) {
+  if (platform === undefined) return fn();
   const saved = Object.getOwnPropertyDescriptor(process, "platform");
   Object.defineProperty(process, "platform", { value: platform });
   try { return fn(); } finally {
