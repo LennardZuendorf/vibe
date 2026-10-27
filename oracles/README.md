@@ -36,3 +36,10 @@ other behind is exactly how the generation-1 record survived into generation 2.
   partial freeze would have left 9 stale files — 7 cosmetic spec-side scripts
   plus the `plan.md`/`tech.md` setup templates, which ship to users through
   `setup.sh` and still said `.spec/` where the tree now says `docs/spec`.
+- gen-3 — **all halves** re-frozen on the flow-v2 branch, after Task 0.2 (route
+  sweep) changed three live flow scripts that gen-2 had already frozen:
+  `detect-context.sh` gained the `.planning/*` block rule (block in every state,
+  `idle` the escape hatch) and `orders.sh`/`regen-active-rules.sh` had their
+  D12/spec-root comments retruthed by Task 0.1. The behaviour change is the
+  `.planning` arm; the other two are comments only. gen-2 is the last freeze
+  that predates skills v2.

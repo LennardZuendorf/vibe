@@ -9,7 +9,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECK="$ROOT/oracles/check.sh"
 # The hash of oracles/MANIFEST.sha256. D30: oracles never change. Changing
 # this constant is an explicit, reviewed act, never a side effect of a fix.
-MANIFEST_SHA256=cae192aee8ae745ccddfc0b58f2149be65ed1fe58e21076939821ad2ad1edbe5
+MANIFEST_SHA256=3f36939f27f4876782bb7e2ea26e2d7c1e4fbb9b7193de3b0c31f0eb6b8da9d2
 pass=0
 fail=0
 
