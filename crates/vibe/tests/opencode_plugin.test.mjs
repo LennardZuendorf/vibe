@@ -81,6 +81,16 @@ function withEnv(vars, fn) {
   }
 }
 
+// The plugin branches on `process.platform`, so a test that means to exercise one branch must
+// pin it: inheriting the host's platform makes a POSIX assertion mean something else on Windows.
+function withPlatform(platform, fn) {
+  const saved = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { value: platform });
+  try { return fn(); } finally {
+    Object.defineProperty(process, "platform", saved);
+  }
+}
+
 test("module_default_export_has_id_and_setup", () => {
   assert.equal(plugin.id, "vibe-store");
   assert.equal(typeof plugin.setup, "function");
@@ -194,7 +204,7 @@ test("missing_agents_file_pushes_nothing", () => {
   }
 });
 
-test("store_dir_falls_back_to_xdg_then_home", () => {
+test("store_dir_falls_back_to_xdg_then_home", () => withPlatform("linux", () => {
   const xdg = tmpDir("vibe-xdg-");
   fs.mkdirSync(path.join(xdg, "vibe"));
   fs.writeFileSync(path.join(xdg, "vibe", "AGENTS.md"), "xdg\n");
@@ -224,7 +234,7 @@ test("store_dir_falls_back_to_xdg_then_home", () => {
     if (saved === undefined) delete process.env.VIBE_STORE;
     else process.env.VIBE_STORE = saved;
   }
-});
+}));
 
 test("spawns_session_start_detached_with_bin_constant", () => {
   storeDir({});
@@ -278,17 +288,16 @@ test("plugin_never_writes_files", () => {
 function runWith(vars, platform) {
   const keys = ["VIBE_STORE", "XDG_CONFIG_HOME", "APPDATA", "HOME", "USERPROFILE"];
   const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
-  const savedPlatform = Object.getOwnPropertyDescriptor(process, "platform");
   for (const k of keys) delete process.env[k];
   Object.assign(process.env, vars);
-  if (platform) Object.defineProperty(process, "platform", { value: platform });
   try {
-    const f = fakeCtx();
-    plugin.setup(f.ctx);
-    f.runTransform();
-    return Object.keys(f.sets);
+    return withPlatform(platform, () => {
+      const f = fakeCtx();
+      plugin.setup(f.ctx);
+      f.runTransform();
+      return Object.keys(f.sets);
+    });
   } finally {
-    Object.defineProperty(process, "platform", savedPlatform);
     for (const [k, v] of Object.entries(saved)) {
       if (v === undefined) delete process.env[k]; else process.env[k] = v;
     }
@@ -309,12 +318,15 @@ test("store_dir_matches_the_rust_resolution", () => {
   const appdata = tmpDir("vibe-plugin-appdata-");
   storeAt(appdata, "vibe", "from_appdata");
 
-  assert.deepEqual(runWith({ HOME: home }), ["from_home"]);
-  assert.deepEqual(runWith({ HOME: home, XDG_CONFIG_HOME: "relative/dir" }), ["from_home"]);
-  assert.deepEqual(runWith({ HOME: home, XDG_CONFIG_HOME: xdg }), ["from_xdg"]);
-  if (process.platform !== "win32") {
-    assert.deepEqual(runWith({ HOME: home, XDG_CONFIG_HOME: xdg, APPDATA: appdata }), ["from_xdg"]);
-  }
+  // Every POSIX assertion pins `linux`: the plugin branches on `process.platform`, so an
+  // unpinned assertion would run the host's branch and mean something else on Windows.
+  assert.deepEqual(runWith({ HOME: home }, "linux"), ["from_home"]);
+  assert.deepEqual(runWith({ HOME: home, XDG_CONFIG_HOME: "relative/dir" }, "linux"), ["from_home"]);
+  assert.deepEqual(runWith({ HOME: home, XDG_CONFIG_HOME: xdg }, "linux"), ["from_xdg"]);
+  assert.deepEqual(
+    runWith({ HOME: home, XDG_CONFIG_HOME: xdg, APPDATA: appdata }, "linux"),
+    ["from_xdg"],
+  );
   assert.deepEqual(
     runWith({ HOME: home, XDG_CONFIG_HOME: xdg, APPDATA: appdata }, "win32"),
     ["from_appdata"],

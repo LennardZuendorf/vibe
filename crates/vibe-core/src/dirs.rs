@@ -110,6 +110,18 @@ mod tests {
         )
     }
 
+    /// An absolute path as the *host* spells one. `Path::is_absolute` follows the running
+    /// platform even when the `Env` says it describes another one, so `/x` is relative on
+    /// Windows and would silently lose to the fallback — the test would then assert the
+    /// fallback against itself.
+    fn abs(component: &str) -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(format!("C:\\{component}"))
+        } else {
+            PathBuf::from(format!("/{component}"))
+        }
+    }
+
     #[test]
     fn home_unix_uses_home() {
         assert_eq!(
@@ -135,8 +147,12 @@ mod tests {
 
     #[test]
     fn config_home_prefers_absolute_xdg() {
-        let e = env(&[("HOME", "/h"), ("XDG_CONFIG_HOME", "/x")], false);
-        assert_eq!(e.config_home().unwrap(), PathBuf::from("/x"));
+        let xdg = abs("x");
+        let e = env(
+            &[("HOME", "/h"), ("XDG_CONFIG_HOME", &xdg.to_string_lossy())],
+            false,
+        );
+        assert_eq!(e.config_home().unwrap(), xdg);
     }
 
     #[test]
@@ -161,10 +177,34 @@ mod tests {
     fn state_home_defaults_and_xdg() {
         let e = env(&[("HOME", "/h")], false);
         assert_eq!(e.state_home().unwrap(), PathBuf::from("/h/.local/state"));
-        let e = env(&[("HOME", "/h"), ("XDG_STATE_HOME", "/x")], false);
-        assert_eq!(e.state_home().unwrap(), PathBuf::from("/x"));
+        let xdg = abs("x");
+        let e = env(
+            &[("HOME", "/h"), ("XDG_STATE_HOME", &xdg.to_string_lossy())],
+            false,
+        );
+        assert_eq!(e.state_home().unwrap(), xdg);
         let e = env(&[("HOME", "/h"), ("XDG_STATE_HOME", "rel")], false);
         assert_eq!(e.state_home().unwrap(), PathBuf::from("/h/.local/state"));
+    }
+
+    /// The Windows rule, stated where it is enforced: `%APPDATA%`/`%LOCALAPPDATA%` decide the
+    /// roots and XDG is ignored, even when XDG is absolute. Pinned with host-absolute paths so
+    /// the assertion is the same on every CI platform.
+    #[test]
+    fn windows_roots_ignore_xdg() {
+        let xdg = abs("x");
+        let xdg = xdg.to_string_lossy();
+        let e = env(
+            &[
+                ("APPDATA", "C:\\A"),
+                ("LOCALAPPDATA", "C:\\L"),
+                ("XDG_CONFIG_HOME", &xdg),
+                ("XDG_STATE_HOME", &xdg),
+            ],
+            true,
+        );
+        assert_eq!(e.config_home().unwrap(), PathBuf::from("C:\\A"));
+        assert_eq!(e.state_home().unwrap(), PathBuf::from("C:\\L"));
     }
 
     #[test]

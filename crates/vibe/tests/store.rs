@@ -164,14 +164,20 @@ fn load_skips_empty_or_invalid_instructions_with_one_note() {
 #[test]
 fn config_expands_tilde_in_sources() {
     let home = Home::with_store("config-tilde");
+    // `abs` must be absolute for the host: `/abs/dir` is not absolute on Windows, so the
+    // fixture would test the relative branch instead of the absolute one.
+    let abs = home.path("abs").join("dir");
     home.write_json(
         ".config/vibe/store.json",
-        r#"{"skills":{"sources":["~/toolkit","/abs/dir"]},"harnesses":{"claude":{"enabled":false},"zzz":{"enabled":true}}}"#,
+        &format!(
+            r#"{{"skills":{{"sources":["~/toolkit",{:?}]}},"harnesses":{{"claude":{{"enabled":false}},"zzz":{{"enabled":true}}}}}}"#,
+            abs.to_string_lossy()
+        ),
     );
     let p = paths(&home);
     let s = store::load(&p).unwrap();
     assert_eq!(s.config.skill_sources[0], p.home.join("toolkit"));
-    assert_eq!(s.config.skill_sources[1], Path::new("/abs/dir"));
+    assert_eq!(s.config.skill_sources[1], abs);
     assert_eq!(s.config.enabled.get(&Harness::Claude), Some(&false));
     assert_eq!(s.config.enabled.len(), 1);
 }
@@ -435,7 +441,7 @@ fn import_cli_never_prints_secrets() {
     assert!(stdout.contains("export VIBE_EXA_AUTHORIZATION"), "{stdout}");
     assert!(stdout.contains("export API_KEY"), "{stdout}");
     assert!(stdout.contains("export VIBE_EXA_EXAAPIKEY"), "{stdout}");
-    let written = home.read(".config/vibe/mcp.json");
+    let written = home.read(&format!("{}/mcp.json", home.store_rel()));
     for lit in ["sk-1", "sk-2", "k3"] {
         let needle = if lit == "k3" { "=k3" } else { lit };
         assert!(!stdout.contains(needle), "{needle} in stdout");

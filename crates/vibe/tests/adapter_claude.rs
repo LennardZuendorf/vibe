@@ -738,13 +738,10 @@ fn skills_shadowed_reported() {
         ),
     );
     let p = skills_plan(&home, &State::default(), &[home.path(".claude/skills")]);
-    let kept = home.path(".config/vibe/skills/a");
-    let dropped = home.path("extra/a");
-    assert!(p.notes.contains(&Note::Info(format!(
-        "skill a: kept {}, shadowed {}",
-        kept.display(),
-        dropped.display()
-    ))));
+    let kept = home.shown(".config/vibe/skills/a");
+    let dropped = home.shown("extra/a");
+    let expected = Note::Info(format!("skill a: kept {kept}, shadowed {dropped}"));
+    assert!(p.notes.contains(&expected), "want {expected:?} in {p:?}");
 }
 
 #[cfg(not(unix))]

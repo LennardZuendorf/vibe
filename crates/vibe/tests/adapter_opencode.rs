@@ -75,7 +75,7 @@ fn opencode_plugin_written_with_marker_and_bin() {
         "{text}"
     );
     assert!(!text.contains("__VIBE_BIN__"));
-    let path = home.path(REL).display().to_string();
+    let path = home.shown(REL);
     assert_eq!(state.owned.plugins.get("opencode"), Some(&path));
     assert!(state.owned.created.contains(&path));
 }
@@ -100,7 +100,7 @@ fn opencode_plugin_foreign_file_refused() {
         p.notes,
         vec![Note::Refused(format!(
             "opencode plugin: {} exists and is not vibe's \u{2014} not overwritten",
-            home.path(REL).display()
+            home.shown(REL)
         ))]
     );
     assert_eq!(home.read(REL), "// mine\nexport default {};\n");

@@ -76,6 +76,25 @@ impl Home {
         self.dir.join(rel)
     }
 
+    /// `rel` rendered the way the product prints a path on this host: `rel` may be written
+    /// with `/`, and `PathBuf` keeps those bytes — but the product builds its paths by joining
+    /// components, so on Windows it prints `\`. Compare shown strings, not path literals.
+    pub fn shown(&self, rel: &str) -> String {
+        self.path(rel)
+            .to_string_lossy()
+            .replace('/', std::path::MAIN_SEPARATOR_STR)
+    }
+
+    /// The store directory as a child `vibe` process resolves it here: `%APPDATA%\vibe` on
+    /// Windows (`run` points `APPDATA` at `<home>/AppData/Roaming`), `~/.config/vibe` elsewhere.
+    pub fn store_rel(&self) -> &'static str {
+        if cfg!(windows) {
+            "AppData/Roaming/vibe"
+        } else {
+            ".config/vibe"
+        }
+    }
+
     /// Writes `text` to `rel` under the home, creating parents.
     pub fn write(&self, rel: &str, text: &str) {
         let path = self.path(rel);

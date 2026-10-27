@@ -82,6 +82,12 @@ impl Paths {
         let codex_dir = env
             .var("CODEX_HOME")
             .map_or_else(|| home.join(".codex"), PathBuf::from);
+        // Third-party harness directories follow each tool's own convention, not vibe's roots.
+        // OpenCode resolves its config dir as `XDG_CONFIG_HOME` or `~/.config`, then `/opencode`,
+        // on every platform (its bundle: `XDG_CONFIG_HOME || join(homedir, ".config")`), so it
+        // never reads `%APPDATA%` — unlike `dirs::Env`, which owns vibe's own store and state and
+        // does take `%APPDATA%`/`%LOCALAPPDATA%` on Windows. An XDG path that is not absolute on
+        // the host is ignored: joining it would produce a relative directory.
         let xdg = env
             .var("XDG_CONFIG_HOME")
             .map(PathBuf::from)
@@ -144,6 +150,16 @@ mod tests {
         )
     }
 
+    /// An absolute path as the *host* spells one: `Path::is_absolute` follows the running
+    /// platform even though this `Env` describes a unix one, so `/x` is relative on Windows.
+    fn abs(component: &str) -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(format!("C:\\{component}"))
+        } else {
+            PathBuf::from(format!("/{component}"))
+        }
+    }
+
     #[test]
     fn paths_default_layout() {
         let p = Paths::from_env(&env(&[("HOME", "/h")])).unwrap();
@@ -170,13 +186,14 @@ mod tests {
 
     #[test]
     fn paths_honour_overrides() {
+        let xdg = abs("x");
         let p = Paths::from_env(&env(&[
             ("HOME", "/h"),
             ("VIBE_STORE", "/s"),
             ("VIBE_STATE", "/t"),
             ("CODEX_HOME", "/cx"),
             ("CLAUDE_CONFIG_DIR", "/c"),
-            ("XDG_CONFIG_HOME", "/x"),
+            ("XDG_CONFIG_HOME", &xdg.to_string_lossy()),
         ]))
         .unwrap();
         assert_eq!(p.store, PathBuf::from("/s"));
@@ -185,7 +202,32 @@ mod tests {
         assert_eq!(p.claude_dir, PathBuf::from("/c"));
         assert_eq!(p.claude_config_env, Some(PathBuf::from("/c")));
         assert_eq!(p.claude_json, PathBuf::from("/c/.claude.json"));
-        assert_eq!(p.opencode_dir, PathBuf::from("/x/opencode"));
+        assert_eq!(p.opencode_dir, xdg.join("opencode"));
+    }
+
+    /// The two roots differ on Windows for a reason: vibe's own store moves to `%APPDATA%`, but
+    /// the OpenCode plugin has to land where OpenCode itself looks (`~/.config/opencode`, on
+    /// every platform). Both rules are pinned here so neither drifts into the other.
+    #[test]
+    fn windows_store_uses_appdata_but_opencode_stays_dot_config() {
+        let env = Env::new(
+            [
+                ("USERPROFILE", "C:\\U"),
+                ("APPDATA", "C:\\U\\AppData\\Roaming"),
+                ("LOCALAPPDATA", "C:\\U\\AppData\\Local"),
+            ]
+            .map(|(k, v)| (k.to_string(), v.to_string())),
+            true,
+        );
+        let p = Paths::from_env(&env).unwrap();
+        assert_eq!(
+            p.store,
+            PathBuf::from("C:\\U\\AppData\\Roaming").join("vibe")
+        );
+        assert_eq!(
+            p.opencode_dir,
+            PathBuf::from("C:\\U").join(".config").join("opencode")
+        );
     }
 
     #[test]
