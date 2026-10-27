@@ -89,14 +89,11 @@ fn fake_claude_logs_exact_argv_and_fails_on_the_named_server() {
     assert_eq!(bin, home.path("bin"));
     let tricky = r#"{"a":"b\\c \"d\""}"#;
     let run = |args: &[&str], fail: &str| {
-        std::process::Command::new(bin.join("claude"))
-            .args(args)
+        let mut cmd = std::process::Command::new(bin.join("claude"));
+        cmd.args(args)
             .env("FAKE_FAIL_NAME", fail)
-            .env("FAKE_EXIT", "7")
-            .status()
-            .unwrap()
-            .code()
-            .unwrap()
+            .env("FAKE_EXIT", "7");
+        common::status(&mut cmd).unwrap().code().unwrap()
     };
     assert_eq!(
         run(

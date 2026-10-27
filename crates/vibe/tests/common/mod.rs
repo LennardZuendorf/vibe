@@ -1,9 +1,12 @@
 //! Shared fixtures for the vibe integration tests. Defined once; later tasks only read them.
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used)]
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, MutexGuard};
+use std::time::Duration;
 
 /// What a process produced.
 #[derive(Debug)]
@@ -16,6 +19,117 @@ pub struct Out {
 impl Out {
     pub fn text(&self) -> String {
         String::from_utf8_lossy(&self.stdout).into_owned()
+    }
+}
+
+// --- exec race -----------------------------------------------------------------------------
+//
+// A fixture writes a script (or copies the binary) and then execs it. On Linux the exec can
+// fail with `ETXTBSY` — "text file busy" — which does not mean the file is broken: `fork`
+// copies every open descriptor, so a thread that starts a child while another thread is still
+// writing that file leaves a write descriptor on it in the child until the child's own exec
+// closes it. Any exec in that window fails. Two mechanisms, both shared here:
+//
+//   * [`fork_lock`] closes the window: writing an executable and starting a process never
+//     overlap, so no child can inherit a write descriptor on a file about to be exec'd.
+//   * [`retry_text_file_busy`] covers what the lock cannot see (a grandchild exec'ing the
+//     file, another process outside this test binary) with a bounded backoff.
+
+/// Attempts an exec gets before a still-busy file is reported as a failure.
+pub const EXEC_ATTEMPTS: u32 = 50;
+
+static FORK_LOCK: Mutex<()> = Mutex::new(());
+
+/// Held while a process is started and while an executable is written — never across a wait.
+fn fork_lock() -> MutexGuard<'static, ()> {
+    FORK_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// True when `e` says "some process still holds this file open for writing": `ETXTBSY` on
+/// Linux and macOS, a sharing violation on Windows.
+pub fn is_text_file_busy(e: &io::Error) -> bool {
+    if e.kind() == io::ErrorKind::ExecutableFileBusy {
+        return true;
+    }
+    cfg!(windows) && e.raw_os_error() == Some(32)
+}
+
+/// Runs `op` while it keeps failing with [`is_text_file_busy`], up to [`EXEC_ATTEMPTS`] times.
+/// Any other error is returned immediately and unchanged, so a real failure still fails the test.
+pub fn retry_text_file_busy<T, F: FnMut() -> io::Result<T>>(mut op: F) -> io::Result<T> {
+    retry_bounded(&mut op, EXEC_ATTEMPTS, Duration::from_millis(1))
+}
+
+/// [`retry_text_file_busy`] with an explicit budget: `attempts` tries in total, `first` the
+/// wait before the first retry, doubled after each one up to 50 ms.
+pub fn retry_bounded<T, F: FnMut() -> io::Result<T>>(
+    mut op: F,
+    attempts: u32,
+    first: Duration,
+) -> io::Result<T> {
+    let mut delay = first;
+    let mut attempt = 1;
+    loop {
+        match op() {
+            Err(e) if is_text_file_busy(&e) && attempt < attempts => {
+                std::thread::sleep(delay);
+                delay = (delay * 2).min(Duration::from_millis(50));
+                attempt += 1;
+            }
+            other => return other,
+        }
+    }
+}
+
+/// Starts `cmd` under [`fork_lock`].
+fn spawn_guarded(cmd: &mut Command) -> io::Result<Child> {
+    let _guard = fork_lock();
+    cmd.spawn()
+}
+
+/// [`Command::output`], guarded and retried: the child is started only while no executable is
+/// being written, and a `ETXTBSY` start is retried.
+pub fn output(cmd: &mut Command) -> io::Result<Output> {
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    retry_text_file_busy(|| {
+        let child = spawn_guarded(cmd)?;
+        child.wait_with_output()
+    })
+}
+
+/// [`Command::status`], guarded and retried, with stdio inherited.
+pub fn status(cmd: &mut Command) -> io::Result<ExitStatus> {
+    retry_text_file_busy(|| {
+        let mut child = spawn_guarded(cmd)?;
+        child.wait()
+    })
+}
+
+/// Writes `text` to `path`, creates the parents, and makes it executable — all before any
+/// process can be started, so no child inherits a write descriptor on it.
+pub fn write_exec(path: &Path, text: &str) {
+    let _guard = fork_lock();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
+/// Copies the executable `src` to `path` and makes it executable, under the same lock as
+/// [`write_exec`].
+pub fn copy_exec(src: &Path, path: &Path) {
+    let _guard = fork_lock();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::copy(src, path).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
     }
 }
 
@@ -102,6 +216,15 @@ impl Home {
         fs::write(path, text).unwrap();
     }
 
+    /// Writes the executable `text` to `rel` under the home and returns its path. Use this —
+    /// never [`Home::write`] plus a later `set_permissions` — for anything that will be exec'd:
+    /// it closes the write-descriptor window that makes exec fail with `ETXTBSY`.
+    pub fn write_exec(&self, rel: &str, text: &str) -> PathBuf {
+        let path = self.path(rel);
+        write_exec(&path, text);
+        path
+    }
+
     /// Writes `json` to `rel` in canonical 2-space form ending in a newline.
     pub fn write_json(&self, rel: &str, json: &str) {
         self.write(rel, &canonical(json));
@@ -156,7 +279,7 @@ impl Home {
         for (k, v) in env {
             cmd.env(k, v);
         }
-        let o = cmd.output().unwrap();
+        let o = output(&mut cmd).unwrap();
         Out {
             code: o.status.code().unwrap_or(-1),
             stdout: o.stdout,
@@ -312,7 +435,6 @@ impl Home {
 /// A call whose `mcp add-json`/`mcp remove` name equals `$FAKE_FAIL_NAME` exits with `$FAKE_EXIT`.
 #[cfg(unix)]
 pub fn fake_claude(home: &Home) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
     let dir = home.bin_dir();
     let log = home.path("claude-argv.log");
     let script = format!(
@@ -333,7 +455,6 @@ pub fn fake_claude(home: &Home) -> PathBuf {
         log = log.display()
     );
     let bin = dir.join("claude");
-    fs::write(&bin, script).unwrap();
-    fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+    write_exec(&bin, &script);
     dir
 }

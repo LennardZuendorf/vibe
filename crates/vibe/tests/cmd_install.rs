@@ -4,6 +4,7 @@
 mod cmd_support;
 mod common;
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 use cmd_support::*;
@@ -409,7 +410,6 @@ fn install_no_literal_secrets_written() {
 #[cfg(unix)]
 #[test]
 fn hook_binary_moved_install_replaces_entry() {
-    use std::os::unix::fs::PermissionsExt;
     let home = Home::with_store("install-moved");
     common::fake_claude(&home);
     let kit = toolkit(&home);
@@ -421,26 +421,24 @@ fn hook_binary_moved_install_replaces_entry() {
     let moved_dir = home.path("moved");
     fs::create_dir_all(&moved_dir).unwrap();
     let moved = moved_dir.join("vibe");
-    fs::copy(env!("CARGO_BIN_EXE_vibe"), &moved).unwrap();
-    fs::set_permissions(&moved, fs::Permissions::from_mode(0o755)).unwrap();
-    let o = Command::new(&moved)
-        .args([
-            "install",
-            "--toolkit",
-            kit.to_str().unwrap(),
-            ALL[0],
-            ALL[1],
-        ])
-        .current_dir(&home.dir)
-        .env_clear()
-        .env(
-            "PATH",
-            format!("{}:/usr/bin:/bin", home.path("bin").display()),
-        )
-        .env("HOME", &home.dir)
-        .env("LC_ALL", "C")
-        .output()
-        .unwrap();
+    common::copy_exec(Path::new(env!("CARGO_BIN_EXE_vibe")), &moved);
+    let mut cmd = Command::new(&moved);
+    cmd.args([
+        "install",
+        "--toolkit",
+        kit.to_str().unwrap(),
+        ALL[0],
+        ALL[1],
+    ])
+    .current_dir(&home.dir)
+    .env_clear()
+    .env(
+        "PATH",
+        format!("{}:/usr/bin:/bin", home.path("bin").display()),
+    )
+    .env("HOME", &home.dir)
+    .env("LC_ALL", "C");
+    let o = common::output(&mut cmd).unwrap();
     assert_eq!(
         o.status.code(),
         Some(0),
@@ -591,34 +589,32 @@ fn install_notes_a_hook_binary_inside_a_build_directory() {
 
 #[test]
 fn hook_binary_prefers_the_path_spelling_of_the_running_binary() {
-    use std::os::unix::fs::{PermissionsExt, symlink};
+    use std::os::unix::fs::symlink;
     let home = Home::with_store("install-path-spelling");
     common::fake_claude(&home);
     let kit = toolkit(&home);
     let real_dir = home.path("pkg/real");
     fs::create_dir_all(&real_dir).unwrap();
     let real = real_dir.join("vibe");
-    fs::copy(env!("CARGO_BIN_EXE_vibe"), &real).unwrap();
-    fs::set_permissions(&real, fs::Permissions::from_mode(0o755)).unwrap();
+    common::copy_exec(Path::new(env!("CARGO_BIN_EXE_vibe")), &real);
     let shim_dir = home.path("pkg/shim");
     fs::create_dir_all(&shim_dir).unwrap();
     symlink(&real, shim_dir.join("vibe")).unwrap();
     let run = |bin: &std::path::Path, path: String| {
-        let o = Command::new(bin)
-            .args([
-                "install",
-                "--toolkit",
-                kit.to_str().unwrap(),
-                "--harness",
-                "codex",
-            ])
-            .current_dir(&home.dir)
-            .env_clear()
-            .env("PATH", path)
-            .env("HOME", &home.dir)
-            .env("LC_ALL", "C")
-            .output()
-            .unwrap();
+        let mut cmd = Command::new(bin);
+        cmd.args([
+            "install",
+            "--toolkit",
+            kit.to_str().unwrap(),
+            "--harness",
+            "codex",
+        ])
+        .current_dir(&home.dir)
+        .env_clear()
+        .env("PATH", path)
+        .env("HOME", &home.dir)
+        .env("LC_ALL", "C");
+        let o = common::output(&mut cmd).unwrap();
         assert_eq!(
             o.status.code(),
             Some(0),

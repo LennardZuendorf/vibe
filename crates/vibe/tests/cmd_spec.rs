@@ -5,11 +5,7 @@ use common::Home;
 
 #[cfg(unix)]
 fn script(home: &Home, rel: &str, body: &str) -> std::path::PathBuf {
-    use std::os::unix::fs::PermissionsExt;
-    home.write(rel, &format!("#!/bin/sh\n{body}\n"));
-    let path = home.path(rel);
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    path
+    home.write_exec(rel, &format!("#!/bin/sh\n{body}\n"))
 }
 
 #[cfg(unix)]
