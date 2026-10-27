@@ -1,0 +1,10 @@
+{
+  "runs": {
+    "hook-guard": [
+      []
+    ]
+  },
+  "stderr": true,
+  "stdin": "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"grep -n lessons docs/spec/lessons.md\"}}",
+  "v": 1
+}
