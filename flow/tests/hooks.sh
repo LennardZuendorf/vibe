@@ -78,7 +78,7 @@ echo "=== f6/shim — five-tier discovery, both legs, higher tiers deleted ==="
 # the live tree: the stop fixture writes a cursor). Path parity with the install
 # layout is what the adapters see at a target.
 SBX="$WORK/sbx"
-mkdir -p "$SBX/flow" "$SBX/.agents/skills" "$SBX/.spec"
+mkdir -p "$SBX/flow" "$SBX/.agents/skills" "$SBX/docs/spec"
 find "$SRC_ROOT/flow" -mindepth 1 -maxdepth 1 ! -name state.json \
   -exec cp -R {} "$SBX/flow/" \;
 ln -s ../../flow "$SBX/.agents/skills/vibe"
@@ -275,7 +275,7 @@ echo "=== f6/fail-safe — a present-but-corrupt policy still blocks a hard rule
 # same corrupt policy allowing an unguarded one: without it this leg would pass
 # for a guard that blocks everything.
 CORRUPT="$WORK/corrupt"
-mkdir -p "$CORRUPT/flow" "$CORRUPT/.agents/skills" "$CORRUPT/.spec"
+mkdir -p "$CORRUPT/flow" "$CORRUPT/.agents/skills" "$CORRUPT/docs/spec"
 find "$SRC_ROOT/flow" -mindepth 1 -maxdepth 1 ! -name state.json \
   -exec cp -R {} "$CORRUPT/flow/" \;
 ln -s ../../flow "$CORRUPT/.agents/skills/vibe"
