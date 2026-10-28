@@ -487,12 +487,295 @@ fn write(path: &Path, text: &str) -> Result<(), String> {
     fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+// ---------------------------------------------------------------------------
+// Hook cases (F6). The hook legs compare `vibe-flow hook <event>` against the
+// frozen bash pair in `oracles/bash/flow/hooks-fallback/`, so every tree has to
+// be a self-contained project both sides resolve the same way: the oracle
+// hardcodes `$ROOT/.agents/skills/vibe/...` with `ROOT=${CLAUDE_PROJECT_DIR:-$PWD}`,
+// the port walks up from the cwd to `.git`. Hence the LEGACY data home here (not
+// `.agents/flow`), and no `engine/cli.mjs` — its absence keeps
+// `detect-context.sh decide` on its own pure-bash branch.
+//
+// Staleness is deliberately NOT a corpus case: the harness applies `stamps`
+// before `git init`, so a static tree cannot produce a *modified tracked* file,
+// and the oracle asks for plain `git status --porcelain` while the port asks for
+// `-uall`, which would diverge over untracked directories for reasons that have
+// nothing to do with the hook. The receipt's staleness and fail-closed paths are
+// pinned by the port's own unit tests instead.
+// ---------------------------------------------------------------------------
+
+const VIBE: &str = ".agents/skills/vibe";
+
+/// A hook case: a tree, one stdin payload, and optionally a git sandbox.
+struct HookDef {
+    class: &'static str,
+    name: &'static str,
+    stdin: String,
+    files: Files,
+    git: Option<(bool, bool)>,
+}
+
+/// The shared vibe install inside a hook tree. `policy`, `detect` and the
+/// cursor are per-case because the defects *are* the cases.
+fn vibe_tree(
+    policy: Option<&str>,
+    machine: &str,
+    detect: Option<&str>,
+    state: &str,
+    feature: Option<&str>,
+) -> Files {
+    let mut files = Vec::new();
+    if let Some(policy) = policy {
+        files.push((format!("{VIBE}/content/policy.json"), policy.to_string()));
+    }
+    files.push((format!("{VIBE}/state-machine.json"), machine.to_string()));
+    if let Some(detect) = detect {
+        files.push((
+            format!("{VIBE}/scripts/detect-context.sh"),
+            detect.to_string(),
+        ));
+    }
+    let (flow, phase) = split_state(state);
+    let feature = feature.map_or(Value::Null, |name| json!(name));
+    files.push((format!("{VIBE}/state.json"), cursor(flow, phase, feature)));
+    files
+}
+
+fn file_payload(tool: &str, key: &str, path: &str) -> String {
+    format!("{{\"tool_name\":\"{tool}\",\"tool_input\":{{\"{key}\":\"{path}\"}}}}")
+}
+
+fn bash_payload(command: &str) -> String {
+    format!("{{\"tool_name\":\"Bash\",\"tool_input\":{{\"command\":\"{command}\"}}}}")
+}
+
+/// A `decide` that prints a reasonless verdict — the crash-shaped answer the
+/// port must not promote to a block.
+const FAKE_EMPTY_REASON: &str = "#!/usr/bin/env bash\nprintf 'block:\\n'\n";
+/// A real block line followed by a second line — also not provable.
+const FAKE_TWO_LINES: &str = "#!/usr/bin/env bash\nprintf 'block:real reason\\nsecond line\\n'\n";
+/// One reason-bearing line: both sides block, so the fallback is exercised
+/// without a divergence.
+const FAKE_CLEAN_BLOCK: &str = "#!/usr/bin/env bash\nprintf 'block:real reason\\n'\n";
+
+/// A fake `decide` tree: no policy (so the in-process answer is unavailable and
+/// both sides reach the spawn) and the given script in its place.
+fn fake_decide(name: &'static str, script: &str, machine: &str) -> HookDef {
+    HookDef {
+        class: "hooks-guard",
+        name,
+        stdin: file_payload("Write", "file_path", "docs/spec/lessons.md"),
+        files: vibe_tree(None, machine, Some(script), "idle", None),
+        git: None,
+    }
+}
+
+fn hook_cases(flow_dir: &Path) -> Result<Vec<HookDef>, String> {
+    let policy_path = flow_dir.join("content").join("policy.json");
+    let policy =
+        fs::read_to_string(&policy_path).map_err(|e| format!("{}: {e}", policy_path.display()))?;
+    let machine_path = flow_dir.join("state-machine.json");
+    let machine = fs::read_to_string(&machine_path)
+        .map_err(|e| format!("{}: {e}", machine_path.display()))?;
+    let detect_path = flow_dir.join("scripts").join("detect-context.sh");
+    let detect =
+        fs::read_to_string(&detect_path).map_err(|e| format!("{}: {e}", detect_path.display()))?;
+
+    let tree = |state: &str, feature: Option<&str>| {
+        vibe_tree(Some(&policy), &machine, Some(&detect), state, feature)
+    };
+    let guard = |name: &'static str, stdin: String, files: Files| HookDef {
+        class: "hooks-guard",
+        name,
+        stdin,
+        files,
+        git: None,
+    };
+    let stop = |name: &'static str, stdin: &str, files: Files, git: Option<(bool, bool)>| HookDef {
+        class: "hooks-stop",
+        name,
+        stdin: stdin.to_string(),
+        files,
+        git,
+    };
+
+    let mut defs = Vec::new();
+
+    // guard: degrade paths first — a missing keystone script, no payload, and a
+    // payload no parser can read all exit 0 with nothing on either stream.
+    let without_detect = {
+        let mut files = tree("idle", None);
+        files.retain(|(path, _)| !path.ends_with("scripts/detect-context.sh"));
+        files
+    };
+    defs.push(guard(
+        "absent-detect",
+        file_payload("Write", "file_path", "docs/spec/lessons.md"),
+        without_detect,
+    ));
+    defs.push(guard("empty-stdin", String::new(), tree("idle", None)));
+    defs.push(guard(
+        "malformed-json",
+        "{ nope".to_string(),
+        tree("idle", None),
+    ));
+
+    // guard: the hard blocks and the warn, and the state that flips one of them.
+    defs.push(guard(
+        "block-lessons",
+        file_payload("Write", "file_path", "docs/spec/lessons.md"),
+        tree("idle", None),
+    ));
+    defs.push(guard(
+        "allow-lessons-compound",
+        file_payload("Write", "file_path", "docs/spec/lessons.md"),
+        tree("feature.compound", Some("auth")),
+    ));
+    defs.push(guard(
+        "block-root-spec",
+        file_payload("Write", "file_path", "docs/spec/tech.md"),
+        tree("idle", None),
+    ));
+    defs.push(guard(
+        "warn-features-frozen",
+        file_payload("Write", "file_path", "docs/spec/features/auth/tech.md"),
+        tree("feature.impl", Some("auth")),
+    ));
+    defs.push(guard(
+        "block-cursor",
+        file_payload("Write", "file_path", ".agents/skills/vibe/state.json"),
+        tree("idle", None),
+    ));
+
+    // guard: the Bash sniffer warns, never blocks, and stays quiet on a read.
+    defs.push(guard(
+        "bash-write-lessons",
+        bash_payload("echo hi >> docs/spec/lessons.md"),
+        tree("idle", None),
+    ));
+    defs.push(guard(
+        "bash-read-control",
+        bash_payload("grep -n lessons docs/spec/lessons.md"),
+        tree("idle", None),
+    ));
+    defs.push(guard(
+        "bash-state-json",
+        bash_payload("echo x > .agents/skills/vibe/state.json"),
+        tree("idle", None),
+    ));
+    defs.push(guard(
+        "bash-set-state",
+        bash_payload(
+            "echo x > .agents/skills/vibe/state.json && bash .agents/skills/vibe/scripts/set-state.sh idle",
+        ),
+        tree("idle", None),
+    ));
+    defs.push(guard(
+        "notebook-path",
+        file_payload("NotebookEdit", "notebook_path", "docs/spec/plan.md"),
+        tree("idle", None),
+    ));
+
+    // guard: the block-vs-crash shape gate. Two of these are pinned as expected
+    // divergences (the oracle prefix-matches `block:*`); the third proves a real
+    // block still travels through the spawned fallback unchanged.
+    defs.push(fake_decide(
+        "decide-empty-reason",
+        FAKE_EMPTY_REASON,
+        &machine,
+    ));
+    defs.push(fake_decide("decide-two-lines", FAKE_TWO_LINES, &machine));
+    defs.push(fake_decide(
+        "decide-clean-block",
+        FAKE_CLEAN_BLOCK,
+        &machine,
+    ));
+
+    // stop: the re-entry guard, the two degrade paths, and both receipt teeth.
+    let receipt = format!("{VIBE}/evidence/feature-auth.md");
+    let with_receipt = |state: &str, feature: Option<&str>, body: &str| {
+        let mut files = tree(state, feature);
+        files.push((receipt.clone(), body.to_string()));
+        files
+    };
+    defs.push(stop(
+        "stop-active",
+        "{\"stop_hook_active\":true}",
+        tree("feature.verify", Some("auth")),
+        None,
+    ));
+    let stop_without_detect = {
+        let mut files = tree("feature.verify", Some("auth"));
+        files.retain(|(path, _)| !path.ends_with("scripts/detect-context.sh"));
+        files
+    };
+    defs.push(stop("absent-detect", "{}", stop_without_detect, None));
+    defs.push(stop("idle", "{}", tree("idle", None), None));
+    defs.push(stop(
+        "verify-missing-receipt",
+        "{}",
+        tree("feature.verify", Some("auth")),
+        None,
+    ));
+    defs.push(stop(
+        "verify-no-feature",
+        "{}",
+        tree("feature.verify", None),
+        None,
+    ));
+    defs.push(stop(
+        "quick-verify-missing-receipt",
+        "{}",
+        tree("quick.verify", None),
+        None,
+    ));
+    defs.push(stop(
+        "verify-fresh-receipt",
+        "{}",
+        with_receipt("feature.verify", Some("auth"), "commands and output\n"),
+        Some((true, true)),
+    ));
+    defs.push(stop(
+        "verify-no-git",
+        "{}",
+        with_receipt("feature.verify", Some("auth"), "commands and output\n"),
+        None,
+    ));
+
+    Ok(defs)
+}
+
+fn hook_case_json(def: &HookDef) -> Value {
+    let mut body = Map::new();
+    body.insert("v".to_string(), json!(1));
+    if !def.stdin.is_empty() {
+        body.insert("stdin".to_string(), json!(def.stdin));
+    }
+    // The block and warn messages ARE the hook contract.
+    body.insert("stderr".to_string(), json!(true));
+    if let Some((init, commit)) = def.git {
+        body.insert("git".to_string(), json!({"init": init, "commit": commit}));
+    }
+    body.insert("runs".to_string(), {
+        let command = if def.class == "hooks-guard" {
+            "hook-guard"
+        } else {
+            "hook-stop"
+        };
+        let mut runs = Map::new();
+        runs.insert(command.to_string(), json!([Vec::<String>::new()]));
+        Value::Object(runs)
+    });
+    Value::Object(body)
+}
+
 /// Writes the corpus into `out` from the flow half in `flow_dir` (its
 /// `content/policy.json` and `state-machine.json`). Refuses to touch an
 /// existing `out` that lacks the [`MARKER`] file. Returns the number of cases
 /// written.
 pub fn generate(flow_dir: &Path, out: &Path) -> Result<usize, String> {
     let defs = cases(flow_dir)?;
+    let hooks = hook_cases(flow_dir)?;
     if out.exists() {
         if !out.join(MARKER).is_file() {
             return Err(format!(
@@ -511,5 +794,13 @@ pub fn generate(flow_dir: &Path, out: &Path) -> Result<usize, String> {
             write(&dir.join("tree").join(path), body)?;
         }
     }
-    Ok(defs.len())
+    for def in &hooks {
+        let dir = out.join(def.class).join(def.name);
+        let text = serde_json::to_string_pretty(&hook_case_json(def)).map_err(|e| e.to_string())?;
+        write(&dir.join("case.json"), &format!("{text}\n"))?;
+        for (path, body) in &def.files {
+            write(&dir.join("tree").join(path), body)?;
+        }
+    }
+    Ok(defs.len() + hooks.len())
 }

@@ -2,16 +2,29 @@
   "v": 1,
   "name": "flow",
   "corpus": "corpus/flow",
-  "oracle_root": "../../oracles/js",
+  "oracle_root": "../../oracles",
   "file_aliases": { ".agents/skills/vibe/state.json": ".vibe/run/flow/state.json" },
   "normalize": ["cursor-updated"],
   "commands": [
-    { "name": "policy-decide", "oracle": ["node", "{oracle}/cli.mjs", "policy", "--vibe-dir", ".agents/skills/vibe", "decide"], "candidate": ["{candidate}", "policy", "--vibe-dir", ".agents/skills/vibe", "decide"], "classes": ["paths", "mutated", "corrupt"] },
-    { "name": "policy-list", "oracle": ["node", "{oracle}/cli.mjs", "policy", "--vibe-dir", ".agents/skills/vibe", "list"], "candidate": ["{candidate}", "policy", "--vibe-dir", ".agents/skills/vibe", "list"], "classes": ["paths", "mutated", "corrupt"] },
-    { "name": "policy-render", "oracle": ["node", "{oracle}/cli.mjs", "policy", "--vibe-dir", ".agents/skills/vibe", "render"], "candidate": ["{candidate}", "policy", "--vibe-dir", ".agents/skills/vibe", "render"], "classes": ["paths", "mutated", "corrupt"] },
-    { "name": "state-get", "oracle": ["node", "{oracle}/cli.mjs", "state", "get"], "candidate": ["{candidate}", "state", "get"], "classes": ["cursors"] },
-    { "name": "state-set", "oracle": ["node", "{oracle}/cli.mjs", "state", "set"], "candidate": ["{candidate}", "state", "set"], "classes": ["edges", "errors"] }
+    { "name": "policy-decide", "oracle": ["node", "{oracle}/js/cli.mjs", "policy", "--vibe-dir", ".agents/skills/vibe", "decide"], "candidate": ["{candidate}", "policy", "--vibe-dir", ".agents/skills/vibe", "decide"], "classes": ["paths", "mutated", "corrupt"] },
+    { "name": "policy-list", "oracle": ["node", "{oracle}/js/cli.mjs", "policy", "--vibe-dir", ".agents/skills/vibe", "list"], "candidate": ["{candidate}", "policy", "--vibe-dir", ".agents/skills/vibe", "list"], "classes": ["paths", "mutated", "corrupt"] },
+    { "name": "policy-render", "oracle": ["node", "{oracle}/js/cli.mjs", "policy", "--vibe-dir", ".agents/skills/vibe", "render"], "candidate": ["{candidate}", "policy", "--vibe-dir", ".agents/skills/vibe", "render"], "classes": ["paths", "mutated", "corrupt"] },
+    { "name": "state-get", "oracle": ["node", "{oracle}/js/cli.mjs", "state", "get"], "candidate": ["{candidate}", "state", "get"], "classes": ["cursors"] },
+    { "name": "state-set", "oracle": ["node", "{oracle}/js/cli.mjs", "state", "set"], "candidate": ["{candidate}", "state", "set"], "classes": ["edges", "errors"] },
+    { "name": "hook-guard", "oracle": ["bash", "{oracle}/bash/flow/hooks-fallback/pre-tool-use-guard.sh"], "candidate": ["{candidate}", "hook", "pre-tool-use-guard"], "classes": ["hooks-guard"] },
+    { "name": "hook-stop", "oracle": ["bash", "{oracle}/bash/flow/hooks-fallback/stop-gate.sh"], "candidate": ["{candidate}", "hook", "stop-gate"], "classes": ["hooks-stop"] }
   ],
-  "floors": { "paths": 25, "mutated": 10, "corrupt": 2, "cursors": 20, "edges": 30, "errors": 3 },
-  "divergences": []
+  "floors": { "paths": 25, "mutated": 10, "corrupt": 2, "cursors": 20, "edges": 30, "errors": 3, "hooks-guard": 16, "hooks-stop": 8 },
+  "divergences": [
+    { "command": "hook-guard", "case": "hooks-guard/decide-empty-reason", "field": "exit", "reason": "A hook shim must tell a block from a crash by output: a verdict with no reason (block:) is not provable, so the port allows (exit 0), while the frozen bash fallback prefix-matches block:* and blocks (exit 2)." },
+    { "command": "hook-guard", "case": "hooks-guard/decide-empty-reason", "field": "stderr", "reason": "Same shape gate: the port emits no block text for a reasonless verdict; the bash fallback prints BLOCKED with an empty reason." },
+    { "command": "hook-guard", "case": "hooks-guard/decide-two-lines", "field": "exit", "reason": "A real block line followed by a second line is not a single verdict, so the port allows (exit 0); the bash fallback prefix-matches block:* and blocks (exit 2) with the extra line folded into the reason." },
+    { "command": "hook-guard", "case": "hooks-guard/decide-two-lines", "field": "stderr", "reason": "Same shape gate: the port forwards nothing; the bash fallback prints a two-line reason no decide is contracted to produce." },
+    { "command": "hook-stop", "case": "hooks-stop/verify-fresh-receipt", "field": "stderr", "reason": "The engine deleted the Stop nudge (predicate 3: 'still in <state> ... (next: ...)') because the per-turn level channel already states it and every firing pollutes the relay; the frozen bash fallback still emits it, and the port follows the engine." },
+    { "command": "hook-stop", "case": "hooks-stop/verify-fresh-receipt", "field": "files", "reason": "Same deleted predicate: the fallback queues its nudge line into warnings.log, the port (like the engine) does not, so the relay file differs." },
+    { "command": "hook-stop", "case": "hooks-stop/verify-no-feature", "field": "stderr", "reason": "Same deleted predicate 3: the port emits only the 'cursor names no feature' warn the gate is contracted to; the fallback appends its stale-phase nudge after it." },
+    { "command": "hook-stop", "case": "hooks-stop/verify-no-feature", "field": "files", "reason": "Same deleted predicate 3: the nudge is also queued to warnings.log by the fallback and not by the port." },
+    { "command": "hook-stop", "case": "hooks-stop/verify-no-git", "field": "stderr", "reason": "Same deleted predicate 3: the port's existence-only pass is silent; the fallback adds its stale-phase nudge before passing too." },
+    { "command": "hook-stop", "case": "hooks-stop/verify-no-git", "field": "files", "reason": "Same deleted predicate 3: the nudge lands in the fallback's warnings.log and not in the port's, so the relay file differs." }
+  ]
 }

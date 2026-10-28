@@ -1,0 +1,10 @@
+{
+  "runs": {
+    "hook-guard": [
+      []
+    ]
+  },
+  "stderr": true,
+  "stdin": "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo x > .agents/skills/vibe/state.json && bash .agents/skills/vibe/scripts/set-state.sh idle\"}}",
+  "v": 1
+}

@@ -1,0 +1,9 @@
+{
+  "runs": {
+    "hook-guard": [
+      []
+    ]
+  },
+  "stderr": true,
+  "v": 1
+}
