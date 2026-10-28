@@ -1598,6 +1598,33 @@ test_agents_suites() {
 }
 test_agents_suites
 
+# ── F19: `claude plugin validate` is a gate only in require mode ─────────────
+# The pinned-CLI CI job runs the require mode; run.sh's own call above must stay
+# local-friendly. Both halves are pinned here, because a fail-closed mode that
+# silently degrades back to SKIP would restore exactly the decorative gate this
+# replaces. PATH is scrubbed to an empty dir: plugin-validate.sh exits before it
+# needs any external command, so this is hermetic on hosts that DO have claude.
+test_plugin_validate_require_mode() {
+  local empty out rc
+  empty="$(mktemp -d)"
+  out="$(PATH="$empty" VIBE_PLUGIN_VALIDATE=require "${BASH:-bash}" "$REPO_ROOT/spec/tests/plugin-validate.sh" 2>&1)"; rc=$?
+  if [[ $rc -ne 0 && "$out" == *"FAIL [plugin-validate]"* && "$out" != *"command not found"* ]]; then
+    pass F19 "require mode fails closed when claude is missing (exit $rc, no shell-out)"
+  else
+    fail F19 "require mode fails closed when claude is missing (exit $rc, no shell-out)"
+    printf '%s\n' "$out" | sed 's/^/        /'
+  fi
+  out="$(PATH="$empty" "${BASH:-bash}" "$REPO_ROOT/spec/tests/plugin-validate.sh" 2>&1)"; rc=$?
+  if [[ $rc -eq 0 && "$out" == *"SKIP [plugin-validate]"* && "$out" != *"command not found"* ]]; then
+    pass F19 "default mode skips (exit 0) without claude, without shelling out"
+  else
+    fail F19 "default mode skips (exit 0) without claude, without shelling out (exit $rc)"
+    printf '%s\n' "$out" | sed 's/^/        /'
+  fi
+  rmdir "$empty" 2>/dev/null || true
+}
+test_plugin_validate_require_mode
+
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]
