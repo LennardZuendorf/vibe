@@ -3,7 +3,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The repository root.
 pub fn repo() -> PathBuf {
@@ -12,11 +11,7 @@ pub fn repo() -> PathBuf {
 
 /// A fresh, canonical scratch project holding an empty `.git/` (bounds discovery).
 pub fn project(name: &str) -> PathBuf {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    let dir =
-        std::env::temp_dir().join(format!("vibe-spec-test-{name}-{}-{n}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
+    let dir = vibe_core::testscratch::scratch("vibe-spec-test", name);
     fs::create_dir_all(dir.join(".git")).unwrap();
     plain(fs::canonicalize(dir).unwrap())
 }

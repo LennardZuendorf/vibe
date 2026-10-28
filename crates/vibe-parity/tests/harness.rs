@@ -15,10 +15,7 @@ fn fixture() -> PathBuf {
 }
 
 fn work(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("vibe-parity-test-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
+    vibe_core::testscratch::scratch("vibe-parity-test", name)
 }
 
 fn candidate() -> Mode {

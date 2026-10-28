@@ -168,10 +168,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("vibe-core-fs-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+        crate::testscratch::scratch("vibe-core-fs", name)
     }
 
     fn entries(dir: &Path) -> Vec<String> {

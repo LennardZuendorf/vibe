@@ -1102,7 +1102,7 @@ mod tests {
 
     #[test]
     fn a_failed_write_removes_what_it_made() {
-        let base = std::env::temp_dir().join(format!("vibe-import-rb-{}", std::process::id()));
+        let base = vibe_core::testscratch::scratch("vibe-import-rb", "failed-write");
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&base).unwrap();
         let features = base.join("features");

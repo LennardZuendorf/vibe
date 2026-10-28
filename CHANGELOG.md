@@ -134,6 +134,13 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Fixed
 
+- **Test scratch is reaped, not leaked** — every `cargo test` process left one
+  directory per test case in `TMPDIR` forever (14 500 of them, 4.3 GiB, after a day
+  of worker runs). Test helpers now build scratch through
+  `vibe_core::testscratch::scratch`, whose first call in a process sweeps `vibe-*`
+  entries idle for over six hours, skipping this process's own and anything that
+  cannot be read.
+
 - **The hard blocks survive a node-less target** — the hook shims were
   `command -v node || exit 0`, so a machine without node silently lost the
   PreToolUse write guard and the Stop evidence gate, while the docs still called

@@ -285,8 +285,7 @@ mod tests {
 
     #[test]
     fn a_failing_write_removes_everything_created() {
-        let base = std::env::temp_dir().join(format!("vibe-spec-init-unit-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
+        let base = vibe_core::testscratch::scratch("vibe-spec-init-unit", "failed-write");
         fs::create_dir_all(&base).unwrap();
         fs::write(base.join("blocker"), "x").unwrap();
         let item = |rel: &str| Planned {
