@@ -172,12 +172,11 @@ done
 FBJQ="$WORK/fbjq"
 cp -R "$NOBIN" "$FBJQ"
 jqp="$(command -v jq 2>/dev/null)" && ln -sf "$jqp" "$FBJQ/jq"
-# tier 4 has two runtimes, in this order: the JS engine while it still ships
-# (FV-R9 — the engine keeps running until F23, so the shim must not regress to
-# pre-port behaviour while node is available), then the frozen bash fallback.
-# The engine and the fallback disagree on exactly one thing this suite can see:
-# the stuck-phase nudge (predicate 3) exists in the frozen fallback and was
-# deleted from the engine. That divergence is the discriminator below — it fails
+# Tier 4 is the JS engine, tier 5 the frozen bash — in that order. FV-R9 keeps the
+# engine shipped until F23, so while node is available the shim must not regress to
+# pre-port behaviour. The engine and the fallback disagree on exactly one thing this
+# suite can see: the stuck-phase nudge (predicate 3) exists in the frozen fallback and
+# was deleted from the engine. That divergence is the discriminator below — it fails
 # if the tier order is flipped.
 : > "$SBX/flow/warnings.log"
 printf '{"flow":"feature","phase":"impl","feature":"demo","updated":"2026-01-01T00:00:00Z"}\n' \
@@ -189,31 +188,31 @@ assert_not_contains "f6/tier4" "the engine's stop gate queues no stuck-phase nud
 # ...and with node gone the frozen bash answers, which is why the engine tier
 # exists: pre-port behaviour still nudges on every Stop.
 out="$(run_shim "$P4" "$FBJQ" stop-gate "$WORK/stop.json")"
-assert_contains "f6/tier4" "with node gone the frozen bash answers (pre-port nudge back)" \
+assert_contains "f6/tier5" "with node gone the frozen bash answers (pre-port nudge back)" \
   "$(cat "$SBX/flow/warnings.log")" "still in"
 rm -f "$SBX/flow/state.json" "$SBX/flow/warnings.log"
 # The guard's hard block, with no binary and no node anywhere on PATH.
 out="$(run_shim "$P4" "$NOBIN" pre-tool-use-guard "$WORK/guard.json")"
-assert_contains "f6/tier4" "the guard's hard block survives on the frozen fallback alone" "$out" "vibe-guard: BLOCKED"
-assert_contains "f6/tier4" "the fallback guard block exits 2" "$out" "rc=2"
-assert_not_contains "f6/tier4" "no node was reachable on that PATH (control)" "$(PATH="$NOBIN" command -v node 2>/dev/null)" "node"
-assert_not_contains "f6/tier4" "no vibe-flow was reachable on that PATH (control)" "$(PATH="$NOBIN" command -v vibe-flow 2>/dev/null)" "vibe-flow"
+assert_contains "f6/tier5" "the guard's hard block survives on the frozen fallback alone" "$out" "vibe-guard: BLOCKED"
+assert_contains "f6/tier5" "the fallback guard block exits 2" "$out" "rc=2"
+assert_not_contains "f6/tier5" "no node was reachable on that PATH (control)" "$(PATH="$NOBIN" command -v node 2>/dev/null)" "node"
+assert_not_contains "f6/tier5" "no vibe-flow was reachable on that PATH (control)" "$(PATH="$NOBIN" command -v vibe-flow 2>/dev/null)" "vibe-flow"
 # The stop gate's evidence tooth, same PATH: quick.verify with no receipt blocks.
 mkdir -p "$SBX/flow/evidence"
 printf '{"flow":"quick","phase":"verify","feature":null,"updated":"2026-01-01T00:00:00Z"}\n' \
   > "$SBX/flow/state.json"
 out="$(run_shim "$P4" "$NOBIN" stop-gate "$WORK/stop.json")"
-assert_contains "f6/tier4" "the evidence tooth survives on the frozen fallback alone" "$out" "vibe-gate: BLOCKED"
-assert_contains "f6/tier4" "the fallback receipt block exits 2" "$out" "rc=2"
+assert_contains "f6/tier5" "the evidence tooth survives on the frozen fallback alone" "$out" "vibe-gate: BLOCKED"
+assert_contains "f6/tier5" "the fallback receipt block exits 2" "$out" "rc=2"
 rm -f "$SBX/flow/state.json"
 
-# tier 5 — nothing to run: exit 0 with exactly one stderr line, never a block.
+# No tier at all — exit 0 with exactly one stderr line, never a block.
 P5="$WORK/p5"; mk_plugin "$P5" no
 for ev in pre-tool-use-guard stop-gate; do
   out="$(run_shim "$P5" "$NOBIN" "$ev" "$WORK/empty")"
-  assert_contains "f6/tier5" "an absent binary, engine and fallback still answers the $ev leg" "$out" "no vibe-flow binary, engine, or fallback"
-  assert_contains "f6/tier5" "the $ev leg allows (exit 0) rather than blocking" "$out" "rc=0"
-  assert_eq "f6/tier5" "the $ev leg prints exactly one stderr line" \
+  assert_contains "f6/notier" "an absent binary, engine and fallback still answers the $ev leg" "$out" "no vibe-flow binary, engine, or fallback"
+  assert_contains "f6/notier" "the $ev leg allows (exit 0) rather than blocking" "$out" "rc=0"
+  assert_eq "f6/notier" "the $ev leg prints exactly one stderr line" \
     "$(printf '%s\n' "$out" | grep -c 'no vibe-flow binary')" "1"
 done
 

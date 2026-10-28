@@ -1,9 +1,9 @@
 #!/bin/sh
 # bin/hook.sh <event> — flow's hook shim (D26, FV-R5): five tiers, never a download.
-# $VIBE_FLOW_BIN -> $CLAUDE_PLUGIN_ROOT/bin/<os>-<arch>/vibe-flow -> `vibe-flow` on
-# PATH -> no binary: the JS engine while it still ships (FV-R9 — deleted at F23),
-# then bin/fallback/<event>.sh (frozen bash) -> exit 0 with one stderr line. A tier
-# that crashes degrades to the frozen bash, never to nothing.
+# 1 $VIBE_FLOW_BIN, 2 bundled bin/<os>-<arch>/vibe-flow, 3 `vibe-flow` on PATH,
+# 4 the JS engine while it still ships (FV-R9 — gone at F23; it outranks 5, the
+# frozen bash bin/fallback/<event>.sh, because that one is the *pre-port* build).
+# No tier at all -> exit 0 + one stderr line; a crash degrades to 5, never nothing.
 # A hook reports by exit code, so the shim decides from the child's OUTPUT: exit 2
 # for a line that proves a block (`block:<reason>`, or the shipped
 # `vibe-guard|vibe-gate: BLOCKED — <reason>` line), allow for everything else — a

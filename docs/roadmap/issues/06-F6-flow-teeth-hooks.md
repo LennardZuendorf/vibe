@@ -22,7 +22,7 @@ Guard hook (`PreToolUse` on `Edit|Write|NotebookEdit`) and stop gate (`Stop` evi
 - [x] parity-green on the receipt × git-state corpus for stop
       — `hooks-stop` class (8 legs, floor), same run; the 5 pins are the engine-vs-fallback divergences
 - [x] discovery tier matrix tested with each higher tier's variables actually deleted from the child env (not merely unset in the parent), both legs per tier
-      — `flow/tests/hooks.sh` (`f6/tier1`–`f6/tier5`): each fake binary dumps its own `env`, so deletion is proved from inside the child
+      — `flow/tests/hooks.sh` `f6/tier1`–`f6/tier5` (1 explicit override, 2 bundled, 3 PATH, 4 the JS engine, 5 the frozen bash): each fake binary dumps its own `env`, so deletion is proved from inside the child
 - [x] present-but-corrupt policy on guard/stop → exit 2 (fail-safe branch, pinned with a control case)
       — `f6/fail-safe` in `flow/tests/hooks.sh`: a truncated `policy.json` still blocks `docs/spec/lessons.md` (exit 2) and still allows an unguarded path (control, exit 0). Stop's receipt tooth consults no policy data, so it cannot be corrupted this way
 - [x] `bash tests/run.sh` green, `cargo test --workspace` green — recorded on PR #65 for the Rust half and on the F6 shim PR for the shim half
