@@ -258,6 +258,22 @@ jobs:
       - name: Spec + flow parity (self-check, candidate)
         run: bash tests/parity/run.sh
 
+  port-order:
+    # F6/F3: port order is blast-radius first — the guard and the stop gate are
+    # the two hard blocks, so no code may be built on top of them before they are
+    # parity-green. The gate fails while crates/vibe-flow/src/tui/ or
+    # crates/vibe-signals/ exists and tests/parity/GREEN.hard does not.
+    name: port-order — no TUI/signals ahead of GREEN.hard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Gate
+        run: bash tests/port-order.sh
+
   openspec:
     # F18 (P3c-R17): OpenSpec's own validator accepts vibe-spec's export of
     # tests/openspec/fixture and rejects a broken one. Pinned CLI via npx.
