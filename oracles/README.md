@@ -43,3 +43,11 @@ other behind is exactly how the generation-1 record survived into generation 2.
   D12/spec-root comments retruthed by Task 0.1. The behaviour change is the
   `.planning` arm; the other two are comments only. gen-2 is the last freeze
   that predates skills v2.
+- gen-4 — **all halves** re-frozen on the flow-v2 branch for F6's shim (Task
+  1.2). Two live sources moved: `.claude/hooks/pre-tool-use-guard.sh` and
+  `.claude/hooks/stop-gate.sh` stopped being node-first and became adapters that
+  exec `flow/bin/hook.sh <event>`. No parity subject moved: the hook legs compare
+  against `flow/hooks-fallback/` (`bash/flow/hooks-fallback/**`), which is
+  byte-identical to gen-3, and the frozen `.claude/hooks/` copies are not spawn
+  targets in `tests/parity/*.json`. The only behaviour these two copies record is
+  "the adapter forwarded to the shim", which is exactly what was shipped.

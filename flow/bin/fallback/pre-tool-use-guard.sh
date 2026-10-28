@@ -1,0 +1,1 @@
+../../hooks-fallback/pre-tool-use-guard.sh
