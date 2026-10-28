@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # scripts/scan-merges.sh — report <!-- merge --> blocks across .spec/features/
 set -euo pipefail
 

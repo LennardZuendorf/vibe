@@ -9,7 +9,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECK="$ROOT/oracles/check.sh"
 # The hash of oracles/MANIFEST.sha256. D30: oracles never change. Changing
 # this constant is an explicit, reviewed act, never a side effect of a fix.
-MANIFEST_SHA256=a343fc0ff327b4208f1059acf11678ce46c6ee23497ba4246890d46de6e2c37e
+MANIFEST_SHA256=3f36939f27f4876782bb7e2ea26e2d7c1e4fbb9b7193de3b0c31f0eb6b8da9d2
 pass=0
 fail=0
 
@@ -87,6 +87,48 @@ else
   record "a regenerated manifest over a changed oracle fails the pin" 0
 fi
 rm -rf "$d"
+
+# --- freshness: integrity cannot see a freeze that has fallen behind the
+# sources it mirrors (a generation-1 freeze is self-consistent), so check.sh
+# also compares every oracle with its live source. A fixture root — oracles/
+# beside the sources — is what makes that leg testable in isolation.
+fixture() { # prints a fresh root: oracles/ beside the live sources they mirror
+  local r
+  r="$(mktemp -d)"
+  mkdir -p "$r/oracles" "$r/flow" "$r/spec" "$r/.claude"
+  cp -R "$ROOT/oracles/." "$r/oracles/"
+  cp -R "$ROOT/flow/engine" "$r/flow/engine"
+  cp -R "$ROOT/flow/scripts" "$r/flow/scripts"
+  cp -R "$ROOT/flow/hooks-fallback" "$r/flow/hooks-fallback"
+  cp -R "$ROOT/spec/scripts" "$r/spec/scripts"
+  cp -R "$ROOT/spec/reference" "$r/spec/reference"
+  cp -R "$ROOT/.claude/hooks" "$r/.claude/hooks"
+  printf '%s\n' "$r"
+}
+
+r="$(fixture)"; expect "a freeze that matches the live sources passes" 0 "$r/oracles"; rm -rf "$r"
+
+r="$(fixture)"; printf ' ' >>"$r/flow/engine/cli.mjs"
+expect "a live source that moved on since the freeze fails" 1 "$r/oracles"; rm -rf "$r"
+
+r="$(fixture)"; rm "$r/spec/scripts/promote.sh"
+expect "a missing live source fails freshness" 1 "$r/oracles"; rm -rf "$r"
+
+r="$(fixture)"; printf '\n' >>"$r/flow/scripts/orders.sh"
+out="$(bash "$CHECK" "$r/oracles" 2>&1)"; rc=$?
+if [[ "$rc" == 1 && "$out" == *"stale: bash/flow/scripts/orders.sh"* && "$out" == *"1 of 43 frozen files are stale"* ]]; then
+  record "a stale oracle is named, with its count" 0
+else
+  record "a stale oracle is named, with its count" 1 "rc=$rc, want 1; the output must keep the stale line and its count"
+fi
+rm -rf "$r"
+
+r="$(fixture)"; printf '\n' >>"$r/flow/scripts/orders.sh"
+bash "$r/oracles/freeze.sh" --dry-run >/dev/null 2>&1
+expect "freeze.sh --dry-run writes nothing" 1 "$r/oracles"
+bash "$r/oracles/freeze.sh" >/dev/null 2>&1
+expect "freeze.sh re-freezes a drifted source and the check goes green" 0 "$r/oracles"
+rm -rf "$r"
 
 attr="$(git -C "$ROOT" check-attr text -- oracles/bash/spec/scripts/validate.sh 2>/dev/null)"
 if [[ "$attr" == *": text: unset" ]]; then

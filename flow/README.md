@@ -320,12 +320,14 @@ The shipped rules, in one sentence each:
 
 1. **`.agents/skills/vibe/state.json`** — blocked in every state; the cursor is
    written only by `set-state.sh`.
-2. **`docs/spec/lessons.md`** — blocked outside the flow-end states that carry the
-   conditional lesson step.
-3. **Root `docs/spec/{product,tech,design,plan}.md`** — blocked outside the states
-   that own the root specs.
-4. **`docs/spec/features/*`**, **`CLAUDE.md` / `AGENTS.md`**, **`src/*` + `tests/*`** —
-   warn-only bands.
+2. **Lessons under `docs/spec/` and the legacy dot-spec root** — blocked outside the
+   flow-end states that carry the conditional lesson step.
+3. **Root specs under `docs/spec/` and the legacy dot-spec root** — blocked outside the
+   states that own the root specs.
+4. **Feature specs under `docs/spec/` and the legacy dot-spec root**, plus
+   **`docs/superpowers/specs/*`**, **`CLAUDE.md` / `AGENTS.md`**, and
+   **`src/*` + `tests/*`** — warn-only bands.
+5. **`.planning/*`** — GSD's read-only state store; writes block except at idle.
 
 The *authoritative* state lists are in the file, and `policy render` prints them;
 this README deliberately does not copy them.
@@ -336,7 +338,9 @@ bash .agents/skills/vibe/scripts/detect-context.sh decide docs/spec/product.md
 
 **What the teeth actually reach — three honest caveats:**
 
-1. **File tools only, plus a Bash warn.** The three hard blocks intercept
+1. **File tools only, plus a Bash warn.** The six block rules cover the flow
+   cursor, lessons and root specs under both root spellings, and GSD's
+   `.planning/` store. They intercept
    `Edit` / `Write` / `NotebookEdit`. A raw shell write (`echo >> docs/spec/lessons.md`,
    `sed -i`, `tee`, `mv`/`cp`/`rm`) does **not** hit that path, so the guard also
    runs a warn-only Bash **sniffer**: it text-scans the command for a write-shaped
@@ -385,8 +389,7 @@ The flow half. Addressed at runtime under `.agents/skills/vibe/`.
 
 | Path | What it is |
 |---|---|
-| [SKILL.md](SKILL.md) | `vibe` router — routing table + the D12 orders blocks |
-| [setup.md](setup.md), [strategy.md](strategy.md), [feature.md](feature.md), [quick.md](quick.md), [verify.md](verify.md), [compound.md](compound.md) | per-phase procedure files |
+| [SKILL.md](SKILL.md) | the `vibe` flow procedures, doctrine, and D12 orders blocks |
 | [state-machine.json](state-machine.json) | static machine — states, skills, `style`, `next` (data, not prose) |
 | [state.example.json](state.example.json) | cursor template; copy to `state.json` to test transitions |
 | `state.json` | runtime cursor — gitignored; created by the installer / `set-state.sh` |

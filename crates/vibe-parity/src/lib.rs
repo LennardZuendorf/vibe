@@ -4,6 +4,7 @@
 //! the corpus classes they run over. Every run stages a case into a sandbox,
 //! runs the oracle, restages, runs the candidate, and compares exit code,
 //! stdout bytes and the bytes of every file left behind.
+pub mod corpus_flow;
 pub mod corpus_spec;
 pub mod harness;
 pub mod sandbox;

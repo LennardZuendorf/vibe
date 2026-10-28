@@ -1,0 +1,10 @@
+{
+  "runs": {
+    "state-set": [
+      [
+        "quick.triage"
+      ]
+    ]
+  },
+  "v": 1
+}

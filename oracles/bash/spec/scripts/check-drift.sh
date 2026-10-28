@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # check-drift.sh — compound-enforcement drift gate for the dogfood repo.
 #
 # A merged feature must leave a compounded trail: a row in the root plan and no

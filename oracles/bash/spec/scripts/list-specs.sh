@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # List all spec files with their type, scope, and area
 
 set -euo pipefail

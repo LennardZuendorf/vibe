@@ -179,7 +179,7 @@ awk '/vibe:instructions:start/{f=1;next} /vibe:instructions:end/{f=0} f' "$TEMPL
 merge_run "merge case 4 (wrap an unmarked-equivalent body)" "$d"
 assert_contains "agent-instructions/3" "unmarked-equivalent body is WRAPPED, not appended twice" "$MERGE_STDOUT" "wrapped"
 assert_eq "agent-instructions/3" "wrap does not duplicate the body" \
-  "$(grep -c '^## Working model' "$d/AGENTS.md")" "1"
+  "$(grep -c '^## Flow$' "$d/AGENTS.md")" "1"
 merge_run "merge case 4 re-run (no-op)" "$d"
 rm -rf "$d"
 # merge case 5 — divergent -> append + warn, preserve content. THE ONE PATH THAT
@@ -260,25 +260,21 @@ merge_run "unmerge (no title present)" unmerge "$d"
 rm -rf "$d"
 
 echo ""
-echo "=== agent-instructions — repo AGENTS.md block == shipped template (parity) ==="
-# The repo's OWN vibe:instructions block must stay byte-identical to the template it
-# ships, so the dogfood guide and every install target never drift. Proof: merging
-# the template into a copy of the repo's AGENTS.md is a pure no-op (byte-identical).
-REPO_AGENTS="$REPO_ROOT/AGENTS.md"
-d="$(mktmp)"; cp "$REPO_AGENTS" "$d/AGENTS.md"
+echo "=== agent-instructions — shipped template merge parity ==="
+# The repo's dogfood guide keeps user-owned instructions outside the managed
+# block; the shipped template is the source for install targets.
+d="$(mktmp)"; cp "$TEMPLATE" "$d/AGENTS.md"
 before="$(cksum < "$d/AGENTS.md")"
-merge_run "merge into the repo's own AGENTS.md (parity no-op)" "$d"
+merge_run "merge into the shipped template (parity no-op)" "$d"
 after="$(cksum < "$d/AGENTS.md")"
-assert_eq "agent-instructions/2" "repo AGENTS.md block is byte-identical to the shipped template (no drift)" "$after" "$before"
-# Discriminating: drop a line from INSIDE the managed block; merge must repair it
-# back to the pristine repo file — proving the parity assertion above would fail the
-# moment the template gains (or loses) a line the repo block does not mirror.
-d="$(mktmp)"; sed '/^## Degrade$/d' "$REPO_AGENTS" > "$d/AGENTS.md"
-cmp -s "$d/AGENTS.md" "$REPO_AGENTS" && fail "agent-instructions/2" "precondition: corrupted block differs from pristine" || true
-merge_run "merge repairs a drifted repo block" "$d"
-cmp -s "$d/AGENTS.md" "$REPO_AGENTS" \
-  && pass "agent-instructions/2" "merge repairs a drifted repo block back to the template (parity is enforced)" \
-  || fail "agent-instructions/2" "merge repairs a drifted repo block back to the template (parity is enforced)"
+assert_eq "agent-instructions/2" "shipped template merge is byte-identical (no drift)" "$after" "$before"
+# A damaged managed block must be repaired from the shipped template.
+d="$(mktmp)"; sed '/^## Degrade$/d' "$TEMPLATE" > "$d/AGENTS.md"
+cmp -s "$d/AGENTS.md" "$TEMPLATE" && fail "agent-instructions/2" "precondition: corrupted template differs" || true
+merge_run "merge repairs a drifted shipped template" "$d"
+cmp -s "$d/AGENTS.md" "$TEMPLATE" \
+  && pass "agent-instructions/2" "merge repairs the shipped template from its source" \
+  || fail "agent-instructions/2" "merge repairs the shipped template from its source"
 rm -rf "$d"
 
 echo ""
@@ -506,7 +502,7 @@ assert_eq "platform-adapters/1" "relay truncated after draining (warn not repeat
 rc=0
 printf '' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
 assert_eq "platform-adapters/2" "guard exits 0 on empty stdin" "$rc" "0"
-# guard no-jq degrade: the three hard blocks still fire without jq (detect-context
+# guard no-jq degrade: hard-block rules still fire without jq (detect-context
 # is pure bash; the path is extracted via sed). Assert exit 2 on a state.json edit.
 # `node` is included (js-core/7): the hook is node-first now, so a farm that
 # omits it would accidentally test the UNRELATED "Node absent" degrade (R4,

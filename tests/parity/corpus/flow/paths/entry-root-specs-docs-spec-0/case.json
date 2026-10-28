@@ -1,0 +1,59 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        "docs/spec/product.md",
+        "feature.compound"
+      ],
+      [
+        "docs/spec/product.md",
+        "feature.design"
+      ],
+      [
+        "docs/spec/product.md",
+        "feature.impl"
+      ],
+      [
+        "docs/spec/product.md",
+        "feature.plan"
+      ],
+      [
+        "docs/spec/product.md",
+        "feature.verify"
+      ],
+      [
+        "docs/spec/product.md",
+        "idle"
+      ],
+      [
+        "docs/spec/product.md",
+        "quick.fix"
+      ],
+      [
+        "docs/spec/product.md",
+        "quick.triage"
+      ],
+      [
+        "docs/spec/product.md",
+        "quick.verify"
+      ],
+      [
+        "docs/spec/product.md",
+        "setup.apply"
+      ],
+      [
+        "docs/spec/product.md",
+        "setup.detect"
+      ],
+      [
+        "docs/spec/product.md",
+        "strategy.brainstorm"
+      ],
+      [
+        "docs/spec/product.md",
+        "strategy.spec"
+      ]
+    ]
+  },
+  "v": 1
+}

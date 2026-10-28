@@ -1,0 +1,59 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        "docs/spec/plan.md",
+        "feature.compound"
+      ],
+      [
+        "docs/spec/plan.md",
+        "feature.design"
+      ],
+      [
+        "docs/spec/plan.md",
+        "feature.impl"
+      ],
+      [
+        "docs/spec/plan.md",
+        "feature.plan"
+      ],
+      [
+        "docs/spec/plan.md",
+        "feature.verify"
+      ],
+      [
+        "docs/spec/plan.md",
+        "idle"
+      ],
+      [
+        "docs/spec/plan.md",
+        "quick.fix"
+      ],
+      [
+        "docs/spec/plan.md",
+        "quick.triage"
+      ],
+      [
+        "docs/spec/plan.md",
+        "quick.verify"
+      ],
+      [
+        "docs/spec/plan.md",
+        "setup.apply"
+      ],
+      [
+        "docs/spec/plan.md",
+        "setup.detect"
+      ],
+      [
+        "docs/spec/plan.md",
+        "strategy.brainstorm"
+      ],
+      [
+        "docs/spec/plan.md",
+        "strategy.spec"
+      ]
+    ]
+  },
+  "v": 1
+}

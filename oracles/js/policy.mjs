@@ -289,8 +289,8 @@ export function decide(policy, relPath, state) {
   const rules = policy && Array.isArray(policy.rules) ? policy.rules : [];
   if (rules.length === 0) return ALLOW_UNMATCHED;
 
-  // Normalize before matching: `.spec/./lessons.md` and `.spec//lessons.md` name
-  // the same file as `.spec/lessons.md`, and a hard block any of those spellings
+  // Normalize before matching: `.spec/./lessons.md` and `.spec//lessons.md` name // literal
+  // the same file as `.spec/lessons.md`, and a hard block any of those spellings // literal
   // walks around is not a block.
   const rawPath = typeof relPath === 'string' ? relPath : '';
   const normalizedPath = rawPath ? posixNormalize(rawPath) : '';

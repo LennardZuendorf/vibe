@@ -1,0 +1,19 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        "src/a.rs",
+        "idle"
+      ],
+      [
+        "docs/spec/tech.md",
+        "idle"
+      ],
+      [
+        "nope.md",
+        "feature.impl"
+      ]
+    ]
+  },
+  "v": 1
+}

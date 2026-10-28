@@ -23,6 +23,16 @@ pub struct Suite {
     pub commands: Vec<CommandSpec>,
     /// Minimum case count per corpus class. Every class a command uses needs one.
     pub floors: BTreeMap<String, usize>,
+    /// Before file comparison, rename a snapshot key on each side to its mapped
+    /// value. Use: two engines that write the same logical file to different
+    /// paths (the JS oracle's legacy cursor vs the candidate's `.vibe/run`
+    /// cursor) compare under one key.
+    #[serde(default)]
+    pub file_aliases: BTreeMap<String, String>,
+    /// Named byte normalizers, applied to every compared file's bytes on both
+    /// sides before comparison. See [`NORMALIZERS`].
+    #[serde(default)]
+    pub normalize: Vec<String>,
     /// Known, deliberate differences between oracle and candidate.
     #[serde(default)]
     pub divergences: Vec<Divergence>,
@@ -33,6 +43,99 @@ pub struct Suite {
 
 fn default_timeout_ms() -> u64 {
     30_000
+}
+
+/// Every normalizer a suite's `normalize` list may name.
+pub const NORMALIZERS: [&str; 1] = ["cursor-updated"];
+
+/// Applies one named normalizer to a file's bytes.
+///
+/// `cursor-updated` replaces every JSON `"updated"` value with a fixed
+/// placeholder: the byte sequence `"updated":` (optional following space)
+/// followed by a quoted string has the quoted value replaced with `"T"`, so
+/// two cursors written seconds apart compare equal. Hand-written; no regex.
+pub fn normalize_bytes(name: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
+    match name {
+        "cursor-updated" => Ok(cursor_updated(bytes)),
+        other => Err(format!(
+            "unknown normalizer {other:?}; known: {}",
+            NORMALIZERS.join(", ")
+        )),
+    }
+}
+
+const UPDATED_KEY: &[u8] = b"\"updated\":";
+
+fn cursor_updated(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut rest = bytes;
+    while let Some(at) = find(rest, UPDATED_KEY) {
+        out.extend_from_slice(&rest[..at + UPDATED_KEY.len()]);
+        rest = &rest[at + UPDATED_KEY.len()..];
+        if rest.first() == Some(&b' ') {
+            out.push(b' ');
+            rest = &rest[1..];
+        }
+        match quoted_value(rest) {
+            Some(len) => {
+                out.extend_from_slice(b"\"T\"");
+                rest = &rest[len..];
+            }
+            None => continue,
+        }
+    }
+    out.extend_from_slice(rest);
+    out
+}
+
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+/// The length of the quoted string at the start of `bytes`, quotes included,
+/// or `None` when `bytes` does not start with a closed quoted string.
+fn quoted_value(bytes: &[u8]) -> Option<usize> {
+    if bytes.first() != Some(&b'"') {
+        return None;
+    }
+    let mut index = 1;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => index += 2,
+            b'"' => return Some(index + 1),
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+/// Renames each aliased snapshot key to its mapped value. The file's parent
+/// directories become present too, because the harness snapshots directories
+/// as keys ending in `/`: the side that never created them would otherwise
+/// differ from the side that did. When a side holds both spellings, the
+/// source key stays put so the comparison reports the extra file.
+fn apply_file_aliases(files: &mut BTreeMap<String, Vec<u8>>, aliases: &BTreeMap<String, String>) {
+    for (from, to) in aliases {
+        let Some(bytes) = files.remove(from) else {
+            continue;
+        };
+        if files.contains_key(to) {
+            files.insert(from.clone(), bytes);
+            continue;
+        }
+        let parts: Vec<&str> = to.split('/').collect();
+        let mut prefix = String::new();
+        for part in &parts[..parts.len() - 1] {
+            if !prefix.is_empty() {
+                prefix.push('/');
+            }
+            prefix.push_str(part);
+            files.entry(format!("{prefix}/")).or_default();
+        }
+        files.insert(to.clone(), bytes);
+    }
 }
 
 /// One command compared between oracle and candidate.
@@ -162,6 +265,22 @@ fn validate_spec(spec: &CaseSpec) -> Result<(), String> {
 }
 
 impl Suite {
+    /// The suite's view of one side's snapshot: aliased keys renamed, then
+    /// every file's bytes passed through the named normalizers. Applied to
+    /// both sides alike, so a self-check (oracle vs oracle) stays green too.
+    pub fn canonical_files(
+        &self,
+        mut files: BTreeMap<String, Vec<u8>>,
+    ) -> Result<BTreeMap<String, Vec<u8>>, String> {
+        apply_file_aliases(&mut files, &self.file_aliases);
+        for name in &self.normalize {
+            for bytes in files.values_mut() {
+                *bytes = normalize_bytes(name, bytes)?;
+            }
+        }
+        Ok(files)
+    }
+
     /// Loads a suite file; `corpus` and `oracle_root` resolve against its directory.
     pub fn load(path: &Path) -> Result<Suite, String> {
         let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -173,6 +292,17 @@ impl Suite {
                 path.display(),
                 suite.v
             ));
+        }
+        for name in &suite.normalize {
+            normalize_bytes(name, &[]).map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        for (from, to) in &suite.file_aliases {
+            if from.is_empty() || to.is_empty() {
+                return Err(format!(
+                    "{}: file alias {from:?} -> {to:?} must map two non-empty paths",
+                    path.display()
+                ));
+            }
         }
         let base = path.parent().unwrap_or_else(|| Path::new("."));
         suite.corpus = base.join(&suite.corpus);

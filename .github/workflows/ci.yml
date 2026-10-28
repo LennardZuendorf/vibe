@@ -232,9 +232,11 @@ jobs:
 
   parity:
     # F3/F16: the frozen spec oracles against themselves and against the
-    # vibe-spec candidate over the generated corpus. The live leg (this repo's
-    # own tree) is retired: oracle bash cannot read docs/spec (P4-R17).
-    name: parity — spec oracles vs vibe-spec
+    # vibe-spec candidate over the generated corpus; F5: the frozen JS flow
+    # oracles against themselves and against vibe-flow over the generated flow
+    # corpus (tests/parity/flow.json). The live leg (this repo's own tree) is
+    # retired: oracle bash cannot read docs/spec (P4-R17).
+    name: parity — spec + flow oracles vs vibe-spec, vibe-flow
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -242,10 +244,18 @@ jobs:
         with:
           persist-credentials: false
 
+      # The flow oracle legs (tests/parity/flow.json) spawn node, so the
+      # interpreter must be pinned before the suites run — same pin as the
+      # check job's engine legs.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
       - name: Toolchain (pinned by rust-toolchain.toml)
         run: rustup toolchain install
 
-      - name: Spec parity (self-check, candidate)
+      - name: Spec + flow parity (self-check, candidate)
         run: bash tests/parity/run.sh
 
   openspec:

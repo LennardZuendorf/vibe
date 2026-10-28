@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # vibe plugin SessionStart hook (per-user). Self-detects a vibe-enabled repo and,
-# when found, emits the working-model doctrine + this project's cursor. Silent
+# when found, emits the working-model doctrine. Silent
 # (exit 0) in non-vibe repos so a per-user install never adds noise elsewhere.
 set -euo pipefail
 cat >/dev/null 2>&1 || true   # consume stdin; unused
