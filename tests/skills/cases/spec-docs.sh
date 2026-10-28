@@ -125,8 +125,8 @@ else
       | sed -e 's/^\*\*Tags:\*\*.*/**Tags:** roundtrip/' -e 's/YYYY-MM-DD/2026-10-24/' -e 's/<[^>]*>/filled/g' \
       >> docs/spec/lessons.md
   )
-  _val="$(cd "$_rt" && "$_vs" validate 2>&1 || true)"
-  _got="$(cd "$_rt" && "$_vs" lessons-for roundtrip 2>&1 || true)"
+  _val="$({ cd "$_rt" && "$_vs" validate 2>&1; } || true)"
+  _got="$({ cd "$_rt" && "$_vs" lessons-for roundtrip 2>&1; } || true)"
   if [[ "$_val" == *SF16* ]]; then fail "skill-revision/9" "filled example trips SF16"; else pass "skill-revision/9" "filled example passes SF16"; fi
   assert_contains "skill-revision/9" "lessons-for returns the filled example" "$_got" "**Tags:** roundtrip"
   rm -rf "$_rt"
@@ -191,16 +191,16 @@ else
     sd_fence "$REPO_ROOT/$_ref/plan.md" 'Example (feature plan)' '````' > "$_r/features/example/plan.md"
     printf '\n## Feature Sequence\n\n| Order | Feature | Deliverable | Test | Status | Starts when |\n|---:|---|---|---|---|---|\n| 1 | demo | files | `t` | IN PROGRESS | — |\n| 2 | example | files | `t` | IN PROGRESS | demo DONE |\n' >> "$_r/plan.md"
   )
-  _val="$(cd "$_fx" && "$_vs" validate 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true)"
+  _val="$({ cd "$_fx" && "$_vs" validate 2>&1 | sed 's/\x1b\[[0-9;]*m//g'; } || true)"
   _warns="$(printf '%s\n' "$_val" | grep -E 'WARN|ERROR' || true)"
   assert_eq "skill-revision/10" "validate prints no warning for a root built from the docs" "" "$_warns"
   (cd "$_fx" && "$_vs" check-drift >/dev/null 2>&1); assert_rc "skill-revision/10" "check-drift exits 0 on the fixture" 0 "$?"
-  _sm="$(cd "$_fx" && "$_vs" scan-merges demo 2>&1 | grep -c 'features/demo' || true)"
+  _sm="$({ cd "$_fx" && "$_vs" scan-merges demo 2>&1 | grep -c 'features/demo'; } || true)"
   assert_eq "skill-revision/10" "the filled feature tech template has no live merge block" "0" "$_sm"
   # The token example of reference/design.md validates as the root design.md.
   _tok="$(awk '/Example — token frontmatter/ { f = 1 } f && /^```yaml/ { g = 1; next } g && /^```/ { exit } g { print }' "$REPO_ROOT/$_ref/design.md")"
   (cd "$_fx" && { printf '%s\n' "$_tok"; printf '\n# Design\n\nProse.\n'; } > docs/spec/design.md)
-  _dv="$(cd "$_fx" && "$_vs" validate 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'WARN|ERROR' || true)"
+  _dv="$({ cd "$_fx" && "$_vs" validate 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'WARN|ERROR'; } || true)"
   assert_eq "skill-revision/10" "the design token example passes as the root design.md" "" "$_dv"
   rm -rf "$_fx"
 fi
