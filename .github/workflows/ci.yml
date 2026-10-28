@@ -166,9 +166,11 @@ jobs:
         run: npm install --global @anthropic-ai/claude-code@2.1.310
 
       - name: plugin validate (fail-closed)
+        # The gate owns the verdict: a missing CLI must surface as the script's
+        # own FAIL line, not as an opaque `command not found` from a diagnostic
+        # line above it, so the version probe is deliberately non-fatal.
         run: |
-          command -v claude
-          claude --version
+          claude --version || echo "claude --version failed — the script below owns the verdict"
           VIBE_PLUGIN_VALIDATE=require bash spec/tests/plugin-validate.sh
 
   macos:
