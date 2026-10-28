@@ -1077,11 +1077,14 @@ mod tests {
             &mut |_| {},
         )
         .expect("block");
+        // The oracle prints `$ROOT/<rel>` — `/`-joined on every platform. Spell
+        // the expectation independently of the product helper so this stays a
+        // check, not a tautology.
+        let expected_path = receipt.display().to_string().replace('\\', "/");
         assert_eq!(
             blocked,
             format!(
-                "vibe-gate: BLOCKED — feature.verify needs an evidence receipt before 'done'.\n  expected: {}\n  it must record the commands you ran and their observed output (per unit ID for a feature).\n{ABORT_HINT}\n",
-                receipt.display()
+                "vibe-gate: BLOCKED — feature.verify needs an evidence receipt before 'done'.\n  expected: {expected_path}\n  it must record the commands you ran and their observed output (per unit ID for a feature).\n{ABORT_HINT}\n"
             )
         );
     }
