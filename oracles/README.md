@@ -28,6 +28,12 @@ makes a regenerated manifest over a changed oracle fail). A half-freeze is not
 expressible there, which is the point: re-copying one half while leaving the
 other behind is exactly how the generation-1 record survived into generation 2.
 
+The refusal is two-pass: it resolves and proves every listed source exists
+**before** the first byte is copied. So a missing live source (or a path with no
+live-source rule) aborts with the freeze byte-identical on disk — the tool says
+"nothing written" only when that is true. A copy loop that aborts mid-way would
+leave a half-frozen tree behind a message denying it.
+
 ## Generation log
 
 - gen-1 — frozen from commit `4e52d07bf34c391f5b5f8f5183aae1b8fdc1113f`.

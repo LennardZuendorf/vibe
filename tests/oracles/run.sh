@@ -130,6 +130,24 @@ bash "$r/oracles/freeze.sh" >/dev/null 2>&1
 expect "freeze.sh re-freezes a drifted source and the check goes green" 0 "$r/oracles"
 rm -rf "$r"
 
+# A freeze refuses as a whole. The missing-source path used to copy whatever it
+# had already visited and then abort while claiming "nothing written" — so the
+# evidence has to be the filesystem *after* the failure, not the exit code.
+# Drift one source, delete a different one: the drifted oracle must be
+# byte-identical, and no copy may be announced.
+r="$(fixture)"; printf '\n' >>"$r/flow/scripts/orders.sh"; rm "$r/spec/scripts/promote.sh"
+drifted="$r/oracles/bash/flow/scripts/orders.sh"
+before="$(shasum -a 256 "$drifted" 2>/dev/null | awk '{ print $1 }')"
+out="$(bash "$r/oracles/freeze.sh" 2>&1)"; rc=$?
+after="$(shasum -a 256 "$drifted" 2>/dev/null | awk '{ print $1 }')"
+if [[ "$rc" == 1 && -n "$before" && "$after" == "$before" && "$out" == *"nothing written"* && "$out" != *"<-"* ]]; then
+  record "freeze.sh writes nothing when a live source is missing" 0
+else
+  record "freeze.sh writes nothing when a live source is missing" 1 \
+    "rc=$rc, want 1; drifted oracle $before -> $after; a refusal must copy nothing"
+fi
+rm -rf "$r"
+
 attr="$(git -C "$ROOT" check-attr text -- oracles/bash/spec/scripts/validate.sh 2>/dev/null)"
 if [[ "$attr" == *": text: unset" ]]; then
   pass=$((pass + 1)); echo "  PASS [oracles] .gitattributes disables EOL conversion under oracles/"
