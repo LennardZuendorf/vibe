@@ -1,33 +1,40 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# FROZEN PARITY ORACLE — AND THE SHIPPED no-node FALLBACK. DO NOT EDIT TO MATCH
-# THE PORT.
+# GUARD PARITY ORACLE — AND THE SHIPPED no-node FALLBACK. NOT BYTE-FROZEN: the
+# byte-frozen original lives at oracles/bash/flow/hooks-fallback/pre-tool-use-guard.sh
+# (pinned by oracles/MANIFEST.sha256).
 #
-# This is the pre-port bash implementation of .claude/hooks/pre-tool-use-guard.sh, restored
-# verbatim from git `main` (blob 959b45fa6591c35823f65fc7e6396795cce1f61a). js-core/7 replaced the real hook with a
-# Node shim IN PLACE, which deleted the only thing `hook.mjs`'s guard/gate
-# reimplementation could be compared against.
+# This began as a verbatim copy of the pre-port bash implementation of
+# .claude/hooks/pre-tool-use-guard.sh, taken from git `main` (blob
+# 959b45fa6591c35823f65fc7e6396795cce1f61a). js-core/7 replaced the real hook with a
+# Node shim IN PLACE, which deleted the only thing `hook.mjs`'s guard
+# reimplementation could be compared against. It has since been edited, so it no
+# longer matches that blob: spec v0.4 taught the Bash sniffer the docs/spec root
+# beside the legacy one (with `# literal` tags), and review-hardening/19 added
+# MultiEdit to the matcher named in the header below (a comment only).
 #
 # It has TWO jobs, and one file does both so they can never drift:
 #
-#  1. PARITY ORACLE. flow/engine/tests/parity.test.mjs spawns this file as the
-#     oracle for runGuardHook()/runGateHook(), exactly as the other parity legs
-#     spawn flow/scripts/{orders,doctrine,doctor,set-state}.sh.
+#  1. PARITY ORACLE. flow/engine/tests/parity.test.mjs spawns this file (not the
+#     frozen copy) as the oracle for runGuardHook(), exactly as the other parity
+#     legs spawn flow/scripts/{orders,doctrine,doctor,set-state}.sh. Pointing it
+#     at the frozen copy would change behaviour: that copy predates docs/spec.
 #  2. SHIPPED FALLBACK. `.claude/hooks/pre-tool-use-guard.sh` execs it when node is absent, the
 #     engine is missing, or the engine exits an unexpected code. Before that, a
-#     node-less target lost the guard's hard block and the Stop gate's evidence
-#     tooth outright — `command -v node || exit 0` — while detect-context.sh's own
-#     header still promised "a target without node must still be enforced".
-#     Enforcement now degrades to this file, never to nothing.
+#     node-less target lost the guard's hard block outright —
+#     `command -v node || exit 0` — while detect-context.sh's own header still
+#     promised "a target without node must still be enforced". Enforcement now
+#     degrades to this file, never to nothing.
 #
-# Rules: FROZEN at the behaviour the port must reproduce. If the engine and this
+# Rules: do not change its decisions to match the port. If the engine and this
 # file ever disagree, either the engine has a bug or the divergence is deliberate
 # — in which case pin it as a KNOWN DIVERGENCE in parity.test.mjs with a stated
-# reason. Never "fix" this file to agree.
+# reason. Never "fix" this file to agree. A comment edit that keeps the header
+# true, or a change both sides adopt with its own test, is allowed; list it above.
 # ─────────────────────────────────────────────────────────────────────────────
 # pre-tool-use-guard.sh — vibe flow guard hook (platform-adapters/2).
 #
-# Event: PreToolUse, matcher Edit|Write|NotebookEdit|Bash. For the file tools it
+# Event: PreToolUse, matcher Edit|Write|MultiEdit|NotebookEdit|Bash. For the file tools it
 # reads the target path from stdin and asks the shared decision policy whether the
 # write is allowed in the current flow state. NO path policy lives here (R8) — it
 # all lives once in .agents/skills/vibe/scripts/detect-context.sh decide.

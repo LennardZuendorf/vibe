@@ -18,8 +18,13 @@ struct Block {
     preview: Vec<u8>,
 }
 
+const USAGE: &str = "Usage: vibe-spec scan-merges [<feature>] [--format table|json|plain]\n\nReport pending merge blocks in feature tech docs.\n";
+
 /// Runs the command.
 pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<u8>) {
+    if crate::wants_help(args) {
+        return (exit::OK, USAGE.as_bytes().to_vec());
+    }
     let mut feature: Option<String> = None;
     let mut format = String::from("table");
     let mut i = 0;
@@ -34,14 +39,14 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
                 }
                 None => {
                     eprintln!("scan-merges: --format requires table|json|plain");
-                    return (exit::FINDINGS, Vec::new());
+                    return (exit::USAGE, Vec::new());
                 }
             }
         } else if let Some(v) = a.strip_prefix("--format=") {
             format = v.to_string();
         } else if a.starts_with('-') {
             eprintln!("Unknown option: {a}");
-            return (exit::FINDINGS, Vec::new());
+            return (exit::USAGE, Vec::new());
         } else {
             feature = Some(a.to_string()).filter(|f| !f.is_empty());
         }

@@ -6,17 +6,21 @@ local to this half. Read the root guide first.
 
 ## What lives here
 
-Pure `bash` + Markdown, **zero runtime**. Ships to targets as
-`.agents/skills/spec/` (a `-L` dereferenced copy of this dir).
+Markdown skills and agents, a hook shim, legacy bash scripts, and the tests. The
+`vibe-spec` binary (`crates/vibe-spec/`) does the work the skills call. Ships to
+targets as `.agents/skills/spec/` and `.agents/skills/using-spec/` (a `-L`
+dereferenced copy).
 
 | Path | Role |
 |---|---|
 | `SKILL.md` | Skill router — entry point the agent loads |
-| `strategy.md`, `feature.md` | Phase guides (root strategy, feature authoring) |
+| `using-spec/` | Session-start router skill |
+| `strategy.md`, `feature.md` | Guides (root strategy, fallback feature authoring) |
 | `reference/` | Templates + per-doc authoring references |
-| `scripts/` | `setup.sh`, `validate.sh` — deterministic, shellcheck-clean |
+| `scripts/` | Legacy bash scripts, flat root only — deterministic, shellcheck-clean |
 | `agents/` | Claude Code agents (`spec-promoter.md`, `spec-health.md`) |
-| `tests/` | Behaviour suite (`spec/tests/run.sh`) — **source-only, never ships** |
+| `hooks/` | `run-hook.sh`, the fail-open shim for `vibe-spec hook` |
+| `tests/` | Behaviour suites (`spec/tests/`) — **source-only, never ships** |
 
 ## Working here
 
@@ -26,10 +30,15 @@ Pure `bash` + Markdown, **zero runtime**. Ships to targets as
   marker search (`docs/spec` / `.git`). See the `tests/` suites for the pattern.
 - `tests/` and this `AGENTS.md` are pruned by `install.sh` on copy — they are
   contributor artifacts, not part of the shipped skill.
+- Skill prose follows the authoring standard in the repo's tech spec: a rule lives
+  in one file, a description says when to use the skill, and `tests/skills` lints it.
 
 ## Verify
 
 ```bash
-bash spec/tests/run.sh          # this half's behaviour suite
-bash spec/scripts/validate.sh   # structural spec validation
+cargo test -p vibe-spec                  # the vibe-spec binary
+bash spec/tests/run.sh                   # this half's behaviour suite
+bash spec/tests/agents.sh                # the two agents
+bash spec/tests/pressure/run.sh          # pressure harness; needs the claude CLI
+bash tests/skills/run.sh                 # skill, agent and doc lints
 ```

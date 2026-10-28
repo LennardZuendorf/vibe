@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # pre-tool-use-guard.sh — vibe flow guard hook.
 #
-# Event: PreToolUse, matcher Edit|Write|NotebookEdit|Bash. Node-first: runs the
+# Event: PreToolUse, matcher Edit|Write|MultiEdit|NotebookEdit|Bash. Node-first: runs the
 # engine's `hook pre-tool-use-guard` (engine/commands/hook.mjs), which owns the
 # stdin parsing, the warn-only Bash write sniffer, the warnings relay, and the
 # exit-code translation. Path POLICY is not here and not in the engine either —
 # both ask content/policy.json through `detect-context.sh decide`.
 #
 # DEGRADE (no node, no engine, or an unexpected engine exit code):
-# `.agents/skills/vibe/hooks-fallback/pre-tool-use-guard.sh` — the frozen pre-port
+# `.agents/skills/vibe/hooks-fallback/pre-tool-use-guard.sh` — the pre-port bash
 # implementation — answers instead. This hook carries a HARD BLOCK, so losing it
 # to a missing runtime is not acceptable: enforcement degrades to bash, never to
 # nothing. It still never inverts an allow into a spurious exit 2.

@@ -84,11 +84,9 @@ Keep token groups you need; delete unused groups. Prose sections explain *why* a
 **Example — token frontmatter:**
 ```yaml
 ---
-type: entrypoint
-scope: design
-design_format: google-labs-code/design.md-compatible
-children: []
+type: hub
 updated: 2026-06-06
+design_format: google-labs-code/design.md-compatible
 colors:
   primary: "#1a1a2e"
   surface: "#ffffff"
@@ -165,4 +163,4 @@ Always link to your product and tech counterparts:
 ## Templates
 
 - **Root entrypoint:** [templates/design.md](templates/design.md)
-- **Feature design:** [templates/design.md](templates/design.md) (same template; set `type: feature-design` and parent links)
+- **Feature design:** [templates/feature-design.md](templates/feature-design.md)

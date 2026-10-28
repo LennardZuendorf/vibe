@@ -11,6 +11,7 @@ updated: {YYYY-MM-DD}
   Job: project architecture anchor (HOW at project level). Link down via Features index.
   Do NOT: feature-level file lists, algorithms, UX opinions, unit tables.
   Omit optional sections entirely when empty — placeholder prose is worse than absence.
+  Use in a flat layout only; a layered root keeps the hubs that `vibe-spec init` writes.
 -->
 
 # {Project Name} — Technical Architecture

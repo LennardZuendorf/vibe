@@ -27,10 +27,6 @@ fn legacy_formats_match_the_oracle() {
         &["--format", "xml", "bash"],
         &["nomatch"],
         &[""],
-        &["--bogus"],
-        &["--format"],
-        &["--"],
-        &[],
     ] {
         assert_parity(&p, "lessons-for", "lessons-for.sh", args);
     }
@@ -114,4 +110,82 @@ fn json_mode_rejects_an_empty_tag() {
         assert!(out.stdout.is_empty(), "{args:?}: {}", out.text());
         assert!(out.stderr.contains("empty"), "{args:?}: {}", out.stderr);
     }
+}
+
+#[test]
+fn usage_errors_exit_2() {
+    // skill-revision/13: the contract's usage code, messages unchanged.
+    let p = project("lessons-usage");
+    write(&p, ".spec/lessons.md", LESSONS);
+    for (args, msg) in [
+        (&["lessons-for", "--bogus"][..], "Unknown option: --bogus"),
+        (&["lessons-for", "--"], "Unknown option: --"),
+        (&["lessons-for"], "usage: vibe-spec lessons-for"),
+        (&["lessons-for", "--format"], "--format requires a value"),
+    ] {
+        let out = spec(&p, args, &[]);
+        assert_eq!(out.code, 2, "{args:?}: {}", out.stderr);
+        assert!(out.stdout.is_empty(), "{args:?}: {}", out.text());
+        assert!(out.stderr.contains(msg), "{args:?}: {}", out.stderr);
+    }
+    // Controls: no match is still success.
+    let out = spec(&p, &["lessons-for", "nomatch"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+}
+
+#[test]
+fn a_missing_root_or_lessons_file_is_named_on_stderr() {
+    // skill-revision/14
+    let none = project("lessons-noroot");
+    let out = spec(&none, &["lessons-for", "bash"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(out.stdout.is_empty());
+    assert_eq!(out.stderr.trim_end().lines().count(), 1, "{}", out.stderr);
+    assert!(out.stderr.contains("no spec root"), "{}", out.stderr);
+    assert!(!out.stderr.contains(".spec"), "{}", out.stderr);
+    let bare = project("lessons-nofile");
+    write(&bare, "docs/spec/product.md", "# P\n");
+    let out = spec(&bare, &["lessons-for", "bash"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(out.stdout.is_empty());
+    assert_eq!(out.stderr.trim_end().lines().count(), 1, "{}", out.stderr);
+    assert!(out.stderr.contains("lessons.md"), "{}", out.stderr);
+}
+
+#[test]
+fn tags_match_whole_tags_only() {
+    // skill-revision/15
+    let p = project("lessons-whole");
+    write(
+        &p,
+        ".spec/lessons.md",
+        "# Lessons\n\n### Plain\n**Rule:** A.\n**Tags:** decision\n\n### Short\n**Rule:** B.\n**Tags:** ci\n",
+    );
+    let out = spec(&p, &["lessons-for", "ci"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(out.text().contains("### Short"), "{}", out.text());
+    assert!(!out.text().contains("### Plain"), "{}", out.text());
+    let json = spec(&p, &["lessons-for", "--json", "ci"], &[]);
+    let v: Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(v["lessons"].as_array().unwrap().len(), 1, "{}", json.text());
+}
+
+#[test]
+fn tags_ignore_case_spaces_and_crlf() {
+    // skill-revision/15 (Review Focus 2)
+    let p = project("lessons-crlf");
+    write(
+        &p,
+        ".spec/lessons.md",
+        "# Lessons\r\n\r\n### Mixed\r\n**Rule:** A.\r\n**Tags:** CI , Decision\r\n",
+    );
+    let hit = spec(&p, &["lessons-for", "ci"], &[]);
+    assert!(hit.text().contains("### Mixed"), "{}", hit.text());
+    let hit = spec(&p, &["lessons-for", "decision"], &[]);
+    assert!(hit.text().contains("### Mixed"), "{}", hit.text());
+    let miss = spec(&p, &["lessons-for", "de"], &[]);
+    assert!(miss.stdout.is_empty(), "{}", miss.text());
+    // Control: an empty tag still matches every lesson.
+    let all = spec(&p, &["lessons-for", ""], &[]);
+    assert!(all.text().contains("### Mixed"), "{}", all.text());
 }

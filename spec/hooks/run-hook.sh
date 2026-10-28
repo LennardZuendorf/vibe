@@ -29,18 +29,10 @@ if [[ -z "$bin" ]]; then
   exit 0
 fi
 
-errf="$(mktemp "${TMPDIR:-/tmp}/vibe-spec-hook.XXXXXX" 2>/dev/null)" || errf=""
-if [[ -n "$errf" ]]; then
-  "$bin" hook "$event" 2>"$errf"
-else
-  "$bin" hook "$event"
-fi
-rc=$?
+# Capture stderr without a temp file: fd 3 carries stdout past the command
+# substitution, so only stderr lands in $err. A missing TMPDIR cannot fail this.
 err=""
-if [[ -n "$errf" ]]; then
-  err="$(cat "$errf" 2>/dev/null)"
-  rm -f "$errf"
-fi
+{ err="$("$bin" hook "$event" 2>&1 1>&3 3>&-)"; rc=$?; } 3>&1
 
 if [[ "$rc" -eq 0 ]]; then
   [[ -n "$err" ]] && printf '%s\n' "$err" >&2

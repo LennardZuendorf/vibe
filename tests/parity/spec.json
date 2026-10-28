@@ -12,7 +12,7 @@
     { "name": "promote", "oracle": ["bash", "{oracle}/scripts/promote.sh"], "candidate": ["{candidate}", "promote"], "classes": ["features"] },
     { "name": "setup", "oracle": ["bash", "{oracle}/scripts/setup.sh"], "candidate": null, "classes": ["no-root", "seeded"] }
   ],
-  "floors": { "no-root": 2, "seeded": 2, "filled": 3, "lessons": 4, "features": 15, "malformed": 4 },
+  "floors": { "no-root": 2, "seeded": 2, "filled": 3, "lessons": 5, "features": 15, "malformed": 4 },
   "divergences": [
     { "command": "lessons-for", "case": "lessons/quotes", "args": ["--format", "json", "escape"], "field": "stdout", "reason": "the oracle prints quotes and backslashes raw (invalid JSON); the port escapes them" },
     { "command": "lessons-for", "case": "lessons/tagged", "args": ["--format", "json", "bash"], "field": "stdout", "reason": "the oracle prints quotes raw (invalid JSON); the port escapes them" },
@@ -33,6 +33,23 @@
     { "command": "promote", "case": "features/delta-removed", "args": ["auth"], "field": "files", "reason": "the port removes Legacy login (R9) from product-auth.md (P3c-R9); the oracle never reads product.md" },
     { "command": "check-drift", "case": "features/superpowers-artifact", "args": [], "field": "stdout", "reason": "the port warns on superpowers artifacts left under docs/superpowers/ (D46, P3c-R4); the oracle does not look there" },
     { "command": "promote", "case": "features/superpowers-artifact", "args": ["auth"], "field": "exit", "reason": "the port prints the superpowers promotion checklist (P3c-R12); the oracle fails on the missing fallback folder" },
-    { "command": "promote", "case": "features/superpowers-artifact", "args": ["auth"], "field": "stdout", "reason": "the port prints the superpowers promotion checklist (P3c-R12); the oracle prints nothing" }
+    { "command": "promote", "case": "features/superpowers-artifact", "args": ["auth"], "field": "stdout", "reason": "the port prints the superpowers promotion checklist (P3c-R12); the oracle prints nothing" },
+    { "command": "lessons-for", "case": "lessons/edge-args", "args": ["--format"], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "lessons-for", "case": "lessons/tagged", "args": ["--bogus"], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "lessons-for", "case": "lessons/tagged", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/empty-feature", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/long-preview", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/no-trailing-newline", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/quoted-preview", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/regex-feature", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/rfc-boundary", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/rich-features", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/rid-prefix", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/scope-section", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/sf14-awk", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "promote", "case": "features/table-preview", "args": [], "field": "exit", "reason": "the oracle exits 1 for a usage error; the port exits 2 as contracts/exit-codes.json defines (skill-revision/13)" },
+    { "command": "list-specs", "case": "no-root/bare", "args": [], "field": "stdout", "reason": "the oracle prints its legacy-root sentence on stdout; the port names both searched roots on stderr (skill-revision/14)" },
+    { "command": "list-specs", "case": "no-root/subdir", "args": [], "field": "stdout", "reason": "the oracle prints its legacy-root sentence on stdout; the port names both searched roots on stderr (skill-revision/14)" },
+    { "command": "lessons-for", "case": "lessons/whole-tag", "args": ["ci"], "field": "stdout", "reason": "the oracle matches a substring of the Tags line; the port matches whole tags (skill-revision/15)" }
   ]
 }

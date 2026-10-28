@@ -357,3 +357,97 @@ fn an_entry_that_cannot_be_inspected_in_the_count_walk_fails_closed() {
         out.stderr
     );
 }
+
+const ROW: &str = "| demo | scope | IN PROGRESS |\n";
+
+fn hub(children: &str, body: &str) -> String {
+    format!("---\ntype: hub\nchildren: [{children}]\nupdated: 2026-01-15\n---\n\n# Plan\n\n{body}")
+}
+
+fn layered(name: &str, plan: &str) -> std::path::PathBuf {
+    let p = project(name);
+    write(&p, ".vibe/spec.json", common::LEGACY_STRICTNESS);
+    write(&p, "docs/spec/plan.md", plan);
+    write(&p, "docs/spec/features/demo/tech.md", "x\n");
+    p
+}
+
+#[test]
+fn rows_in_a_listed_note_count() {
+    // skill-revision/16
+    let p = layered(
+        "dr-layered",
+        &hub("concepts/feature-sequence.md", "See notes.\n"),
+    );
+    write(&p, "docs/spec/concepts/feature-sequence.md", ROW);
+    let out = spec(&p, &["check-drift"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(!out.stderr.contains("has no row"), "{}", out.stderr);
+    assert!(
+        out.stderr
+            .contains("live feature 'demo' \u{2014} root plan says: IN PROGRESS"),
+        "{}",
+        out.stderr
+    );
+}
+
+#[test]
+fn rows_in_a_linked_note_count() {
+    // skill-revision/16: a relative .md link counts like a child.
+    let p = layered("dr-linked", &hub("", "- [Sequence](concepts/seq.md)\n"));
+    write(&p, "docs/spec/concepts/seq.md", ROW);
+    let out = spec(&p, &["check-drift"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(
+        out.stderr.contains("root plan says: IN PROGRESS"),
+        "{}",
+        out.stderr
+    );
+}
+
+#[test]
+fn a_missing_row_still_fails_and_a_flat_row_still_passes() {
+    // skill-revision/16 controls
+    let none = layered("dr-norow2", &hub("concepts/feature-sequence.md", ""));
+    write(
+        &none,
+        "docs/spec/concepts/feature-sequence.md",
+        "# Sequence\n",
+    );
+    let out = spec(&none, &["check-drift"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(
+        out.stderr
+            .contains("feature 'demo' has no row in docs/spec/plan.md"),
+        "{}",
+        out.stderr
+    );
+    let flat = layered("dr-flat", &format!("# Plan\n\n{ROW}"));
+    let out = spec(&flat, &["check-drift"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+}
+
+#[test]
+fn hostile_children_are_never_read() {
+    // skill-revision/16 (Review Focus 3)
+    let p = layered(
+        "dr-hostile",
+        &hub(
+            "../outside.md, concepts/missing.md, concepts/link.md",
+            "- [Out](../outside.md)\n",
+        ),
+    );
+    write(&p, "outside.md", ROW);
+    write(&p, "docs/spec/concepts/placeholder.md", "x\n");
+    std::os::unix::fs::symlink("../../../outside.md", p.join("docs/spec/concepts/link.md"))
+        .unwrap();
+    let out = spec(&p, &["check-drift"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(
+        out.stderr
+            .contains("feature 'demo' has no row in docs/spec/plan.md"),
+        "{}",
+        out.stderr
+    );
+    assert!(!out.stderr.contains("panicked"), "{}", out.stderr);
+}

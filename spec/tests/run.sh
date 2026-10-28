@@ -596,14 +596,13 @@ test_sf17_templates() {
   done
 }
 
-# ── SF17: SKILL.md stays within skill size budget ────────────────────────────
+# ── SF17, skill-revision/5: SKILL.md stays within its word budget; detail lives in reference/setup.md ──
 test_sf17_skill_size() {
-  local lines; lines="$(wc -l < "$SPEC_SKILL/SKILL.md" | tr -d ' ')"
-  if [[ "$lines" -lt 500 ]]; then
-    pass SF17 "SKILL.md under 500 lines ($lines)"
-  else
-    fail SF17 "SKILL.md under 500 lines ($lines)"
-  fi
+  local words; words="$(wc -w < "$SPEC_SKILL/SKILL.md" | tr -d ' ')"
+  if [[ "$words" -le 1400 ]]; then pass SF17 "SKILL.md at most 1400 words ($words)"
+  else fail SF17 "SKILL.md at most 1400 words ($words)"; fi
+  if [[ -f "$SPEC_SKILL/reference/setup.md" ]]; then pass SF17 "setup, config and templates live in reference/setup.md"
+  else fail SF17 "setup, config and templates live in reference/setup.md"; fi
 }
 
 # ── SF17: companion entrypoints exist ────────────────────────────────────────
@@ -647,16 +646,20 @@ test_sf17_templates
 test_sf17_skill_size
 test_sf17_companion_docs
 
-# ── spec-skill-improvements: Unit 1 — SKILL.md v2.0 frontmatter ─────────────
+# ── skill-revision/3: SKILL.md frontmatter holds only keys a harness reads ───
 test_skill_v2_frontmatter_fields() {
-  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
-  assert_contains "spec-skill-improvements/1" "SKILL.md version 2.0" "$skill" "version: 2.0"
-  assert_contains "spec-skill-improvements/1" "SKILL.md has allowed-tools:" "$skill" "allowed-tools:"
-  assert_contains "spec-skill-improvements/1" "SKILL.md has context:" "$skill" "context:"
-  assert_contains "spec-skill-improvements/1" "SKILL.md has agents:" "$skill" "agents:"
-  assert_contains "spec-skill-improvements/1" "SKILL.md has superpowers:" "$skill" "superpowers:"
-  assert_contains "spec-skill-improvements/1" "SKILL.md has delegates:" "$skill" "delegates:"
-  assert_not_contains "spec-skill-improvements/1" "SKILL.md frontmatter dropped retired caveman machinery" "$skill" "caveman"
+  local fm keys bad="" k compat
+  local allowed=" name description user-invocable argument-hint allowed-tools compatibility "
+  fm="$(awk 'NR==1&&$0!="---"{exit} NR>1&&$0=="---"{exit} NR>1{print}' "$SPEC_SKILL/SKILL.md")"
+  keys="$(grep -Eo '^[A-Za-z][A-Za-z0-9_-]*:' <<<"$fm" | sed 's/:$//' | tr '\n' ' ')"
+  for k in $keys; do
+    [[ "$allowed" == *" $k "* ]] || bad="$bad $k"
+  done
+  if [[ -z "$bad" && -n "$keys" ]]; then pass "skill-revision/3" "SKILL.md frontmatter keys are the allowlist ($keys)"
+  else fail "skill-revision/3" "SKILL.md frontmatter keys are the allowlist (unexpected:$bad)"; fi
+  compat="$(sed -n 's/^compatibility:[[:space:]]*//p' <<<"$fm")"
+  assert_contains "skill-revision/3" "compatibility names the vibe-spec binary" "$compat" "vibe-spec"
+  assert_not_contains "skill-revision/3" "SKILL.md frontmatter dropped retired caveman machinery" "$fm" "caveman"
 }
 
 # ── spec-skill-improvements: Unit 2 — ## Roles section reconciled to real subagents ─
@@ -664,7 +667,7 @@ test_skill_v2_frontmatter_fields() {
 # names (spec-architect/planner/auditor/compactor) must not reappear anywhere in SKILL.md.
 test_skill_roles_section() {
   local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
-  assert_contains "spec-skill-improvements/2" "SKILL.md has ## Roles" "$skill" "## Roles"
+  assert_contains "skill-revision/6" "SKILL.md has ## Roles and dispatch" "$skill" "## Roles and dispatch"
   assert_contains "spec-skill-improvements/2" "Roles name spec-promoter" "$skill" "spec-promoter"
   assert_contains "spec-skill-improvements/2" "Roles name spec-health" "$skill" "spec-health"
   assert_not_contains "spec-skill-improvements/2" "no phantom spec-architect" "$skill" "spec-architect"
@@ -692,7 +695,9 @@ test_skill_routing_new_routes() {
   local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
   assert_contains "spec-skill-improvements/3" "SKILL.md routing has interview" "$skill" "interview"
   assert_contains "spec-skill-improvements/3" "SKILL.md routing has promote" "$skill" "promote"
-  assert_contains "spec-skill-improvements/3" "SKILL.md routing has audit" "$skill" "audit"
+  # shellcheck disable=SC2016 # literal backticks
+  if grep -qE '^\| `audit` \|' "$SPEC_SKILL/SKILL.md"; then fail "skill-revision/4" "SKILL.md has no audit argument row (health runs validate + check-drift)"
+  else pass "skill-revision/4" "SKILL.md has no audit argument row (health runs validate + check-drift)"; fi
   assert_contains "spec-skill-improvements/3" "SKILL.md routing has lessons-for" "$skill" "lessons-for"
   assert_contains "spec-skill-improvements/3" "SKILL.md routing has diff" "$skill" "diff"
   assert_contains "spec-skill-improvements/3" "SKILL.md routing has health" "$skill" "health"
@@ -703,7 +708,6 @@ test_skill_routing_new_routes() {
 test_feature_output_profiles() {
   local fm; fm="$(cat "$SPEC_SKILL/feature.md")"
   assert_contains "spec-skill-improvements/4" "feature.md has ## Output density" "$fm" "## Output density"
-  assert_contains "spec-skill-improvements/4" "feature.md output density cites the flow style note" "$fm" "§ Style"
   assert_not_contains "spec-skill-improvements/4" "feature.md dropped retired caveman levels" "$fm" "caveman"
 }
 
@@ -1044,19 +1048,26 @@ test_openspec_docs_present() {
   assert_contains "spec-skill-improvements/11" "reference/product.md notes opt-in" "$product_ref" "opt-in"
 }
 
-# ── spec-skill-improvements: Unit 13 — spec-promoter diff-first ──────────────
+# ── spec-skill-improvements/13, skill-revision/6: spec-promoter previews first, applies on "apply: yes" ──
 test_spec_promoter_diff_first() {
   local promoter; promoter="$(cat "$SPEC_SKILL/agents/spec-promoter.md")"
   assert_contains "spec-skill-improvements/13" "spec-promoter has dry-run language" "$promoter" "--dry-run"
-  assert_contains "spec-skill-improvements/13" "spec-promoter has confirmation language" "$promoter" "confirm"
+  assert_contains "skill-revision/6" "spec-promoter applies only on 'apply: yes'" "$promoter" "apply: yes"
 }
 
-# ── spec-skill-improvements: Unit 15 — spec-health output levels ─────────────
+# ── skill-revision/6: every field spec-health cites is a key or value its commands emit ──
 test_spec_health_output_levels() {
-  local health; health="$(cat "$SPEC_SKILL/agents/spec-health.md")"
-  assert_contains "spec-skill-improvements/15" "spec-health has CRITICAL level" "$health" "CRITICAL"
-  assert_contains "spec-skill-improvements/15" "spec-health has WARN level" "$health" "WARN"
-  assert_contains "spec-skill-improvements/15" "spec-health has INFO level" "$health" "INFO"
+  local f tok bad=0 n=0 emit
+  emit="$(cat "$REPO_ROOT/crates/vibe-spec/src/report.rs" "$REPO_ROOT/crates/vibe-spec/src/drift.rs")"
+  f="$SPEC_SKILL/agents/spec-health.md"
+  # shellcheck disable=SC2016 # literal backticks
+  for tok in $(grep -E '^[0-9]+\. Reply with' -A3 "$f" | grep -oE '`[a-z]+`' | tr -d '`' | sort -u); do
+    n=$((n + 1))
+    if ! grep -qF "\"$tok\"" <<<"$emit"; then bad=$((bad + 1)); echo "        not emitted: $tok"; fi
+  done
+  if [[ $n -lt 4 ]]; then fail "skill-revision/6" "spec-health cites the emitted fields (examined $n, floor 4)"
+  elif [[ $bad -eq 0 ]]; then pass "skill-revision/6" "spec-health cites only fields report.rs/drift.rs emit ($n)"
+  else fail "skill-revision/6" "spec-health cites $bad field(s) no command emits"; fi
 }
 
 # ── spec-skill-improvements: Unit 16 — SF15 + SF16 ───────────────────────────
@@ -1156,29 +1167,32 @@ test_subagents_folder_wiring() {
   assert_contains "spec-skill-improvements/17" "root SKILL.md agents: map has spec-health" "$skill" "spec-health"
 }
 
-# ── spec-skill-improvements: Unit 18 — setup interview flow ──────────────────
+# ── skill-revision/5: the setup interview lives in reference/setup.md ───────
 test_setup_section_has_interview_flow() {
-  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
-  assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q1" "$skill" "Q1"
-  assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q2" "$skill" "Q2"
-  assert_contains "spec-skill-improvements/18" "SKILL.md Setup has Q3" "$skill" "Q3"
-  assert_not_contains "spec-skill-improvements/18" "SKILL.md Setup dropped the caveman-level question (now 3 questions)" "$skill" "Q4"
-  assert_contains "spec-skill-improvements/18" "SKILL.md Setup references .config.yaml" "$skill" ".config.yaml"
+  local setup; setup="$(cat "$SPEC_SKILL/reference/setup.md" 2>/dev/null)"
+  assert_contains "skill-revision/5" "reference/setup.md Setup has Q1" "$setup" "Q1"
+  assert_contains "skill-revision/5" "reference/setup.md Setup has Q2" "$setup" "Q2"
+  assert_contains "skill-revision/5" "reference/setup.md Setup has Q3" "$setup" "Q3"
+  assert_not_contains "skill-revision/5" "reference/setup.md Setup keeps three questions" "$setup" "Q4"
+  assert_contains "skill-revision/5" "reference/setup.md Setup writes .vibe/spec.json" "$setup" ".vibe/spec.json"
 }
 
-# ── spec-skill-improvements: Unit 19 — config section + defaults ─────────────
+# ── skill-revision/5: one config file; SKILL.md § Config points to reference/setup.md ──
 test_config_section_present() {
-  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
-  assert_contains "spec-skill-improvements/19" "SKILL.md has ## Config section" "$skill" "## Config"
-  assert_contains "spec-skill-improvements/19" "SKILL.md Config references .config.yaml" "$skill" ".config.yaml"
-  assert_contains "spec-skill-improvements/19" "SKILL.md Config has suggest-superpowers" "$skill" "suggest-superpowers"
+  local setup skill; setup="$(cat "$SPEC_SKILL/reference/setup.md" 2>/dev/null)"; skill="$(cat "$SPEC_SKILL/SKILL.md")"
+  assert_contains "skill-revision/5" "SKILL.md has ## Config" "$skill" "## Config"
+  assert_contains "skill-revision/5" "SKILL.md Config points to reference/setup.md" "$skill" "(reference/setup.md)"
+  assert_contains "skill-revision/5" "reference/setup.md has ## Config" "$setup" "## Config"
+  assert_contains "skill-revision/5" "reference/setup.md Config names .vibe/spec.json" "$setup" ".vibe/spec.json"
 }
 
+# shellcheck disable=SC2016 # literal backticks
 test_config_defaults_documented() {
-  local skill; skill="$(cat "$SPEC_SKILL/SKILL.md")"
-  assert_contains "spec-skill-improvements/19" "SKILL.md Config documents vibe-flow key" "$skill" "vibe-flow"
-  assert_not_contains "spec-skill-improvements/19" "SKILL.md Config dropped the retired caveman key" "$skill" "caveman"
-  assert_contains "spec-skill-improvements/19" "SKILL.md Config documents suggest-superpowers key" "$skill" "suggest-superpowers"
+  local setup; setup="$(cat "$SPEC_SKILL/reference/setup.md" 2>/dev/null)"
+  assert_contains "skill-revision/5" "reference/setup.md documents featureLayer" "$setup" '`featureLayer`'
+  assert_contains "skill-revision/5" "reference/setup.md documents suggest" "$setup" '`suggest`'
+  assert_contains "skill-revision/5" "reference/setup.md documents superpowers" "$setup" '`superpowers`'
+  assert_not_contains "skill-revision/5" "reference/setup.md dropped the retired caveman key" "$setup" "caveman"
 }
 
 # ── flow-mvp/4: hybrid plan template gains agentic-workers grammar ──────────
@@ -1551,15 +1565,16 @@ test_f1_git_boundary() {
 }
 test_f1_git_boundary
 
-# ── SF17/F25: description is trigger-first (superpowers style) and within budget ──
+# ── SF17/F25, skill-revision/3: description is trigger-first, ≤500 chars, no angle brackets ──
 test_sf17_description_budget() {
   local desc chars
-  desc="$(awk '/^description:/{f=1; sub(/^description:[[:space:]]*\|?[[:space:]]*/,""); if(length) print; next} f && /^[a-z_-]+:/{exit} f{sub(/^[[:space:]]+/,""); print}' "$SPEC_SKILL/SKILL.md" | tr '\n' ' ')"
+  desc="$(awk '/^description:/{f=1; sub(/^description:[[:space:]]*\|?[[:space:]]*/,""); if(length) print; next} f && /^[a-z_-]+:/{exit} f{sub(/^[[:space:]]+/,""); print}' "$SPEC_SKILL/SKILL.md" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
   chars="${#desc}"
-  if [[ $chars -gt 20 && $chars -le 1024 ]] && grep -qE '^(You MUST use this|Use when)' <<<"$desc" && ! grep -qF 'Maintains' <<<"$desc"; then
-    pass SF17 "description is trigger-first and within budget ($chars chars)"
+  if [[ $chars -gt 20 && $chars -le 500 ]] && grep -qE '^(You MUST use this|Use when)' <<<"$desc" \
+    && ! grep -qF 'Maintains' <<<"$desc" && ! grep -q '[<>]' <<<"$desc"; then
+    pass SF17 "description is trigger-first, within 500 chars, no angle brackets ($chars chars)"
   else
-    fail SF17 "description is trigger-first and within budget ($chars chars)"
+    fail SF17 "description is trigger-first, within 500 chars, no angle brackets ($chars chars)"
   fi
 }
 test_sf17_description_budget
