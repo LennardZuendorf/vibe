@@ -17,11 +17,15 @@ Guard hook (`PreToolUse` on `Edit|Write|NotebookEdit`) and stop gate (`Stop` evi
 **Does not own:** `state set` enforcement (F7 — the writer, not the hooks, is the ultimate gate); orders/doctrine (F8).
 
 ## Acceptance (evidence, not intent)
-- [ ] parity-green on the guard corpus, ≥1 block per policy rule, plus Bash-sniffer warn cases
-- [ ] parity-green on the receipt × git-state corpus for stop
-- [ ] discovery tier matrix tested with each higher tier's variables actually deleted from the child env (not merely unset in the parent), both legs per tier
-- [ ] present-but-corrupt policy on guard/stop → exit 2 (fail-safe branch, pinned with a control case)
-- [ ] `bash tests/run.sh` green, `cargo test --workspace` green
+- [x] parity-green on the guard corpus, ≥1 block per policy rule, plus Bash-sniffer warn cases
+      — `tests/parity/flow.json` `hooks-guard` class (16 legs, floor), flows 505 passed / 5 pinned / 0 failed
+- [x] parity-green on the receipt × git-state corpus for stop
+      — `hooks-stop` class (8 legs, floor), same run; the 5 pins are the engine-vs-fallback divergences
+- [x] discovery tier matrix tested with each higher tier's variables actually deleted from the child env (not merely unset in the parent), both legs per tier
+      — `flow/tests/hooks.sh` (`f6/tier1`–`f6/tier5`): each fake binary dumps its own `env`, so deletion is proved from inside the child
+- [x] present-but-corrupt policy on guard/stop → exit 2 (fail-safe branch, pinned with a control case)
+      — `f6/fail-safe` in `flow/tests/hooks.sh`: a truncated `policy.json` still blocks `docs/spec/lessons.md` (exit 2) and still allows an unguarded path (control, exit 0). Stop's receipt tooth consults no policy data, so it cannot be corrupted this way
+- [x] `bash tests/run.sh` green, `cargo test --workspace` green — recorded on PR #65 for the Rust half and on the F6 shim PR for the shim half
 
 ## Depends on
 F5
@@ -33,6 +37,8 @@ F5
 ## Notes
 - A control case that depends on an unset variable must delete it, not merely not set it — apply this to every discovery-tier test, on the shared spawn helper.
 - Where an oracle disagrees with itself across code paths, follow the fail-safe branch (exit 2) and pin the divergence with a control.
+- The shim's tier 4 runs the still-shipping JS engine before the frozen bash (FV-R9 keeps it alive until F23). The fallback is the *pre-port* implementation — the parity pins above list exactly where it disagrees — so preferring it would regress a shipped stop behaviour (a false block on `vibe`'s own `.vibe/run/**` writes). `f6/tier4` pins the order both ways.
+- `flow/bin/fallback/*.sh` are symlinks to `flow/hooks-fallback/`, the parity oracle: one file, two jobs, so the shipped degrade path cannot drift from the port's reference.
 
 Phase: 1 · Tool: flow · Source: `docs/spec/plan.md` row F6
 
