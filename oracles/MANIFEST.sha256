@@ -1,7 +1,7 @@
 2ac59ff200313a51c87df7093f9c54a2c9218925fc44c3018076a5044b69236b  bash/.claude/hooks/_engine-hook.sh
-a5995eca03aa9ffce1bbc6d9d5b7d755b1b928be954f9b47deae5afe873fb8f7  bash/.claude/hooks/pre-tool-use-guard.sh
+55b4b79e3c6ec7ac141161473d79a73be47fcd76d4e9c8e994e1aa69c61d76a9  bash/.claude/hooks/pre-tool-use-guard.sh
 ab02ca7380d26263607e1ae0d4ff825a37aa0fd295b5eda94239328dd0ec2d77  bash/.claude/hooks/session-start-doctrine.sh
-c3079e8bd587cf795dfd2b5448982cbfbe55c8f88d12e234a61046102d05334d  bash/.claude/hooks/stop-gate.sh
+5e365f19f250c6d3c3ea8acd69c1ca4acada94226b0abe25361f6e3001a16a3e  bash/.claude/hooks/stop-gate.sh
 e1205783b6cf701e9e1fc91745622b9b57864ff22fe256d9a51df4ae271835d1  bash/.claude/hooks/user-prompt-submit-inject.sh
 915fb10c1f5550c9265d35141a9de7d28d7cbd61e7856c5a77be3c6e6b61fd92  bash/flow/hooks-fallback/pre-tool-use-guard.sh
 acc800514c35dd4448a3d29e367af0d37364d0e96171eb4672ded62ae8a5c51e  bash/flow/hooks-fallback/stop-gate.sh

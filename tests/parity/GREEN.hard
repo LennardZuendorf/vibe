@@ -1,0 +1,22 @@
+# GREEN.hard — the two hard blocks are parity-green (F6)
+
+Written when the guard (`pre-tool-use-guard`) and the stop gate (`stop-gate`) were
+ported to `vibe-flow` and checked against the frozen bash fallbacks.
+
+That is what `port-order` gates on: `crates/vibe-flow/src/tui/` and
+`crates/vibe-signals/` may not exist before this file does, because both would be
+built on top of enforcement that has not been proven (docs/spec/tech/rust/rust-parity-pins.md).
+
+## Evidence at the freeze
+
+- Port: `crates/vibe-flow/src/hook.rs` — guard, stop, the `decide` fallback with its
+  shape gate, and `Command::Hook { event }`; PR #65.
+- Parity at that head: flow candidate 505 passed / 5 pinned / 0 failed over 510
+  runs, flow self-check 510/510, spec 132 passed / 17 pinned; CI 11/11 green
+  including both windows-latest toolchains.
+- Shim: `flow/bin/hook.sh` reaches the guard/stop behaviour through five tiers, and
+  the last one (`flow/bin/fallback/`) is byte-identical to the frozen oracle, so the
+  hard blocks survive a missing binary and a missing node (`flow/tests/hooks.sh`).
+
+Remove this file only when the marker's claim stops being true — i.e. never for
+convenience; a red guard/stop corpus is a bug to fix, not a marker to delete.
