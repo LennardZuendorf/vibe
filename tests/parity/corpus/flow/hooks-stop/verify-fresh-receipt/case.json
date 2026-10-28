@@ -1,0 +1,14 @@
+{
+  "git": {
+    "commit": true,
+    "init": true
+  },
+  "runs": {
+    "hook-stop": [
+      []
+    ]
+  },
+  "stderr": true,
+  "stdin": "{}",
+  "v": 1
+}

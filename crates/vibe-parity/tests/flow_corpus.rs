@@ -40,7 +40,7 @@ fn cases_of(class: &str) -> usize {
 fn committed_corpus_matches_the_generator() {
     let out = scratch("regen").join("flow");
     let n = generate(&repo().join("flow"), &out).unwrap();
-    assert_eq!(n, 90, "generated only {n} cases");
+    assert_eq!(n, 114, "generated only {n} cases");
     let committed = snapshot(&corpus()).unwrap();
     let fresh = snapshot(&out).unwrap();
     assert_eq!(
