@@ -166,8 +166,12 @@ impl FlowPaths {
 }
 
 /// `--root`/env values resolve against the working directory when relative.
+/// A *rooted* path is kept exactly as given — `has_root`, not `is_absolute`:
+/// on Windows `\explicit` is rooted but not absolute, and joining it to the
+/// cwd would silently relocate it to that drive's root. `vibe-spec`'s
+/// `hook::is_absolute` draws the same line (leading `/`, or `C:/`).
 fn absolute(cwd: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
+    if path.has_root() {
         path.to_path_buf()
     } else {
         cwd.join(path)

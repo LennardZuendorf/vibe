@@ -564,6 +564,22 @@ fn read_capped(source: &mut impl Read, cap: usize, into: &mut Vec<u8>) -> bool {
     into.len() > cap
 }
 
+/// The `/`-joined spelling a gate message shows for `path`.
+///
+/// The frozen oracle prints `$ROOT/<rel>` and its separator is always `/`, so
+/// the gate text is byte-identical across platforms only if `\` never leaks
+/// into it. Decided against `oracles/bash/flow/hooks-fallback/stop-gate.sh`:
+/// the oracle is the contract, the test is not.
+#[cfg(windows)]
+fn shown_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+#[cfg(not(windows))]
+fn shown_path(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
 /// `(^|/)segment/` — the segment must begin the row or follow a `/`.
 fn has_segment(row: &str, segment: &str) -> bool {
     let needle = format!("{segment}/");
@@ -630,7 +646,7 @@ fn evidence_receipt_check(
             return None;
         }
     };
-    let shown = receipt.to_string_lossy().into_owned();
+    let shown = shown_path(&receipt);
     let existing = std::fs::metadata(&receipt)
         .ok()
         .filter(std::fs::Metadata::is_file);
