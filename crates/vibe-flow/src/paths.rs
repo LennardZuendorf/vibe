@@ -183,6 +183,18 @@ mod tests {
         dir
     }
 
+    /// An absolute path as the *host* spells one. `Path::is_absolute` follows the running
+    /// platform, so `/explicit` is a relative path on Windows: the resolver would join it onto
+    /// the working directory, and the assertion would then compare the join against itself
+    /// instead of pinning "an absolute override wins".
+    fn abs(component: &str) -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(format!("C:\\{component}"))
+        } else {
+            PathBuf::from(format!("/{component}"))
+        }
+    }
+
     struct Map(BTreeMap<String, String>);
 
     impl Map {
@@ -203,29 +215,44 @@ mod tests {
     #[test]
     fn root_override_wins_over_everything() {
         let cwd = scratch("root-override");
-        let env = Map::new(&[("CLAUDE_PROJECT_DIR", "/env"), ("VIBE_ROOT", "/vibe")]);
-        let paths = FlowPaths::resolve(Some(Path::new("/explicit")), None, &cwd, &env);
-        assert_eq!(paths.root(), Path::new("/explicit"));
+        let explicit = abs("explicit");
+        let from_project_dir = abs("env").to_string_lossy().to_string();
+        let from_vibe_root = abs("vibe").to_string_lossy().to_string();
+        let env = Map::new(&[
+            ("CLAUDE_PROJECT_DIR", &from_project_dir),
+            ("VIBE_ROOT", &from_vibe_root),
+        ]);
+        let paths = FlowPaths::resolve(Some(&explicit), None, &cwd, &env);
+        assert_eq!(paths.root(), explicit);
+    }
+
+    /// The other half of the rule above: an override that is *not* absolute on this host
+    /// resolves against the working directory. Pinned with a host-relative literal so the two
+    /// branches stay distinguishable on every platform.
+    #[test]
+    fn a_relative_root_override_resolves_against_the_working_directory() {
+        let cwd = scratch("relative-root");
+        let env = Map::new(&[]);
+        let paths = FlowPaths::resolve(Some(Path::new("nested")), None, &cwd, &env);
+        assert_eq!(paths.root(), cwd.join("nested"));
     }
 
     #[test]
     fn claude_project_dir_beats_vibe_root() {
         let cwd = scratch("env-order");
-        let env = Map::new(&[("CLAUDE_PROJECT_DIR", "/env"), ("VIBE_ROOT", "/vibe")]);
-        assert_eq!(
-            FlowPaths::resolve(None, None, &cwd, &env).root(),
-            Path::new("/env")
-        );
+        let from_env = abs("env");
+        let spelled = from_env.to_string_lossy().to_string();
+        let env = Map::new(&[("CLAUDE_PROJECT_DIR", &spelled), ("VIBE_ROOT", "/vibe")]);
+        assert_eq!(FlowPaths::resolve(None, None, &cwd, &env).root(), from_env);
     }
 
     #[test]
     fn vibe_root_is_used_when_claude_project_dir_is_absent() {
         let cwd = scratch("vibe-root");
-        let env = Map::new(&[("VIBE_ROOT", "/vibe")]);
-        assert_eq!(
-            FlowPaths::resolve(None, None, &cwd, &env).root(),
-            Path::new("/vibe")
-        );
+        let from_env = abs("vibe");
+        let spelled = from_env.to_string_lossy().to_string();
+        let env = Map::new(&[("VIBE_ROOT", &spelled)]);
+        assert_eq!(FlowPaths::resolve(None, None, &cwd, &env).root(), from_env);
     }
 
     #[test]
@@ -282,9 +309,10 @@ mod tests {
     fn vibe_dir_override_wins_over_both_data_homes() {
         let root = scratch("vibe-dir");
         fs::create_dir_all(root.join(".agents").join("flow")).expect("flow data home");
+        let pinned = abs("pinned");
         let env = Map::new(&[]);
-        let paths = FlowPaths::resolve(Some(&root), Some(Path::new("/pinned")), &root, &env);
-        assert_eq!(paths.data_dir(), Path::new("/pinned"));
+        let paths = FlowPaths::resolve(Some(&root), Some(&pinned), &root, &env);
+        assert_eq!(paths.data_dir(), pinned);
     }
 
     #[test]
