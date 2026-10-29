@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/vibe-core", "crates/vibe-spec", "crates/vibe-parity"]
+members = ["crates/vibe", "crates/vibe-core", "crates/vibe-spec", "crates/vibe-parity"]
 
 [workspace.package]
 version = "0.4.0"

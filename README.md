@@ -26,7 +26,7 @@ never through code. One repo, one installer, three release trains.
 |  | **spec** | **flow** | **instruct** |
 |---|---|---|---|
 | **What it is** | Durable `docs/spec/` planning layer — product / tech / design / plan / lessons — with templates and a validator. | State-machine workflow: routes each phase to the right skills, injects per-turn orders, guards its own write invariants with hooks. | ⏳ Planned — layered, budgeted instruction injection (global → repo → local → session tiers). |
-| **Works with** | Any coding agent, or none. | Claude Code, OpenCode, and Factory Droid via `/flow`; Codex via skill invocation. Hooks are Claude Code-only. Other agents read the same rules as prose. | Claude Code + OpenCode, both ⏳ planned. |
+| **Works with** | Any coding agent, or none. | Claude Code, OpenCode, and Factory Droid via `/flow`; Codex via skill invocation. Other agents read the same rules as prose. | Claude Code + OpenCode, both ⏳ planned. |
 | **Needs** | `bash`; the `vibe-spec` binary (dev build) for validation | `bash`, plus Node ≥18 for today's engine — a static Rust binary in v0.4. | Nothing today (unbuilt) — a static Rust binary in v0.4. |
 | **Install** | `./install.sh <repo> --only spec` | `./install.sh <repo> --only flow` | ⏳ planned: `./install.sh <repo> --only instruct` |
 | **Deep dive** | [`spec/README.md`](spec/README.md) | [`flow/README.md`](flow/README.md) | [`docs/spec/tech/instruct.md`](docs/spec/tech/instruct.md) |
@@ -369,11 +369,49 @@ configured host. Paths below are relative to the installed root.
 | **Bare git / any editor** | — (spec framework only) | — | `docs/spec/` docs, templates, `vibe-spec`. |
 
 The **spec** workflow is skill-invoked on every host (the skill is
-user-invocable, so hosts that list skills as commands offer it as `/spec`). Hooks are **Claude Code-only** in this slice: OpenCode, Codex,
-and Factory Droid get skills and a workflow entry point, not per-turn inject,
-guard, or stop-gate wiring — and no host gets native agent/droid registration.
+user-invocable, so hosts that list skills as commands offer it as `/spec`). The
+flow's per-turn inject, guard and stop-gate hooks are wired for Claude Code only
+in this slice: OpenCode, Codex, and Factory Droid get skills and a workflow entry
+point — and no host gets native agent/droid registration. (The `vibe` store hook
+below is separate and covers all four harnesses.)
 The install summary reports a host's hooks only when their wiring actually
 installed. Budgeted instruction injection (`instruct`) remains ⏳ planned.
+
+## Global store
+
+`vibe` (crate `crates/vibe`) keeps one user-level store and projects it into Claude Code, Codex, OpenCode and Factory droid. Decision: [D48](docs/spec/decisions/d48-global-store-and-projection.md); tech note: [`cli-store.md`](docs/spec/tech/cli/cli-store.md).
+
+```bash
+vibe install [--harness claude,codex] [--dry-run]   # store init, one SessionStart hook per detected harness, OpenCode plugin, then sync
+vibe store import-mcp ~/old/mcp.json                # merge servers; secrets become ${VIBE_<SERVER>_<FIELD>}
+vibe sync [--dry-run] [--json]                      # full projection, including Claude MCP via `claude mcp add-json`
+vibe store status                                   # per-harness drift, skips, conflicts
+vibe uninstall [--dry-run]                          # reverse exactly what vibe created; the store stays
+```
+
+Store layout (`~/.config/vibe/`):
+
+```text
+store.json   # harness switches, extra skill sources
+AGENTS.md    # root instructions, the single source
+mcp.json     # {"mcpServers":{...}}
+skills/      # one dir per skill, each with SKILL.md
+```
+
+`install` wires the harnesses it detects (configuration directory present, or its CLI `claude`, `codex`, `opencode`, `droid` on `PATH`); an undetected one gets a note, and `--harness <id>` forces it. Without the `claude` CLI, `install` and `sync` skip the Claude MCP step with one note and exit 0; after you install the CLI, run `vibe sync` once to project MCP.
+
+After install, every harness session start re-projects the store. When something changed, the hook prints one notice line: a `{"systemMessage":"vibe: …"}` JSON line for Claude, Codex and Factory (shown to you), plain text for OpenCode. The hook never injects instruction content and always exits 0. Claude MCP changes need `vibe sync`; until you run it, every session start repeats the notice, and `vibe store status` shows `claude mcp: out of date`. vibe changes only its own marker blocks and the entries it recorded in `state.json`; everything else survives install, sync and uninstall.
+
+**Secrets.** vibe never writes a secret it detects on import. Keep API keys in your environment and reference them as `${NAME}` placeholders in `mcp.json`; `store import-mcp` does the replacement and prints variable names only (`--keep-literals` opts out). An env secret of key `K` becomes `${K}` (so Codex can forward it) unless that name has another use in the store; headers and URLs get `${VIBE_<SERVER>_<FIELD>}`. Literals you write into `mcp.json` yourself are projected as written, with a `literal secret-looking value projected` note. URL userinfo is never rewritten and always warns.
+
+| Variable | Effect |
+|---|---|
+| `VIBE_STORE` | the whole global root (default `~/.config/vibe`): the store files and what later CLI slices keep beside them |
+| `VIBE_STATE` | state dir (default `~/.local/state/vibe`) |
+| `VIBE_TOOLKIT` | directory holding vibe's own skills, added as a skill source by `install` |
+| `VIBE_SPEC_BIN` | `vibe-spec` binary used by `vibe spec …` |
+
+Known limits: Windows skills links are skipped; a Codex `config.toml` with a root inline `mcp_servers = {…}` gets no vibe MCP block.
 
 ## Documentation
 

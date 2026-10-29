@@ -1,0 +1,1 @@
+{ "v": 1, "dry_run": true, "changes": ["would write /home/u/.codex/config.toml", "would link /home/u/.claude/skills/a"], "notes": ["kept /home/u/.claude/CLAUDE.md", "skip opencode (disabled)"], "failed": [] }

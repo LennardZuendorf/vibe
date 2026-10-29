@@ -1,16 +1,17 @@
 ---
 type: concept
-updated: 2026-10-19
+updated: 2026-10-24
 ---
 
-# v0.5 — the vibe CLI arc (queued)
+# v0.5 — the vibe CLI arc (queued; C0 pulled ahead)
 
-The follow-on arc: one `vibe` CLI front door over the three tools, plus the cross-tool capabilities no single tool can own — worktree lifecycle, global spec management, global blocks. Architecture: [tech-cli.md](../../../tech/cli.md). Decisions: D40–D43 in [decisions](../../../decisions/README.md). Nothing starts before F22 is DONE; C4 additionally waits on F16, C5 on F14.
+The follow-on arc: one `vibe` CLI front door over the three tools, plus the cross-tool capabilities no single tool can own — worktree lifecycle, global spec management, global blocks. Architecture: [tech-cli.md](../../../tech/cli.md). Decisions: D40–D43 and D48 in [decisions](../../../decisions/README.md). Nothing starts before F22 is DONE, except C0, which D48 pulled ahead; C4 additionally waits on F16, C5 on F14.
 
 **Issue catalog.** #42 tracks this arc; C1–C6 are #43–#48, filed as its sub-issues (2026-09-26), all six on the `v0.5 — CLI front door` milestone; #42 itself carries none.
 
 | Order | Feature | Deliverable | Test | Status | Starts when |
 |---:|---|---|---|---|---|
+| C0 | global-store | `crates/vibe` store, projection and install: `store`, `sync`, `hook session-start`, `install`, `uninstall`, `status`, `doctor` over Claude, Codex, OpenCode, Factory ([D48](../../../decisions/d48-global-store-and-projection.md)) | Idempotent install; real-shaped preserve; fail-open hook; E2E gated (`VIBE_E2E=1`) | DONE on this branch (ships at the owner's gate) | — |
 | C1 | cli-core | `crates/vibe`: `spec\|flow\|instruct` dispatch via the shim's discovery tiers; `~/.config/vibe/repos.json` registry; `space list`; `doctor` peer + registry checks | Dispatch matrix with each tier's env deleted (both legs); missing-peer advice lines; registry floor test | NOT STARTED | F22 |
 | C2 | worktree-lifecycle | `worktree create/list/remove`: git worktree + isolated `.vibe/run/`; mid-flow remove refusal; deregistration | Refusal discriminates vs naive removal; cursor isolation per worktree; fresh non-git target exits 1 with one line | NOT STARTED | C1 |
 | C3 | worktree-bootstrap | Bootstrap on create: `.vibe/spec.json` root pointer, each tool's `init`, AGENTS.md blocks; staleness in `list` | Byte-parity of bootstrapped files vs `install.sh --local` on the same tree; bootstrap idempotent on re-run | NOT STARTED | C2 |
