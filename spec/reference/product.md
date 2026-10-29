@@ -153,7 +153,7 @@ This bridges WHAT to HOW so the reader can navigate.
 
 ## OpenSpec frontmatter (optional)
 
-Feature `product.md` files may include a machine-readable `requirements:` list in their YAML frontmatter. This is **opt-in** — files without it pass `validate.sh` unchanged.
+Feature `product.md` files may include a machine-readable `requirements:` list in their YAML frontmatter. This is **opt-in** — files without it pass `vibe-spec validate` unchanged.
 
 ```yaml
 requirements:
@@ -173,5 +173,5 @@ Fields:
 - `strength` — RFC-2119 keyword: SHALL / MUST / SHOULD / MAY
 - `scenarios` — expected count of `#### Scenario:` blocks under this requirement
 
-`validate.sh` does not error on absence. When `requirements:` is present, a warn-only check compares the declared `scenarios` count against actual GWT blocks in the file body.
+No tool reads this list. `vibe-spec validate` reads the requirement headings and the scenario blocks in the body, not these fields.
 

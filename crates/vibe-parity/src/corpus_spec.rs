@@ -251,6 +251,20 @@ fn cases(templates: &Path) -> Result<Vec<CaseDef>, String> {
         },
         CaseDef {
             class: "lessons",
+            name: "whole-tag",
+            cwd: "",
+            runs: &[("lessons-for", &[&["ci"]])],
+            files: vec![(
+                ".spec/lessons.md".into(),
+                format!(
+                    "{LESSONS_HEAD}{}{}",
+                    lesson("Decide in writing", "Record the decision.", "decision"),
+                    lesson("Keep CI green", "Fix the build first.", "ci")
+                ),
+            )],
+        },
+        CaseDef {
+            class: "lessons",
             name: "quotes",
             cwd: "",
             runs: &[(

@@ -794,14 +794,14 @@ function makeMatrixHarness() {
   const nodeHere = runCommand('bash', ['-c', 'command -v node']);
   assertEqual(nodeHere.code, 0, 'the node leg needs node on the ambient PATH');
 
-  function runLeg(paths, states, { noNode }) {
+  function runLeg(paths, states, { noNode, cwd }) {
     const env = {
       VIBE_DETECT: DETECT_SH,
       VIBE_PATHS: paths.join('\n'),
       VIBE_STATES: states.join('\n'),
     };
     if (noNode) env.PATH = shimDir;
-    const result = runCommand('bash', [driverPath], { env, unsetEnv: ['CLAUDE_PROJECT_DIR'] });
+    const result = runCommand('bash', [driverPath], { env, cwd, unsetEnv: ['CLAUDE_PROJECT_DIR'] });
     assertEqual(result.code, 0, `matrix driver failed: ${result.stderr}`);
     const rows = result.stdout.split('\n').filter((l) => l !== '');
     assertEqual(
@@ -828,6 +828,11 @@ function guardedPathsFor(rules) {
         out.push(pattern.replace(/\*/g, 'sample.md'), pattern.replace(/\*/g, 'nested/dir/sample.md'));
       } else {
         out.push(pattern, `/abs/root/${pattern}`, `worktree/${pattern}`, `./${pattern}`);
+        // Alias spellings of the same path (review-hardening/6): both branches
+        // must normalise them alike.
+        const slash = pattern.indexOf('/');
+        const withDot = slash > 0 ? `${pattern.slice(0, slash)}/./${pattern.slice(slash + 1)}` : `./${pattern}`;
+        out.push(`.//${pattern}`, withDot, `x/../${pattern}`, `//${pattern}`, `../${pattern}`, `./${pattern}/`);
       }
     }
   }
@@ -854,8 +859,8 @@ test('differential matrix: every guarded path x all 13 states is byte-identical 
 
     // --- the matrix asserts its own population -----------------------------
     assertEqual(MACHINE_STATES.length, 13, 'the machine no longer has 13 states — update the matrix, do not shrink it');
-    assert(paths.length >= 20, `path axis collapsed to ${paths.length} paths`);
-    assert(engineRows.length >= 250, `only ${engineRows.length} comparisons ran — the matrix is not covering the surface`);
+    assert(paths.length >= 40, `path axis collapsed to ${paths.length} paths`);
+    assert(engineRows.length >= 500, `only ${engineRows.length} comparisons ran — the matrix is not covering the surface`);
 
     // Every state actually appears in a row, and every shipped rule is the
     // deciding rule for at least one cell: a matrix whose paths all fell
@@ -875,6 +880,128 @@ test('differential matrix: every guarded path x all 13 states is byte-identical 
       assert(decidingRules.has(rule.id), `no matrix cell was decided by rule '${rule.id}'`);
     }
     assertEqual([...verdictKinds].sort(), ['allow', 'block', 'warn'], 'the matrix must observe all three verdicts');
+  } finally {
+    harness.cleanup();
+  }
+});
+
+test('review-hardening/6: differential matrix: alias spellings of a guarded path decide identically with and without node', () => {
+  const aliases = [
+    '.spec//lessons.md', '.spec/./lessons.md', '.spec/x/../lessons.md', // literal
+    'docs/spec//lessons.md', 'docs/spec/./plan.md', 'docs/spec/x/../lessons.md',
+  ];
+  const controls = ['docs/lessons.md'];
+  const harness = makeMatrixHarness();
+  try {
+    const paths = [...aliases, ...controls];
+    const engineRows = harness.runLeg(paths, ['idle'], { noNode: false });
+    const bashRows = harness.runLeg(paths, ['idle'], { noNode: true });
+    assertEqual(bashRows, engineRows, 'branches diverged on an alias spelling');
+    for (const alias of aliases) {
+      const row = engineRows.find((r) => r.startsWith(`${alias}\t`));
+      assert(row !== undefined, `no row for ${alias}`);
+      assertIncludes(row.split('\t')[3], 'block:', `${alias} must block in idle`);
+    }
+    // control: an unrelated path still allows on both branches
+    assertEqual(engineRows.find((r) => r.startsWith('docs/lessons.md\t')).split('\t')[3], 'allow');
+  } finally {
+    harness.cleanup();
+  }
+});
+
+test('review-hardening/6: differential matrix: glob characters and leading ../ or / normalise literally, whatever the cwd holds', () => {
+  // review-hardening/6: the bash normaliser must not pathname-expand segments
+  // against the cwd. The cwd below holds files every glob here would match.
+  const cwd = mkTempRoot('vibe-policy-glob-');
+  const harness = makeMatrixHarness();
+  try {
+    mkdirSync(path.join(cwd, '.spec'), { recursive: true });
+    writeFileSync(path.join(cwd, '.spec', 'lessons.md'), 'x\n');
+    mkdirSync(path.join(cwd, 'docs'), { recursive: true });
+    writeFileSync(path.join(cwd, 'docs', 'zz'), 'x\n');
+    writeFileSync(path.join(cwd, 'zz'), 'x\n');
+    const paths = ['.s*/lessons.md', 'docs/*', '*', '../src/p.js', '//src/p.js', '/abs/src/p.js', '../.spec/lessons.md'];
+    const engineRows = harness.runLeg(paths, ['idle'], { noNode: false, cwd });
+    const bashRows = harness.runLeg(paths, ['idle'], { noNode: true, cwd });
+    assertEqual(bashRows, engineRows, 'branches diverged in a populated cwd');
+    const verdict = (rows, p) => rows.find((r) => r.startsWith(`${p}\t`)).split('\t')[3];
+    assertEqual(verdict(bashRows, '.s*/lessons.md'), 'allow', 'a glob segment is literal, not the cwd file it matches');
+    assertEqual(verdict(bashRows, 'docs/*'), 'allow');
+    assertEqual(verdict(bashRows, '*'), 'allow');
+    assertIncludes(verdict(bashRows, '../src/p.js'), 'warn:', 'a leading .. is kept, so src/ still matches');
+    assertIncludes(verdict(bashRows, '//src/p.js'), 'warn:', 'an absolute path keeps its root');
+    assertIncludes(verdict(bashRows, '/abs/src/p.js'), 'warn:');
+  } finally {
+    harness.cleanup();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('review-hardening/6: differential: a path holding a newline is split whole, so the bash branch blocks like the engine', () => {
+  // review-hardening/6: the matrix driver is newline-separated, so these paths
+  // are decided one spawn each. `read` stops at the first newline; the bash
+  // normaliser must still see every segment.
+  const harness = makeMatrixHarness();
+  try {
+    const paths = ['evil\n/.spec/lessons.md', 'a\nb/.agents/skills/vibe/state.json', '.spec/x\n/../lessons.md'];
+    for (const p of paths) {
+      const opts = { unsetEnv: ['CLAUDE_PROJECT_DIR'] };
+      const engine = runCommand('bash', [DETECT_SH, 'decide', p, 'idle'], opts);
+      const bash = runCommand('bash', [DETECT_SH, 'decide', p, 'idle'], { ...opts, env: { PATH: harness.shimDir } });
+      assertEqual(engine.code, 0, `engine leg failed: ${engine.stderr}`);
+      assertEqual(bash.code, 0, `bash leg failed: ${bash.stderr}`);
+      assertIncludes(engine.stdout, 'block:', `engine must block ${JSON.stringify(p)}`);
+      assertEqual(bash.stdout, engine.stdout, `branches diverged for ${JSON.stringify(p)}`);
+    }
+  } finally {
+    harness.cleanup();
+  }
+});
+
+test('review-hardening/6: differential: a path ending in a newline gets the same verdict from both branches', () => {
+  // review-hardening/6: `$(...)` strips trailing newlines, so a bash normaliser
+  // returned through command substitution decided `.spec/lessons.md` for a
+  // different file the engine keeps whole. Both branches must agree byte-exact.
+  const harness = makeMatrixHarness();
+  try {
+    const paths = ['.spec/lessons.md\n', '.spec/lessons.md\n\n', '.agents/skills/vibe/state.json\n', '.spec/plan.md\n'];
+    for (const p of paths) {
+      const opts = { unsetEnv: ['CLAUDE_PROJECT_DIR'] };
+      const engine = runCommand('bash', [DETECT_SH, 'decide', p, 'idle'], opts);
+      const bash = runCommand('bash', [DETECT_SH, 'decide', p, 'idle'], { ...opts, env: { PATH: harness.shimDir } });
+      assertEqual(engine.code, 0, `engine leg failed: ${engine.stderr}`);
+      assertEqual(bash.code, 0, `bash leg failed: ${bash.stderr}`);
+      assertEqual(bash.stdout, engine.stdout, `branches diverged for ${JSON.stringify(p)}`);
+    }
+  } finally {
+    harness.cleanup();
+  }
+});
+
+test('review-hardening/6: differential: a glob rule matches a path holding a newline in both branches', () => {
+  // review-hardening/6: bash `case` lets `*` span a newline; the engine's glob
+  // must too, or a glob rule (.spec/features/*, src/*) allows what bash warns on.
+  const harness = makeMatrixHarness();
+  try {
+    const cells = [
+      ['.spec/features/a\nb.md', 'feature.impl'],
+      ['src/a\nb.js', 'idle'],
+      ['x/tests/a\nb.sh', 'feature.verify'],
+    ];
+    for (const [p, state] of cells) {
+      const opts = { unsetEnv: ['CLAUDE_PROJECT_DIR'] };
+      const engine = runCommand('bash', [DETECT_SH, 'decide', p, state], opts);
+      const bash = runCommand('bash', [DETECT_SH, 'decide', p, state], { ...opts, env: { PATH: harness.shimDir } });
+      assertEqual(engine.code, 0, `engine leg failed: ${engine.stderr}`);
+      assertEqual(bash.code, 0, `bash leg failed: ${bash.stderr}`);
+      assertIncludes(bash.stdout, 'warn:', `bash must warn on ${JSON.stringify(p)} in ${state}`);
+      assertEqual(engine.stdout, bash.stdout, `branches diverged for ${JSON.stringify(p)} in ${state}`);
+    }
+    // control: the newline-free spelling of the same rule allows outside impl/fix
+    const control = runCommand('bash', [DETECT_SH, 'decide', '.spec/features/ab.md', 'feature.design'], {
+      unsetEnv: ['CLAUDE_PROJECT_DIR'],
+    });
+    assertEqual(control.stdout, 'allow\n', 'control: a feature spec is writable in feature.design');
   } finally {
     harness.cleanup();
   }

@@ -8,8 +8,9 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 use vibe_core::exit;
 
+use crate::frontmatter;
 use crate::root::{Miss, Root};
-use crate::text::{find, lines, lossy, name_of, sub_dirs, walk_all};
+use crate::text::{find, join_raw, lines, lossy, name_of, sub_dirs, walk_all};
 
 /// Command options.
 pub struct Options {
@@ -170,6 +171,65 @@ fn unreadable(shown: &str, e: &std::io::Error) -> Event {
     )
 }
 
+/// Relative `.md` link targets of `text`: `](target)` with the anchor cut,
+/// no scheme, not absolute.
+fn md_link_targets(text: &[u8]) -> Vec<String> {
+    let s = String::from_utf8_lossy(text);
+    let mut out = Vec::new();
+    let mut rest: &str = &s;
+    while let Some((_, tail)) = rest.split_once("](") {
+        let Some((target, after)) = tail.split_once(')') else {
+            break;
+        };
+        rest = after;
+        let target = target.split('#').next().unwrap_or_default().trim();
+        if target.ends_with(".md") && !target.contains("://") && !target.starts_with('/') {
+            out.push(target.to_string());
+        }
+    }
+    out
+}
+
+/// The plan hub and the notes it lists (`children:` or a relative `.md`
+/// link), one level, each kept only when it resolves to a file inside the
+/// root. Display path and bytes; the hub comes first. A missing or
+/// unreadable note is skipped.
+fn plan_texts(root: &Root) -> Vec<(String, Vec<u8>)> {
+    let d = root.display();
+    let Ok(plan) = std::fs::read(root.dir.join("plan.md")) else {
+        return Vec::new();
+    };
+    let mut candidates: Vec<String> = Vec::new();
+    if let Some(fm) = frontmatter::parse(&plan) {
+        candidates.extend(fm.list("children"));
+    }
+    candidates.extend(md_link_targets(&plan));
+    let mut out = vec![(format!("{d}/plan.md"), plan)];
+    let Ok(canon_root) = std::fs::canonicalize(&root.dir) else {
+        return out;
+    };
+    let mut seen = vec![root.dir.join("plan.md")];
+    for rel in candidates {
+        let rel = rel.trim().trim_start_matches("./").to_string();
+        if rel.is_empty() || rel.contains('{') {
+            continue;
+        }
+        let path = join_raw(&root.dir, rel.as_bytes());
+        let Ok(canon) = std::fs::canonicalize(&path) else {
+            continue;
+        };
+        if !canon.starts_with(&canon_root) || !canon.is_file() || seen.contains(&canon) {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&canon) else {
+            continue;
+        };
+        seen.push(canon);
+        out.push((format!("{d}/{rel}"), bytes));
+    }
+    out
+}
+
 /// Runs the command.
 pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u8>) {
     let root = match found {
@@ -191,7 +251,15 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     let mut ev: Vec<Event> = Vec::new();
     let plan_present = plan_path.is_file();
     let plan = if plan_present {
-        read_closed(&plan_path, &format!("{d}/plan.md"), &mut ev)
+        read_closed(&plan_path, &format!("{d}/plan.md"), &mut ev).map(|hub| {
+            // (a) and (d) read the hub and the notes it lists (skill-revision/16).
+            let mut text = hub;
+            for (_, bytes) in plan_texts(root).into_iter().skip(1) {
+                text.push(b'\n');
+                text.extend(bytes);
+            }
+            text
+        })
     } else {
         None
     };

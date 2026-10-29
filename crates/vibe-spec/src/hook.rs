@@ -410,15 +410,22 @@ fn touch_marker(project: &Path) -> Result<(), String> {
 }
 
 /// `hook session-start`: injects the `using-spec` router and, inside a
-/// project with a spec root, touches `.vibe/spec-session`. Always exits 0.
+/// project with a spec root, touches `.vibe/spec-session`. Silent (`{}`)
+/// where no spec root exists: the router is for a repo that keeps a spec.
+/// A bad config or a missing named root still routes. Always exits 0.
 pub fn session_start(stdin: &[u8], cwd: &Path, harness: Harness) -> (u8, Vec<u8>) {
     let dir = parse(stdin).map_or_else(|_| cwd.to_path_buf(), |p| p.cwd);
-    // The marker only matters where git cannot say what changed.
-    if let Ok(root) = crate::root::discover(&dir, None, env_root().as_deref())
-        && crate::git::top(&root.project).is_none()
-        && let Err(why) = touch_marker(&root.project)
-    {
-        eprintln!("vibe-spec hook session-start: marker skipped — {why}");
+    match crate::root::discover(&dir, None, env_root().as_deref()) {
+        Err(crate::root::Miss::NotFound) => return (0, b"{}\n".to_vec()),
+        // The marker only matters where git cannot say what changed.
+        Ok(root) => {
+            if crate::git::top(&root.project).is_none()
+                && let Err(why) = touch_marker(&root.project)
+            {
+                eprintln!("vibe-spec hook session-start: marker skipped — {why}");
+            }
+        }
+        Err(_) => {}
     }
     let text = format!(
         "<EXTREMELY_IMPORTANT>\n{}\n</EXTREMELY_IMPORTANT>",

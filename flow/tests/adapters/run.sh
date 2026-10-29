@@ -297,7 +297,7 @@ for pair in "SessionStart:session-start-doctrine.sh" "UserPromptSubmit:user-prom
   assert_contains "platform-adapters/4" "$ev command is \$CLAUDE_PROJECT_DIR-relative" "$cmd" '$CLAUDE_PROJECT_DIR/.claude/hooks/'
 done
 matcher="$(jq -r '.hooks.PreToolUse[0].matcher' "$SETTINGS")"
-assert_eq "platform-adapters/4" "PreToolUse matcher is Edit|Write|NotebookEdit|Bash" "$matcher" "Edit|Write|NotebookEdit|Bash"
+assert_eq "platform-adapters/4" "PreToolUse matcher is Edit|Write|MultiEdit|NotebookEdit|Bash" "$matcher" "Edit|Write|MultiEdit|NotebookEdit|Bash"
 # every wired command points at a hook script that exists and is executable.
 allok=1
 while IFS= read -r script; do
@@ -639,7 +639,7 @@ for h in session-start-doctrine user-prompt-submit-inject; do
   assert_eq "js-core/7" "node-absent: $h exits 0 silently" "$out" "rc=0"
 done
 # The two HARD-BLOCK hooks must NOT lose their teeth without node. They fall back
-# to flow/hooks-fallback/*.sh — the frozen pre-port bash implementations, which
+# to flow/hooks-fallback/*.sh — the pre-port bash implementations, which
 # install ships into the target — so a node-less machine is still enforced.
 # `command -v node || exit 0` used to drop both blocks silently while
 # detect-context.sh's header still promised "a target without node must still be
@@ -2233,6 +2233,639 @@ assert_not_contains "host-support/2" "a --only flow claude report claims no spec
 assert_contains "host-support/2" "a --only flow report still names the vibe skill it did install" "$foout" ".agents/skills/{vibe}"
 rm -rf "$SBfo"
 rm -rf "$FARM_NONE" "$FARM_ALL" "$FARM_CO"
+
+# review-hardening/1 — uninstall guard and symlink-safe remove_shipped.
+# Every destructive case runs on a fresh tar copy of the repo: a failing run
+# deletes the copy's own spec/ and flow/. Installs select --platform claude, so
+# host detection on the runner never adds host surfaces to these fixtures.
+rh_copy() { local d; d="$(mktmp)"; tar -cf - --exclude=.git --exclude=./target -C "$REPO_ROOT" . 2>/dev/null | tar -xf - -C "$d"; printf '%s\n' "$d"; }
+rh_count() { find "$1/spec" "$1/flow" -type f 2>/dev/null | wc -l | tr -d ' '; }
+rh_files() { find "$@" \( -type f -o -type l \) 2>/dev/null | wc -l | tr -d ' '; }
+echo ""
+echo "=== review-hardening/1 — uninstall guard + symlink-safe remove_shipped ==="
+SRCA="$(rh_copy)"; before="$(rh_count "$SRCA")"
+out="$(bash "$SRCA/install.sh" "$SRCA" --uninstall --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/1" "uninstall in the source repo exits 1" "$rc" "1"
+assert_eq "review-hardening/1" "uninstall in the source repo deletes nothing" "$(rh_count "$SRCA")" "$before"
+assert_contains "review-hardening/1" "the refusal says it refuses to uninstall" "$out" "refusing to uninstall"
+rm -rf "$SRCA"
+SRCA="$(rh_copy)"; before="$(rh_count "$SRCA")"
+out="$(bash "$SRCA/install.sh" "$SRCA" --dry-run --uninstall 2>&1)"; rc=$?
+assert_eq "review-hardening/1" "--dry-run --uninstall in the source repo exits 1" "$rc" "1"
+assert_eq "review-hardening/1" "--dry-run --uninstall in the source repo deletes nothing" "$(rh_count "$SRCA")" "$before"
+assert_contains "review-hardening/1" "the --dry-run refusal says it refuses to uninstall" "$out" "uninstall"
+rm -rf "$SRCA"
+SRCA="$(rh_copy)"; before="$(rh_count "$SRCA")"; LNKD="$(mktmp)"; LNK="$LNKD/link"; ln -s "$SRCA" "$LNK"
+out="$(bash "$SRCA/install.sh" "$LNK" --uninstall --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/1" "uninstall via a symlink to the source repo exits 1" "$rc" "1"
+assert_eq "review-hardening/1" "uninstall via a symlink to the source repo deletes nothing" "$(rh_count "$SRCA")" "$before"
+assert_contains "review-hardening/1" "the symlink refusal says it refuses to uninstall" "$out" "uninstall"
+rm -rf "$SRCA" "$LNKD"
+# Another vibe checkout as the target (a curl bootstrap snapshot run against a
+# checkout, or a second clone): SRC != TARGET, yet it is still a vibe source.
+SRCA="$(rh_copy)"; SRCB="$(rh_copy)"; before="$(rh_count "$SRCB")"
+sumb() { (cd "$SRCB" && cksum .claude/settings.json AGENTS.md && ls .claude/hooks .claude/commands && readlink CLAUDE.md) 2>&1; }
+sb_before="$(sumb)"
+out="$(bash "$SRCA/install.sh" "$SRCB" --uninstall --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/1" "uninstall into another vibe checkout exits 1" "$rc" "1"
+assert_contains "review-hardening/1" "the other-checkout refusal says it refuses to uninstall" "$out" "refusing to uninstall"
+assert_eq "review-hardening/1" "uninstall into another vibe checkout keeps its hooks, commands, CLAUDE.md, settings and AGENTS.md" "$(sumb)" "$sb_before"
+assert_eq "review-hardening/1" "uninstall into another vibe checkout deletes nothing under spec/ and flow/" "$(rh_count "$SRCB")" "$before"
+rm -rf "$SRCB"; SRCB="$(rh_copy)"; sb_before="$(sumb)"
+out="$(bash "$SRCA/install.sh" "$SRCB" --platform claude 2>&1)"; rc=$?
+assert_eq "review-hardening/1" "install into another vibe checkout exits 1" "$rc" "1"
+assert_eq "review-hardening/1" "install into another vibe checkout changes nothing" "$(sumb)" "$sb_before"
+rm -rf "$SRCA" "$SRCB"
+# Skill dirs symlinked to directories outside the target are left alone, and
+# --yes never deletes the cursor or receipts through them.
+T="$(mktmp)"; OUT="$(mktmp)"; OUT2="$(mktmp)"; mkdir -p "$T/.agents/skills"
+cp -R "$REPO_ROOT/.agents/skills/spec/." "$OUT/" 2>/dev/null; : >"$OUT/KEEP.md"
+cp -R "$REPO_ROOT/.agents/skills/vibe/scripts" "$OUT2/" 2>/dev/null
+mkdir -p "$OUT2/evidence"; printf '{}\n' >"$OUT2/state.json"; : >"$OUT2/evidence/x.md"
+nout="$(rh_files "$OUT")"; nout2="$(rh_files "$OUT2")"
+ln -s "$OUT" "$T/.agents/skills/spec"; ln -s "$OUT2" "$T/.agents/skills/vibe"
+out="$(bash "$INSTALL" "$T" --uninstall --yes --only spec 2>&1)"
+assert_eq "review-hardening/1" "--only spec: a symlinked spec dir's outside files survive uninstall" "$(rh_files "$OUT")" "$nout"
+assert_contains "review-hardening/1" "--only spec: the symlinked skill dir is reported" "$out" "WARN"
+out="$(bash "$INSTALL" "$T" --uninstall --yes --only flow 2>&1)"
+assert_eq "review-hardening/1" "--only flow: a symlinked vibe dir's outside files survive uninstall" "$(rh_files "$OUT2")" "$nout2"
+[[ -f "$OUT2/state.json" && -f "$OUT2/evidence/x.md" ]] && pass "review-hardening/1" "--only flow --yes keeps the outside cursor and evidence" \
+  || fail "review-hardening/1" "--only flow --yes keeps the outside cursor and evidence"
+assert_contains "review-hardening/1" "--only flow: the symlinked skill dir is reported" "$out" "WARN"
+rm -rf "$T" "$OUT" "$OUT2"
+# control: a normal install then uninstall still removes the shipped files.
+T2="$(mktmp)"; bash "$INSTALL" "$T2" --platform claude >/dev/null 2>&1
+[[ -f "$T2/.agents/skills/spec/SKILL.md" ]] && pass "review-hardening/1" "control: install shipped the spec skill" \
+  || fail "review-hardening/1" "control: install shipped the spec skill"
+bash "$INSTALL" "$T2" --uninstall --yes >/dev/null 2>&1; rc=$?
+assert_eq "review-hardening/1" "control: a normal uninstall exits 0" "$rc" "0"
+assert_eq "review-hardening/1" "control: a normal uninstall removes the spec skill" "$([[ -e "$T2/.agents/skills/spec/SKILL.md" ]] && echo present || echo gone)" "gone"
+assert_eq "review-hardening/1" "control: a normal --yes uninstall removes the cursor" "$([[ -e "$T2/.agents/skills/vibe/state.json" ]] && echo present || echo gone)" "gone"
+rm -rf "$T2"
+# A symlinked ANCESTOR (.agents/skills, .claude) shared by two repos: uninstall
+# from repo B never deletes through it, so repo A's install survives.
+SHARED="$(mktmp)"; SHAREDC="$(mktmp)"; RA="$(mktmp)"; RB="$(mktmp)"
+mkdir -p "$SHARED/skills" "$RA/.agents" "$RB/.agents"
+ln -s "$SHARED/skills" "$RA/.agents/skills"; ln -s "$SHARED/skills" "$RB/.agents/skills"
+ln -s "$SHAREDC" "$RA/.claude"; ln -s "$SHAREDC" "$RB/.claude"
+bash "$INSTALL" "$RA" --platform claude >/dev/null 2>&1
+[[ -f "$SHARED/skills/spec/SKILL.md" && -f "$SHARED/skills/vibe/state.json" && -n "$(ls "$SHAREDC/hooks" 2>/dev/null)" ]] \
+  && pass "review-hardening/1" "precondition: install through the shared links shipped spec, vibe and hooks" \
+  || fail "review-hardening/1" "precondition: install through the shared links shipped spec, vibe and hooks"
+nshared="$(rh_files "$SHARED" "$SHAREDC")"
+out="$(bash "$INSTALL" "$RB" --uninstall --yes --only spec 2>&1)"
+assert_eq "review-hardening/1" "--only spec uninstall through a shared skills link deletes nothing there" "$(rh_files "$SHARED" "$SHAREDC")" "$nshared"
+assert_contains "review-hardening/1" "the shared skills link is reported" "$out" "WARN"
+bash "$INSTALL" "$RB" --uninstall --yes >/dev/null 2>&1
+assert_eq "review-hardening/1" "full --yes uninstall through shared links deletes nothing there" "$(rh_files "$SHARED" "$SHAREDC")" "$nshared"
+[[ -f "$SHARED/skills/vibe/state.json" ]] && pass "review-hardening/1" "repo A's cursor survives repo B's --yes uninstall" \
+  || fail "review-hardening/1" "repo A's cursor survives repo B's --yes uninstall"
+rm -rf "$SHARED" "$SHAREDC" "$RA" "$RB"
+# A .vibe symlinked out of an otherwise normal target: --yes keeps its marker.
+RC="$(mktmp)"; SHAREDV="$(mktmp)"; bash "$INSTALL" "$RC" --platform claude >/dev/null 2>&1
+rm -rf "$RC/.vibe"; : > "$SHAREDV/last-inject"; ln -s "$SHAREDV" "$RC/.vibe"
+bash "$INSTALL" "$RC" --uninstall --yes >/dev/null 2>&1
+[[ -f "$SHAREDV/last-inject" ]] && pass "review-hardening/1" "a symlinked .vibe's last-inject survives --yes uninstall" \
+  || fail "review-hardening/1" "a symlinked .vibe's last-inject survives --yes uninstall"
+rm -rf "$RC" "$SHAREDV"
+# A .claude-plugin symlinked out of the target: its vibe manifest is not ours.
+RC="$(mktmp)"; SHAREDP="$(mktmp)"; bash "$INSTALL" "$RC" --platform claude >/dev/null 2>&1
+printf '%s\n' '{"name":"vibe"}' > "$SHAREDP/plugin.json"; ln -s "$SHAREDP" "$RC/.claude-plugin"
+bash "$INSTALL" "$RC" --uninstall --yes >/dev/null 2>&1
+[[ -f "$SHAREDP/plugin.json" ]] && pass "review-hardening/1" "a symlinked .claude-plugin's manifest survives uninstall" \
+  || fail "review-hardening/1" "a symlinked .claude-plugin's manifest survives uninstall"
+rm -rf "$RC" "$SHAREDP"
+# A vibe checkout vendored INSIDE the target, reached through an in-repo link
+# (.claude -> vendor/vibe/.claude): the link resolves inside TARGET, yet
+# uninstall must never delete or unwire the vibe source's own files. The
+# vendored copy's own install.sh runs, so it is the running SRC.
+RV="$(mktmp)"; mkdir -p "$RV/vendor"; RVS="$(rh_copy)"; mv "$RVS" "$RV/vendor/vibe"
+ln -s vendor/vibe/.claude "$RV/.claude"
+nsrc="$(rh_files "$RV/vendor/vibe")"
+ssrc="$(cksum < "$RV/vendor/vibe/.claude/settings.json")"
+out="$(bash "$RV/vendor/vibe/install.sh" "$RV" --uninstall --yes 2>&1)"
+assert_eq "review-hardening/1" "uninstall through a link into a vendored vibe source deletes none of its files or links" "$(rh_files "$RV/vendor/vibe")" "$nsrc"
+assert_eq "review-hardening/1" "uninstall through a link into a vendored vibe source leaves its settings.json unchanged" "$(cksum < "$RV/vendor/vibe/.claude/settings.json")" "$ssrc"
+assert_contains "review-hardening/1" "the link into the vibe source is reported" "$out" "vibe source"
+rm -rf "$RV"
+# The same vendored layout, uninstalled by ANOTHER vibe copy (this checkout's
+# install.sh): the vendored checkout is not the running SRC, so only its own
+# source markers (flow/state-machine.json + spec/SKILL.md) can protect it.
+RV="$(mktmp)"; mkdir -p "$RV/vendor"; RVS="$(rh_copy)"; mv "$RVS" "$RV/vendor/vibe"
+ln -s vendor/vibe/.claude "$RV/.claude"
+nsrc="$(rh_files "$RV/vendor/vibe")"
+ssrc="$(cksum < "$RV/vendor/vibe/.claude/settings.json")"
+out="$(bash "$INSTALL" "$RV" --uninstall --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/1" "uninstall by another vibe copy through a link into a vendored checkout exits 0" "$rc" "0"
+assert_eq "review-hardening/1" "uninstall by another vibe copy deletes none of the vendored checkout's files" "$(rh_files "$RV/vendor/vibe")" "$nsrc"
+assert_eq "review-hardening/1" "uninstall by another vibe copy leaves the vendored settings.json unchanged" "$(cksum < "$RV/vendor/vibe/.claude/settings.json")" "$ssrc"
+assert_contains "review-hardening/1" "the link into the vendored checkout is reported" "$out" "vibe source"
+rm -rf "$RV"
+# Control: an installed target holds no directory carrying both source markers,
+# so the marker walk can never refuse a normal install's own files.
+RT="$(mktmp)"; bash "$INSTALL" "$RT" --platform "claude,opencode,codex,droid" >/dev/null 2>&1; rc=$?
+assert_eq "review-hardening/1" "control: the marker-walk install exits 0" "$rc" "0"
+[[ -f "$RT/.agents/skills/vibe/state-machine.json" && -f "$RT/.agents/skills/spec/SKILL.md" ]] \
+  && pass "review-hardening/1" "control: the install shipped both markers under .agents/skills" \
+  || fail "review-hardening/1" "control: the install shipped both markers under .agents/skills"
+assert_eq "review-hardening/1" "control: no directory of an installed target carries flow/state-machine.json" \
+  "$(find "$RT" -path '*/flow/state-machine.json' | wc -l | tr -d ' ')" "0"
+rm -rf "$RT"
+# A skill dir linked to an in-repo directory (not a vibe checkout): remove_shipped
+# leaves the link alone, so --yes must not delete the runtime files through it.
+RL="$(mktmp)"; bash "$INSTALL" "$RL" --platform claude >/dev/null 2>&1; rm -rf "$RL/.agents/skills/vibe"
+mkdir -p "$RL/mydir/evidence"; : >"$RL/mydir/state.json"; : >"$RL/mydir/warnings.log"; : >"$RL/mydir/evidence/r.txt"
+ln -s ../../mydir "$RL/.agents/skills/vibe"
+out="$(bash "$INSTALL" "$RL" --uninstall --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/1" "--yes through an in-repo skill-dir link exits 0" "$rc" "0"
+assert_contains "review-hardening/1" "the in-repo skill-dir link is reported" "$out" "left untouched"
+assert_eq "review-hardening/1" "--yes through an in-repo skill-dir link keeps state, warnings and evidence" \
+  "$(cd "$RL/mydir" && find . -type f | LC_ALL=C sort | tr '\n' ' ')" "./evidence/r.txt ./state.json ./warnings.log "
+rm -rf "$RL"
+
+# review-hardening/2 — jq-less manifest retirement reads the first key.
+echo ""
+echo "=== review-hardening/2 — jq-less manifest retirement ==="
+rh_manifest() { # rh_manifest JSON JQMODE -> "manifest:hooks" presence after install
+  local t shim; t="$(mktmp)"
+  mkdir -p "$t/.claude-plugin" "$t/.claude/hooks"
+  printf '%s\n' "$1" >"$t/.claude-plugin/plugin.json"
+  printf '%s\n' '{"hooks":{}}' >"$t/.claude/hooks/hooks.json"
+  if [[ "$2" == "nojq" ]]; then
+    shim="$(mkshim jq)"; PATH="$shim" "$shim/bash" "$INSTALL" "$t" --platform none >/dev/null 2>&1; rm -rf "$shim"
+  else
+    bash "$INSTALL" "$t" --platform none >/dev/null 2>&1
+  fi
+  local m=gone h=gone
+  [[ -f "$t/.claude-plugin/plugin.json" ]] && m=kept
+  [[ -f "$t/.claude/hooks/hooks.json" ]] && h=kept
+  rm -rf "$t"; printf '%s:%s\n' "$m" "$h"
+}
+J_FOREIGN='{"name":"other","author":{"name":"vibe"}}'
+J_VIBE='{"name":"vibe","author":{"name":"x"}}'
+J_NOTFIRST='{"version":"0.2.0","name":"vibe"}'
+J_PRETTY='{
+  "name": "vibe",
+  "version": "0.2.0"
+}'
+assert_eq "review-hardening/2" "no jq: nested author name 'vibe' does not retire a foreign manifest" "$(rh_manifest "$J_FOREIGN" nojq)" "kept:kept"
+assert_eq "review-hardening/2" "no jq: first key 'vibe' retires despite a nested other name" "$(rh_manifest "$J_VIBE" nojq)" "gone:gone"
+assert_eq "review-hardening/2" "no jq: a vibe manifest whose first key is not name is kept" "$(rh_manifest "$J_NOTFIRST" nojq)" "kept:kept"
+assert_eq "review-hardening/2" "control: no jq, pretty-printed vibe manifest is retired" "$(rh_manifest "$J_PRETTY" nojq)" "gone:gone"
+# A jq leg that cannot run must fail loudly, not pass by not running: only a
+# declared jq-less run (VIBE_NO_JQ=1, as in the engine suite) may skip it.
+if command -v jq >/dev/null 2>&1; then
+  assert_eq "review-hardening/2" "control: jq, foreign manifest preserved" "$(rh_manifest "$J_FOREIGN" jq)" "kept:kept"
+  assert_eq "review-hardening/2" "control: jq, vibe manifest retired" "$(rh_manifest "$J_VIBE" jq)" "gone:gone"
+elif [[ "${VIBE_NO_JQ:-}" == 1 ]]; then
+  pass "review-hardening/2" "jq legs deliberately skipped (VIBE_NO_JQ=1)"
+else
+  fail "review-hardening/2" "jq is not on PATH, so the jq legs cannot run (set VIBE_NO_JQ=1 to declare the skip)"
+fi
+
+# review-hardening/16 — a refused AGENTS.md merge is a warning; install goes on.
+echo ""
+echo "=== review-hardening/16 — install continues past a refused AGENTS.md merge ==="
+t="$(mktmp)"
+printf '%s\n' '<!-- vibe:instructions:end -->' '<!-- vibe:instructions:start -->' 'user prose' > "$t/AGENTS.md"
+agbefore="$(cat "$t/AGENTS.md")"
+out="$(bash "$INSTALL" "$t" --platform claude 2>&1)"; rc=$?
+assert_eq "review-hardening/16" "install over a reversed-marker AGENTS.md exits 0" "$rc" "0"
+assert_contains "review-hardening/16" "install warns that AGENTS.md was not merged" "$out" "AGENTS.md not merged"
+assert_contains "review-hardening/16" "install still wires the hooks" "$out" "wire flow hooks into .claude/settings.json"
+assert_contains "review-hardening/16" "install still reaches the final banner" "$out" "install: done."
+assert_contains "review-hardening/16" "install still prints the host report" "$out" "install: hosts: claude"
+# Only the merge is refused: the later agents-md render still appends its own
+# vibe:rules block, so the user's three lines are compared, not the whole file.
+assert_eq "review-hardening/16" "the merge leaves the reversed-marker lines untouched" "$(head -n 3 "$t/AGENTS.md")" "$agbefore"
+rm -rf "$t"
+# control: a real-file CLAUDE.md is still refused with a 'not linked' warning.
+t="$(mktmp)"; printf 'mine\n' > "$t/CLAUDE.md"
+out="$(bash "$INSTALL" "$t" --platform claude --adapters claude 2>&1)"
+assert_contains "review-hardening/16" "control: a real-file CLAUDE.md prints a not-linked warning" "$out" "CLAUDE.md not linked"
+assert_eq "review-hardening/16" "control: the real-file CLAUDE.md is untouched" "$(cat "$t/CLAUDE.md")" "mine"
+rm -rf "$t"
+
+# review-hardening/15 — every uninstall delete stays inside the target: host
+# files, host packages, the manifest, .gitignore and the empty-dir prunes never
+# act through a symlinked ancestor.
+echo ""
+echo "=== review-hardening/15 — every uninstall delete stays inside the target ==="
+# rh_snap DIR — every file (with its checksum) and link (with its target) under DIR.
+rh_snap() {
+  (cd "$1" && find . \( -type f -o -type l \) | LC_ALL=C sort | while IFS= read -r p; do
+    if [[ -L "$p" ]]; then printf '%s -> %s\n' "$p" "$(readlink "$p")"; else printf '%s %s\n' "$p" "$(cksum < "$p")"; fi
+  done)
+}
+RH15_HOSTS="opencode,codex,droid"
+# (a) manifest file row, (b) manifest package, (e) manifest record, (f) .gitignore
+T="$(mktmp)"; OA="$(mktmp)"; OB="$(mktmp)"; OE="$(mktmp)"; OF="$(mktmp)"
+bash "$INSTALL" "$T" --platform "$RH15_HOSTS" >/dev/null 2>&1
+[[ -f "$T/.opencode/commands/flow.md" && -L "$T/factory-plugin/skills/spec" && -f "$T/.vibe/install-manifest.json" && -f "$T/.gitignore" ]] \
+  && pass "review-hardening/15" "precondition: the host install wrote the manifest-recorded surfaces" \
+  || fail "review-hardening/15" "precondition: the host install wrote the manifest-recorded surfaces"
+mv "$T/.opencode/commands" "$OA/commands"; ln -s "$OA/commands" "$T/.opencode/commands"
+mv "$T/factory-plugin" "$OB/factory-plugin"; ln -s "$OB/factory-plugin" "$T/factory-plugin"
+mv "$T/.vibe" "$OE/vibe"; ln -s "$OE/vibe" "$T/.vibe"
+mv "$T/.gitignore" "$OF/gi"; ln -s "$OF/gi" "$T/.gitignore"
+sa="$(rh_snap "$OA")"; sb="$(rh_snap "$OB")"; se="$(rh_snap "$OE")"; sf="$(rh_snap "$OF")"
+out="$(bash "$INSTALL" "$T" --uninstall --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/15" "uninstall with symlinked host surfaces exits 0" "$rc" "0"
+assert_eq "review-hardening/15" "(a) a manifest-recorded host file behind a symlinked dir survives" "$(rh_snap "$OA")" "$sa"
+assert_eq "review-hardening/15" "(b) a manifest-recorded host package behind a symlink survives, links included" "$(rh_snap "$OB")" "$sb"
+assert_eq "review-hardening/15" "(e) the install manifest behind a symlinked .vibe survives" "$(rh_snap "$OE")" "$se"
+assert_eq "review-hardening/15" "(f) the .gitignore a symlink points at is unchanged" "$(rh_snap "$OF")" "$sf"
+[[ -L "$T/.gitignore" && "$(readlink "$T/.gitignore")" == "$OF/gi" ]] \
+  && pass "review-hardening/15" "(f) .gitignore is still the same symlink" \
+  || fail "review-hardening/15" "(f) .gitignore is still the same symlink"
+assert_contains "review-hardening/15" "(a) the skipped host file is reported" "$out" "WARN: .opencode/commands/flow.md is outside the target"
+assert_contains "review-hardening/15" "(b) the skipped host package is reported" "$out" "WARN: factory-plugin/commands/flow.md is outside the target"
+assert_contains "review-hardening/15" "(e) the skipped manifest is reported" "$out" "WARN: .vibe/install-manifest.json is outside the target"
+assert_contains "review-hardening/15" "(f) the symlinked .gitignore is reported" "$out" "WARN: .gitignore is a symlink"
+[[ ! -e "$T/plugins/vibe/plugin.json" && ! -e "$T/.agents/plugins/marketplace.json" ]] \
+  && pass "review-hardening/15" "the in-target recorded files are still removed" \
+  || fail "review-hardening/15" "the in-target recorded files are still removed"
+rm -rf "$T" "$OA" "$OB" "$OE" "$OF"
+# (e2) the --only spec manifest prune: a half-uninstall leaves the manifest in
+# place and rewrites it, so a symlinked .vibe must stop that rewrite as well.
+# The plain --only spec prune (host-support/2) is the control. --platform
+# claude pins the host set, so the install never reads the ambient PATH.
+T="$(mktmp)"; OE="$(mktmp)"
+bash "$INSTALL" "$T" --platform claude >/dev/null 2>&1
+mv "$T/.vibe" "$OE/vibe"; ln -s "$OE/vibe" "$T/.vibe"
+grep -qF '.claude/skills/spec' "$OE/vibe/install-manifest.json" \
+  && pass "review-hardening/15" "(e2) precondition: the outside manifest records the spec half" \
+  || fail "review-hardening/15" "(e2) precondition: the outside manifest records the spec half"
+se="$(rh_snap "$OE")"
+out="$(bash "$INSTALL" "$T" --uninstall --only spec --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/15" "(e2) --only spec uninstall with a symlinked .vibe exits 0" "$rc" "0"
+assert_eq "review-hardening/15" "(e2) --only spec leaves the manifest behind a symlinked .vibe unchanged" "$(rh_snap "$OE")" "$se"
+assert_contains "review-hardening/15" "(e2) the skipped manifest prune is reported" "$out" "WARN: .vibe/install-manifest.json is outside the target"
+[[ -L "$T/.vibe" && "$(readlink "$T/.vibe")" == "$OE/vibe" ]] \
+  && pass "review-hardening/15" "(e2) .vibe is still the same symlink" \
+  || fail "review-hardening/15" "(e2) .vibe is still the same symlink"
+rm -rf "$T" "$OE"
+# (c) no usable manifest: the shipped-source fallback, a symlinked package dir
+# and a symlinked marketplace dir.
+T="$(mktmp)"; OC="$(mktmp)"
+bash "$INSTALL" "$T" --platform "$RH15_HOSTS" >/dev/null 2>&1
+rm -f "$T/.vibe/install-manifest.json"
+mv "$T/.opencode" "$OC/opencode"; ln -s "$OC/opencode" "$T/.opencode"
+mv "$T/.factory-plugin" "$OC/fpm"; ln -s "$OC/fpm" "$T/.factory-plugin"
+sc="$(rh_snap "$OC")"
+out="$(bash "$INSTALL" "$T" --uninstall --dry-run 2>&1)"
+assert_contains "review-hardening/15" "(c) --dry-run shows the skipped fallback package" "$out" "skip .opencode (outside the target"
+assert_not_contains "review-hardening/15" "(c) --dry-run does not plan to remove the outside file" "$out" "remove .opencode/commands/flow.md"
+assert_eq "review-hardening/15" "(c) --dry-run changes nothing outside" "$(rh_snap "$OC")" "$sc"
+out="$(bash "$INSTALL" "$T" --uninstall --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/15" "(c) fallback uninstall exits 0" "$rc" "0"
+assert_eq "review-hardening/15" "(c) a symlinked package and marketplace dir survive the fallback" "$(rh_snap "$OC")" "$sc"
+assert_contains "review-hardening/15" "(c) the skipped fallback package is reported" "$out" "WARN: .opencode is outside the target"
+assert_contains "review-hardening/15" "(c) the skipped marketplace file is reported" "$out" "WARN: .factory-plugin/marketplace.json is outside the target"
+[[ ! -e "$T/factory-plugin/commands/flow.md" ]] \
+  && pass "review-hardening/15" "(c) the in-target fallback package is still removed" \
+  || fail "review-hardening/15" "(c) the in-target fallback package is still removed"
+rm -rf "$T" "$OC"
+# (g) empty-dir prunes: a vendored vibe checkout reached through .claude, with
+# empty .claude/skills and .claude/hooks, and plugins -> an outside dir holding
+# an empty vibe/. The vendored copy's own install.sh runs, so it is the SRC.
+RV="$(mktmp)"; O4="$(mktmp)"; mkdir -p "$RV/vendor" "$O4/vibe"; RVS="$(rh_copy)"; mv "$RVS" "$RV/vendor/vibe"
+rm -rf "$RV/vendor/vibe/.claude/skills" "$RV/vendor/vibe/.claude/hooks"
+mkdir -p "$RV/vendor/vibe/.claude/skills" "$RV/vendor/vibe/.claude/hooks"
+ln -s vendor/vibe/.claude "$RV/.claude"; ln -s "$O4" "$RV/plugins"
+ndirs="$(find "$RV/vendor/vibe" "$O4" -type d | wc -l | tr -d ' ')"
+bash "$RV/vendor/vibe/install.sh" "$RV" --uninstall --yes >/dev/null 2>&1; rc=$?
+assert_eq "review-hardening/15" "(g) the vendored uninstall exits 0" "$rc" "0"
+assert_eq "review-hardening/15" "(g) no empty directory behind a symlinked ancestor is pruned" "$(find "$RV/vendor/vibe" "$O4" -type d | wc -l | tr -d ' ')" "$ndirs"
+rm -rf "$RV" "$O4"
+# control: the same host install with no symlink uninstalls cleanly.
+T="$(mktmp)"; bash "$INSTALL" "$T" --platform "$RH15_HOSTS" >/dev/null 2>&1
+out="$(bash "$INSTALL" "$T" --uninstall --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/15" "control: a plain host uninstall exits 0" "$rc" "0"
+left=""
+for p in .agents/plugins/marketplace.json plugins/vibe/plugin.json plugins/vibe/skills/spec plugins/vibe/skills/vibe \
+         .factory-plugin/marketplace.json factory-plugin/.factory-plugin/plugin.json factory-plugin/commands/flow.md \
+         factory-plugin/skills/spec factory-plugin/skills/vibe .opencode/commands/flow.md .vibe/install-manifest.json; do
+  [[ -e "$T/$p" || -L "$T/$p" ]] && left="$left $p"
+done
+assert_eq "review-hardening/15" "control: every recorded file and the manifest are removed" "$left" ""
+assert_not_contains "review-hardening/15" "control: a plain uninstall reports nothing outside the target" "$out" "outside the target"
+rm -rf "$T"
+
+# review-hardening/4 — resolve_target: managed writes go through symlinks, inside
+# the repo only. A symlinked AGENTS.md stays a symlink and the real file carries
+# the block; a dangling or outside-repo link is refused and nothing is written.
+echo ""
+echo "=== review-hardening/4 — write-through for bash writers ==="
+RH4_SCRIPTS="$REPO_ROOT/flow/scripts"
+rh4_regen_sandbox() {  # prints a sandbox root with regen + lib + one lesson
+  local r; r="$(mktmp)"
+  mkdir -p "$r/docs/spec" "$r/.agents/skills/vibe/scripts/lib"
+  cp "$RH4_SCRIPTS/regen-active-rules.sh" "$r/.agents/skills/vibe/scripts/"
+  cp "$RH4_SCRIPTS/lib/resolve-target.sh" "$r/.agents/skills/vibe/scripts/lib/"
+  printf '# Lessons\n\n### One\n**Rule:** keep it.\n**Date:** 2026-06-18\n' > "$r/docs/spec/lessons.md"
+  printf '%s\n' "$r"
+}
+RH4_REGEN="/.agents/skills/vibe/scripts/regen-active-rules.sh"
+# (a) merge writes through a symlinked AGENTS.md
+d="$(mktmp)"; mkdir "$d/docs"
+{ printf 'user prose\n\n<!-- vibe:instructions:start -->\nstale\n<!-- vibe:instructions:end -->\n'; } > "$d/docs/AGENTS.real.md"
+ln -s docs/AGENTS.real.md "$d/AGENTS.md"
+bash "$MERGE" "$d" >/dev/null 2>&1; rc=$?
+assert_eq "review-hardening/4" "merge through a symlinked AGENTS.md exits 0" "$rc" "0"
+[[ -L "$d/AGENTS.md" && "$(readlink "$d/AGENTS.md")" == "docs/AGENTS.real.md" ]] \
+  && pass "review-hardening/4" "merge keeps the AGENTS.md symlink" || fail "review-hardening/4" "merge replaced the symlink"
+grep -qF '<!-- vibe:instructions:start -->' "$d/docs/AGENTS.real.md" && grep -qF 'user prose' "$d/docs/AGENTS.real.md" \
+  && pass "review-hardening/4" "real file carries the block and the user prose" || fail "review-hardening/4" "real file lacks block or prose"
+assert_eq "review-hardening/4" "no stray temp files in the real file's directory" "$(find "$d/docs" -type f | wc -l | tr -d ' ')" "1"
+# (d) unmerge on a symlinked AGENTS.md keeps the link
+bash "$MERGE" unmerge "$d" >/dev/null 2>&1
+[[ -L "$d/AGENTS.md" && -f "$d/docs/AGENTS.real.md" ]] && ! grep -qF 'vibe:instructions' "$d/docs/AGENTS.real.md" \
+  && grep -qF 'user prose' "$d/docs/AGENTS.real.md" \
+  && pass "review-hardening/4" "unmerge keeps the symlink and strips the block through it" || fail "review-hardening/4" "unmerge broke the symlink"
+# (d2) a symlinked AGENTS.md with no user content left: merge refuses a dangling
+# link, so the link and its target file were there before vibe. unmerge strips
+# the blocks and keeps both, on the whitespace-only path and the pure-stub path.
+rh4_kept() {  # DIR LABEL NOTE — the link, its target and no vibe marker remain
+  [[ -L "$1/AGENTS.md" && "$(readlink "$1/AGENTS.md")" == "docs/agents.md" && -f "$1/docs/agents.md" ]] \
+    && ! grep -qF 'vibe:' "$1/docs/agents.md" \
+    && pass "review-hardening/4" "$2" || fail "review-hardening/4" "$2"
+}
+d="$(mktmp)"; mkdir "$d/docs"; : > "$d/docs/agents.md"; ln -s docs/agents.md "$d/AGENTS.md"
+bash "$MERGE" "$d" >/dev/null 2>&1
+grep -qF '<!-- vibe:instructions:start -->' "$d/docs/agents.md" \
+  && pass "review-hardening/4" "(d2) precondition: merge wrote the block into the empty linked file" \
+  || fail "review-hardening/4" "(d2) precondition: merge wrote the block into the empty linked file"
+out="$(bash "$MERGE" unmerge "$d" 2>&1)"; rc=$?
+assert_eq "review-hardening/4" "(d2) unmerge of an emptied linked AGENTS.md exits 0" "$rc" "0"
+rh4_kept "$d" "(d2) whitespace-only: unmerge keeps the user's AGENTS.md link and its target file"
+assert_not_contains "review-hardening/4" "(d2) whitespace-only: unmerge reports no removed stub" "$out" "removed vibe-created AGENTS.md stub"
+d="$(mktmp)"; mkdir "$d/docs"; cp "$REPO_ROOT/flow/reference/templates/AGENTS.md" "$d/docs/agents.md"; ln -s docs/agents.md "$d/AGENTS.md"
+out="$(bash "$MERGE" unmerge "$d" 2>&1)"; rc=$?
+assert_eq "review-hardening/4" "(d2) unmerge of a linked template copy exits 0" "$rc" "0"
+rh4_kept "$d" "(d2) pure stub: unmerge keeps the user's AGENTS.md link and its target file"
+assert_not_contains "review-hardening/4" "(d2) pure stub: unmerge reports no removed stub" "$out" "removed vibe-created AGENTS.md stub"
+# install level: install then full uninstall through a linked empty placeholder
+t="$(mktmp)"; mkdir "$t/docs"; : > "$t/docs/agents.md"; ln -s docs/agents.md "$t/AGENTS.md"
+bash "$INSTALL" "$t" >/dev/null 2>&1
+bash "$INSTALL" "$t" --uninstall --yes >/dev/null 2>&1; rc=$?
+assert_eq "review-hardening/4" "(d2) uninstall with a linked empty AGENTS.md exits 0" "$rc" "0"
+rh4_kept "$t" "(d2) uninstall keeps the user's AGENTS.md link and its target file"
+# control: a regular vibe-created stub is still deleted
+d="$(mktmp)"; bash "$MERGE" "$d" >/dev/null 2>&1; bash "$MERGE" unmerge "$d" >/dev/null 2>&1
+[[ ! -e "$d/AGENTS.md" && ! -L "$d/AGENTS.md" ]] \
+  && pass "review-hardening/4" "(d2) control: a regular vibe-created stub is still removed" \
+  || fail "review-hardening/4" "(d2) control: a regular vibe-created stub is still removed"
+# (a) regen writes through a symlinked AGENTS.md
+r="$(rh4_regen_sandbox)"; printf 'user prose\n<!-- vibe:active-rules:start -->\nold\n<!-- vibe:active-rules:end -->\n' > "$r/docs/AGENTS.real.md"; ln -s docs/AGENTS.real.md "$r/AGENTS.md"
+bash "$r$RH4_REGEN" >/dev/null 2>&1
+[[ -L "$r/AGENTS.md" ]] && pass "review-hardening/4" "regen keeps the AGENTS.md symlink" || fail "review-hardening/4" "regen replaced the symlink"
+grep -qF 'vibe:active-rules:start' "$r/docs/AGENTS.real.md" && grep -qF 'user prose' "$r/docs/AGENTS.real.md" \
+  && pass "review-hardening/4" "regen block lands in the real file, prose intact" || fail "review-hardening/4" "regen did not write through"
+# (b) dangling link: refused, nothing created
+d="$(mktmp)"; ln -s missing.md "$d/AGENTS.md"
+errtxt="$(bash "$MERGE" "$d" 2>&1 >/dev/null)"; rc=$?
+[[ $rc -ne 0 ]] && pass "review-hardening/4" "merge refuses a dangling AGENTS.md link" || fail "review-hardening/4" "dangling link accepted"
+assert_contains "review-hardening/4" "dangling refusal names the link" "$errtxt" "AGENTS.md"
+[[ ! -e "$d/missing.md" ]] && pass "review-hardening/4" "dangling link target not created" || fail "review-hardening/4" "dangling target was created"
+r="$(rh4_regen_sandbox)"; ln -s missing.md "$r/AGENTS.md"
+errtxt="$(bash "$r$RH4_REGEN" 2>&1 >/dev/null)"; rc=$?
+[[ $rc -ne 0 && ! -e "$r/missing.md" ]] && pass "review-hardening/4" "regen refuses a dangling link, creates nothing" || fail "review-hardening/4" "regen dangling rc=$rc"
+assert_contains "review-hardening/4" "regen dangling refusal names the link" "$errtxt" "AGENTS.md"
+# (c) link to a file outside the repo: refused, outside file byte-identical
+o="$(mktmp)"; printf 'outside\n' > "$o/x.md"; cp "$o/x.md" "$o/x.orig"
+d="$(mktmp)"; ln -s "$o/x.md" "$d/AGENTS.md"
+bash "$MERGE" "$d" >/dev/null 2>&1; rc=$?
+[[ $rc -ne 0 ]] && cmp -s "$o/x.md" "$o/x.orig" && pass "review-hardening/4" "merge refuses an outside link, file untouched" || fail "review-hardening/4" "outside link clobbered (rc=$rc)"
+bash "$MERGE" unmerge "$d" >/dev/null 2>&1; rc=$?
+[[ $rc -ne 0 ]] && cmp -s "$o/x.md" "$o/x.orig" && pass "review-hardening/4" "unmerge refuses an outside link, file untouched" || fail "review-hardening/4" "unmerge outside link (rc=$rc)"
+r="$(rh4_regen_sandbox)"; ln -s "$o/x.md" "$r/AGENTS.md"
+bash "$r$RH4_REGEN" >/dev/null 2>&1; rc=$?
+[[ $rc -ne 0 ]] && cmp -s "$o/x.md" "$o/x.orig" && pass "review-hardening/4" "regen refuses an outside link, file untouched" || fail "review-hardening/4" "regen outside link (rc=$rc)"
+# control: a regular AGENTS.md behaves as before
+d="$(mktmp)"; printf 'plain\n' > "$d/AGENTS.md"
+bash "$MERGE" "$d" >/dev/null 2>&1; rc=$?
+[[ $rc -eq 0 && ! -L "$d/AGENTS.md" ]] && grep -qF 'plain' "$d/AGENTS.md" && grep -qF 'vibe:instructions:start' "$d/AGENTS.md" \
+  && pass "review-hardening/4" "control: regular AGENTS.md merges as today" || fail "review-hardening/4" "control regressed"
+# install level (R11): a dangling AGENTS.md is refused, and the install continues
+t="$(mktmp)"; ln -s /nonexistent "$t/AGENTS.md"
+out="$(bash "$INSTALL" "$t" 2>&1)"; rc=$?
+assert_eq "review-hardening/4" "install with a dangling AGENTS.md exits 0" "$rc" "0"
+assert_contains "review-hardening/4" "install warns that AGENTS.md was not merged" "$out" "AGENTS.md not merged"
+[[ -L "$t/AGENTS.md" && "$(readlink "$t/AGENTS.md")" == "/nonexistent" ]] \
+  && pass "review-hardening/4" "install keeps the dangling AGENTS.md link" || fail "review-hardening/4" "install replaced the dangling AGENTS.md link"
+
+# review-hardening/3 — link_adapter never rewrites a symlink that points elsewhere.
+echo ""
+echo "=== review-hardening/3 — link_adapter refuses a foreign symlink ==="
+d="$(mktmp)"; printf 'other\n' > "$d/other.md"; ln -s other.md "$d/CLAUDE.md"
+errtxt="$(bash "$MERGE" link CLAUDE.md "$d" 2>&1 >/dev/null)"; rc=$?
+assert_eq "review-hardening/3" "foreign symlink: link exits 1" "$rc" "1"
+assert_eq "review-hardening/3" "foreign symlink left pointing at other.md" "$(readlink "$d/CLAUDE.md")" "other.md"
+assert_contains "review-hardening/3" "refusal names the foreign target" "$errtxt" "other.md"
+# install level: the install continues, names the held link, and leaves it alone
+t="$(mktmp)"; mkdir "$t/docs"; printf 'other\n' > "$t/docs/other.md"; ln -s docs/other.md "$t/CLAUDE.md"
+out="$(bash "$INSTALL" "$t" --adapters claude 2>&1)"; rc=$?
+assert_eq "review-hardening/3" "install with a foreign CLAUDE.md symlink exits 0" "$rc" "0"
+assert_contains "review-hardening/3" "install names the held link's target" "$out" "docs/other.md"
+assert_not_contains "review-hardening/3" "install does not call the held link a real file" "$out" "real file?"
+assert_eq "review-hardening/3" "install leaves the foreign symlink alone" "$(readlink "$t/CLAUDE.md")" "docs/other.md"
+# controls: correct link skipped, real file refused, absent file linked
+d="$(mktmp)"; ln -s AGENTS.md "$d/CLAUDE.md"
+bash "$MERGE" link CLAUDE.md "$d" >/dev/null 2>&1; rc=$?
+assert_eq "review-hardening/3" "control: correct link skipped (exit 0)" "$rc" "0"
+d="$(mktmp)"; printf 'real\n' > "$d/WARP.md"
+bash "$MERGE" link WARP.md "$d" >/dev/null 2>&1; rc=$?
+assert_eq "review-hardening/3" "control: real file refused (exit 1)" "$rc" "1"
+d="$(mktmp)"
+bash "$MERGE" link CLAUDE.md "$d" >/dev/null 2>&1; rc=$?
+[[ $rc -eq 0 && "$(readlink "$d/CLAUDE.md")" == "AGENTS.md" ]] \
+  && pass "review-hardening/3" "control: absent adapter is linked" || fail "review-hardening/3" "control: absent adapter not linked"
+assert_not_contains "review-hardening/3" "setup.md no longer says it relinks" "$(cat "$REPO_ROOT/flow/setup.md")" "relinks a wrong target"
+# review-hardening/5
+echo ""
+echo "=== review-hardening/5 — set-state.sh validates its arguments ==="
+SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
+SS="$SB/.agents/skills/vibe/scripts/set-state.sh"
+CUR="$SB/.agents/skills/vibe/state.json"
+RH5_NOJQ="$(mkshim jq)"
+# The jq leg runs `bash "$SS"` on the ambient PATH: without jq it would test the
+# no-jq writer twice under a "(jq)" label. Run it only where jq exists, and fail
+# loudly when it cannot run unless the skip is declared (VIBE_NO_JQ=1).
+RH5_LEGS=(nojq)
+if command -v jq >/dev/null 2>&1; then
+  RH5_LEGS=(jq nojq)
+elif [[ "${VIBE_NO_JQ:-}" == 1 ]]; then
+  pass "review-hardening/5" "jq legs deliberately skipped (VIBE_NO_JQ=1)"
+else
+  fail "review-hardening/5" "jq is not on PATH, so the jq legs cannot run (set VIBE_NO_JQ=1 to declare the skip)"
+fi
+rh5_reject() { # label state [feature] — both paths must exit 1, cursor bytes unchanged
+  local label="$1"; shift
+  local leg before rc after
+  for leg in ${RH5_LEGS[@]+"${RH5_LEGS[@]}"}; do
+    bash "$SS" feature.design keepme >/dev/null 2>&1
+    before="$(cat "$CUR")"; rc=0
+    if [[ "$leg" == jq ]]; then bash "$SS" "$@" >/dev/null 2>&1 || rc=$?
+    else PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" "$@" >/dev/null 2>&1 || rc=$?; fi
+    after="$(cat "$CUR")"
+    assert_eq "review-hardening/5" "$label rejected ($leg): exit 1" "$rc" "1"
+    assert_eq "review-hardening/5" "$label rejected ($leg): cursor bytes unchanged" "$after" "$before"
+    if command -v jq >/dev/null 2>&1; then
+      jq -e . "$CUR" >/dev/null 2>&1 && pass "review-hardening/5" "$label ($leg): cursor still parses" \
+        || fail "review-hardening/5" "$label ($leg): cursor still parses"
+    fi
+  done
+}
+rh5_reject "pattern state idle|x" 'idle|x'
+rh5_reject "quote in feature" feature.design 'a"b'
+rh5_reject "backslash in feature" feature.design 'a\b'
+rh5_reject "newline in feature" feature.design $'a\nb'
+# control: an empty-string feature means "no feature argument" (carry forward),
+# as in the engine writer — never an error and never the literal feature "".
+for leg in ${RH5_LEGS[@]+"${RH5_LEGS[@]}"}; do
+  bash "$SS" feature.design keepme >/dev/null 2>&1; rc=0
+  if [[ "$leg" == jq ]]; then bash "$SS" feature.plan '' >/dev/null 2>&1 || rc=$?
+  else PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" feature.plan '' >/dev/null 2>&1 || rc=$?; fi
+  assert_eq "review-hardening/5" "control ($leg): empty-string feature exits 0" "$rc" "0"
+  assert_contains "review-hardening/5" "control ($leg): empty-string feature still moves the cursor" "$(cat "$CUR")" '"phase": "plan"'
+  assert_contains "review-hardening/5" "control ($leg): empty-string feature carries the current one" "$(cat "$CUR")" '"feature": "keepme"'
+done
+# controls: legal names still work, hostile-looking-but-legal names land literally
+# shellcheck disable=SC2016  # '$(touch x)' is a literal feature name on purpose
+for leg in ${RH5_LEGS[@]+"${RH5_LEGS[@]}"}; do
+  rm -f "$SB/x" "$CUR"; ( cd "$SB" || exit 1
+    if [[ "$leg" == jq ]]; then bash "$SS" feature.impl demo >/dev/null 2>&1; bash "$SS" feature.impl '$(touch x)' >/dev/null 2>&1
+    else PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" feature.impl demo >/dev/null 2>&1; PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" feature.impl '$(touch x)' >/dev/null 2>&1; fi )
+  assert_contains "review-hardening/5" "control ($leg): shell-hostile feature written literally" "$(cat "$CUR")" '"feature": "$(touch x)"'
+  [[ ! -e "$SB/x" && ! -e "$PWD/x" ]] && pass "review-hardening/5" "control ($leg): no file x created" || fail "review-hardening/5" "control ($leg): no file x created"
+  rc=0
+  if [[ "$leg" == jq ]]; then bash "$SS" quick.fix >/dev/null 2>&1 || rc=$?
+  else PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" quick.fix >/dev/null 2>&1 || rc=$?; fi
+  assert_eq "review-hardening/5" "control ($leg): quick.fix accepted" "$rc" "0"
+done
+# a corrupt cursor feature must not be re-emitted without jq
+printf '{\n  "flow": "feature",\n  "phase": "impl",\n  "feature": "a\\"b",\n  "updated": "t"\n}\n' > "$CUR"
+PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" feature.verify >/dev/null 2>&1 || true
+assert_contains "review-hardening/5" "no-jq: corrupt carried feature falls back to null" "$(cat "$CUR")" '"feature": null'
+rm -rf "$RH5_NOJQ" "$SB"
+
+# review-hardening/19
+echo ""
+echo "=== review-hardening/19 — the flow guard matcher covers MultiEdit ==="
+MERGE_SETTINGS="$REPO_ROOT/flow/scripts/merge-settings.sh"
+RH19_MATCHER="Edit|Write|MultiEdit|NotebookEdit|Bash"
+RH19_GROUP='[.hooks.PreToolUse[] | select([.hooks[]?.command // empty] | any(test("pre-tool-use-guard")))]'
+SB="$(mktmp)"; bash "$MERGE_SETTINGS" merge "$SB" >/dev/null 2>&1
+assert_eq "review-hardening/19" "a fresh merge writes the MultiEdit matcher" \
+  "$(jq -r "$RH19_GROUP"' | .[0].matcher' "$SB/.claude/settings.json")" "$RH19_MATCHER"
+jq '.hooks.PreToolUse = [{"matcher":"Edit|Write|NotebookEdit|Bash","hooks":[{"type":"command","command":"bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-tool-use-guard.sh\"","timeout":10}]}]' \
+  "$SB/.claude/settings.json" > "$SB/s.tmp" && mv "$SB/s.tmp" "$SB/.claude/settings.json"
+bash "$MERGE_SETTINGS" merge "$SB" >/dev/null 2>&1
+assert_eq "review-hardening/19" "an old matcher is upgraded in place: one vibe group" "$(jq -r "$RH19_GROUP | length" "$SB/.claude/settings.json")" "1"
+assert_eq "review-hardening/19" "the upgraded group carries MultiEdit" "$(jq -r "$RH19_GROUP"' | .[0].matcher' "$SB/.claude/settings.json")" "$RH19_MATCHER"
+rh19_before="$(cat "$SB/.claude/settings.json")"
+bash "$MERGE_SETTINGS" merge "$SB" >/dev/null 2>&1
+assert_eq "review-hardening/19" "a second merge changes nothing (idempotent)" "$(cat "$SB/.claude/settings.json")" "$rh19_before"
+rm -rf "$SB"
+# a MultiEdit payload reaches the guard on both paths (engine, and the bash fallback without node).
+# The guard roots itself at ${CLAUDE_PROJECT_DIR:-$PWD}, so every call names $SB: without it the
+# legs read whatever cursor the caller's cwd holds, not this sandbox's.
+SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
+RH19_SS="$SB/.agents/skills/vibe/scripts/set-state.sh"; bash "$RH19_SS" idle >/dev/null 2>&1
+RH19_NONODE="$(mkshim)"
+rh19_guard() { # leg tool file_path -> guard exit code
+  local rc=0 payload
+  payload="$(printf '{"tool_name":"%s","tool_input":{"file_path":"%s"}}' "$2" "$3")"
+  if [[ "$1" == engine ]]; then
+    printf '%s' "$payload" | CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
+  else
+    printf '%s' "$payload" | CLAUDE_PROJECT_DIR="$SB" PATH="$RH19_NONODE" "$RH19_NONODE/bash" "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
+  fi
+  echo "$rc"
+}
+for leg in engine fallback; do
+  for tool in MultiEdit Edit; do
+    assert_eq "review-hardening/19" "$tool on a guarded path blocks ($leg guard, idle)" "$(rh19_guard "$leg" "$tool" docs/spec/lessons.md)" "2"
+  done
+  assert_eq "review-hardening/19" "control: MultiEdit on an unguarded path allows ($leg guard)" "$(rh19_guard "$leg" MultiEdit docs/notes.md)" "0"
+done
+# control: the sandbox's own cursor decides. feature.compound may write the lessons file, so the
+# same MultiEdit now allows; a leg that read another cursor would not follow this change.
+printf '{\n  "flow": "feature",\n  "phase": "compound",\n  "feature": "demo",\n  "updated": "t"\n}\n' > "$SB/.agents/skills/vibe/state.json"
+for leg in engine fallback; do
+  assert_eq "review-hardening/19" "control: MultiEdit on docs/spec/lessons.md allows in the sandbox's feature.compound ($leg guard)" "$(rh19_guard "$leg" MultiEdit docs/spec/lessons.md)" "0"
+done
+rm -rf "$SB" "$RH19_NONODE"
+
+# review-hardening/7
+echo ""
+echo "=== review-hardening/7 — plugin SessionStart hook defers to the repo-local hook ==="
+RH7_HOOK="$REPO_ROOT/plugin/hooks/session-start.sh"
+rh7_run() { env -u VIBE_ENGINE CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" CLAUDE_PROJECT_DIR="$1" bash "$RH7_HOOK" </dev/null 2>/dev/null || true; }
+# (a) a repo with only docs/spec/ has no flow installed: the plugin stays silent
+RH7="$(mktmp)"; mkdir -p "$RH7/docs/spec"
+assert_eq "review-hardening/7" "spec-only repo (no flow installed): plugin hook is silent" "$(rh7_run "$RH7")" ""
+rm -rf "$RH7"
+# (a2) the same with the legacy root
+RH7="$(mktmp)"; mkdir -p "$RH7/.spec" # literal
+assert_eq "review-hardening/7" "legacy-root spec-only repo: plugin hook is silent" "$(rh7_run "$RH7")" ""
+rm -rf "$RH7"
+# (b) a real install target: the repo-local hook emits it, the plugin stays silent
+RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1
+assert_eq "review-hardening/7" "install target: plugin hook is silent" "$(rh7_run "$RH7")" ""
+rm -rf "$RH7"
+# (c) script present, no settings wiring: the repo-local hook never fires, so the
+# plugin must still emit the doctrine (once, not zero times).
+RH7="$(mktmp)"; mkdir -p "$RH7/.claude/hooks"; : > "$RH7/.claude/hooks/session-start-doctrine.sh"
+mkdir -p "$RH7/.agents/skills/vibe"; : > "$RH7/.agents/skills/vibe/state-machine.json"
+assert_contains "review-hardening/7" "script present, no settings: plugin hook emits the doctrine" "$(rh7_run "$RH7")" "sessions are ephemeral"
+rm -rf "$RH7"
+# (c2) a jq-less install copies the hooks but cannot wire settings.json
+RH7="$(mktmp)"; RH7_NOJQ="$(mkshim jq)"
+PATH="$RH7_NOJQ" "$RH7_NOJQ/bash" "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1
+[[ -f "$RH7/.claude/hooks/session-start-doctrine.sh" ]] || fail "review-hardening/7" "precondition: jq-less install copied the hook script"
+assert_contains "review-hardening/7" "jq-less install (hooks unwired): plugin hook emits the doctrine" "$(rh7_run "$RH7")" "sessions are ephemeral"
+rm -rf "$RH7" "$RH7_NOJQ"
+# (d) settings.json wired, script absent: a real install (a working engine) with
+# the script removed, so the wiring is the only signal under test. The plugin
+# probes the engine, so an empty stub cli.mjs no longer stands in for one.
+RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1; rm -f "$RH7/.claude/hooks/session-start-doctrine.sh"
+assert_eq "review-hardening/7" "settings.json wired, script absent: plugin hook is silent" "$(rh7_run "$RH7")" ""
+rm -rf "$RH7"
+# (e) settings.local.json wired
+RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1
+mv "$RH7/.claude/settings.json" "$RH7/.claude/settings.local.json"
+assert_eq "review-hardening/7" "settings.local.json wired: plugin hook is silent" "$(rh7_run "$RH7")" ""
+# (e2) the same wiring with no engine: the repo hook cannot answer, so emit
+rm -rf "$RH7/.agents/skills/vibe/engine"
+assert_contains "review-hardening/7" "wired, engine absent: plugin hook emits the doctrine" "$(rh7_run "$RH7")" "sessions are ephemeral"
+rm -rf "$RH7"
+# (e3) wired install, broken engine: the repo hook exits 0 with no output on a
+# crash, so the plugin must emit the doctrine (once, not zero times).
+RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1
+printf '%s\n' "throw new Error('broken engine');" > "$RH7/.agents/skills/vibe/engine/cli.mjs"
+assert_contains "review-hardening/7" "wired, broken engine: plugin hook emits the doctrine" "$(rh7_run "$RH7")" "sessions are ephemeral"
+rm -rf "$RH7"
+# (e4) wired install, a node that cannot run the engine (older than engines.node
+# >=18): stand-in node that fails like a too-old one.
+RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1; RH7_OLDNODE="$(mkshim)"
+printf '%s\n' '#!/bin/sh' 'echo "SyntaxError: Unexpected token (node v16)" >&2' 'exit 1' > "$RH7_OLDNODE/node"; chmod +x "$RH7_OLDNODE/node"
+assert_contains "review-hardening/7" "wired, node cannot run the engine: plugin hook emits the doctrine" \
+  "$(env -u VIBE_ENGINE CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" CLAUDE_PROJECT_DIR="$RH7" PATH="$RH7_OLDNODE" "$RH7_OLDNODE/bash" "$RH7_HOOK" </dev/null 2>/dev/null || true)" "sessions are ephemeral"
+rm -rf "$RH7" "$RH7_OLDNODE"
+# (f) wired install on a node-less host: the repo-local hook (engine-only, no
+# fallback) prints nothing, so the plugin must emit the doctrine (once, not zero).
+RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1; RH7_NONODE="$(mkshim)"
+grep -qF 'session-start-doctrine.sh' "$RH7/.claude/settings.json" 2>/dev/null \
+  || fail "review-hardening/7" "precondition: install wired session-start-doctrine.sh"
+assert_eq "review-hardening/7" "no node: the repo-local doctrine hook prints nothing" \
+  "$(cd "$RH7" && CLAUDE_PROJECT_DIR="$RH7" PATH="$RH7_NONODE" "$RH7_NONODE/bash" .claude/hooks/session-start-doctrine.sh </dev/null 2>/dev/null || true)" ""
+assert_contains "review-hardening/7" "no node, wired install: plugin hook emits the doctrine" \
+  "$(env -u VIBE_ENGINE CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" CLAUDE_PROJECT_DIR="$RH7" PATH="$RH7_NONODE" "$RH7_NONODE/bash" "$RH7_HOOK" </dev/null 2>/dev/null || true)" "sessions are ephemeral"
+rm -rf "$RH7" "$RH7_NONODE"
+assert_eq "review-hardening/7" "generated hook carries no stale cursor comment" \
+  "$(grep -c "this project's cursor" "$RH7_HOOK" || true)" "0"
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

@@ -1,0 +1,27 @@
+{
+  "skill": "spec",
+  "listing": "tests/evals/listing.md",
+  "pass": { "sonnet": { "positives_min": 9, "near_misses_max": 1 }, "haiku": { "positives_min": 8, "near_misses_max": 2 } },
+  "queries": [
+    { "id": "pos-flag", "query": "Add a --dry-run flag to the export command.", "expect": "spec" },
+    { "id": "pos-prd", "query": "Write a PRD for team billing.", "expect": "spec" },
+    { "id": "pos-plan", "query": "Plan the migration of the auth module to OAuth.", "expect": "spec" },
+    { "id": "pos-arch", "query": "Update the architecture notes to say we now use Postgres.", "expect": "spec" },
+    { "id": "pos-howbuild", "query": "How should we structure the plugin system?", "expect": "spec" },
+    { "id": "pos-typo", "query": "Fix the typo in the README install heading.", "expect": "spec" },
+    { "id": "pos-decision", "query": "Record a decision: we drop Windows support.", "expect": "spec" },
+    { "id": "pos-refactor", "query": "Refactor the parser into separate modules.", "expect": "spec" },
+    { "id": "pos-quick", "query": "Quick fix: the CLI prints \"Sucess\". Just fix it.", "expect": "spec" },
+    { "id": "pos-roadmap", "query": "Add the Q3 features to the roadmap.", "expect": "spec" },
+    { "id": "nm-explain", "query": "Explain what src/cli.sh prints.", "expect": "none" },
+    { "id": "nm-tests", "query": "Run the test suite.", "expect": "none" },
+    { "id": "nm-gitstatus", "query": "What does git status show?", "expect": "none" },
+    { "id": "nm-lastcommit", "query": "Summarise the last commit.", "expect": "none" },
+    { "id": "nm-json", "query": "Format this JSON: {\"a\":1}", "expect": "none" },
+    { "id": "nm-review", "query": "Review PR 12 for bugs.", "expect": "none" },
+    { "id": "nm-regex", "query": "What does the regex ^a+b?$ match?", "expect": "none" },
+    { "id": "nm-rebase", "query": "Rebase my branch onto main.", "expect": "none" },
+    { "id": "nm-retry", "query": "Explain how the retry loop in src/net.js works.", "expect": "none" },
+    { "id": "nm-todos", "query": "List the TODO comments under src/.", "expect": "none" }
+  ]
+}

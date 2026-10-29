@@ -639,13 +639,19 @@ if command -v node >/dev/null 2>&1; then
   # safe while it cannot drift: it must equal, byte for byte, what
   # `render agents-md` composes from content/policy.json — which is also what
   # makes an install WITH node re-render it to "no change".
+  # skill-revision/25: the maintainer's own `vibe.json` adds a policy block to
+  # THIS repo's render, so the shipped copy is compared with a shipped-defaults-only
+  # render (a temp project with no `vibe.json`).
+  ship_proj="$(mktemp -d)"; mkdir -p "$ship_proj/.agents/skills"; ln -s "$FLOW" "$ship_proj/.agents/skills/vibe"
+  ship_rend="$( cd "$ship_proj" && CLAUDE_PROJECT_DIR="$ship_proj" node "$FLOW/engine/cli.mjs" render agents-md 2>/dev/null )"
+  rm -rf "$ship_proj"
   tmpl_rules="$(awk '/^<!-- vibe:rules -->$/{f=1;next} /^<!-- \/vibe:rules -->$/{f=0} f' "$FLOW/reference/templates/AGENTS.md")"
   tmpl_rules_note="$(printf '%s\n' "$tmpl_rules" | head -n1)"
   tmpl_rules_body="$(printf '%s\n' "$tmpl_rules" | sed '1,2d')"
   assert_contains "inject-triggers/6" "the template ships a vibe:rules block with the managed-region note" \
     "$tmpl_rules_note" "_Managed by vibe"
   assert_eq "inject-triggers/6" "the template's shipped vibe:rules body IS the agents-md render (no drift possible)" \
-    "$tmpl_rules_body" "$rend"
+    "$tmpl_rules_body" "$ship_rend"
   # Floor for that equality: neither side is empty, and the body really carries
   # the generated rules (an empty-vs-empty comparison would pass just as well).
   assert_contains "inject-triggers/6" "floor: the shipped block carries the generated invariants" \
@@ -688,6 +694,7 @@ echo "=== regen-active-rules.sh — digest from lessons ==="
 d="$(mktemp -d)"
 mkdir -p "$d/.spec" "$d/.agents/skills/vibe/scripts"
 cp "$SCRIPTS/regen-active-rules.sh" "$d/.agents/skills/vibe/scripts/"
+mkdir -p "$d/.agents/skills/vibe/scripts/lib"; cp "$SCRIPTS/lib/resolve-target.sh" "$d/.agents/skills/vibe/scripts/lib/"
 cat > "$d/.spec/lessons.md" <<'EOF'
 # Lessons
 
@@ -757,6 +764,7 @@ assert_eq "path-parity" "doctrine identical via both paths" "$a" "$b"
 pr="$(mktemp -d)"
 mkdir -p "$pr/flow/scripts" "$pr/.agents/skills" "$pr/.spec"
 cp "$SCRIPTS/regen-active-rules.sh" "$pr/flow/scripts/"
+mkdir -p "$pr/flow/scripts/lib"; cp "$SCRIPTS/lib/resolve-target.sh" "$pr/flow/scripts/lib/"
 ( cd "$pr/.agents/skills" && ln -s ../../flow vibe )
 cat > "$pr/.spec/lessons.md" <<'EOF'
 # Lessons
@@ -1251,16 +1259,22 @@ assert_contains "review-fix" "empty stdin exits 0 (graceful)" "$out" "rc=0"
 assert_not_contains "review-fix" "empty stdin does not warn" "$out" "warn"
 rm -rf "$gsbx"
 
-# spec-v04 P4-R16: the per-user plugin's SessionStart detector accepts either
-# spec root (docs/spec, legacy) and stays silent without one.
+# spec-v04 P4-R16, flipped by review-hardening/7: the per-user plugin's
+# SessionStart detector fires only where the flow is installed
+# (.agents/skills/vibe/state-machine.json). A spec-only repo, whichever root, stays
+# silent: the doctrine is flow doctrine, so it never fires in every spec repo.
 PSS="$SRC_ROOT/plugin/hooks/session-start.sh"
 for root_rel in docs/spec .spec; do # literal
   psb="$(mktemp -d)"; mkdir -p "$psb/$root_rel"
   out="$(printf '{}' | CLAUDE_PROJECT_DIR="$psb" CLAUDE_PLUGIN_ROOT="$SRC_ROOT/plugin" bash "$PSS" 2>&1; echo "rc=$?")"
-  assert_contains "spec-v04/p4" "plugin session-start detects a $root_rel project (emits the doctrine)" "$out" "vibe flow"
-  assert_contains "spec-v04/p4" "plugin session-start exits 0 for a $root_rel project" "$out" "rc=0"
+  assert_eq "spec-v04/p4" "plugin session-start is silent in a $root_rel repo without the flow" "$out" "rc=0"
   rm -rf "$psb"
 done
+psb="$(mktemp -d)"; mkdir -p "$psb/.agents/skills/vibe"; : > "$psb/.agents/skills/vibe/state-machine.json"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$psb" CLAUDE_PLUGIN_ROOT="$SRC_ROOT/plugin" bash "$PSS" 2>&1; echo "rc=$?")"
+assert_contains "spec-v04/p4" "plugin session-start emits the doctrine where the flow is installed" "$out" "vibe flow"
+assert_contains "spec-v04/p4" "plugin session-start exits 0 where the flow is installed" "$out" "rc=0"
+rm -rf "$psb"
 psb="$(mktemp -d)"
 out="$(printf '{}' | CLAUDE_PROJECT_DIR="$psb" CLAUDE_PLUGIN_ROOT="$SRC_ROOT/plugin" bash "$PSS" 2>&1; echo "rc=$?")"
 assert_eq "spec-v04/p4" "plugin session-start is silent in a project with no spec root" "$out" "rc=0"
@@ -1273,7 +1287,7 @@ guard_group='[.hooks.PreToolUse[] | select([.hooks[]?.command // empty] | any(te
 # The shipped adapter wires Bash into the PreToolUse matcher (file tools kept).
 shipped_m="$(jq -r '.hooks.PreToolUse[0].matcher' "$SRC_ROOT/.claude/settings.json")"
 assert_contains "review-fix" "shipped .claude/settings.json PreToolUse matcher includes Bash" "$shipped_m" "Bash"
-assert_contains "review-fix" "shipped matcher keeps the file tools" "$shipped_m" "Edit|Write|NotebookEdit"
+assert_contains "review-fix" "shipped matcher keeps the file tools" "$shipped_m" "Edit|Write|MultiEdit|NotebookEdit"
 
 mt="$(mktemp -d)"
 bash "$MS" merge "$mt" >/dev/null 2>&1
@@ -1874,6 +1888,7 @@ mkdir -p "$dr/docs/spec" "$dr/pkg/flow/scripts" "$dr/.agents/skills/vibe"
 for f in regen-active-rules.sh orders.sh doctor.sh doctrine.sh detect-context.sh; do
   cp "$SCRIPTS/$f" "$dr/pkg/flow/scripts/"
 done
+mkdir -p "$dr/pkg/flow/scripts/lib"; cp "$SCRIPTS/lib/resolve-target.sh" "$dr/pkg/flow/scripts/lib/"
 cp "$FLOW/state-machine.json" "$dr/pkg/flow/"
 
 # regen-active-rules.sh: digest from docs/spec/lessons.md

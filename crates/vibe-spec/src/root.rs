@@ -1,4 +1,4 @@
-//! Spec root discovery (`.spec/tech-spec.md`, "Root and discovery"). One // literal
+//! Spec root discovery (`docs/spec/tech/spec/spec-root-discovery.md`). One
 //! function implements the order; every command goes through it.
 //!
 //! Order: `--root`, `$VIBE_SPEC_ROOT`, `.vibe/spec.json` `root`, `docs/spec/`,

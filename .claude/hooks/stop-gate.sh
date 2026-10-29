@@ -8,9 +8,10 @@
 # is no no-jq branch to reproduce here.
 #
 # DEGRADE (no node, no engine, or an unexpected engine exit code):
-# `.agents/skills/vibe/hooks-fallback/stop-gate.sh` — the frozen pre-port
-# implementation — answers instead. The evidence tooth is a HARD BLOCK the docs
-# promise; it degrades to bash, never to nothing.
+# `.agents/skills/vibe/hooks-fallback/stop-gate.sh` — the pre-port bash
+# implementation, with the review-hardening/10 changed-path fix — answers
+# instead. The evidence tooth is a HARD BLOCK the docs promise; it degrades to
+# bash, never to nothing.
 set -euo pipefail
 
 HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

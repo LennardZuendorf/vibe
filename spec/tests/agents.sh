@@ -38,6 +38,23 @@ ok agents/spec-promoter "bare apply command on its own line" \
   grep -qE '^ *`vibe-spec promote <feature>`$' "$AGENTS/spec-promoter.md"
 ok agents/spec-promoter "tools include Write" grep -qE '^tools: .*Write' "$AGENTS/spec-promoter.md"
 
+# skill-revision/6: non-interactive agents with a status line and real fields.
+P="$AGENTS/spec-promoter.md" H="$AGENTS/spec-health.md"
+ok agents/spec-promoter "STATUS line with the closed enum" \
+  grep -qF 'STATUS: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT | BLOCKED' "$P"
+ok agents/spec-promoter "applies only on 'apply: yes'" grep -qF 'apply: yes' "$P"
+# shellcheck disable=SC2016 # literal backticks
+ok agents/spec-promoter "never runs --done" grep -qF 'Never run `--done`' "$P"
+ok agents/spec-promoter "never waits for an answer" test -z "$(grep -F 'Wait for' "$P")"
+ok agents/spec-promoter "never asks the user" test -z "$(grep -F 'Ask the user' "$P")"
+for fld in check file message severity; do
+  # shellcheck disable=SC2016 # literal backticks
+  ok agents/spec-health "names the JSON field \`$fld\`" grep -qF "\`$fld\`" "$H"
+done
+# shellcheck disable=SC2016 # literal backticks
+ok agents/spec-health "ends with the health count line" grep -qF 'health: <n> error, <n> warning' "$H"
+ok agents/spec-health "names no CRITICAL level" test -z "$(grep -F 'CRITICAL' "$H")"
+
 ok agents "no old SKILL.md-format agent dirs" test -z "$(find "$AGENTS" -mindepth 1 -type d)"
 
 hits="$(grep -rIl -e spec-interviewer -e spec-tracer "$ROOT/spec" "$ROOT/.claude" "$ROOT/plugin" "$ROOT/flow" 2>/dev/null \

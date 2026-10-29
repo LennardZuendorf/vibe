@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/LennardZuendorf/vibe/actions/workflows/ci.yml/badge.svg)](https://github.com/LennardZuendorf/vibe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![built with](https://img.shields.io/badge/built%20with-bash%20%2B%20markdown%20%2B%20json%20%2B%20node-informational)
+![built with](https://img.shields.io/badge/built%20with-rust%20%2B%20bash%20%2B%20markdown%20%2B%20node-informational)
 
 </div>
 
@@ -27,14 +27,14 @@ never through code. One repo, one installer, three release trains.
 |---|---|---|---|
 | **What it is** | Durable `docs/spec/` planning layer — product / tech / design / plan / lessons — with templates and a validator. | State-machine workflow: routes each phase to the right skills, injects per-turn orders, guards its own write invariants with hooks. | ⏳ Planned — layered, budgeted instruction injection (global → repo → local → session tiers). |
 | **Works with** | Any coding agent, or none. | Claude Code, OpenCode, and Factory Droid via `/flow`; Codex via skill invocation. Other agents read the same rules as prose. | Claude Code + OpenCode, both ⏳ planned. |
-| **Needs** | `bash` | `bash`, plus Node ≥18 for today's engine — a static Rust binary in v0.4. | Nothing today (unbuilt) — a static Rust binary in v0.4. |
+| **Needs** | `bash`; the `vibe-spec` binary (dev build) for validation | `bash`, plus Node ≥18 for today's engine — a static Rust binary in v0.4. | Nothing today (unbuilt) — a static Rust binary in v0.4. |
 | **Install** | `./install.sh <repo> --only spec` | `./install.sh <repo> --only flow` | ⏳ planned: `./install.sh <repo> --only instruct` |
 | **Deep dive** | [`spec/README.md`](spec/README.md) | [`flow/README.md`](flow/README.md) | [`docs/spec/tech/instruct.md`](docs/spec/tech/instruct.md) |
 
 This repo builds itself with its own harness, so what you install is what is
 dogfooded here.
 
-## Shipped today (v0.3)
+## Shipped today (v0.3.x, plus the vibe-spec dev build)
 
 Everything in this section is real, installable, and tested right now.
 Commands are byte-exact — copy them as written.
@@ -69,7 +69,7 @@ plain directory with no Git ancestor uses the current directory.
 
 | Mode | Command | What you get |
 |---|---|---|
-| **local** (default) | `./install.sh <repo>` | The full **stateful** kit at the resolved root: both skills, the engine, and the native surface of every configured host. For Claude Code that is `/flow` plus the four hooks wired via `.claude/settings.json`. |
+| **local** (default) | `./install.sh <repo>` | The full **stateful** kit at the resolved root: both skills, the engine, and the native surface of every configured host. For Claude Code that is `/flow` plus the hooks wired via `.claude/settings.json`. |
 | **global** | `./install.sh --global` | The **per-user plugin** (`vibe@vibe`): the portable, stateless surface only — both skills plus the doctrine hook — in **every** repo. Needs the `claude` CLI. |
 
 ```bash
@@ -121,6 +121,16 @@ user files in every shared directory. A repeat run leaves the managed files
 byte-stable and keeps your live cursor and evidence receipts. `--uninstall`
 inverts every host, regardless of `--platform`.
 
+#### The `vibe-spec` binary
+
+`/spec validate` and the spec hooks run `vibe-spec`. `install.sh` does not ship
+the binary yet; build it from a clone:
+
+```bash
+cargo install --locked --path crates/vibe-spec
+vibe-spec --version
+```
+
 ### spec — the planning layer
 
 Every vibe project gets a `docs/spec/` tree, the single source of truth for what
@@ -147,7 +157,8 @@ design, consumed at impl, merged at compound, then deleted. **Code is truth.**
 /spec validate         # check structural consistency
 ```
 
-Pure bash and Markdown — no runtime, no build step.
+The `/spec` skill is Markdown and bash. Validation (`/spec validate`) runs the
+`vibe-spec` binary, which is a Rust dev build today (see [Install](#install)).
 
 ### flow — the workflow harness
 
@@ -169,12 +180,16 @@ feature.compound` are **gated** and need an explicit confirm token.
 |---|---|---|
 | `SessionStart` | Re-injects the working-model doctrine each session (and on `compact`). | quiet |
 | `UserPromptSubmit` | Every turn, two byte-stable lines naming the state and its transition command; full orders on the turn after the cursor moves. | quiet |
-| `PreToolUse` | Guards the write invariants. | **still blocks**, via `flow/hooks-fallback/` |
+| `PreToolUse` | Guards the write invariants on file-tool calls (Edit/Write/MultiEdit/NotebookEdit/Bash); on `Bash` it only warns. | **still blocks**, via `flow/hooks-fallback/` |
 | `Stop` | Warn-first exit checks; blocks in `*.verify` without a fresh evidence receipt. | **still blocks**, via `flow/hooks-fallback/` |
 
 The flow runs on a zero-dependency Node engine ([`flow/engine/`](flow/engine/)).
 In an installed repo it is `node .agents/skills/vibe/engine/cli.mjs <command>`
 — shortened to `vibe` below:
+
+Orders arrive once, on the turn after the cursor moves. If they are lost (a
+compaction, a missed turn), `vibe orders` or `bash .agents/skills/vibe/scripts/orders.sh`
+recovers them.
 
 ```bash
 vibe state get | vibe state set <target>   # read / move the cursor
@@ -198,7 +213,7 @@ your-repo/                     # after install
 ├── .agents/skills/
 │   ├── spec/                  # the spec framework
 │   └── vibe/                  # the flow: router, phase files, state machine, engine
-├── .claude/                   # Claude adapter: /flow + four hooks + settings.json
+├── .claude/                   # Claude adapter: /flow + hooks + settings.json
 ├── .opencode/                 # OpenCode: /flow project command
 ├── plugins/vibe/              # Codex: skill package (+ .agents/plugins/marketplace.json)
 ├── factory-plugin/            # Factory Droid: /flow + skills (+ .factory-plugin/marketplace.json)
@@ -221,7 +236,8 @@ bash tests/run.sh   # spec + flow + adapters + engine suites
 
 CI runs `shellcheck` on every tracked `*.sh`, the combined suite on Linux and
 macOS `bash` 3.2, the engine suite jq-less and from a space-containing path, a
-`CLAUDE_PROJECT_DIR` hermeticity leg, `validate.sh`, and `check-drift.sh`.
+`CLAUDE_PROJECT_DIR` hermeticity leg, `vibe-spec validate --strict`,
+`vibe-spec check-drift`, and `vibe-spec migrate --to docs/spec --check`.
 
 ## v0.4 target
 
@@ -322,7 +338,7 @@ vibe/
 
 ## Roadmap
 
-Five phases, F1–F24, each a binary gate. Parallel tracks open once
+Five phases, each a binary gate. Parallel tracks open once
 foundations land: flow (F5→F10), instruct (F11→F15), spec (F16→F20).
 
 | Phase | Focus | Features |
@@ -335,10 +351,8 @@ foundations land: flow (F5→F10), instruct (F11→F15), spec (F16→F20).
 
 F1 (the spec path-resolution hotfix) is a same-week fix on the current bash
 tree, ahead of the phases above. Full sequence and evidence criteria:
-[`docs/spec/plan.md`](docs/spec/plan.md). The issue set — one tracking epic plus one
-issue per feature — is authored under [`docs/roadmap/`](docs/roadmap/) and
-posts to GitHub with `bash docs/roadmap/create-issues.sh` once Issues are
-enabled on the repository.
+[`docs/spec/plan.md`](docs/spec/plan.md). The per-feature issue drafts are under
+[`docs/roadmap/`](docs/roadmap/).
 
 ## Platform support
 
@@ -347,18 +361,19 @@ configured host. Paths below are relative to the installed root.
 
 | Host | Start the flow workflow | Skills live at | Wired per host |
 |---|---|---|---|
-| **Claude Code** | `/flow` — native project command (`.claude/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `.claude/skills/{spec,vibe}` | All four hooks, via `.claude/settings.json`. |
+| **Claude Code** | `/flow` — native project command (`.claude/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `.claude/skills/{spec,vibe}` | All hooks, via `.claude/settings.json`. |
 | **OpenCode** | `/flow` — native project command (`.opencode/commands/flow.md`) | `.agents/skills/{spec,vibe}` | No hook integration. |
 | **Codex** | Skill invocation only — `$vibe` (or the skill picker `/skills`); there is no synthetic `/flow` command | `.agents/skills/{spec,vibe}` + `plugins/vibe/skills` | No hook integration; no native agent registration. |
 | **Factory Droid** | `/flow` — native project command (`factory-plugin/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `factory-plugin/skills` | No hook integration; no native droid registration. |
 | **Other `AGENTS.md` readers** | Manual — the agent follows the `AGENTS.md` rules as prose | `.agents/skills/{spec,vibe}` (plain files) | No hooks, no native command. |
-| **Bare git / any editor** | — (spec framework only) | — | `docs/spec/` docs, templates, `validate.sh`. |
+| **Bare git / any editor** | — (spec framework only) | — | `docs/spec/` docs, templates, `vibe-spec`. |
 
-The **spec** workflow is skill-invoked on every host; there is no `/spec`
-command anywhere. The flow's per-turn inject, guard and stop-gate hooks are wired for
-Claude Code only in this slice: OpenCode, Codex, and Factory Droid get skills and a
-workflow entry point — and no host gets native agent/droid registration. (The `vibe`
-store hook below is separate and covers all four harnesses.)
+The **spec** workflow is skill-invoked on every host (the skill is
+user-invocable, so hosts that list skills as commands offer it as `/spec`). The
+flow's per-turn inject, guard and stop-gate hooks are wired for Claude Code only
+in this slice: OpenCode, Codex, and Factory Droid get skills and a workflow entry
+point — and no host gets native agent/droid registration. (The `vibe` store hook
+below is separate and covers all four harnesses.)
 The install summary reports a host's hooks only when their wiring actually
 installed. Budgeted instruction injection (`instruct`) remains ⏳ planned.
 

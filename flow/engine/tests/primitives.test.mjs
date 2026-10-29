@@ -862,7 +862,7 @@ const REASONS = {
   'bash-sniffer':
     "mirrors detect-context.sh's guarded-path CLASSES for the warn-only Bash sniffer — a pattern matched against someone else's shell command, not a path this engine builds or opens.",
   'legacy-lessons-fallback':
-    "one deliberate fallback for the configured lessons source (D33): when the shipped docs/spec default is absent, the legacy lessons file is read through confinePath(). No marker search and no root resolution is derived here.",
+    "one deliberate fallback for the configured lessons source (D33): when the shipped docs/spec default is absent, the legacy lessons file is read through confineRealWhy(), the same physical gate as the configured read. No marker search and no root resolution is derived here.",
   'hook-root-literal':
     "mirrors the ORIGINAL .sh hook's own $ROOT-relative literal for the warnings log / evidence receipts (hook.mjs header; js-core/7 review). This IS a real layout literal — the waiver allows exactly ONE occurrence (see `count`), so a SECOND copy, byte-identical or not, is a violation.",
   'layout-name-probe':
@@ -917,7 +917,7 @@ const WAIVERS = [
   { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'hook-root-literal', line: "return path.join(root, '.agents', 'skills', 'vibe');" },
   { file: 'commands/hook.mjs', id: 'root-markers', reason: 'bash-sniffer', line: 'const LESSONS_RE = /(^|[^A-Za-z0-9_])(docs\\/spec|\\.spec)\\/lessons\\.md/;' },
   { file: 'commands/hook.mjs', id: 'root-markers', reason: 'bash-sniffer', line: 'const ROOT_SPEC_RE = /(^|[^A-Za-z0-9_])(docs\\/spec|\\.spec)\\/(product|tech|design|plan)\\.md/;' },
-  { file: 'content.mjs', id: 'root-markers', reason: 'legacy-lessons-fallback', line: "const legacyPath = confinePath(root, '.spec/lessons.md');" },
+  { file: 'content.mjs', id: 'root-markers', reason: 'legacy-lessons-fallback', line: "const legacyRel = '.spec/lessons.md';" },
   { file: 'commands/hook.mjs', id: 'cursor-file', reason: 'bash-sniffer', line: 'const STATE_JSON_RE = /(\\.agents\\/skills\\/vibe\\/state\\.json|(^|[^A-Za-z0-9_])flow\\/state\\.json)/;' },
   { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'bash-sniffer', line: 'const STATE_JSON_RE = /(\\.agents\\/skills\\/vibe\\/state\\.json|(^|[^A-Za-z0-9_])flow\\/state\\.json)/;' },
   { file: 'commands/hook.mjs', id: 'cursor-file', reason: 'bash-sniffer', line: "return '.agents/skills/vibe/state.json (use set-state.sh)';" },
