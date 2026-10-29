@@ -185,10 +185,55 @@ decide() {
   decide_bash "$path" "$state"
 }
 
-# The bash branch. Takes an ALREADY-normalised path and an explicit state (see
-# decide above) — it is never called with either left to default.
+# normalise_path PATH — pure-bash twin of the engine's posix normalise: drop empty
+# and `.` segments, resolve `..` against the previous kept segment, keep a leading
+# `/`, keep leading `..` segments of a relative path, keep a trailing `/`; `.` and
+# the empty result become empty. Without it `.spec//lessons.md` or # literal
+# `.spec/x/../lessons.md` slip past the literal case patterns the engine blocks. # literal
+# Segments are split with `read`, never an unquoted expansion, so a glob character
+# stays literal and the result never depends on the cwd. `-d ''` reads to the end
+# of the value, not to its first newline, so a path holding a newline is split
+# whole instead of being decided on its prefix.
+normalise_path() {
+  local p="$1" abs=0 trail=0 seg out="" i
+  local -a keep=()
+  [[ "$p" == /* ]] && abs=1
+  [[ "$p" == */ ]] && trail=1
+  local -a segs=()
+  IFS=/ read -r -d '' -a segs < <(printf '%s' "$p") || true
+  for seg in ${segs[@]+"${segs[@]}"}; do
+    case "$seg" in
+      ''|.) ;;
+      ..)
+        if [[ ${#keep[@]} -gt 0 && "${keep[${#keep[@]}-1]}" != ".." ]]; then
+          unset "keep[${#keep[@]}-1]"
+        elif [[ $abs -eq 0 ]]; then
+          keep+=("..")
+        fi
+        ;;
+      *) keep+=("$seg") ;;
+    esac
+  done
+  for i in ${keep[@]+"${keep[@]}"}; do
+    out="${out:+$out/}$i"
+  done
+  [[ $abs -eq 1 ]] && out="/$out"
+  if [[ $trail -eq 1 && -n "$out" && "$out" != "/" ]]; then out="$out/"; fi
+  while [[ "$out" == ./* ]]; do out="${out#./}"; done
+  [[ "$out" == "." ]] && out=""
+  printf '%s' "$out"
+}
+
+# The bash branch. Takes a path and an explicit state (see decide above) — it is
+# never called with the state left to default. It normalises the path itself, and
+# decide does not: the engine branch then still runs its own normaliser, which the
+# differential matrix compares against this one. The `.` sentinel survives the
+# command substitution, which would otherwise strip a trailing newline the
+# engine keeps (`.spec/lessons.md<LF>` is not `.spec/lessons.md`). # literal
 decide_bash() {
-  local path="$1"
+  local path
+  path="$(normalise_path "$1"; printf '.')"
+  path="${path%.}"
   local state="$2"
 
   # Block 3: state.json is writer-only.

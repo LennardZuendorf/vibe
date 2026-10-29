@@ -179,7 +179,10 @@ function hasGlobChars(pattern) {
 const REGEXP_ESCAPE_RE = /[.+^${}()|[\]\\]/g;
 
 // `*` and `?` both stand for "any run of / any one character", including
-// `/` — see the header. Every other character is matched literally.
+// `/` — see the header — and including a newline: the `s` flag makes `.` span
+// it, as bash `case` patterns do, so a glob rule decides a path holding a
+// newline the same way in both branches. Every other character is matched
+// literally.
 function globToRegExp(pattern) {
   let body = '';
   // Collapse runs of `*` first. `**` translated naively to `.*.*` is
@@ -192,7 +195,7 @@ function globToRegExp(pattern) {
     else if (c === '?') body += '.';
     else body += c.replace(REGEXP_ESCAPE_RE, '\\$&');
   }
-  return new RegExp(`^${body}$`);
+  return new RegExp(`^${body}$`, 's');
 }
 
 // Compiled-pattern cache, keyed by the pattern string. A Map, not a plain

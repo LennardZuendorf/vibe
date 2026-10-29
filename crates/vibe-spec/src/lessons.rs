@@ -2,15 +2,14 @@
 //! `--json` (Spec JSON v1 `lessons-for`) and `--tag <t>`.
 //!
 //! Deliberate divergences (pinned in tests/parity/spec.json): tags match as
-//! case-insensitive literal substrings, not as regexes; the legacy
+//! whole, case-insensitive tags, not as regexes or substrings; the legacy
 //! `--format json` array escapes its strings.
 use serde_json::{Value, json};
 use vibe_core::exit;
 
 use crate::root::{Miss, Root};
 use crate::text::{
-    contains_ci, is_date, is_space, json_str, lines, lossy, remove_first, strip_prefix_or,
-    trim_space,
+    is_date, is_space, json_str, lines, lossy, remove_first, strip_prefix_or, trim_space,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -30,8 +29,13 @@ impl Format {
     }
 }
 
+const USAGE: &str = "Usage: vibe-spec lessons-for <tag> [<tag>...] [--format markdown|inject|json] [--tag <tag>] [--json]\n\nPrint the lessons whose Tags line matches a tag. --json prints Spec JSON v1.\n";
+
 /// Runs the command.
 pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
+    if crate::wants_help(args) {
+        return (exit::OK, USAGE.as_bytes().to_vec());
+    }
     let mut format = Format::Markdown;
     let mut tags: Vec<String> = Vec::new();
     let mut spec_json = false;
@@ -47,7 +51,7 @@ pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
                 }
                 None => {
                     eprintln!("lessons-for: --format requires a value (markdown|inject|json)");
-                    return (exit::FINDINGS, Vec::new());
+                    return (exit::USAGE, Vec::new());
                 }
             },
             "--json" => spec_json = true,
@@ -70,7 +74,7 @@ pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
             _ if a.starts_with("--format=") => format = Format::parse(&a["--format=".len()..]),
             _ if a.starts_with('-') => {
                 eprintln!("Unknown option: {a}");
-                return (exit::FINDINGS, Vec::new());
+                return (exit::USAGE, Vec::new());
             }
             _ => tags.push(a.to_string()),
         }
@@ -81,18 +85,25 @@ pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
     }
     let file = match found {
         Ok(root) => root.dir.join("lessons.md"),
-        Err(Miss::NotFound) => return (exit::OK, Vec::new()),
+        Err(Miss::NotFound) => {
+            eprintln!(
+                "vibe-spec lessons-for: no spec root (searched docs/spec/ and the legacy root up to .git)"
+            );
+            return (exit::OK, Vec::new());
+        }
         Err(miss) => {
             eprintln!("{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };
     if !file.is_file() {
+        let show = found.as_ref().map(Root::display).unwrap_or_default();
+        eprintln!("vibe-spec lessons-for: {show}/lessons.md not found");
         return (exit::OK, Vec::new());
     }
     if tags.is_empty() {
         eprintln!("usage: vibe-spec lessons-for <tag> [<tag>...] [--format markdown|inject|json]");
-        return (exit::FINDINGS, Vec::new());
+        return (exit::USAGE, Vec::new());
     }
     let text = std::fs::read(&file).unwrap_or_default();
     let matched: Vec<Vec<u8>> = blocks(&text)
@@ -152,13 +163,27 @@ fn blocks(text: &[u8]) -> Vec<Vec<u8>> {
     out
 }
 
-/// The first `**Tags:**` line contains any tag (an empty tag always matches).
-fn matches(block: &[u8], tags: &[String]) -> bool {
-    let tags_line = lines(block)
+/// The first `**Tags:**` line, split on `,`: trimmed (CR included), lower-cased, empty entries dropped.
+fn tags_of(block: &[u8]) -> Vec<String> {
+    let line = lines(block)
         .into_iter()
         .find(|l| l.starts_with(b"**Tags:**"))
         .unwrap_or_default();
-    tags.iter().any(|t| contains_ci(tags_line, t.as_bytes()))
+    line.get(b"**Tags:**".len()..)
+        .unwrap_or_default()
+        .split(|&c| c == b',')
+        .map(trim_space)
+        .filter(|t| !t.is_empty())
+        .map(|t| lossy(t).to_ascii_lowercase())
+        .collect()
+}
+
+/// Any requested tag equals one of the lesson's tags, ignoring ASCII case
+/// (an empty tag always matches).
+fn matches(block: &[u8], tags: &[String]) -> bool {
+    let own = tags_of(block);
+    tags.iter()
+        .any(|t| t.is_empty() || own.contains(&t.to_ascii_lowercase()))
 }
 
 /// Every line starting with `key`, `strip` removed once, joined by `\n`, trailing newlines dropped.

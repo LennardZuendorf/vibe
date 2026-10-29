@@ -1,23 +1,23 @@
 ---
 type: feature-research
-feature: <name>
+feature: {name}
 parent: product.md
-updated: 2026-06-29
+updated: {YYYY-MM-DD}
 ---
 
-# <name> — Research
+# {name} — Research
 
 Discovery artifacts for the feature. Deleted with the feature folder at wrapup — never promoted to root. Extract a finding that must persist to a lesson (lessons.md) or root tech.md section.
 
 ## Question
 
-<What are we trying to learn?>
+{What are we trying to learn?}
 
 ## Findings
 
-### Finding: <title>
+### Finding: {title}
 
-<What was found and where.>
+{What was found and where.}
 
 ## Approaches tried
 
@@ -27,4 +27,4 @@ Discovery artifacts for the feature. Deleted with the feature folder at wrapup �
 
 ## Decision
 
-<What the research led to — and what was ruled out.>
+{What the research led to — and what was ruled out.}

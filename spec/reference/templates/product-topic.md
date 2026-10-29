@@ -1,12 +1,19 @@
 ---
 type: product-topic
 parent: product.md
-scope: <topic>
-covers: <comma-separated list>
-updated: 2026-06-29
+scope: {topic}
+covers: {comma-separated list}
+updated: {YYYY-MM-DD}
 ---
 
-# <topic> — Product
+<!--
+  TEMPLATE GUARDRAIL — product-{topic}.md
+  Job: cross-cutting product concern that spans every feature.
+  Do NOT: one feature's detail; that belongs in the feature folder.
+  Use in a flat layout only; a layered root keeps the hubs that `vibe-spec init` writes.
+-->
+
+# {topic} — Product
 
 One paragraph: why this cross-cutting concern exists and who it affects.
 
@@ -17,11 +24,11 @@ One paragraph: why this cross-cutting concern exists and who it affects.
 
 ## Requirements
 
-### Requirement: <title>
+### Requirement: {title}
 
-<The system> SHALL/MUST <observable behaviour>.
+{The system} SHALL/MUST {observable behaviour}.
 
-#### Scenario: <title>
+#### Scenario: {title}
 
 **Given** …
 **When** …

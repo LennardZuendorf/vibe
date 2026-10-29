@@ -464,6 +464,77 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** tests, ci, hooks, windows
 **Date:** 2026-10-22
 
+### Compare a task branch with origin/main before planning
+**Pattern:** The Layer task branch `villain/vibe` sat behind `origin/main`. The first review-hardening implementation was built on that stale base, and every unit had to be ported onto the v0.4 tree afterwards.
+**Rule:** Before planning on a task branch, run `git fetch` and compare it with `origin/main` (`git rev-list --left-right --count HEAD...origin/main`). Rebase or re-plan before any unit starts, and write the base SHA into the plan.
+**Tags:** process, git, orchestration, layer, base
+**Date:** 2026-10-24
+
+### Workflow worktree isolation does not branch from your branch
+**Pattern:** A Workflow agent with `isolation: 'worktree'` gets a worktree branched from the bare repo's default branch, not from the task branch. An implementer in such a worktree works on the wrong base and nothing warns.
+**Rule:** Give each implementer a pinned base SHA. It creates its own worktree with `git worktree add -b <branch> <path> <sha>` and asserts `git rev-parse HEAD` equals that SHA before its first edit.
+**Tags:** orchestration, workflow, worktree, git, subagents
+**Date:** 2026-10-24
+
+### `validate` reads any feature/number text in a plan as a unit edge
+**Pattern:** `vibe-spec validate` (I1) flags every `<feature>/<n>` string in a feature plan as a cross-feature unit dependency, also when it is only a test-ID citation. Under `--strict` the warning fails the tree.
+**Rule:** In a feature plan, cite another feature's unit as `<feature> unit-n`, never in the slash form. Keep the slash form for test names and for the plan's own units.
+**Tags:** spec, validate, plans, citations
+**Date:** 2026-10-24
+
+### A path guard checks the physical path
+**Pattern:** `confinePath`, the uninstall deletes and the AGENTS.md writers all judged the spelled path. A symlink in the config, in a parent directory or at the target let a read inject an outside file, a delete leave the target, and a temp + rename replace a link with a regular file.
+**Rule:** Resolve the real path of the anchor and of the target (or of its deepest existing ancestor for a new file), then compare with a separator-aware prefix test. Write through an in-repo link, refuse an outside or dangling one, and report each refusal. A lexical check is only a cheap pre-check.
+**Tags:** security, symlinks, confinement, install, content
+**Date:** 2026-10-24
+
+### Read git status with `-z`, scoped to the project
+**Pattern:** The Stop gate read plain `git status --porcelain`. C-quoted names (a space, a non-ASCII byte, a newline, a rename) never matched a file, and toplevel-relative paths missed every change in a project below the git root. A stale receipt passed. A wholly untracked nested project arrives as one `?? sub/` record, so the prefix strip leaves an empty path.
+**Rule:** Run `status --porcelain -z -- .`, strip `rev-parse --show-prefix`, consume the origin field of every `R` or `C` record, and treat an empty stripped path as the project directory. In bash, read with `read -r -d ''` from a process substitution.
+**Tags:** git, hooks, gate, parsing, nested-project
+**Date:** 2026-10-24
+
+### Port fixes onto a moved base after all their tests are RED
+**Pattern:** The review-hardening fixes were written for the pre-v0.4 tree. v0.4 added delete and rewrite sites that the old diff never saw: manifest-driven and source-walk uninstall deletes, and the `--only spec` manifest prune that a later review found unguarded.
+**Rule:** Port the old tests first and see each one RED on the new base. Apply the old diff only then. After it is green, grep the new base for every delete, `rmdir`, `mv` and rewrite site, partial modes included, and give each site the same guard and a test.
+**Tags:** porting, install, uninstall, tdd, review
+**Date:** 2026-10-24
+
+### A shim that captures stderr must not need a temp file
+**Pattern:** `spec/hooks/run-hook.sh` captured the guard's stderr in a `mktemp` file. With no usable temp directory the capture failed, and a real `blocked:` exit 2 became an allow.
+**Rule:** Capture stderr with a descriptor swap into a variable. Test the shim with a probe binary that counts temp files while it runs.
+**Tags:** hooks, shim, fail-open, temp-files
+**Date:** 2026-10-24
+
+### A differential test must also assert the expected value
+**Pattern:** Parity tests compared two writers' output only. The dropped-feature fixture stayed green while both writers carried the bad feature, and no rename record was followed by a second record, so removing the origin step from either gate stayed green.
+**Rule:** Besides "both sides agree", assert the absolute expected value, the WARN text, and a precondition floor (for example, that git really reports the fixture). Then delete the guarded line and see the test turn RED.
+**Tags:** tests, parity, discriminating-tests, review
+**Date:** 2026-10-24
+
+### Scrub every git variable a hook exports before a git fixture runs
+**Pattern:** A git hook that runs the engine suite exports `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, and with `git -c` also `GIT_CONFIG_PARAMETERS` or `GIT_CONFIG_COUNT` with `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`. The fixtures then acted on the outer repo, or an injected `status.showUntrackedFiles=all` turned pins red.
+**Rule:** The shared test spawn helper deletes all of these variables. A test runs each pin under each injection and checks every deleted name.
+**Tags:** tests, git, hermeticity, environment, hooks
+**Date:** 2026-10-24
+
+### Pin every ambient input an install or hook test reads
+**Pattern:** An uninstall test installed without `--platform`, so host detection read the runner's `PATH` and failed where no `claude` CLI exists. Guard tests read the caller's cursor because `CLAUDE_PROJECT_DIR` was not set to the sandbox.
+**Rule:** Pass the platform explicitly and set `CLAUDE_PROJECT_DIR` to the sandbox in each test leg. A test must not depend on the CLIs or the cursor of the machine it runs on.
+**Tags:** tests, install, hooks, hermeticity, ci
+**Date:** 2026-10-24
+
+### `jq -r` erases JSON types
+**Pattern:** `set-state.sh` read the carried feature with `jq -r`. A number or `true` came back as the string `5` or `true`, `false` and the string `"null"` read as no feature, and a trailing newline was trimmed. The engine classified the same values by type, so the two writers disagreed.
+**Rule:** Read `jq type` first and classify the value as the other writer does. Use `jq -r` only on a value known to be a string.
+**Tags:** jq, bash, parity, cursor
+**Date:** 2026-10-24
+
+### `patch` leaves `.orig` files behind
+**Pattern:** Two units applied an old hunk with `patch -F3` and committed the `.orig` backup it wrote. Each needed a follow-up commit.
+**Rule:** After `patch`, run `git status --porcelain` and delete every `.orig` and `.rej` file before `git add`.
+**Tags:** git, patch, porting, hygiene
+**Date:** 2026-10-24
 ### Test scratch is reaped, not leaked
 **Pattern:** Every `cargo test` process left one directory per test case in `TMPDIR` and never removed it; a day of worker runs left 14 500 dead directories and 4.3 GiB on a disk with 5.7 GiB free, and the only reclamation was an external 24 h pruner.
 **Rule:** Build test scratch through `vibe_core::testscratch::scratch`, which sweeps siblings idle for more than six hours on first use in a process. Never hand-roll a `std::env::temp_dir()` path in a test, and never assume a later process will clean up after this one.

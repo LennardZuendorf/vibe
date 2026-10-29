@@ -17,6 +17,8 @@
 #
 # Deterministic, idempotent, marker-aware. Graceful degrade: missing lessons.md
 # or no entries -> warn and leave an empty managed block; never hard-fail.
+# Writes go through a symlinked target (the link survives); a dangling link or one
+# resolving outside the repo is refused with a warning and exit 1, nothing written.
 
 set -euo pipefail
 
@@ -67,7 +69,11 @@ CAP=5
 START="<!-- vibe:active-rules:start -->"
 END="<!-- vibe:active-rules:end -->"
 
+# shellcheck source-path=SCRIPTDIR source=lib/resolve-target.sh
+. "$SCRIPT_DIR/lib/resolve-target.sh"
+
 warn() { echo "regen-active-rules: $1" >&2; }
+REFUSED=0
 
 # Build the digest body (markdown lines) from lessons.md.
 build_digest() {
@@ -113,15 +119,11 @@ build_digest() {
 # block if the markers are absent. Idempotent.
 write_block() {
   local file="$1" digest="$2"
-  local target="$file"
-  if [[ -L "$file" ]]; then
-    local link
-    link="$(readlink "$file")"
-    if [[ "$link" == /* ]]; then
-      target="$link"
-    else
-      target="$(cd "$(dirname "$file")" && pwd)/$link"
-    fi
+  local target
+  if ! target="$(resolve_target "$file" "$REPO_ROOT")"; then
+    warn "WARN: refusing to write $file (dangling or outside $REPO_ROOT)."
+    REFUSED=1
+    return 0
   fi
   [[ -f "$target" ]] || { warn "WARN: $target not found; skipping."; return 0; }
 
@@ -180,3 +182,5 @@ for t in ${TARGETS[@]+"${TARGETS[@]}"}; do
   seen="${seen}${resolved}"$'\n'
   write_block "$t" "$DIGEST"
 done
+# A dangling or outside-repo link is refused (nothing written); say so in the exit.
+[[ "$REFUSED" -eq 0 ]] || exit 1
