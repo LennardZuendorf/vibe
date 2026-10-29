@@ -172,6 +172,13 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   target gets an unpredictable name and is opened exclusively (`wx`), so a link a
   repo plants at the temp name is never followed (review-hardening/12).
 - **The spec hook shim keeps a guard block without a temp file** — `spec/hooks/run-hook.sh` `guard` keeps a real `blocked:` exit 2 when the temp directory is missing. The shim captures stderr with a descriptor swap and no longer creates a temp file; `spec/tests/hooks.sh` checks that with a probe binary that counts temp files while it runs. (review-hardening/17)
+- **Test scratch is reaped, not leaked** — every `cargo test` process left one
+  directory per test case in `TMPDIR` forever (14 500 of them, 4.3 GiB, after a day
+  of worker runs). Test helpers now build scratch through
+  `vibe_core::testscratch::scratch`, whose first call in a process sweeps `vibe-*`
+  entries idle for over six hours, skipping this process's own and anything that
+  cannot be read.
+
 - **The hard blocks survive a node-less target** — the hook shims were
   `command -v node || exit 0`, so a machine without node silently lost the
   PreToolUse write guard and the Stop evidence gate, while the docs still called

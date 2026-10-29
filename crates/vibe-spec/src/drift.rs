@@ -512,7 +512,7 @@ mod tests {
     #[test]
     #[expect(clippy::unwrap_used, reason = "test scratch tree")]
     fn marker_root_accepts_a_docs_spec_only_project() {
-        let base = std::env::temp_dir().join(format!("vibe-drift-marker-{}", std::process::id()));
+        let base = vibe_core::testscratch::scratch("vibe-drift-marker", "docs-spec");
         let nested = base.join("a/b");
         std::fs::create_dir_all(&nested).unwrap();
         std::fs::create_dir_all(base.join("docs/spec")).unwrap();

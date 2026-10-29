@@ -535,5 +535,10 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** After `patch`, run `git status --porcelain` and delete every `.orig` and `.rej` file before `git add`.
 **Tags:** git, patch, porting, hygiene
 **Date:** 2026-10-24
+### Test scratch is reaped, not leaked
+**Pattern:** Every `cargo test` process left one directory per test case in `TMPDIR` and never removed it; a day of worker runs left 14 500 dead directories and 4.3 GiB on a disk with 5.7 GiB free, and the only reclamation was an external 24 h pruner.
+**Rule:** Build test scratch through `vibe_core::testscratch::scratch`, which sweeps siblings idle for more than six hours on first use in a process. Never hand-roll a `std::env::temp_dir()` path in a test, and never assume a later process will clean up after this one.
+**Tags:** tests, scratch, tmpdir, disk
+**Date:** 2026-10-28
 
 <!-- vibe-spec: allow SF15 -->

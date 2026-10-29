@@ -16,11 +16,7 @@ fn repo() -> PathBuf {
 }
 
 fn scratch(name: &str) -> PathBuf {
-    let dir =
-        std::env::temp_dir().join(format!("vibe-parity-corpus-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
+    vibe_core::testscratch::scratch("vibe-parity-corpus", name)
 }
 
 const TEMPLATES: &str = "oracles/bash/spec/reference/templates";

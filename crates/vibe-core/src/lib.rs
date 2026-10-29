@@ -6,5 +6,6 @@ pub mod error;
 pub mod exit;
 pub mod fs;
 pub mod glob;
+pub mod testscratch;
 
 pub use error::{Error, Result};
