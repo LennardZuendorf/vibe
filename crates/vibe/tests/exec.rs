@@ -112,20 +112,15 @@ fn file_write_creates_parents_and_rollback_removes_them() {
 #[cfg(unix)]
 #[test]
 fn claude_child_env_is_pinned_to_paths() {
-    use std::os::unix::fs::PermissionsExt;
     let home = Home::new("claude-env");
     let log = home.path("env.log");
-    let bin = home.path("bin/claude");
-    std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
-    std::fs::write(
-        &bin,
-        format!(
+    let bin = home.write_exec(
+        "bin/claude",
+        &format!(
             "#!/bin/sh\nprintf '%s|%s\\n' \"$HOME\" \"$CLAUDE_CONFIG_DIR\" >> '{}'\nexit 0\n",
             log.display()
         ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    );
     let add = |name: &str| PlanItem::ClaudeCli {
         op: vibe::plan::CliOp::Add {
             name: name.into(),
@@ -450,20 +445,14 @@ fn cli_items_run_last_and_record_success_only() {
 
 #[cfg(unix)]
 fn failing_wrapper(home: &Home, name: &str) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
     let fake = common::fake_claude(home).join("claude");
-    let wrapper = home.path("wrap/claude");
-    fs::create_dir_all(wrapper.parent().unwrap()).unwrap();
-    fs::write(
-        &wrapper,
-        format!(
+    home.write_exec(
+        "wrap/claude",
+        &format!(
             "#!/bin/sh\nFAKE_FAIL_NAME='{name}' FAKE_EXIT=3 exec '{}' \"$@\"\n",
             fake.display()
         ),
     )
-    .unwrap();
-    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
-    wrapper
 }
 
 #[cfg(unix)]
