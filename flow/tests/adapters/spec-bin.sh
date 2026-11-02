@@ -62,18 +62,29 @@ mkfarm() {
   printf '%s\n' "$dir"
 }
 
-# run_install HOME PATHSTR ARGS... — invoke the installer the way a user does,
-# with every ambient host override removed so the HOME under test is the only
-# state in play. Prints combined output; returns the installer's status.
-run_install() {
-  local home="$1" pathstr="$2"; shift 2
-  local work; work="$(tmp)"
-  ( cd "$work" && env -u CLAUDE_CONFIG_DIR -u CODEX_HOME -u FACTORY_HOME \
+# run_install_in CWD HOME PATHSTR ARGS... — invoke the installer the way a user
+# does, with every ambient host override removed so the HOME under test is the
+# only state in play, and with CWD as the working directory (a PATH leg that
+# resolves a relative entry against the cwd needs that). Prints combined output;
+# returns the installer's status. SPEC_BIN_UNDER_TEST, when set, is handed to the
+# installer as $VIBE_SPEC_BIN — the ambient one is still stripped.
+run_install_in() {
+  local cwd="$1" home="$2" pathstr="$3"; shift 3
+  ( cd "$cwd" || exit 1
+    env -u CLAUDE_CONFIG_DIR -u CODEX_HOME -u FACTORY_HOME \
       -u XDG_CONFIG_HOME -u CLAUDE_PROJECT_DIR -u VIBE_SPEC_BIN \
       HOME="$home" PATH="$pathstr" XDG_CONFIG_HOME="$home/.config" \
+      VIBE_SPEC_BIN="${SPEC_BIN_UNDER_TEST:-}" \
       bash "$INSTALL" "$@" 2>&1 )
   local rc=$?
   return $rc
+}
+
+# run_install HOME PATHSTR ARGS... — the common case: a throwaway working dir.
+run_install() {
+  local home="$1" pathstr="$2"; shift 2
+  local work; work="$(tmp)"
+  run_install_in "$work" "$home" "$pathstr" "$@"
 }
 
 echo "=== $TAG — install.sh and doctor tell the truth about the vibe-spec binary ==="
@@ -181,7 +192,54 @@ out="$( cd "$H8" && bash "$REPO_ROOT/spec/scripts/validate.sh" 2>&1 )"; rc=$?
 assert_eq "$TAG" "the bundled validate.sh validates a flat legacy root with no binary" "$rc" "0"
 assert_contains "$TAG" "its report is a real validation summary" "$out" "Errors:   0"
 
-# ── 9. the shipped skill states the degradation (prose pin) ────────────────
+# ── 9. a DIRECTORY at $VIBE_SPEC_BIN is not an install ─────────────────────
+# `[[ -x ]]` is true for a directory, and two of the three probes used only that:
+# install said "installed (<dir>)" and doctor said "present (<dir>)" for a path
+# that cannot be run, while the engine (regular-file test) disagreed. Both bash
+# surfaces must agree with the engine.
+H9="$(tmp)"; ROOT9="$(tmp)"; mkdir -p "$H9/fake-bin/vibe-spec"
+SPEC_BIN_UNDER_TEST="$H9/fake-bin/vibe-spec"
+out="$(run_install "$H9" "$FARM" --global --host codex)"; rc=$?
+SPEC_BIN_UNDER_TEST=""
+assert_eq "$TAG" "a directory at \$VIBE_SPEC_BIN: --global still exits 0" "$rc" "0"
+assert_contains "$TAG" "a directory at \$VIBE_SPEC_BIN: the installer says NOT installed" "$out" "vibe-spec: NOT installed"
+assert_not_contains "$TAG" "a directory at \$VIBE_SPEC_BIN: the installer never claims it as installed" "$out" "vibe-spec: installed ($H9/fake-bin/vibe-spec"
+out="$(VIBE_SPEC_BIN="$H9/fake-bin/vibe-spec" PATH="$FARM" bash "$DOCTOR" "$ROOT9" 2>&1)"; rc=$?
+assert_eq "$TAG" "a directory at \$VIBE_SPEC_BIN: doctor still exits 0" "$rc" "0"
+assert_contains "$TAG" "a directory at \$VIBE_SPEC_BIN: doctor warns it is missing" "$out" "warn tool.vibe-spec vibe-spec not installed"
+assert_not_contains "$TAG" "a directory at \$VIBE_SPEC_BIN: doctor never claims it present" "$out" "present ($H9/fake-bin/vibe-spec"
+
+# ── 10. an empty PATH entry resolves to the cwd, like the shell does ───────
+# POSIX: a zero-length PATH entry is the current directory. `command -v` finds a
+# binary there and prints it as `./vibe-spec`; both surfaces must report that
+# instead of "not installed".
+CWD10="$(tmp)"; H10="$(tmp)"; ROOT10="$(tmp)"
+printf '#!/bin/sh\necho "vibe-spec 0.4.0"\n' > "$CWD10/vibe-spec"; chmod +x "$CWD10/vibe-spec"
+out="$(run_install_in "$CWD10" "$H10" ":$FARM" --global --host codex)"; rc=$?
+assert_eq "$TAG" "empty PATH entry: --global exits 0" "$rc" "0"
+assert_contains "$TAG" "empty PATH entry: the installer reports the cwd binary as installed" "$out" "vibe-spec: installed (./vibe-spec)"
+out="$( cd "$CWD10" && env -u VIBE_SPEC_BIN PATH=":$FARM" bash "$DOCTOR" "$ROOT10" 2>&1 )"; rc=$?
+assert_eq "$TAG" "empty PATH entry: doctor exits 0" "$rc" "0"
+assert_contains "$TAG" "empty PATH entry: doctor reports the cwd binary as present" "$out" "ok   tool.vibe-spec vibe-spec present (./vibe-spec)"
+
+# ── 11. a second plain run names the installed copy, not target/ ───────────
+# After --build-spec-bin both the ~/.local/bin copy and the checkout artifact
+# exist; the copy is what the user should add to PATH, so recommend that.
+out="$(run_install "$H4" "$P4" --global --host codex)"; rc=$?
+assert_eq "$TAG" "second plain run exits 0" "$rc" "0"
+assert_contains "$TAG" "second plain run recommends the installed bin-dir copy" "$out" "vibe-spec: installed ($BIN4/vibe-spec, not on PATH"
+assert_not_contains "$TAG" "second plain run no longer points at the checkout build" "$out" "built in this checkout but NOT on PATH"
+
+# ── 12. --local --build-spec-bin --bin-dir gives ONE warning ──────────────
+# The destination was named correctly with the flag it belongs to; repeating
+# "--bin-dir only applies with --build-spec-bin" misstates what the user typed.
+T12="$(tmp)"
+out="$(run_install_in "$T12" "$T12" "$FARM" --local --dry-run --platform none --build-spec-bin --bin-dir "$T12/bins")"; rc=$?
+assert_eq "$TAG" "--local --build-spec-bin --bin-dir exits 0" "$rc" "0"
+assert_contains "$TAG" "it says --build-spec-bin is a global-only action" "$out" "--build-spec-bin applies to --global; ignoring it"
+assert_not_contains "$TAG" "it does not also claim --bin-dir was given without --build-spec-bin" "$out" "--bin-dir only applies with --build-spec-bin"
+
+# ── 13. the shipped skill states the degradation (prose pin) ──────────────
 # A behaviour leg cannot see what the agent is told; this pins the two sentences
 # that make the absence non-fatal instead of an error.
 SKILL="$REPO_ROOT/spec/SKILL.md"

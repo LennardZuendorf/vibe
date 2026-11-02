@@ -373,6 +373,149 @@ test('divergence pin: tool.vibe-spec — genuinely no binary on PATH reports the
   }
 });
 
+// ---------------------------------------------------------------------------
+// Seam-free detection (review round 1, finding 3). The tests above pin
+// opts.specBin, so detectSpecBin()/findOnPath() never runs in them — a probe
+// regression there stays green. These drive the real probe on BOTH sides: the
+// oracle through its documented env/PATH, the engine through the process env
+// and cwd it actually reads, so the two have to agree by construction.
+// ---------------------------------------------------------------------------
+
+function withEnv(vars, fn) {
+  const before = new Map();
+  for (const [key, value] of Object.entries(vars)) {
+    before.set(key, process.env[key]);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    return fn();
+  } finally {
+    for (const [key, value] of before) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+function withCwd(dir, fn) {
+  const before = process.cwd();
+  process.chdir(dir);
+  try {
+    return fn();
+  } finally {
+    process.chdir(before);
+  }
+}
+
+// Every seam-free case unsets CARGO_TARGET_DIR as well: a checkout build
+// reachable through it would satisfy the probe before PATH does and make the
+// test pass on a developer machine for the wrong reason.
+function runEngineDetect(sandbox) {
+  return runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, { home: '/nonexistent-home' });
+}
+
+test('parity: tool.vibe-spec — a binary found on PATH is reported present (seam-free)', () => {
+  const sandbox = makeHealthySandbox();
+  const farm = path.join(sandbox.dir, 'farm');
+  mkdirSync(farm, { recursive: true });
+  symlinkSync(sandbox.specBin, path.join(farm, 'vibe-spec'));
+  const pathValue = `${farm}:/usr/bin:/bin`;
+  try {
+    const result = withEnv({ VIBE_SPEC_BIN: undefined, CARGO_TARGET_DIR: undefined }, () => {
+      const oracleResult = runCommand('bash', [sandbox.scriptPath], {
+        env: { HOME: '/nonexistent-home', PATH: pathValue },
+        unsetEnv: ['VIBE_SPEC_BIN'],
+      });
+      const engineResult = withEnv({ PATH: pathValue }, () => runEngineDetect(sandbox));
+      return { oracleResult, engineResult };
+    });
+    assertEqual(result.oracleResult.code, 0);
+    assertEqual(result.engineResult.code, 0);
+    assertEqual(result.engineResult.stdout, result.oracleResult.stdout);
+    assertIncludes(result.engineResult.stdout, `ok   tool.vibe-spec vibe-spec present (${farm}/vibe-spec)`);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('parity: tool.vibe-spec — a binary found through $VIBE_SPEC_BIN is reported present (seam-free)', () => {
+  const sandbox = makeHealthySandbox();
+  const pathValue = noSpecBinPath();
+  try {
+    const result = withEnv(
+      { VIBE_SPEC_BIN: sandbox.specBin, CARGO_TARGET_DIR: undefined },
+      () => {
+        const oracleResult = runCommand('bash', [sandbox.scriptPath], {
+          env: { HOME: '/nonexistent-home', PATH: pathValue, VIBE_SPEC_BIN: sandbox.specBin },
+        });
+        const engineResult = withEnv({ PATH: pathValue }, () => runEngineDetect(sandbox));
+        return { oracleResult, engineResult };
+      },
+    );
+    assertEqual(result.engineResult.stdout, result.oracleResult.stdout);
+    assertIncludes(result.engineResult.stdout, `ok   tool.vibe-spec vibe-spec present (${sandbox.specBin})`);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+// POSIX: a zero-length PATH entry is the current directory. Bash's `command -v`
+// resolves it AND prints it as `./vibe-spec`; an engine probe that skips empty
+// entries reports "not installed" for a PATH the user's own shell runs.
+test('parity: tool.vibe-spec — an empty PATH entry resolves to the cwd (./vibe-spec)', () => {
+  const sandbox = makeHealthySandbox();
+  const cwdDir = mkTempRoot('vibe-doctor-relcwd-');
+  const stub = path.join(cwdDir, 'vibe-spec');
+  writeFileSync(stub, '#!/bin/sh\necho "vibe-spec 0.4.0"\n');
+  chmodSync(stub, 0o755);
+  const pathValue = ':/usr/bin:/bin';
+  try {
+    const result = withEnv({ VIBE_SPEC_BIN: undefined, CARGO_TARGET_DIR: undefined }, () => {
+      const oracleResult = runCommand('bash', [sandbox.scriptPath], {
+        cwd: cwdDir,
+        env: { HOME: '/nonexistent-home', PATH: pathValue },
+        unsetEnv: ['VIBE_SPEC_BIN'],
+      });
+      const engineResult = withEnv({ PATH: pathValue }, () => withCwd(cwdDir, () => runEngineDetect(sandbox)));
+      return { oracleResult, engineResult };
+    });
+    assertEqual(result.oracleResult.code, 0);
+    assertEqual(result.engineResult.stdout, result.oracleResult.stdout);
+    assertIncludes(result.engineResult.stdout, 'ok   tool.vibe-spec vibe-spec present (./vibe-spec)');
+  } finally {
+    sandbox.cleanup();
+    rmSync(cwdDir, { recursive: true, force: true });
+  }
+});
+
+// `[[ -x ]]` is true for a DIRECTORY, so a probe built on it alone reports an
+// install that does not exist (the path cannot be run). Both sides must agree
+// with the engine's regular-file test.
+test('parity: tool.vibe-spec — a DIRECTORY at $VIBE_SPEC_BIN is not an install', () => {
+  const sandbox = makeHealthySandbox();
+  const dirAt = path.join(sandbox.dir, 'fake-bin', 'vibe-spec');
+  mkdirSync(dirAt, { recursive: true });
+  const pathValue = noSpecBinPath();
+  try {
+    const result = withEnv(
+      { VIBE_SPEC_BIN: dirAt, CARGO_TARGET_DIR: undefined },
+      () => {
+        const oracleResult = runCommand('bash', [sandbox.scriptPath], {
+          env: { HOME: '/nonexistent-home', PATH: pathValue, VIBE_SPEC_BIN: dirAt },
+        });
+        const engineResult = withEnv({ PATH: pathValue }, () => runEngineDetect(sandbox));
+        return { oracleResult, engineResult };
+      },
+    );
+    assertEqual(result.oracleResult.code, 0);
+    assertEqual(result.engineResult.stdout, result.oracleResult.stdout);
+    assertMatch(result.engineResult.stdout, /warn tool\.vibe-spec vibe-spec not installed/);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
 test('parity: header line names the resolved root', () => {
   const sandbox = makeHealthySandbox();
   try {
