@@ -44,6 +44,7 @@ import {
   chmodSync,
   cpSync,
   accessSync,
+  statSync,
   constants as fsConstants,
 } from 'node:fs';
 import path from 'node:path';
@@ -68,18 +69,53 @@ const HOOK_SCRIPTS = [
 const JQ_PRESENT = runCommand('bash', ['-c', 'command -v jq >/dev/null 2>&1']).code === 0;
 
 // ---------------------------------------------------------------------------
-// A PATH with jq genuinely absent, built once (lazily) via a symlink farm
-// that carries every OTHER binary on the real PATH (bash, node, coreutils,
-// ...). Excluding jq's whole directory from PATH would also drop bash —
-// this is the same problem the CI "jq stripped from PATH" leg has to solve,
-// solved here in-process for a couple of pinned no-jq divergence tests that
-// spawn the real oracle. Memoized: readdir'ing every PATH dir is not free.
+// Two PATH shims, both built lazily (readdir'ing every PATH dir is not free)
+// and both POSTCONDITION-ASSERTED at build time — a shim that quietly failed
+// to exclude its tool would not fail here, it would surface as a byte mismatch
+// five tests later, or (worse) not at all).
+//
+// Each shim exists because the divergence pins below hand the ENGINE an
+// explicit verdict (`jqPresent: false`, `specBin: undefined`) while the oracle
+// can only reach its verdict from its own PATH. So the shim has to carry
+// neither the named tool NOR `vibe-spec`: on a machine that installed the
+// binary — `install.sh --global --build-spec-bin`, i.e. exactly what this
+// feature tells users to do — an ambient `vibe-spec` would reach the oracle
+// through the shim while the engine stays pinned absent, and the two sides
+// would then be describing two different machines. That is a suite that goes
+// red for following the README, which is how this round was found.
 // ---------------------------------------------------------------------------
+
+function regularExecutableIn(dir, name) {
+  const full = path.join(dir, name);
+  try {
+    if (!statSync(full).isFile()) return false;
+    accessSync(full, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Resolve a PATH-shaped directory list the way the probes do: a zero-length
+// entry is the current directory (POSIX), and only a regular executable
+// counts. Never `command -v` — bash resolves a non-executable regular file
+// too, which is not what either probe reports.
+function pathResolvesIn(dirs, name) {
+  return dirs.some((dir) => regularExecutableIn(dir === '' ? '.' : dir, name));
+}
+
+function pathHas(name) {
+  return pathResolvesIn((process.env.PATH ?? '').split(':'), name);
+}
 
 let cachedNoJqPath;
 function noJqPath() {
   if (cachedNoJqPath !== undefined) return cachedNoJqPath;
-  if (!JQ_PRESENT) {
+  const exclude = new Set(['jq']);
+  if (pathHas('vibe-spec')) exclude.add('vibe-spec');
+  if (!JQ_PRESENT && exclude.size === 1) {
+    // Nothing to strip and jq already absent: the ambient PATH IS the shim
+    // (CI's "jq stripped from PATH" leg runs the suite in exactly this state).
     cachedNoJqPath = process.env.PATH ?? '';
     return cachedNoJqPath;
   }
@@ -93,7 +129,7 @@ function noJqPath() {
       continue;
     }
     for (const name of entries) {
-      if (name === 'jq') continue;
+      if (exclude.has(name)) continue;
       const link = path.join(shimDir, name);
       try {
         symlinkSync(path.join(dir, name), link);
@@ -103,22 +139,19 @@ function noJqPath() {
       }
     }
   }
+  for (const name of exclude) {
+    assert(
+      !pathResolvesIn([shimDir], name),
+      `no-jq shim still resolves ${name} — the divergence pins below would compare the code against the ambient machine instead of pinning it`,
+    );
+  }
   cachedNoJqPath = shimDir;
   return cachedNoJqPath;
 }
 
 let cachedNoSpecBinPath;
 function specBinOnPath() {
-  const dirs = (process.env.PATH ?? '').split(':').filter(Boolean);
-  for (const dir of dirs) {
-    try {
-      accessSync(path.join(dir, 'vibe-spec'), fsConstants.X_OK);
-      return true;
-    } catch {
-      // not here
-    }
-  }
-  return false;
+  return pathHas('vibe-spec');
 }
 function noSpecBinPath() {
   if (cachedNoSpecBinPath !== undefined) return cachedNoSpecBinPath;
@@ -143,6 +176,10 @@ function noSpecBinPath() {
       }
     }
   }
+  assert(
+    !pathResolvesIn([shimDir], 'vibe-spec'),
+    'no-spec-bin shim still resolves vibe-spec — every "genuinely absent" pin below would run against the ambient machine',
+  );
   cachedNoSpecBinPath = shimDir;
   return cachedNoSpecBinPath;
 }
@@ -356,6 +393,11 @@ test('divergence pin: tool.vibe-spec — genuinely no binary on PATH reports the
   try {
     const oracleResult = runCommand('bash', [sandbox.scriptPath], {
       env: { HOME: '/nonexistent-home', PATH: noSpecBinPath() },
+      // "Genuinely absent" has to mean it: an exported $VIBE_SPEC_BIN (the
+      // override spec/hooks/run-hook.sh and install.sh both document, i.e. an
+      // ordinary dev/testing variable) or a $CARGO_TARGET_DIR build would reach
+      // the oracle while the engine below is pinned absent.
+      unsetEnv: ['VIBE_SPEC_BIN', 'CARGO_TARGET_DIR'],
     });
     const engineResult = runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, {
       home: '/nonexistent-home',
@@ -609,10 +651,17 @@ test('divergence pin: machine — invalid JSON but jq absent still reports ok (d
     addMachine(sandbox, '{ this is not json');
     const oracleResult = runCommand('bash', [sandbox.scriptPath], {
       env: { HOME: '/nonexistent-home', PATH: noJqPath() },
+      // The shim carries neither jq nor vibe-spec, but the ENGINE below reads
+      // this process's real environment — so its verdict is PINNED absent
+      // instead of detected. Otherwise a developer (or CI) with a vibe-spec on
+      // PATH, or a $CARGO_TARGET_DIR holding a checkout build, would make this
+      // leg compare the shim's machine against the runner's.
+      unsetEnv: ['VIBE_SPEC_BIN', 'CARGO_TARGET_DIR'],
     });
     const engineResult = runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, {
       home: '/nonexistent-home',
       jqPresent: false,
+      specBin: undefined,
     });
     assertEqual(oracleResult.code, 0);
     assertEqual(engineResult.code, 0);
@@ -747,10 +796,17 @@ test('divergence pin: cursor — present without jq is unverified-ok, never runs
     addCursor(sandbox, '{ not even json'); // would be invalid if validated
     const oracleResult = runCommand('bash', [sandbox.scriptPath], {
       env: { HOME: '/nonexistent-home', PATH: noJqPath() },
+      // The shim carries neither jq nor vibe-spec, but the ENGINE below reads
+      // this process's real environment — so its verdict is PINNED absent
+      // instead of detected. Otherwise a developer (or CI) with a vibe-spec on
+      // PATH, or a $CARGO_TARGET_DIR holding a checkout build, would make this
+      // leg compare the shim's machine against the runner's.
+      unsetEnv: ['VIBE_SPEC_BIN', 'CARGO_TARGET_DIR'],
     });
     const engineResult = runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, {
       home: '/nonexistent-home',
       jqPresent: false,
+      specBin: undefined,
     });
     assertEqual(oracleResult.code, 0);
     assertEqual(engineResult.code, 0);
@@ -1065,10 +1121,17 @@ test('divergence pin: deps.manifest — jq absent warns "unavailable", never rea
   try {
     const oracleResult = runCommand('bash', [sandbox.scriptPath], {
       env: { HOME: '/nonexistent-home', PATH: noJqPath() },
+      // The shim carries neither jq nor vibe-spec, but the ENGINE below reads
+      // this process's real environment — so its verdict is PINNED absent
+      // instead of detected. Otherwise a developer (or CI) with a vibe-spec on
+      // PATH, or a $CARGO_TARGET_DIR holding a checkout build, would make this
+      // leg compare the shim's machine against the runner's.
+      unsetEnv: ['VIBE_SPEC_BIN', 'CARGO_TARGET_DIR'],
     });
     const engineResult = runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, {
       home: '/nonexistent-home',
       jqPresent: false,
+      specBin: undefined,
     });
     assertEqual(oracleResult.code, 0);
     assertEqual(engineResult.code, 0);
@@ -1186,10 +1249,17 @@ test('divergence pin: tool.jq — genuinely no jq on PATH', () => {
   try {
     const oracleResult = runCommand('bash', [sandbox.scriptPath], {
       env: { HOME: '/nonexistent-home', PATH: noJqPath() },
+      // The shim carries neither jq nor vibe-spec, but the ENGINE below reads
+      // this process's real environment — so its verdict is PINNED absent
+      // instead of detected. Otherwise a developer (or CI) with a vibe-spec on
+      // PATH, or a $CARGO_TARGET_DIR holding a checkout build, would make this
+      // leg compare the shim's machine against the runner's.
+      unsetEnv: ['VIBE_SPEC_BIN', 'CARGO_TARGET_DIR'],
     });
     const engineResult = runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, {
       home: '/nonexistent-home',
       jqPresent: false,
+      specBin: undefined,
     });
     assertEqual(engineResult.stdout, oracleResult.stdout);
     assertMatch(
