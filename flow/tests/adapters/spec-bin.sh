@@ -41,7 +41,14 @@ assert_contains()     { if [[ "$3" == *"$4"* ]]; then pass "$1" "$2"; else fail 
 assert_not_contains() { if [[ "$3" != *"$4"* ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        want NOT contains: $4"; fi; }
 assert_eq()           { if [[ "$3" == "$4" ]]; then pass "$1" "$2"; else fail "$1" "$2"; echo "        want: $4"; echo "        got:  $3"; fi; }
 
-tmp() { mktemp -d "${TMPDIR%/}/vibe-specbin.XXXXXX"; }
+# TMPDIR is NOT set in CI: default it, and refuse to continue on an empty dir
+# (a failed mktemp under `set -u` plus no `-e` used to hand the installer an
+# empty HOME, which is how this leg first went red in CI).
+tmp() {
+  local d
+  d="$(mktemp -d "${TMPDIR:-/tmp}/vibe-specbin.XXXXXX")" || { echo "spec-bin: cannot create a temp dir" >&2; exit 1; }
+  printf '%s\n' "$d"
+}
 
 # mkfarm — a broad POSIX toolset and NO cargo, NO vibe-spec, NO host CLI. The
 # list matches global-install.sh's farm: a leg that needs an optional tool adds a
