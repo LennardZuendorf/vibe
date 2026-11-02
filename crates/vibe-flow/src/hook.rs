@@ -238,11 +238,21 @@ fn spawned_verdict(paths: &FlowPaths, relative: &str) -> String {
 /// diagnostic, a reasonless verdict, a real verdict followed by a second line
 /// — is an allow. A block is a claim about the user's write; it has to be
 /// provable from the bytes, not inferred from "the process printed something".
+///
+/// Only **trailing newlines** are dropped, exactly as the bash fallback's
+/// `$(…)` drops them: both verdict shapes are anchored at the first byte
+/// (`is_verdict`'s `block:?*`, the fallback's `case "$VERDICT"`), so
+/// `"  block:x"` is a diagnostic with a block inside it, not a block.
 fn shape_gated(stdout: Option<&[u8]>) -> String {
-    let text = stdout.map(|bytes| String::from_utf8_lossy(bytes).trim().to_string());
-    match text {
-        Some(text) if is_verdict(&text) => text,
-        _ => "allow".to_string(),
+    let Some(bytes) = stdout else {
+        return "allow".to_string();
+    };
+    let lossy = String::from_utf8_lossy(bytes);
+    let text = lossy.trim_end_matches('\n');
+    if is_verdict(text) {
+        text.to_string()
+    } else {
+        "allow".to_string()
     }
 }
 
@@ -434,14 +444,30 @@ fn stop_hook_active(stdin: &[u8]) -> bool {
 fn cursor_state_feature(paths: &FlowPaths) -> (String, Option<String>) {
     match read_cursor(paths) {
         Ok(cursor) => {
-            let feature = cursor
-                .feature
-                .as_str()
-                .filter(|text| !text.is_empty())
-                .map(str::to_string);
+            let feature = feature_name(&cursor.feature);
             (cursor.state, feature)
         }
         Err(_) => ("idle".to_string(), None),
+    }
+}
+
+/// The receipt name a cursor `feature` value resolves to.
+///
+/// The cursor carries the feature verbatim, whatever its JSON type, and the
+/// receipt is the one blocking tooth in this module — so a non-string value
+/// must still name a receipt instead of falling into the warn-only "names no
+/// feature" degrade. Both frozen oracles stringify it and block on the missing
+/// `feature-<value>.md`: `jq -r` in the bash fallback, a template literal in
+/// the engine. Scalars therefore render exactly as `jq -r` prints them
+/// (`123`, `true`); a container — which the cursor writer never produces, and
+/// which the two oracles already spell differently — renders as compact JSON,
+/// so the block still names a path instead of vanishing.
+fn feature_name(feature: &Value) -> Option<String> {
+    match feature {
+        Value::Null => None,
+        Value::String(text) if text.is_empty() => None,
+        Value::String(text) => Some(text.clone()),
+        scalar => Some(scalar.to_string()),
     }
 }
 
@@ -968,9 +994,17 @@ mod tests {
         assert_eq!(shape_gated(Some(b"boom\n")), "allow");
         assert_eq!(shape_gated(Some(b"block:\n")), "allow");
         assert_eq!(shape_gated(Some(b"block:a\nblock:b\n")), "allow");
+        // Leading whitespace is never part of a verdict: both oracle shapes are
+        // anchored on the first byte (the bash `case`, `is_verdict`'s
+        // `block:?*`), so a banner that merely contains a block line is a
+        // diagnostic and must not become a block.
+        assert_eq!(shape_gated(Some(b"  block:real reason\n")), "allow");
+        assert_eq!(shape_gated(Some(b"\tallow\n")), "allow");
+        // Trailing newlines are dropped exactly as `$(…)` drops them; trailing
+        // spaces stay, because `block:?*` counts them as part of the reason.
         assert_eq!(
-            shape_gated(Some(b"  block:real reason \n")),
-            "block:real reason"
+            shape_gated(Some(b"block:real reason \n\n")),
+            "block:real reason "
         );
     }
 
@@ -1116,6 +1150,50 @@ mod tests {
             [
                 "in feature.verify but the cursor names no feature — cannot resolve the evidence receipt; skipping the gate. (warn-only)"
             ]
+        );
+    }
+
+    #[test]
+    fn a_non_string_feature_still_names_a_receipt_and_blocks() {
+        let (root, paths) = root_with_policy("stop-numeric-feature");
+        fs::write(
+            root.join(".agents/skills/vibe/state.json"),
+            "{\"flow\":\"feature\",\"phase\":\"verify\",\"feature\":123}",
+        )
+        .expect("write cursor");
+        let (state, feature) = cursor_state_feature(&paths);
+        assert_eq!(state, "feature.verify");
+        // The cursor carries the feature verbatim; both oracles stringify it as
+        // `jq -r` prints a number, so the receipt name survives the type.
+        assert_eq!(feature.as_deref(), Some("123"));
+        let out = stop(&paths, b"{}");
+        assert_eq!(out.code, 2, "{}", out.stderr);
+        assert!(
+            out.stderr
+                .starts_with("vibe-gate: BLOCKED — feature.verify needs an evidence receipt"),
+            "{}",
+            out.stderr
+        );
+        assert!(
+            out.stderr.contains("/evidence/feature-123.md"),
+            "{}",
+            out.stderr
+        );
+    }
+
+    #[test]
+    fn only_a_null_or_empty_feature_is_unnamable() {
+        assert_eq!(feature_name(&Value::Null), None);
+        assert_eq!(feature_name(&serde_json::json!("")), None);
+        assert_eq!(
+            feature_name(&serde_json::json!("auth")),
+            Some("auth".into())
+        );
+        assert_eq!(feature_name(&serde_json::json!(123)), Some("123".into()));
+        assert_eq!(feature_name(&serde_json::json!(true)), Some("true".into()));
+        assert_eq!(
+            feature_name(&serde_json::json!(["a"])),
+            Some("[\"a\"]".into())
         );
     }
 

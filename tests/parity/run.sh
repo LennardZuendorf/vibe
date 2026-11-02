@@ -11,6 +11,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 command -v cargo >/dev/null 2>&1 || { echo "parity: cargo not found on PATH" >&2; exit 1; }
+# The flow oracles read the cursor with jq (see detect-context.sh / stop-gate.sh
+# and their documented no-jq branches), so without it the ORACLE's own answer
+# changes and the run reports stale pins — a missing tool dressed up as a real
+# divergence. Refuse up front instead.
+command -v jq >/dev/null 2>&1 || { echo "parity: jq not found on PATH" >&2; exit 1; }
 cargo build --locked -q -p vibe-spec -p vibe-parity -p vibe-flow
 BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug"
 
