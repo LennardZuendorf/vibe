@@ -32,6 +32,16 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Added
 
+- **The `vibe-spec` binary is reported, not assumed** (vibe#71): a plain
+  `./install.sh --global` now prints whether `vibe-spec` is installed — and what
+  still works when it is not — instead of leaving a skill that shells out to a
+  missing command. `--build-spec-bin [--bin-dir DIR]` opts into building it from
+  this checkout with cargo and installing it into a user-owned bin dir
+  (`~/.local/bin` by default, never editing a shell profile). `doctor` reports the
+  same state as `tool.vibe-spec` on both sides of the port, and the shipped `spec`
+  skill states the fallback (bundled bash scripts, flat legacy roots only) instead
+  of failing. No prebuilt release artifacts: the repo publishes none, and the
+  installer will not fetch a binary it cannot verify.
 - Spec hooks and agents (F19): `vibe-spec hook {session-start,guard,validate}`, `validate --changed|--file|--format hook`, and `vibe-spec setup [--git-hooks] [--opencode] [--agents-md]`. A shim (`spec/hooks/run-hook.sh`) wires four events into the plugin `hooks.json` and `.claude/settings.json`. The `guard` tooth blocks spec-root edits made without `Skill(spec)`, and edits under `docs/superpowers/specs/` or `plans/` made without `spec` or the matching superpowers skill (`superpowers:brainstorming`, `superpowers:writing-plans`). Agents `spec-promoter` and `spec-health` replace `spec-interviewer` and `spec-tracer`.
 - Spec migration (F20): `vibe-spec init [--to <dir>]` seeds a layered spec root; `vibe-spec migrate --to <dir> [--layout layered] [--dry-run] [--check]` moves the root, rewrites legacy literals with a population assertion and reverts on failure or on newly introduced validate errors. This repo now lives under `docs/spec/`; CI runs `validate --strict` and `migrate --to docs/spec --check`.
 - `vibe-spec check-drift [--pre-merge]` and `vibe-spec promote` ported (F18), with byte parity for `.spec` roots. `promote` applies `## ADDED|MODIFIED|REMOVED Requirements` deltas, prints the superpowers promotion checklist, and `promote <feature> --done` deletes the artifacts once the spec changed since the branch base.

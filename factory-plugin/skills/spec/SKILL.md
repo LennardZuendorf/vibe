@@ -152,13 +152,17 @@ use the report; `NEEDS_CONTEXT` → supply it, re-dispatch once; `BLOCKED` or a 
 ## Commands
 
 Run `vibe-spec promote` and `vibe-spec init` from the project root; every other
-`vibe-spec` command finds the spec root from any directory.
+command finds the spec root from any directory.
 
-If `vibe-spec` is not on PATH, say "vibe-spec is not installed" and point your
-human partner to the README Install section. On a flat legacy root you may run
-`bash <skill-dir>/scripts/validate.sh` (`<skill-dir>` is the directory that holds
-this file). On any other root no validator runs: say "validation unavailable"
-in your finish line and never claim the tree validated.
+A plain install ships no `vibe-spec`. If absent: say "vibe-spec is not
+installed", name the fix (`install.sh --global --build-spec-bin`,
+`cargo install --locked --path crates/vibe-spec`):
+
+- `<root>` without the binary: `docs/spec/` if present, else the legacy flat root.
+- Flat legacy root: `bash <skill-dir>/scripts/{validate,check-drift,list-specs}.sh`
+  still run (`<skill-dir>` holds this file).
+- Any other root: no validator runs — say "validation unavailable" in the finish
+  line; never claim a pass.
 
 ## Config
 

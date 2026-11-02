@@ -42,6 +42,12 @@
 # default — it would load the same skills a second time. The full STATEFUL flow
 # (cursor, /flow, hooks) is a per-repo `--local` install.
 #
+# The `vibe-spec` BINARY is NOT part of a plain install (vibe#71 sub-gap 4): the
+# `spec` skill shells out to it, and no release artifact exists for it, so a
+# global install REPORTS its status (present / absent + what still works) instead
+# of pretending the skill set is complete. `--build-spec-bin` opts into building
+# it from this checkout with cargo and installing it into a user-owned bin dir.
+#
 # Flags:
 #   --local            full per-repo install into the target (the default).
 #   --global           per-user install: both skills into each selected host's
@@ -52,6 +58,10 @@
 #                      Same selector vocabulary as --platform (last one wins).
 #   --plugin           (with --global) ALSO install the Claude plugin at user scope
 #                      for its doctrine hook. Needs the `claude` CLI.
+#   --build-spec-bin   (with --global) build the `vibe-spec` binary from this
+#                      checkout (needs cargo) and install it into --bin-dir.
+#   --bin-dir DIR      where --build-spec-bin puts `vibe-spec`
+#                      (default: $HOME/.local/bin).
 #   --with-plugins     also install companion plugins (superpowers; feature-dev slot).
 #   --only spec|flow   install (or uninstall) a single half (default: both).
 #   --platform LIST    native host surfaces to configure, comma-separated:
@@ -1064,8 +1074,116 @@ install_global_agents_block() {
 # host's own memory file would clobber user prose the installer does not own.
 global_agents_file() { printf '%s/AGENTS.md' "$HOME/.agents"; }
 
+# ── the vibe-spec binary (vibe#71 sub-gap 4) ───────────────────────────────────
+# The shipped `spec` skill shells out to `vibe-spec` (root, validate, promote,
+# check-drift). install.sh ships SKILL FILES, and a global-install user has no
+# checkout to `cargo build` in, so the honest contract is:
+#
+#   - a plain `--global` REPORTS the binary's status and never fails on it: an
+#     absent binary degrades the spec skill (flat legacy roots still validate
+#     through the bundled bash scripts), it does not break the install;
+#   - `--build-spec-bin` OPTS INTO the real thing: cargo-build from this
+#     checkout and copy the artifact into a user-owned bin dir (~/.local/bin),
+#     noting when that dir is not on PATH — install.sh never edits a shell
+#     profile.
+#
+# REJECTED: fetching prebuilt release artifacts with a pinned checksum. That
+# needs published per-platform release assets (a release action this installer
+# cannot take on its own) and it would ship a binary nothing in the repo can
+# rebuild reproducibly per target today. Recorded in the PR body, not here.
+
+# vibe_spec_on_path — the `vibe-spec` an agent would actually run: the documented
+# $VIBE_SPEC_BIN override first (the same variable spec/hooks/run-hook.sh reads),
+# then PATH. Prints its path; fails when there is none.
+vibe_spec_on_path() {
+  if [[ -n "${VIBE_SPEC_BIN:-}" && -x "${VIBE_SPEC_BIN}" ]]; then
+    printf '%s\n' "$VIBE_SPEC_BIN"
+    return 0
+  fi
+  command -v vibe-spec 2>/dev/null
+}
+
+# vibe_spec_checkout_build — this checkout's own build artifact, if one exists
+# (release preferred). CARGO_TARGET_DIR wins, so a user with a redirected target
+# dir is told about the binary they actually have.
+vibe_spec_checkout_build() {
+  local tdir="${CARGO_TARGET_DIR:-$SRC/target}"
+  if [[ -x "$tdir/release/vibe-spec" ]]; then
+    printf '%s\n' "$tdir/release/vibe-spec"
+    return 0
+  fi
+  [[ -x "$tdir/debug/vibe-spec" ]] && { printf '%s\n' "$tdir/debug/vibe-spec"; return 0; }
+  return 1
+}
+
+# spec_bin_status — one report line, and the degradation paragraph when absent.
+# Never returns non-zero: this is a report, not a gate.
+spec_bin_status() {
+  local found
+  if found="$(vibe_spec_on_path)"; then
+    note "vibe-spec: installed ($found)"
+    return 0
+  fi
+  if found="$(vibe_spec_checkout_build)"; then
+    note "vibe-spec: built in this checkout but NOT on PATH — add $(dirname "$found") to PATH"
+    return 0
+  fi
+  err "vibe-spec: NOT installed — the spec skill's binary commands (root, validate,"
+  err "  promote, init) are unavailable. What still works: the bundled scripts beside"
+  err "  the skill validate a FLAT legacy root only (bash <skill>/scripts/validate.sh);"
+  err "  a layered docs/spec/ tree cannot be validated at all."
+  err "  To install it: re-run with --build-spec-bin (needs cargo), or from a clone:"
+  err "    cargo install --locked --path crates/vibe-spec"
+  return 0
+}
+
+# build_spec_bin — cargo build the binary and copy it into the user bin dir.
+# Every failure is a WARN (+ a non-zero return the caller may ignore): a build
+# that cannot run must leave the documented degradation in place, not abort an
+# install that has already written the skills.
+build_spec_bin() {
+  local bin_dir="${BIN_DIR:-$HOME/.local/bin}"
+  local tdir="${CARGO_TARGET_DIR:-$SRC/target}"
+  local dest="$bin_dir/vibe-spec" artifact="$tdir/release/vibe-spec"
+  if ! command -v cargo >/dev/null 2>&1; then
+    err "WARN: --build-spec-bin needs cargo on PATH — skipping the build (skills degrade as reported below)."
+    return 1
+  fi
+  if [[ ! -f "$SRC/Cargo.toml" || ! -d "$SRC/crates/vibe-spec" ]]; then
+    err "WARN: no crates/vibe-spec in this tree — nothing to build (skills degrade as reported below)."
+    return 1
+  fi
+  # Never clobber a file at that path that is demonstrably not ours.
+  if [[ -e "$dest" ]] && ! "$dest" --version 2>/dev/null | grep -q 'vibe-spec'; then
+    err "WARN: $dest exists and is not a vibe-spec binary — leaving it alone."
+    return 1
+  fi
+  say "build vibe-spec (cargo build --release -p vibe-spec) and install it to $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && return 0
+  if ! ( cd "$SRC" && cargo build --release -p vibe-spec ); then
+    err "WARN: cargo build failed — vibe-spec not installed (skills degrade as reported below)."
+    return 1
+  fi
+  if [[ ! -f "$artifact" ]]; then
+    err "WARN: cargo reported success but $artifact is missing — not installed."
+    return 1
+  fi
+  if ! mkdir -p "$bin_dir" || ! cp "$artifact" "$dest" || ! chmod 755 "$dest"; then
+    err "WARN: could not install $dest (is $bin_dir writable?) — not installed."
+    return 1
+  fi
+  note "vibe-spec: installed ($dest, $("$dest" --version 2>/dev/null || echo 'version unknown'))"
+  # PATH is the user's to change: a profile edit here would be a guess about
+  # their shell, and install.sh never touches one.
+  case ":$PATH:" in
+    *":$bin_dir:"*) ;;
+    *) err "note: $bin_dir is not on PATH — add it (export PATH=\"$bin_dir:\$PATH\") and restart the host CLI." ;;
+  esac
+  return 0
+}
+
 install_global() {
-  local hosts h rc=0
+  local hosts h rc=0 built=0
   # Every write lands under $HOME, so it must belong to the invoking user. Root
   # would leave files the user cannot edit or remove.
   if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
@@ -1091,6 +1209,15 @@ install_global() {
     install_global_skill "$h" vibe || rc=1
   done
   install_global_agents_block || rc=1
+  # The `vibe-spec` binary (vibe#71 sub-gap 4). Always REPORTED, because the spec
+  # skill's commands depend on it and a silent absence is the bug this fixes;
+  # built only when asked, and a build that cannot run must never fail the run.
+  if [[ "$BUILD_SPEC_BIN" -eq 1 ]]; then
+    if build_spec_bin; then built=1; fi
+  fi
+  if [[ "$built" -eq 0 ]]; then
+    spec_bin_status
+  fi
   # The Claude per-user plugin stays available, but only on request: it carries
   # the doctrine hook AND the same two skills, so a default run would load every
   # skill twice (the duplicate-load problem #71's workaround note calls out).
@@ -1139,6 +1266,8 @@ install:     each host reads its OWN instruction file, so include the block ther
 install:     you want it applied globally: ~/.claude/CLAUDE.md (Claude Code),
 install:     ~/.codex/AGENTS.md (Codex), ~/.factory/AGENTS.md (Droid),
 install:     ~/.config/opencode/AGENTS.md (OpenCode).
+install:   vibe-spec: see the status above — without it /spec validate falls back to the
+install:     bundled bash scripts (flat legacy roots only); --build-spec-bin installs it.
 install:   For the FULL stateful flow (cursor, /flow, hooks) in a repo, run:
 install:     ./install.sh <repo> --local
 EOF
@@ -1173,6 +1302,8 @@ ASSUME_YES=0
 MODE=""
 WITH_PLUGINS=0
 WANT_PLUGIN=0
+BUILD_SPEC_BIN=0
+BIN_DIR=""
 TARGET=""
 TARGET_GIVEN=0
 ADAPTERS=""
@@ -1201,6 +1332,13 @@ while [[ $# -gt 0 ]]; do
     --global) MODE=global; shift ;;
     --with-plugins) WITH_PLUGINS=1; shift ;;
     --plugin) WANT_PLUGIN=1; shift ;;
+    --build-spec-bin) BUILD_SPEC_BIN=1; shift ;;
+    --bin-dir)
+      [[ $# -ge 2 && -n "$2" ]] || { err "ERROR: --bin-dir needs a directory (e.g. --bin-dir \"\$HOME/.local/bin\")"; exit 1; }
+      BIN_DIR="$2"; shift 2 ;;
+    --bin-dir=*)
+      [[ -n "${1#*=}" ]] || { err "ERROR: --bin-dir needs a directory (e.g. --bin-dir=\"\$HOME/.local/bin\")"; exit 1; }
+      BIN_DIR="${1#*=}"; shift ;;
     --only)
       case "${2:-}" in
         spec|flow) ONLY="$2" ;;
@@ -1271,6 +1409,19 @@ if [[ -z "$MODE" ]]; then
   else
     MODE=local
   fi
+fi
+
+# --build-spec-bin is a GLOBAL-mode action: the global user is the one with no
+# checkout. Silently ignoring it elsewhere would read as "the binary was built".
+if [[ "$BUILD_SPEC_BIN" -eq 1 && "$MODE" != "global" ]]; then
+  err "WARN: --build-spec-bin applies to --global; ignoring it for a local install."
+  BUILD_SPEC_BIN=0
+fi
+# --bin-dir only names a destination for --build-spec-bin; on its own it does
+# nothing, and saying so beats letting a user believe the binary moved.
+if [[ -n "$BIN_DIR" && "$BUILD_SPEC_BIN" -eq 0 ]]; then
+  err "WARN: --bin-dir only applies with --build-spec-bin; ignoring it."
+  BIN_DIR=""
 fi
 
 # Resolve TARGET to an absolute path. Create it only for a real install; a

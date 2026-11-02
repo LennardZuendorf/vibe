@@ -70,7 +70,7 @@ plain directory with no Git ancestor uses the current directory.
 | Mode | Command | What you get |
 |---|---|---|
 | **local** (default) | `./install.sh <repo>` | The full **stateful** kit at the resolved root: both skills, the engine, and the native surface of every configured host. For Claude Code that is `/flow` plus the hooks wired via `.claude/settings.json`. |
-| **global** | `./install.sh --global` | The **per-user skills**: `spec` and `vibe` installed into each selected host's own user-level skills dir (Claude `~/.claude/skills`, Codex `~/.codex/skills`, Droid `~/.factory/skills`, OpenCode `~/.config/opencode/skills`) plus one shared `~/.agents/AGENTS.md` block. No host CLI needed, and re-running it changes nothing. `--host <claude\|codex\|droid\|opencode\|all>` overrides detection; `--plugin` also installs the Claude plugin for its doctrine hook. |
+| **global** | `./install.sh --global` | The **per-user skills**: `spec` and `vibe` installed into each selected host's own user-level skills dir (Claude `~/.claude/skills`, Codex `~/.codex/skills`, Droid `~/.factory/skills`, OpenCode `~/.config/opencode/skills`) plus one shared `~/.agents/AGENTS.md` block. No host CLI needed, and re-running it changes nothing. It also reports the `vibe-spec` binary status (absent by default — see [The `vibe-spec` binary](#the-vibe-spec-binary)); `--build-spec-bin` builds and installs it. `--host <claude\|codex\|droid\|opencode\|all>` overrides detection; `--plugin` also installs the Claude plugin for its doctrine hook. |
 
 ```bash
 ./install.sh <repo> --only spec       # the spec framework alone
@@ -123,13 +123,24 @@ inverts every host, regardless of `--platform`.
 
 #### The `vibe-spec` binary
 
-`/spec validate` and the spec hooks run `vibe-spec`. `install.sh` does not ship
-the binary yet; build it from a clone:
+`/spec validate`, `vibe-spec root` and the spec hooks call the `vibe-spec`
+binary. A plain install does **not** ship it (no release artifacts exist yet), so
+`./install.sh --global` prints its status instead of pretending the skill set is
+complete. Two ways to get it:
 
 ```bash
-cargo install --locked --path crates/vibe-spec
-vibe-spec --version
+./install.sh --global --build-spec-bin      # build from this checkout, install to ~/.local/bin
+cargo install --locked --path crates/vibe-spec   # from a clone
+vibe-spec --version                              # confirm which binary you got
 ```
+
+`--bin-dir DIR` puts it somewhere else; the installer prints a note when that
+directory is not on PATH (it never edits a shell profile). Without the binary the
+harness still runs: the `spec` skill reports the absence and falls back to the
+bundled bash scripts, which validate a **flat legacy** root only. A layered
+`docs/spec/` tree cannot be validated at all — the skill says so in its finish
+line rather than claiming a pass. `doctor.sh` reports the same status as
+`tool.vibe-spec`, and `install.sh` never fails because the binary is missing.
 
 ### spec — the planning layer
 
