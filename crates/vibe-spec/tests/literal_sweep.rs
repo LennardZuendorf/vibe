@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Path exemptions: `(prefix or exact path, reason)`. A trailing `/` is a prefix.
-const EXEMPT: [(&str, &str); 6] = [
+const EXEMPT: [(&str, &str); 8] = [
     (
         "oracles/",
         "frozen oracles of the bash and JS originals; never rewritten",
@@ -29,6 +29,14 @@ const EXEMPT: [(&str, &str); 6] = [
     (
         "tests/parity/corpus/",
         "legacy-tree corpus the parity matrix compares; JSON cannot carry a comment",
+    ),
+    (
+        "tests/parity/flow.json",
+        "pins record the frozen oracles' observed output verbatim; JSON cannot carry a comment",
+    ),
+    (
+        "tests/parity/spec.json",
+        "pins record the frozen oracles' observed output verbatim; JSON cannot carry a comment",
     ),
     (
         "flow/content/policy.json",
@@ -72,6 +80,10 @@ fn exemptions_are_prefixes_or_exact_paths() {
     assert!(!exempt("flow/content/policy.json.bak"));
     assert!(!exempt("docs/superpowers"));
     assert!(!exempt("crates/vibe-spec/src/main.rs"));
+    // A pin file is exempt as itself only: a neighbouring suite still sweeps.
+    assert!(exempt("tests/parity/spec.json"));
+    assert!(!exempt("tests/parity/spec.json.bak"));
+    assert!(!exempt("tests/parity/run.sh"));
 }
 
 #[test]

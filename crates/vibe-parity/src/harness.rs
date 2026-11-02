@@ -543,20 +543,20 @@ pub fn compare(
             },
         });
     }
-    if compare_stderr {
-        if let Some((line, left, right)) = first_differing_line(&oracle.stderr, &candidate.stderr) {
-            diffs.push(Difference {
-                field: Field::Stderr,
-                message: format!(
-                    "stderr line {}: oracle {left:?}, candidate {right:?}",
-                    line + 1
-                ),
-                observed: Observed::Line {
-                    oracle: left,
-                    candidate: right,
-                },
-            });
-        }
+    if compare_stderr
+        && let Some((line, left, right)) = first_differing_line(&oracle.stderr, &candidate.stderr)
+    {
+        diffs.push(Difference {
+            field: Field::Stderr,
+            message: format!(
+                "stderr line {}: oracle {left:?}, candidate {right:?}",
+                line + 1
+            ),
+            observed: Observed::Line {
+                oracle: left,
+                candidate: right,
+            },
+        });
     }
     let oracle_files = suite.canonical_files(oracle.files.clone())?;
     let candidate_files = suite.canonical_files(candidate.files.clone())?;
