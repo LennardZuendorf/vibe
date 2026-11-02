@@ -107,6 +107,10 @@ for (const key of Object.keys(process.env)) {
   if (/^GIT_CONFIG_(KEY|VALUE)_\d+$/.test(key)) delete process.env[key];
 }
 
+// Fixtures own their project root. Tests of caller context set it explicitly.
+// Inherited session context must not confine every temporary fixture to the caller.
+delete process.env.CLAUDE_PROJECT_DIR;
+
 // ---------------------------------------------------------------------------
 // Assert helpers
 // ---------------------------------------------------------------------------

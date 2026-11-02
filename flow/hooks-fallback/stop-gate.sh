@@ -147,6 +147,7 @@ diagnostic_value() {
   for ((i=0; i<${#value}; i++)); do
     ch="${value:i:1}"
     printf -v code '%d' "'$ch"
+    code=$((code & 255)) # Bash 3.2 printf reports high bytes as signed values.
     if [[ "$ch" == \\ ]]; then out+="\\\\"
     elif [[ "$code" -lt 32 || "$code" -eq 127 ]]; then printf -v ch '\\x%02x' "$code"; out+="$ch"
     else out+="$ch"; fi

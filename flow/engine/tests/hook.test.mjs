@@ -1964,7 +1964,7 @@ test('runtime migration: new Stop receipts work in JS and no-node fallback', () 
 });
 
 // flow-v2/F6: path values cannot inject lines into complete block diagnostics.
-for (const kind of ['changed-path', 'receipt-path', 'project-path']) {
+for (const kind of ['changed-path', 'receipt-path', 'project-path', 'utf8-controls']) {
   test(`flow-v2/F6: real JS and no-node Stop blocks survive the shim with newline ${kind}`, () => {
     const sb = makeRealGitFixture();
     try {
@@ -1980,8 +1980,9 @@ for (const kind of ['changed-path', 'receipt-path', 'project-path']) {
         assertEqual(readFileSync(sb.cursorPath,'utf8'),before);
         writeCursor(sb,{flow:'feature',phase:'verify',feature:'line\nfeature'});
       } else {
-        const file=path.join(sb.dir,'changed\nfile.txt'); writeFileSync(file,'new');
-        assert(realEntries(sb).some(e=>e.path === 'changed\nfile.txt'),'real git names changed path');
+        const name=kind === 'utf8-controls' ? 'café-日-😀\\\t\n\x7f.txt' : 'changed\nfile.txt';
+        const file=path.join(sb.dir,name); writeFileSync(file,'new');
+        assert(realEntries(sb).some(e=>e.path === name),'real git names changed path');
       }
       const reason=kind === 'receipt-path' ? "vibe-gate: BLOCKED — feature.verify needs an evidence receipt before 'done'." : 'vibe-gate: BLOCKED — the evidence receipt is stale.';
       const direct=runGateHook(root,sb.vibeDir,'{}',{});
@@ -2013,6 +2014,11 @@ for (const kind of ['changed-path', 'receipt-path', 'project-path']) {
       // This raw feature fixture bypasses writers; no-jq readers retain JSON escapes.
       const encodedPath=kind === 'receipt-path' && jq.code !== 0 ? "feature-line\\\\nfeature.md" : "\\x0a";
       assert(bash.stderr.includes(encodedPath),bash.stderr);
+      if (kind === 'utf8-controls') {
+        const expected="changed after it was written: café-日-😀\\\\\\x09\\x0a\\x7f.txt";
+        assertIncludes(direct.stderr,expected); assertIncludes(bash.stderr,expected);
+      }
+
       assert(bash.stderr.split('\n').filter(Boolean).slice(1).every(l=>l.startsWith('  ')),bash.stderr);
       const noNodeShim=runCommand('sh',[path.join(REPO_ROOT,'flow/bin/hook.sh'),'stop-gate'],{env:{...shimEnv,VIBE_FLOW_BIN:''},input:'{}'});
       assertEqual(noNodeShim.code,2,noNodeShim.stderr); assertEqual(noNodeShim.stderr,bash.stderr);

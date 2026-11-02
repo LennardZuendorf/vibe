@@ -14,13 +14,14 @@ pass=0
 fail=0
 
 expect() { # name want-rc [dir]
-  local name="$1" want="$2" rc=0
+  local name="$1" want="$2" rc=0 output
   shift 2
-  bash "$CHECK" "$@" >/dev/null 2>&1 || rc=$?
+  output="$(bash "$CHECK" "$@" 2>&1)" || rc=$?
   if [[ "$rc" == "$want" ]]; then
     pass=$((pass + 1)); echo "  PASS [oracles] $name"
   else
     fail=$((fail + 1)); echo "  FAIL [oracles] $name (rc=$rc, want $want)"
+    [[ -z "$output" ]] || printf '%s\n' "$output"
   fi
 }
 
