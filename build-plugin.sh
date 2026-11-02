@@ -362,5 +362,5 @@ for pkg in ${SKILL_PKGS[@]+"${SKILL_PKGS[@]}"}; do
   done
 done
 echo "build-plugin: built ./plugin (vibe $VERSION, symlinked skills), ./.claude-plugin/marketplace.json, plugins/vibe/plugin.json"
-echo "build-plugin: materialized skills in ${SKILL_PKGS[*]} (real dirs — codex and droid drop symlinks)"
+echo "build-plugin: materialized skills in ${SKILL_PKGS[*]:-} (real dirs — codex and droid drop symlinks)"
 echo "build-plugin: validate with  claude plugin validate $SRC"

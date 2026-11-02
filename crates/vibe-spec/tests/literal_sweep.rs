@@ -17,10 +17,18 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Path exemptions: `(prefix or exact path, reason)`. A trailing `/` is a prefix.
-const EXEMPT: [(&str, &str); 6] = [
+const EXEMPT: [(&str, &str); 8] = [
     (
         "oracles/",
         "frozen oracles of the bash and JS originals; never rewritten",
+    ),
+    (
+        "plugins/vibe/skills/",
+        "materialized copies of spec/ and flow/ shipped for Codex/Droid, which drop symlinks; byte-identity is proven by build-plugin.sh --check, and the sources are swept",
+    ),
+    (
+        "factory-plugin/skills/",
+        "materialized copies of spec/ and flow/ shipped for Factory Droid; same proof as plugins/vibe/skills",
     ),
     (
         "contracts/fixtures/",
