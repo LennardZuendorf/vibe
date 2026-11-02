@@ -70,9 +70,9 @@ const JQ_PRESENT = runCommand('bash', ['-c', 'command -v jq >/dev/null 2>&1']).c
 
 // ---------------------------------------------------------------------------
 // Two PATH shims, both built lazily (readdir'ing every PATH dir is not free)
-// and both POSTCONDITION-ASSERTED at build time — a shim that quietly failed
-// to exclude its tool would not fail here, it would surface as a byte mismatch
-// five tests later, or (worse) not at all).
+// and both POSTCONDITION-ASSERTED at build time. Without that, a shim that
+// quietly failed to exclude its tool would surface as a byte mismatch five
+// tests later — or not at all.
 //
 // Each shim exists because the divergence pins below hand the ENGINE an
 // explicit verdict (`jqPresent: false`, `specBin: undefined`) while the oracle
