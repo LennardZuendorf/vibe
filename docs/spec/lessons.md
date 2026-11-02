@@ -561,3 +561,9 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Compare the index with the recorded tree using `git diff --cached --quiet <tree>`. Use `git rev-parse`, `git ls-files` and source hashes for read-only identity checks. Reserve object-writing commands for an explicitly required mutation; do not escalate a failed write when a read-only query answers the question.
 **Tags:** git, verification, sandbox, ownership
 **Date:** 2026-11-02
+
+### Stop dependent mutations after a failed check
+**Pattern:** A Python staging check raised on inherited main whitespace, but the outer shell continued to `git commit` because the next command had no explicit failure gate. The signed commit contained the approved tree; the required stop did not happen before it.
+**Rule:** Run each dependent verification and mutation with explicit exit-code handling. A failed check must stop before commit or push. Classify inherited parent diagnostics separately with read-only comparisons, then continue only after resolving the check's meaning; never rely on a multi-command shell's final exit status to prove every preceding step passed.
+**Tags:** git, verification, shell, publication
+**Date:** 2026-11-02
