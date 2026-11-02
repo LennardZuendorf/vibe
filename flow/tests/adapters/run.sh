@@ -1329,29 +1329,42 @@ assert_eq "host-support/1" "existing Claude Code hook scripts are intact" "$hp_h
 [[ ! -e "$CODEX_PKG/commands" ]] \
   && pass "host-support/1" "Codex package ships no fabricated slash-command dir" \
   || fail "host-support/1" "Codex package ships no fabricated slash-command dir"
-# Open Question 1: the Codex package LINKS the canonical halves instead of
-# carrying a plugin-local copy, so a divergent workflow body is impossible.
+# Open Question 1 (revised for vibe#71): the Codex package carries REAL skill
+# dirs, not symlinks. `codex plugin add` drops a symlinked skill dir from its
+# per-user cache (leaving an empty skills/), so the payload must be materialized;
+# build-plugin.sh does that and its --check keeps each copy byte-identical to the
+# canonical half, so "a divergent workflow body is impossible" still holds — it is
+# now enforced by a parity gate instead of by the filesystem.
 hp_links=1
-for pair in "spec:../../../spec" "vibe:../../../flow"; do
-  name="${pair%%:*}"; want="${pair#*:}"
-  if [[ -L "$CODEX_PKG/skills/$name" && "$(readlink "$CODEX_PKG/skills/$name")" == "$want" && -f "$CODEX_PKG/skills/$name/SKILL.md" ]]; then
-    : # resolves to the canonical SKILL.md
+for name in spec vibe; do
+  case "$name" in spec) canon=spec ;; vibe) canon=flow ;; esac
+  if [[ -d "$CODEX_PKG/skills/$name" && ! -L "$CODEX_PKG/skills/$name" \
+        && -f "$CODEX_PKG/skills/$name/SKILL.md" ]] \
+     && cmp -s "$CODEX_PKG/skills/$name/SKILL.md" "$REPO_ROOT/$canon/SKILL.md"; then
+    : # a real dir carrying the canonical SKILL.md byte for byte
   else
-    hp_links=0; echo "        Codex skills/$name is not a symlink -> $want resolving to SKILL.md"
+    hp_links=0; echo "        Codex skills/$name is not a real dir carrying the canonical $canon/SKILL.md"
   fi
 done
-assert_eq "host-support/1" "Codex package links both skills to the canonical halves (no copy)" "$hp_links" "1"
-# Factory package: same linked-not-copied shape for its native plugin skills.
+assert_eq "host-support/1" "Codex package materializes both skills from the canonical halves (real dirs, byte-identical)" "$hp_links" "1"
+# Factory package: same materialized shape for its native plugin skills.
 hp_dlinks=1
-for pair in "spec:../../spec" "vibe:../../flow"; do
-  name="${pair%%:*}"; want="${pair#*:}"
-  if [[ -L "$DROID_PKG/skills/$name" && "$(readlink "$DROID_PKG/skills/$name")" == "$want" && -f "$DROID_PKG/skills/$name/SKILL.md" ]]; then
-    : # resolves to the canonical SKILL.md
+for name in spec vibe; do
+  case "$name" in spec) canon=spec ;; vibe) canon=flow ;; esac
+  if [[ -d "$DROID_PKG/skills/$name" && ! -L "$DROID_PKG/skills/$name" \
+        && -f "$DROID_PKG/skills/$name/SKILL.md" ]] \
+     && cmp -s "$DROID_PKG/skills/$name/SKILL.md" "$REPO_ROOT/$canon/SKILL.md"; then
+    : # a real dir carrying the canonical SKILL.md byte for byte
   else
-    hp_dlinks=0; echo "        Factory skills/$name is not a symlink -> $want resolving to SKILL.md"
+    hp_dlinks=0; echo "        Factory skills/$name is not a real dir carrying the canonical $canon/SKILL.md"
   fi
 done
-assert_eq "host-support/1" "Factory package links both skills to the canonical halves (no copy)" "$hp_dlinks" "1"
+assert_eq "host-support/1" "Factory package materializes both skills from the canonical halves (real dirs, byte-identical)" "$hp_dlinks" "1"
+# …and no symlink survives anywhere under either package (vibe#71 DoD#2): a link
+# is exactly what both of those hosts fail to deliver. Non-vacuous by construction
+# — the two loops above already proved the trees exist.
+hp_pkgsyms="$(find "$CODEX_PKG" "$DROID_PKG" -type l 2>/dev/null || true)"
+assert_eq "host-support/1" "no symlink anywhere under the Codex or Factory package" "$hp_pkgsyms" ""
 
 # The spec workflow stays skill-invoked on EVERY host — no /spec command exists.
 hp_specmd=0
@@ -2862,6 +2875,14 @@ assert_contains "review-hardening/7" "no node, wired install: plugin hook emits 
 rm -rf "$RH7" "$RH7_NONODE"
 assert_eq "review-hardening/7" "generated hook carries no stale cursor comment" \
   "$(grep -c "this project's cursor" "$RH7_HOOK" || true)" "0"
+
+# vibe#71: the shipped plugin packages must install real skills into each host's
+# per-user cache. That needs the host CLIs, which CI's main suite does not have,
+# so the leg lives in its own file: skip-aware here, and CI runs it separately
+# with the CLIs present and --require-host (a skip there is a failure).
+PI_OUT="$(bash "$REPO_ROOT/flow/tests/adapters/plugin-install.sh" 2>&1)"; PI_RC=$?
+printf '%s\n' "$PI_OUT"
+assert_eq "plugin-install/71" "clean-clone install lands SKILL.md in each host cache (skips without the CLIs)" "$PI_RC" "0"
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

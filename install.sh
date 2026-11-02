@@ -627,14 +627,18 @@ skill_present() {
   return 1
 }
 
-# deploy_package HOST PKG — copy a host package directory into the target,
-# REWRITING every skill symlink inside it so it resolves against the target's own
-# core (.agents/skills/<name>) instead of the source checkout's top-level spec/ +
-# flow/ — which a target does not have, so a verbatim copy would dangle. A link
-# whose skill was not installed at all (--only flow has no spec half) is skipped
-# rather than deployed dangling. Records one action per created file and per
-# created link; in dry-run it reports each planned path instead. Enumerated
-# WITHOUT following symlinks, so the rewrite never walks into the real skill tree.
+# deploy_package HOST PKG — copy a host package directory into the target and
+# LINK its skills to the target's own core (.agents/skills/<name>).
+#
+# The package ships REAL skill dirs (build-plugin.sh materializes them, because
+# `codex plugin add` and `droid plugin install` DROP a symlinked dir from their
+# per-user cache — vibe#71), but a repo-scoped install must not fork a second
+# copy of a skill into the target: the target's own .agents/skills/<name> is the
+# copy the flow updates, and it is what every other host surface points at. So
+# the skills/ subtree is pruned from the file copy and re-created as the same
+# relative symlink this package used to carry, keeping the skip-on-missing-half,
+# collision and ownership semantics unchanged. Enumerated WITHOUT following
+# symlinks, so the copy never walks into a real skill tree.
 deploy_package() {
   local host="$1" pkg="$2" src="$SRC/$2" f l rel dst name d want reason
   if [[ ! -d "$src" ]]; then
@@ -644,10 +648,11 @@ deploy_package() {
   while IFS= read -r f; do
     rel="${f#"$src"/}"
     deploy_file "$host" "$f" "$pkg/$rel"
-  done < <(find "$src" -type f 2>/dev/null)
+  done < <(find "$src" -path "$src/skills" -prune -o -type f -print 2>/dev/null)
   while IFS= read -r l; do
-    rel="${l#"$src"/}"
-    name="$(basename "$rel")"
+    [[ -n "$l" ]] || continue
+    name="$(basename "$l")"
+    rel="skills/$name"
     d="$(dirname "$pkg/$rel")"
     want="$(rel_up "$(count_components "$d")").agents/skills/$name"
     dst="$TARGET/$pkg/$rel"
@@ -704,7 +709,7 @@ deploy_package() {
     mkdir -p "$(dirname "$dst")"
     ln -s "$want" "$dst"
     record_action "$host" symlink "$pkg/$rel" "$want"
-  done < <(find "$src" -type l 2>/dev/null)
+  done < <(find "$src/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
 }
 
 # remove_host_file REL — remove one recorded vibe artifact. Never a directory:
@@ -765,8 +770,10 @@ dry_remove_rel() {
 # remove_host_package PKG — the per-file inverse of deploy_package. Removes the
 # files the SOURCE package ships (never a path the source lacks, which is how a
 # user's co-located file survives), and removes a skill link only while it is a
-# symlink still pointing at the rewrite deploy_package created — a user's real
-# directory, or a link they aimed elsewhere, is never touched. Then prunes dirs
+# symlink still pointing at the target-relative path deploy_package created — a
+# user's real directory, or a link they aimed elsewhere, is never touched. The
+# skills/ subtree is skipped in the file pass for the same reason deploy_package
+# skips it: it is a link to the target's own core, not a copy. Then prunes dirs
 # this emptied. In dry-run it removes nothing and prints the paths it would. A
 # package dir that resolves outside the target (a symlink to a shared copy) is
 # left whole with a warning, and so is any file behind a symlinked subdirectory.
@@ -784,30 +791,32 @@ remove_host_package() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
     while IFS= read -r f; do
       dry_remove_rel "${f#"$SRC"/}"
-    done < <(find "$src" -type f 2>/dev/null)
+    done < <(find "$src" -path "$src/skills" -prune -o -type f -print 2>/dev/null)
     while IFS= read -r l; do
-      rel="${l#"$src"/}"
-      name="$(basename "$rel")"
+      [[ -n "$l" ]] || continue
+      name="$(basename "$l")"
+      rel="skills/$name"
       d="$(dirname "$pkg/$rel")"
       want="$(rel_up "$(count_components "$d")").agents/skills/$name"
       dst="$TARGET/$pkg/$rel"
       if [[ -L "$dst" && "$(readlink "$dst")" == "$want" ]]; then dry_remove_rel "$pkg/$rel"; fi
-    done < <(find "$src" -type l 2>/dev/null)
+    done < <(find "$src/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
     return 0
   fi
   [[ -d "$TARGET/$pkg" ]] || return 0
   while IFS= read -r f; do
     rel="${f#"$src"/}"
     if target_owned "$pkg/$rel"; then rm -f "$TARGET/$pkg/$rel"; fi
-  done < <(find "$src" -type f 2>/dev/null)
+  done < <(find "$src" -path "$src/skills" -prune -o -type f -print 2>/dev/null)
   while IFS= read -r l; do
-    rel="${l#"$src"/}"
-    name="$(basename "$rel")"
+    [[ -n "$l" ]] || continue
+    name="$(basename "$l")"
+    rel="skills/$name"
     d="$(dirname "$pkg/$rel")"
     want="$(rel_up "$(count_components "$d")").agents/skills/$name"
     dst="$TARGET/$pkg/$rel"
     if [[ -L "$dst" && "$(readlink "$dst")" == "$want" ]] && target_owned "$pkg/$rel"; then rm -f "$dst"; fi
-  done < <(find "$src" -type l 2>/dev/null)
+  done < <(find "$src/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
   prune_empty "$TARGET/$pkg"
 }
 

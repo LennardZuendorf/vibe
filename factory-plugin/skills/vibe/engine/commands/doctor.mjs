@@ -1,0 +1,615 @@
+// engine/commands/doctor.mjs — `vibe doctor`, ported from
+// flow/scripts/doctor.sh (the oracle; read closely, never edited). Byte
+// parity with the bash script is the acceptance test — see
+// engine/tests/doctor.test.mjs. Warn-only, read-only, ALWAYS {code: 0} —
+// preserved exactly, including on missing files, broken symlinks, and
+// unreadable JSON. Never crosses "warn" into "fail": a broken install must
+// still be able to report on itself.
+//
+// jq-presence note (per the task brief): doctor.sh's tool.jq check is REAL
+// — it spawns `jq --version` — even though the ENGINE itself never needs
+// jq for any of its own JSON reads (readJson/readCursor are pure JS, no
+// shelling out). The line is kept ONLY for byte parity with the bash
+// oracle's tool.jq check; removing it belongs to a later feature
+// (plugin-runtime). Do not "clean this up" here. The jq PRESENCE also
+// gates several other checks below exactly like the oracle: when jq is
+// missing, the machine/deps JSON-validity checks and the cursor
+// validate-state.sh check all degrade to their no-jq branch, which is not
+// simply "skip validation" — it is a specific, sometimes more lenient,
+// documented shortcut. Reproduce the shortcut, do not "improve" it.
+//
+// No CLI positional ROOT override (doctor.sh's `doctor.sh [<repo-root>]`):
+// when the oracle is given an explicit root it joins VIBE_SKILL/SPEC_SKILL
+// off it literally, bypassing self-location entirely. Reproducing that
+// would mean re-deriving the `.agents/skills/vibe` join in this file, which
+// the task brief forbids — root.mjs is the one place that constant lives.
+// This port only serves the no-arg path (`vibe doctor`), the only path
+// unit 7's hook shims and the CLI actually exercise.
+//
+// Per repo convention: never re-derive root/vibeDir/skillsDir, never parse
+// cursor/machine/manifest JSON directly here — resolveRoot/resolveVibeDir/
+// resolveSkillsDir (root.mjs), readCursor (cursor.mjs), loadMachine +
+// machinePath (machine.mjs), readJson (json.mjs) are the only primitives
+// for that. The machine check below reads exclusively via loadMachine()
+// and gets its path exclusively via machinePath() (review round 1 Finding
+// 2, tightened in round 2: a residual local `path.join` for the machine
+// file was still present after round 1 and has been removed) —
+// state.json/deps.json/SKILL.md/.claude/** joins stay direct because no
+// primitive owns those paths (doctrine.mjs's own precedent).
+//
+// resolveRoot()'s root note (review round 1, Finding 3): resolveRoot()
+// checks CLAUDE_PROJECT_DIR BEFORE self-relative resolution, unconditionally
+// — a real divergence from the oracle (which never reads CLAUDE_PROJECT_DIR
+// for ROOT at all) in the ordinary vendored-install case, not just a
+// mismatched plugin layout: `CLAUDE_PROJECT_DIR=<other-project> vibe doctor`
+// run from an installed `<root>/.agents/skills/vibe/engine` would otherwise
+// compute the header line and every `.claude/**` check against the WRONG
+// tree, while core.spec/core.vibe/machine/cursor/deps (all vibeDir/
+// skillsDir-based, which DO resolve self-relative-first) still correctly
+// target the real install. doctor.mjs is the first shipped consumer of
+// resolveRoot() to reach this. Rather than resolveRoot(opts) directly, the
+// CLI wrapper below derives root from the already-resolved skillsDir via
+// rootForReport() — see its own comment for why that is safe and not a
+// re-derivation of the vibeDir/skillsDir join itself.
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { resolveRoot, resolveVibeDir, resolveSkillsDir } from '../root.mjs';
+import { readCursor, cursorPath } from '../cursor.mjs';
+import { loadMachine, machinePath } from '../machine.mjs';
+import { readJson } from '../json.mjs';
+
+const HOOK_SCRIPTS = [
+  'session-start-doctrine.sh',
+  'user-prompt-submit-inject.sh',
+  'pre-tool-use-guard.sh',
+  'stop-gate.sh',
+];
+
+// ---------------------------------------------------------------------------
+// Output formatting — mirrors the oracle's `ok()`/`warn()` printf helpers
+// exactly (5-char-wide prefix so the two verdicts column-align).
+// ---------------------------------------------------------------------------
+
+function ok(id, msg) {
+  return `ok   ${id} ${msg}\n`;
+}
+
+function warn(id, msg) {
+  return `warn ${id} ${msg}\n`;
+}
+
+// ---------------------------------------------------------------------------
+// Small guarded filesystem helpers. Every one degrades to "not present" on
+// a non-string path (a caller passing a bad root/vibeDir/skillsDir) or any
+// fs error — never throws, matching the never-throws contract shared by
+// every command since orders.mjs/state.mjs's review lessons.
+// ---------------------------------------------------------------------------
+
+function joinMaybe(base, ...parts) {
+  return typeof base === 'string' ? path.join(base, ...parts) : undefined;
+}
+
+function isRegularFile(p) {
+  if (typeof p !== 'string') return false;
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function isDirectory(p) {
+  if (typeof p !== 'string') return false;
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function isExecutable(p) {
+  if (typeof p !== 'string') return false;
+  try {
+    fs.accessSync(p, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isSymlink(p) {
+  if (typeof p !== 'string') return false;
+  try {
+    return fs.lstatSync(p).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// core.spec / core.vibe — ok when P is a real dir, or a symlink that
+// resolves; warn when broken/absent. Mirrors doctor.sh's
+// check_link_or_dir() exactly, including its quirk of calling a same-named
+// regular FILE "absent" too (bash `-d` is false for a file, same as for
+// nothing there at all — never "fixed" here, byte parity is the contract).
+// ---------------------------------------------------------------------------
+
+function checkLinkOrDir(id, p) {
+  if (typeof p !== 'string') return warn(id, `${p} is absent`);
+  let lst;
+  try {
+    lst = fs.lstatSync(p);
+  } catch {
+    return warn(id, `${p} is absent`);
+  }
+  if (lst.isSymbolicLink()) {
+    if (fs.existsSync(p)) {
+      return ok(id, `${p} -> ${fs.readlinkSync(p)} (symlink resolves)`);
+    }
+    return warn(id, `${p} -> ${fs.readlinkSync(p)} is a BROKEN symlink`);
+  }
+  if (lst.isDirectory()) {
+    return ok(id, `${p} is a real directory`);
+  }
+  return warn(id, `${p} is absent`);
+}
+
+// ---------------------------------------------------------------------------
+// tool.jq — the one check that genuinely shells out. Presence is detected
+// by actually running `jq --version`, exactly like the oracle's
+// `command -v jq` + `jq --version 2>/dev/null` pair. Kept vestigial per the
+// task brief.
+// ---------------------------------------------------------------------------
+
+function detectJq() {
+  const res = spawnSync('jq', ['--version'], { encoding: 'utf8' });
+  if (!res || res.error || res.status !== 0) return { present: false, version: '' };
+  return { present: true, version: (res.stdout || '').trim() };
+}
+
+// Tests need to exercise both the jq-present and jq-absent branches inside
+// one process without mutating the real PATH mid-run — opts.jqPresent (and
+// opts.jqVersion for the message text) overrides real detection when a test
+// explicitly supplies it; production callers (the CLI) never pass it, so
+// `vibe doctor` always reports the machine's real jq status.
+function jqStatus(opts) {
+  if (opts && typeof opts.jqPresent === 'boolean') {
+    return { present: opts.jqPresent, version: typeof opts.jqVersion === 'string' ? opts.jqVersion : '' };
+  }
+  return detectJq();
+}
+
+// tool.node — node is NOT optional the way jq is: all four hooks are node-first.
+// Detected the same way as jq (actually running it), and overridable for tests.
+function detectNode() {
+  const res = spawnSync('node', ['--version'], { encoding: 'utf8' });
+  if (!res || res.error || res.status !== 0) return { present: false, version: '' };
+  return { present: true, version: (res.stdout || '').trim() };
+}
+
+function nodeStatus(opts) {
+  if (opts && typeof opts.nodePresent === 'boolean') {
+    return { present: opts.nodePresent, version: typeof opts.nodeVersion === 'string' ? opts.nodeVersion : '' };
+  }
+  return detectNode();
+}
+
+// package.json declares engines.node >= 18, so "present" is not the whole
+// question: a v16 that runs every hook until it hits modern syntax reports the
+// same "ok" as a v22 and tells the user nothing.
+function nodeMajor(version) {
+  const m = /^v?(\d+)\./.exec(typeof version === 'string' ? version : '');
+  return m ? Number(m[1]) : undefined;
+}
+
+function checkToolNode(node) {
+  if (node.present) {
+    const major = nodeMajor(node.version);
+    if (major !== undefined && major < 18) {
+      return warn('tool.node', `node ${node.version} is older than the engine's minimum (18) — the hooks may fail and fall back to flow/hooks-fallback (guard + Stop gate) or no-op (inject + doctrine)`);
+    }
+    return ok('tool.node', `node present (${node.version})`);
+  }
+  return warn('tool.node', "node not installed — the four .claude/hooks are the flow's enforcement, and without node they fall back to flow/hooks-fallback (guard + Stop gate) or no-op (inject + doctrine)");
+}
+
+function checkToolJq(jq) {
+  if (jq.present) {
+    return ok('tool.jq', `jq present (${jq.version})`);
+  }
+  return warn(
+    'tool.jq',
+    'jq not installed (recommended, not required) — set-state writes the cursor via printf, the guard extracts paths via sed, state reads degrade to idle; cursor + manifest checks unverified',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// machine — state-machine.json presence + (jq-gated) parse validity.
+//
+// PATH: machinePath(vibeDir) (machine.mjs) — the single-sourced join, never
+// re-derived here (review round 2: a local `joinMaybe(vibeDir,
+// 'state-machine.json')` fallback was exactly the residue the round-1 fix
+// was supposed to remove).
+//
+// EXISTENCE/TYPE: gated on isRegularFile(), matching the oracle's own
+// `[[ -f "$MACHINE" ]]` — which is false for BOTH an absent path and a
+// non-regular one (a directory, a socket, ...). Reading via loadMachine()
+// alone cannot make this distinction: an ENOENT and an EISDIR both throw,
+// but only ENOENT means "missing" to the oracle — a directory at this path
+// must also report "missing", not "not valid JSON" (review round 2,
+// Regression 1). Doing the existence check BEFORE attempting a read avoids
+// that ambiguity entirely, rather than trying to disambiguate fs error
+// codes after the fact.
+//
+// PARSE VALIDITY (jq-gated): loadMachine() (machine.mjs) is the ONLY read
+// of this file — no local readJson/JSON.parse here (review round 1, Finding
+// 2). loadMachine() itself now rejects a top-level `null` OR `false`
+// document (machine.mjs review round 2, Regression 2 — destructuring
+// `false` alone does not throw, so this needed an explicit check in the
+// primitive that owns the read, not a re-derivation here). When jq is
+// absent the oracle skips validation ENTIRELY and always reports "present"
+// — not a smarter/safer check, a documented shortcut. Reproduce it as-is.
+// ---------------------------------------------------------------------------
+
+function checkMachine(vibeDir, jqPresent) {
+  const p = typeof vibeDir === 'string' ? machinePath(vibeDir) : undefined;
+  if (!isRegularFile(p)) {
+    return warn('machine', `state-machine.json missing at ${p} — flow harness incomplete`);
+  }
+
+  if (jqPresent) {
+    try {
+      loadMachine(vibeDir);
+    } catch {
+      return warn('machine', 'state-machine.json is present but not valid JSON');
+    }
+  }
+  return ok('machine', 'state-machine.json present');
+}
+
+// ---------------------------------------------------------------------------
+// cursor — absent is idle (ok); present-without-jq is an unverified ok
+// (validate-state.sh itself needs jq, so the oracle cannot run it either);
+// present-with-jq spawns the REAL validate-state.sh (never reimplemented
+// here) and reports valid/invalid off its exit code.
+// ---------------------------------------------------------------------------
+
+function runValidateState(scriptPath) {
+  const res = spawnSync('bash', [scriptPath], { stdio: 'ignore' });
+  return !res.error && res.status === 0;
+}
+
+// Mirrors jq's `.feature // "none"` STRING INTERPOLATION (not a top-level
+// `-r` value): a string interpolates raw, anything else uses jq's
+// tostring conversion, which for objects/arrays is always compact (never
+// pretty, unlike a bare `-r` document dump). null/false take the `// "none"`
+// branch; only reachable via a hand-edited cursor, but worth getting right.
+function jqFeatureOrNone(value) {
+  if (value === null || value === undefined || value === false) return 'none';
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+function checkCursor(vibeDir, jqPresent) {
+  // Path via cursorPath() (cursor.mjs) — the same single-sourcing checkMachine
+  // above does with machinePath(), and guarded the same way, so a non-string
+  // vibeDir degrades to "absent" instead of throwing in path.join.
+  const statePath = typeof vibeDir === 'string' ? cursorPath(vibeDir) : undefined;
+  if (!isRegularFile(statePath)) {
+    return ok('cursor', 'no flow cursor (idle) — normal when not mid-flow');
+  }
+  if (!jqPresent) {
+    return ok('cursor', 'flow cursor present (unverified — jq missing; validate-state.sh needs jq)');
+  }
+
+  const validateScript = joinMaybe(vibeDir, 'scripts', 'validate-state.sh');
+  const valid = isExecutable(validateScript) && runValidateState(validateScript);
+  if (!valid) {
+    return warn('cursor', 'flow cursor present but invalid — run validate-state.sh (or reseed from state.example.json)');
+  }
+
+  let summary = 'present';
+  try {
+    const cursor = readCursor(vibeDir);
+    summary = `${cursor.flow}.${cursor.phase} feature=${jqFeatureOrNone(cursor.feature)}`;
+  } catch {
+    summary = 'present';
+  }
+  return ok('cursor', `flow cursor valid (${summary})`);
+}
+
+// ---------------------------------------------------------------------------
+// Claude adapter wiring — hook scripts present under .claude/hooks, then
+// whether .claude/settings.json actually wires all four by name (a plain
+// substring/grep -F check, not JSON-aware — matches the oracle).
+// ---------------------------------------------------------------------------
+
+function checkAdapter(root) {
+  let lines = '';
+  let allPresent = true;
+
+  for (const hs of HOOK_SCRIPTS) {
+    const p = joinMaybe(root, '.claude', 'hooks', hs);
+    if (isRegularFile(p)) {
+      lines += ok(`adapter.script.${hs}`, `.claude/hooks/${hs} present`);
+    } else {
+      lines += warn(`adapter.script.${hs}`, `.claude/hooks/${hs} missing — re-run install.sh`);
+      allPresent = false;
+    }
+  }
+
+  const settingsPath = joinMaybe(root, '.claude', 'settings.json');
+  const settingsPresent = isRegularFile(settingsPath);
+  let settingsText;
+  if (settingsPresent) {
+    try {
+      settingsText = fs.readFileSync(settingsPath, 'utf8');
+    } catch {
+      settingsText = '';
+    }
+  }
+
+  if (settingsPresent) {
+    const unwired = HOOK_SCRIPTS.filter((hs) => !settingsText.includes(hs));
+    if (unwired.length === 0) {
+      lines += ok('adapter.activation', `all ${HOOK_SCRIPTS.length} vibe hooks wired in .claude/settings.json`);
+    } else {
+      lines += warn(
+        'adapter.activation',
+        `hooks present but NOT wired in .claude/settings.json (issue #12 gap: ${unwired.join(' ')}) — re-run install.sh`,
+      );
+    }
+  } else if (allPresent) {
+    lines += warn(
+      'adapter.activation',
+      '.claude/settings.json absent — hooks not activated (issue #12 gap) — re-run install.sh',
+    );
+  } else {
+    lines += warn('adapter.activation', '.claude/settings.json absent and hook scripts missing — re-run install.sh');
+  }
+
+  return { lines, allPresent, settingsPresent, settingsText };
+}
+
+// ---------------------------------------------------------------------------
+// instruction.coverage — three independent carriers; ok if any fire. The
+// plugin-installed probe and dep_present() below both read real
+// filesystem state under $HOME, exactly like the oracle — `home` is
+// threaded through explicitly (default process.env.HOME) so tests can
+// fixture it without touching the real machine's ~/.claude.
+// ---------------------------------------------------------------------------
+
+// find "$dir" -maxdepth N -type f -name plugin.json -path '*vibe*': files
+// only, exact (case-sensitive) basename, substring match on the FULL path
+// as constructed from `startDir` (mirrors find's own path text, which
+// always carries the starting-point prefix).
+//
+// find's default -P NEVER follows symlinks — including the STARTING POINT
+// itself when it is one (only -H/-L opt into following it; the oracle
+// passes neither). Node's readdirSync(path) on a symlinked path silently
+// follows it (a plain opendir() syscall does), so `$HOME/.claude/plugins`
+// being a symlink would make this recurse into its target's whole tree
+// while the oracle's find just sees an un-traversable symlink and reports
+// nothing — a real byte-parity break (review round 1, Finding 1), not just
+// for this check but for dep_present()'s identical descent below. Refuse to
+// descend when the START point is a symlink; symlinks ENCOUNTERED during
+// the walk are already excluded because a Dirent's isDirectory()/isFile()
+// reflect the entry's own (unresolved) type, never the symlink's target.
+function findPluginJson(startDir, maxDepth) {
+  if (isSymlink(startDir)) return false;
+  function visit(dir, level) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    const childLevel = level + 1;
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isFile() && e.name === 'plugin.json' && full.includes('vibe')) return true;
+      if (e.isDirectory() && childLevel < maxDepth) {
+        if (visit(full, childLevel)) return true;
+      }
+    }
+    return false;
+  }
+  return visit(startDir, 0);
+}
+
+// find "$dir" -maxdepth N -iname "$name": any type, case-insensitive
+// basename match, including the starting dir itself. Same symlinked-start-
+// point guard as findPluginJson() above — the basename self-check still
+// runs (find DOES evaluate the starting point path itself against the
+// test, it just never descends into it), only the descent is refused.
+function findInameBelow(startDir, name, maxDepth) {
+  const target = name.toLowerCase();
+  if (path.basename(startDir).toLowerCase() === target) return true;
+  if (isSymlink(startDir)) return false;
+  function visit(dir, level) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    const childLevel = level + 1;
+    for (const e of entries) {
+      if (e.name.toLowerCase() === target) return true;
+      if (e.isDirectory() && childLevel < maxDepth) {
+        if (visit(path.join(dir, e.name), childLevel)) return true;
+      }
+    }
+    return false;
+  }
+  return visit(startDir, 0);
+}
+
+// dep_present(): mirrors the oracle's own string-concatenation exactly
+// (`"$HOME/.claude/skills/$n"`), including the edge case of an
+// empty/unset HOME collapsing to an absolute `/.claude/...` path — plain
+// template interpolation, not path.join, so that edge case matches byte
+// for byte instead of being silently normalized away.
+function depPresent(home, name) {
+  const h = typeof home === 'string' ? home : '';
+  if (isDirectory(`${h}/.claude/skills/${name}`)) return true;
+  const pluginsDir = `${h}/.claude/plugins`;
+  if (!isDirectory(pluginsDir)) return false;
+  return findInameBelow(pluginsDir, name, 5);
+}
+
+function checkInstructionCoverage(vibeDir, adapter, home) {
+  let doctrineBlock = false;
+  const skillMdPath = joinMaybe(vibeDir, 'SKILL.md');
+  if (isRegularFile(skillMdPath)) {
+    try {
+      doctrineBlock = fs.readFileSync(skillMdPath, 'utf8').includes('<!-- vibe:doctrine -->');
+    } catch {
+      doctrineBlock = false;
+    }
+  }
+
+  const sessionStartWired =
+    adapter.settingsPresent &&
+    typeof adapter.settingsText === 'string' &&
+    adapter.settingsText.includes('session-start-doctrine.sh');
+
+  const h = typeof home === 'string' ? home : '';
+  const pluginsDir = `${h}/.claude/plugins`;
+  const pluginInstalled = isDirectory(pluginsDir) && findPluginJson(pluginsDir, 6);
+
+  if (doctrineBlock || sessionStartWired || pluginInstalled) {
+    const carriers = [];
+    if (doctrineBlock) carriers.push('doctrine block');
+    if (sessionStartWired) carriers.push('SessionStart hook');
+    if (pluginInstalled) carriers.push('per-user plugin');
+    return ok('instruction.coverage', `doctrine reaches the agent via: ${carriers.join(', ')}`);
+  }
+  return warn(
+    'instruction.coverage',
+    'no doctrine coverage — no <!-- vibe:doctrine --> block, no wired SessionStart hook, no per-user plugin; run install.sh (--local or --global) / setup.apply',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// deps.manifest + per-dep presence.
+// ---------------------------------------------------------------------------
+
+function checkDeps(vibeDir, jqPresent, home) {
+  const depsPath = joinMaybe(vibeDir, 'reference', 'deps.json');
+  if (!isRegularFile(depsPath)) {
+    return warn('deps.manifest', `deps.json missing at ${depsPath}`);
+  }
+  if (!jqPresent) {
+    return warn('deps.manifest', 'deps.json present but jq unavailable — cannot read dependency list');
+  }
+
+  let raw;
+  try {
+    raw = readJson(depsPath);
+  } catch {
+    return warn('deps.manifest', 'deps.json is not valid JSON');
+  }
+  if (raw === null || raw === false) {
+    return warn('deps.manifest', 'deps.json is not valid JSON');
+  }
+
+  let lines = ok('deps.manifest', `dependency manifest valid (${depsPath})`);
+  const deps = raw && typeof raw === 'object' && Array.isArray(raw.deps) ? raw.deps : [];
+  for (const dep of deps) {
+    if (!dep || typeof dep !== 'object') continue;
+    const name = typeof dep.name === 'string' ? dep.name : '';
+    if (!name) continue; // matches the oracle's `[[ -n "$name" ]] || continue`
+    const kind = typeof dep.kind === 'string' ? dep.kind : '';
+    const degrade = typeof dep.degrade === 'string' ? dep.degrade : '';
+    if (depPresent(home, name)) {
+      lines += ok(`dep.${name}`, `${kind} '${name}' present on disk`);
+    } else {
+      lines += warn(`dep.${name}`, `${kind} '${name}' not found — degrade: ${degrade}`);
+    }
+  }
+  return lines;
+}
+
+// ---------------------------------------------------------------------------
+// Pure: takes the already-resolved root/vibeDir/skillsDir, returns
+// {code, stdout, stderr} — NEVER throws, matching every other command's
+// contract, so unit 7's hook shims can call it straight through. Guards
+// non-string root/vibeDir/skillsDir (review lesson from units 4/5): every
+// check function above degrades to its own "absent"/warn branch on a
+// non-string path rather than throwing on a bad path.join.
+// ---------------------------------------------------------------------------
+
+export function runDoctor(root, vibeDir, skillsDir, opts = {}) {
+  const home = opts && typeof opts.home === 'string' ? opts.home : process.env.HOME;
+  const jq = jqStatus(opts);
+
+  let stdout = `# vibe doctor — ${root}\n`;
+  stdout += checkToolJq(jq);
+  stdout += checkToolNode(nodeStatus(opts));
+  stdout += checkLinkOrDir('core.spec', joinMaybe(skillsDir, 'spec'));
+  stdout += checkLinkOrDir('core.vibe', vibeDir);
+  stdout += checkMachine(vibeDir, jq.present);
+  stdout += checkCursor(vibeDir, jq.present);
+
+  const adapter = checkAdapter(root);
+  stdout += adapter.lines;
+  stdout += checkInstructionCoverage(vibeDir, adapter, home);
+  stdout += checkDeps(vibeDir, jq.present, home);
+
+  return { code: 0, stdout, stderr: '' };
+}
+
+// Root for the header + .claude/** checks, derived from the ALREADY-resolved
+// skillsDir instead of a bare resolveRoot(opts) call (review round 1,
+// Finding 3). skillsDir is always `<root>/.agents/skills` by construction —
+// true on resolveSkillsDir()'s self-relative sibling-probe leg (the ordinary
+// vendored-install case, which deliberately ignores CLAUDE_PROJECT_DIR) AND
+// on its root-based fallback leg (which built skillsDir from that SAME
+// resolveRoot(opts) value in the first place) — so two path.dirname() calls
+// recover exactly the root each leg already used, without re-joining the
+// `.agents/skills/vibe` literal anywhere in this file. This is pure
+// directory-structure walking off an already-resolved primitive, not a new
+// resolution algorithm. It does not hold for the per-user PLUGIN layout
+// (skillsDir there is only `<pluginRoot>/skills`, one level shallower, and
+// has no meaningful project root at all) — doctor.sh ships no plugin-layout
+// consumer to be correct FOR, so that shape falls back to resolveRoot(opts)
+// unchanged, matching root.mjs's own stance that a plugin has no root.
+// Distinguished the same way root.mjs's own vendoredVibeDir() does: does
+// skillsDir's parent carry the `.agents` wrapper name?
+function rootForReport(skillsDir, opts) {
+  if (typeof skillsDir === 'string') {
+    const agentsDir = path.dirname(skillsDir);
+    if (path.basename(agentsDir) === '.agents') {
+      return path.dirname(agentsDir);
+    }
+  }
+  return resolveRoot(opts);
+}
+
+export default async function run(argv, opts = {}) {
+  // REFUSE a positional root rather than ignoring it. doctor.sh accepts
+  // `doctor.sh [<repo-root>]`; this port deliberately does not (see the header —
+  // reproducing it means re-deriving the `.agents/skills/vibe` join, which
+  // root.mjs owns). Swallowing the argument was worse than not supporting it:
+  // `vibe doctor /some/other/repo` printed a clean report about the SELF-LOCATED
+  // tree and exited 0, so the answer looked like it was about the path given.
+  const positional = Array.isArray(argv) ? argv.filter((a) => typeof a === 'string' && a !== '') : [];
+  if (positional.length > 0) {
+    process.stderr.write(
+      `vibe doctor: takes no arguments (got '${positional[0]}'). It reports on the install it resolves from its own location; run it from inside the target repo instead.\n`,
+    );
+    return 1;
+  }
+
+  const vibeDir = resolveVibeDir(opts);
+  const skillsDir = resolveSkillsDir(opts);
+  const root = rootForReport(skillsDir, opts);
+
+  const result = runDoctor(root, vibeDir, skillsDir, opts);
+
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  return result.code;
+}
