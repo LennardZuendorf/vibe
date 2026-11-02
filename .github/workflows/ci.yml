@@ -173,6 +173,47 @@ jobs:
           claude --version || echo "claude --version failed — the script below owns the verdict"
           VIBE_PLUGIN_VALIDATE=require bash spec/tests/plugin-validate.sh
 
+  plugin-install:
+    # vibe#71: `codex plugin add` DROPPED a symlinked skill dir from its
+    # per-user cache and Droid left skills/ empty, so the Codex and Factory
+    # packages now ship REAL skill trees materialized by build-plugin.sh.
+    # The consequence is proven end to end HERE, not by inspection: install
+    # each package into a throwaway HOME and read the HOST's own cache. It
+    # cannot live in the suites job — that runner has no host CLI, so the leg
+    # would only ever SKIP, and green by absence is the failure mode this job
+    # exists to kill. --require-host turns "no host really installed anything"
+    # into a red run for the same reason.
+    #
+    # CLIs are pinned by hand: cache layout and validator rules change between
+    # releases, and an auto-floating CLI would turn someone else's release into
+    # this repo's red build. Bump deliberately.
+    #
+    # Droid is deliberately NOT installed: its marketplace rejects every source
+    # for a CI-less credential, so the script asserts the payload property the
+    # drop depends on (real skills/, zero symlinks) and prints a SKIP naming the
+    # refusal. Installing a CLI that can only ever refuse would be a fake leg.
+    name: plugin — install lands real skills in the Codex cache (pinned CLIs)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
+      - name: Install host CLIs (pinned)
+        run: |
+          npm install --global @anthropic-ai/claude-code@2.1.310 @openai/codex@0.164.0
+          claude --version || echo "claude --version failed — the script below owns the verdict"
+          codex --version || echo "codex --version failed — the script below owns the verdict"
+
+      - name: Install each plugin into a temp HOME and read the host cache
+        run: bash flow/tests/adapters/plugin-install.sh --require-host
+
   macos:
     # js-core/8: stock macOS ships bash 3.2 (Apple freezes it at the last
     # GPLv2 release) — the only way to know tests/run.sh's bash-3.2 fix
