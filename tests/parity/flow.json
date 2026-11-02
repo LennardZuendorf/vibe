@@ -14,7 +14,7 @@
     { "name": "hook-guard", "oracle": ["bash", "{oracle}/bash/flow/hooks-fallback/pre-tool-use-guard.sh"], "candidate": ["{candidate}", "hook", "pre-tool-use-guard"], "classes": ["hooks-guard"] },
     { "name": "hook-stop", "oracle": ["bash", "{oracle}/bash/flow/hooks-fallback/stop-gate.sh"], "candidate": ["{candidate}", "hook", "stop-gate"], "classes": ["hooks-stop"] }
   ],
-  "floors": { "paths": 25, "mutated": 10, "corrupt": 2, "cursors": 20, "edges": 30, "errors": 3, "hooks-guard": 16, "hooks-stop": 8 },
+  "floors": { "paths": 25, "mutated": 10, "corrupt": 2, "cursors": 20, "edges": 30, "errors": 3, "hooks-guard": 17, "hooks-stop": 9 },
   "divergences": [
     { "command": "hook-guard", "case": "hooks-guard/decide-empty-reason", "field": "exit", "reason": "A hook shim must tell a block from a crash by output: a verdict with no reason (block:) is not provable, so the port allows (exit 0), while the frozen bash fallback prefix-matches block:* and blocks (exit 2)." },
     { "command": "hook-guard", "case": "hooks-guard/decide-empty-reason", "field": "stderr", "reason": "Same shape gate: the port emits no block text for a reasonless verdict; the bash fallback prints BLOCKED with an empty reason." },
