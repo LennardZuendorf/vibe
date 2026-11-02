@@ -559,4 +559,10 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** tooling, verification, rust
 **Date:** 2026-11-02
 
+### A Windows sharing hold needs data access
+**Pattern:** PR66 commit `fe29557` passed macOS checks, but Windows Rust 1.88 CI job `125298715909` renamed the empty workspace while its `access_mode(0)` handle omitted `FILE_SHARE_DELETE`. The metadata-only handle did not protect ownership.
+**Rule:** Request directory data-read access with `read(true)` before relying on a Windows no-delete sharing mode. Preserve the original rename-denial regression and add a bare empty-directory hold/release control. If ownership handles are missing, preserve the tree. Use Windows CI on both MSRV and stable as platform evidence; non-Windows green cannot establish Windows sharing semantics.
+**Tags:** tests, rust, windows, ownership, safety
+**Date:** 2026-11-02
+
 <!-- vibe-spec: allow SF15 -->

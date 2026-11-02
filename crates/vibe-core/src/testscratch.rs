@@ -51,6 +51,10 @@ impl AsRef<Path> for Scratch {
 
 impl Drop for Scratch {
     fn drop(&mut self) {
+        #[cfg(windows)]
+        if self.directory_handles.is_none() {
+            return;
+        }
         let unchanged = |path: &Path, original: &fs::Metadata| {
             fs::symlink_metadata(path)
                 .is_ok_and(|meta| meta.is_dir() && same_directory(&meta, original))
@@ -108,6 +112,8 @@ fn same_directory(a: &fs::Metadata, b: &fs::Metadata) -> bool {
 #[cfg(windows)]
 fn hold_directory(path: &Path) -> io::Result<fs::File> {
     use std::os::windows::fs::OpenOptionsExt;
+    // Request data-read access so Windows tracks the sharing hold. Metadata-only
+    // access_mode(0) allowed the empty workspace to be renamed in Windows CI.
     // OpenOptionsExt (stable since 1.10) passes these through to CreateFileW.
     // https://doc.rust-lang.org/std/os/windows/fs/trait.OpenOptionsExt.html
     // https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew
@@ -115,7 +121,7 @@ fn hold_directory(path: &Path) -> io::Result<fs::File> {
     const FILE_SHARE_WRITE: u32 = 0x0000_0002;
     const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
     fs::OpenOptions::new()
-        .access_mode(0)
+        .read(true)
         .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
         .open(path)
@@ -600,6 +606,39 @@ mod tests {
         assert!(
             !container.exists(),
             "drop releases handles before removing owned data"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_directory_hold_pins_an_empty_directory_until_closed() {
+        let root = root("windows-empty-hold");
+        let original = root.join("original");
+        let moved = root.join("moved");
+        fs::create_dir(&original).unwrap();
+        let hold = hold_directory(&original).unwrap();
+        assert!(fs::rename(&original, &moved).is_err());
+        assert!(original.is_dir());
+        assert!(!moved.exists());
+        drop(hold);
+        fs::rename(&original, &moved).unwrap();
+        assert!(moved.is_dir());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_missing_directory_holds_preserve_replaced_workspace() {
+        let root = root("windows-missing-hold");
+        let mut owned = local(&root, &AtomicUsize::new(0));
+        let container = owned.container.clone();
+        drop(owned.directory_handles.take());
+        fs::rename(&*owned, root.join("original-workspace")).unwrap();
+        fs::create_dir(&*owned).unwrap();
+        fs::write(owned.join("keep"), "foreign").unwrap();
+        drop(owned);
+        assert_eq!(
+            fs::read_to_string(container.join("work/keep")).unwrap(),
+            "foreign"
         );
     }
 }
