@@ -1391,7 +1391,19 @@ for d in $hp_dirs; do hp_files=$((hp_files + $(find "$d" -type f 2>/dev/null | w
 if [[ "$hp_pop" -eq 5 ]]; then
   hp_badreg=""
   for d in $hp_dirs; do
-    m="$(find "$d" \( -path '*/hooks/*' -o -name 'hooks.json' -o -name droids -o -name agents \) -print 2>/dev/null)"
+    # Prune skills/: since vibe#71 the Codex and Factory packages carry REAL
+    # copies of the spec/vibe skills, and a skill ships its own `hooks/` shim
+    # and `agents/` files — the same payload install.sh drops in
+    # `.agents/skills/spec/`, and the same one Claude's package has always had
+    # dereferenced. Skill-internal files are skill content, not host
+    # integration. What this negative still guards is the PACKAGE surface:
+    # hooks.json, a root-level hooks/, native droids/ or agents/ registration.
+    # The pruned subtrees are not unexamined — build-plugin.sh --check proves
+    # each one is a byte-identical copy of spec/ and flow/, and the loops above
+    # assert exactly that shape.
+    m="$(find "$d" -name skills -prune -o \
+             \( -path '*/hooks/*' -o -name 'hooks.json' -o -name droids -o -name agents \) \
+             -print 2>/dev/null)"
     [[ -n "$m" ]] && hp_badreg="$hp_badreg $m"
   done
   assert_eq "host-support/1" "no hook integration or agent/droid registration in the new host packages" "$hp_badreg" ""
