@@ -8,7 +8,7 @@ use vibe_core::lock::{Acquired, Lock, STALE};
 
 use super::mcp::{is_name, is_pure_placeholder, parse_one, placeholders};
 use super::read_json;
-use crate::paths::Paths;
+use crate::paths::{Harness, Paths};
 
 /// What an import did. Holds variable names, never values.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -51,16 +51,15 @@ fn var_name(server: &str, field: &str) -> String {
 struct Rewriter<'a> {
     server: &'a str,
     used: &'a mut BTreeSet<String>,
-    foreign: &'a mut BTreeSet<String>,
     vars: &'a mut Vec<String>,
 }
 
 impl Rewriter<'_> {
     /// The placeholder for an env value of key `field`: `${field}` itself (Codex forwards the
-    /// variable by that name) unless `field` is no valid name or another field already uses
-    /// the name for a different purpose.
+    /// variable by that name) unless `field` is not a valid name or any existing
+    /// placeholder or earlier imported credential already reserves the name.
     fn env_placeholder(&mut self, field: &str) -> String {
-        if is_name(field) && !self.foreign.contains(field) {
+        if is_name(field) && !self.used.contains(field) {
             self.used.insert(field.to_string());
             if !self.vars.iter().any(|v| v == field) {
                 self.vars.push(field.to_string());
@@ -79,7 +78,6 @@ impl Rewriter<'_> {
             n += 1;
         }
         self.used.insert(name.clone());
-        self.foreign.insert(name.clone());
         self.vars.push(name.clone());
         format!("${{{name}}}")
     }
@@ -144,35 +142,6 @@ fn collect_placeholders(v: &Value, out: &mut BTreeSet<String>) {
         Value::Array(items) => items.iter().for_each(|i| collect_placeholders(i, out)),
         Value::Object(o) => o.iter().for_each(|(_, v)| collect_placeholders(v, out)),
         _ => {}
-    }
-}
-
-/// Collects the placeholder names that stand for something other than "the env value of the
-/// key of the same name": every placeholder outside `env`, and env values whose name differs
-/// from their key.
-fn collect_foreign(doc: &Value, out: &mut BTreeSet<String>) {
-    let Some(servers) = doc.path(&["mcpServers"]).and_then(Value::as_object) else {
-        return;
-    };
-    for (_, server) in servers.iter() {
-        let Some(obj) = server.as_object() else {
-            continue;
-        };
-        for (field, value) in obj.iter() {
-            match (field, value.as_object()) {
-                ("env", Some(env)) => {
-                    for (key, v) in env.iter() {
-                        if let Some(text) = v.as_str() {
-                            let same = text.strip_prefix("${").and_then(|t| t.strip_suffix('}'));
-                            if same != Some(key) {
-                                out.extend(placeholders(text).into_iter().map(str::to_string));
-                            }
-                        }
-                    }
-                }
-                _ => collect_placeholders(value, out),
-            }
-        }
     }
 }
 
@@ -246,7 +215,7 @@ fn leftover_secrets(server: &Object) -> Vec<&'static str> {
 /// `mcp.json`, under the store lock. Servers already in the store are kept as they are;
 /// the file is rewritten as 2-space JSON (vibe owns it), keeping key order and number
 /// text. Unless `keep_literals`, header values, secret-looking env values and
-/// secret-looking URL query values become `${VIBE_<SERVER>_<FIELD>}`, except a secret env value of key `K` (a valid name) that becomes `${K}` unless another field already uses `${K}` for a different purpose; new names never
+/// secret-looking URL query values become `${VIBE_<SERVER>_<FIELD>}`, except a secret env value of key `K` (a valid name) that becomes `${K}` unless an existing placeholder or earlier credential already reserves `${K}`; new names never
 /// reuse a `${NAME}` already in the store or the input. A server of invalid shape is
 /// skipped with a warning. Secret-looking values the rewrite cannot replace (URL
 /// userinfo or fragment, `;` query pairs, secret flags in `args`) produce a warning.
@@ -260,7 +229,12 @@ pub fn import(file: &Path, paths: &Paths, keep_literals: bool) -> Result<ImportR
 
     let _lock = match Lock::acquire(&paths.lock_file(), STALE).map_err(|e| e.to_string())? {
         Acquired::Got(lock) => lock,
-        Acquired::Busy => return Err("store busy; retry".to_string()),
+        Acquired::Busy => {
+            return Err(format!(
+                "store busy: {}; verify the holder stopped before removing this file, then retry",
+                paths.lock_file().display()
+            ));
+        }
     };
     let target = paths.store_mcp();
     refuse_symlink(&target)?;
@@ -268,9 +242,6 @@ pub fn import(file: &Path, paths: &Paths, keep_literals: bool) -> Result<ImportR
     let mut used = BTreeSet::new();
     collect_placeholders(&store_doc, &mut used);
     collect_placeholders(&doc, &mut used);
-    let mut foreign = BTreeSet::new();
-    collect_foreign(&store_doc, &mut foreign);
-    collect_foreign(&doc, &mut foreign);
     let store_obj = store_doc
         .as_object_mut()
         .ok_or_else(|| format!("{}: expected a JSON object", target.display()))?;
@@ -293,10 +264,13 @@ pub fn import(file: &Path, paths: &Paths, keep_literals: bool) -> Result<ImportR
             report.kept_existing.push(name.to_string());
             continue;
         }
-        if let Err(cause) = parse_one(name, value) {
-            report.warnings.push(format!("skipped {cause}"));
-            continue;
-        }
+        let parsed = match parse_one(name, value) {
+            Ok(server) => server,
+            Err(cause) => {
+                report.warnings.push(format!("skipped {cause}"));
+                continue;
+            }
+        };
         let mut server = value.clone();
         if let Some(obj) = server.as_object_mut()
             && !keep_literals
@@ -304,7 +278,6 @@ pub fn import(file: &Path, paths: &Paths, keep_literals: bool) -> Result<ImportR
             let mut rw = Rewriter {
                 server: name,
                 used: &mut used,
-                foreign: &mut foreign,
                 vars: &mut report.vars,
             };
             if let Some(Value::Object(headers)) = obj.get_mut("headers") {
@@ -312,6 +285,18 @@ pub fn import(file: &Path, paths: &Paths, keep_literals: bool) -> Result<ImportR
             }
             if let Some(Value::Object(env)) = obj.get_mut("env") {
                 rw.map_values(env, false);
+                for (key, value) in env.iter() {
+                    if parsed.transport == super::mcp::Transport::Stdio
+                        && parsed.applies_to(Harness::Codex)
+                        && let Some(text) = value.as_str()
+                        && is_pure_placeholder(text)
+                        && text != format!("${{{key}}}")
+                    {
+                        report.warnings.push(format!(
+                            "{name}: codex cannot remap env {key} from {text}; server will be skipped"
+                        ));
+                    }
+                }
             }
             if let Some(Value::String(url)) = obj.get("url") {
                 let rewritten = rw.url(url);
@@ -328,6 +313,7 @@ pub fn import(file: &Path, paths: &Paths, keep_literals: bool) -> Result<ImportR
     }
 
     if !report.added.is_empty() {
+        vibe_core::lock::verify_path(&paths.lock_file())?;
         fs::create_dir_all(&paths.store).map_err(|e| format!("{}: {e}", paths.store.display()))?;
         vibe_core::fs::write_atomic(&target, vibe_core::json::to_pretty(&store_doc).as_bytes())
             .map_err(|e| e.to_string())?;
@@ -367,12 +353,10 @@ mod tests {
     #[test]
     fn url_keeps_fragment_and_non_secret_pairs() {
         let mut used = BTreeSet::new();
-        let mut foreign = BTreeSet::new();
         let mut vars = Vec::new();
         let mut rw = Rewriter {
             server: "s",
             used: &mut used,
-            foreign: &mut foreign,
             vars: &mut vars,
         };
         assert_eq!(

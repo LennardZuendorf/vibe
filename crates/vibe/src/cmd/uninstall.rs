@@ -50,6 +50,7 @@ fn created_dirs(paths: &Paths, created: &[String]) -> Vec<PathBuf> {
         .iter()
         .map(PathBuf::from)
         .filter(|p| !p.starts_with(&paths.store))
+        .filter(|p| paths.guard_parent(p).is_ok())
         .filter(|p| fs::symlink_metadata(p).is_ok_and(|m| m.is_dir()))
         .collect();
     dirs.sort_by_key(|d| std::cmp::Reverse(d.as_os_str().len()));
@@ -111,7 +112,9 @@ fn run(paths: &Paths, dry_run: bool, claude_bin: &str) -> Result<Outcome, String
     if !outcome.failed.is_empty() || refused {
         return Ok(outcome);
     }
+    vibe_core::lock::verify_path(&paths.lock_file())?;
     outcome.applied.extend(remove_created_dirs(paths, &created));
+    vibe_core::lock::verify_path(&paths.lock_file())?;
     fs::remove_file(paths.state_file())
         .map_err(|e| format!("{}: {e}", paths.state_file().display()))?;
     outcome.applied.push(state_line);

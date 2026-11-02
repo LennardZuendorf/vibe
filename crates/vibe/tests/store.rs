@@ -549,7 +549,7 @@ fn import_disambiguates_colliding_variable_names() {
 }
 
 #[test]
-fn import_names_env_secrets_after_their_key_and_shares_the_name() {
+fn import_keeps_per_server_env_credentials_distinct() {
     let home = Home::new("import-same-name");
     home.write_json(
         "in.json",
@@ -558,14 +558,34 @@ fn import_names_env_secrets_after_their_key_and_shares_the_name() {
     let p = paths(&home);
     init::init(&p, None).unwrap();
     let report = import::import(&home.path("in.json"), &p, false).unwrap();
-    assert_eq!(report.vars, ["TOKEN"]);
+    assert_eq!(report.vars, ["TOKEN", "VIBE_B_TOKEN"]);
     let v = stored(&home);
-    for s in ["a", "b"] {
-        assert_eq!(
-            v.path(&["mcpServers", s, "env", "TOKEN"]).unwrap().as_str(),
-            Some("${TOKEN}")
-        );
-    }
+    assert_eq!(
+        v.path(&["mcpServers", "a", "env", "TOKEN"])
+            .unwrap()
+            .as_str(),
+        Some("${TOKEN}")
+    );
+    assert_eq!(
+        v.path(&["mcpServers", "b", "env", "TOKEN"])
+            .unwrap()
+            .as_str(),
+        Some("${VIBE_B_TOKEN}")
+    );
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.contains("codex") && w.contains("b") && w.contains("TOKEN"))
+    );
+    fs::create_dir_all(home.path(".codex")).unwrap();
+    let out = home.vibe(&["sync", "--harness", "codex"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let config = home.read(".codex/config.toml");
+    assert!(config.contains("[mcp_servers.a]"));
+    assert!(config.contains("env_vars = [\"TOKEN\"]"));
+    assert!(!config.contains("[mcp_servers.b]"));
+    assert!(out.text().contains("env TOKEN uses another variable"));
 }
 
 #[test]
@@ -749,7 +769,13 @@ fn import_refuses_when_the_store_is_busy() {
     let held = Lock::acquire(&p.lock_file(), STALE).unwrap();
     assert!(matches!(held, Acquired::Got(_)));
     let err = import::import(&home.path("in.json"), &p, false).unwrap_err();
-    assert_eq!(err, "store busy; retry");
+    assert_eq!(
+        err,
+        format!(
+            "store busy: {}; verify the holder stopped before removing this file, then retry",
+            p.lock_file().display()
+        )
+    );
     assert!(!home.read(".config/vibe/mcp.json").contains("\"n\""));
     drop(held);
     assert!(import::import(&home.path("in.json"), &p, false).is_ok());
@@ -910,4 +936,57 @@ fn store_with_another_version_is_refused_and_a_missing_version_is_read_as_1() {
         .map(|(n, _)| n)
         .collect();
     assert!(invalid.contains(&"v2.json".to_string()));
+}
+
+// global-store Task 5: credentials stay independently rotatable, including equal literals.
+#[test]
+fn import_reserves_existing_placeholders_and_equal_credentials() {
+    let home = Home::new("import-env-isolation");
+    set_mcp(
+        &home,
+        r#"{"mcpServers":{"old":{"command":"c","env":{"API_KEY":"${API_KEY}"}}}}"#,
+    );
+    home.write_json(
+        "in.json",
+        r#"{"mcpServers":{
+      "a.b":{"command":"c","env":{"API_KEY":"fake-equal"}},
+      "a-b":{"command":"c","env":{"API_KEY":"fake-equal"}},
+      "other":{"command":"c","env":{"TOKEN":"fake-distinct"},"headers":{"TOKEN":"${TOKEN}"}}
+    }}"#,
+    );
+    let report = import::import(&home.path("in.json"), &paths(&home), false).unwrap();
+    assert_eq!(
+        report.vars,
+        ["VIBE_A_B_API_KEY", "VIBE_A_B_API_KEY_2", "VIBE_OTHER_TOKEN"]
+    );
+    let text = home.read(".config/vibe/mcp.json");
+    assert!(!text.contains("fake-"));
+    assert!(!format!("{report:?}").contains("fake-"));
+    assert_eq!(
+        stored(&home)
+            .path(&["mcpServers", "old", "env", "API_KEY"])
+            .unwrap()
+            .as_str(),
+        Some("${API_KEY}")
+    );
+}
+
+// global-store Task 5: remapping warnings describe only the harness/transport that skips.
+#[test]
+fn import_remapping_warning_applies_only_to_codex_stdio() {
+    let home = Home::new("import-remap-scope");
+    home.write_json(
+        "in.json",
+        r#"{"mcpServers":{
+      "first":{"command":"c","env":{"TOKEN":"fake-first"}},
+      "droid":{"command":"c","env":{"TOKEN":"fake-droid"},"harnesses":["droid"]},
+      "http":{"type":"http","url":"https://example.invalid/mcp","env":{"TOKEN":"fake-http"}}
+    }}"#,
+    );
+    let report = import::import(&home.path("in.json"), &paths(&home), false).unwrap();
+    assert_eq!(
+        report.vars,
+        ["TOKEN", "VIBE_DROID_TOKEN", "VIBE_HTTP_TOKEN"]
+    );
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
 }

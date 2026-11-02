@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use vibe_core::fs::{Write, commit, restore};
-use vibe_core::lock::{Acquired, Lock, STALE, refresh_path};
+use vibe_core::lock::{Acquired, Lock, STALE, refresh_path, verify_path};
 
 use crate::links;
 use crate::paths::Paths;
@@ -199,6 +199,23 @@ pub fn apply(
             .collect();
         return (out, state);
     }
+    for item in &proj.items {
+        let target = match item {
+            PlanItem::FileWrite { path, .. }
+            | PlanItem::FileRemove { path, .. }
+            | PlanItem::LinkCreate { path, .. }
+            | PlanItem::LinkRemove { path, .. } => path,
+            PlanItem::ClaudeCli { .. } => continue,
+        };
+        if let Err(e) = paths.guard_parent(target) {
+            out.failed.push(e);
+            return (out, state);
+        }
+    }
+    if let Err(e) = verify_path(&paths.lock_file()) {
+        out.failed.push(e);
+        return (out, state);
+    }
     let mut undo = Undo::default();
     let mut ok: BTreeSet<usize> = BTreeSet::new();
     let lock = paths.lock_file();
@@ -221,6 +238,10 @@ pub fn apply(
         let PlanItem::ClaudeCli { op } = item else {
             continue;
         };
+        if let Err(e) = verify_path(&lock) {
+            out.failed.push(e);
+            return (out, state);
+        }
         refresh_path(&lock);
         match run_cli(paths, claude_bin, op) {
             Ok(CliResult::Done) => {
@@ -240,6 +261,10 @@ pub fn apply(
         }
     }
 
+    if let Err(e) = verify_path(&lock) {
+        out.failed.push(e);
+        return (out, state);
+    }
     let loaded = state::to_value(&state);
     let old = state.clone();
     let mut new = state;
@@ -275,6 +300,12 @@ pub fn record_stamp(paths: &Paths, state: State, stamp: Stamp, out: &mut Outcome
 }
 
 fn save(paths: &Paths, new: &State, out: &mut Outcome) -> bool {
+    if let Err(e) =
+        verify_path(&paths.lock_file()).and_then(|()| paths.guard_parent(&paths.state_file()))
+    {
+        out.failed.push(e);
+        return false;
+    }
     let PlanItem::FileWrite {
         path, bytes, show, ..
     } = state::save_plan(paths, new)

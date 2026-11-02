@@ -536,4 +536,29 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** git, patch, porting, hygiene
 **Date:** 2026-10-24
 
+
+### Do not infer lock-owner death from age
+**Pattern:** A blocking Claude call outlived the freshness window, so a second run stole its lock and the first later overwrote ownership state.
+**Rule:** Keep liveness active through blocking work, check the unique owner token before state commit and release, and retain unknown owners when death cannot be established safely. Age and PID alone do not authorize removal; require independently verified manual recovery when portable safe liveness proof is unavailable.
+**Tags:** rust, locks, ownership, safety, process
+**Date:** 2026-11-02
+
+### Retire registry ownership before releasing the filesystem lock
+**Pattern:** Drop unlinked the file before unregistering its token. A real successor registered alongside that retired token and failed its ownership check during an ordinary handoff.
+**Rule:** Order registry retirement and filesystem release under the same mutex. Test a real successor acquiring and verifying while its predecessor's Drop is paused at the release boundary; stress alone can miss the race.
+**Tags:** rust, locks, concurrency, tests, review
+**Date:** 2026-11-02
+
+### Reserve placeholder names across credential owners
+**Pattern:** Two imported servers with distinct API_KEY values both became ${API_KEY}; a pre-existing placeholder could also be reused for a new credential.
+**Rule:** Reserve placeholders in both input and stored documents and every prior allocation. Give separate credentials distinct names even when their current literals match. When a target cannot translate the allocated name, explicitly report and skip it instead of forwarding the wrong environment variable.
+**Tags:** credentials, import, namespaces, translation, tests
+**Date:** 2026-11-02
+
+### Make test runtime paths explicit
+**Pattern:** A build-note test assumed Cargo's executable path contained /target/, a legacy hook suite required a local target/debug binary despite isolated Cargo output, and direct plugin tests lacked the fixture variables supplied by their wrapper.
+**Rule:** Discover test entrypoints before invoking internals, create complete harness fixtures, and supply every runtime path explicitly. Put path-specific assertions under fixture-owned paths, and bridge legacy binary expectations to isolated build output without using global binaries or user configuration.
+**Tags:** tests, fixtures, paths, hermeticity, tooling
+**Date:** 2026-11-02
+
 <!-- vibe-spec: allow SF15 -->

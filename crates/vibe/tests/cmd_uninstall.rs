@@ -209,3 +209,19 @@ fn uninstall_keeps_preexisting_empty_config_dir() {
     assert_eq!(fs::read_dir(home.path(".factory")).unwrap().count(), 0);
     assert!(!home.path(".codex").exists());
 }
+
+// global-store Task 9: recorded ownership does not authorize an escaped physical path.
+#[test]
+fn uninstall_refuses_plugin_parent_escape() {
+    use std::os::unix::fs::symlink;
+    let home = Home::with_store("uninstall-plugin-escape");
+    let kit = toolkit(&home);
+    assert_ok(&install(&home, &kit, &["--harness", "opencode"]));
+    fs::rename(home.path(".config/opencode/plugins"), home.path("outside")).unwrap();
+    symlink(home.path("outside"), home.path(".config/opencode/plugins")).unwrap();
+    let before = home.read("outside/vibe-store.js");
+    let out = home.vibe(&["uninstall"], &[]);
+    assert_eq!(out.code, 1, "{} {}", out.text(), out.stderr);
+    assert_eq!(home.read("outside/vibe-store.js"), before);
+    assert!(state_path(&home).exists());
+}

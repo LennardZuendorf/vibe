@@ -14,6 +14,8 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Changed
 
+- **Global store safety (C0)** — retain locks while owner death is unproven, keep blocking CLI work alive with a token-checked heartbeat, and retire ownership before releasing the filesystem lock. Keep imported credentials independently named and report Codex env-remapping skips. Confine projection to resolved configured roots while preserving intentional root/internal and read-only store links.
+
 - **Direction: v0.4 re-architecture** — three independent tools (spec, flow,
   instruct) as static Rust binaries, Claude Code + OpenCode plugins, contracts
   as the only coupling; root specs rewritten, roadmap F1–F24 authored as an

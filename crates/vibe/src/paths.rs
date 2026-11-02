@@ -1,5 +1,6 @@
 //! Every path the program touches derives from [`Paths`].
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Component, Path, PathBuf};
 use vibe_core::dirs::{Env, Kind};
 
 /// An agent harness vibe projects into.
@@ -107,6 +108,41 @@ impl Paths {
         })
     }
 
+    /// Refuses projection through an ancestor that escapes the configured target root.
+    /// The root itself may be intentionally linked; store source links are not inspected.
+    pub fn guard_parent(&self, path: &Path) -> Result<(), String> {
+        let fail = |why: &str| format!("{}: {why}", path.display());
+        if path.components().any(|c| matches!(c, Component::ParentDir)) {
+            return Err(fail("parent traversal in projection target"));
+        }
+        let roots = [
+            &self.claude_dir,
+            &self.codex_dir,
+            &self.factory_dir,
+            &self.opencode_dir,
+            &self.agents_skills,
+            &self.state_dir,
+            &self.store,
+            &self.home,
+        ];
+        let root = roots
+            .into_iter()
+            .filter(|r| path.starts_with(r))
+            .max_by_key(|r| r.components().count())
+            .ok_or_else(|| fail("outside configured projection roots"))?;
+        let physical_root = physical(root).map_err(|e| fail(&e.to_string()))?;
+        let target = if path == root {
+            path
+        } else {
+            path.parent().unwrap_or(path)
+        };
+        let physical_parent = physical(target).map_err(|e| fail(&e.to_string()))?;
+        if !physical_parent.starts_with(&physical_root) {
+            return Err(fail("physical projection path escapes configured root"));
+        }
+        Ok(())
+    }
+
     /// The store configuration file.
     pub fn store_json(&self) -> PathBuf {
         self.store.join("store.json")
@@ -135,6 +171,26 @@ impl Paths {
     /// The projection lock file.
     pub fn lock_file(&self) -> PathBuf {
         self.state_dir.join("lock")
+    }
+}
+
+/// Resolve a path that may not exist, without treating a dangling link as a missing directory.
+fn physical(path: &Path) -> std::io::Result<PathBuf> {
+    let mut ancestor = path;
+    loop {
+        match fs::symlink_metadata(ancestor) {
+            Ok(_) => {
+                let mut resolved = fs::canonicalize(ancestor)?;
+                if let Ok(suffix) = path.strip_prefix(ancestor) {
+                    resolved.push(suffix);
+                }
+                return Ok(resolved);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                ancestor = ancestor.parent().ok_or(e)?;
+            }
+            Err(e) => return Err(e),
+        }
     }
 }
 

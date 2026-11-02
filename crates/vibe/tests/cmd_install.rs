@@ -575,10 +575,36 @@ fn install_notes_a_hook_binary_inside_a_build_directory() {
     let home = Home::with_store("install-build-note");
     common::fake_claude(&home);
     let kit = toolkit(&home);
-    let out = install(&home, &kit, &["--harness", "codex"]);
+    // global-store Task 10: the fixture owns the build path, independent of Cargo's target dir.
+    let bin = home.path("build/target/debug/vibe");
+    fs::create_dir_all(bin.parent().unwrap()).unwrap();
+    fs::copy(env!("CARGO_BIN_EXE_vibe"), &bin).unwrap();
+    let output = Command::new(&bin)
+        .args([
+            "install",
+            "--toolkit",
+            kit.to_str().unwrap(),
+            "--harness",
+            "codex",
+        ])
+        .current_dir(&home.dir)
+        .env_clear()
+        .env("HOME", &home.dir)
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    let out = Out {
+        code: output.status.code().unwrap(),
+        stdout: output.stdout,
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    };
     assert_ok(&out);
-    let bin = env!("CARGO_BIN_EXE_vibe");
-    assert!(bin.contains("/target/"), "{bin}");
+    let commands = session_start_commands(&home, ".codex/hooks.json");
+    assert!(
+        commands.iter().any(
+            |command| command.starts_with(&format!("\"{}\" hook session-start", bin.display()))
+        )
+    );
     assert!(
         out.text().lines().any(|l| l.starts_with("note hook binary ")
             && l.ends_with(
@@ -650,4 +676,57 @@ fn hook_binary_prefers_the_path_spelling_of_the_running_binary() {
             fs::canonicalize(&real).unwrap().display()
         )]
     );
+}
+
+// global-store Task 9: a child link cannot escape the configured harness root.
+#[test]
+fn install_refuses_plugin_parent_escape_and_dangling_parent() {
+    use std::os::unix::fs::symlink;
+    for dangling in [false, true] {
+        let home = Home::with_store(if dangling {
+            "install-plugin-dangling"
+        } else {
+            "install-plugin-escape"
+        });
+        let kit = toolkit(&home);
+        fs::create_dir_all(home.path(".config/opencode")).unwrap();
+        if !dangling {
+            fs::create_dir_all(home.path("outside")).unwrap();
+        }
+        symlink(home.path("outside"), home.path(".config/opencode/plugins")).unwrap();
+        let out = install(&home, &kit, &["--harness", "opencode"]);
+        assert_eq!(out.code, 1, "{} {}", out.text(), out.stderr);
+        assert!(!home.path("outside/vibe-store.js").exists());
+    }
+}
+
+// global-store Task 9: the configured root may intentionally point at a dotfiles directory.
+#[test]
+fn install_preserves_linked_harness_root_and_internal_parent_links() {
+    use std::os::unix::fs::symlink;
+    let home = Home::with_store("install-linked-root");
+    let kit = toolkit(&home);
+    fs::create_dir_all(home.path("dotfiles/opencode/real-plugins")).unwrap();
+    symlink(
+        home.path("dotfiles/opencode"),
+        home.path(".config/opencode"),
+    )
+    .unwrap();
+    symlink(
+        home.path("dotfiles/opencode/real-plugins"),
+        home.path("dotfiles/opencode/plugins"),
+    )
+    .unwrap();
+    assert_ok(&install(&home, &kit, &["--harness", "opencode"]));
+    assert!(
+        home.path("dotfiles/opencode/real-plugins/vibe-store.js")
+            .is_file()
+    );
+    assert_ok(&home.vibe(&["uninstall"], &[]));
+    assert!(
+        !home
+            .path("dotfiles/opencode/real-plugins/vibe-store.js")
+            .exists()
+    );
+    assert!(is_link(&home, ".config/opencode"));
 }
