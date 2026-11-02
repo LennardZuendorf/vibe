@@ -44,7 +44,7 @@ Commands are byte-exact — copy them as written.
 **Prerequisites:** `bash` and `curl` (or `wget`), plus `git` for the target repo.
 [`jq`](https://jqlang.github.io/jq/) and [Node](https://nodejs.org) ≥18 are
 recommended — both halves degrade without them, but with no Node the flow's
-hooks fall back to bash (guard, Stop gate) or go quiet. `claude` CLI is needed only for `--global`.
+hooks fall back to bash (guard, Stop gate) or go quiet. The `claude` CLI is needed only for the optional `--global --plugin` (and `--with-plugins`).
 
 No clone required — run from inside the repo you want vibe in:
 
@@ -70,7 +70,7 @@ plain directory with no Git ancestor uses the current directory.
 | Mode | Command | What you get |
 |---|---|---|
 | **local** (default) | `./install.sh <repo>` | The full **stateful** kit at the resolved root: both skills, the engine, and the native surface of every configured host. For Claude Code that is `/flow` plus the hooks wired via `.claude/settings.json`. |
-| **global** | `./install.sh --global` | The **per-user plugin** (`vibe@vibe`): the portable, stateless surface only — both skills plus the doctrine hook — in **every** repo. Needs the `claude` CLI. |
+| **global** | `./install.sh --global` | The **per-user skills**: `spec` and `vibe` installed into each selected host's own user-level skills dir (Claude `~/.claude/skills`, Codex `~/.codex/skills`, Droid `~/.factory/skills`, OpenCode `~/.config/opencode/skills`) plus one shared `~/.agents/AGENTS.md` block. No host CLI needed, and re-running it changes nothing. `--host <claude\|codex\|droid\|opencode\|all>` overrides detection; `--plugin` also installs the Claude plugin for its doctrine hook. |
 
 ```bash
 ./install.sh <repo> --only spec       # the spec framework alone

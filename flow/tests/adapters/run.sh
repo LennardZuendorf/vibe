@@ -1185,20 +1185,25 @@ subout="$( cd "$SBsub/pkg/src" && bash "$INSTALL" --dry-run --local --platform n
 assert_contains "install-modes" "bare run from a subdir targets the repo root" "$subout" "$SBsub/.agents/skills"
 assert_not_contains "install-modes" "bare run from a subdir skips the subdir" "$subout" "pkg/src/.agents"
 rm -rf "$SBsub"
-# --global --dry-run writes nothing and describes the per-user plugin plan.
+# --global --dry-run writes nothing and describes the per-user SKILLS plan
+# (vibe#71 sub-gap 2: the global path installs real skill dirs per host now, not
+# a Claude-only plugin, so the plan names the hosts it would write for).
 SBg="$(mktmp)"
-gout="$( cd "$SBg" && bash "$INSTALL" --global --dry-run 2>&1 )"
-assert_contains "install-modes" "--global plans a per-user plugin install" "$gout" "install plugin vibe@vibe at user scope"
+gout="$( cd "$SBg" && HOME="$(mktmp)" bash "$INSTALL" --global --dry-run 2>&1 )"
+assert_contains "install-modes" "--global plans a per-user skills install" "$gout" "install the spec + vibe skills at user scope"
+assert_contains "install-modes" "--global plans the shared AGENTS.md block" "$gout" "would maintain the shared AGENTS.md block"
 { [[ ! -e "$SBg/.agents" && ! -e "$SBg/.claude" ]] && pass "install-modes" "--global --dry-run writes nothing"; } || fail "install-modes" "--global dry-run wrote files"
 rm -rf "$SBg"
-# A REAL --global without the claude CLI errors clearly (graceful, not a stack
-# trace) — and exits before any mutation. A dry-run prints the plan without the CLI
-# (it touches nothing), so the error path is exercised with a real run here.
+# A REAL --global without the claude CLI now SUCCEEDS: the payload is files, not
+# a CLI-driven plugin. It must land in that HOME and never touch the real one.
 noclaude="$(mkshim claude)"
-SBn="$(mktmp)"
-nout="$( cd "$SBn" && PATH="$noclaude" bash "$INSTALL" --global 2>&1 || true )"
-assert_contains "install-modes" "real --global without claude CLI errors clearly" "$nout" "needs the 'claude' CLI"
-rm -rf "$noclaude" "$SBn"
+SBn="$(mktmp)"; Gn="$(mktmp)"
+nout="$( cd "$SBn" && HOME="$Gn" PATH="$noclaude" bash "$INSTALL" --global --host claude 2>&1 )"
+assert_contains "install-modes" "real --global needs no host CLI" "$nout" "done (global / per-user skills)"
+[[ -f "$Gn/.claude/skills/vibe/SKILL.md" ]] \
+  && pass "install-modes" "real --global without the claude CLI installs into that HOME" \
+  || fail "install-modes" "real --global without the claude CLI installs into that HOME"
+rm -rf "$noclaude" "$SBn" "$Gn"
 # An explicitly-empty target must be REJECTED, never fall through to cwd — else
 # `install.sh "" --uninstall` would strip vibe from the current directory. Regression
 # for a dogfood near-miss (an unset shell var expanded to an empty argument).
@@ -2905,6 +2910,13 @@ if [[ "$PI_ISOLATION_RC" -eq 0 ]]; then
 else
   fail "plugin-install/71" "live host probes blocked: isolation regression failed"
 fi
+
+# vibe#71 sub-gap 2: `install.sh --global` writes the two skills into each
+# host's own user-level skills dir and maintains one shared AGENTS.md block,
+# idempotently. Needs no host CLI, so it runs as a normal (never skipped) leg.
+GI_OUT="$(bash "$REPO_ROOT/flow/tests/adapters/global-install.sh" 2>&1)"; GI_RC=$?
+printf '%s\n' "$GI_OUT"
+assert_eq "global-install/71" "temp-HOME global install lands both skills per host, idempotently" "$GI_RC" "0"
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

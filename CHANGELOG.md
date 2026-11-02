@@ -14,6 +14,16 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Changed
 
+- **`install.sh --global` is no longer Claude-only** (vibe#71): it installs the
+  `spec` and `vibe` skills into each selected host's own user-level skills dir
+  (Claude `~/.claude/skills`, Codex `~/.codex/skills`, Droid `~/.factory/skills`,
+  OpenCode `~/.config/opencode/skills`) and maintains one shared
+  `~/.agents/AGENTS.md` block between markers. Hosts are detected (CLI on PATH or
+  an existing config dir) or forced with `--host <claude|codex|droid|opencode|all>`;
+  no host CLI is required, and a second run changes no file and says so. The Claude
+  per-user plugin — and its doctrine hook — moved behind `--plugin`, because it
+  would load the same two skills a second time. A `--global` run as root is
+  refused: everything it writes must stay user-owned.
 - **Direction: v0.4 re-architecture** — three independent tools (spec, flow,
   instruct) as static Rust binaries, Claude Code + OpenCode plugins, contracts
   as the only coupling; root specs rewritten, roadmap F1–F24 authored as an

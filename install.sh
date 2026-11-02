@@ -4,8 +4,9 @@
 #   ./install.sh                 # single command: default to THIS repo; on a TTY,
 #                                #   ask local vs global first.
 #   ./install.sh <repo>          # local: full vibe into <repo> (explicit target).
-#   ./install.sh --global        # per-user plugin (spec + vibe skills + doctrine,
-#                                #   applies across every repo) via the claude CLI.
+#   ./install.sh --global        # per-user install: both skills into every detected
+#                                #   host's user-level skills dir (Claude, Codex, Droid,
+#                                #   OpenCode) + one shared user-level AGENTS.md block.
 #   ./install.sh --with-plugins  # also offer companion plugins (superpowers, …).
 #
 # No checkout required — run straight from the web (installs into the current repo):
@@ -32,13 +33,25 @@
 #   8. Report the configured hosts + entry points, that hooks are live (Claude
 #      Code only, and only when wired), and that /flow is a native command.
 #
-# GLOBAL install installs the per-user vibe plugin (marketplace add + plugin
-# install) so the skills + doctrine apply everywhere; the full STATEFUL flow
+# GLOBAL install places the two skills (`spec`, `vibe`) in each selected host's
+# OWN user-level skills directory, so a user of Codex, Droid or OpenCode no longer
+# has to hand-copy trees out of `git archive` (vibe#71), and maintains ONE shared
+# user-level AGENTS.md block (tracked template, marker-delimited, appended once).
+# No host CLI is required: the payload is files. The optional Claude plugin
+# (`--plugin`) stays available for the per-user doctrine hook, but is off by
+# default — it would load the same skills a second time. The full STATEFUL flow
 # (cursor, /flow, hooks) is a per-repo `--local` install.
 #
 # Flags:
 #   --local            full per-repo install into the target (the default).
-#   --global           per-user plugin install via the claude CLI.
+#   --global           per-user install: both skills into each selected host's
+#                      user-level skills dir, plus the shared AGENTS.md block.
+#   --host LIST        hosts for --global, comma-separated or `all`:
+#                      claude, codex, droid, opencode. Default: detect a host when
+#                      its CLI is on PATH or its user-level config dir exists.
+#                      Same selector vocabulary as --platform (last one wins).
+#   --plugin           (with --global) ALSO install the Claude plugin at user scope
+#                      for its doctrine hook. Needs the `claude` CLI.
 #   --with-plugins     also install companion plugins (superpowers; feature-dev slot).
 #   --only spec|flow   install (or uninstall) a single half (default: both).
 #   --platform LIST    native host surfaces to configure, comma-separated:
@@ -883,43 +896,226 @@ install_companion_plugins() {
   done
 }
 
-# ── global (per-user plugin) install ───────────────────────────────────────────
-# Install the vibe plugin at user scope so its spec + vibe skills and the doctrine
-# hook apply in every vibe-enabled repo. The full STATEFUL flow stays a per-repo
-# --local install. Respects --dry-run and degrades without the claude CLI.
+# ── global (per-user skills + shared instruction block) install ───────────────
+# vibe#71 sub-gap 2: this path used to be Claude-only (it shelled out to
+# `claude plugin install` and wrote nothing else), so a Codex, Droid or OpenCode
+# user had to hand-copy skill trees out of `git archive`. It now writes the two
+# skills into each selected host's OWN user-level skills directory and maintains
+# one shared user-level AGENTS.md block. Files only — no host CLI required.
+
+# The marker pair around the shared user-level AGENTS.md block. The block is
+# rewritten IN PLACE between the markers, so a re-run can neither duplicate nor
+# reorder it, and everything outside them stays user-owned.
+GLOBAL_MARK_START='<!-- vibe:global:start -->'
+GLOBAL_MARK_END='<!-- vibe:global:end -->'
+# The block ships as a TRACKED template (never as a file named AGENTS.md at a
+# path this installer writes blindly): the markers live inside it.
+GLOBAL_TEMPLATE="flow/reference/templates/agents-global.md"
+
+# global_host_root HOST — a host's per-user config root. Each is the user-scope
+# mirror of that host's project-level root in flow/reference/host-surfaces.json
+# (`claude` -> .claude, `opencode` -> .config/opencode, ...). The documented env
+# override wins where the host has one, so a relocated install still lands right.
+global_host_root() {
+  case "$1" in
+    claude)   printf '%s' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" ;;
+    codex)    printf '%s' "${CODEX_HOME:-$HOME/.codex}" ;;
+    droid)    printf '%s' "${FACTORY_HOME:-$HOME/.factory}" ;;
+    opencode) printf '%s' "${XDG_CONFIG_HOME:-$HOME/.config}/opencode" ;;
+    *) return 1 ;;
+  esac
+}
+
+# global_skills_dir HOST — where that host discovers USER-level skills.
+# OpenCode deliberately gets `~/.config/opencode/skills` (its own documented
+# global root), NOT the shared `~/.agents/skills`: the point of this path is that
+# each host's discovery is real and checkable on its own, and `~/.agents` is
+# already the tree the #71 workaround puts hand-copies in.
+global_skills_dir() { printf '%s/skills' "$(global_host_root "$1")"; }
+
+# global_host_detected HOST — the default global selection: the host's CLI is on
+# PATH, or its user-level config dir already exists (a user who installed the CLI
+# but has it off PATH still gets their skills). Never guessed from another host.
+global_host_detected() {
+  local host="$1" root
+  command -v "$host" >/dev/null 2>&1 && return 0
+  root="$(global_host_root "$host")" || return 1
+  [[ -n "$root" && -d "$root" ]]
+}
+
+detect_global_hosts() {
+  local h found=""
+  for h in ${HOST_IDS[@]+"${HOST_IDS[@]}"}; do
+    global_host_detected "$h" || continue
+    found="${found:+$found,}$h"
+  done
+  printf '%s' "$found"
+}
+
+# global_stage_skill NAME STAGE_DIR — copy the SHIPPED tree of skill NAME into
+# STAGE_DIR/NAME, scrubbed exactly as a repo install scrubs it (co-located tests
+# at any depth, the contributor AGENTS.md, source-side evidence/warnings.log) and
+# minus the source checkout's runtime cursor. Nothing is written to the target
+# here: the caller compares first, so an unchanged install touches no file.
+global_stage_skill() {
+  local name="$1" stage="$2" src="$SRC/.agents/skills/$1"
+  [[ -f "$src/SKILL.md" ]] || return 1
+  cp -RpL "$src" "$stage/" || return 1
+  scrub_source_only "$src" "$stage/$name"
+  rm -f "$stage/$name/state.json"
+  return 0
+}
+
+# global_tree_matches STAGED DEST — content-identical? A missing DEST is a
+# mismatch. Content is the criterion (the suite hashes it); modes come from the
+# staged copy when the tree is written.
+global_tree_matches() {
+  [[ -d "$2" ]] || return 1
+  diff -r "$1" "$2" >/dev/null 2>&1
+}
+
+# install_global_skill HOST NAME — install one skill for one host, idempotently.
+install_global_skill() {
+  local host="$1" name="$2" dir dest stage
+  dir="$(global_skills_dir "$host")" || return 1
+  dest="$dir/$name"
+  stage="$(mktemp -d "${TMPDIR:-/tmp}/vibe-global.XXXXXX")" || return 1
+  if ! global_stage_skill "$name" "$stage"; then
+    rm -rf "$stage"
+    err "WARN: could not stage the '$name' skill for $host; skipping."
+    return 1
+  fi
+  if global_tree_matches "$stage/$name" "$dest"; then
+    note "already installed: $name -> $dest ($host, unchanged)"
+    rm -rf "$stage"
+    return 0
+  fi
+  say "install the $name skill -> $dest ($host)"
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    mkdir -p "$dir"
+    rm -rf "${dest:?}"
+    if ! cp -Rp "$stage/$name" "$dest"; then
+      rm -rf "$stage"
+      err "WARN: could not install the '$name' skill for $host (under $dir)."
+      return 1
+    fi
+  fi
+  rm -rf "$stage"
+  return 0
+}
+
+# install_global_agents_block — maintain the shared user-level AGENTS.md block.
+# Appended once between the marker pair; on a re-run the region between the
+# markers is REWRITTEN IN PLACE from the tracked template, so it is never
+# duplicated, never reordered, and a run whose result is byte-identical writes
+# nothing at all. Everything outside the markers is left exactly as it was.
+install_global_agents_block() {
+  local file tpl tmp
+  file="$(global_agents_file)"
+  tpl="$SRC/$GLOBAL_TEMPLATE"
+  if [[ ! -f "$tpl" ]]; then
+    err "WARN: the global AGENTS.md template is missing ($tpl); skipping the shared block."
+    return 1
+  fi
+  # An unterminated marker is ambiguous: never guess where the block ended.
+  if [[ -f "$file" ]] && grep -qF "$GLOBAL_MARK_START" "$file" && ! grep -qF "$GLOBAL_MARK_END" "$file"; then
+    err "WARN: $file has an unterminated vibe:global block — leaving it alone; close it by hand."
+    return 1
+  fi
+  tmp="$(mktemp "${TMPDIR:-/tmp}/vibe-global-agents.XXXXXX")" || return 1
+  # A missing file is the "create it" case: awk reads /dev/null and the END rule
+  # still emits the block, so no branch is needed here.
+  local input="$file"
+  [[ -f "$file" ]] || input=/dev/null
+  awk -v start="$GLOBAL_MARK_START" -v end="$GLOBAL_MARK_END" -v body="$tpl" '
+    function emit(   line) {
+      while ((getline line < body) > 0) print line
+      close(body)
+      done = 1
+    }
+    {
+      if ($0 == start) { if (!done) emit(); inblock = 1; next }
+      if (inblock) { if ($0 == end) inblock = 0; next }
+      print
+      last = $0
+    }
+    END { if (!done) { if (last != "") print ""; emit() } }
+  ' "$input" > "$tmp" || { rm -f "$tmp"; err "WARN: could not compose the shared AGENTS.md block."; return 1; }
+  if [[ -f "$file" ]] && cmp -s "$tmp" "$file"; then
+    note "already installed: shared AGENTS.md block -> $file (unchanged)"
+    rm -f "$tmp"
+    return 0
+  fi
+  say "maintain the shared AGENTS.md block -> $file"
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    mkdir -p "$(dirname "$file")"
+    # `cat >` (not `mv`) so an existing file keeps its mode and a new one gets
+    # the invoking user's umask — the block never lands 0600 or root-owned.
+    cat "$tmp" > "$file"
+  fi
+  rm -f "$tmp"
+  return 0
+}
+
+# global_agents_file — the ONE shared user-level instruction file. The hosts each
+# read their own (Claude `~/.claude/CLAUDE.md`, Codex `~/.codex/AGENTS.md`, Droid
+# `~/.factory/AGENTS.md`, OpenCode `~/.config/opencode/AGENTS.md`), so vibe keeps
+# a single host-neutral block here and prints the include lines; writing into a
+# host's own memory file would clobber user prose the installer does not own.
+global_agents_file() { printf '%s/AGENTS.md' "$HOME/.agents"; }
+
 install_global() {
-  local have_claude=0
-  command -v claude >/dev/null 2>&1 && have_claude=1
-  # A dry-run never touches anything, so it prints the plan even without the CLI. A
-  # REAL global install needs the claude CLI to add the marketplace + install.
-  if [[ "$DRY_RUN" -eq 0 && "$have_claude" -eq 0 ]]; then
-    err "ERROR: --global needs the 'claude' CLI on PATH (it installs the vibe plugin per-user)."
-    err "       Install Claude Code, or run a per-repo install: ./install.sh <repo> --local"
+  local hosts h rc=0
+  # Every write lands under $HOME, so it must belong to the invoking user. Root
+  # would leave files the user cannot edit or remove.
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    err "ERROR: --global installs into \$HOME and must not run as root (the files would be root-owned)."
+    err "       Run it as yourself; a shared/system-wide install is out of scope."
     exit 1
   fi
-  # Marketplace source: the local checkout normally, the GitHub slug when this
-  # tree came from the curl bootstrap — that tree is a temp dir the bootstrap's
-  # EXIT trap removes, so registering it would point a marketplace at nothing
-  # (and `curl … | bash -s -- --global` is a documented path).
-  local market="$SRC"
-  if [[ "${VIBE_BOOTSTRAPPED:-0}" == "1" ]]; then market="$VIBE_REPO"; fi
-  say "add the vibe marketplace ($market) at user scope"
-  say "install plugin vibe@vibe at user scope (applies across all your repos)"
-  if [[ "$DRY_RUN" -eq 1 && "$have_claude" -eq 0 ]]; then
-    note "(dry-run) note: the 'claude' CLI is not on PATH — a real --global run needs it."
+  if [[ -z "${HOME:-}" ]]; then
+    err "ERROR: --global needs \$HOME (it installs the skills per user)."
+    exit 1
   fi
-  if [[ "$DRY_RUN" -eq 0 ]]; then
-    claude plugin marketplace add "$market" --scope user >/dev/null 2>&1 \
-      || err "WARN: could not add the vibe marketplace (already added?); continuing."
-    if claude plugin install vibe@vibe --scope user >/dev/null 2>&1; then
-      note "installed vibe@vibe (user scope)"
+  if [[ "$PLATFORM_GIVEN" -eq 1 ]]; then
+    hosts="$PLATFORMS"
+    HOSTS_SOURCE="selected with --host/--platform"
+  else
+    hosts="$(detect_global_hosts)"
+    HOSTS_SOURCE="detected by CLI or an existing user config dir"
+  fi
+  say "install the spec + vibe skills at user scope for ${hosts:-no host} ($HOSTS_SOURCE)"
+  # shellcheck disable=SC2086  # ${hosts//,/ } is the intended word split
+  for h in ${hosts//,/ }; do
+    install_global_skill "$h" spec || rc=1
+    install_global_skill "$h" vibe || rc=1
+  done
+  install_global_agents_block || rc=1
+  # The Claude per-user plugin stays available, but only on request: it carries
+  # the doctrine hook AND the same two skills, so a default run would load every
+  # skill twice (the duplicate-load problem #71's workaround note calls out).
+  if [[ "$WANT_PLUGIN" -eq 1 ]]; then
+    if ! command -v claude >/dev/null 2>&1; then
+      err "WARN: --plugin needs the 'claude' CLI on PATH; skipping the per-user plugin."
     else
-      err "WARN: could not install vibe@vibe — run 'claude plugin install vibe@vibe' by hand."
+      local market="$SRC"
+      if [[ "${VIBE_BOOTSTRAPPED:-0}" == "1" ]]; then market="$VIBE_REPO"; fi
+      say "add the vibe marketplace ($market) at user scope"
+      say "install plugin vibe@vibe at user scope (doctrine hook)"
+      if [[ "$DRY_RUN" -eq 0 ]]; then
+        claude plugin marketplace add "$market" --scope user >/dev/null 2>&1 \
+          || err "WARN: could not add the vibe marketplace (already added?); continuing."
+        if claude plugin install vibe@vibe --scope user >/dev/null 2>&1; then
+          note "installed vibe@vibe (user scope)"
+        else
+          err "WARN: could not install vibe@vibe — run 'claude plugin install vibe@vibe' by hand."
+        fi
+      fi
     fi
   fi
   # Per-repo home for the spec framework: seed the legacy tree in the current repo
-  # if it is a git repo with neither root (docs/spec or the legacy tree); the plugin
-  # carries the skills, each repo still needs its own spec memory. The seed is the
+  # if it is a git repo with neither root (docs/spec or the legacy tree); the skills
+  # apply across repos, each repo still needs its own spec memory. The seed is the
   # bash setup.sh until F22 retires it. The full stateful flow is a separate --local
   # install.
   if [[ -e "$TARGET/.git" && ! -d "$TARGET/docs/spec" && ! -d "$TARGET/$LEGACY_SPEC" ]]; then
@@ -932,17 +1128,21 @@ install_global() {
   [[ "$WITH_PLUGINS" -eq 1 ]] && install_companion_plugins
   if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "install: [dry-run] global plan complete — nothing was written."
-  else
-    cat <<EOF
-install: done (global / per-user plugin).
-install:   vibe@vibe is installed at user scope — its spec + vibe skills and the
-install:   SessionStart doctrine hook now apply in every vibe-enabled repo (one with
-install:   a docs/spec/ or $LEGACY_SPEC/ tree). Restart Claude Code to load it.
+    exit 0
+  fi
+  cat <<EOF
+install: done (global / per-user skills).
+install:   ${hosts:-no host} — spec + vibe skills placed in the user-level skills dir.
+install:   ${hosts:+Restart the host CLI (or reload its skills) to pick them up.}
+install:   Shared AGENTS.md block: $(global_agents_file)
+install:     each host reads its OWN instruction file, so include the block there if
+install:     you want it applied globally: ~/.claude/CLAUDE.md (Claude Code),
+install:     ~/.codex/AGENTS.md (Codex), ~/.factory/AGENTS.md (Droid),
+install:     ~/.config/opencode/AGENTS.md (OpenCode).
 install:   For the FULL stateful flow (cursor, /flow, hooks) in a repo, run:
 install:     ./install.sh <repo> --local
 EOF
-  fi
-  exit 0
+  exit "$rc"
 }
 
 # ── interactive mode prompt (bare TTY run only) ────────────────────────────────
@@ -972,6 +1172,7 @@ UNINSTALL=0
 ASSUME_YES=0
 MODE=""
 WITH_PLUGINS=0
+WANT_PLUGIN=0
 TARGET=""
 TARGET_GIVEN=0
 ADAPTERS=""
@@ -988,12 +1189,18 @@ while [[ $# -gt 0 ]]; do
       PLATFORM_RAW="$2"; PLATFORM_GIVEN=1; shift 2 ;;
     --platform=*)
       PLATFORM_RAW="${1#*=}"; PLATFORM_GIVEN=1; shift ;;
+    --host)
+      [[ $# -ge 2 && -n "$2" ]] || { err "ERROR: --host needs a value: claude, codex, droid, opencode, or all"; exit 1; }
+      PLATFORM_RAW="$2"; PLATFORM_GIVEN=1; shift 2 ;;
+    --host=*)
+      PLATFORM_RAW="${1#*=}"; PLATFORM_GIVEN=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     --yes|-y) ASSUME_YES=1; shift ;;
     --local)  MODE=local;  shift ;;
     --global) MODE=global; shift ;;
     --with-plugins) WITH_PLUGINS=1; shift ;;
+    --plugin) WANT_PLUGIN=1; shift ;;
     --only)
       case "${2:-}" in
         spec|flow) ONLY="$2" ;;
@@ -1024,6 +1231,9 @@ esac
 # bad token is a usage error before anything is created.
 HOSTS_SOURCE="detected on PATH"
 if [[ "$PLATFORM_GIVEN" -eq 1 ]]; then
+  # `all` is the --host shorthand for the whole supported set; it expands to the
+  # canonical list before validation so one code path decides the ordering.
+  [[ "$PLATFORM_RAW" == "all" ]] && PLATFORM_RAW="claude,opencode,codex,droid"
   resolve_platforms "$PLATFORM_RAW" || exit 1
   HOSTS_SOURCE="selected with --platform"
 else
