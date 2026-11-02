@@ -561,4 +561,23 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** tests, fixtures, paths, hermeticity, tooling
 **Date:** 2026-11-02
 
+
+### Pin store roots across fixture process boundaries
+**Pattern:** Windows CI failed `import_keeps_per_server_env_credentials_distinct` because its injected Unix-flavour Env wrote `.config/vibe`, while the public CLI resolved `%APPDATA%\vibe` and produced no Codex config.
+**Rule:** When a test mixes injected paths with a real CLI, pass the fixture's resolved `VIBE_STORE` explicitly. Keep the projection and credential assertions intact; do not change global helpers or skip the host.
+**Tags:** tests, fixtures, paths, windows, import
+**Date:** 2026-11-02
+
+### Avoid writable executable copies for path-only fixtures
+**Pattern:** Ubuntu stable CI failed the build-note fixture at process spawn with `ExecutableFileBusy` / `Text file busy` after copying the binary into its fixture build directory.
+**Rule:** A path-warning test can link the already-built executable and put that fixture directory first on PATH when the product preserves matching PATH spelling. Assert the exact registered hook path and warning through the public CLI instead of adding launch retries.
+**Tags:** tests, fixtures, executables, paths, ci
+**Date:** 2026-11-02
+
+### Preserve CI diagnostic evidence before changing code
+**Pattern:** The pinned diagnostics endpoint returned 502 for a failed job; sandbox network access failed, then `gh api` refused terminal escapes. A guessed dated plan path was absent, and a scanner-config search had no matches.
+**Rule:** Discover document paths with `rg --files`. Read logs for the exact failed job and head; when the dedicated reader is unavailable, retrieve through the authorized API and preserve escaped log bytes with `--allow-escape-sequences`. Treat a no-match search as evidence, and keep scanner findings distinct from runtime failures.
+**Tags:** tooling, ci, diagnostics, discovery, tests
+**Date:** 2026-11-02
+
 <!-- vibe-spec: allow SF15 -->

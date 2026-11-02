@@ -578,7 +578,7 @@ fn install_notes_a_hook_binary_inside_a_build_directory() {
     // global-store Task 10: the fixture owns the build path, independent of Cargo's target dir.
     let bin = home.path("build/target/debug/vibe");
     fs::create_dir_all(bin.parent().unwrap()).unwrap();
-    fs::copy(env!("CARGO_BIN_EXE_vibe"), &bin).unwrap();
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_vibe"), &bin).unwrap();
     let output = Command::new(&bin)
         .args([
             "install",
@@ -590,7 +590,10 @@ fn install_notes_a_hook_binary_inside_a_build_directory() {
         .current_dir(&home.dir)
         .env_clear()
         .env("HOME", &home.dir)
-        .env("PATH", "/usr/bin:/bin")
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", bin.parent().unwrap().display()),
+        )
         .output()
         .unwrap();
     let out = Out {

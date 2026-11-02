@@ -579,7 +579,10 @@ fn import_keeps_per_server_env_credentials_distinct() {
             .any(|w| w.contains("codex") && w.contains("b") && w.contains("TOKEN"))
     );
     fs::create_dir_all(home.path(".codex")).unwrap();
-    let out = home.vibe(&["sync", "--harness", "codex"], &[]);
+    let out = home.vibe(
+        &["sync", "--harness", "codex"],
+        &[("VIBE_STORE", p.store.to_str().unwrap())],
+    );
     assert_eq!(out.code, 0, "{}", out.stderr);
     let config = home.read(".codex/config.toml");
     assert!(config.contains("[mcp_servers.a]"));
