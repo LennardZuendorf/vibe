@@ -2888,13 +2888,23 @@ rm -rf "$RH7" "$RH7_NONODE"
 assert_eq "review-hardening/7" "generated hook carries no stale cursor comment" \
   "$(grep -c "this project's cursor" "$RH7_HOOK" || true)" "0"
 
+# plugin-install/71: adversarial inherited host paths must be contained before
+# this suite can invoke any real host CLI.
+PI_ISOLATION_OUT="$(bash "$REPO_ROOT/flow/tests/adapters/plugin-isolation.sh" 2>&1)"; PI_ISOLATION_RC=$?
+printf '%s\n' "$PI_ISOLATION_OUT"
+assert_eq "plugin-install/71" "host install environment isolation" "$PI_ISOLATION_RC" "0"
+
 # vibe#71: the shipped plugin packages must install real skills into each host's
 # per-user cache. That needs the host CLIs, which CI's main suite does not have,
 # so the leg lives in its own file: skip-aware here, and CI runs it separately
 # with the CLIs present and --require-host (a skip there is a failure).
-PI_OUT="$(bash "$REPO_ROOT/flow/tests/adapters/plugin-install.sh" 2>&1)"; PI_RC=$?
-printf '%s\n' "$PI_OUT"
-assert_eq "plugin-install/71" "clean-clone install lands SKILL.md in each host cache (skips without the CLIs)" "$PI_RC" "0"
+if [[ "$PI_ISOLATION_RC" -eq 0 ]]; then
+  PI_OUT="$(bash "$REPO_ROOT/flow/tests/adapters/plugin-install.sh" 2>&1)"; PI_RC=$?
+  printf '%s\n' "$PI_OUT"
+  assert_eq "plugin-install/71" "clean-clone install lands SKILL.md in each host cache (skips without the CLIs)" "$PI_RC" "0"
+else
+  fail "plugin-install/71" "live host probes blocked: isolation regression failed"
+fi
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

@@ -615,3 +615,39 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Promote only missing current contracts, keep later work explicitly pending, and inventory every retained artifact before deletion. Check on-disk existence separately from the index; verify the staged commit tree after staging. Use non-writing Git queries for read-only audits. Inventory commands and verify behavior separately on every stack head before sharing wording. Run strict validation and pre-merge drift after cleanup; never infer compound completion from green source tests.
 **Tags:** compound, spec, git, artifacts, verification
 **Date:** 2026-11-03
+
+### Host install tests need an environment allowlist
+**Pattern:** Plugin-install tests replaced HOME but inherited host-specific config paths, project settings, and credentials. Real CLIs could write outside the temporary homes.
+**Rule:** Launch each host with a clean environment, explicit config/data/cache/state paths, and a temporary working directory. Confirm the host's actual override variables. Prove external paths stay untouched with safe CLI doubles before live install probes.
+**Tags:** tests, install, hermeticity, environment, credentials
+**Date:** 2026-11-02
+
+### A host cache identity can differ from the manifest version
+**Pattern:** Droid registered a local marketplace by its directory basename and cached installed skills under hashed names plus a source revision. Tests assumed the manifest name and version, so a successful installation failed lookup.
+**Rule:** Verify each host's registration and cache identity from an isolated real installation. Pin the installed clone's identity and compare real cached files with canonical source. Preserve manifest-version assertions for hosts that use them.
+**Tags:** tests, plugins, cache, install, identity
+**Date:** 2026-11-02
+
+### Corrected fixtures must fail against the original source
+**Pattern:** The first CLI double counted install arguments and failure summaries incorrectly. Its failing output mixed the inherited-config defect with fixture errors.
+**Rule:** Derive fixture contracts from actual calls and outputs. After correcting a fixture, run it against the original source again and confirm failure for the intended cause before using its passing result as regression evidence.
+**Tags:** tests, fixtures, tdd, review
+**Date:** 2026-11-02
+
+### Isolated builds must remain visible to the test harness
+**Pattern:** Cargo built successfully in an isolated target directory, but spec and skill tests hardcoded the worktree's target/debug path and reported a missing binary. A temporary target symlink was untracked despite the target/ ignore rule.
+**Rule:** Check binary lookup paths before moving build output. If a harness hardcodes target/debug, bridge that path to the isolated build for verification and remove the owned bridge afterward. Verify ignore behavior for symlinks separately from directories.
+**Tags:** tests, cargo, isolation, fixtures, gitignore
+**Date:** 2026-11-02
+
+### Check generated content and permissions separately
+**Pattern:** Canonical active-rules regeneration produced the approved bytes but replaced AGENTS.md with a mode0600 temporary file. A complete source-identity assertion correctly detected its difference from the mode0644 preview.
+**Rule:** Check content and filesystem mode separately after atomic generators. Preserve the accepted source-file permissions before publication, then verify both again. Do not change generator behavior during an unrelated repair merely to satisfy its verification fixture.
+**Tags:** generators, permissions, verification, git
+**Date:** 2026-11-02
+
+### Use authorized network access for remote Git checks
+**Pattern:** The sandbox could not resolve github.com during an authorized remote-head check. The same narrowly scoped command succeeded with approved network access and returned the expected PR head.
+**Rule:** Distinguish sandbox network admission from repository authentication. Use a scoped escalation for an already authorized remote Git action, verify the exact branch and expected head, and retain the returned SHA before pushing without force.
+**Tags:** git, network, sandbox, publication
+**Date:** 2026-11-02

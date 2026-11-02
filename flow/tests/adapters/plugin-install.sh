@@ -49,7 +49,8 @@ assert_eq "$TAG" "precondition: package.json declares a version" "$([[ -n "$VER"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/vibe-plugin-install.XXXXXX")" || exit 1
 trap 'rm -rf "$WORK"' EXIT
-CLONE="$WORK/clone"
+# Droid names local marketplaces after their source directory.
+CLONE="$WORK/vibe"
 
 if git clone -q "$REPO_ROOT" "$CLONE" 2>"$WORK/clone.err"; then
   pass "$TAG" "a clean clone of the repo under test"
@@ -77,24 +78,45 @@ done
 
 # verify_cache HOST HOMEDIR — the host's cache must hold both SKILL.md files as
 # real files byte-identical to the clone's canonical half. Matching on
-# "/vibe/$VER/" is what pins the manifest version: a version-less Codex manifest
-# makes the cache dir read 1.0.0 and this finds nothing.
+# "/vibe/$VER/" pins Claude/Codex manifest versions: a version-less Codex
+# manifest reads 1.0.0 and finds nothing. Droid hashes both names and keys local
+# installs by their source revision, so pin its exact cloned commit instead.
 verify_cache() {
-  local host="$1" home="$2" name canon got all found
+  local host="$1" home="$2" name canon got all found pin="/vibe/$VER/" identity="v$VER"
+  if [[ "$host" == droid ]]; then
+    local revision; revision="$(git -C "$CLONE" rev-parse --short=12 HEAD)"
+    pin="/$revision/"; identity="revision $revision"
+  fi
   all="$(find "$home" -type f -path '*/plugins/cache/*' -name SKILL.md 2>/dev/null | sort)"
   for pair in "spec:spec" "vibe:flow"; do
     name="${pair%%:*}" canon="${pair#*:}"
-    got="$(printf '%s\n' "$all" | grep -E "/skills/$name/SKILL\.md$" | grep -F "/vibe/$VER/" | head -n1)"
+    got="$(printf '%s\n' "$all" | grep -E "/skills/$name/SKILL\.md$" | grep -F "$pin" | head -n1)"
     found="$got"
     [[ -n "$found" && ! -L "$found" ]] && cmp -s "$found" "$CLONE/$canon/SKILL.md" || found=""
     if [[ -n "$found" ]]; then
-      pass "$TAG" "$host cache holds skills/$name/SKILL.md (v$VER, byte-identical to $canon/)"
+      pass "$TAG" "$host cache holds skills/$name/SKILL.md ($identity, byte-identical to $canon/)"
     else
-      fail "$TAG" "$host cache holds skills/$name/SKILL.md (v$VER, byte-identical to $canon/)"
+      fail "$TAG" "$host cache holds skills/$name/SKILL.md ($identity, byte-identical to $canon/)"
       echo "        got: ${got:-<no skills/$name/SKILL.md under $home>}"
     fi
   done
 }
+
+# Every host invocation starts from an allowlist: HOME alone does not override
+# CODEX_HOME / CLAUDE_CONFIG_DIR, and inherited credentials or project settings
+# can redirect writes as well. Keep both commands in the same isolated home.
+run_host() (
+  local home="$1"; shift
+  mkdir -p "$home"/{.claude,.codex,.factory,.config,.local/share,.local/state,.cache,tmp} || exit 1
+  home="$(cd "$home" && pwd -P)" || exit 1
+  cd "$home" || exit 1
+  env -i PATH="$PATH" HOME="$home" TMPDIR="$home/tmp" \
+    CLAUDE_CONFIG_DIR="$home/.claude" CODEX_HOME="$home/.codex" \
+    FACTORY_HOME_OVERRIDE="$home" FACTORY_CONFIG_HOME="$home/.factory" \
+    XDG_CONFIG_HOME="$home/.config" \
+    XDG_DATA_HOME="$home/.local/share" XDG_STATE_HOME="$home/.local/state" \
+    XDG_CACHE_HOME="$home/.cache" "$@"
+)
 
 RAN=0
 # ── Claude: the host that already dereferenced symlinks — the control ────────
@@ -102,8 +124,8 @@ if ! command -v claude >/dev/null 2>&1; then
   skip "$TAG" "claude CLI not on PATH — cache not exercised here"
 else
   H="$WORK/home-claude"; mkdir -p "$H"
-  if HOME="$H" claude plugin marketplace add "$CLONE" >"$WORK/claude.log" 2>&1 \
-     && HOME="$H" claude plugin install vibe@vibe >>"$WORK/claude.log" 2>&1; then
+  if run_host "$H" claude plugin marketplace add "$CLONE" >"$WORK/claude.log" 2>&1 \
+     && run_host "$H" claude plugin install vibe@vibe >>"$WORK/claude.log" 2>&1; then
     RAN=$((RAN + 1)); verify_cache claude "$H"
   else
     fail "$TAG" "claude plugin install vibe@vibe"
@@ -116,8 +138,8 @@ if ! command -v codex >/dev/null 2>&1; then
   skip "$TAG" "codex CLI not on PATH — cache not exercised here"
 else
   H="$WORK/home-codex"; mkdir -p "$H"
-  if HOME="$H" codex plugin marketplace add "$CLONE" >"$WORK/codex.log" 2>&1 \
-     && HOME="$H" codex plugin add vibe@vibe >>"$WORK/codex.log" 2>&1; then
+  if run_host "$H" codex plugin marketplace add "$CLONE" >"$WORK/codex.log" 2>&1 \
+     && run_host "$H" codex plugin add vibe@vibe >>"$WORK/codex.log" 2>&1; then
     RAN=$((RAN + 1)); verify_cache codex "$H"
   else
     fail "$TAG" "codex plugin add vibe@vibe"
@@ -128,11 +150,11 @@ fi
 # ── Factory Droid: same drop, but its marketplace refuses this credential ────
 if ! command -v droid >/dev/null 2>&1; then
   skip "$TAG" "droid CLI not on PATH — cache not exercised here"
-elif ! HOME="$WORK/home-droid" droid plugin marketplace add "$CLONE" >"$WORK/droid.log" 2>&1; then
+elif ! run_host "$WORK/home-droid" droid plugin marketplace add "$CLONE" >"$WORK/droid.log" 2>&1; then
   skip "$TAG" "droid refuses every marketplace source here ($(grep -m1 -E 'Error|error' "$WORK/droid.log" || head -n1 "$WORK/droid.log")) — payload property asserted above instead"
 else
   H="$WORK/home-droid"; mkdir -p "$H"
-  if HOME="$H" droid plugin install vibe@vibe --scope user >"$WORK/droid.log" 2>&1; then
+  if run_host "$H" droid plugin install vibe@vibe --scope user >"$WORK/droid.log" 2>&1; then
     RAN=$((RAN + 1)); verify_cache droid "$H"
   else
     fail "$TAG" "droid plugin install vibe@vibe --scope user"
