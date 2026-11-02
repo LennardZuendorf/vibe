@@ -206,13 +206,19 @@ pub struct Expect {
 
 impl Expect {
     /// The pin shape, for messages: pasting it under `expect` states exactly
-    /// these values.
+    /// these values. A `null` side is printed as `null` rather than dropped,
+    /// so a drift message reads expected and observed symmetrically (`{"oracle":
+    /// "x", "candidate": null}`, not `{"oracle": "x"}`, which looks like an
+    /// absent field).
     pub fn as_json(&self) -> String {
         let mut map = serde_json::Map::new();
-        if !self.oracle.is_null() {
+        // A stream/exit pin always prints both sides; a files pin prints only
+        // the sides it carries (it has `files` instead).
+        let both_sides = self.files.is_none();
+        if both_sides || !self.oracle.is_null() {
             map.insert("oracle".to_string(), self.oracle.clone());
         }
-        if !self.candidate.is_null() {
+        if both_sides || !self.candidate.is_null() {
             map.insert("candidate".to_string(), self.candidate.clone());
         }
         if let Some(files) = &self.files {

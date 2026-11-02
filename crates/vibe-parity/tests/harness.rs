@@ -223,6 +223,77 @@ fn a_crashing_candidate_is_pin_drift_not_pinned() {
 }
 
 #[test]
+fn a_candidate_without_the_final_newline_fails_instead_of_passing() {
+    // The mutation the line-based matcher let through: the oracle's stdout
+    // and the candidate's are equal as lines, and only the trailing byte
+    // differs. Bytes decide the difference, and no pin can state a difference
+    // with no differing line — even one that names both sides as identical.
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "stdout",
+          "expect": { "oracle": "args:", "candidate": "args:" }, "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=newline"]);
+    let report = run("final-newline", suite, &candidate());
+    assert_eq!(report.pinned(), 0, "{report:#?}");
+    assert!(
+        report.errors.is_empty(),
+        "the pin is claimed, not stale: {:?}",
+        report.errors
+    );
+    let two = report
+        .results
+        .iter()
+        .find(|r| r.case == "basic/two")
+        .expect("basic/two ran");
+    let Status::Fail(msgs) = &two.status else {
+        panic!("a missing final newline reported {:?}", two.status)
+    };
+    assert!(
+        msgs.iter().any(|m| m
+            == "stdout: unpinnable — the lines all agree, and only the final newline \
+                differs (oracle does, candidate does not)"),
+        "{msgs:?}"
+    );
+}
+
+#[test]
+fn a_file_equal_as_lines_but_not_as_bytes_fails_instead_of_pinning() {
+    // The same hole one level down: `Present(None)` on both sides reads as
+    // "two files with no lines", which a pin can state. When the bytes differ
+    // only in the final newline, no pin may claim it.
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "files",
+          "expect": { "files": [
+              { "key": "out.txt",
+                "oracle": { "present": true },
+                "candidate": { "present": true } }
+          ] }, "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=file-newline"]);
+    let report = run("file-final-newline", suite, &candidate());
+    assert_eq!(report.pinned(), 0, "{report:#?}");
+    assert!(
+        report.errors.is_empty(),
+        "the pin is claimed, not stale: {:?}",
+        report.errors
+    );
+    let two = report
+        .results
+        .iter()
+        .find(|r| r.case == "basic/two")
+        .expect("basic/two ran");
+    let Status::Fail(msgs) = &two.status else {
+        panic!("a file missing its final newline reported {:?}", two.status)
+    };
+    assert!(
+        msgs.iter().any(|m| m.starts_with("files: unpinnable")),
+        "{msgs:?}"
+    );
+}
+
+#[test]
 fn a_pin_that_states_the_wrong_values_fails_as_drift() {
     let mut suite = base();
     suite["divergences"] = json!([

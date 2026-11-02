@@ -391,6 +391,47 @@ fn first_differing_line(a: &[u8], b: &[u8]) -> Option<(usize, Option<String>, Op
     Some((same, side(&left), side(&right)))
 }
 
+/// The difference between two byte-unequal streams: the first line they
+/// disagree on, or — when every line agrees and the streams differ only in
+/// whether they end with a newline — a difference no pin can state. Splitting
+/// into lines drops a final newline, so the two sides being equal *as lines*
+/// is not equality: the byte comparison decides, this only describes it.
+fn stream_difference(name: &str, oracle: &[u8], candidate: &[u8]) -> (String, Observed) {
+    match first_differing_line(oracle, candidate) {
+        Some((line, left, right)) => (
+            format!(
+                "{name} line {}: oracle {left:?}, candidate {right:?}",
+                line + 1
+            ),
+            Observed::Line {
+                oracle: left,
+                candidate: right,
+            },
+        ),
+        None => {
+            let side = |end: &[u8]| {
+                if end.ends_with(b"\n") {
+                    "does"
+                } else {
+                    "does not"
+                }
+            };
+            (
+                format!(
+                    "{name}: unpinnable — the lines all agree, and only the final \
+                     newline differs (oracle {}, candidate {})",
+                    side(oracle),
+                    side(candidate)
+                ),
+                Observed::FinalNewline {
+                    oracle: oracle.ends_with(b"\n"),
+                    candidate: candidate.ends_with(b"\n"),
+                },
+            )
+        }
+    }
+}
+
 /// A difference between the two sides: the message a report prints, and the
 /// values a pin must state to cover it.
 #[derive(Debug)]
@@ -421,8 +462,31 @@ pub enum Observed {
         /// The candidate's line.
         candidate: Option<String>,
     },
+    /// Every line agrees and the streams differ only in whether they end with
+    /// a newline: a byte difference with no differing line, so no pin can
+    /// state it (see [`Observed::unpinnable`]).
+    FinalNewline {
+        /// Whether the oracle's stream ends with a newline.
+        oracle: bool,
+        /// Whether the candidate's stream ends with a newline.
+        candidate: bool,
+    },
     /// One record per snapshot key that differs.
     Files(Vec<FileObservation>),
+}
+
+impl Observed {
+    /// True when no pin can state this difference: it is a byte difference
+    /// with no line to address. A run carrying one fails as unpinnable rather
+    /// than reporting `PINNED`, because a pin that matched it would be the
+    /// field-name-only pin again — the values it names would describe nothing.
+    fn unpinnable(&self) -> bool {
+        match self {
+            Observed::FinalNewline { .. } => true,
+            Observed::Files(files) => files.iter().any(|file| file.tail_only),
+            Observed::Exit { .. } | Observed::Line { .. } => false,
+        }
+    }
 }
 
 /// One differing snapshot key as observed.
@@ -434,6 +498,11 @@ pub struct FileObservation {
     pub oracle: FileSideObserved,
     /// What the candidate side showed for it.
     pub candidate: FileSideObserved,
+    /// Both sides left the key, their lines all agree, and the bytes differ
+    /// only in whether the file ends with a newline. Then both sides read as
+    /// `Present(None)` — which a pin could take for two empty files — so the
+    /// key carries the fact that nothing line-shaped distinguishes them.
+    pub tail_only: bool,
 }
 
 /// One side of a differing key.
@@ -457,6 +526,9 @@ impl Observed {
             Observed::Line { oracle, candidate } => {
                 serde_json::json!({ "oracle": oracle, "candidate": candidate })
             }
+            Observed::FinalNewline { oracle, candidate } => serde_json::json!({
+                "final_newline": { "oracle": oracle, "candidate": candidate },
+            }),
             Observed::Files(files) => serde_json::json!({
                 "files": files
                     .iter()
@@ -498,10 +570,13 @@ fn observe_key(
             FileSideObserved::Present(split_lines(own).first().map(|l| render_line(l)))
         }
     };
+    let tail_only = matches!((oracle, candidate), (Some(oracle), Some(candidate))
+        if first_differing_line(oracle, candidate).is_none());
     FileObservation {
         key: key.to_string(),
         oracle: side(oracle, candidate),
         candidate: side(candidate, oracle),
+        tail_only,
     }
 }
 
@@ -530,32 +605,22 @@ pub fn compare(
             },
         });
     }
-    if let Some((line, left, right)) = first_differing_line(&oracle.stdout, &candidate.stdout) {
+    // Bytes decide, not lines: splitting drops a final newline, so two streams
+    // that differ only there are equal as lines and must still fail.
+    if oracle.stdout != candidate.stdout {
+        let (message, observed) = stream_difference("stdout", &oracle.stdout, &candidate.stdout);
         diffs.push(Difference {
             field: Field::Stdout,
-            message: format!(
-                "stdout line {}: oracle {left:?}, candidate {right:?}",
-                line + 1
-            ),
-            observed: Observed::Line {
-                oracle: left,
-                candidate: right,
-            },
+            message,
+            observed,
         });
     }
-    if compare_stderr
-        && let Some((line, left, right)) = first_differing_line(&oracle.stderr, &candidate.stderr)
-    {
+    if compare_stderr && oracle.stderr != candidate.stderr {
+        let (message, observed) = stream_difference("stderr", &oracle.stderr, &candidate.stderr);
         diffs.push(Difference {
             field: Field::Stderr,
-            message: format!(
-                "stderr line {}: oracle {left:?}, candidate {right:?}",
-                line + 1
-            ),
-            observed: Observed::Line {
-                oracle: left,
-                candidate: right,
-            },
+            message,
+            observed,
         });
     }
     let oracle_files = suite.canonical_files(oracle.files.clone())?;
@@ -566,15 +631,27 @@ pub fn compare(
             .into_iter()
             .filter(|k| oracle_files.get(*k) != candidate_files.get(*k))
             .collect();
+        let observed: Vec<FileObservation> = differing
+            .iter()
+            .map(|key| observe_key(key, oracle_files.get(*key), candidate_files.get(*key)))
+            .collect();
+        let tail_only: Vec<&str> = observed
+            .iter()
+            .filter(|file| file.tail_only)
+            .map(|file| file.key.as_str())
+            .collect();
+        let message = if tail_only.is_empty() {
+            format!("files differ: {differing:?}")
+        } else {
+            format!(
+                "files: unpinnable — key(s) {tail_only:?}: the lines all agree, and only \
+                 the final newline differs"
+            )
+        };
         diffs.push(Difference {
             field: Field::Files,
-            message: format!("files differ: {differing:?}"),
-            observed: Observed::Files(
-                differing
-                    .iter()
-                    .map(|key| observe_key(key, oracle_files.get(*key), candidate_files.get(*key)))
-                    .collect(),
-            ),
+            message,
+            observed: Observed::Files(observed),
         });
     }
     Ok(diffs)
@@ -622,7 +699,9 @@ fn check_floors(suite: &Suite, errors: &mut Vec<String>) {
 /// `pin drift` — distinct from `stale pin` (a pin that no longer matches a
 /// difference at all) — and fails the run, because the pin's reason now
 /// describes the opposite of what happens. A pin that met a difference on its
-/// field is claimed either way: it is not stale, it is wrong.
+/// field is claimed either way: it is not stale, it is wrong. A difference no
+/// pin can state (a byte difference with no differing line) fails as
+/// unpinnable, whatever pins the field carries.
 fn judge(diffs: Vec<Difference>, pins: &[(usize, &Divergence)], claimed: &mut [bool]) -> Status {
     let mut failures = Vec::new();
     let mut pinned = Vec::new();
@@ -631,6 +710,18 @@ fn judge(diffs: Vec<Difference>, pins: &[(usize, &Divergence)], claimed: &mut [b
             .iter()
             .filter(|(_, pin)| pin.field == diff.field)
             .collect();
+        if diff.observed.unpinnable() {
+            // A real difference the pins on this field meet but cannot state:
+            // claim them (they are not stale — the field still diverges) and
+            // fail the run, because no pin can carry these values.
+            for (index, _) in &covering {
+                if let Some(claim) = claimed.get_mut(*index) {
+                    *claim = true;
+                }
+            }
+            failures.push(diff.message);
+            continue;
+        }
         if covering.is_empty() {
             failures.push(diff.message);
             continue;
@@ -676,6 +767,9 @@ fn pin_matches(expect: &Expect, observed: &Observed) -> bool {
         Observed::Line { oracle, candidate } => {
             line_matches(&expect.oracle, oracle) && line_matches(&expect.candidate, candidate)
         }
+        // No pin states a line-less difference; `judge` fails these as
+        // unpinnable before asking.
+        Observed::FinalNewline { .. } => false,
         Observed::Files(found) => expect.files.as_deref().is_some_and(|pins| {
             pins.len() == found.len()
                 && pins
