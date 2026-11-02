@@ -1,5 +1,5 @@
 //! Test candidate for the parity harness. Reproduces
-//! `tests/fixture/oracle/echo.sh`; `--mutate=<exit|stdout|file|dir|hang|path|updated>`
+//! `tests/fixture/oracle/echo.sh`; `--mutate=<exit|stdout|file|dir|hang|path|updated|crash>`
 //! makes it diverge on purpose so tests can prove the harness turns red.
 use std::process::ExitCode;
 
@@ -34,6 +34,13 @@ fn main() -> ExitCode {
     };
     if std::fs::write(name, body).is_err() {
         return ExitCode::from(1);
+    }
+    if mutate == "crash" {
+        // A panic leaves stdout and the files it already wrote intact, so
+        // only the exit code differs: exactly the shape that satisfied an
+        // exit pin by field name alone.
+        eprintln!("thread 'main' panicked at src/main.rs:1:1:\nboom");
+        return ExitCode::from(101);
     }
     ExitCode::from(if mutate == "exit" { 3 } else { 0 })
 }

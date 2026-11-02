@@ -4,13 +4,27 @@ applies:
   - "oracles/**"
   - "tests/parity/**"
   - "crates/vibe-parity/**"
-updated: 2026-10-19
+updated: 2026-11-02
 ---
 
 # Parity pins and port order
 
+A pin states the values it expects, not just the field. `expect` is required
+and validated at suite load: an `exit` pin names both codes, a
+`stdout`/`stderr` pin names a prefix of each side's first differing line
+(`null` = that side has no such line, `""` = an empty line), and a `files` pin
+names each differing key with which side left it and the line it starts with.
+Two failures follow from that: `pin drift` — the field still diverges but on
+other values than the pin states, so the reason below would describe the
+opposite of what happens — and `stale pin` — the field no longer diverges at
+all. Drift is a run failure, not a suite error, and its message prints the
+expected and the observed values so a re-pin is a copy of what actually ran.
+Field-name-only pins used to let a crashing candidate (exit 101, empty stdout)
+report as `PINNED` on an `exit` pin; a pin that states nothing is now a suite
+error.
+
 Pins are per argument set and may be scoped to one OS (`"os": "macos"`
-for BSD-tool differences; an os pin is never stale-checked). Thirteen pins (ten from F16, three from F17): legacy `--format json` output is valid JSON — quotes, backslashes
+for BSD-tool differences; an os pin is never stale-checked). Twenty pins cover the spec half (one os-scoped), ten the flow half: legacy `--format json` output is valid JSON — quotes, backslashes
 and control characters are escaped, and invalid UTF-8 (such as a preview
 cut inside a sequence) becomes U+FFFD (`lessons-for`, `scan-merges`);
 `lessons-for` tags and the `validate` I1 own-feature filter match

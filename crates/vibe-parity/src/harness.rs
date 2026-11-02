@@ -7,7 +7,9 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::sandbox::{ORACLE_DIR, snapshot, stage};
-use crate::suite::{Case, CommandSpec, Field, Suite};
+use crate::suite::{
+    Case, CommandSpec, Divergence, Expect, Field, FileExpect, FileSideExpect, Suite, exit_code,
+};
 
 /// What the candidate side of each run is.
 #[derive(Debug, Clone)]
@@ -337,76 +339,243 @@ fn sandbox_git(dest: &Path, commit: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn first_line_diff(a: &[u8], b: &[u8]) -> String {
-    let (la, lb): (Vec<&[u8]>, Vec<&[u8]>) = (
-        a.split(|&c| c == b'\n').collect(),
-        b.split(|&c| c == b'\n').collect(),
-    );
-    let n = la.iter().zip(&lb).take_while(|(x, y)| x == y).count();
-    let show = |l: &Vec<&[u8]>| l.get(n).map(|s| String::from_utf8_lossy(s).into_owned());
-    format!(
-        "stdout line {}: oracle {:?}, candidate {:?}",
-        n + 1,
-        show(&la),
-        show(&lb)
-    )
+/// A side's line bytes split into lines. No bytes means no lines: a trailing
+/// newline opens no extra line, and an empty stream is not one empty line.
+fn split_lines(bytes: &[u8]) -> Vec<&[u8]> {
+    if bytes.is_empty() {
+        return Vec::new();
+    }
+    let mut lines: Vec<&[u8]> = bytes.split(|&c| c == b'\n').collect();
+    if lines.last().is_some_and(|line| line.is_empty()) {
+        lines.pop();
+    }
+    lines
+}
+
+/// Renders one line's bytes as text a pin can hold: every byte that is part
+/// of a valid UTF-8 sequence passes through, and every byte that is not
+/// renders as `\xNN`. Without this, a preview cut inside a sequence and the
+/// port's U+FFFD replacement would render identically and no pin could tell
+/// them apart.
+fn render_line(bytes: &[u8]) -> String {
+    let mut out = String::new();
+    let mut rest = bytes;
+    loop {
+        match std::str::from_utf8(rest) {
+            Ok(valid) => {
+                out.push_str(valid);
+                return out;
+            }
+            Err(e) => {
+                let good = e.valid_up_to();
+                out.push_str(std::str::from_utf8(&rest[..good]).unwrap_or_default());
+                let bad = e.error_len().unwrap_or(rest.len() - good);
+                for byte in &rest[good..good + bad] {
+                    out.push_str(&format!("\\x{byte:02x}"));
+                }
+                rest = &rest[good + bad..];
+            }
+        }
+    }
+}
+
+/// The first line the two sides disagree on: its 1-based number, and each
+/// side's line rendered. A side that has no such line is `None`.
+fn first_differing_line(a: &[u8], b: &[u8]) -> Option<(usize, Option<String>, Option<String>)> {
+    let (left, right) = (split_lines(a), split_lines(b));
+    let same = left.iter().zip(&right).take_while(|(x, y)| x == y).count();
+    if same == left.len() && same == right.len() {
+        return None;
+    }
+    let side = |lines: &[&[u8]]| lines.get(same).map(|line| render_line(line));
+    Some((same, side(&left), side(&right)))
+}
+
+/// A difference between the two sides: the message a report prints, and the
+/// values a pin must state to cover it.
+#[derive(Debug)]
+pub struct Difference {
+    /// The field that differs.
+    pub field: Field,
+    /// One line naming the first difference, as a report prints it.
+    pub message: String,
+    /// The values that difference showed, for the pin to match against.
+    pub observed: Observed,
+}
+
+/// What one side actually showed for a differing field.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Observed {
+    /// Both exit codes; `None` means killed by a signal.
+    Exit {
+        /// The oracle's code.
+        oracle: Option<i32>,
+        /// The candidate's code.
+        candidate: Option<i32>,
+    },
+    /// The first differing line on each side, rendered by [`render_line`];
+    /// `None` when that side has no such line.
+    Line {
+        /// The oracle's line.
+        oracle: Option<String>,
+        /// The candidate's line.
+        candidate: Option<String>,
+    },
+    /// One record per snapshot key that differs.
+    Files(Vec<FileObservation>),
+}
+
+/// One differing snapshot key as observed.
+#[derive(Debug, PartialEq, Eq)]
+pub struct FileObservation {
+    /// The snapshot key.
+    pub key: String,
+    /// What the oracle side showed for it.
+    pub oracle: FileSideObserved,
+    /// What the candidate side showed for it.
+    pub candidate: FileSideObserved,
+}
+
+/// One side of a differing key.
+#[derive(Debug, PartialEq, Eq)]
+pub enum FileSideObserved {
+    /// The side left no such key in its snapshot.
+    Absent,
+    /// The side left the key; `None` means it has no lines (a directory, or
+    /// an empty file).
+    Present(Option<String>),
+}
+
+impl Observed {
+    /// The pin shape for these values: pasting it under `expect` states
+    /// exactly what was observed.
+    pub fn as_expect(&self) -> String {
+        let value = match self {
+            Observed::Exit { oracle, candidate } => {
+                serde_json::json!({ "oracle": oracle, "candidate": candidate })
+            }
+            Observed::Line { oracle, candidate } => {
+                serde_json::json!({ "oracle": oracle, "candidate": candidate })
+            }
+            Observed::Files(files) => serde_json::json!({
+                "files": files
+                    .iter()
+                    .map(|file| serde_json::json!({
+                        "key": file.key,
+                        "oracle": side_value(&file.oracle),
+                        "candidate": side_value(&file.candidate),
+                    }))
+                    .collect::<Vec<_>>(),
+            }),
+        };
+        value.to_string()
+    }
+}
+
+fn side_value(side: &FileSideObserved) -> serde_json::Value {
+    match side {
+        FileSideObserved::Absent => serde_json::json!({ "present": false }),
+        FileSideObserved::Present(line) => {
+            serde_json::json!({ "present": true, "first_line": line })
+        }
+    }
+}
+
+/// What one side showed for `key`, given both snapshots' view of it. Two
+/// present sides contribute their first differing line; a one-sided key
+/// contributes its first line.
+fn observe_key(
+    key: &str,
+    oracle: Option<&Vec<u8>>,
+    candidate: Option<&Vec<u8>>,
+) -> FileObservation {
+    let side = |own: Option<&Vec<u8>>, other: Option<&Vec<u8>>| match (own, other) {
+        (None, _) => FileSideObserved::Absent,
+        (Some(own), Some(other)) => {
+            FileSideObserved::Present(first_differing_line(own, other).and_then(|(_, own, _)| own))
+        }
+        (Some(own), None) => {
+            FileSideObserved::Present(split_lines(own).first().map(|l| render_line(l)))
+        }
+    };
+    FileObservation {
+        key: key.to_string(),
+        oracle: side(oracle, candidate),
+        candidate: side(candidate, oracle),
+    }
 }
 
 /// Lists the fields on which `oracle` and `candidate` differ, each with a
-/// message. File keys are first passed through the suite's aliases and file
-/// bytes through its normalizers, on both sides, so the same logical file
-/// written to different paths or with nondeterministic bytes compares equal.
-/// Stderr is compared only for cases that opt in.
+/// message and the values it showed. File keys are first passed through the
+/// suite's aliases and file bytes through its normalizers, on both sides, so
+/// the same logical file written to different paths or with nondeterministic
+/// bytes compares equal. Stderr is compared only for cases that opt in.
 pub fn compare(
     suite: &Suite,
     compare_stderr: bool,
     oracle: &Outcome,
     candidate: &Outcome,
-) -> Result<Vec<(Field, String)>, String> {
+) -> Result<Vec<Difference>, String> {
     let mut diffs = Vec::new();
     if oracle.exit != candidate.exit {
-        diffs.push((
-            Field::Exit,
-            format!(
+        diffs.push(Difference {
+            field: Field::Exit,
+            message: format!(
                 "exit: oracle {:?}, candidate {:?}",
                 oracle.exit, candidate.exit
             ),
-        ));
+            observed: Observed::Exit {
+                oracle: oracle.exit,
+                candidate: candidate.exit,
+            },
+        });
     }
-    if oracle.stdout != candidate.stdout {
-        diffs.push((
-            Field::Stdout,
-            first_line_diff(&oracle.stdout, &candidate.stdout),
-        ));
-    }
-    if compare_stderr && oracle.stderr != candidate.stderr {
-        diffs.push((
-            Field::Stderr,
-            format!(
-                "stderr line 1: oracle {:?}, candidate {:?}",
-                oracle
-                    .stderr
-                    .split(|&c| c == b'\n')
-                    .next()
-                    .unwrap_or_default(),
-                candidate
-                    .stderr
-                    .split(|&c| c == b'\n')
-                    .next()
-                    .unwrap_or_default()
+    if let Some((line, left, right)) = first_differing_line(&oracle.stdout, &candidate.stdout) {
+        diffs.push(Difference {
+            field: Field::Stdout,
+            message: format!(
+                "stdout line {}: oracle {left:?}, candidate {right:?}",
+                line + 1
             ),
-        ));
+            observed: Observed::Line {
+                oracle: left,
+                candidate: right,
+            },
+        });
+    }
+    if compare_stderr {
+        if let Some((line, left, right)) = first_differing_line(&oracle.stderr, &candidate.stderr) {
+            diffs.push(Difference {
+                field: Field::Stderr,
+                message: format!(
+                    "stderr line {}: oracle {left:?}, candidate {right:?}",
+                    line + 1
+                ),
+                observed: Observed::Line {
+                    oracle: left,
+                    candidate: right,
+                },
+            });
+        }
     }
     let oracle_files = suite.canonical_files(oracle.files.clone())?;
     let candidate_files = suite.canonical_files(candidate.files.clone())?;
     if oracle_files != candidate_files {
         let keys: BTreeSet<&String> = oracle_files.keys().chain(candidate_files.keys()).collect();
-        let differing: Vec<&str> = keys
+        let differing: Vec<&String> = keys
             .into_iter()
             .filter(|k| oracle_files.get(*k) != candidate_files.get(*k))
-            .map(String::as_str)
             .collect();
-        diffs.push((Field::Files, format!("files differ: {differing:?}")));
+        diffs.push(Difference {
+            field: Field::Files,
+            message: format!("files differ: {differing:?}"),
+            observed: Observed::Files(
+                differing
+                    .iter()
+                    .map(|key| observe_key(key, oracle_files.get(*key), candidate_files.get(*key)))
+                    .collect(),
+            ),
+        });
     }
     Ok(diffs)
 }
@@ -448,26 +617,105 @@ fn check_floors(suite: &Suite, errors: &mut Vec<String>) {
     }
 }
 
-fn judge(diffs: Vec<(Field, String)>, pins: &[(usize, Field)], hits: &mut [bool]) -> Status {
-    let mut unpinned = Vec::new();
+/// Decides one run: every difference must be covered by a pin that states
+/// *these* values. A pin whose field matches but whose values do not is
+/// `pin drift` — distinct from `stale pin` (a pin that no longer matches a
+/// difference at all) — and fails the run, because the pin's reason now
+/// describes the opposite of what happens. A pin that met a difference on its
+/// field is claimed either way: it is not stale, it is wrong.
+fn judge(diffs: Vec<Difference>, pins: &[(usize, &Divergence)], claimed: &mut [bool]) -> Status {
+    let mut failures = Vec::new();
     let mut pinned = Vec::new();
-    for (field, msg) in diffs {
-        match pins.iter().find(|(_, f)| *f == field) {
-            Some(&(i, f)) => {
-                if let Some(hit) = hits.get_mut(i) {
-                    *hit = true;
-                }
-                pinned.push(f);
+    for diff in diffs {
+        let covering: Vec<&(usize, &Divergence)> = pins
+            .iter()
+            .filter(|(_, pin)| pin.field == diff.field)
+            .collect();
+        if covering.is_empty() {
+            failures.push(diff.message);
+            continue;
+        }
+        for (index, _) in &covering {
+            if let Some(claim) = claimed.get_mut(*index) {
+                *claim = true;
             }
-            None => unpinned.push(msg),
+        }
+        match covering
+            .iter()
+            .find(|(_, pin)| pin_matches(&pin.expect, &diff.observed))
+        {
+            Some(_) => pinned.push(diff.field),
+            None => failures.push(format!(
+                "pin drift: pin {}: {}: expected {}, observed {}",
+                covering[0].0,
+                diff.field.name(),
+                covering
+                    .iter()
+                    .map(|(_, pin)| pin.expect.as_json())
+                    .collect::<Vec<_>>()
+                    .join(" or "),
+                diff.observed.as_expect()
+            )),
         }
     }
-    if !unpinned.is_empty() {
-        Status::Fail(unpinned)
+    if !failures.is_empty() {
+        Status::Fail(failures)
     } else if pinned.is_empty() {
         Status::Pass
     } else {
         Status::Pinned(pinned)
+    }
+}
+
+/// True when `observed` is the difference `expect` states.
+fn pin_matches(expect: &Expect, observed: &Observed) -> bool {
+    match observed {
+        Observed::Exit { oracle, candidate } => {
+            exit_code(&expect.oracle) == *oracle && exit_code(&expect.candidate) == *candidate
+        }
+        Observed::Line { oracle, candidate } => {
+            line_matches(&expect.oracle, oracle) && line_matches(&expect.candidate, candidate)
+        }
+        Observed::Files(found) => expect.files.as_deref().is_some_and(|pins| {
+            pins.len() == found.len()
+                && pins
+                    .iter()
+                    .all(|pin| found.iter().any(|file| file_pin_matches(pin, file)))
+        }),
+    }
+}
+
+fn file_pin_matches(pin: &FileExpect, found: &FileObservation) -> bool {
+    pin.key == found.key
+        && file_side_matches(&pin.oracle, &found.oracle)
+        && file_side_matches(&pin.candidate, &found.candidate)
+}
+
+fn file_side_matches(pin: &FileSideExpect, found: &FileSideObserved) -> bool {
+    match (pin.present, found) {
+        (false, FileSideObserved::Absent) => true,
+        (true, FileSideObserved::Present(line)) => {
+            line_prefix_matches(pin.first_line.as_deref(), line.as_deref())
+        }
+        _ => false,
+    }
+}
+
+/// A pin's expected side is a prefix; `null` means the side has no such line
+/// and `""` means the line is empty (never "matches anything").
+fn line_matches(expected: &serde_json::Value, observed: &Option<String>) -> bool {
+    match expected.as_str() {
+        Some(prefix) => line_prefix_matches(Some(prefix), observed.as_deref()),
+        None => expected.is_null() && observed.is_none(),
+    }
+}
+
+fn line_prefix_matches(expected: Option<&str>, observed: Option<&str>) -> bool {
+    match (expected, observed) {
+        (None, None) => true,
+        (Some(""), Some(line)) => line.is_empty(),
+        (Some(prefix), Some(line)) => line.starts_with(prefix),
+        _ => false,
     }
 }
 
@@ -477,7 +725,7 @@ fn run_command(
     mode: &Mode,
     work: &Path,
     report: &mut Report,
-    hits: &mut [bool],
+    claimed: &mut [bool],
 ) {
     let oracle_dir = work.join("sandbox").join(ORACLE_DIR);
     let oracle_argv = expand(&cmd.oracle, &oracle_dir, None);
@@ -500,7 +748,7 @@ fn run_command(
         };
         for case in &cases {
             for args in case.arg_sets(&cmd.name) {
-                let pins: Vec<(usize, Field)> = match mode {
+                let pins: Vec<(usize, &Divergence)> = match mode {
                     Mode::SelfCheck => Vec::new(),
                     Mode::Candidate(_) => suite
                         .divergences
@@ -512,7 +760,6 @@ fn run_command(
                                 && d.active()
                                 && d.args.as_ref().is_none_or(|a| *a == args)
                         })
-                        .map(|(i, d)| (i, d.field))
                         .collect(),
                 };
                 let with = |base: &[String]| base.iter().chain(&args).cloned().collect::<Vec<_>>();
@@ -522,7 +769,7 @@ fn run_command(
                     });
                 let status = match outcome {
                     Ok((o, c)) => match compare(suite, case.spec.stderr, &o, &c) {
-                        Ok(diffs) => judge(diffs, &pins, hits),
+                        Ok(diffs) => judge(diffs, &pins, claimed),
                         Err(e) => Status::Fail(vec![e]),
                     },
                     Err(e) => Status::Fail(vec![e]),
@@ -544,13 +791,13 @@ fn run_command(
 pub fn run_suite(suite: &Suite, mode: &Mode, work: &Path) -> Report {
     let mut report = Report::default();
     check_floors(suite, &mut report.errors);
-    let mut hits = vec![false; suite.divergences.len()];
+    let mut claimed = vec![false; suite.divergences.len()];
     for cmd in &suite.commands {
-        run_command(suite, cmd, mode, work, &mut report, &mut hits);
+        run_command(suite, cmd, mode, work, &mut report, &mut claimed);
     }
     if matches!(mode, Mode::Candidate(_)) {
-        for (pin, hit) in suite.divergences.iter().zip(&hits) {
-            if !hit && pin.os.is_none() {
+        for (pin, claimed) in suite.divergences.iter().zip(&claimed) {
+            if !claimed && pin.os.is_none() {
                 let args = pin
                     .args
                     .as_ref()
