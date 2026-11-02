@@ -857,6 +857,7 @@ cp -RL "$REPO_ROOT/flow" "$FS2/flow"
 cp -RL "$REPO_ROOT/spec" "$FS2/spec"
 ln -s ../../flow "$FS2/.agents/skills/vibe"
 ln -s ../../spec "$FS2/.agents/skills/spec"
+ln -s ../../spec/using-spec "$FS2/.agents/skills/using-spec"
 cp -RL "$REPO_ROOT/.claude/commands" "$FS2/.claude/commands"
 cp -RL "$REPO_ROOT/.claude/hooks" "$FS2/.claude/hooks"
 rm -f "$FS2/flow/AGENTS.md"
@@ -1190,7 +1191,7 @@ rm -rf "$SBsub"
 # a Claude-only plugin, so the plan names the hosts it would write for).
 SBg="$(mktmp)"
 gout="$( cd "$SBg" && HOME="$(mktmp)" bash "$INSTALL" --global --dry-run 2>&1 )"
-assert_contains "install-modes" "--global plans a per-user skills install" "$gout" "install the spec + vibe skills at user scope"
+assert_contains "install-modes" "--global plans a per-user skills install" "$gout" "install the spec + using-spec + vibe skills at user scope"
 assert_contains "install-modes" "--global plans the shared AGENTS.md block" "$gout" "would maintain the shared AGENTS.md block"
 { [[ ! -e "$SBg/.agents" && ! -e "$SBg/.claude" ]] && pass "install-modes" "--global --dry-run writes nothing"; } || fail "install-modes" "--global dry-run wrote files"
 rm -rf "$SBg"
@@ -1229,13 +1230,17 @@ if command -v jq >/dev/null 2>&1; then
 else
   { [[ -f "$PLUGIN_JSON" && -f "$MARKET_JSON" ]] && pass "vibe-plugin" "manifests present (no jq)"; } || fail "vibe-plugin" "manifests missing"
 fi
-# Both skills resolve to SKILL.md through symlinks to the canonical spec/ + flow/
-# trees (zero duplication; `claude plugin install` dereferences them into real cache
-# dirs — verified live: Skills (2) spec, vibe). A commands/ dir is what mis-scans as
-# a phantom skill, so the plugin ships none.
+# All three shipped skills resolve to SKILL.md through symlinks to the canonical
+# spec/, spec/using-spec and flow/ trees (zero duplication; `claude plugin install`
+# dereferences them into real cache dirs — verified live: Skills (3) spec,
+# using-spec, vibe). A commands/ dir is what mis-scans as a phantom skill, so the
+# plugin ships none. `using-spec` is a SIBLING, never nested inside spec/ (vibe#71
+# sub-gap 3).
 { [[ -L "$REPO_ROOT/plugin/skills/spec" && -L "$REPO_ROOT/plugin/skills/vibe" \
-     && -f "$REPO_ROOT/plugin/skills/spec/SKILL.md" && -f "$REPO_ROOT/plugin/skills/vibe/SKILL.md" ]] \
-  && pass "vibe-plugin" "spec + vibe skills are symlinks resolving to SKILL.md"; } || fail "vibe-plugin" "skills not symlinked/resolvable"
+     && -L "$REPO_ROOT/plugin/skills/using-spec" \
+     && -f "$REPO_ROOT/plugin/skills/spec/SKILL.md" && -f "$REPO_ROOT/plugin/skills/vibe/SKILL.md" \
+     && -f "$REPO_ROOT/plugin/skills/using-spec/SKILL.md" ]] \
+  && pass "vibe-plugin" "spec, using-spec + vibe skills are symlinks resolving to SKILL.md"; } || fail "vibe-plugin" "skills not symlinked/resolvable"
 # No per-project runtime state may ship in the plugin. TWO checks, because the
 # plugin's skills are symlinks and the two halves of "the payload" differ:
 #
@@ -1341,8 +1346,8 @@ assert_eq "host-support/1" "existing Claude Code hook scripts are intact" "$hp_h
 # canonical half, so "a divergent workflow body is impossible" still holds — it is
 # now enforced by a parity gate instead of by the filesystem.
 hp_links=1
-for name in spec vibe; do
-  case "$name" in spec) canon=spec ;; vibe) canon=flow ;; esac
+for name in spec using-spec vibe; do
+  case "$name" in spec) canon=spec ;; using-spec) canon=spec/using-spec ;; vibe) canon=flow ;; esac
   if [[ -d "$CODEX_PKG/skills/$name" && ! -L "$CODEX_PKG/skills/$name" \
         && -f "$CODEX_PKG/skills/$name/SKILL.md" ]] \
      && cmp -s "$CODEX_PKG/skills/$name/SKILL.md" "$REPO_ROOT/$canon/SKILL.md"; then
@@ -1351,11 +1356,11 @@ for name in spec vibe; do
     hp_links=0; echo "        Codex skills/$name is not a real dir carrying the canonical $canon/SKILL.md"
   fi
 done
-assert_eq "host-support/1" "Codex package materializes both skills from the canonical halves (real dirs, byte-identical)" "$hp_links" "1"
+assert_eq "host-support/1" "Codex package materializes every shipped skill from the canonical halves (real dirs, byte-identical)" "$hp_links" "1"
 # Factory package: same materialized shape for its native plugin skills.
 hp_dlinks=1
-for name in spec vibe; do
-  case "$name" in spec) canon=spec ;; vibe) canon=flow ;; esac
+for name in spec using-spec vibe; do
+  case "$name" in spec) canon=spec ;; using-spec) canon=spec/using-spec ;; vibe) canon=flow ;; esac
   if [[ -d "$DROID_PKG/skills/$name" && ! -L "$DROID_PKG/skills/$name" \
         && -f "$DROID_PKG/skills/$name/SKILL.md" ]] \
      && cmp -s "$DROID_PKG/skills/$name/SKILL.md" "$REPO_ROOT/$canon/SKILL.md"; then
@@ -1364,7 +1369,7 @@ for name in spec vibe; do
     hp_dlinks=0; echo "        Factory skills/$name is not a real dir carrying the canonical $canon/SKILL.md"
   fi
 done
-assert_eq "host-support/1" "Factory package materializes both skills from the canonical halves (real dirs, byte-identical)" "$hp_dlinks" "1"
+assert_eq "host-support/1" "Factory package materializes every shipped skill from the canonical halves (real dirs, byte-identical)" "$hp_dlinks" "1"
 # …and no symlink survives anywhere under either package (vibe#71 DoD#2): a link
 # is exactly what both of those hosts fail to deliver. Non-vacuous by construction
 # — the two loops above already proved the trees exist.
@@ -1427,27 +1432,30 @@ if command -v jq >/dev/null 2>&1; then
     "$(jq -r '.hosts | length' "$SURFACES" 2>/dev/null)" "4"
   assert_eq "host-support/1" "matrix host ids are exactly claude/opencode/codex/droid" \
     "$(jq -r '.hosts[].id' "$SURFACES" 2>/dev/null | sort | tr '\n' ',')" "claude,codex,droid,opencode,"
-  assert_eq "host-support/1" "matrix declares exactly the two shared workflows" \
-    "$(jq -r '.workflow.skills | sort | join(",")' "$SURFACES" 2>/dev/null)" "spec,vibe"
-  # Every declared skill path resolves to a real SKILL.md, for BOTH workflows —
-  # the "each host discovers both shared workflows" scenario, per host, from data.
-  # The population floor is data-derived, not a hand-written count: every host
-  # declares at least one skill path, and the workflow declares exactly the two
-  # shared skills, so fewer than hosts x 2 examined paths means the matrix (or
-  # this loop) lost rows — folded into the verdict so an empty iteration can never
-  # read as "checked and clean".
+  assert_eq "host-support/1" "matrix declares exactly the three shipped skills" \
+    "$(jq -r '.workflow.skills | sort | join(",")' "$SURFACES" 2>/dev/null)" "spec,using-spec,vibe"
+  # Every declared skill path resolves to a real SKILL.md, for EVERY declared
+  # workflow — the "each host discovers every shared workflow" scenario, per
+  # host, from data. The population floor is data-derived, not a hand-written
+  # count: every host declares at least one skill path, and the workflow declares
+  # exactly the shipped skills, so fewer than hosts x skills examined paths means
+  # the matrix (or this loop) lost rows — folded into the verdict so an empty
+  # iteration can never read as "checked and clean".
   hp_hosts="$(jq -r '.hosts | length' "$SURFACES" 2>/dev/null)"
   [[ "$hp_hosts" =~ ^[0-9]+$ ]] || hp_hosts=0
+  hp_wanted="$(jq -r '.workflow.skills | length' "$SURFACES" 2>/dev/null)"
+  [[ "$hp_wanted" =~ ^[0-9]+$ ]] || hp_wanted=0
   hp_skillmiss=""; hp_skilln=0
   while IFS= read -r tpl; do
-    for s in spec vibe; do
+    while IFS= read -r s; do
+      [[ -n "$s" ]] || continue
       hp_skilln=$((hp_skilln + 1))
       p="${tpl//\{name\}/$s}"
       [[ -f "$REPO_ROOT/$p/SKILL.md" ]] || hp_skillmiss="$hp_skillmiss $p"
-    done
+    done < <(jq -r '.workflow.skills[]' "$SURFACES" 2>/dev/null)
   done < <(jq -r '.hosts[].skills[]' "$SURFACES" 2>/dev/null)
-  [[ "$hp_skilln" -lt $((hp_hosts * 2)) ]] && hp_skillmiss="$hp_skillmiss (floor: $hp_skilln paths examined < $hp_hosts hosts x 2 skills)"
-  assert_eq "host-support/1" "every declared host skill path resolves to SKILL.md (floor = hosts x 2)" "$hp_skillmiss" ""
+  [[ "$hp_skilln" -lt $((hp_hosts * hp_wanted)) ]] && hp_skillmiss="$hp_skillmiss (floor: $hp_skilln paths examined < $hp_hosts hosts x $hp_wanted skills)"
+  assert_eq "host-support/1" "every declared host skill path resolves to SKILL.md (floor = hosts x skills)" "$hp_skillmiss" ""
   # The matrix must declare EVERY surface the deploy really creates, not a subset:
   # install deploys plugins/vibe/skills/{spec,vibe} for Codex, so a matrix listing
   # only .agents/skills/{name} was a data/doc/report three-way drift — the report
@@ -1884,8 +1892,10 @@ assert_eq "host-support/2" "re-install is byte-stable across every managed host 
 # verbatim copy would dangle.
 links=1
 for pair in "plugins/vibe/skills/spec:../../../.agents/skills/spec" \
+            "plugins/vibe/skills/using-spec:../../../.agents/skills/using-spec" \
             "plugins/vibe/skills/vibe:../../../.agents/skills/vibe" \
             "factory-plugin/skills/spec:../../.agents/skills/spec" \
+            "factory-plugin/skills/using-spec:../../.agents/skills/using-spec" \
             "factory-plugin/skills/vibe:../../.agents/skills/vibe"; do
   lp="${pair%%:*}"; want="${pair#*:}"
   if [[ -L "$SBd/$lp" && "$(readlink "$SBd/$lp")" == "$want" && -f "$SBd/$lp/SKILL.md" ]]; then
@@ -1899,7 +1909,7 @@ dupn=0
 for d in plugins/vibe/skills factory-plugin/skills; do
   dupn=$((dupn + $(find "$SBd/$d" -type l | wc -l | tr -d ' ')))
 done
-assert_eq "host-support/2" "re-install does not duplicate the host skill registrations" "$dupn" "4"
+assert_eq "host-support/2" "re-install does not duplicate the host skill registrations" "$dupn" "6"
 # Uninstall: user files in EVERY new shared dir, then a full removal. The
 # co-located files are what make "remove only what we created" discriminating on
 # BOTH removal paths (the manifest pass here, and the shipped-source fallback in
@@ -2911,12 +2921,13 @@ else
   fail "plugin-install/71" "live host probes blocked: isolation regression failed"
 fi
 
-# vibe#71 sub-gap 2: `install.sh --global` writes the two skills into each
-# host's own user-level skills dir and maintains one shared AGENTS.md block,
-# idempotently. Needs no host CLI, so it runs as a normal (never skipped) leg.
+# vibe#71 sub-gap 2 + 3: `install.sh --global` writes the three shipped skills
+# (`spec`, `using-spec`, `vibe` — siblings, never nested) into each host's own
+# user-level skills dir and maintains one shared AGENTS.md block, idempotently.
+# Needs no host CLI, so it runs as a normal (never skipped) leg.
 GI_OUT="$(bash "$REPO_ROOT/flow/tests/adapters/global-install.sh" 2>&1)"; GI_RC=$?
 printf '%s\n' "$GI_OUT"
-assert_eq "global-install/71" "temp-HOME global install lands both skills per host, idempotently" "$GI_RC" "0"
+assert_eq "global-install/71" "temp-HOME global install lands every shipped skill per host, un-nested, idempotently" "$GI_RC" "0"
 
 # vibe#71 sub-gap 4: nothing used to ship the `vibe-spec` binary the spec skill
 # calls, so a global-install user had skills pointing at a missing command. The

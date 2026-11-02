@@ -4,9 +4,10 @@
 #
 # `install.sh --global` used to be Claude-only (`claude plugin install`), so a
 # Codex, Droid or OpenCode user had to hand-copy skill trees. It now writes the
-# two skills into each selected host's OWN user-level skills dir and maintains
-# one shared user-level AGENTS.md block. This leg proves that against a throwaway
-# HOME, per host, and proves the SECOND run changes no byte.
+# shipped skills (`spec`, `using-spec`, `vibe` — three SIBLING dirs) into each
+# selected host's OWN user-level skills dir and maintains one shared user-level
+# AGENTS.md block. This leg proves that against a throwaway HOME, per host, and
+# proves the SECOND run changes no byte.
 #
 # Hermetic by construction: every leg runs with its own temp HOME, from a temp
 # working dir (so the per-repo seed cannot fire), with XDG/CODEX/FACTORY/CLAUDE
@@ -104,6 +105,14 @@ for host in claude codex droid opencode; do
     || fail "$TAG" "$host: skills/spec/SKILL.md is installed ($dir)"
   [[ -f "$dir/vibe/SKILL.md" ]] && pass "$TAG" "$host: skills/vibe/SKILL.md is installed" \
     || fail "$TAG" "$host: skills/vibe/SKILL.md is installed ($dir)"
+  # vibe#71 sub-gap 3: the session-start router ships as its own SIBLING skill
+  # dir. Nested one level down it is invisible to a host whose documented scan is
+  # `skills/*/SKILL.md` (OpenCode), and it double-registers on a host that walks
+  # the tree recursively.
+  [[ -f "$dir/using-spec/SKILL.md" ]] && pass "$TAG" "$host: skills/using-spec/SKILL.md is installed (sibling)" \
+    || fail "$TAG" "$host: skills/using-spec/SKILL.md is installed ($dir)"
+  [[ ! -e "$dir/spec/using-spec" ]] && pass "$TAG" "$host: using-spec is NOT also nested inside skills/spec/" \
+    || fail "$TAG" "$host: using-spec is duplicated inside skills/spec/ ($dir/spec/using-spec)"
   # Exactly one host tree: --host must not fan out to the others.
   others="$(cd "$H" && find . -mindepth 1 -maxdepth 1 -type d | LC_ALL=C sort | tr '\n' ' ')"
   case "$host" in
@@ -159,7 +168,7 @@ git_before="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null; git -C "$REPO_
 run_global "$H" "$FARM" --global --host all >/dev/null 2>&1
 for host in claude codex droid opencode; do
   dir="$(skill_dir "$H" "$host")"
-  [[ -f "$dir/spec/SKILL.md" && -f "$dir/vibe/SKILL.md" ]] \
+  [[ -f "$dir/spec/SKILL.md" && -f "$dir/using-spec/SKILL.md" && -f "$dir/vibe/SKILL.md" ]] \
     && pass "$TAG" "--host all installs $host" || fail "$TAG" "--host all installs $host"
 done
 git_after="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null; git -C "$REPO_ROOT" ls-files -o --exclude-standard 2>/dev/null)"
@@ -197,6 +206,36 @@ rm -rf "$H"
 grep -qF 'must not run as root' "$INSTALL" \
   && pass "$TAG" "the installer refuses a root --global (no root-owned files in \$HOME)" \
   || fail "$TAG" "the installer refuses a root --global (no root-owned files in \$HOME)"
+
+# ── 7. OpenCode's own discovery: the installed router is found (vibe#71 sub-gap 3)
+# The claim this leg pins is behavioural, not structural: OpenCode's skill loader
+# is the oracle. Its docs (https://opencode.ai/docs/skills) describe discovery as
+# `skills/*/SKILL.md` — a SINGLE level — which is why using-spec is installed as a
+# sibling. `opencode debug skill` prints the resolved skill set, so the leg asks
+# the real CLI which skills it sees and where each came from. Skipped (never
+# failed) when the CLI is absent: CI's portable matrix has no host CLIs, and a
+# skip is honest about that. Run it by hand or in the host-CLI CI leg.
+OC_BIN="$(command -v opencode 2>/dev/null || true)"
+if [[ -n "$OC_BIN" ]] && command -v jq >/dev/null 2>&1; then
+  H="$(tmp)"
+  run_global "$H" "$FARM" --global --host opencode >/dev/null 2>&1
+  ocdir="$H/.config/opencode/skills"
+  ocout="$( cd "$H" && HOME="$H" OPENCODE_DISABLE_EXTERNAL_SKILLS=1 \
+            timeout 120 "$OC_BIN" debug skill --pure 2>/dev/null )"
+  ocrc=$?
+  if [[ "$ocrc" -ne 0 ]]; then
+    fail "$TAG" "opencode debug skill runs against the installed HOME (rc=$ocrc)"
+  else
+    for s in spec using-spec vibe; do
+      want="$ocdir/$s/SKILL.md"
+      got="$(printf '%s' "$ocout" | jq -r --arg n "$s" '.[] | select(.name == $n) | .location' 2>/dev/null | head -n1)"
+      assert_eq "$TAG" "opencode discovers the '$s' skill at its installed path" "$got" "$want"
+    done
+  fi
+  rm -rf "$H"
+else
+  echo "  SKIP [$TAG] opencode discovery leg — no opencode CLI (or jq) on PATH; the tree legs above still hold"
+fi
 
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="

@@ -70,17 +70,20 @@ PI_LINKS="$(find "$CLONE/plugins" "$CLONE/factory-plugin" -type l 2>/dev/null ||
 assert_eq "$TAG" "the clone's shipped packages carry no symlink at all" "$PI_LINKS" ""
 for _pkg in plugins/vibe factory-plugin; do
   _ok=1
-  for _s in spec vibe; do
+  for _s in spec using-spec vibe; do
     [[ -f "$CLONE/$_pkg/skills/$_s/SKILL.md" && ! -L "$CLONE/$_pkg/skills/$_s" ]] || _ok=0
   done
-  assert_eq "$TAG" "$_pkg/skills/{spec,vibe} are real dirs carrying SKILL.md" "$_ok" "1"
+  # using-spec is a SIBLING skill dir, never also nested inside skills/spec/.
+  [[ -e "$CLONE/$_pkg/skills/spec/using-spec" ]] && _ok=0
+  assert_eq "$TAG" "$_pkg/skills/{spec,using-spec,vibe} are real sibling dirs carrying SKILL.md" "$_ok" "1"
 done
 
-# verify_cache HOST HOMEDIR — the host's cache must hold both SKILL.md files as
-# real files byte-identical to the clone's canonical half. Matching on
-# "/vibe/$VER/" pins Claude/Codex manifest versions: a version-less Codex
-# manifest reads 1.0.0 and finds nothing. Droid hashes both names and keys local
-# installs by their source revision, so pin its exact cloned commit instead.
+# verify_cache HOST HOMEDIR — the host's cache must hold every shipped SKILL.md as
+# a real file byte-identical to the clone's canonical half. Matching on
+# "/vibe/$VER/" is what pins the manifest version: a version-less Codex manifest
+# makes the cache dir read 1.0.0 and this finds nothing. Droid hashes both names
+# and keys local installs by their source revision, so pin its exact cloned
+# commit instead.
 verify_cache() {
   local host="$1" home="$2" name canon got all found pin="/vibe/$VER/" identity="v$VER"
   if [[ "$host" == droid ]]; then
@@ -88,7 +91,7 @@ verify_cache() {
     pin="/$revision/"; identity="revision $revision"
   fi
   all="$(find "$home" -type f -path '*/plugins/cache/*' -name SKILL.md 2>/dev/null | sort)"
-  for pair in "spec:spec" "vibe:flow"; do
+  for pair in "spec:spec" "using-spec:spec/using-spec" "vibe:flow"; do
     name="${pair%%:*}" canon="${pair#*:}"
     got="$(printf '%s\n' "$all" | grep -E "/skills/$name/SKILL\.md$" | grep -F "$pin" | head -n1)"
     found="$got"

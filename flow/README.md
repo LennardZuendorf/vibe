@@ -54,10 +54,10 @@ paths are identical on every host — only the entry point differs.
 
 | Host | Start the flow workflow | Skill discovery | Wired per host |
 |---|---|---|---|
-| **Claude Code** | `/flow` (`.claude/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `.claude/skills/{spec,vibe}` | every hook, via `.claude/settings.json` |
-| **OpenCode** | `/flow` (`.opencode/commands/flow.md`) | `.agents/skills/{spec,vibe}` | no hooks |
-| **Codex** | skill invocation only: `$vibe` (or the skill picker `/skills`) — no synthetic `/flow` command | `.agents/skills/{spec,vibe}` + `plugins/vibe/skills` | no hooks; no native agent registration |
-| **Factory Droid** | `/flow` (`factory-plugin/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `factory-plugin/skills` | no hooks; no native droid registration |
+| **Claude Code** | `/flow` (`.claude/commands/flow.md`) | `.agents/skills/{spec,using-spec,vibe}` + `.claude/skills/{spec,using-spec,vibe}` | every hook, via `.claude/settings.json` |
+| **OpenCode** | `/flow` (`.opencode/commands/flow.md`) | `.agents/skills/{spec,using-spec,vibe}` | no hooks |
+| **Codex** | skill invocation only: `$vibe` (or the skill picker `/skills`) — no synthetic `/flow` command | `.agents/skills/{spec,using-spec,vibe}` + `plugins/vibe/skills` | no hooks; no native agent registration |
+| **Factory Droid** | `/flow` (`factory-plugin/commands/flow.md`) | `.agents/skills/{spec,using-spec,vibe}` + `factory-plugin/skills` | no hooks; no native droid registration |
 
 The **spec** half is skill-invoked on every host (the skill is user-invocable, so
 hosts that list skills as commands offer it as `/spec`). Hooks

@@ -69,8 +69,8 @@ plain directory with no Git ancestor uses the current directory.
 
 | Mode | Command | What you get |
 |---|---|---|
-| **local** (default) | `./install.sh <repo>` | The full **stateful** kit at the resolved root: both skills, the engine, and the native surface of every configured host. For Claude Code that is `/flow` plus the hooks wired via `.claude/settings.json`. |
-| **global** | `./install.sh --global` | The **per-user skills**: `spec` and `vibe` installed into each selected host's own user-level skills dir (Claude `~/.claude/skills`, Codex `~/.codex/skills`, Droid `~/.factory/skills`, OpenCode `~/.config/opencode/skills`) plus one shared `~/.agents/AGENTS.md` block. No host CLI needed, and re-running it changes nothing. It also reports the `vibe-spec` binary status (absent by default — see [The `vibe-spec` binary](#the-vibe-spec-binary)); `--build-spec-bin` builds and installs it. `--host <claude\|codex\|droid\|opencode\|all>` overrides detection; `--plugin` also installs the Claude plugin for its doctrine hook. |
+| **local** (default) | `./install.sh <repo>` | The full **stateful** kit at the resolved root: the `spec`, `using-spec` and `vibe` skills, the engine, and the native surface of every configured host. For Claude Code that is `/flow` plus the hooks wired via `.claude/settings.json`. |
+| **global** | `./install.sh --global` | The **per-user skills**: `spec`, `using-spec` and `vibe` installed into each selected host's own user-level skills dir (Claude `~/.claude/skills`, Codex `~/.codex/skills`, Droid `~/.factory/skills`, OpenCode `~/.config/opencode/skills`) plus one shared `~/.agents/AGENTS.md` block. No host CLI needed, and re-running it changes nothing. It also reports the `vibe-spec` binary status (absent by default — see [The `vibe-spec` binary](#the-vibe-spec-binary)); `--build-spec-bin` builds and installs it. `--host <claude\|codex\|droid\|opencode\|all>` overrides detection; `--plugin` also installs the Claude plugin for its doctrine hook. |
 
 ```bash
 ./install.sh <repo> --only spec       # the spec framework alone
@@ -236,8 +236,8 @@ your-repo/                     # after install
 Each host surface appears only when that host was configured — a Claude-only
 install writes `.claude/` and nothing under `.opencode/`, `plugins/`, or
 `factory-plugin/`. In **this** repo the canonical halves live at
-[`spec/`](spec/) and [`flow/`](flow/); `.agents/skills/{spec,vibe}` are
-compatibility symlinks.
+[`spec/`](spec/) and [`flow/`](flow/); `.agents/skills/{spec,using-spec,vibe}` are
+compatibility symlinks (three sibling skill dirs, `using-spec` never nested).
 
 ## Tests
 
@@ -372,11 +372,11 @@ configured host. Paths below are relative to the installed root.
 
 | Host | Start the flow workflow | Skills live at | Wired per host |
 |---|---|---|---|
-| **Claude Code** | `/flow` — native project command (`.claude/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `.claude/skills/{spec,vibe}` | All hooks, via `.claude/settings.json`. |
-| **OpenCode** | `/flow` — native project command (`.opencode/commands/flow.md`) | `.agents/skills/{spec,vibe}` | No hook integration. |
-| **Codex** | Skill invocation only — `$vibe` (or the skill picker `/skills`); there is no synthetic `/flow` command | `.agents/skills/{spec,vibe}` + `plugins/vibe/skills` | No hook integration; no native agent registration. |
-| **Factory Droid** | `/flow` — native project command (`factory-plugin/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `factory-plugin/skills` | No hook integration; no native droid registration. |
-| **Other `AGENTS.md` readers** | Manual — the agent follows the `AGENTS.md` rules as prose | `.agents/skills/{spec,vibe}` (plain files) | No hooks, no native command. |
+| **Claude Code** | `/flow` — native project command (`.claude/commands/flow.md`) | `.agents/skills/{spec,using-spec,vibe}` + `.claude/skills/{spec,using-spec,vibe}` | All hooks, via `.claude/settings.json`. |
+| **OpenCode** | `/flow` — native project command (`.opencode/commands/flow.md`) | `.agents/skills/{spec,using-spec,vibe}` | No hook integration. |
+| **Codex** | Skill invocation only — `$vibe` (or the skill picker `/skills`); there is no synthetic `/flow` command | `.agents/skills/{spec,using-spec,vibe}` + `plugins/vibe/skills` | No hook integration; no native agent registration. |
+| **Factory Droid** | `/flow` — native project command (`factory-plugin/commands/flow.md`) | `.agents/skills/{spec,using-spec,vibe}` + `factory-plugin/skills` | No hook integration; no native droid registration. |
+| **Other `AGENTS.md` readers** | Manual — the agent follows the `AGENTS.md` rules as prose | `.agents/skills/{spec,using-spec,vibe}` (plain files) | No hooks, no native command. |
 | **Bare git / any editor** | — (spec framework only) | — | `docs/spec/` docs, templates, `vibe-spec`. |
 
 The **spec** workflow is skill-invoked on every host (the skill is

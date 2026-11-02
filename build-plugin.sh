@@ -22,6 +22,11 @@
 #     link is not a portable payload for them: the trees are materialized here
 #     and pinned to spec/ + flow/ by --check.
 #
+# `using-spec` ships as a SIBLING skill dir in every package, never nested
+# inside `skills/spec/` (vibe#71 sub-gap 3): OpenCode documents its skill
+# discovery as `skills/*/SKILL.md`, and a router that only exists one level down
+# is invisible to a single-level scan.
+#
 # The materialized trees are the skill that SHIPS, not the contributor tree:
 # `tests/` and the half's own AGENTS.md are pruned, exactly as install.sh prunes
 # them ("source-only, never ships" — spec/AGENTS.md, flow/AGENTS.md). The file
@@ -79,8 +84,14 @@ esac
 # ── materialized skill trees (Codex + Factory Droid) ─────────────────────────
 # The two host packages that cannot consume a symlinked skill dir ship copies.
 # SKILL_PKGS lists the package roots; SKILL_TREES maps <skill dir>:<source tree>.
+# `using-spec` is materialized as a SIBLING skill dir, never left nested inside
+# `skills/spec/` (vibe#71 sub-gap 3): OpenCode documents its discovery as
+# `skills/*/SKILL.md`, so a router that only exists one level down is found by
+# today's build only by luck. Ship the flat shape everywhere.
 SKILL_PKGS=("plugins/vibe" "factory-plugin")
-SKILL_TREES=("spec:spec" "vibe:flow")
+SKILL_TREES=("spec:spec" "vibe:flow" "using-spec:spec/using-spec")
+# The one skill dir that must NOT stay inside another skill's materialized tree.
+SKILL_NESTED_PRUNE=("spec/using-spec")
 
 # copy_skill_tree SRC_REL DEST — materialize the tracked, shipped files of
 # SRC_REL under DEST. `git ls-files` is the manifest (tracked only, so runtime
@@ -112,12 +123,18 @@ copy_skill_tree() {
 
 # emit_skill_trees DEST — materialize every package's skills/ tree under DEST.
 emit_skill_trees() {
-  local dest="$1" pkg pair name src
+  local dest="$1" pkg pair name src prune
   for pkg in ${SKILL_PKGS[@]+"${SKILL_PKGS[@]}"}; do
     for pair in ${SKILL_TREES[@]+"${SKILL_TREES[@]}"}; do
       name="${pair%%:*}"
       src="${pair#*:}"
       copy_skill_tree "$src" "$dest/$pkg/skills/$name"
+    done
+    # Flatten: a nested copy inside the skill that CONTAINS it would register the
+    # same skill twice on a host that walks recursively, and is invisible on a
+    # host that does not. Exactly one location, always a sibling.
+    for prune in ${SKILL_NESTED_PRUNE[@]+"${SKILL_NESTED_PRUNE[@]}"}; do
+      rm -rf "${dest:?}/$pkg/skills/$prune"
     done
   done
 }
