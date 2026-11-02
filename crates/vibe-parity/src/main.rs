@@ -8,7 +8,7 @@
 //! Exit 0 when every run passes or is pinned, 1 on any failure or suite
 //! error, 2 on a usage error or a suite file that fails to load (unreadable,
 //! not valid suite JSON, or an unsupported version).
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use vibe_core::exit;
@@ -52,9 +52,14 @@ fn run(suite_path: &Path, mode: Mode) -> ExitCode {
         Ok(suite) => suite,
         Err(e) => return usage(&e),
     };
-    let work: PathBuf = std::env::temp_dir().join(format!("vibe-parity-{}", std::process::id()));
+    let work = match vibe_core::testscratch::try_scratch("vibe-parity", "run") {
+        Ok(work) => work,
+        Err(err) => {
+            eprintln!("vibe-parity: create scratch: {err}");
+            return ExitCode::from(exit::FINDINGS);
+        }
+    };
     let report = run_suite(&suite, &mode, &work);
-    let _ = std::fs::remove_dir_all(&work);
     for r in &report.results {
         let args = r.args.join(" ");
         match &r.status {

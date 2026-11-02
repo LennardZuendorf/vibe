@@ -165,9 +165,9 @@ mod tests {
     use super::{write_atomic, write_via};
     use crate::Error;
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
-    fn scratch(name: &str) -> PathBuf {
+    fn scratch(name: &str) -> crate::testscratch::Scratch {
         crate::testscratch::scratch("vibe-core-fs", name)
     }
 

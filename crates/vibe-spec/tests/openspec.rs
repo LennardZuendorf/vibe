@@ -5,12 +5,12 @@
 mod common;
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use common::{assert_spec_json, project, repo, spec, write};
 
 /// Copies `tests/openspec/fixture/` into a fresh project.
-fn fixture(name: &str) -> PathBuf {
+fn fixture(name: &str) -> vibe_core::testscratch::Scratch {
     fn copy(from: &Path, to: &Path) {
         fs::create_dir_all(to).unwrap();
         for e in fs::read_dir(from).unwrap() {
@@ -215,7 +215,7 @@ const BLOCK: &str = "## Requirements\n\n### Requirement: A\n\nThe system SHALL a
 /// `x.md` exports to `specs/x/spec.md`; `x/spec.md.md` exports to
 /// `specs/x/spec.md/spec.md`, whose parent is the first file. The second
 /// write fails after `openspec/` exists, on every platform.
-fn mid_write_failure(name: &str) -> PathBuf {
+fn mid_write_failure(name: &str) -> vibe_core::testscratch::Scratch {
     let p = fixture(name);
     write(&p, ".spec/x.md", BLOCK);
     write(&p, ".spec/x/spec.md.md", BLOCK);
@@ -278,7 +278,7 @@ fn export_refuses_a_destination_inside_the_spec_root() {
 }
 
 /// An empty project with a `.spec` root and no features.
-fn empty(name: &str) -> PathBuf {
+fn empty(name: &str) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     write(&p, ".spec/product.md", "# P\n");
     p
@@ -671,7 +671,10 @@ fn a_quoted_marker_is_not_a_carried_design() {
 
 /// Exports the fixture and imports it into an empty root, after `edit`
 /// changed the exported tree.
-fn import_edited(name: &str, edit: impl Fn(&Path)) -> (PathBuf, common::Out) {
+fn import_edited(
+    name: &str,
+    edit: impl Fn(&Path),
+) -> (vibe_core::testscratch::Scratch, common::Out) {
     let a = fixture(&format!("{name}-a"));
     assert_eq!(spec(&a, &["export", "--openspec", "out"], &[]).code, 0);
     edit(&a.join("out/openspec/changes/passkeys"));

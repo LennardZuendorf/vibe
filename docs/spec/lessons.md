@@ -541,4 +541,22 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** tests, scratch, tmpdir, disk
 **Date:** 2026-10-28
 
+### Scratch cleanup requires an explicit owner
+**Pattern:** The six-hour sweep recommended by the 2026-10-28 lesson deleted unrelated `vibe-*` data and another live process's scratch. Reusing a computed path deleted collision contents. A scoped owner also leaked its container when a caller had already removed the workspace.
+**Rule:** This supersedes the 2026-10-28 six-hour sweep rule. Reserve scratch with exclusive directory creation and retry collisions. Retain the `Scratch` owner through every helper and derived path's last use. On drop, reclaim only the original container with unchanged ownership metadata and marker; an already removed workspace permits removing its owned container. Age, a PID, a name and a marker alone do not prove ownership or inactivity. Leave abandoned or legacy data for separately verified cleanup. CLI callers report reservation errors through the fallible helper; the panic-based shortcut is for tests.
+**Tags:** tests, scratch, tmpdir, safety, ownership
+**Date:** 2026-11-02
+
+### Fixture adapters retain lifetime owners
+**Pattern:** Replacing a `PathBuf` scratch helper with a scope guard left transitive fixture return types, tuple fields and JSON conversions expecting bare paths. A temporary `.join()` discarded the guard before the derived path was used.
+**Rule:** Audit the entire fixture return chain when adding cleanup guards. Return the owner alongside derived paths, keep it alive until the last use, and convert only borrowed paths for serialization. Compile all test targets before running suites, then run strict Clippy; express Unix permission modes as octal literals.
+**Tags:** tests, rust, ownership, tooling
+**Date:** 2026-11-02
+
+### Verify tool availability before invoking matrix commands
+**Pattern:** A Homebrew Cargo installation had no `rustup`; a toolchain-list command failed. An unquoted optional glob also failed in zsh before `rg` ran. A rejecting host-CLI shim was still detected as installed, and hooks.sh could not find its hardcoded target/debug binary when Cargo used an isolated build root. A first PATH allowlist omitted grep and basename, producing environment-only failures.
+**Rule:** Probe the executable needed by a verification command, rather than inferring it from a related tool. Quote search globs that may match no files. Keep required system utilities in a host-CLI-free allowlisted PATH for optional-tool skip tests, and use an ignored target/debug bridge for suites with a fixed binary path. Report an unavailable toolchain as an unverified matrix leg.
+**Tags:** tooling, verification, rust
+**Date:** 2026-11-02
+
 <!-- vibe-spec: allow SF15 -->

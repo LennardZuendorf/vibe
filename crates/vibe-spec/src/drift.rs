@@ -517,7 +517,6 @@ mod tests {
         std::fs::create_dir_all(&nested).unwrap();
         std::fs::create_dir_all(base.join("docs/spec")).unwrap();
         let got = marker_root(&nested);
-        std::fs::remove_dir_all(&base).unwrap();
-        assert_eq!(got, base);
+        assert_eq!(got, &*base);
     }
 }

@@ -299,6 +299,5 @@ mod tests {
         assert!(err.contains("blocker/c.md"), "{err}");
         assert!(!base.join("d").exists(), "created directories remain");
         assert_eq!(fs::read(base.join("blocker")).unwrap(), b"x");
-        fs::remove_dir_all(&base).unwrap();
     }
 }

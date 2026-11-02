@@ -6,7 +6,7 @@ mod common;
 
 use common::{assert_spec_json, project, spec, write};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const FILES: [&str; 7] = [
     "README.md",
@@ -18,7 +18,7 @@ const FILES: [&str; 7] = [
     "lessons.md",
 ];
 
-fn repo(name: &str) -> PathBuf {
+fn repo(name: &str) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     fs::remove_dir_all(p.join(".git")).unwrap();
     common::git(&p, "2026-03-01T12:00:00Z", &["init", "-q"]);

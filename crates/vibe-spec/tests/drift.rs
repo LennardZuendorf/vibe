@@ -364,7 +364,7 @@ fn hub(children: &str, body: &str) -> String {
     format!("---\ntype: hub\nchildren: [{children}]\nupdated: 2026-01-15\n---\n\n# Plan\n\n{body}")
 }
 
-fn layered(name: &str, plan: &str) -> std::path::PathBuf {
+fn layered(name: &str, plan: &str) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     write(&p, ".vibe/spec.json", common::LEGACY_STRICTNESS);
     write(&p, "docs/spec/plan.md", plan);

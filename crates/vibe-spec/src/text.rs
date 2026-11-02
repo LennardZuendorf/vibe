@@ -387,7 +387,6 @@ mod tests {
         }
         let names: Vec<String> = sub_dirs(&dir).iter().map(|p| name_of(p)).collect();
         assert_eq!(names, ["a-b", "a", "a_b", "spec-delta", "spec"]);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -435,7 +434,7 @@ mod tests {
     }
 
     #[allow(clippy::unwrap_used)]
-    fn scratch(tag: &str) -> PathBuf {
+    fn scratch(tag: &str) -> vibe_core::testscratch::Scratch {
         vibe_core::testscratch::scratch("vibe-walk", tag)
     }
 
@@ -454,7 +453,8 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn walk_files_missing_dir_is_empty() {
-        let dir = scratch("missing").join("nope");
+        let workspace = scratch("missing");
+        let dir = workspace.join("nope");
         assert_eq!(walk_files(&dir).unwrap(), Vec::<String>::new());
     }
 

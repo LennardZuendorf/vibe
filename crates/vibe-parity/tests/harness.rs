@@ -14,7 +14,7 @@ fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixture")
 }
 
-fn work(name: &str) -> PathBuf {
+fn work(name: &str) -> vibe_core::testscratch::Scratch {
     vibe_core::testscratch::scratch("vibe-parity-test", name)
 }
 
@@ -457,4 +457,94 @@ fn the_cli_prints_skipped_commands() {
         "{text}"
     );
     assert!(text.contains(", 1 skipped ("), "{text}");
+}
+
+// PR66: the CLI owns a fresh reservation; a legacy PID path is foreign data.
+#[test]
+fn cli_preserves_legacy_pid_workdir_and_reclaims_its_reservation() {
+    let dir = work("cli-ownership");
+    let tmp = dir.join("tmp");
+    fs::create_dir(&tmp).unwrap();
+    let ready = dir.join("ready");
+    let finish = dir.join("finish");
+    let mut suite = base();
+    suite["commands"][0]["oracle"] = json!([
+        "bash",
+        "-c",
+        "touch \"$1\"; while test ! -f \"$2\"; do sleep 0.01; done",
+        "oracle",
+        ready,
+        finish
+    ]);
+    let suite_path = dir.join("suite.json");
+    fs::write(&suite_path, serde_json::to_vec(&suite).unwrap()).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_vibe-parity"))
+        .args(["run", suite_path.to_str().unwrap(), "--self"])
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", &*dir)
+        .env("TMPDIR", &tmp)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !ready.exists() {
+        if Instant::now() >= deadline || child.try_wait().unwrap().is_some() {
+            let _ = child.kill();
+            let output = child.wait_with_output().unwrap();
+            panic!(
+                "CLI did not reach oracle: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let legacy = tmp.join(format!("vibe-parity-{}", child.id()));
+    fs::create_dir_all(&legacy).unwrap();
+    fs::write(legacy.join("keep"), "foreign").unwrap();
+    fs::write(&finish, "").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert_eq!(fs::read_to_string(legacy.join("keep")).unwrap(), "foreign");
+    let remaining: Vec<_> = fs::read_dir(&tmp)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(
+        remaining,
+        vec![legacy],
+        "CLI must reclaim its own reservation"
+    );
+}
+
+// PR66: scratch reservation failures remain CLI findings, not panic exits.
+#[test]
+fn cli_reports_an_unusable_temp_root_without_panicking() {
+    let dir = work("cli-invalid-temp");
+    let unusable = dir.join("file");
+    fs::write(&unusable, "not a directory").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_vibe-parity"))
+        .arg("run")
+        .arg(fixture().join("suite.json"))
+        .arg("--self")
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", &*dir)
+        .env("TMPDIR", &unusable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).starts_with("vibe-parity: create scratch: "));
+    assert!(output.stdout.is_empty());
+    assert_eq!(fs::read_to_string(unusable).unwrap(), "not a directory");
 }

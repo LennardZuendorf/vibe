@@ -6,7 +6,6 @@
 mod common;
 
 use std::fs;
-use std::path::PathBuf;
 
 use common::{assert_spec_json, git, layered_tree, project, spec, staged_oracle, write};
 
@@ -14,7 +13,7 @@ const TECH: &str = "---\ntype: feature-tech\n---\n\n<!-- merge -->\n## Auth\n\nS
 const PRESENT: &str =
     "# Tech\n\n## Auth\n\nSessions live in signed cookies.\n\nTokens expire after 1 hour.\n";
 
-fn tree(name: &str, tech: &str, target: &str) -> PathBuf {
+fn tree(name: &str, tech: &str, target: &str) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     write(&p, ".spec/features/auth/tech.md", tech);
     write(&p, ".spec/tech.md", target);
@@ -217,7 +216,7 @@ const TOPIC: &str = "# auth — Product\n\n## Requirements\n\n### Requirement: S
 const DELTA: &str = "---\ntype: feature-product\nfeature: auth\nparent: ../../product-auth.md\n---\n\n# Feature: Auth — Product\n\n## MODIFIED Requirements\n\n### Requirement: Sign in (R1)\nThe system SHALL sign users in with a passkey.\n\n#### Scenario: ok\n- **WHEN** valid\n- **THEN** in\n\n## REMOVED Requirements\n\n### Requirement: Sign out (R2)\n**Reason**: sessions expire.\n\n## ADDED Requirements\n\n### Requirement: Enrol (R3)\nThe system MUST enrol passkeys.\n\n#### Scenario: enrol\n- **WHEN** added\n- **THEN** stored\n";
 const AFTER: &str = "# auth — Product\n\n## Requirements\n\n### Requirement: Sign in (R1)\nThe system SHALL sign users in with a passkey.\n\n#### Scenario: ok\n- **WHEN** valid\n- **THEN** in\n\n### Requirement: Enrol (R3)\nThe system MUST enrol passkeys.\n\n#### Scenario: enrol\n- **WHEN** added\n- **THEN** stored\n";
 
-fn delta_tree(name: &str, product: &str) -> PathBuf {
+fn delta_tree(name: &str, product: &str) -> vibe_core::testscratch::Scratch {
     let p = tree(name, TECH, "# Tech\n");
     write(&p, ".spec/product-auth.md", TOPIC);
     write(&p, ".spec/features/auth/product.md", product);
@@ -461,7 +460,7 @@ const STAMP: &str = "2026-01-01T00:00:00Z";
 
 /// A committed repo on branch `feat` off `main`, with two artifacts bound
 /// to `auth` and one that is not (`auth-v2`).
-fn sp_repo(name: &str) -> PathBuf {
+fn sp_repo(name: &str) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     write(&p, ".spec/plan.md", "# Plan\n");
     write(

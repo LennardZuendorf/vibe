@@ -10,19 +10,10 @@ pub fn repo() -> PathBuf {
 }
 
 /// A fresh, canonical scratch project holding an empty `.git/` (bounds discovery).
-pub fn project(name: &str) -> PathBuf {
+pub fn project(name: &str) -> vibe_core::testscratch::Scratch {
     let dir = vibe_core::testscratch::scratch("vibe-spec-test", name);
     fs::create_dir_all(dir.join(".git")).unwrap();
-    plain(fs::canonicalize(dir).unwrap())
-}
-
-/// Drops the Windows verbatim prefix that `fs::canonicalize` adds (`\\?\C:\…`):
-/// the binary prints the plain `C:\…` form. A no-op elsewhere.
-fn plain(path: PathBuf) -> PathBuf {
-    match path.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
-        Some(rest) if !rest.starts_with(r"UNC\") => PathBuf::from(rest),
-        _ => path,
-    }
+    dir
 }
 
 /// Writes `text` to `root/rel`, creating parents.
@@ -208,7 +199,7 @@ pub fn validate_json(cwd: &Path, extra: &[&str], env: &[(&str, &str)]) -> (i32, 
 
 /// A clean layered project (D44): hubs, README/AGENTS, every kind folder,
 /// a nested topic folder with its own README hub, and a part.
-pub fn layered_tree(name: &str) -> PathBuf {
+pub fn layered_tree(name: &str) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     let hub = |title: &str, body: &str| {
         format!("---\ntype: hub\nupdated: 2026-01-15\n---\n\n# {title}\n\n{body}\n")

@@ -23,7 +23,7 @@ fn run(p: &Path, env: &[(&str, &str)]) -> (i32, Value) {
     (out.code, v)
 }
 
-fn rooted(name: &str) -> std::path::PathBuf {
+fn rooted(name: &str) -> vibe_core::testscratch::Scratch {
     let p = common::project(name);
     common::write(&p, "docs/spec/README.md", "# Spec\n");
     p
