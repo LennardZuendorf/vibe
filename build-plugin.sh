@@ -89,7 +89,9 @@ SKILL_TREES=("spec:spec" "vibe:flow")
 # source-only prune, rather than failing the build.
 copy_skill_tree() {
   local rel="$1" dest="$2" files f base
-  files="$( cd "$SRC" && git ls-files -- "$rel" 2>/dev/null || true )"
+  if ! files="$( cd "$SRC" && git ls-files -- "$rel" 2>/dev/null )"; then
+    files=""
+  fi
   if [[ -z "$files" ]]; then
     echo "build-plugin: WARN — no tracked files under $rel (not a git checkout?); copying the tree as-is" >&2
     mkdir -p "$dest"
