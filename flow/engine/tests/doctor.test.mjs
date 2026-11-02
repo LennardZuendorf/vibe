@@ -43,6 +43,8 @@ import {
   rmSync,
   chmodSync,
   cpSync,
+  accessSync,
+  constants as fsConstants,
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -103,6 +105,46 @@ function noJqPath() {
   }
   cachedNoJqPath = shimDir;
   return cachedNoJqPath;
+}
+
+let cachedNoSpecBinPath;
+function specBinOnPath() {
+  const dirs = (process.env.PATH ?? '').split(':').filter(Boolean);
+  for (const dir of dirs) {
+    try {
+      accessSync(path.join(dir, 'vibe-spec'), fsConstants.X_OK);
+      return true;
+    } catch {
+      // not here
+    }
+  }
+  return false;
+}
+function noSpecBinPath() {
+  if (cachedNoSpecBinPath !== undefined) return cachedNoSpecBinPath;
+  if (!specBinOnPath()) {
+    cachedNoSpecBinPath = process.env.PATH ?? '';
+    return cachedNoSpecBinPath;
+  }
+  const shimDir = mkTempRoot('vibe-doctor-nospecbin-');
+  for (const dir of (process.env.PATH ?? '').split(':').filter(Boolean)) {
+    let entries;
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      if (name === 'vibe-spec') continue;
+      try {
+        symlinkSync(path.join(dir, name), path.join(shimDir, name));
+      } catch {
+        // duplicate name across PATH dirs (first writer wins) — normal precedence.
+      }
+    }
+  }
+  cachedNoSpecBinPath = shimDir;
+  return cachedNoSpecBinPath;
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +252,24 @@ function makeHealthySandbox() {
   addHooks(sandbox);
   addSettings(sandbox, HOOK_SCRIPTS);
   addDeps(sandbox);
+  sandbox.specBin = addSpecBin(sandbox);
   return sandbox;
+}
+
+// A stub `vibe-spec` binary inside the sandbox — the healthy install's seventh
+// check. The spec skill's binary is NOT installed by install.sh (vibe#71
+// sub-gap 4), so a sandbox without this reports a legitimate
+// `warn tool.vibe-spec`; the healthy fixture carries the binary so "every check
+// ok" stays a real statement. Both sides are pointed at it the same way: the
+// oracle through $VIBE_SPEC_BIN (its documented override), the engine through
+// opts.specBin, so neither leg reads the runner's ambient PATH.
+function addSpecBin(sandbox) {
+  const binDir = path.join(sandbox.dir, 'bin');
+  mkdirSync(binDir, { recursive: true });
+  const dest = path.join(binDir, 'vibe-spec');
+  writeFileSync(dest, '#!/bin/sh\necho "vibe-spec 0.4.0"\n');
+  chmodSync(dest, 0o755);
+  return dest;
 }
 
 function makeHomeFixture({ skills = [], plugins = [] } = {}) {
@@ -225,13 +284,22 @@ function makeHomeFixture({ skills = [], plugins = [] } = {}) {
 }
 
 function runOracle(sandbox, opts = {}) {
-  return runCommand('bash', [sandbox.scriptPath], { env: { HOME: opts.home ?? '/nonexistent-home', ...opts.env } });
+  const specBin = 'specBin' in opts ? opts.specBin : sandbox.specBin;
+  const env = { HOME: opts.home ?? '/nonexistent-home' };
+  if (typeof specBin === 'string' && specBin !== '') env.VIBE_SPEC_BIN = specBin;
+  return runCommand('bash', [sandbox.scriptPath], { env: { ...env, ...opts.env } });
 }
 
 function runEngine(sandbox, opts = {}) {
+  const engineOpts = { ...opts.engineOpts };
+  const specBin = 'specBin' in opts ? opts.specBin : sandbox.specBin;
+  // An explicit specBin (string = present, undefined = absent) pins the check;
+  // without a fixture the engine detects for real, exactly like the oracle.
+  if ('specBin' in opts) engineOpts.specBin = specBin === undefined ? undefined : { detail: specBin };
+  else if (typeof sandbox.specBin === 'string') engineOpts.specBin = { detail: sandbox.specBin };
   return runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, {
     home: opts.home ?? '/nonexistent-home',
-    ...opts.engineOpts,
+    ...engineOpts,
   });
 }
 
@@ -262,6 +330,46 @@ test('parity: fully healthy install — every check ok, exit 0', () => {
     assertMatch(engineResult.stdout, /^# vibe doctor — /);
   } finally {
     cleanupAll(sandbox, home);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// tool.vibe-spec (vibe#71 sub-gap 4). The binary is NOT part of a plain
+// install, so the check has to tell the truth in both directions: present when
+// a probe finds it, and an explicit, non-fatal degradation message when not.
+// ---------------------------------------------------------------------------
+
+test('parity: tool.vibe-spec — a binary found through $VIBE_SPEC_BIN is reported present', () => {
+  const sandbox = makeHealthySandbox();
+  try {
+    const oracleResult = runOracle(sandbox);
+    const engineResult = runEngine(sandbox);
+    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertIncludes(engineResult.stdout, `ok   tool.vibe-spec vibe-spec present (${sandbox.specBin})`);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('divergence pin: tool.vibe-spec — genuinely no binary on PATH reports the fallback, never fails', () => {
+  const sandbox = makeHealthySandbox();
+  try {
+    const oracleResult = runCommand('bash', [sandbox.scriptPath], {
+      env: { HOME: '/nonexistent-home', PATH: noSpecBinPath() },
+    });
+    const engineResult = runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, {
+      home: '/nonexistent-home',
+      specBin: undefined,
+    });
+    assertEqual(oracleResult.code, 0);
+    assertEqual(engineResult.code, 0);
+    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertMatch(engineResult.stdout, /warn tool\.vibe-spec vibe-spec not installed/);
+    // The message must name the thing that DOES still work, byte-exactly.
+    assertIncludes(engineResult.stdout, `bash ${sandbox.dir}/.agents/skills/spec/scripts/validate.sh`);
+    assertIncludes(engineResult.stdout, './install.sh --global --build-spec-bin');
+  } finally {
+    sandbox.cleanup();
   }
 });
 
