@@ -158,7 +158,7 @@ A plain install ships no `vibe-spec`. If absent: say "vibe-spec is not
 installed", name the fix (`install.sh --global --build-spec-bin`,
 `cargo install --locked --path crates/vibe-spec`):
 
-- `<root>` without the binary: `docs/spec/` if present, else the legacy flat root.
+- `<root>` without the binary is `docs/spec/` if present, else the legacy flat root.
 - Flat legacy root: `bash <skill-dir>/scripts/{validate,check-drift,list-specs}.sh`
   still run (`<skill-dir>` holds this file).
 - Any other root: no validator runs — say "validation unavailable" in the finish
