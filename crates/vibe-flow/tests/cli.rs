@@ -278,3 +278,42 @@ fn json_is_accepted_and_ignored() {
     assert_eq!(code, 0);
     assert_eq!(stdout, IDLE_CURSOR);
 }
+
+// clap's own default for a usage error is 2, and the platform reads 2 as BLOCK
+// — so every one of these would deny a tool call the hook was asked to check.
+// clap writes its own message straight to the process streams (`err.print()`),
+// so only the exit code is observable here; that code is the whole defect.
+#[test]
+fn a_usage_error_exits_one_never_the_platforms_block_code() {
+    let root = support::root("usage-exit");
+    for argv in [
+        vec!["bogus-subcommand"],
+        vec!["hook", "--nope"],
+        vec!["state", "set", "a", "b", "c"],
+    ] {
+        let (code, stdout, stderr) = run(&root, &argv);
+        assert_eq!(code, 1, "{argv:?} must not read as a BLOCK: {stderr}");
+        assert!(stdout.is_empty(), "{argv:?}: {stdout}");
+    }
+}
+
+#[test]
+fn a_bare_invocation_is_an_error_not_a_block() {
+    let root = support::root("usage-bare");
+    let argv: Vec<OsString> = ["vibe-flow"].iter().map(OsString::from).collect();
+    let (code, _stdout, stderr) = run_argv(&root, &argv, &MapEnv::new(&[]));
+    assert_eq!(code, 1, "{stderr}");
+}
+
+#[test]
+fn help_and_version_keep_exit_zero() {
+    let root = support::root("usage-help");
+    let (code, _stdout, _stderr) = run(&root, &["--help"]);
+    assert_eq!(code, 0);
+    let argv: Vec<OsString> = ["vibe-flow", "--version"]
+        .iter()
+        .map(OsString::from)
+        .collect();
+    let (code, _stdout, stderr) = run_argv(&root, &argv, &MapEnv::new(&[]));
+    assert_eq!(code, 0, "{stderr}");
+}
