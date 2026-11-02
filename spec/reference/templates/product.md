@@ -11,6 +11,7 @@ updated: {YYYY-MM-DD}
   Job: project anchor (WHAT/WHY at project level). Link down via Features index.
   Do NOT: feature-level UX, file paths, implementation, code constructs, unit tables.
   Omit optional sections entirely when empty — placeholder prose is worse than absence.
+  Use in a flat layout only; a layered root keeps the hubs that `vibe-spec init` writes.
 -->
 
 # {Project Name} — Product

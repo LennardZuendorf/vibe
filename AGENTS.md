@@ -34,7 +34,7 @@ Know what exists before you read or create files.
 | Path | Status |
 |---|---|
 | `docs/spec/` | **Live** — primary source of truth; read every session |
-| `.agents/skills/spec/` | **Live** — spec skill + `validate.sh` |
+| `.agents/skills/spec/` | **Live** — spec skill; validation runs `vibe-spec` (`crates/vibe-spec/`) |
 | `AGENTS.md` / `CLAUDE.md` | **Live** — this guide; `CLAUDE.md` → `AGENTS.md` |
 | `.agents/skills/vibe/state-machine.json` | **Present** — static flow definition (data to edit when building flow) |
 | `.agents/skills/vibe/scripts/` | **Present** — `set-state.sh`, `detect-context.sh`, etc. |
@@ -42,7 +42,7 @@ Know what exists before you read or create files.
 | `.agents/skills/vibe/state.json` | **Often absent** — gitignored runtime cursor; missing is normal |
 | `.agents/skills/vibe/evidence/` (`flow/evidence/`) | **Often absent** — gitignored `*.verify` receipts (`feature-<feature>.md`, `quick.md`); written during verify, missing is normal |
 | `.agents/skills/vibe/` | **Present** — workflow skill (SKILL.md router + phase files) |
-| `.claude/commands/`, `.claude/hooks/`, `.claude/settings.json` | **Present** — Claude Code adapter (`/flow` command + three hook scripts wired via `settings.json`) |
+| `.claude/commands/`, `.claude/hooks/`, `.claude/settings.json` | **Present** — Claude Code adapter (`/flow` command + hook scripts wired via `settings.json`) |
 | **`flow.json`** | **Does not exist** — never expect, read, or create this file |
 | Per-turn inject / D12 orders-in-skills | **Live** — orders sourced from linked `vibe` skill via `orders.sh` |
 
@@ -55,8 +55,8 @@ Route by **intent**, not by flow cursor.
 | Intent | Load first | Write surface |
 |---|---|---|
 | Understand the project | `docs/spec/product.md`, `docs/spec/tech.md` | — |
-| Build a named feature | `docs/spec/features/<name>/` + root `plan.md` | per feature Scope |
-| Small bounded fix | relevant feature spec or `docs/spec/quick/<slug>.md` | minimal |
+| Build a named feature | `docs/superpowers/specs/*-<feature>-design.md` + `docs/superpowers/plans/*-<feature>.md` (default); `docs/spec/features/<feature>/` only as the fallback | per feature Scope |
+| Small bounded fix | the relevant feature spec; a quick fix needs no new doc | minimal |
 | Spec / plan work | `.agents/skills/spec/SKILL.md` | `docs/spec/**` per write rules |
 | Build flow machinery | `docs/spec/tech.md` + `.agents/skills/vibe/` | `.agents/skills/vibe/`, `vibe` skill |
 | Build adapters / hooks | `docs/spec/tech.md` + `.claude/` | `.claude/`, `install.sh` |
@@ -85,9 +85,15 @@ This is the **end-state** the repo is building. Reference the root
 ## Repo layout
 
 ```text
-docs/spec/             # durable memory (product/tech/design/plan/lessons + features/)
-.agents/skills/spec/   # bundled spec framework
-.agents/skills/vibe/   # workflow skill: router, phase files, state machine, scripts
+flow/                  # vibe skill source: router, procedure files, machine, scripts, engine, content
+spec/                  # spec skill source: guides, reference, agents, tests
+crates/                # Rust workspace: vibe-core, vibe-spec, vibe-parity
+contracts/             # schemas and golden fixtures
+oracles/               # frozen JS and bash oracles — never edited
+tests/                 # umbrella suite, parity corpus, skills lint
+docs/spec/             # durable memory (hubs, lessons.md, kind folders, features/)
+docs/superpowers/      # superpowers-layer specs and plans (the default feature layer)
+.agents/skills/        # compatibility symlinks to spec/ and flow/
 AGENTS.md              # this file (canonical)
 CLAUDE.md              # symlink → AGENTS.md
 ```
@@ -105,7 +111,7 @@ CLAUDE.md              # symlink → AGENTS.md
 
 **Always**
 - Read `docs/spec/` before code.
-- Run `validate.sh` before claiming work is done.
+- Run `vibe-spec validate --strict` before claiming work is done.
 - Cite plan unit IDs in tests and commits during impl.
 - Respect feature **Scope** tables — do not implement another feature's units.
 
@@ -135,115 +141,56 @@ docs(agents): rewrite instruction set
 
 ## Spec layout
 
-Root: `docs/spec/{product,tech,design,plan,lessons}.md`.
-Features: `docs/spec/features/<feature>/{product,tech}.md` required; `design.md`,
-`plan.md`, `research.md` optional.
+Hubs: `docs/spec/{product,tech,design,plan}.md`; each lists its notes in `children:`.
+`docs/spec/lessons.md` is the append-only lessons file.
+Kind folders hold the notes: `areas/`, `concepts/`, `decisions/`, `parts/`,
+`platform/`, `questions/`, `tech/`.
+Fallback features: `docs/spec/features/<feature>/{product,tech}.md` required;
+`design.md`, `plan.md`, `research.md` optional.
 
 <!-- vibe:instructions:start -->
-<!-- Managed by vibe (merge-agents.sh). Edits inside these markers are
-     replaced on the next setup.apply / install. Content outside the markers
-     (above this line, or inside vibe:active-rules) is user-owned. -->
-
-This project runs the **vibe flow** — a spec-first workflow harness. The spec root is the
-durable memory (`docs/spec/`, or legacy `.spec/`); sessions are ephemeral. Read the specs before you write code.
-
+<!-- Managed by vibe (merge-agents.sh); replaced on setup.apply / install.
+     Content outside these markers, including vibe:active-rules, is user-owned. -->
+This project runs the **vibe flow**, a spec-first workflow harness. The spec root (`docs/spec/`, or legacy `.spec/`) is durable memory; sessions are ephemeral.
+Read the specs before writing code. A flow-only install has no spec tree.
 ## Session start
-
-1. Read `lessons.md` and `plan.md` in the spec root (`docs/spec/`, or legacy `.spec/`). (The spec half owns that root; a
-   flow-only install has no tree — the flow still runs, the specs are just absent.)
-2. Identify the feature you are working on and load its specs:
-   `docs/superpowers/specs/*-<name>-design.md` + `docs/superpowers/plans/*-<name>.md`, or the fallback `docs/spec/features/<name>/{product,tech,plan}.md`.
-3. If `.agents/skills/vibe/state.json` exists and you are continuing a flow session,
-   read `{flow, phase, feature}` and resume the linked `vibe` skill. A missing cursor
-   means `idle` — proceed with the specs; a missing cursor is not an error.
-
-## Driving the flow
-
-- `/flow <flow.phase> [feature] [confirm]` transitions the state machine. Pass the feature
-  name to carry it into the cursor; add the literal `confirm` token to cross a gated edge
-  (the two human gates below). Never edit `state.json` by hand.
-- Under the hood `/flow` runs
-  `bash .agents/skills/vibe/scripts/set-state.sh <flow.phase> [feature]`. That script is a
-  *writer*, not a gate — it moves the cursor but enforces no approval. The gate teeth live
-  in the `/flow` command and the hooks, not the writer.
-- Per-turn **orders** for the current state come from the linked `vibe` skill, resolved by
-  `orders.sh`. Follow the current state's orders over any delegated skill's own prose.
-
+1. Read the spec root's `lessons.md` and `plan.md` when present.
+2. Load `docs/superpowers/specs/*-<name>-design.md` and `docs/superpowers/plans/*-<name>.md`; fallback: `docs/spec/features/<name>/{product,tech,plan}.md`.
+3. Read `{flow, phase, feature}` from `.vibe/run/flow/state.json` when present, otherwise `.agents/skills/vibe/state.json`. Only absence means `idle`; report a present invalid cursor. Resume the linked `vibe` skill.
 ## Working model
-
-```
-ASK → read the spec root → PLAN → CONFIRM → IMPL → verify → compound
-```
-
-Most transitions auto-advance. Two edges are **human gates** — stop and get explicit
-approval before crossing: plan → impl, and verify → ship. Everything else flows without
-pausing to ask.
-
-**Output: brief technical English** — answer first, then the detail. One idea per
-sentence, active voice, no filler or hedging; compress receipts and subagent
-summaries. Never compress security warnings, irreversible-action confirmations, or
-code/paths/commands — those stay full and byte-exact.
-
-## Write policy
-
-Which paths this harness restricts, and in which states, is **data**:
-`content/policy.json`, read by `detect-context.sh decide` (which defaults to `idle`
-when `state.json` is absent). The rules are rendered rule-by-rule into the
-`vibe:rules` block below — this section states no state list of its own, because a
-second hand-written copy is a copy that can disagree with the enforcer. Check any
-path before writing it:
-
-```bash
-bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
-```
-
-## Precedence
-
-The cursor owns sequencing and artifact destinations; delegated skills own method. When a
-delegated skill's text names its own artifact path or hands off elsewhere, the current
-state's orders win: write to the state's surface, transition only via `set-state.sh`. Scope
-edits are not a state — edit within the current state's write surface and stay put.
-`set-state.sh idle` is always legal: abort ends any flow.
-
-## Injected rules
-
-Standing rules are authored as content blocks and composed into channels: the
-per-turn prompt, session start, and the `vibe:rules` block below. Configure them in
-this repo's root `vibe.json` — add, remove, reorder, disable, or define your own —
-never by editing the block, which is regenerated.
-
+`design → plan →[gate] impl → verify →[gate] compound`
+Most transitions auto-advance. Two edges are **human gates**: get explicit
+approval before crossing: plan → impl, and verify → ship. Other edges need no pause.
+`/flow <flow.phase> [feature] [confirm]` carries the feature; literal `confirm`
+crosses a gated edge. Never hand-edit `state.json`. The underlying command is
+`bash .agents/skills/vibe/scripts/set-state.sh <flow.phase> [feature]`.
+Gates are a convention today: `/flow` asks for a `confirm` token, and no hook or script checks it.
+`set-state.sh` writes the cursor; it does not gate. No hook enforces the two approvals; honor them yourself.
+## Precedence and policy
+The cursor owns sequencing and artifact destinations; delegated skills own method. Follow current-state orders from the linked `vibe` skill, resolved by `orders.sh`,
+over delegated prose or artifact paths. Scope edits stay in the current state's
+write surface. Transition only via `set-state.sh`; `set-state.sh idle` always aborts.
+Restricted paths and states are data in `content/policy.json`, enforced by
+`detect-context.sh decide` and rendered rule-by-rule below. Absent cursor means idle.
+Standing blocks compose the per-turn prompt, session start and `vibe:rules` channels. Configure them in root `vibe.json`; edit blocks/config, never generated regions.
 ## Commands
-
 ```bash
-# Spec validation — run before claiming done (spec half; absent on --only flow)
-# (until F22 ships the binary, `bash .agents/skills/spec/scripts/validate.sh` on a legacy `.spec/` root)
-vibe-spec validate
-# Write policy for a path (works without state.json)
-bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
-# Health-check the harness wiring (hooks, cursor, machine)
+vibe-spec validate # before claiming done; absent on --only flow
+bash .agents/skills/vibe/scripts/detect-context.sh decide <path> # before writes
 bash .agents/skills/vibe/scripts/doctor.sh
-# Injection config: what each channel composes, and lint it
 node .agents/skills/vibe/engine/cli.mjs render --list
 node .agents/skills/vibe/engine/cli.mjs render --check
-# Re-render the AGENTS.md rules block after editing vibe.json
 node .agents/skills/vibe/engine/cli.mjs render agents-md --write
 ```
-
 ## Enforcement is partial — do not trust it blindly
-
-- The `pre-tool-use-guard` hook only intercepts `Edit`, `Write`, and `NotebookEdit` tool
-  calls. Shell redirection (`>`, `tee`, `sed -i`) bypasses it — honoring the write
-  invariants there is a **convention**, backed only by a warn-only Bash sniffer.
-- `set-state.sh` writes the cursor; it does not gate. Approvals are enforced by `/flow` and
-  the hooks, not by the writer.
-- The Stop receipt tooth (a `*.verify` state needs a fresh evidence receipt) fires only when
-  the hooks are wired into the platform (e.g. `.claude/settings.json`). No wiring, no tooth.
-
-## Degrade
-
-Scripts graceful-degrade: `jq` is recommended but optional (a pure-bash path keeps the
-cursor byte-identical), and other agents may edit concurrently — touch only your own files
-and prefer warn over hard-fail.
+The guard intercepts only `Edit`, `Write`, `MultiEdit`, and `NotebookEdit`.
+Shell redirection (`>`, `tee`, `sed -i`) bypasses it; a warn-only Bash sniffer backs the convention. No hook enforces either human approval. The Stop receipt
+tooth requires fresh evidence in verify only when platform hooks are wired
+(e.g. `.claude/settings.json`). No wiring, no tooth.
+Scripts graceful-degrade; `jq` is optional (pure bash keeps cursor bytes identical).
+Other agents may edit concurrently: touch only your own files; prefer warn over hard-fail.
+**Output: brief technical English** — answer first, one idea per sentence, active voice, no filler. Compress receipts/summaries; keep security warnings, irreversible-action
+confirmations, code, paths and commands full and byte-exact.
 <!-- vibe:instructions:end -->
 
 <!-- vibe:active-rules:start -->
@@ -254,13 +201,13 @@ and prefer warn over hard-fail.
 
 - 📌 **A guard is only as strong as the capability it bans, not the spelling it matches** — When a guard is evaded, do not add a pattern for the evasion — that buys exactly one round. Close the *capability*: state the invariant as "no module may obtain X by any means unless allowlisted", then find the mechanical property that makes it true regardless of syntax. Match against the whole comment-stripped file, never per line. Close the scanned set under whatever relation the attacker can traverse (here, module resolution — which covers static `import`, `import()`, `require`, and `createRequire` without naming any of them). Pin exemptions by exact line *and occurrence count*, never by file. And require the implementer to produce the list of evasions it tried against its **own** fix, including the ones that failed — the round that finally held was the first to produce that artifact.
 - 📌 **Porting a script destroys the oracle that proves the port — freeze it first** — When replacing an implementation, copy its predecessor into the test tree as a frozen oracle **before** the first line of the replacement is written, and make differential comparison part of the suite. Prioritise by blast radius: anything that can block, delete, or halt gets its oracle frozen first. Where an oracle disagrees with *itself* across its own code paths, follow the fail-safe branch and pin the divergence with a control — losing one turn of enforcement is recoverable, wedging a session is not.
-- **Local green is not CI green** — Feed test stdin by redirect or process substitution, not a pipe. Build or require each binary a suite needs. Normalise CRLF when a test reads repo text.
-- **A hook shim must tell a block from a crash by output** — Pass a block through only when the output proves it was one, such as a single `blocked:` line. Map every other code to allow. Test with a fake binary for each event.
-- **A rewrite tool needs corruption-class tests** — Before a tool rewrites user content, test each corruption class: look-alike tokens, link forms, line endings, duplicate keys and walk pruning. A committed rewrite cannot be undone.
+- **A block proof covers the complete output and the restricted runtime** — Validate the complete block grammar and allowed status, keep the shim within its declared runtime, and escape backslash and C0/DEL bytes in every diagnostic value, and pair real multiline producers with usage/crash and restricted-PATH controls. Assert binding content budgets in executable tests. Refuse a directory leaf before atomic cursor replacement. Update integration fixtures from canonical content rather than pinning an obsolete heading or repo-only configuration.
+- **Keep frozen integrity separate from reviewed source divergence** — Skip freshness only for a bare oracle copy. Keep frozen bytes immutable and pin a reviewed divergence with both exact hashes, a known manifest path, and a reason. Reject malformed, duplicate, unknown, missing-source, and stale rows. Report byte-identical sources separately from accepted differences. A source-availability preflight does not make copying transactional.
+- **Migrate every live cursor reader and writer together** — Define one primary location with an explicit absence-only fallback, preserve legacy bytes, and test legacy-only, new-only, both-present, present-invalid, and no-node controls, using distinct old/new states and absolute expectations for every reader. Port the active producer contract, including NUL Git records, nested roots, rename origins and stat failures, into every preferred tier. Establish absence through the full ancestor chain: require directory type and search permission, reject dangling/looping links, and accept execute-only directories. Apply the same established-absence rule to evidence selection, while keeping receipt metadata validity separate from cursor read permission. Preserve accepted receipt-relative components until filesystem resolution; neither basename truncation nor normalization may hide a missing ancestor. Keep standalone and shared shell classifiers identical with an executable pin. Keep root/layout resolution in its existing primitive owner; run the capability guard before the expensive suite.
 <!-- vibe:active-rules:end -->
 
 <!-- vibe:rules -->
-_Managed by vibe — rendered from the `agents-md` channel by `vibe render agents-md --write`. Edit the blocks or `vibe.json`, not this region._
+_Managed by vibe — rendered from the `agents-md` channel by `node .agents/skills/vibe/engine/cli.mjs render agents-md --write`. Edit the blocks or `vibe.json`, not this region._
 
 ## Write invariants
 
@@ -269,7 +216,7 @@ list below is RENDERED from that file — the same data
 `detect-context.sh decide` enforces — so the prose and the enforcer cannot
 disagree. Edit the rules, never this text.
 
-- `.agents/skills/vibe/state.json` — otherwise: block — state.json is written only via set-state.sh, never by direct edit
+- `.vibe/run/flow/state.json`, `.agents/skills/vibe/state.json`, `.agents/flow/state.json` — otherwise: block — state.json is written only via set-state.sh, never by direct edit
 - `.spec/lessons.md` — `feature.compound`, `setup.apply`, `strategy.spec`, `quick.verify`: allow; otherwise: block — .spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: the current state)
 - `docs/spec/lessons.md` — `feature.compound`, `setup.apply`, `strategy.spec`, `quick.verify`: allow; otherwise: block — docs/spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: the current state)
 - `.spec/product.md`, `.spec/tech.md`, `.spec/design.md`, `.spec/plan.md` — `strategy.spec`, `feature.compound`, `setup.apply`: allow; otherwise: block — root .spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: the current state)
@@ -294,12 +241,9 @@ calls alike. Set the `model` parameter explicitly on every call; never omit it
 (omission silently inherits the session model):
 
 - `haiku` — mechanical bulk work: renames, boilerplate, format conversion, log triage.
-- `sonnet` — default for well-specified implementation with clear acceptance criteria.
-- `opus` — genuinely tricky work: concurrency, subtle algorithms, adversarial
-  verify/judge panels, gnarly debugging.
-- `fable` — rare; only when independence from your context is the point (e.g.
-  adversarial review of your own plan or a large diff). If the complexity of the task
-  warrants a Fable sub-agent, ALWAYS check with me first — never spawn one unprompted.
+- `sonnet` — default for well-specified implementation, exploration and per-task review.
+- `opus` — architecture, adversarial or final review, genuinely tricky work:
+  concurrency, subtle algorithms, gnarly debugging.
 
 When unsure between tiers, pick the cheaper and escalate on failure.
 
@@ -309,17 +253,21 @@ Applies to ALL sessions, any model. Dynamic workflows do not need to be avoided 
 reach for the Workflow tool when a task has 3+ independent parallelizable subtasks or
 would benefit from a pipeline/judge panel.
 
-Standing rule on opt-in: if ultracode is NOT on for the session (no "ultracode"
-keyword, no toggle, no orchestration request in my own words), plan first — propose
-the workflow in one or two sentences with the rough shape and cost, and wait for my
-reply; my "yes" is the opt-in. If ultracode IS on, invoke directly.
+Opt-in: unless your human partner already asked for orchestration in their own words,
+plan first — propose the workflow in one or two sentences with the rough shape and
+cost, and wait for their reply; their "yes" is the opt-in.
 
 **Agent models inside workflow scripts:** every `agent()` call MUST set the `model`
-parameter explicitly, chosen per "Delegating to sub-agents" above — with one
-tightening: NEVER use `fable` agents in a dynamic workflow, not even with approval.
-Only `haiku`, `sonnet`, or `opus`. If a Fable review is warranted, it happens AFTER
-the workflow completes, as a standalone Agent-tool call (ask first, per above) —
-never as a workflow stage.
+parameter explicitly, chosen per "Delegating to sub-agents" above. Only `haiku`,
+`sonnet`, or `opus`.
+
+## Delegation policy (maintainer)
+
+Maintainer rules on top of the shipped tiers.
+
+- `fable` — rare; only when independence from your context is the point (e.g. adversarial review of your own plan or a large diff). ALWAYS check with the maintainer first — never spawn one unprompted.
+- Never use `fable` agents in a dynamic workflow, not even with approval. A Fable review happens AFTER the workflow completes, as a standalone Agent-tool call (ask first).
+- If ultracode is NOT on for the session (no "ultracode" keyword, no toggle, no orchestration request in the maintainer's own words), plan first — propose the workflow with rough shape and cost, and wait for the maintainer's reply; their "yes" is the opt-in. If ultracode IS on, invoke directly.
 <!-- /vibe:rules -->
 
 <!-- vibe-spec:router:start -->

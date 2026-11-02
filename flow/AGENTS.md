@@ -17,6 +17,9 @@ path to `flow/`. The Claude adapter in `../.claude/` drives it.
 | `.vibe/run/flow/state.json` | Runtime cursor — write through `vibe-flow state set` |
 | `scripts/` | `set-state.sh`, `detect-context.sh`, `orders.sh`, `doctor.sh`, `merge-*.sh` |
 | `reference/` | `deps.json`, `adapters.json`, templates |
+| `content/` | Injection data — `policy.json` (write rules), `vibe.default.json`, `blocks/` |
+| `engine/` | Zero-dependency Node engine (`cli.mjs`) and its suite in `engine/tests/` |
+| `hooks-fallback/` | Frozen bash guard and Stop gate for hosts without node |
 | `tests/` | Behaviour suites (`flow/tests/run.sh` + `tests/adapters/`) — **source-only, never ships** |
 
 ## Working here

@@ -164,7 +164,7 @@ assert_not_contains "f6/tier3" "CLAUDE_PLUGIN_ROOT is DELETED from the tier-3 ch
 P4="$WORK/p4"; mk_plugin "$P4"
 NOBIN="$WORK/nobin"
 mkdir -p "$NOBIN"
-for t in sh bash uname tr dirname grep sed cat head; do
+for t in sh bash uname tr dirname grep sed cat head awk; do
   p="$(command -v "$t" 2>/dev/null)" && ln -sf "$p" "$NOBIN/$t"
 done
 # ...and a second farm with jq but still NO node: the frozen bash nudge below needs
@@ -253,6 +253,12 @@ chmod +x "$WORK/bin6/vibe-flow"
 out="$(run_shim "$P6" "$WORK/bin6:$HOSTPATH" pre-tool-use-guard "$WORK/empty")"
 assert_contains "f6/exit" "one \`block:<reason>\` line blocks even with exit 0" "$out" "rc=2"
 assert_contains "f6/exit" "the proved reason is relayed" "$out" "block:only one proved line"
+# flow-v2/1.2: a crash status without fallback cannot manufacture a block.
+printf '#!/bin/sh\nprintf "block:crash diagnostic\\n"\nexit 3\n' > "$WORK/bin6/vibe-flow"
+chmod +x "$WORK/bin6/vibe-flow"
+out="$(run_shim "$P5" "$WORK/bin6:$HOSTPATH" pre-tool-use-guard "$WORK/empty")"
+assert_contains "f6/exit" "a crashed verdict-shaped child without fallback allows" "$out" "rc=0"
+
 # (d) reasonless and banner-shaped verdicts never block. The anchor is the line
 #     start: a stack trace that merely mentions a verdict shape is not one.
 for garbage in 'block:' 'usage: vibe-flow hook <event>' 'Traceback: block:not at line start'; do
@@ -263,6 +269,14 @@ for garbage in 'block:' 'usage: vibe-flow hook <event>' 'Traceback: block:not at
   chmod +x "$WORK/bin6/vibe-flow"
   out="$(run_shim "$P6" "$WORK/bin6:$HOSTPATH" pre-tool-use-guard "$WORK/empty")"
   assert_contains "f6/exit" "unproved shape never blocks: $garbage" "$out" "rc=0"
+done
+
+# flow-v2/1.2: a matching usage line cannot prove the complete output.
+for ev in pre-tool-use-guard stop-gate; do
+  printf '#!/bin/sh\nprintf "usage: vibe-flow hook <event>\\nblock:example\\n" >&2\nexit 2\n' > "$WORK/bin6/vibe-flow"
+  chmod +x "$WORK/bin6/vibe-flow"
+  out="$(run_shim "$P6" "$WORK/bin6:$HOSTPATH" "$ev" "$WORK/empty")"
+  assert_contains "f6/exit" "multiline usage with block example allows: $ev" "$out" "rc=0"
 done
 
 echo ""

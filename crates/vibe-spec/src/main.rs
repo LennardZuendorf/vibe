@@ -48,7 +48,13 @@ mod validate;
 
 /// The vibe spec tool.
 #[derive(Parser)]
-#[command(name = "vibe-spec", version, about, arg_required_else_help = true)]
+#[command(
+    name = "vibe-spec",
+    version,
+    about,
+    arg_required_else_help = true,
+    after_help = "Environment:\n  VIBE_SPEC_ROOT  spec root (overridden by --root)\nExit: 0 ok, 1 findings or refused, 2 usage, 3 no spec root"
+)]
 struct Cli {
     /// Spec root directory; skips discovery. Goes before the command.
     #[arg(long, value_name = "DIR")]
@@ -65,28 +71,28 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// List spec files (port of list-specs.sh).
+    /// List spec files with type and scope.
     #[command(disable_help_flag = true)]
     ListSpecs {
         /// Ignored, as the oracle ignores them.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Lessons matching tags (port of lessons-for.sh; `--json` for Spec JSON v1).
+    /// Print lessons whose tags match (`--format markdown|inject|json`; `--json` for Spec JSON v1).
     #[command(disable_help_flag = true)]
     LessonsFor {
         /// Tags, `--format <markdown|inject|json>`, `--tag <t>`, `--json`.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Report `<!-- merge -->` blocks in feature tech docs (port of scan-merges.sh).
+    /// Report pending merge blocks in feature tech docs.
     #[command(disable_help_flag = true)]
     ScanMerges {
         /// `[<feature>] [--format table|json|plain]`.
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Validate the spec tree (port of validate.sh, plus F17's checks).
+    /// Validate the spec tree (structure, links, frontmatter, strictness).
     Validate {
         /// Promote every non-off check to error; refuse a run that examined nothing.
         #[arg(long)]
@@ -124,8 +130,10 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Compound drift gate (port of check-drift.sh); `--pre-merge` also fails
-    /// on superpowers artifacts left under docs/superpowers/.
+    /// Check that merged features left a wrap-up trail.
+    ///
+    /// `--pre-merge` also fails on superpowers artifacts left under
+    /// docs/superpowers/.
     CheckDrift {
         /// Superpowers artifacts are errors (run before merging).
         #[arg(long)]
@@ -134,7 +142,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Promote a feature (port of promote.sh; requirement deltas; superpowers).
+    /// Merge a feature's durable facts into the root spec.
     #[command(disable_help_flag = true)]
     Promote {
         /// `<feature> [--dry-run] [--target <file>] [--done] [--base <ref>] [--json]`.
@@ -302,7 +310,7 @@ fn main() -> ExitCode {
     }
     let (code, out) = match cli.command {
         Command::Root { json } => root::command(&found, json),
-        Command::ListSpecs { args: _ } => list_specs::run(&found),
+        Command::ListSpecs { args: _ } => list_specs::run(&found, &raw_tail(std::env::args_os())),
         Command::LessonsFor { args: _ } => lessons::run(&found, &raw_tail(std::env::args_os())),
         Command::ScanMerges { args: _ } => {
             scan_merges::run(&found, &cwd, &raw_tail(std::env::args_os()))
@@ -400,6 +408,21 @@ fn raw_tail(argv: impl IntoIterator<Item = OsString>) -> Vec<String> {
     it.map(|a| a.to_string_lossy().into_owned()).collect()
 }
 
+/// Whether a raw-tail command was asked for help: a `-h` or `--help` token
+/// that is not the value of `--format`, `--tag` or `--target`.
+pub(crate) fn wants_help(args: &[String]) -> bool {
+    let mut i = 0;
+    while let Some(arg) = args.get(i) {
+        match arg.as_str() {
+            "--format" | "--tag" | "--target" => i += 1,
+            "-h" | "--help" => return true,
+            _ => {}
+        }
+        i += 1;
+    }
+    false
+}
+
 /// Writes `bytes` to stdout. A closed pipe is not an error.
 fn emit(bytes: &[u8]) {
     let mut out = std::io::stdout().lock();
@@ -429,6 +452,18 @@ mod tests {
             bad,
         ];
         assert_eq!(raw_tail(argv), ["\u{fffd}a"]);
+    }
+
+    #[test]
+    fn wants_help_skips_option_values() {
+        let v = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(super::wants_help(&v(&["foo", "--help"])));
+        assert!(super::wants_help(&v(&["-h"])));
+        assert!(!super::wants_help(&v(&["--tag", "-h"])));
+        assert!(!super::wants_help(&v(&["--format", "--help"])));
+        assert!(!super::wants_help(&v(&["--target", "-h"])));
+        assert!(super::wants_help(&v(&["--tag", "x", "-h"])));
+        assert!(!super::wants_help(&[]));
     }
 
     #[test]

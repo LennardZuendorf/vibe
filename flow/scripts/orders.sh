@@ -53,6 +53,11 @@ else
 fi
 MACHINE="$SKILL_DIR/state-machine.json"
 STATE="$SKILL_DIR/state.json"
+if [[ -f "$SKILL_DIR/scripts/runtime-state.sh" ]]; then
+  # shellcheck source=flow/scripts/runtime-state.sh
+  source "$SKILL_DIR/scripts/runtime-state.sh"
+  STATE="$(runtime_state_path "$SKILL_DIR")"
+fi
 
 GENERIC_FALLBACK="state=unknown · read .agents/skills/vibe/state-machine.json and pick the matching vibe phase · transition via set-state.sh"
 

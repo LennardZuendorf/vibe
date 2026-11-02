@@ -18,15 +18,27 @@ An oracle that has fallen behind its source is still self-consistent, so an
 integrity check alone passes over a stale freeze. `check.sh` therefore also
 compares every listed oracle with the live source it mirrors — `bash/<path>` is
 `<path>` at the repo root, `js/<path>` is `flow/engine/<path>` — and fails
-naming each stale file and the count. Inside a checkout that leg always runs;
+naming each stale file and the count. Inside a full or partial checkout that leg always runs;
 on a bare copy of `oracles/` the check says freshness was not checked.
 
-A freeze is all-or-nothing: `bash oracles/freeze.sh` re-copies **every** listed
+Reviewed live repairs may be pinned in `tests/oracles/accepted-divergences.tsv`.
+Each row contains the oracle-relative path, frozen SHA256, live SHA256, and a
+reason, separated by tabs. Both hashes must match the current bytes. Unknown
+paths, duplicates, malformed rows, missing sources, and stale rows fail, even
+when the source now equals the oracle. This retains the frozen reference and
+refuses any unreviewed source drift. The table labels merged-main differences
+separately from the cursor and hook repairs.
+
+`bash oracles/freeze.sh` preflights and then re-copies **every** listed
 path from its live source, regenerates the manifest, runs the check, and prints
 the new hash to pin in `tests/oracles/run.sh` (after review — the pin is what
-makes a regenerated manifest over a changed oracle fail). A half-freeze is not
-expressible there, which is the point: re-copying one half while leaving the
-other behind is exactly how the generation-1 record survived into generation 2.
+makes a regenerated manifest over a changed oracle fail). The source-availability
+preflight refuses before copying. Copy failures after that preflight are not
+transactional; the tool does not promise rollback.
+
+An accepted-divergence table is never rewritten or removed by the freezer. A
+reviewed re-freeze must retire or update those rows and the external manifest
+pin explicitly. Otherwise the post-copy check fails on the now-stale hash pairs.
 
 The refusal is two-pass: it resolves and proves every listed source exists
 **before** the first byte is copied. So a missing live source (or a path with no

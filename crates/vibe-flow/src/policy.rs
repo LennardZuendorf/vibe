@@ -640,7 +640,7 @@ mod tests {
         assert_eq!(lines.len(), 11);
         assert_eq!(
             lines[0],
-            "- `.agents/skills/vibe/state.json` — otherwise: block — state.json is written only via set-state.sh, never by direct edit"
+            "- `.vibe/run/flow/state.json`, `.agents/skills/vibe/state.json`, `.agents/flow/state.json` — otherwise: block — state.json is written only via set-state.sh, never by direct edit"
         );
         assert!(
             lines[1].contains("otherwise: block")
@@ -858,5 +858,20 @@ mod tests {
             "{}",
             loaded.errors[0]
         );
+    }
+    #[test]
+    fn both_cursor_generations_block_direct_edits() {
+        let loaded = load_policy(&shipped());
+        for path in [
+            ".vibe/run/flow/state.json",
+            ".agents/skills/vibe/state.json",
+            ".agents/flow/state.json",
+        ] {
+            assert_eq!(
+                decide(&loaded.policy, path, "idle").verdict,
+                Verdict::Block,
+                "{path}"
+            );
+        }
     }
 }

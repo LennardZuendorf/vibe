@@ -1,29 +1,20 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# FROZEN PARITY ORACLE — AND THE SHIPPED no-node FALLBACK. DO NOT EDIT TO MATCH
-# THE PORT.
+# SHIPPED no-node FALLBACK. The frozen original lives at
+# oracles/bash/flow/hooks-fallback/stop-gate.sh (pinned by
+# oracles/MANIFEST.sha256) and is the parity oracle; this file is not.
 #
-# This is the pre-port bash implementation of .claude/hooks/stop-gate.sh, restored
-# verbatim from git `main` (blob f5ded4a723d372da7fab1f10c37380382d1d484f). js-core/7 replaced the real hook with a
-# Node shim IN PLACE, which deleted the only thing `hook.mjs`'s guard/gate
-# reimplementation could be compared against.
+# It began as a verbatim copy of the pre-port bash hook, restored from git `main`
+# (blob f5ded4a723d372da7fab1f10c37380382d1d484f) after js-core/7 replaced the
+# real hook with a Node shim IN PLACE. `.claude/hooks/stop-gate.sh` execs it when
+# node is absent, the engine is missing, or the engine exits an unexpected code,
+# so a node-less target keeps the Stop gate's evidence tooth instead of losing it.
 #
-# It has TWO jobs, and one file does both so they can never drift:
-#
-#  1. PARITY ORACLE. flow/engine/tests/parity.test.mjs spawns this file as the
-#     oracle for runGuardHook()/runGateHook(), exactly as the other parity legs
-#     spawn flow/scripts/{orders,doctrine,doctor,set-state}.sh.
-#  2. SHIPPED FALLBACK. `.claude/hooks/stop-gate.sh` execs it when node is absent, the
-#     engine is missing, or the engine exits an unexpected code. Before that, a
-#     node-less target lost the guard's hard block and the Stop gate's evidence
-#     tooth outright — `command -v node || exit 0` — while detect-context.sh's own
-#     header still promised "a target without node must still be enforced".
-#     Enforcement now degrades to this file, never to nothing.
-#
-# Rules: FROZEN at the behaviour the port must reproduce. If the engine and this
-# file ever disagree, either the engine has a bug or the divergence is deliberate
-# — in which case pin it as a KNOWN DIVERGENCE in parity.test.mjs with a stated
-# reason. Never "fix" this file to agree.
+# review-hardening/10 forked it from the oracle: the staleness scan reads
+# `git status --porcelain -z -- .` scoped to the project, like the engine
+# (flow/engine/commands/hook.mjs). flow/engine/tests/parity.test.mjs runs the
+# engine, this file and the frozen oracle side by side; where the oracle is wrong
+# the divergence is pinned there as a KNOWN DIVERGENCE with its reason.
 # ─────────────────────────────────────────────────────────────────────────────
 # stop-gate.sh — vibe flow gate hook (platform-adapters/3 + flow-mvp/9).
 #
@@ -59,9 +50,47 @@ set -euo pipefail
 
 STDIN="$(cat 2>/dev/null || true)"   # capture stdin (stop_hook_active lives here)
 
+# 0: regular entry (readable unless metadata mode); 1: absent; 2: invalid chain.
+# Check each parent before interpreting a failed child probe as absence.
+# Keep this body identical to the standalone permanent Stop classifier.
+runtime_cursor_status() {
+  local target="$1" access="${2:-read}" current=/ rest part
+  [[ "$target" == /* ]] || target="$PWD/$target"
+  rest="${target#/}"
+  [[ -d "$current" && -x "$current" ]] || return 2
+  while [[ "$rest" == */* ]]; do
+    part="${rest%%/*}"; rest="${rest#*/}"
+    [[ -n "$part" ]] || continue
+    current="${current%/}/$part"
+    if [[ -e "$current" || -L "$current" ]]; then
+      [[ -d "$current" && -x "$current" ]] || return 2
+    else
+      return 1
+    fi
+  done
+  current="${current%/}/$rest"
+  if [[ -e "$current" || -L "$current" ]]; then
+    [[ -f "$current" ]] || return 2
+    [[ "$access" == metadata || -r "$current" ]] || return 2
+    return 0
+  fi
+  return 1
+}
+
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
 DETECT="$ROOT/.agents/skills/vibe/scripts/detect-context.sh"
-STATE_FILE="$ROOT/.agents/skills/vibe/state.json"
+STATE_FILE="$ROOT/.vibe/run/flow/state.json"
+cursor_status=0
+runtime_cursor_status "$STATE_FILE" || cursor_status=$?
+if [[ "$cursor_status" == 1 ]]; then
+  STATE_FILE="$ROOT/.agents/skills/vibe/state.json"
+  cursor_status=0
+  runtime_cursor_status "$STATE_FILE" || cursor_status=$?
+fi
+if [[ "$cursor_status" == 2 ]]; then
+  printf 'vibe-gate: cursor present but invalid; skipping checks: %s\n' "$STATE_FILE" >&2
+  exit 0
+fi
 EVID_REL=".agents/skills/vibe/evidence"
 WARN_LOG="$ROOT/.agents/skills/vibe/warnings.log"
 
@@ -111,10 +140,35 @@ warn() {
   printf 'gate: %s\n' "$1" >> "$WARN_LOG" 2>/dev/null || true
 }
 
+# Escape backslash and every C0/DEL byte so values cannot inject diagnostic lines.
+diagnostic_value() {
+  local value="$1" out="" ch code i
+  local LC_ALL=C
+  for ((i=0; i<${#value}; i++)); do
+    ch="${value:i:1}"
+    printf -v code '%d' "'$ch"
+    if [[ "$ch" == \\ ]]; then out+="\\\\"
+    elif [[ "$code" -lt 32 || "$code" -eq 127 ]]; then printf -v ch '\\x%02x' "$code"; out+="$ch"
+    else out+="$ch"; fi
+  done
+  printf '%s' "$out"
+}
+
 git_changed() {
   command -v git >/dev/null 2>&1 || return 1
   git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
   git -C "$ROOT" status --porcelain 2>/dev/null
+}
+
+# git_changed_z — the staleness scan's read (review-hardening/10): NUL-terminated
+# records with raw path bytes, scoped to the project with `-- .`. Paths are still
+# toplevel-relative; the caller strips the project's `rev-parse --show-prefix`.
+# Read it through process substitution and `read -d ''`, never `$(...)`, which
+# drops NULs.
+git_changed_z() {
+  command -v git >/dev/null 2>&1 || return 1
+  git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+  git -C "$ROOT" status --porcelain -z -- . 2>/dev/null
 }
 
 # Predicate 1 — impl touched src/** but no tests/**.  (warn-only)
@@ -134,11 +188,12 @@ fi
 # warn-only. Fixed receipt names under $ROOT/.agents/skills/vibe/evidence/:
 # feature-<feature>.md for feature.verify, quick.md for quick.verify.
 if [[ "$STATE" == "feature.verify" || "$STATE" == "quick.verify" ]]; then
-  receipt=""
+  receipt=""; receipt_name=""
   case "$STATE" in
     feature.verify)
       if [[ -n "$FEATURE" ]]; then
-        receipt="$ROOT/$EVID_REL/feature-$FEATURE.md"
+        receipt_name="feature-$FEATURE.md"
+        receipt="$ROOT/$EVID_REL/$receipt_name"
       else
         # Cursor names no feature -> the receipt path is ambiguous; degrade to
         # warn-only rather than block on ambiguity.
@@ -146,55 +201,87 @@ if [[ "$STATE" == "feature.verify" || "$STATE" == "quick.verify" ]]; then
       fi
       ;;
     quick.verify)
-      receipt="$ROOT/$EVID_REL/quick.md"
+      receipt_name="quick.md"
+      receipt="$ROOT/$EVID_REL/$receipt_name"
       ;;
   esac
 
   if [[ -n "$receipt" ]]; then
+    current="$ROOT/.vibe/run/flow/evidence/$receipt_name"
+    receipt_status=0
+    runtime_cursor_status "$current" metadata || receipt_status=$?
+    if [[ "$receipt_status" != 1 || ( ! -e "$receipt" && -d "$ROOT/.vibe/run/flow" ) ]]; then receipt="$current"; fi
     if [[ ! -f "$receipt" ]]; then
       {
         echo "vibe-gate: BLOCKED — $STATE needs an evidence receipt before 'done'."
-        echo "  expected: $receipt"
+        echo "  expected: $(diagnostic_value "$receipt")"
         echo "  it must record the commands you ran and their observed output (per unit ID for a feature)."
         echo "  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle"
       } >&2
       exit 2
     fi
-    # Receipt present. Staleness is git-derived: any changed path (git status
-    # --porcelain, both columns) whose mtime is newer than the receipt means the
-    # receipt no longer reflects the tree. No git or a clean tree -> existence-only
-    # (pass). The evidence dir is excluded (a receipt is always newer than the
-    # tree it describes).
-    # Known fail-OPEN cases (never false-block, per the speed-bump posture):
-    # porcelain paths are repo-root-relative, so when $ROOT is a subdirectory of
-    # an enclosing git repo the -e probe misses and staleness no-ops; C-quoted
-    # non-ASCII paths (core.quotePath) are likewise skipped.
-    CH="$(git_changed || true)"
-    if [[ -n "$CH" ]]; then
-      stale=""
-      while IFS= read -r line; do
-        [[ -n "$line" ]] || continue
-        xy="${line:0:2}"
-        path="${line:3}"
-        case "$xy" in *D*) continue ;; esac                 # skip deletions
-        case "$xy" in R*|C*) path="${path##* -> }" ;; esac   # rename/copy -> new path
-        case "$path" in "$EVID_REL"/*) continue ;; esac      # exclude the evidence dir
-        f="$ROOT/$path"
-        if [[ -e "$f" && "$f" -nt "$receipt" ]]; then
-          stale="$path"
-          break
-        fi
-      done <<< "$CH"
-      if [[ -n "$stale" ]]; then
-        {
-          echo "vibe-gate: BLOCKED — the evidence receipt is stale."
-          echo "  receipt: $receipt"
-          echo "  changed after it was written: $stale"
-          echo "  re-run verification and rewrite the receipt with fresh commands + output."
-          echo "  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle"
-        } >&2
-        exit 2
+    # Receipt present. Staleness is git-derived: any changed path of the project
+    # (git status --porcelain -z, both columns) whose mtime is newer than the
+    # receipt means the receipt no longer reflects the tree. No git or a clean
+    # tree -> existence-only (pass). This harness's own runtime files are
+    # excluded: the evidence dir (a receipt is always newer than the tree it
+    # describes), the inject marker and the warnings relay log — the same three
+    # paths as the engine's isOwnRuntimeState().
+    # `-z` keeps a space, a non-ASCII byte or a newline in a name intact (plain
+    # porcelain C-quotes them and the -e probe missed). A rename or copy record
+    # carries a second field, the origin, after the new path; it is skipped
+    # whatever the record is, or every later record is read one field off.
+    # Paths are toplevel-relative, so the project's prefix is stripped and an
+    # entry outside it is dropped: a project below the git root is gated too.
+    # When the outer repo tracks nothing of the project, git reports it as one
+    # `?? <prefix>` record and the strip leaves an empty path; that record is
+    # the project directory itself, so it is compared and named as `.`.
+    # Still fail-OPEN where the engine is not: no `-uall`, so a wholly-untracked
+    # directory (the project included) is one row and only its own mtime is
+    # compared, which an in-place edit of a file inside it does not move; and a
+    # path that cannot be stat'ed (a symlink loop, ELOOP; a file in a directory
+    # it may not search, EACCES) fails -e and is skipped rather than blocking.
+    # The engine blocks on both, and also on a name git printed in bytes that
+    # are not UTF-8 (it decodes them to U+FFFD), which this file reads raw and
+    # judges by mtime. Each is pinned in parity.test.mjs as KNOWN DIVERGENCE
+    # (STAT ERROR), review-hardening/9.
+    stale=""
+    prefix="$(git -C "$ROOT" rev-parse --show-prefix 2>/dev/null || true)"
+    skip_origin=0
+    while IFS= read -r -d '' rec; do
+      if [[ "$skip_origin" == 1 ]]; then skip_origin=0; continue; fi
+      [[ -n "$rec" ]] || continue
+      xy="${rec:0:2}"
+      path="${rec:3}"
+      case "$xy" in *R*|*C*) skip_origin=1 ;; esac          # origin field follows
+      case "$xy" in *D*) continue ;; esac                    # skip deletions
+      if [[ -n "$prefix" ]]; then
+        case "$path" in
+        .vibe/run/*) continue ;;
+          "$prefix"*) path="${path#"$prefix"}" ;;
+          *) continue ;;                                     # outside the project
+        esac
+        [[ -n "$path" ]] || path=.                           # the project dir itself
       fi
+      case "$path" in
+        .vibe/run/*) continue ;;
+        "$EVID_REL"/*|.vibe/last-inject|.agents/skills/vibe/warnings.log) continue ;;
+      esac
+      f="$ROOT/$path"
+      if [[ -e "$f" && "$f" -nt "$receipt" ]]; then
+        stale="$path"
+        break
+      fi
+    done < <(git_changed_z || true)
+    if [[ -n "$stale" ]]; then
+      {
+        echo "vibe-gate: BLOCKED — the evidence receipt is stale."
+        echo "  receipt: $(diagnostic_value "$receipt")"
+        echo "  changed after it was written: $(diagnostic_value "$stale")"
+        echo "  re-run verification and rewrite the receipt with fresh commands + output."
+        echo "  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle"
+      } >&2
+      exit 2
     fi
   fi
 fi

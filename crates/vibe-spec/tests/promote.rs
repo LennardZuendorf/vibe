@@ -101,16 +101,6 @@ fn promote_matches_the_oracle_on_every_stream() {
             vec!["auth"],
             true,
         ),
-        ("pr-unknown", TECH, "x\n", vec!["auth", "--bogus"], true),
-        // bash's own `${2:?}` / `${1:?}` messages name the script: code only.
-        (
-            "pr-target-nopath",
-            TECH,
-            "x\n",
-            vec!["auth", "--target"],
-            false,
-        ),
-        ("pr-noargs", TECH, "x\n", vec![], false),
     ];
     for (name, tech, target, args, stderr_too) in cases {
         same(name, tech, target, &args, stderr_too);
@@ -122,8 +112,6 @@ fn promote_matches_the_oracle_on_edge_inputs() {
     let dup = "<!-- merge -->\nsame\n<!-- /merge -->\n<!-- merge -->\nsame\n<!-- /merge -->\n";
     same("pr-dup", dup, "# Tech\n", &["auth"], true);
     same("pr-dup-dry", dup, "# Tech\n", &["auth", "--dry-run"], true);
-    // bash's own `${1:?}` message names the script: code only.
-    same("pr-empty-name", TECH, "x\n", &[""], false);
     same("pr-sub", TECH, "x\n", &["auth/sub"], true);
     same("pr-dotdot", TECH, "x\n", &["../features/auth"], true);
     same("pr-no-eol", TECH, "# Tech", &["auth"], true);
@@ -899,4 +887,26 @@ fn done_without_a_root_exits_3() {
     let out = spec(&p, &["promote", "auth", "--done"], &[]);
     assert_eq!(out.code, 3, "{}", out.stderr);
     assert!(out.text().is_empty());
+}
+
+#[test]
+fn usage_errors_exit_2() {
+    // skill-revision/13: the contract's usage code, messages unchanged.
+    let p = tree("pr-usage", TECH, "# Tech\n");
+    for (args, msg) in [
+        (&["promote"][..], "usage: vibe-spec promote"),
+        (&["promote", ""], "usage: vibe-spec promote"),
+        (&["promote", "--bogus", "x"], "Unknown option: x"),
+        (&["promote", "auth", "--bogus"], "Unknown option: --bogus"),
+        (&["promote", "auth", "--target"], "--target requires a path"),
+        (&["promote", "auth", "--base"], "--base requires a ref"),
+    ] {
+        let out = spec(&p, args, &[]);
+        assert_eq!(out.code, 2, "{args:?}: {}", out.stderr);
+        assert!(out.stdout.is_empty(), "{args:?}: {}", out.text());
+        assert!(out.stderr.contains(msg), "{args:?}: {}", out.stderr);
+    }
+    // Controls: a refused action stays exit 1.
+    let out = spec(&p, &["promote", "missing"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
 }

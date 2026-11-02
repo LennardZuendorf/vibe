@@ -1,15 +1,7 @@
 #!/bin/sh
-# bin/hook.sh <event> — flow's hook shim (D26, FV-R5): five tiers, never a download.
-# 1 $VIBE_FLOW_BIN, 2 bundled bin/<os>-<arch>/vibe-flow, 3 `vibe-flow` on PATH,
-# 4 the JS engine while it still ships (FV-R9 — gone at F23; it outranks 5, the
-# frozen bash bin/fallback/<event>.sh, because that one is the *pre-port* build).
-# No tier at all -> exit 0 + one stderr line; a crash degrades to 5, never nothing.
-# A hook reports by exit code, so the shim decides from the child's OUTPUT: exit 2
-# for a line that proves a block (`block:<reason>`, or the shipped
-# `vibe-guard|vibe-gate: BLOCKED — <reason>` line), allow for everything else — a
-# crash, a stack trace, a banner. An unknown event reads no stdin and exits 0.
+# Five-tier hook discovery; complete output proves a block, crashes allow.
 set -u
-
+case ${BASH:-} in */bash) shell=$BASH ;; *) shell=bash ;; esac
 event=${1:-}
 case $event in
   pre-tool-use-guard|stop-gate) ;;
@@ -26,7 +18,7 @@ if [ -z "$bin" ] && [ -x "$bundled" ]; then bin=$bundled; fi
 if [ -z "$bin" ]; then bin=$(command -v vibe-flow 2>/dev/null); fi
 if [ -n "$bin" ]; then set -- "$bin" hook "$event"
 elif [ -f "$engine/cli.mjs" ] && command -v node >/dev/null 2>&1; then set -- node "$engine/cli.mjs" hook "$event"
-elif [ -n "$fb" ]; then set -- "${BASH:-bash}" "$fb"
+elif [ -n "$fb" ]; then set -- "$shell" "$fb"
 else
   echo "vibe: no vibe-flow binary, engine, or fallback for '$event' — flow hook not enforced" >&2
   exit 0
@@ -34,7 +26,15 @@ fi
 payload=$(cat 2>/dev/null || true)
 rc=0
 out=$(printf '%s' "$payload" | "$@" 2>&1) || rc=$?
-if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ] && [ -n "$fb" ]; then out=$(printf '%s' "$payload" | "${BASH:-bash}" "$fb" 2>&1); rc=$?; fi
-if printf '%s\n' "$out" | grep -Eq '^(block:.+|vibe-(guard|gate): BLOCKED — .+)$'; then printf '%s\n' "$out" >&2; exit 2; fi
+if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ] && [ -n "$fb" ]; then out=$(printf '%s' "$payload" | "$shell" "$fb" 2>&1); rc=$?; fi
+if { [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ]; } && printf '%s\n' "$out" | {
+  IFS= read -r first || exit 1
+  case $first in
+    block:?*) ! IFS= read -r rest ;;
+    "vibe-guard: BLOCKED — "?*) if IFS= read -r rest; then [ "$rest" = "vibe-guard: transition with set-state.sh, or edit within the current state's write rules." ] && ! IFS= read -r rest; fi ;;
+    "vibe-gate: BLOCKED — "?*) while IFS= read -r rest; do case $rest in "  "?*) ;; *) exit 1 ;; esac; done ;;
+    *) exit 1 ;;
+  esac
+}; then printf '%s\n' "$out" >&2; exit 2; fi
 if [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ]; then [ -z "$out" ] || printf '%s\n' "$out" >&2; fi
 exit 0

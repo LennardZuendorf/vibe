@@ -49,10 +49,13 @@ interface {Name} {
 
 {How it works. Algorithms. Data flow. Code examples with real paths.}
 
-<!-- merge -->
-{Sections marked merge get promoted into root tech.md during COMPOUND.
-Use this for cross-cutting decisions that affect the whole project.}
-<!-- /merge -->
+<!--
+  Merge markers. To promote a cross-cutting section into the root tech.md, wrap it in the HTML
+  comment pair `merge` ... `/merge` (opening and closing marker each on its own line, written out
+  in full as in reference/tech.md § merge markers). `vibe-spec promote {name}` appends the wrapped
+  blocks. The markers are not written here, because a live block would be promoted as it stands.
+-->
+-->
 
 <!-- include-when-material: Performance Budget — omit when not applicable -->
 

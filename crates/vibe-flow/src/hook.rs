@@ -27,7 +27,7 @@
 //! in `tests/parity/flow.json`, never "fixed" by editing the frozen oracle.
 
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use serde_json::Value;
@@ -459,8 +459,9 @@ struct Tree {
     determined: bool,
     /// There is no work tree here at all — the documented existence-only pass.
     no_git: bool,
-    /// Porcelain rows, trailing newlines trimmed.
+    /// Decoded project-relative porcelain for the warn-only TDD predicate.
     text: String,
+    entries: Vec<(String, String, Option<String>)>,
     /// Why an undetermined answer happened.
     why: String,
 }
@@ -471,6 +472,7 @@ impl Tree {
             determined: false,
             no_git: false,
             text: String::new(),
+            entries: Vec::new(),
             why: String::new(),
         }
     }
@@ -491,6 +493,7 @@ fn tree_from(inside: bool, status: Status) -> Tree {
             determined: false,
             no_git: true,
             text: String::new(),
+            entries: Vec::new(),
             why: String::new(),
         };
     }
@@ -499,40 +502,69 @@ fn tree_from(inside: bool, status: Status) -> Tree {
             determined: false,
             no_git: false,
             text: String::new(),
+            entries: Vec::new(),
             why,
         },
-        Status::Output(bytes) => Tree {
-            determined: true,
-            no_git: false,
-            text: String::from_utf8_lossy(&bytes)
-                .trim_end_matches('\n')
-                .to_string(),
-            why: String::new(),
-        },
+        Status::Output(bytes) => {
+            let mut records = bytes.split(|b| *b == 0).filter(|r| !r.is_empty());
+            let mut entries = Vec::new();
+            let mut rows = Vec::new();
+            while let Some(record) = records.next() {
+                if record.len() < 3 {
+                    continue;
+                }
+                let xy = String::from_utf8_lossy(&record[..2]).into_owned();
+                let path = String::from_utf8_lossy(&record[3..]).into_owned();
+                let origin = if xy.contains(['R', 'C']) {
+                    records.next()
+                } else {
+                    None
+                };
+                rows.push(match origin {
+                    Some(origin) => format!("{xy} {} -> {path}", String::from_utf8_lossy(origin)),
+                    None => format!("{xy} {path}"),
+                });
+                entries.push((
+                    xy,
+                    path,
+                    origin.map(|o| String::from_utf8_lossy(o).into_owned()),
+                ));
+            }
+            Tree {
+                determined: true,
+                no_git: false,
+                text: rows.join("\n"),
+                entries,
+                why: String::new(),
+            }
+        }
     }
 }
 
-/// `git status --porcelain -uall` — one row per untracked FILE, which is what
+/// `git status --porcelain -z -uall -- .` — one row per untracked FILE, which is what
 /// makes the staleness scan able to name the file the human touched and to
 /// exclude this harness's own markers without excluding the project's files
 /// sitting beside them.
 fn git_porcelain(root: &Path) -> Tree {
-    let inside = Command::new("git")
+    let check = Command::new("git")
         .arg("-C")
         .arg(root)
-        .args(["rev-parse", "--is-inside-work-tree"])
+        .args(["rev-parse", "--is-inside-work-tree", "--show-prefix"])
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success());
-    if !inside {
-        return tree_from(false, Status::Failed(String::new()));
-    }
+        .output();
+    let check = match check {
+        Ok(check) if check.status.success() => check,
+        _ => return tree_from(false, Status::Failed(String::new())),
+    };
+    let check_text = String::from_utf8_lossy(&check.stdout);
+    let prefix = check_text
+        .split_once('\n')
+        .map_or("", |(_, tail)| tail.strip_suffix('\n').unwrap_or(tail));
     let spawned = Command::new("git")
         .arg("-C")
         .arg(root)
-        .args(["status", "--porcelain", "-uall"])
+        .args(["status", "--porcelain", "-z", "-uall", "--", "."])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -552,7 +584,34 @@ fn git_porcelain(root: &Path) -> Tree {
         return tree_from(true, Status::Failed("ENOBUFS".to_string()));
     }
     match child.wait() {
-        Ok(status) if status.success() => tree_from(true, Status::Output(bytes)),
+        Ok(status) if status.success() => {
+            let mut tree = tree_from(true, Status::Output(bytes));
+            tree.entries = tree
+                .entries
+                .into_iter()
+                .filter_map(|(xy, path, origin)| {
+                    path.strip_prefix(prefix)
+                        .filter(|p| !p.is_empty())
+                        .map(|p| {
+                            (
+                                xy,
+                                p.to_string(),
+                                origin.map(|o| o.strip_prefix(prefix).unwrap_or(&o).to_string()),
+                            )
+                        })
+                })
+                .collect();
+            tree.text = tree
+                .entries
+                .iter()
+                .map(|(xy, p, origin)| match origin {
+                    Some(o) => format!("{xy} {o} -> {p}"),
+                    None => format!("{xy} {p}"),
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            tree
+        }
         _ => tree_from(true, Status::Failed("git status failed".to_string())),
     }
 }
@@ -578,6 +637,20 @@ fn shown_path(path: &Path) -> String {
 #[cfg(not(windows))]
 fn shown_path(path: &Path) -> String {
     path.to_string_lossy().into_owned()
+}
+
+/// Keep values inside one diagnostic line; escaping backslash makes it unambiguous.
+fn diagnostic_value(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| match ch {
+            '\\' => "\\\\".to_string(),
+            ch if ch.is_control() && (ch as u32 <= 0x1f || ch == '\u{7f}') => {
+                format!("\\x{:02x}", ch as u32)
+            }
+            ch => ch.to_string(),
+        })
+        .collect()
 }
 
 /// `(^|/)segment/` — the segment must begin the row or follow a `/`.
@@ -613,7 +686,10 @@ fn predicate_tdd(state: &str, changed: &str) -> Option<String> {
 /// three, so a project's own `.vibe/blocks/**` still counts as a change.
 fn own_runtime_state(paths: &FlowPaths, path: &str) -> bool {
     let evidence = paths.posix_relative(&paths.legacy_evidence_dir());
-    if path == evidence || path.starts_with(&format!("{evidence}/")) {
+    if path.starts_with(".vibe/run/")
+        || path == evidence
+        || path.starts_with(&format!("{evidence}/"))
+    {
         return true;
     }
     if path == paths.posix_relative(&paths.warnings_log()) {
@@ -634,11 +710,9 @@ fn evidence_receipt_check(
     if state != "feature.verify" && state != "quick.verify" {
         return None;
     }
-    let receipt: PathBuf = match (state, feature) {
-        ("quick.verify", _) => paths.legacy_evidence_dir().join("quick.md"),
-        (_, Some(feature)) => paths
-            .legacy_evidence_dir()
-            .join(format!("feature-{feature}.md")),
+    let name = match (state, feature) {
+        ("quick.verify", _) => "quick.md".to_string(),
+        (_, Some(feature)) => format!("feature-{feature}.md"),
         (_, None) => {
             warn(
                 "in feature.verify but the cursor names no feature — cannot resolve the evidence receipt; skipping the gate. (warn-only)",
@@ -646,7 +720,18 @@ fn evidence_receipt_check(
             return None;
         }
     };
-    let shown = shown_path(&receipt);
+    let current = paths.evidence_dir().join(&name);
+    let legacy = paths.legacy_evidence_dir().join(&name);
+    // A present new receipt is authoritative, including invalid or stale ones.
+    let legacy_layout = paths.legacy_cursor_path().exists() && !paths.cursor_path().exists();
+    let receipt = if !matches!(crate::cursor::regular_file_absent(&current), Ok(true))
+        || (!legacy.exists() && !legacy_layout)
+    {
+        current
+    } else {
+        legacy
+    };
+    let shown = diagnostic_value(&shown_path(&receipt));
     let existing = std::fs::metadata(&receipt)
         .ok()
         .filter(std::fs::Metadata::is_file);
@@ -675,7 +760,7 @@ fn evidence_receipt_check(
                 "vibe-gate: BLOCKED — the working tree state could not be determined, so the receipt cannot be trusted.",
             ) + &line(&format!("  receipt: {shown}"))
                 + &line(&format!(
-                    "  git status --porcelain -uall did not answer ({}).",
+                    "  git status --porcelain -z -uall did not answer ({}).",
                     tree.why
                 ))
                 + &line(
@@ -693,34 +778,48 @@ fn evidence_receipt_check(
     let Ok(receipt_time) = receipt_stat.modified() else {
         return None;
     };
-    for row in tree.text.split('\n') {
-        if row.is_empty() {
-            continue;
-        }
-        let status = row.get(0..2).unwrap_or("");
+    for (status, path, _) in &tree.entries {
         if status.contains('D') {
-            continue; // skip deletions
-        }
-        let mut path = row.get(3..).unwrap_or("");
-        if (status.starts_with('R') || status.starts_with('C'))
-            && let Some((_, renamed)) = path.rsplit_once(" -> ")
-        {
-            path = renamed; // rename/copy -> the new path
+            continue;
         }
         if own_runtime_state(paths, path) {
             continue;
         }
-        let Ok(stat) = std::fs::metadata(paths.root().join(path)) else {
-            continue; // matches the oracle's `-e` guard
-        };
-        let Ok(modified) = stat.modified() else {
-            continue;
+        let checked = std::fs::metadata(paths.root().join(path)).and_then(|stat| stat.modified());
+        let modified = match checked {
+            Ok(modified) => modified,
+            Err(err) => {
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) && !path.contains('\u{fffd}')
+                {
+                    continue;
+                }
+                return Some(
+                    line(
+                        "vibe-gate: BLOCKED — a changed path could not be checked, so the receipt cannot be trusted.",
+                    ) + &line(&format!("  receipt: {shown}"))
+                        + &line(&format!(
+                            "  could not stat: {} ({})",
+                            diagnostic_value(path),
+                            diagnostic_value(&err.to_string())
+                        ))
+                        + &line(
+                            "  fix or remove that path, then re-run verification and rewrite the receipt.",
+                        )
+                        + &line(ABORT_HINT),
+                );
+            }
         };
         if modified > receipt_time {
             return Some(
                 line("vibe-gate: BLOCKED — the evidence receipt is stale.")
                     + &line(&format!("  receipt: {shown}"))
-                    + &line(&format!("  changed after it was written: {path}"))
+                    + &line(&format!(
+                        "  changed after it was written: {}",
+                        diagnostic_value(path)
+                    ))
                     + &line(
                         "  re-run verification and rewrite the receipt with fresh commands + output.",
                     )
@@ -737,6 +836,7 @@ mod tests {
     use super::*;
     use crate::paths::Env;
     use std::fs;
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1145,7 +1245,7 @@ mod tests {
         let changed = root.join("notes.md");
         fs::write(&changed, "later\n").expect("write");
         stamp(&changed, 1_700_000_000);
-        let tree = tree_from(true, Status::Output(b"?? notes.md\n".to_vec()));
+        let tree = tree_from(true, Status::Output(b"?? notes.md\0".to_vec()));
         let blocked =
             evidence_receipt_check(&paths, "feature.verify", Some("auth"), &tree, &mut |_| {})
                 .expect("block");
@@ -1172,7 +1272,7 @@ mod tests {
         let tree = tree_from(
             true,
             Status::Output(
-                b"?? .agents/skills/vibe/evidence/feature-auth.md\n?? .agents/skills/vibe/warnings.log\n?? .vibe/last-inject\n"
+                b"?? .agents/skills/vibe/evidence/feature-auth.md\0?? .agents/skills/vibe/warnings.log\0?? .vibe/last-inject\0"
                     .to_vec(),
             ),
         );
@@ -1185,7 +1285,7 @@ mod tests {
     #[test]
     fn a_deleted_path_is_never_stale() {
         let (_, paths, _) = receipt_root("stop-deleted");
-        let tree = tree_from(true, Status::Output(b" D gone.md\n".to_vec()));
+        let tree = tree_from(true, Status::Output(b" D gone.md\0".to_vec()));
         assert!(
             evidence_receipt_check(&paths, "feature.verify", Some("auth"), &tree, &mut |_| {})
                 .is_none()
@@ -1198,7 +1298,7 @@ mod tests {
         let moved = root.join("moved.md");
         fs::write(&moved, "x\n").expect("write");
         stamp(&moved, 1_700_000_000);
-        let tree = tree_from(true, Status::Output(b"R  old.md -> moved.md\n".to_vec()));
+        let tree = tree_from(true, Status::Output(b"R  moved.md\0old.md\0".to_vec()));
         let blocked =
             evidence_receipt_check(&paths, "feature.verify", Some("auth"), &tree, &mut |_| {})
                 .expect("block");
@@ -1221,7 +1321,7 @@ mod tests {
             "{blocked}"
         );
         assert!(
-            blocked.contains("git status --porcelain -uall did not answer (ENOBUFS)."),
+            blocked.contains("git status --porcelain -z -uall did not answer (ENOBUFS)."),
             "{blocked}"
         );
     }
@@ -1242,7 +1342,7 @@ mod tests {
         let clean = tree_from(true, Status::Output(b"".to_vec()));
         assert!(clean.determined);
         assert_eq!(clean.text, "");
-        let rows = tree_from(true, Status::Output(b"?? a\n?? b\n\n".to_vec()));
+        let rows = tree_from(true, Status::Output(b"?? a\0?? b\0".to_vec()));
         assert_eq!(rows.text, "?? a\n?? b");
         let broken = tree_from(true, Status::Failed("git status failed".to_string()));
         assert!(!broken.determined && !broken.no_git);
@@ -1296,5 +1396,209 @@ mod tests {
             "/elsewhere/a.md"
         );
         assert_eq!(strip_leading_root("a.md", root), "a.md");
+    }
+    // flow-v2/1.2: the new receipt wins; the old path is absence-only fallback.
+    #[test]
+    fn new_runtime_receipts_are_authoritative_with_legacy_fallback() {
+        let (root, paths, legacy) = receipt_root("new-receipt");
+        let tree = tree_from(true, Status::Output(Vec::new()));
+        let new = paths.evidence_dir().join("feature-auth.md");
+        fs::create_dir_all(new.parent().unwrap()).unwrap();
+        fs::rename(&legacy, &new).unwrap();
+        assert!(
+            evidence_receipt_check(&paths, "feature.verify", Some("auth"), &tree, &mut |_| {})
+                .is_none()
+        );
+        let source = root.join("src/new.rs");
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::write(&source, "changed").unwrap();
+        stamp(&new, 1_600_000_000);
+        stamp(&source, 1_600_000_001);
+        fs::write(&legacy, "fresh old receipt").unwrap();
+        stamp(&legacy, 1_600_000_002);
+        let tree = tree_from(true, Status::Output(b" M src/new.rs\0".to_vec()));
+        assert!(
+            evidence_receipt_check(&paths, "feature.verify", Some("auth"), &tree, &mut |_| {})
+                .unwrap()
+                .contains("receipt is stale")
+        );
+    }
+    // flow-v2/F6 review: the preferred producer preserves main's NUL protocol.
+    #[test]
+    fn nul_paths_and_every_rename_origin_are_scanned() {
+        for name in ["changed file.txt", "å.txt", "changed\nsecond.txt"] {
+            let (root, paths, _) = receipt_root("nul-path");
+            fs::write(root.join(name), "changed").unwrap();
+            stamp(&root.join(name), 1_700_000_000);
+            let tree = tree_from(true, Status::Output(format!("?? {name}\0").into_bytes()));
+            let block =
+                evidence_receipt_check(&paths, "feature.verify", Some("auth"), &tree, &mut |_| {})
+                    .expect("stale path blocks");
+            assert!(block.contains("receipt is stale"));
+            assert!(
+                block.lines().skip(1).all(|l| l.starts_with("  ")),
+                "{block}"
+            );
+        }
+        for xy in ["R ", "RD", " R", "C "] {
+            let (root, paths, _) = receipt_root("origin");
+            fs::write(root.join("new.txt"), "changed").unwrap();
+            stamp(&root.join("new.txt"), 1_700_000_000);
+            let data = format!("{xy} dest\0origin\0?? new.txt\0");
+            let tree = tree_from(true, Status::Output(data.into_bytes()));
+            let block =
+                evidence_receipt_check(&paths, "feature.verify", Some("auth"), &tree, &mut |_| {})
+                    .expect("record after origin blocks");
+            assert!(
+                block.contains("changed after it was written: new.txt"),
+                "{xy}: {block}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_changed_symlink_loop_fails_closed_but_vanished_paths_pass() {
+        let (root, paths, _) = receipt_root("stat-error");
+        std::os::unix::fs::symlink("loop", root.join("loop")).unwrap();
+        let tree = tree_from(true, Status::Output(b"?? loop\0".to_vec()));
+        let block =
+            evidence_receipt_check(&paths, "feature.verify", Some("auth"), &tree, &mut |_| {})
+                .expect("unknown stat blocks");
+        assert!(block.contains("could not stat: loop"), "{block}");
+        fs::remove_file(root.join("loop")).unwrap();
+        assert!(
+            evidence_receipt_check(&paths, "feature.verify", Some("auth"), &tree, &mut |_| {})
+                .is_none()
+        );
+    }
+    // flow-v2/F6 final review: metadata-only evidence uses full ancestry.
+    #[cfg(unix)]
+    #[test]
+    fn receipt_absence_requires_valid_searchable_ancestry() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let mut failures = Vec::new();
+        for feature in ["auth", "auth/part"] {
+            for kind in [
+                "denied-parent",
+                "dangling-parent",
+                "file-parent",
+                "loop-parent",
+                "missing-parent",
+                "missing-leaf",
+                "search-only",
+                "search-only-missing",
+                "metadata-only",
+                "directory-leaf",
+                "dangling-leaf",
+                "loop-leaf",
+                "valid",
+            ] {
+                let (_, paths) = root_with_policy("receipt-ancestry");
+                let name = format!("feature-{feature}.md");
+                let legacy = paths.legacy_evidence_dir().join(&name);
+                fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+                fs::write(&legacy, "legacy").unwrap();
+                let current = paths.evidence_dir().join(&name);
+                let dir = current.parent().unwrap().to_path_buf();
+                fs::create_dir_all(&dir).unwrap();
+                fs::write(&current, "current").unwrap();
+                match kind {
+                    "denied-parent" => {
+                        fs::set_permissions(&dir, fs::Permissions::from_mode(0o0)).unwrap()
+                    }
+                    "search-only" | "search-only-missing" => {
+                        if kind == "search-only-missing" {
+                            fs::remove_file(&current).unwrap();
+                        }
+                        fs::set_permissions(&dir, fs::Permissions::from_mode(0o111)).unwrap()
+                    }
+                    "metadata-only" => {
+                        fs::set_permissions(&current, fs::Permissions::from_mode(0o0)).unwrap()
+                    }
+                    "dangling-parent" | "file-parent" | "loop-parent" | "missing-parent" => {
+                        fs::remove_dir_all(&dir).unwrap();
+                        match kind {
+                            "dangling-parent" => symlink("missing", &dir).unwrap(),
+                            "loop-parent" => symlink(dir.file_name().unwrap(), &dir).unwrap(),
+                            "file-parent" => fs::write(&dir, "file").unwrap(),
+                            _ => (),
+                        }
+                    }
+                    "missing-leaf" | "directory-leaf" | "dangling-leaf" | "loop-leaf" => {
+                        fs::remove_file(&current).unwrap();
+                        match kind {
+                            "directory-leaf" => fs::create_dir(&current).unwrap(),
+                            "dangling-leaf" => symlink("missing", &current).unwrap(),
+                            "loop-leaf" => symlink(current.file_name().unwrap(), &current).unwrap(),
+                            _ => (),
+                        }
+                    }
+                    _ => (),
+                }
+                let tree = tree_from(false, Status::Failed(String::new()));
+                let block = evidence_receipt_check(
+                    &paths,
+                    "feature.verify",
+                    Some(feature),
+                    &tree,
+                    &mut |_| {},
+                );
+                if matches!(
+                    kind,
+                    "denied-parent" | "search-only" | "search-only-missing"
+                ) {
+                    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+                }
+                let expected = matches!(
+                    kind,
+                    "denied-parent"
+                        | "dangling-parent"
+                        | "file-parent"
+                        | "loop-parent"
+                        | "directory-leaf"
+                        | "dangling-leaf"
+                        | "loop-leaf"
+                );
+                if block.is_some() != expected {
+                    failures.push(format!("{kind}: expected block={expected}; got {block:?}"));
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+    #[test]
+    fn receipt_names_keep_nested_feature_components_and_reject_basename_decoys() {
+        for feature in ["auth", "auth/part"] {
+            for placement in ["current", "basename", "legacy"] {
+                let (_, paths) = root_with_policy("receipt-name");
+                let name = format!("feature-{feature}.md");
+                let current = paths.evidence_dir().join(&name);
+                let receipt = match placement {
+                    "legacy" => paths.legacy_evidence_dir().join(&name),
+                    "basename" => paths.evidence_dir().join(current.file_name().unwrap()),
+                    _ => current.clone(),
+                };
+                fs::create_dir_all(receipt.parent().unwrap()).unwrap();
+                fs::write(&receipt, "observed output").unwrap();
+                let tree = tree_from(false, Status::Failed(String::new()));
+                let block = evidence_receipt_check(
+                    &paths,
+                    "feature.verify",
+                    Some(feature),
+                    &tree,
+                    &mut |_| {},
+                );
+                let expected = placement == "basename" && feature.contains('/');
+                assert_eq!(
+                    block.is_some(),
+                    expected,
+                    "{feature}/{placement}: {block:?}"
+                );
+                if expected {
+                    assert!(block.unwrap().contains(&shown_path(&current)));
+                }
+            }
+        }
     }
 }

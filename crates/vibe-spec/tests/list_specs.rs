@@ -41,8 +41,36 @@ fn matches_the_oracle_without_specs_or_root() {
     let p = project("ls-empty");
     write(&p, ".spec/notes.txt", "x\n");
     assert_parity(&p, "list-specs", "list-specs.sh", &[]);
+}
+
+#[test]
+fn no_root_prints_one_stderr_line_and_nothing_else() {
+    // skill-revision/14
     let none = project("ls-none");
-    assert_parity(&none, "list-specs", "list-specs.sh", &[]);
+    let out = common::spec(&none, &["list-specs"], &[]);
+    assert_eq!(out.code, 0);
+    assert!(out.stdout.is_empty(), "{}", out.text());
+    assert_eq!(
+        out.stderr,
+        "vibe-spec list-specs: WARN: no spec root (searched docs/spec/ and the legacy root up to .git). Run: vibe-spec init\n"
+    );
+}
+
+#[test]
+fn both_roots_still_list_docs_spec() {
+    // skill-revision/14 control (Review Focus 1)
+    let p = project("ls-both");
+    write(&p, "docs/spec/product.md", DOC);
+    write(&p, ".spec/old.md", DOC);
+    let out = common::spec(&p, &["list-specs"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(
+        out.text().contains("- product.md [product]"),
+        "{}",
+        out.text()
+    );
+    assert!(!out.text().contains("old.md"), "{}", out.text());
+    assert!(out.stderr.contains("both docs/spec/"), "{}", out.stderr);
 }
 
 #[test]

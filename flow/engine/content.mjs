@@ -105,13 +105,19 @@ function readConfig(file, errors, label) {
 // Deterministic depth-first walk, sorted at every level, so composition order
 // and `--list` output never depend on filesystem iteration order.
 //
-// statSync (not the dirent) so a symlinked directory is followed like a real
-// one — which is exactly why the depth cap exists: a symlink cycle inside a
-// blocks tree would otherwise spin forever, and this walk runs inside a hook.
-// Losing blocks nested 8 deep is recoverable; a hung hook is not.
+// Every entry is resolved to its real path first (see confineReal below): a
+// symlink — file or directory — whose real path leaves `anchorReal` is
+// skipped and pushed to `refused`, so a linked tree can never pull an outside
+// file into a prompt. An in-repo symlink is followed like a real entry — which
+// is exactly why the depth cap exists: a symlink cycle inside a blocks tree
+// would otherwise spin forever, and this walk runs inside a hook. Losing
+// blocks nested 8 deep is recoverable; a hung hook is not.
+//
+// Returns `{ file, real }` pairs: `file` is the LOGICAL path (block ids and
+// `--list` sources derive from it), `real` is what gets read.
 const MAX_BLOCK_DEPTH = 8;
 
-function walkMarkdown(dir, depth = 0) {
+function walkMarkdown(dir, depth, anchorReal, refused) {
   if (depth > MAX_BLOCK_DEPTH) return [];
   let entries;
   try {
@@ -123,14 +129,20 @@ function walkMarkdown(dir, depth = 0) {
   const out = [];
   for (const name of names) {
     const full = path.join(dir, name);
+    let real;
     let stat;
     try {
-      stat = fs.statSync(full);
+      real = fs.realpathSync(full);
+      stat = fs.statSync(real);
     } catch {
       continue;
     }
-    if (stat.isDirectory()) out.push(...walkMarkdown(full, depth + 1));
-    else if (stat.isFile() && name.endsWith('.md')) out.push(full);
+    if (!isInside(anchorReal, real)) {
+      refused.push(full);
+      continue;
+    }
+    if (stat.isDirectory()) out.push(...walkMarkdown(full, depth + 1, anchorReal, refused));
+    else if (stat.isFile() && name.endsWith('.md')) out.push({ file: full, real });
   }
   return out;
 }
@@ -236,9 +248,21 @@ export function parseBlockFile(text, { id: fallbackId, source } = {}) {
   };
 }
 
-function loadBlocksDir(dir, blocks) {
-  for (const file of walkMarkdown(dir)) {
-    const text = readText(file);
+// `anchor` is the tree the blocks must physically live in: the project root
+// for `.vibe/blocks`, the vibe directory for the shipped blocks. A refused
+// entry (or a refused blocks root) is an `errors` entry, which
+// `vibe render --check` turns into a non-zero exit; an absent dir is normal.
+function loadBlocksDir(dir, blocks, errors, anchor) {
+  const found = confineRealWhy(anchor, dir);
+  if (found.real === undefined) {
+    if (found.why !== 'missing') errors.push(`blocks dir: ${dir} escapes ${anchor}`);
+    return;
+  }
+  const refused = [];
+  const files = walkMarkdown(dir, 0, realOf(anchor), refused);
+  for (const bad of refused) errors.push(`blocks dir: ${bad} escapes ${anchor}`);
+  for (const { file, real } of files) {
+    const text = readText(real);
     if (text === undefined) continue;
     const block = parseBlockFile(text, { id: idFromPath(file, dir), source: file });
     if (!block.id) continue;
@@ -247,19 +271,23 @@ function loadBlocksDir(dir, blocks) {
   }
 }
 
-// A `blocks` entry in vibe.json patches (or defines) a block by id. `file` is
-// read relative to the config's own directory, so a project can keep long
-// rules in files without adopting the .vibe/blocks/ convention.
-// confine BASE, REL -> an absolute path inside BASE, or undefined.
+// confinePath BASE, REL -> an absolute path inside BASE, or undefined.
+// confineReal BASE, REL [, {forWrite}] -> the REAL absolute path inside
+// realpath(BASE), or undefined.
 //
 // SECURITY. `vibe.json` is repository content: cloning an untrusted repo is
 // enough to get its `blocks.*.file`, `sources.*` and `channels.*.write.file`
-// evaluated. Resolved unconfined, `"/etc/passwd"` or `"../../.ssh/id_rsa"` reads
+// evaluated, and its `.vibe/blocks` tree walked. Resolved unconfined,
+// `"/etc/passwd"`, `"../../.ssh/id_rsa"` or an in-repo symlink to either reads
 // an arbitrary user-readable file into EVERY turn's injected prompt, and a
 // `write.file` of `"../escaped.md"` lets `render --write` create files outside
-// the repo. Confinement is checked after resolution, so `..` segments and
-// symlink-free absolute paths are both covered; `path.relative` starting with
-// `..` (or staying absolute) means the result escaped.
+// the repo. confinePath is only the cheap lexical pre-check. The capability
+// gate is confineReal: containment is checked on the resolved real path of
+// both the anchor and the target, so upward segments, absolute paths and
+// symlinks (file, directory, or parent) that leave the repo are all refused,
+// while in-repo symlinks are allowed. A dangling write target is refused.
+// Callers read and write the returned path, so reads are TOCTOU-narrowed by
+// reading the resolved path rather than re-resolving the configured one.
 export function confinePath(base, rel) {
   if (typeof base !== 'string' || !base) return undefined;
   if (typeof rel !== 'string' || !rel) return undefined;
@@ -275,6 +303,79 @@ export function confinePath(base, rel) {
   return resolved.startsWith(prefix) ? resolved : undefined;
 }
 
+// isInside ANCHOR_REAL, REAL — separator-aware prefix containment, so
+// `/repo-evil` is not read as living under `/repo`. Both arguments are
+// already real paths.
+function isInside(anchorReal, real) {
+  if (typeof anchorReal !== 'string' || typeof real !== 'string') return false;
+  if (real === anchorReal) return true;
+  const prefix = anchorReal.endsWith(path.sep) ? anchorReal : anchorReal + path.sep;
+  return real.startsWith(prefix);
+}
+
+function realOf(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return undefined;
+  }
+}
+
+// confineRealWhy -> { real } on success, else { why } with why one of
+// 'invalid' | 'missing' | 'dangling' | 'escapes'. 'missing' (nothing at the
+// path, not even a link) is the one a caller may treat as normal — an absent
+// lessons file or blocks dir is not an attack. Every fs call is caught: this
+// runs inside hooks, which must never throw.
+export function confineRealWhy(base, rel, { forWrite = false } = {}) {
+  const lexical = confinePath(base, rel);
+  if (lexical === undefined) return { why: typeof base === 'string' && base && typeof rel === 'string' && rel ? 'escapes' : 'invalid' };
+  const anchorReal = realOf(path.resolve(base));
+  if (anchorReal === undefined) return { why: 'missing' };
+
+  let real = realOf(lexical);
+  if (real === undefined) {
+    let linkExists = false;
+    try {
+      fs.lstatSync(lexical);
+      linkExists = true;
+    } catch {
+      linkExists = false;
+    }
+    if (linkExists) return { why: 'dangling' };
+    if (!forWrite) return { why: 'missing' };
+    // A missing write target: realpath the deepest existing ancestor and
+    // append the remainder. An ancestor that exists but does not resolve is a
+    // dangling intermediate link — refused, never created through.
+    const rest = [path.basename(lexical)];
+    let cur = path.dirname(lexical);
+    for (;;) {
+      const resolved = realOf(cur);
+      if (resolved !== undefined) {
+        real = path.join(resolved, ...rest);
+        break;
+      }
+      try {
+        fs.lstatSync(cur);
+        return { why: 'dangling' };
+      } catch {
+        // truly absent: keep walking up
+      }
+      const up = path.dirname(cur);
+      if (up === cur) return { why: 'missing' };
+      rest.unshift(path.basename(cur));
+      cur = up;
+    }
+  }
+  return isInside(anchorReal, real) ? { real } : { why: 'escapes' };
+}
+
+export function confineReal(base, rel, opts = {}) {
+  return confineRealWhy(base, rel, opts).real;
+}
+
+// A `blocks` entry in vibe.json patches (or defines) a block by id. `file` is
+// read relative to the config's own directory, so a project can keep long
+// rules in files without adopting the .vibe/blocks/ convention.
 function applyConfigBlocks(configBlocks, blocks, configDir, errors) {
   if (!configBlocks || typeof configBlocks !== 'object' || Array.isArray(configBlocks)) return;
   for (const id of Object.keys(configBlocks).sort()) {
@@ -294,11 +395,12 @@ function applyConfigBlocks(configBlocks, blocks, configDir, errors) {
     };
     let fromFile;
     if (typeof entry.file === 'string' && entry.file) {
-      const file = confinePath(configDir, entry.file);
-      if (file === undefined) {
+      const found = confineRealWhy(configDir, entry.file);
+      const file = path.resolve(configDir, entry.file);
+      if (found.real === undefined && found.why !== 'missing') {
         errors.push(`blocks.${id}: file escapes the config directory: ${entry.file}`);
       } else {
-        const text = readText(file);
+        const text = found.real === undefined ? undefined : readText(found.real);
         if (text === undefined) errors.push(`blocks.${id}: file not readable: ${file}`);
         else fromFile = parseBlockFile(text, { id, source: file });
       }
@@ -412,8 +514,8 @@ export function loadContent(root, vibeDir) {
   const project = (projectConfigPath && readConfig(projectConfigPath, errors, CONFIG_BASENAME)) || {};
 
   const blocks = new Map();
-  if (typeof vibeDir === 'string') loadBlocksDir(path.join(vibeDir, SHIPPED_BLOCKS_RELPATH), blocks);
-  if (typeof root === 'string') loadBlocksDir(path.join(root, USER_BLOCKS_RELPATH), blocks);
+  if (typeof vibeDir === 'string') loadBlocksDir(path.join(vibeDir, SHIPPED_BLOCKS_RELPATH), blocks, errors, vibeDir);
+  if (typeof root === 'string') loadBlocksDir(path.join(root, USER_BLOCKS_RELPATH), blocks, errors, root);
   applyConfigBlocks(defaults.blocks, blocks, shippedDir ?? '.', errors);
   applyConfigBlocks(project.blocks, blocks, root ?? '.', errors);
 
@@ -461,22 +563,35 @@ function joinList(value) {
 // `sources.lessons` in the config — the path is DATA, not an engine literal,
 // so the layout stays owned by root.mjs/the config and a project that keeps
 // its lessons elsewhere only edits vibe.json.
-function lessonsFor(root, relPath, tag) {
+// A lessons source that resolves outside the repo (lexically or through a
+// symlink) is pushed onto `problems`, which renderChannel reports as an error;
+// an ABSENT lessons file stays silent (a flow-only install has none).
+function lessonsFor(root, relPath, tag, problems) {
   if (typeof relPath !== 'string' || !relPath) return '';
   // No tag selects NOTHING, never everything: an indirect tag that resolved to
   // nothing (a cursor with no feature, say) must not turn into a wildcard that
   // matches a lessons file's own trailing empty tag field.
   if (typeof tag !== 'string' || !tag) return '';
-  // Confined: `sources.lessons` is project config, so it must not be able to
-  // name a file outside the repo and have it injected into every turn.
-  const lessonsPath = confinePath(root, relPath);
-  if (lessonsPath === undefined) return '';
-  let text = readText(lessonsPath);
+  // Confined on the real path: `sources.lessons` is project config, so it
+  // must not be able to name — or symlink to — a file outside the repo and
+  // have it injected into every turn. Both reads below go through this gate.
+  const read = (found, rel) => {
+    if (found.real !== undefined) return { text: readText(found.real) };
+    if (found.why !== 'missing') {
+      const msg = `sources.lessons: ${rel} escapes ${root}`;
+      if (Array.isArray(problems) && !problems.includes(msg)) problems.push(msg);
+      return { refused: true };
+    }
+    return {};
+  };
+  const configured = read(confineRealWhy(root, relPath), relPath);
+  if (configured.refused) return '';
+  let text = configured.text;
   // The shipped default names the docs/spec root; a project still on the legacy
   // root keeps working through this one fallback (D33).
   if (text === undefined && relPath === 'docs/spec/lessons.md') {
-    const legacyPath = confinePath(root, '.spec/lessons.md'); // literal
-    if (legacyPath !== undefined) text = readText(legacyPath);
+    const legacyRel = '.spec/lessons.md'; // literal
+    text = read(confineRealWhy(root, legacyRel), legacyRel).text;
   }
   if (text === undefined) return '';
   const wanted = String(tag).toLowerCase();
@@ -497,7 +612,10 @@ function lessonsFor(root, relPath, tag) {
   return out.join('\n');
 }
 
-export function buildResolver(ctx, content) {
+// `problems` (optional) collects content refusals met while resolving — today
+// a refused `sources.lessons` — the way `interpolate`'s `unresolved` collects
+// unknown names; renderChannel turns both into errors.
+export function buildResolver(ctx, content, problems) {
   const { root, vibeDir, skillsDir } = ctx;
   const cache = new Map();
 
@@ -605,7 +723,7 @@ export function buildResolver(ctx, content) {
     if (cache.has(name)) return cache.get(name);
     let value;
     const lessonsMatch = /^lessons:(.+)$/.exec(name);
-    if (lessonsMatch) value = lessonsFor(root, content.sources.lessons, resolveTag(lessonsMatch[1]));
+    if (lessonsMatch) value = lessonsFor(root, content.sources.lessons, resolveTag(lessonsMatch[1]), problems);
     else if (Object.prototype.hasOwnProperty.call(builtins, name)) value = builtins[name]();
     else if (typeof content.placeholders[name] === 'string') value = content.placeholders[name];
     else value = undefined;
@@ -663,7 +781,8 @@ export function renderChannel(name, ctx, content = loadContent(ctx.root, ctx.vib
   }
   if (!channel.enabled) return { text: '', blocks: [], warnings, errors, unresolved };
 
-  const resolve = buildResolver(ctx, content);
+  const problems = [];
+  const resolve = buildResolver(ctx, content, problems);
   const rendered = [];
   const used = [];
   for (const id of Array.isArray(channel.blocks) ? channel.blocks : []) {
@@ -685,6 +804,7 @@ export function renderChannel(name, ctx, content = loadContent(ctx.root, ctx.vib
     used.push(id);
   }
 
+  for (const problem of problems) errors.push(`channels.${name}: ${problem}`);
   if (rendered.length === 0) return { text: '', blocks: used, warnings, errors, unresolved };
 
   const separator = channel.render === 'body' ? '\n\n' : '\n';

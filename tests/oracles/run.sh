@@ -97,16 +97,23 @@ fixture() { # prints a fresh root: oracles/ beside the live sources they mirror
   r="$(mktemp -d)"
   mkdir -p "$r/oracles" "$r/flow" "$r/spec" "$r/.claude"
   cp -R "$ROOT/oracles/." "$r/oracles/"
-  cp -R "$ROOT/flow/engine" "$r/flow/engine"
-  cp -R "$ROOT/flow/scripts" "$r/flow/scripts"
-  cp -R "$ROOT/flow/hooks-fallback" "$r/flow/hooks-fallback"
-  cp -R "$ROOT/spec/scripts" "$r/spec/scripts"
-  cp -R "$ROOT/spec/reference" "$r/spec/reference"
-  cp -R "$ROOT/.claude/hooks" "$r/.claude/hooks"
+  cp -R "$ROOT/oracles/js" "$r/flow/engine"
+  cp -R "$ROOT/oracles/bash/flow/scripts" "$r/flow/scripts"
+  cp -R "$ROOT/oracles/bash/flow/hooks-fallback" "$r/flow/hooks-fallback"
+  cp -R "$ROOT/oracles/bash/spec/scripts" "$r/spec/scripts"
+  cp -R "$ROOT/oracles/bash/spec/reference" "$r/spec/reference"
+  cp -R "$ROOT/oracles/bash/.claude/hooks" "$r/.claude/hooks"
   printf '%s\n' "$r"
 }
 
 r="$(fixture)"; expect "a freeze that matches the live sources passes" 0 "$r/oracles"; rm -rf "$r"
+
+# flow-v2/0.4: one missing live source directory is a partial checkout.
+for missing in flow/engine spec/scripts .claude/hooks; do
+  r="$(fixture)"; rm -rf "${r:?}/$missing"
+  expect "a partial checkout missing $missing fails freshness" 1 "$r/oracles"
+  rm -rf "$r"
+done
 
 r="$(fixture)"; printf ' ' >>"$r/flow/engine/cli.mjs"
 expect "a live source that moved on since the freeze fails" 1 "$r/oracles"; rm -rf "$r"
@@ -146,6 +153,69 @@ else
   record "freeze.sh writes nothing when a live source is missing" 1 \
     "rc=$rc, want 1; drifted oracle $before -> $after; a refusal must copy nothing"
 fi
+rm -rf "$r"
+
+# flow-v2/0.4: exact reviewed divergence pairs; no file-level exemptions.
+accept_pair() {
+  local r="$1" oracle="$2" source="$3"
+  mkdir -p "$r/tests/oracles"
+  printf '%s\t%s\t%s\t%s\n' "$oracle" \
+    "$(shasum -a 256 "$r/oracles/$oracle" | awk '{print $1}')" \
+    "$(shasum -a 256 "$r/$source" | awk '{print $1}')" \
+    'Intentional reviewed control: live source differs from frozen generation.' \
+    > "$r/tests/oracles/accepted-divergences.tsv"
+}
+r="$(fixture)"; printf '\n' >> "$r/flow/scripts/orders.sh"
+expect "an unreviewed source mutation remains stale" 1 "$r/oracles"
+accept_pair "$r" bash/flow/scripts/orders.sh flow/scripts/orders.sh
+expect "an exact reviewed oracle/live hash pair passes" 0 "$r/oracles"
+out="$(bash "$CHECK" "$r/oracles" 2>&1)"; rc=$?
+if [[ "$rc" == 0 && "$out" == *"42/43 live sources are byte-identical; 1 exact reviewed divergences; 0 unreviewed stale files"* ]]; then
+  record "byte-identical and accepted-divergence counts stay separate" 0
+else
+  record "byte-identical and accepted-divergence counts stay separate" 1 "$out"
+fi
+
+printf '\n' >> "$r/flow/engine/cli.mjs"
+expect "unlisted drift still fails alongside an accepted pair" 1 "$r/oracles"
+cp "$r/oracles/js/cli.mjs" "$r/flow/engine/cli.mjs"
+printf ' ' >> "$r/flow/scripts/orders.sh"
+expect "live bytes changed after acceptance fail the hash pair" 1 "$r/oracles"
+cp "$r/oracles/bash/flow/scripts/orders.sh" "$r/flow/scripts/orders.sh"
+printf '\n' >> "$r/flow/scripts/orders.sh"
+for column in 2 3; do
+  cp "$r/tests/oracles/accepted-divergences.tsv" "$r/pair"
+  awk -F '\t' -v OFS='\t' -v c="$column" '{$c="0000000000000000000000000000000000000000000000000000000000000000"; print}' "$r/pair" > "$r/tests/oracles/accepted-divergences.tsv"
+  expect "a mutated accepted hash column $column fails" 1 "$r/oracles"
+  mv "$r/pair" "$r/tests/oracles/accepted-divergences.tsv"
+done
+for malformed in hash reason extra; do
+  cp "$r/tests/oracles/accepted-divergences.tsv" "$r/pair"
+  case "$malformed" in
+    hash) awk -F '\t' -v OFS='\t' '{$2="not-hex"; print}' "$r/pair" > "$r/tests/oracles/accepted-divergences.tsv" ;;
+    reason) awk -F '\t' -v OFS='\t' '{$4=""; print}' "$r/pair" > "$r/tests/oracles/accepted-divergences.tsv" ;;
+    extra) sed $'s/$/\tunexpected/' "$r/pair" > "$r/tests/oracles/accepted-divergences.tsv" ;;
+  esac
+  expect "malformed accepted $malformed fails" 1 "$r/oracles"
+  mv "$r/pair" "$r/tests/oracles/accepted-divergences.tsv"
+done
+cp "$r/tests/oracles/accepted-divergences.tsv" "$r/pair"
+cat "$r/pair" >> "$r/tests/oracles/accepted-divergences.tsv"
+expect "duplicate accepted paths fail" 1 "$r/oracles"
+mv "$r/pair" "$r/tests/oracles/accepted-divergences.tsv"
+printf 'not-a-valid-row\n' > "$r/tests/oracles/accepted-divergences.tsv"
+expect "malformed accepted rows fail" 1 "$r/oracles"
+accept_pair "$r" bash/flow/scripts/orders.sh flow/scripts/orders.sh
+sed 's@bash/flow/scripts/orders.sh@bash/not-in-manifest.sh@' "$r/tests/oracles/accepted-divergences.tsv" > "$r/pair"
+mv "$r/pair" "$r/tests/oracles/accepted-divergences.tsv"
+expect "accepted paths outside the frozen manifest fail" 1 "$r/oracles"
+accept_pair "$r" bash/flow/scripts/orders.sh flow/scripts/orders.sh
+rm "$r/flow/scripts/orders.sh"
+expect "an accepted missing live source fails" 1 "$r/oracles"
+cp "$r/oracles/bash/flow/scripts/orders.sh" "$r/flow/scripts/orders.sh"
+expect "a stale acceptance row fails even when source equals oracle" 1 "$r/oracles"
+accept_pair "$r" bash/flow/scripts/orders.sh flow/scripts/orders.sh
+expect "an exact equal-byte row is unnecessary and fails" 1 "$r/oracles"
 rm -rf "$r"
 
 attr="$(git -C "$ROOT" check-attr text -- oracles/bash/spec/scripts/validate.sh 2>/dev/null)"

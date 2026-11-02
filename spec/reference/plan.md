@@ -218,20 +218,90 @@ Plans sequence decisions — they are not implementation dumps.
 
 ## Example (multi-feature repo)
 
-Root `docs/spec/plan.md` feature sequence:
+Root `plan.md` feature sequence (status is one of `NOT STARTED | IN PROGRESS | BLOCKED | DONE`; `vibe-spec check-drift` reads `IN PROGRESS` and `DONE`, and any other word, `ACTIVE` included, reads as `NOT STARTED`):
 
 | Order | Feature | Deliverable | Test | Status | Starts when |
 |---:|---|---|---|---|---|
-| 1 | spec | `docs/spec/` + validate + tests | `tests/spec/run.sh` | DONE | — |
-| 2 | vibe-flow | `.agents/skills/vibe/` + `vibe` skill | `tests/flow/run.sh` | ACTIVE | spec DONE |
+| 1 | spec | spec root + validate + tests | `tests/spec/run.sh` | DONE | — |
+| 2 | vibe-flow | `.agents/skills/vibe/` + `vibe` skill | `tests/flow/run.sh` | IN PROGRESS | spec DONE |
 | 3 | agent-instructions | `AGENTS.md` template + merge | `tests/agent-instructions/run.sh` | BLOCKED | vibe-flow DONE |
 
-Feature `vibe-flow/plan.md` unit rows:
+## Example (feature plan)
 
-| ID | Seq | Summary | Depends | Verification |
-|---|---:|---|---|---|
-| vibe-flow/1 | 1 | Per-turn orders in the vibe skill; strip frozen injects | — | `tests/flow/run.sh` |
-| vibe-flow/2 | 2 | Skill-count decision | vibe-flow/1 | review note |
+A complete feature `plan.md` (heading per unit, Requirements Trace, one status enum):
+
+````markdown
+---
+type: feature-plan
+feature: example
+sibling: tech.md
+parent: ../../plan.md
+updated: 2026-10-24
+---
+
+# Feature: Example — Implementation Plan
+
+Two units: the first ships the data model, the second ships the command that uses it.
+
+**Parent:** [../../plan.md](../../plan.md)
+**Requirements:** [product.md](product.md)
+**Architecture:** [tech.md](tech.md)
+
+---
+
+## Requirements Trace
+
+| ID | Requirement | Units |
+|---|---|---|
+| R1 | [Store entries](product.md#requirement-store-entries-r1) | example/1 |
+| R2 | [List entries](product.md#requirement-list-entries-r2) | example/2 |
+
+---
+
+### example/1 — Data model
+
+**Goal:** entries persist between runs.
+
+**Requirements:** R1
+
+**Dependencies:** —
+
+**Files:**
+
+```
+src/store.ext    # entry store
+```
+
+**Test scenarios:**
+
+- A saved entry is present after a restart.
+
+**Verification:** `tests/example/run.sh` exits 0.
+
+---
+
+### example/2 — List command
+
+**Goal:** the list command prints stored entries.
+
+**Requirements:** R2
+
+**Dependencies:** example/1
+
+**Files:**
+
+```
+src/list.ext    # list command
+```
+
+**Test scenarios:**
+
+- The list command prints every stored entry.
+
+**Verification:** `tests/example/run.sh` exits 0.
+````
+
+Status of a unit or feature is one of `NOT STARTED | IN PROGRESS | BLOCKED | DONE`.
 
 This pattern scales: add features, promote sub-features to siblings, extend the sequence — without cross-feature unit locks and without rewriting history.
 
@@ -239,7 +309,7 @@ This pattern scales: add features, promote sub-features to siblings, extend the 
 
 ## OpenSpec frontmatter (optional)
 
-Feature `plan.md` files may include a machine-readable `units:` list in their YAML frontmatter. This is **opt-in** — files without it pass `validate.sh` unchanged.
+Feature `plan.md` files may include a machine-readable `units:` list in their YAML frontmatter. This is **opt-in** — files without it pass `vibe-spec validate` unchanged.
 
 ```yaml
 units:
@@ -259,4 +329,4 @@ Fields:
 - `status` — planned / in-progress / done
 - `requires` — list of same-feature unit IDs this unit depends on (cross-feature order lives in root plan Feature Sequence, never here)
 
-`validate.sh` does not error on absence. Tooling can compute dependency graphs and status summaries from this list without parsing markdown tables. Adoption rule: opt-in per file; reference docs note the convention as optional.
+`vibe-spec validate` does not error on absence. Tooling can compute dependency graphs and status summaries from this list without parsing markdown tables. Adoption rule: opt-in per file; reference docs note the convention as optional.

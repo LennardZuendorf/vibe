@@ -2,7 +2,7 @@
 type: hub
 scope: technical
 children: [tech/contracts.md, tech/rust.md, tech/instruct.md, tech/spec.md, tech/cli.md]
-updated: 2026-10-19
+updated: 2026-11-02
 ---
 
 # vibe — Technical Architecture
@@ -11,12 +11,16 @@ vibe is three independent tools — spec, flow, instruct — each a single stati
 Rust binary with no runtime dependency, each a Claude Code plugin and an
 OpenCode plugin, each installable and useful alone. They compose through
 file-based contracts, never through imports. One repo, one installer, three
-release trains. **Shipped today:** one Node engine (`flow/engine/`) plus bash
-oracles drive all machinery, hooks run through `.claude/settings.json`, and
-the cursor lives at `.agents/skills/vibe/state.json`. This document describes
-the v0.4 target unless a callout says otherwise; the queued v0.5 arc adds one
-front door — the `vibe` CLI — plus worktree lifecycle and a global spec space
-over the same three tools ([tech-cli.md](tech/cli.md)).
+release trains. **Current F5/F6 source:** the Rust `vibe-flow` CLI writes state
+and implements guard/Stop behind the POSIX shim. The JS engine still provides
+injection while it ships. Rust writes `.vibe/run/flow/state.json`; active JS and
+shell readers/writers prefer that file once present and retain the legacy
+cursor as an absence-only fallback. Legacy-only targets keep their existing
+cursor until Rust migrates them. This source status does not establish a
+published release or an installed runtime. F7 transition gates/ledger and F8
+Rust injection remain target work. The queued v0.5 arc adds one front door —
+the `vibe` CLI — plus worktree lifecycle and a global spec space over the same
+three tools ([tech-cli.md](tech/cli.md)).
 
 ## Concepts
 

@@ -1,0 +1,59 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        ".vibe/run/flow/state.json",
+        "feature.compound"
+      ],
+      [
+        ".vibe/run/flow/state.json",
+        "feature.design"
+      ],
+      [
+        ".vibe/run/flow/state.json",
+        "feature.impl"
+      ],
+      [
+        ".vibe/run/flow/state.json",
+        "feature.plan"
+      ],
+      [
+        ".vibe/run/flow/state.json",
+        "feature.verify"
+      ],
+      [
+        ".vibe/run/flow/state.json",
+        "idle"
+      ],
+      [
+        ".vibe/run/flow/state.json",
+        "quick.fix"
+      ],
+      [
+        ".vibe/run/flow/state.json",
+        "quick.triage"
+      ],
+      [
+        ".vibe/run/flow/state.json",
+        "quick.verify"
+      ],
+      [
+        ".vibe/run/flow/state.json",
+        "setup.apply"
+      ],
+      [
+        ".vibe/run/flow/state.json",
+        "setup.detect"
+      ],
+      [
+        ".vibe/run/flow/state.json",
+        "strategy.brainstorm"
+      ],
+      [
+        ".vibe/run/flow/state.json",
+        "strategy.spec"
+      ]
+    ]
+  },
+  "v": 1
+}

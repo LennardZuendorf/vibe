@@ -5,3 +5,9 @@ refactor	spec|superpowers:brainstorming|superpowers:writing-plans	Plan the refac
 quick	spec|superpowers:brainstorming|superpowers:systematic-debugging	Quick fix: the greeting in src/cli.sh says "Helo". Just fix it.
 howbuild	spec|superpowers:brainstorming	How should we build user authentication here?
 archnote	spec	Update the architecture notes to say we store data in SQLite.
+nm-explain	none	Explain what src/cli.sh prints.
+nm-tests	none	Run the test suite.
+nm-gitstatus	none	What does git status show?
+nm-lastcommit	none	Summarise the last commit.
+nm-json	none	Format this JSON: {"a":1}
+nm-review	none	Review PR 12 for bugs.

@@ -9,7 +9,7 @@ updated: {YYYY-MM-DD}
 <!--
   TEMPLATE GUARDRAIL — feature product.md
   Job: WHAT this feature must do (requirements, scope, UX). Link to tech.md for HOW.
-  Do NOT: file paths, code, APIs, algorithms, plan units, implementation steps.
+  Do NOT: code, APIs, algorithms, plan units. File paths appear only in the Scope table's Owns row.
   Omit optional sections entirely when empty — placeholder prose is worse than absence.
 -->
 
@@ -55,7 +55,7 @@ The system MUST {another obligation}.
 - **Then** {observable outcome}
 
 Requirement headings MAY carry an inline id — `### Requirement: {Short name} (R1)` — so
-`validate.sh` (SF12) checks each R-id is cited in the feature plan's Requirements Trace.
+`vibe-spec validate` (SF12) checks each R-id is cited in the feature plan's Requirements Trace.
 Reference the same R1, R2, … in [plan.md](plan.md)'s Requirements Trace.
 
 <!-- include-when-material: User Experience — omit when requirements fully capture UX -->

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # pre-tool-use-guard.sh — vibe flow guard hook (Claude Code PreToolUse adapter).
 #
-# Event: PreToolUse, matcher Edit|Write|NotebookEdit|Bash. This file is ONLY the
+# Event: PreToolUse, matcher Edit|Write|MultiEdit|NotebookEdit|Bash. This file is ONLY the
 # adapter: the work happens in `flow/bin/hook.sh pre-tool-use-guard`, flow's
 # five-tier discovery shim (D26, F6). That shim resolves, in order, $VIBE_FLOW_BIN,
 # a bundled `bin/<os>-<arch>/vibe-flow`, a `vibe-flow` on PATH, and finally the

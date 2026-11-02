@@ -10,7 +10,11 @@
         }
       ],
       "id": "cursor",
-      "match": ".agents/skills/vibe/state.json"
+      "match": [
+        ".vibe/run/flow/state.json",
+        ".agents/skills/vibe/state.json",
+        ".agents/flow/state.json"
+      ]
     },
     {
       "arms": [

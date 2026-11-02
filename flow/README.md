@@ -14,7 +14,7 @@ session into a disciplined arc: it routes each phase
 its own write invariants with hooks. It is Markdown and JSON, driven by bash hook
 shims over a zero-dependency Node engine ([engine/](engine)) — Node ≥18, no
 dependencies, no build step. Without node the two hooks that carry a hard block
-fall back to the frozen bash implementations in
+fall back to the pre-port bash implementations in
 [hooks-fallback/](hooks-fallback); the two that only inject text no-op.
 
 It is one of two halves. The other is [the spec framework](https://github.com/LennardZuendorf/vibe/blob/main/spec/README.md),
@@ -32,7 +32,7 @@ point — see [Host entry points](#host-entry-points).
 
 The installer copies the flow core into `<repo>/.agents/skills/vibe/`, merges the
 `AGENTS.md` instructions block, seeds + gitignores the flow cursor, and — on
-Claude Code — writes `.claude/settings.json` with four auto-wired hooks
+Claude Code — writes `.claude/settings.json` with the auto-wired hooks
 (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `Stop`). The `vibe` skill works
 as plain project files immediately;
 the flow hooks activate as soon as the settings.json wiring is in place. `/flow`
@@ -54,12 +54,13 @@ paths are identical on every host — only the entry point differs.
 
 | Host | Start the flow workflow | Skill discovery | Wired per host |
 |---|---|---|---|
-| **Claude Code** | `/flow` (`.claude/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `.claude/skills/{spec,vibe}` | all four hooks, via `.claude/settings.json` |
+| **Claude Code** | `/flow` (`.claude/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `.claude/skills/{spec,vibe}` | every hook, via `.claude/settings.json` |
 | **OpenCode** | `/flow` (`.opencode/commands/flow.md`) | `.agents/skills/{spec,vibe}` | no hooks |
 | **Codex** | skill invocation only: `$vibe` (or the skill picker `/skills`) — no synthetic `/flow` command | `.agents/skills/{spec,vibe}` + `plugins/vibe/skills` | no hooks; no native agent registration |
 | **Factory Droid** | `/flow` (`factory-plugin/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `factory-plugin/skills` | no hooks; no native droid registration |
 
-The **spec** half is skill-invoked on every host; no `/spec` command exists. Hooks
+The **spec** half is skill-invoked on every host (the skill is user-invocable, so
+hosts that list skills as commands offer it as `/spec`). Hooks
 are Claude Code-only in this slice: OpenCode, Codex, and Factory Droid get the
 skills and a workflow entry point, but the per-turn inject, the `PreToolUse`
 guard, and the `Stop` gate do not fire there, and no host gets native
@@ -246,7 +247,7 @@ has none — byte-identical to what `render agents-md` composes (a test fails if
 the two ever drift), so an install *with* node re-renders it to `no change` and
 a project's own customization, once rendered, is never overwritten by a merge.
 
-## The four hooks
+## The hooks
 
 Thin shells over `scripts/`; the allow/warn/block policy lives once in
 `detect-context.sh`. Each degrades warn-first and exits 0 on any missing keystone.
@@ -255,8 +256,11 @@ Thin shells over `scripts/`; the allow/warn/block policy lives once in
 |---|---|---|
 | `session-start-doctrine.sh` | `SessionStart` (all sources, incl. `compact` re-inject) | emits the working-model doctrine each session, single-sourced from the `<!-- vibe:doctrine -->` block via `doctrine.sh`; wired with no matcher (all sources). Carries **no live state** — this output replays verbatim after `--resume`, so a cursor line printed here is stale by construction |
 | `user-prompt-submit-inject.sh` | `UserPromptSubmit` | injects the trigger-classed channels: the two-line level payload every turn, the full orders on the turn after the cursor moves, event text only when an event occurred |
-| `pre-tool-use-guard.sh` | `PreToolUse` (Edit/Write/NotebookEdit/Bash) | hard-blocks the three write invariants on **file-tool** calls; on `Bash` it only **warns** when a command looks like it writes a guarded path (see caveats below) |
+| `pre-tool-use-guard.sh` | `PreToolUse` (Edit/Write/MultiEdit/NotebookEdit/Bash) | hard-blocks the blocking write invariants on **file-tool** calls; on `Bash` it only **warns** when a command looks like it writes a guarded path (see caveats below) |
 | `stop-gate.sh` | `Stop` | warn-first exit checks; blocks in `*.verify` without a fresh evidence receipt — with or without `jq` |
+
+Orders arrive once, on the turn after the cursor moves. If they are lost (a
+compaction, a missed turn), `bash .agents/skills/vibe/scripts/orders.sh` recovers them.
 
 Wired automatically by `install.sh` into `.claude/settings.json`; hook scripts resolve their data via `$CLAUDE_PROJECT_DIR`. Claude Code only — no other host gets hook wiring in this slice.
 
@@ -277,8 +281,8 @@ carrier there.
 ## Write invariants (`content/policy.json`)
 
 The write policy is **data**, not code and not prose:
-[`content/policy.json`](content/policy.json) holds one rule per guarded path —
-three that block, three that warn. Both halves of the harness read that one
+[`content/policy.json`](content/policy.json) holds one rule per guarded path;
+each rule's arms say allow, warn or block per state. Both halves of the harness read that one
 file: [scripts/detect-context.sh](scripts/detect-context.sh) `decide` (which the
 `PreToolUse` guard translates into its allow/warn/block verdict) and the
 `{{invariants}}` placeholder that renders the rules as prose into `AGENTS.md`.
@@ -338,10 +342,8 @@ bash .agents/skills/vibe/scripts/detect-context.sh decide docs/spec/product.md
 
 **What the teeth actually reach — three honest caveats:**
 
-1. **File tools only, plus a Bash warn.** The six block rules cover the flow
-   cursor, lessons and root specs under both root spellings, and GSD's
-   `.planning/` store. They intercept
-   `Edit` / `Write` / `NotebookEdit`. A raw shell write (`echo >> docs/spec/lessons.md`,
+1. **File tools only, plus a Bash warn.** The hard blocks intercept
+   `Edit` / `Write` / `MultiEdit` / `NotebookEdit`. A raw shell write (`echo >> docs/spec/lessons.md`,
    `sed -i`, `tee`, `mv`/`cp`/`rm`) does **not** hit that path, so the guard also
    runs a warn-only Bash **sniffer**: it text-scans the command for a write-shaped
    op aimed at a guarded path and nudges. It never blocks (false positives are
@@ -362,6 +364,7 @@ All under `.agents/skills/vibe/scripts/` at runtime.
 
 | Script | Role |
 |---|---|
+| [runtime-state.sh](scripts/runtime-state.sh) | shared migrated-cursor selection and physical write checks |
 | [set-state.sh](scripts/set-state.sh) | the only sanctioned cursor writer (validates the target state name; `/flow` enforces the graph edge) |
 | [validate-state.sh](scripts/validate-state.sh) | check the cursor is a legal state in the machine |
 | [detect-context.sh](scripts/detect-context.sh) | write policy (allow/warn/block) + state snapshot |
@@ -370,7 +373,8 @@ All under `.agents/skills/vibe/scripts/` at runtime.
 | [regen-active-rules.sh](scripts/regen-active-rules.sh) | render `lessons.md` → the `AGENTS.md` active-rules digest |
 | [doctor.sh](scripts/doctor.sh) | warn-only install health report (always exits 0) |
 | [merge-agents.sh](scripts/merge-agents.sh) | `AGENTS.md` marker merge / unmerge + adapter symlinks |
-| [merge-settings.sh](scripts/merge-settings.sh) | wires the four hooks into `.claude/settings.json` |
+| [merge-settings.sh](scripts/merge-settings.sh) | wires the hooks into `.claude/settings.json` |
+| [doctrine.sh](scripts/doctrine.sh) | print the working-model doctrine (the `SessionStart` hook's source) |
 
 ## Dependencies & degrade
 
@@ -398,7 +402,7 @@ The flow half. Addressed at runtime under `.agents/skills/vibe/`.
 | [content/blocks/](content/blocks) | shipped content blocks (flow level/edge/invariants, style, delegation) |
 | [engine/](engine) | the zero-dependency Node engine (`cli.mjs`: `state`, `orders`, `doctrine`, `doctor`, `render`, `policy`, `hook`) |
 | `.vibe/last-inject` *(project root)* | edge-detection marker — gitignored runtime state, like the cursor |
-| [scripts/](scripts/) | the nine scripts above |
+| [scripts/](scripts/) | the scripts above |
 | [reference/deps.json](reference/deps.json) | dependency manifest (the table above) |
 | [reference/adapters.json](reference/adapters.json) | adapter definitions consumed by setup / merge |
 | [reference/templates/AGENTS.md](reference/templates/AGENTS.md) | the merged instructions block template |
@@ -408,3 +412,17 @@ The flow half. Addressed at runtime under `.agents/skills/vibe/`.
 - [the root README](https://github.com/LennardZuendorf/vibe#readme) — the umbrella: the spec/flow split and install.
 - [`spec/README.md`](https://github.com/LennardZuendorf/vibe/blob/main/spec/README.md) — the other half: the spec framework.
 - [SKILL.md](SKILL.md) — the router agents actually follow.
+
+### Runtime migration compatibility (F5/F6)
+
+Rust `state set` writes `.vibe/run/flow/state.json`. Active JS and shell readers
+and writers prefer that cursor once present. A legacy-only project keeps its
+existing `.agents/skills/vibe/state.json` until the Rust writer migrates it.
+Migration leaves the legacy file untouched. Cursor writers refuse symlinks
+whose physical target leaves the project.
+
+Stop prefers `.vibe/run/flow/evidence/feature-<feature>.md` or `quick.md`.
+It uses the corresponding legacy receipt only when the new receipt is absent.
+A present stale or invalid new receipt cannot fall back to an older location.
+Legacy-only projects retain legacy missing-receipt diagnostics. Receipt contents
+have the existing freshness contract; verdict enforcement belongs to F7.

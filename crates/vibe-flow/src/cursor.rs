@@ -55,17 +55,40 @@ fn idle() -> Cursor {
 /// Reads the cursor. `Err` names the malformed file and the reason.
 pub fn read_cursor(paths: &FlowPaths) -> Result<Cursor, String> {
     let new_path = paths.cursor_path();
-    match std::fs::read(&new_path) {
-        Ok(bytes) => return parse(&new_path, &bytes),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => return Err(malformed(&new_path, &err.to_string())),
+    for path in [&new_path, &paths.legacy_cursor_path()] {
+        if regular_file_absent(path).map_err(|reason| malformed(path, &reason))? {
+            continue;
+        }
+        return std::fs::read(path)
+            .map_err(|err| malformed(path, &err.to_string()))
+            .and_then(|bytes| parse(path, &bytes));
     }
-    let legacy = paths.legacy_cursor_path();
-    match std::fs::read(&legacy) {
-        Ok(bytes) => parse(&legacy, &bytes),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(idle()),
-        Err(err) => Err(malformed(&legacy, &err.to_string())),
+    Ok(idle())
+}
+
+// Metadata-only regular-file classification shared by cursor and receipt selection.
+// A missing child proves absence only after every existing parent is a directory.
+// Following each existing link separately catches dangling and looping ancestors.
+pub(crate) fn regular_file_absent(path: &Path) -> Result<bool, String> {
+    for entry in path.ancestors().collect::<Vec<_>>().into_iter().rev() {
+        match std::fs::symlink_metadata(entry) {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+            Err(err) => return Err(err.to_string()),
+            Ok(_) => {}
+        }
+        let stat = std::fs::metadata(entry).map_err(|err| err.to_string())?;
+        if entry == path {
+            if !stat.is_file() {
+                return Err("cursor entry is not a regular file".to_string());
+            }
+        } else if !stat.is_dir() {
+            return Err(format!(
+                "cursor ancestor {} is not a directory",
+                entry.display()
+            ));
+        }
     }
+    Ok(false)
 }
 
 fn malformed(path: &Path, reason: &str) -> String {
@@ -107,6 +130,7 @@ pub fn write_cursor(
     feature: &Value,
 ) -> Result<(), String> {
     let path = paths.cursor_path();
+    constrain_cursor_path(paths.root(), &path)?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)
             .map_err(|err| format!("cannot create {}: {err}", dir.display()))?;
@@ -121,6 +145,30 @@ pub fn write_cursor(
         now_utc_seconds()
     );
     write_atomic(&path, body.as_bytes()).map_err(|err| err.to_string())
+}
+
+// Resolve existing ancestors before creating anything; a dangling link fails closed.
+fn constrain_cursor_path(root: &Path, path: &Path) -> Result<(), String> {
+    let root = std::fs::canonicalize(root).map_err(|err| err.to_string())?;
+    let mut existing = path;
+    loop {
+        match std::fs::symlink_metadata(existing) {
+            Ok(_) => break,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                existing = existing.parent().ok_or("cursor has no existing ancestor")?;
+            }
+            Err(err) => return Err(err.to_string()),
+        }
+    }
+    let resolved = std::fs::canonicalize(existing).map_err(|err| err.to_string())?;
+    if !resolved.starts_with(&root) {
+        return Err(format!(
+            "cursor path {} escapes project {}",
+            path.display(),
+            root.display()
+        ));
+    }
+    Ok(())
 }
 
 fn json_string(text: &str) -> String {
@@ -415,5 +463,159 @@ mod tests {
             .expect("read dir")
             .count();
         assert_eq!(count, 1);
+    }
+    // flow-v2/1.1: validation must precede creation under hostile ancestors.
+    #[cfg(unix)]
+    #[test]
+    fn escaping_cursor_parent_and_leaf_are_refused() {
+        for part in [
+            ".vibe",
+            ".vibe/run",
+            ".vibe/run/flow",
+            ".vibe/run/flow/state.json",
+        ] {
+            let root = scratch("escape");
+            let outside = scratch("outside");
+            let target = root.join(part);
+            fs::create_dir_all(target.parent().unwrap()).unwrap();
+            let destination = if part.ends_with("state.json") {
+                let file = outside.join("keeper");
+                fs::write(&file, "keep").unwrap();
+                file
+            } else {
+                outside.clone()
+            };
+            std::os::unix::fs::symlink(&destination, &target).unwrap();
+            assert!(
+                write_cursor(&paths_for(&root), "quick", "fix", &Value::Null).is_err(),
+                "accepted {part}"
+            );
+            assert_eq!(
+                fs::read_dir(&outside).unwrap().count(),
+                usize::from(part.ends_with("state.json"))
+            );
+            if part.ends_with("state.json") {
+                assert_eq!(fs::read(&destination).unwrap(), b"keep");
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_in_project_cursor_parent_link_is_allowed() {
+        let root = scratch("internal-link");
+        fs::create_dir(root.join("runtime")).unwrap();
+        std::os::unix::fs::symlink("runtime", root.join(".vibe")).unwrap();
+        write_cursor(&paths_for(&root), "quick", "fix", &Value::Null).unwrap();
+        assert_eq!(read_cursor(&paths_for(&root)).unwrap().state, "quick.fix");
+    }
+    // flow-v2/1.1: an entry is absent only when lstat says so.
+    #[cfg(unix)]
+    #[test]
+    fn present_invalid_new_cursor_never_uses_legacy() {
+        for kind in ["dangling", "directory", "unreadable"] {
+            let root = scratch(kind);
+            let paths = paths_for(&root);
+            fs::create_dir_all(paths.legacy_cursor_path().parent().unwrap()).unwrap();
+            fs::write(
+                paths.legacy_cursor_path(),
+                r#"{"flow":"quick","phase":"fix"}"#,
+            )
+            .unwrap();
+            let before = fs::read(paths.legacy_cursor_path()).unwrap();
+            fs::create_dir_all(paths.cursor_path().parent().unwrap()).unwrap();
+            match kind {
+                "dangling" => std::os::unix::fs::symlink("missing", paths.cursor_path()).unwrap(),
+                "directory" => fs::create_dir(paths.cursor_path()).unwrap(),
+                _ => {
+                    use std::os::unix::fs::PermissionsExt;
+                    fs::write(paths.cursor_path(), "{}").unwrap();
+                    fs::set_permissions(paths.cursor_path(), fs::Permissions::from_mode(0o0))
+                        .unwrap();
+                }
+            }
+            assert!(read_cursor(&paths).is_err(), "{kind} must be malformed");
+            assert_eq!(fs::read(paths.legacy_cursor_path()).unwrap(), before);
+        }
+    }
+    // flow-v2/F6 review2: ENOENT under an invalid ancestor is not absence.
+    #[cfg(unix)]
+    #[test]
+    fn full_cursor_ancestry_distinguishes_absence_from_invalid_layout() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        for ancestor in [".vibe", ".vibe/run", ".vibe/run/flow"] {
+            for kind in [
+                "inaccessible",
+                "non-directory",
+                "dangling",
+                "looping",
+                "absent",
+                "search-only",
+                "search-only-absent",
+            ] {
+                let root = scratch("ancestry");
+                let paths = paths_for(&root);
+                fs::create_dir_all(paths.legacy_cursor_path().parent().unwrap()).unwrap();
+                let old = r#"{"flow":"quick","phase":"fix","feature":"old"}"#;
+                fs::write(paths.legacy_cursor_path(), old).unwrap();
+                write_raw(
+                    &root,
+                    r#"{"flow":"quick","phase":"verify","feature":"new"}"#,
+                );
+                let target = root.join(ancestor);
+                match kind {
+                    "inaccessible" => {
+                        fs::set_permissions(&target, fs::Permissions::from_mode(0o0)).unwrap()
+                    }
+                    "search-only" | "search-only-absent" => {
+                        if kind == "search-only-absent" {
+                            fs::remove_file(paths.cursor_path()).unwrap();
+                        }
+                        fs::set_permissions(&target, fs::Permissions::from_mode(0o111)).unwrap()
+                    }
+                    _ => {
+                        fs::remove_dir_all(&target).unwrap();
+                        match kind {
+                            "non-directory" => fs::write(&target, "not a directory").unwrap(),
+                            "dangling" => symlink("missing-target", &target).unwrap(),
+                            "looping" => symlink(target.file_name().unwrap(), &target).unwrap(),
+                            _ => (),
+                        }
+                    }
+                }
+                let result = read_cursor(&paths);
+                if matches!(kind, "inaccessible" | "search-only" | "search-only-absent") {
+                    fs::set_permissions(&target, fs::Permissions::from_mode(0o700)).unwrap();
+                }
+                match kind {
+                    "absent" | "search-only-absent" => {
+                        assert_eq!(result.unwrap().state, "quick.fix", "{ancestor}/{kind}")
+                    }
+                    "search-only" => {
+                        assert_eq!(result.unwrap().state, "quick.verify", "{ancestor}/{kind}")
+                    }
+                    _ => assert!(
+                        result.is_err(),
+                        "{ancestor}/{kind} used legacy state: {result:?}"
+                    ),
+                }
+                assert_eq!(fs::read_to_string(paths.legacy_cursor_path()).unwrap(), old);
+            }
+        }
+    }
+    #[cfg(unix)]
+    #[test]
+    fn project_root_requires_search_but_not_listing_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = scratch("root-search");
+        let paths = paths_for(&root);
+        write_raw(&root, r#"{"flow":"quick","phase":"verify"}"#);
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o0)).unwrap();
+        let denied = read_cursor(&paths);
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o111)).unwrap();
+        let searchable = read_cursor(&paths);
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(denied.is_err());
+        assert_eq!(searchable.unwrap().state, "quick.verify");
     }
 }

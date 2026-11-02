@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-10-19
+updated: 2026-11-02
 ---
 
 # Vibe Flow Contract
@@ -18,10 +18,29 @@ Cursor JSON is unchanged in shape, at a new path,
 ```
 
 `state-machine.json` defines each `<flow>.<phase>` state's phase-file link,
-delegates, write surface, exit predicate, and legal `next`; edge-keyed
-`gates` name the two human approvals. **The writer is the gate:** `vibe-flow
-state set` refuses a target outside `next` and a gated edge without
-`--confirm` — `/flow` becomes a thin wrapper over the same check. A
-`.vibe/run/flow/ledger.jsonl` records every transition, hook verdict, and
-advisory signal; `vibe-flow tui` reads the same cursor and ledger for a live
-pane and recorded-flow playback. Full contract: [tech-rust.md](../../../tech/rust.md).
+delegates, write surface, exit predicate, and legal `next`; edge-keyed `gates`
+name the two human approvals.
+
+**F5/F6 source behavior:** the writer validates the target state name and saves
+atomically. Rust writes the new cursor; active JS and shell readers/writers
+prefer it once present, with the legacy cursor retained as a read fallback.
+An invalid new cursor or ancestor never selects legacy state. Commands report
+malformed/degraded state. Fallback requires established absence below valid,
+searchable ancestors; directory listing permission is unnecessary.
+Stop scans scoped NUL-delimited Git paths and escapes control bytes in diagnostics.
+Cursor writes refuse pre-existing links that resolve outside the physical
+project root. Stop prefers receipts in `.vibe/run/flow/evidence/`; it uses a
+legacy receipt only when the corresponding new receipt is absent. A stale or
+invalid new receipt or ancestor cannot fall back to an older location. Only
+established absence below valid searchable ancestors selects legacy evidence.
+Receipts need regular-file metadata, not read permission or parsed contents.
+Every producer preserves the same relative `feature-${feature}.md` or `quick.md`
+name, including accepted feature path components. This is the existing
+receipt freshness contract; it does not enforce a verdict field.
+
+**F7 and later target:** `vibe-flow state set` enforces legal `next` edges and
+requires `--confirm` at human gates; `/flow` becomes a thin wrapper over that
+check. The ledger records transitions, hook verdicts, and advisory signals;
+TUI and playback consume the same cursor and ledger. These target guarantees
+are not implemented by the F5/F6 writer. Full target contract:
+[tech-rust.md](../../../tech/rust.md).

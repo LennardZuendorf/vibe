@@ -1,12 +1,9 @@
 // engine/cursor.mjs — readCursor()/writeCursor(): the only cursor JSON I/O.
 //
-// Both take `vibeDir` — the vibe skill's own directory, where state.json
-// lives — not a project root. Callers resolve that directory once via
-// `resolveVibeDir()` in root.mjs (which knows the self-relative/
-// installed-vs-dogfood layout distinction) and pass it in explicitly; this
-// module never re-derives it, so there is exactly one place that owns that
-// resolution (the duplicate-primitive scan's whole point). Tests pass
-// whatever directory their fixture uses (e.g. sandbox.flowDir) directly.
+// Both take the resolved flow data directory. Once a project has a migrated
+// .vibe runtime cursor, all reads and writes prefer it. Legacy-only targets
+// keep their existing cursor until the Rust writer migrates them; old bytes
+// remain available as an absence-only fallback.
 //
 // readCursor(vibeDir):
 //   - absent file            -> {state: "idle", flow: "idle", phase: "idle",
@@ -23,6 +20,7 @@
 // an *absent* cursor may mean idle.
 
 import path from 'node:path';
+import { resolveCursorRoot, flowRuntimeDir, assertCursorWithinRoot, cursorEntryAbsent } from './root.mjs';
 import { readJson, writeJsonAtomic } from './json.mjs';
 
 export class CursorParseError extends Error {
@@ -52,6 +50,12 @@ export class CursorParseError extends Error {
 // must stay importable without dragging json.mjs in); it carries its own
 // one-line waiver for the literal instead.
 export function cursorPath(vibeDir) {
+  const root = resolveCursorRoot(vibeDir);
+  const current = root && path.join(flowRuntimeDir(root), 'state.json');
+  if (current) {
+    try { if (!cursorEntryAbsent(current)) return current; }
+    catch { return current; } // Invalid new layout remains authoritative.
+  }
   return path.join(vibeDir, 'state.json');
 }
 
@@ -64,11 +68,11 @@ export function readCursor(vibeDir) {
 
   let raw;
   try {
-    raw = readJson(filePath);
-  } catch (err) {
-    if (err && err.code === 'ENOENT') {
+    if (cursorEntryAbsent(filePath)) {
       return { flow: 'idle', phase: 'idle', feature: null, updated: null, state: 'idle' };
     }
+    raw = readJson(filePath);
+  } catch (err) {
     // Present but unreadable-as-JSON (parse error, permissions error other
     // than ENOENT, etc.) — a real malformed cursor. Throw, don't guess idle.
     throw new CursorParseError(filePath, err);
@@ -86,10 +90,18 @@ export function readCursor(vibeDir) {
   return { flow, phase, feature, updated, state: stateKey(flow, phase) };
 }
 
+// validFeature(value) — the feature charset both cursor writers accept, the twin
+// of set-state.sh's valid_feature: a non-empty string with no C0 control byte,
+// no DEL, no double quote and no backslash.
+export function validFeature(value) {
+  return typeof value === 'string' && value !== '' && !/[\u0000-\u001f\u007f"\\]/.test(value);
+}
+
 // Atomic; preserves the cursor's shape (key order flow, phase, feature,
 // updated) so byte parity with the bash writer's hand-rolled printf holds.
 export function writeCursor(vibeDir, { flow, phase, feature = null }) {
   const filePath = cursorPath(vibeDir);
+  assertCursorWithinRoot(resolveCursorRoot(vibeDir), filePath);
   const updated = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
   const body = { flow, phase, feature: feature ?? null, updated };
   writeJsonAtomic(filePath, body);
