@@ -32,7 +32,7 @@ fn plugin(ctx: &Ctx, h: Harness) -> Projection {
             ctx.vibe_bin.display()
         )));
     };
-    let current = match guard_target(&path) {
+    let current = match guard_target(ctx.paths, &path) {
         Ok(c) => c,
         Err(n) => return Projection::refused(n),
     };
@@ -90,7 +90,7 @@ pub fn plan_uninstall(ctx: &Ctx, h: Harness) -> Projection {
         path: None,
     };
     let mut p = Projection::default();
-    match guard_target(&path) {
+    match guard_target(ctx.paths, &path) {
         Err(n) => return Projection::refused(n),
         Ok(None) => p.edits.push((usize::MAX, forget)),
         Ok(Some(text)) if text.lines().next() != Some(PLUGIN_MARKER) => {

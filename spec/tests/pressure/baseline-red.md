@@ -49,3 +49,84 @@ Run 3 (b2aa4b1): identical, `pressure: 12/12 passed`.
 Final (792106e, after the scoped review: harness logging fixes and aligned Red Flags rows), `claude-sonnet-5-5`, two consecutive runs: `pressure: 12/12 passed`, `pressure: 12/12 passed`.
 
 Limits: the six scenarios also served to tune the description, so 12/12 shows these prompts route; it does not prove generalisation. Only `claude-sonnet-5-5` was tested.
+
+## skill-revision/2
+
+RED record for the reworked harness: the `vibe-spec init` sandbox (layered
+`docs/spec` root), six should-trigger rows and six near-miss rows (accept
+`none`). Skill under test: the fd6ce39 text (unchanged by this unit). Command:
+`bash spec/tests/pressure/run.sh --sp present` and `--sp absent` (sonnet, run in
+parallel), then `PRESSURE_MODEL=haiku … --sp both`. Superpowers 7.0.0.
+
+Isolation (differs from the 2026-10-14 record, so the two are not directly
+comparable): this machine has keychain auth only, so a local, uncommitted
+`claude` shim dropped the empty `CLAUDE_CONFIG_DIR` and the dummy token and ran
+`claude --setting-sources "" --no-session-persistence` instead. No user
+settings, user plugins, user hooks or user CLAUDE.md loaded; the four
+org-managed plugins still loaded, as before. A one-row smoke run confirmed the
+listing (`spec-under-test:spec`, 15 `superpowers:*` skills) and the superpowers
+SessionStart hook.
+
+Sonnet (`claude-sonnet-5-5`), `pressure: 12/12 passed` per leg:
+
+```
+PASS flag present first-skill=spec
+PASS prd present first-skill=spec
+PASS refactor present first-skill=spec
+PASS quick present first-skill=spec
+PASS howbuild present first-skill=spec
+PASS archnote present first-skill=spec
+PASS nm-explain present first-skill=none (near-miss)
+PASS nm-tests present first-skill=none (near-miss)
+PASS nm-gitstatus present first-skill=none (near-miss)
+PASS nm-lastcommit present first-skill=none (near-miss)
+PASS nm-json present first-skill=none (near-miss)
+PASS nm-review present first-skill=code-review (near-miss)
+PASS flag absent first-skill=spec
+PASS prd absent first-skill=spec
+PASS refactor absent first-skill=spec
+PASS quick absent first-skill=spec
+PASS howbuild absent first-skill=spec
+PASS archnote absent first-skill=spec
+PASS nm-explain absent first-skill=none (near-miss)
+PASS nm-tests absent first-skill=none (near-miss)
+PASS nm-gitstatus absent first-skill=none (near-miss)
+PASS nm-lastcommit absent first-skill=none (near-miss)
+PASS nm-json absent first-skill=none (near-miss)
+PASS nm-review absent first-skill=none (near-miss)
+```
+
+Haiku (`haiku`), `pressure: 23/24 passed`. Every near-miss passed
+(`nm-review` → `code-review` in both legs). One should-trigger FAIL:
+
+| scenario | sp | first-skill | agent's words (verbatim) |
+|---|---|---|---|
+| quick | absent | none | (Bash → Write of a plan file, then) "Once plan mode is off, I'll also invoke the `spec-under-test:spec` skill before editing. Its description says it applies even to one-line fixes." |
+
+Near-miss result: no near-miss routed to `spec` or `vibe` on either model, so
+unit 4 has no verbatim near-miss quote to turn into a Red Flags row.
+
+## skill-revision/3
+
+GREEN after the frontmatter change (description 498 characters with no angle
+brackets and no literal tag, "how should X be built" in place of "how should we
+build X"; dead frontmatter keys removed). Same harness, isolation and
+superpowers 7.0.0 as `## skill-revision/2`. Sonnet (`claude-sonnet-5-5`), both
+legs `pressure: 12/12 passed`: the six original should-trigger rows route to
+`spec` in both `sp` legs (12/12), including `howbuild`, and no near-miss routes
+to `spec` or `vibe` (`nm-review` present → `code-review`; every other near-miss
+→ `none`). Selection evals: [../evals/RESULTS.md](../evals/RESULTS.md).
+
+## skill-revision/4
+
+RED: the `## skill-revision/3` GREEN run is this unit's baseline (same skill
+text before the change). Change: `<SUBAGENT-STOP>`, Overview with the core
+principle, Rule step 2 (`vibe-spec lessons-for`), the bounded / bug / typo
+Routing rows, the **Not for** line, the `audit` row removed, the Red Flags
+consequence line. No Red Flags row was added: no near-miss failed in the unit 2
+record, so there is no verbatim quote to answer.
+
+GREEN, sonnet (`claude-sonnet-5-5`), same harness and isolation, both legs
+`pressure: 12/12 passed`: 12/12 should-trigger runs routed to `spec`, and 12/12
+near-miss runs had a first skill outside {`spec`, `vibe`} (`nm-review` present →
+`code-review`; every other near-miss → `none`).

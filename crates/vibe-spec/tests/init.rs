@@ -257,3 +257,44 @@ fn refuses_a_populated_flat_root() {
     assert_eq!(out.code, 0, "{}", out.stderr);
     assert!(p.join(".spec/README.md").is_file());
 }
+
+#[test]
+fn seeds_the_lesson_format_and_a_plan_without_a_backlog() {
+    // skill-revision/15
+    let p = repo("init-formats");
+    assert_eq!(spec(&p, &["init"], &[]).code, 0);
+    let lessons = fs::read_to_string(p.join("docs/spec/lessons.md")).unwrap();
+    for needle in [
+        "### ",
+        "**Pattern:**",
+        "**Rule:**",
+        "**Tags:**",
+        "**Date:**",
+    ] {
+        assert!(
+            lessons.contains(needle),
+            "lessons.md lacks {needle}: {lessons}"
+        );
+    }
+    let plan = fs::read_to_string(p.join("docs/spec/plan.md")).unwrap();
+    assert!(!plan.contains("open work"), "{plan}");
+    let strict = spec(&p, &["validate", "--strict"], &[]);
+    assert_eq!(strict.code, 0, "{}\n{}", strict.text(), strict.stderr);
+    // The format sample must not read as a lesson.
+    let none = spec(&p, &["lessons-for", "bash", "--json"], &[]);
+    let v: serde_json::Value = serde_json::from_slice(&none.stdout).unwrap();
+    assert_eq!(v["lessons"].as_array().unwrap().len(), 0, "{}", none.text());
+    let markdown = spec(&p, &["lessons-for", ""], &[]);
+    assert!(markdown.stdout.is_empty(), "{}", markdown.text());
+}
+
+#[test]
+fn the_router_fragment_points_to_the_readme_install_section() {
+    // skill-revision/15
+    let p = repo("init-router");
+    let out = spec(&p, &["setup", "--agents-md"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let agents = fs::read_to_string(p.join("AGENTS.md")).unwrap();
+    assert!(agents.contains("README Install section"), "{agents}");
+    assert!(!agents.contains("cargo build"), "{agents}");
+}

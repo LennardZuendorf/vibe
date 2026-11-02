@@ -409,11 +409,19 @@ fn json_base(a: &Args, shown: &[String], items: &[(&str, String)]) -> Value {
     v
 }
 
+const HELP: &str = "Usage: vibe-spec promote <feature-name> [--dry-run] [--target <file>] [--done] [--base <ref>] [--json]\n\nMerge a feature's durable facts into the root spec.\n  --done only deletes the bound superpowers artifacts and ignores --target; --base applies to --done only\n";
+
 /// Runs the command.
 pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<u8>) {
+    if crate::wants_help(args) {
+        return (exit::OK, HELP.as_bytes().to_vec());
+    }
     let a = match parse(args) {
         Ok(a) => a,
-        Err(msg) => return fail(&msg),
+        Err(msg) => {
+            eprintln!("{msg}");
+            return (exit::USAGE, Vec::new());
+        }
     };
     // The oracle's paths are cwd-relative under `.spec/`; the port uses the // literal
     // discovered root (a walk up from the cwd, shared by every subcommand: a

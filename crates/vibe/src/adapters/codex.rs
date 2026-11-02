@@ -47,7 +47,7 @@ fn tail_is_safe(tail: &str) -> bool {
 
 fn mcp(ctx: &Ctx, h: Harness) -> Projection {
     let path = ctx.paths.codex_dir.join("config.toml");
-    let text = match guard_target(&path) {
+    let text = match guard_target(ctx.paths, &path) {
         Ok(t) => t.unwrap_or_default(),
         Err(n) => return Projection::refused(n),
     };

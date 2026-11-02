@@ -42,7 +42,7 @@ clobbering:
    adapters the user wants (all opt-in — none by default, per `adapters.json`).
    For each chosen one,
    `bash .agents/skills/vibe/scripts/merge-agents.sh link <adapter>`. It skips
-   a correct symlink, relinks a wrong target, and **refuses to replace a real file**
+   a correct symlink and **refuses to replace a symlink or real file**
    — show a diff and confirm before clobbering. Never create a symlink the user
    didn't request.
 3. **Flow scaffold.** Ensure `.agents/skills/vibe/` files exist. Seed the cursor only if

@@ -1,62 +1,111 @@
-//! Advisory lock files with stale takeover.
+//! Advisory lock files with explicit ownership and conservative recovery.
 use crate::{Error, Result};
+use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
-use std::io::{ErrorKind, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::sync::{
+    Mutex,
+    atomic::{AtomicU64, Ordering},
+    mpsc,
+};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// Age after which a lock file counts as abandoned.
+/// Heartbeat freshness window. Age alone never establishes that a holder died.
 pub const STALE: Duration = Duration::from_secs(60);
+static NEXT: AtomicU64 = AtomicU64::new(0);
+static HELD: Mutex<BTreeMap<PathBuf, Vec<String>>> = Mutex::new(BTreeMap::new());
 
 /// Outcome of [`Lock::acquire`].
 #[derive(Debug)]
 pub enum Acquired {
     /// The lock is held until the value drops.
     Got(Lock),
-    /// Another holder has a live lock.
+    /// Another holder exists; its death has not been established.
     Busy,
 }
 
-/// A held lock file. Dropping it removes the file, unless another process took the lock over.
+/// A held lock. Only its exact ownership token may refresh or remove the file.
 #[derive(Debug)]
 pub struct Lock {
     path: PathBuf,
+    token: String,
+    stop: mpsc::Sender<()>,
+    heartbeat: Option<JoinHandle<()>>,
 }
 
-fn holds_our_pid(path: &Path) -> bool {
-    fs::read_to_string(path).is_ok_and(|text| text.trim() == std::process::id().to_string())
+fn ours(path: &Path, token: &str) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|m| m.is_file())
+        && fs::read_to_string(path).is_ok_and(|text| text == token)
 }
 
-impl Lock {
-    /// Marks the lock alive by touching its modification time, so a long run is not taken
-    /// for abandoned. Does nothing when the file no longer holds this process's pid.
-    pub fn refresh(&self) {
-        refresh_path(&self.path);
+fn touch(path: &Path, token: &str) {
+    if !fs::symlink_metadata(path).is_ok_and(|m| m.is_file()) {
+        return;
+    }
+    if let Ok(mut file) = OpenOptions::new().read(true).write(true).open(path) {
+        let mut text = String::new();
+        if file.read_to_string(&mut text).is_ok() && text == token {
+            let _ = file.set_modified(SystemTime::now());
+        }
     }
 }
 
-/// Touches the lock file at `path` when it holds this process's pid; any other file is left alone.
-pub fn refresh_path(path: &Path) {
-    if holds_our_pid(path)
-        && let Ok(file) = OpenOptions::new().write(true).open(path)
+/// Verifies the active in-process holder before a protected state write.
+/// Unlocked callers are left unchanged; command entry points acquire before planning.
+pub fn verify_path(path: &Path) -> std::result::Result<(), String> {
+    let held = HELD
+        .lock()
+        .map_err(|_| "lock ownership registry poisoned".to_string())?;
+    if let Some(tokens) = held.get(path)
+        && (tokens.len() != 1 || !ours(path, &tokens[0]))
     {
-        let _ = file.set_modified(SystemTime::now());
+        return Err(format!(
+            "{}: lock ownership lost; state not written; inspect the holder before recovery",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+impl Lock {
+    /// Refreshes this holder only, leaving replacements untouched.
+    pub fn refresh(&self) {
+        touch(&self.path, &self.token);
+    }
+}
+
+/// Refreshes only the exact registered owner, never another lock with the same pid.
+pub fn refresh_path(path: &Path) {
+    if let Ok(held) = HELD.lock()
+        && let Some(tokens) = held.get(path)
+        && tokens.len() == 1
+    {
+        touch(path, &tokens[0]);
     }
 }
 
 impl Drop for Lock {
     fn drop(&mut self) {
-        if holds_our_pid(&self.path) {
-            let _ = fs::remove_file(&self.path);
+        let _ = self.stop.send(());
+        if let Some(heartbeat) = self.heartbeat.take() {
+            let _ = heartbeat.join();
         }
-    }
-}
-
-struct Guard(PathBuf);
-
-impl Drop for Guard {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
+        // Retire ownership before exposing the file; a successor registers under this mutex.
+        if let Ok(mut held) = HELD.lock() {
+            if let Some(tokens) = held.get_mut(&self.path) {
+                tokens.retain(|t| t != &self.token);
+                if tokens.is_empty() {
+                    held.remove(&self.path);
+                }
+            }
+            if ours(&self.path, &self.token) {
+                let _ = fs::remove_file(&self.path);
+            }
+        }
+        #[cfg(test)]
+        tests::after_release(&self.path);
     }
 }
 
@@ -67,94 +116,59 @@ fn io(path: &Path, source: std::io::Error) -> Error {
     }
 }
 
-fn is_stale(path: &Path, stale: Duration) -> std::io::Result<bool> {
-    let modified = fs::metadata(path)?.modified()?;
-    Ok(SystemTime::now()
-        .duration_since(modified)
-        .is_ok_and(|age| age > stale))
-}
-
-/// Creates `path` exclusively. `None` means it exists or is pending deletion.
-fn create(path: &Path) -> std::io::Result<Option<std::fs::File>> {
-    match OpenOptions::new().write(true).create_new(true).open(path) {
-        Ok(file) => Ok(Some(file)),
-        Err(e)
-            if matches!(
-                e.kind(),
-                ErrorKind::AlreadyExists | ErrorKind::PermissionDenied
-            ) =>
-        {
-            Ok(None)
-        }
-        Err(e) => Err(e),
-    }
-}
-
-fn create_lock(path: &Path) -> Result<Option<Lock>> {
-    Ok(create(path).map_err(|e| io(path, e))?.map(|mut file| {
-        let _ = write!(file, "{}", std::process::id());
-        Lock {
-            path: path.to_path_buf(),
-        }
-    }))
-}
-
-fn take_guard(guard: &Path, stale: Duration) -> Result<Option<Guard>> {
-    if create(guard).map_err(|e| io(guard, e))?.is_some() {
-        return Ok(Some(Guard(guard.to_path_buf())));
-    }
-    if !is_stale(guard, stale).unwrap_or(false) {
-        return Ok(None);
-    }
-    let _ = fs::remove_file(guard);
-    Ok(create(guard)
-        .map_err(|e| io(guard, e))?
-        .map(|_| Guard(guard.to_path_buf())))
-}
-
 impl Lock {
-    /// Takes the lock at `path`, or reports [`Acquired::Busy`] when a live holder exists.
-    /// A lock file older than `stale` is replaced.
-    pub fn acquire(path: &Path, stale: Duration) -> Result<Acquired> {
-        acquire_with(path, stale, || {})
-    }
-}
-
-fn acquire_with(path: &Path, stale: Duration, before_guard: impl Fn()) -> Result<Acquired> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| io(parent, e))?;
-    }
-    let mut guard_name = path.as_os_str().to_owned();
-    guard_name.push(".takeover");
-    let guard_path = PathBuf::from(guard_name);
-    for _ in 0..2 {
-        if let Some(lock) = create_lock(path)? {
-            return Ok(Acquired::Got(lock));
+    /// Acquires exclusively. An existing lock is retained regardless of age: std on the
+    /// supported MSRV cannot prove process death portably without a subprocess or unsafe
+    /// code. After independently verifying its holder stopped, remove the abandoned file
+    /// and retry. A heartbeat keeps old clients from treating blocking work as abandoned.
+    pub fn acquire(path: &Path, _stale: Duration) -> Result<Acquired> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| io(parent, e))?;
         }
-        match is_stale(path, stale) {
-            Ok(false) => return Ok(Acquired::Busy),
-            Err(e) if e.kind() == ErrorKind::NotFound => continue,
-            Err(e) => return Err(io(path, e)),
-            Ok(true) => {}
-        }
-        before_guard();
-        let Some(_guard) = take_guard(&guard_path, stale)? else {
-            return Ok(Acquired::Busy);
-        };
-        match is_stale(path, stale) {
-            Ok(true) => {
-                fs::remove_file(path).map_err(|e| io(path, e))?;
+        let mut file = match OpenOptions::new().write(true).create_new(true).open(path) {
+            Ok(f) => f,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    ErrorKind::AlreadyExists | ErrorKind::PermissionDenied
+                ) =>
+            {
+                return Ok(Acquired::Busy);
             }
-            Ok(false) => return Ok(Acquired::Busy),
-            Err(e) if e.kind() == ErrorKind::NotFound => {}
             Err(e) => return Err(io(path, e)),
+        };
+        let token = format!(
+            "{}:{}:{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        );
+        if let Err(e) = file.write_all(token.as_bytes()) {
+            let _ = fs::remove_file(path);
+            return Err(io(path, e));
         }
-        return Ok(match create_lock(path)? {
-            Some(lock) => Acquired::Got(lock),
-            None => Acquired::Busy,
+        let (stop, receive) = mpsc::channel();
+        let (heartbeat_path, heartbeat_token) = (path.to_path_buf(), token.clone());
+        let heartbeat = thread::spawn(move || {
+            while receive.recv_timeout(STALE / 4) == Err(mpsc::RecvTimeoutError::Timeout) {
+                touch(&heartbeat_path, &heartbeat_token);
+            }
         });
+        if let Ok(mut held) = HELD.lock() {
+            held.entry(path.to_path_buf())
+                .or_default()
+                .push(token.clone());
+        }
+        Ok(Acquired::Got(Lock {
+            path: path.to_path_buf(),
+            token,
+            stop,
+            heartbeat: Some(heartbeat),
+        }))
     }
-    Ok(Acquired::Busy)
 }
 
 #[cfg(test)]
@@ -163,6 +177,66 @@ mod tests {
     use super::*;
     use std::fs::{self, File};
     use std::time::SystemTime;
+
+    struct ReleaseHook {
+        path: PathBuf,
+        released: mpsc::SyncSender<()>,
+        resume: mpsc::Receiver<()>,
+    }
+
+    static RELEASE_HOOK: Mutex<Option<ReleaseHook>> = Mutex::new(None);
+
+    // Only the selected fixture pauses; unrelated parallel lock tests keep running.
+    pub(super) fn after_release(path: &Path) {
+        let hook = {
+            let mut hook = RELEASE_HOOK.lock().unwrap();
+            if hook.as_ref().is_some_and(|hook| hook.path == path) {
+                hook.take()
+            } else {
+                None
+            }
+        };
+        if let Some(hook) = hook {
+            hook.released.send(()).unwrap();
+            hook.resume.recv().unwrap();
+        }
+    }
+
+    // global-store Task 2: a real successor verifies while its predecessor's Drop is paused.
+    #[test]
+    fn concurrent_successor_verifies_before_predecessor_drop_returns() {
+        let d = dir("successor-handoff");
+        let p = d.join("x.lock");
+        let Acquired::Got(first) = Lock::acquire(&p, STALE).unwrap() else {
+            panic!("first acquisition")
+        };
+        let (released, released_rx) = mpsc::sync_channel(0);
+        let (resume, resume_rx) = mpsc::sync_channel(0);
+        *RELEASE_HOOK.lock().unwrap() = Some(ReleaseHook {
+            path: p.clone(),
+            released,
+            resume: resume_rx,
+        });
+        let predecessor = thread::spawn(move || drop(first));
+        released_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(!p.exists(), "predecessor must expose the filesystem lock");
+        let successor = Lock::acquire(&p, STALE).unwrap();
+        let verified = verify_path(&p);
+        // Resume and join before asserting so a failing control leaves no blocked worker.
+        resume.send(()).unwrap();
+        predecessor.join().unwrap();
+        assert!(
+            matches!(successor, Acquired::Got(_)),
+            "successor must acquire the real lock"
+        );
+        drop(successor);
+        assert!(!p.exists(), "successor must release its own lock");
+        let _ = fs::remove_dir_all(&d);
+        assert!(
+            verified.is_ok(),
+            "legitimate successor rejected: {verified:?}"
+        );
+    }
 
     fn dir(name: &str) -> PathBuf {
         let d =
@@ -175,6 +249,45 @@ mod tests {
         let f = File::options().write(true).open(path).unwrap();
         f.set_modified(SystemTime::now() - Duration::from_secs(secs))
             .unwrap();
+    }
+
+    // global-store Task 2: age alone never authorizes stealing a live holder.
+    #[test]
+    fn old_live_holder_stays_exclusive_without_refresh() {
+        let d = dir("old-live");
+        let p = d.join("x.lock");
+        let Acquired::Got(held) = Lock::acquire(&p, STALE).unwrap() else {
+            panic!("first")
+        };
+        age(&p, 120);
+        assert!(matches!(Lock::acquire(&p, STALE).unwrap(), Acquired::Busy));
+        drop(held);
+        assert!(!p.exists());
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn drop_does_not_remove_replacement_with_same_pid() {
+        let d = dir("same-pid");
+        let p = d.join("x.lock");
+        let Acquired::Got(held) = Lock::acquire(&p, STALE).unwrap() else {
+            panic!("first")
+        };
+        fs::remove_file(&p).unwrap();
+        fs::write(&p, std::process::id().to_string()).unwrap();
+        age(&p, 120);
+        held.refresh();
+        refresh_path(&p);
+        assert!(
+            SystemTime::now()
+                .duration_since(fs::metadata(&p).unwrap().modified().unwrap())
+                .unwrap()
+                > Duration::from_secs(100)
+        );
+        assert!(verify_path(&p).is_err());
+        drop(held);
+        assert!(p.exists());
+        let _ = fs::remove_dir_all(&d);
     }
 
     #[test]
@@ -239,12 +352,16 @@ mod tests {
     }
 
     #[test]
-    fn stale_lock_is_taken_over() {
+    fn stale_unknown_holder_requires_verified_manual_recovery() {
         let d = dir("stale");
         fs::create_dir_all(&d).unwrap();
         let p = d.join("x.lock");
-        fs::write(&p, "999").unwrap();
+        fs::write(&p, "999999999").unwrap();
         age(&p, 120);
+        assert!(matches!(Lock::acquire(&p, STALE).unwrap(), Acquired::Busy));
+        assert_eq!(fs::read_to_string(&p).unwrap(), "999999999");
+        // Operator independently confirmed the fixture owner does not exist.
+        fs::remove_file(&p).unwrap();
         assert!(matches!(
             Lock::acquire(&p, STALE).unwrap(),
             Acquired::Got(_)
@@ -264,76 +381,22 @@ mod tests {
     }
 
     #[test]
-    fn two_stale_takers_one_wins() {
+    fn old_foreign_lock_is_not_changed_by_competing_acquirers() {
         let d = dir("race");
         fs::create_dir_all(&d).unwrap();
         let p = d.join("x.lock");
-        fs::write(&p, "999").unwrap();
+        fs::write(&p, "999999999").unwrap();
         age(&p, 120);
-        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
         let handles: Vec<_> = (0..2)
             .map(|_| {
-                let (p, b) = (p.clone(), barrier.clone());
-                std::thread::spawn(move || {
-                    b.wait();
-                    Lock::acquire(&p, STALE).unwrap()
-                })
+                let p = p.clone();
+                std::thread::spawn(move || Lock::acquire(&p, STALE).unwrap())
             })
             .collect();
-        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-        let got = results
-            .iter()
-            .filter(|r| matches!(r, Acquired::Got(_)))
-            .count();
-        assert_eq!(got, 1);
-        assert!(p.exists());
-        drop(results);
-        let _ = fs::remove_dir_all(&d);
-    }
-
-    #[test]
-    fn stale_lock_with_fresh_guard_is_busy() {
-        let d = dir("guard-fresh");
-        fs::create_dir_all(&d).unwrap();
-        let p = d.join("x.lock");
-        fs::write(&p, "999").unwrap();
-        age(&p, 120);
-        fs::write(d.join("x.lock.takeover"), "").unwrap();
-        assert!(matches!(Lock::acquire(&p, STALE).unwrap(), Acquired::Busy));
-        assert!(p.exists());
-        assert!(d.join("x.lock.takeover").exists());
-        let _ = fs::remove_dir_all(&d);
-    }
-
-    #[test]
-    fn stale_guard_is_recovered() {
-        let d = dir("guard-stale");
-        fs::create_dir_all(&d).unwrap();
-        let p = d.join("x.lock");
-        fs::write(&p, "999").unwrap();
-        age(&p, 120);
-        let g = d.join("x.lock.takeover");
-        fs::write(&g, "").unwrap();
-        age(&g, 120);
-        assert!(matches!(
-            Lock::acquire(&p, STALE).unwrap(),
-            Acquired::Got(_)
-        ));
-        assert!(!g.exists());
-        let _ = fs::remove_dir_all(&d);
-    }
-
-    #[test]
-    fn lock_that_turns_fresh_before_the_guard_is_not_stolen() {
-        let d = dir("turns-fresh");
-        fs::create_dir_all(&d).unwrap();
-        let p = d.join("x.lock");
-        fs::write(&p, "999").unwrap();
-        age(&p, 120);
-        let r = acquire_with(&p, STALE, || age(&p, 0)).unwrap();
-        assert!(matches!(r, Acquired::Busy));
-        assert_eq!(fs::read_to_string(&p).unwrap(), "999");
-        assert!(!d.join("x.lock.takeover").exists());
+        for handle in handles {
+            assert!(matches!(handle.join().unwrap(), Acquired::Busy));
+        }
+        assert_eq!(fs::read_to_string(&p).unwrap(), "999999999");
         let _ = fs::remove_dir_all(&d);
     }
 }

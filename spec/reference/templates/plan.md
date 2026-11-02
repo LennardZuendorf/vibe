@@ -11,6 +11,7 @@ updated: {YYYY-MM-DD}
   Job: cross-feature sequencing (WHAT ships WHEN). Link to feature plan.md for units.
   Do NOT: feature unit tables, step-by-step tasks, product re-litigation, architecture detail.
   Omit optional sections entirely when empty — placeholder prose is worse than absence.
+  Use in a flat layout only; a layered root keeps the hubs that `vibe-spec init` writes.
 -->
 
 # {Project Name} — Implementation Plan
@@ -56,7 +57,7 @@ Whole-feature delivery order with **binary** gates — a downstream feature star
 
 | Order | Feature | Deliverable | Test | Status | Starts when |
 |---:|---|---|---|---|---|
-| 1 | {name} | {artifact set} | `tests/{name}/...` | {NOT STARTED / ACTIVE / DONE} | — |
+| 1 | {name} | {artifact set} | `tests/{name}/...` | {NOT STARTED / IN PROGRESS / BLOCKED / DONE} | — |
 | 2 | {name} | {artifact set} | `tests/{name}/...` | {…} | {feature 1} DONE |
 
 Pick by repo shape:

@@ -269,7 +269,7 @@ fn hook_second_concurrent_run_silent() {
 }
 
 #[test]
-fn hook_after_crash_stale_lock_recovered() {
+fn hook_retains_unproven_stale_owner_until_manual_recovery() {
     let home = synced_home("hook-stale");
     append_store_instructions(&home);
     let lock = home.path(".local/state/vibe/lock");
@@ -281,6 +281,14 @@ fn hook_after_crash_stale_lock_recovered() {
         .unwrap()
         .set_modified(old)
         .unwrap();
+    let skipped = hook(&home);
+    assert_eq!(skipped.code, 0);
+    assert!(skipped.stdout.is_empty());
+    assert!(skipped.stderr.is_empty());
+    assert_eq!(fs::read_to_string(&lock).unwrap(), "99999");
+    assert!(!home.read(".codex/AGENTS.md").contains("New rule."));
+    // The fixture owner is independently known to be absent; simulate operator recovery.
+    fs::remove_file(&lock).unwrap();
     let out = hook(&home);
     assert_eq!(out.code, 0, "{}", out.stderr);
     assert!(

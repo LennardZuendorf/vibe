@@ -17,8 +17,8 @@
 # touched. Re-running with an up-to-date template is a no-op (byte compare).
 #
 # Graceful: missing template -> exit 1 with a clear message (this is a setup
-# prerequisite, not a session-time degrade). A real-file adapter is reported, not
-# clobbered.
+# prerequisite, not a session-time degrade). An existing adapter that is a real
+# file or a symlink to anything but AGENTS.md is reported (exit 1), never replaced.
 
 set -euo pipefail
 
@@ -46,6 +46,9 @@ R_END="<!-- /vibe:rules -->"
 # when it creates the file; unmerge removes it when nothing else vibe-owned keeps
 # the file alive. Exact-match only — a user's own heading is never touched.
 TITLE_LINE="# AGENTS.md — vibe Engineering Guide"
+
+# shellcheck source-path=SCRIPTDIR source=lib/resolve-target.sh
+. "$SCRIPT_DIR/lib/resolve-target.sh"
 
 warn() { echo "merge-agents: WARN — $1" >&2; }
 note() { echo "merge-agents: $1"; }
@@ -80,7 +83,10 @@ assert_not_reversed() {
 # strip_managed_block FILE START END — remove the inclusive START..END region in
 # place via grep -n + sed range delete (awk-free, so unmerge runs on an awk-less
 # target). Assumes assert_not_reversed already validated the pair; no-ops when the
-# block is absent or the markers are not exact lines. Writes via temp + rename.
+# block is absent or the markers are not exact lines. FILE must already be a
+# resolve_target path (every caller resolves once at its own entry), so the temp
+# file sits beside the REAL file and the rename keeps a symlinked document a
+# symlink. Writes via temp + rename.
 strip_managed_block() {
   local file="$1" start="$2" end="$3"
   grep -qF "$start" "$file" && grep -qF "$end" "$file" || return 0
@@ -159,8 +165,8 @@ link_adapter() {
       if [[ "$(readlink "$adapter")" == "$target" ]]; then
         note "skip: $adapter already symlinks $target"; exit 0
       fi
-      warn "$adapter symlinks $(readlink "$adapter"), not $target — relinking."
-      ln -sf "$target" "$adapter"; note "relinked $adapter -> $target"; exit 0
+      warn "$adapter symlinks $(readlink "$adapter"), not $target — refusing to replace it. Repoint or remove it yourself."
+      exit 1
     fi
     if [[ -e "$adapter" ]]; then
       warn "$adapter is a real file — not replacing. Show a diff and confirm before symlinking."
@@ -190,7 +196,9 @@ link_adapter() {
 # (vibe.json can add, remove or reorder blocks), which is the engine's to
 # manage, not this script's.
 seed_rules_block() {
-  local target="$1"
+  local target
+  target="$(resolve_target "$1" "$2")" \
+    || die "refusing to write $1 (dangling or outside $2)"
   [[ -f "$target" ]] || return 0
   grep -qxF "$R_START" "$target" && return 0
   local block; block="$(mktemp "${target}.rules.XXXXXX")"
@@ -212,12 +220,14 @@ seed_rules_block() {
 merge() {
   local root="${1:-.}"
   ( merge_instructions "$root" )
-  seed_rules_block "$root/AGENTS.md"
+  seed_rules_block "$root/AGENTS.md" "$root"
 }
 
 merge_instructions() {
   local root="${1:-.}"
-  local target="$root/AGENTS.md"
+  local target
+  target="$(resolve_target "$root/AGENTS.md" "$root")" \
+    || die "refusing to write $root/AGENTS.md (dangling or outside $root)"
   [[ -f "$TEMPLATE" ]] || die "template not found at $TEMPLATE"
 
   if [[ ! -f "$target" ]]; then
@@ -282,10 +292,14 @@ merge_instructions() {
 # reversed markers in EITHER block are refused before any write, so a refusal
 # leaves the file byte-identical. If nothing but whitespace remains, the file was
 # a vibe-created stub (target had no AGENTS.md) — delete it so uninstall leaves no
-# trace. Writes go via temp + atomic rename.
+# trace. A symlinked AGENTS.md is never such a stub: merge refuses a dangling
+# link, so the link and its target file were there before vibe. Unmerge strips
+# the blocks through it and keeps both. Writes go via temp + atomic rename.
 unmerge() {
   local root="${1:-.}"
-  local target="$root/AGENTS.md"
+  local orig="$root/AGENTS.md" target
+  target="$(resolve_target "$orig" "$root")" \
+    || die "refusing to touch $orig (dangling or outside $root)"
   [[ -f "$target" ]] || { note "no AGENTS.md at $target — nothing to remove"; return 0; }
 
   local had_i=0 had_ar=0 had_r=0
@@ -306,7 +320,8 @@ unmerge() {
   # user content added around the managed blocks — including the template's own
   # title line, which sits above the markers. This is the "target had none" case:
   # remove it wholesale, the clean inverse of the fresh install that created it.
-  if [[ -f "$TEMPLATE" ]] && same_normalized "$target" "$TEMPLATE"; then
+  # A symlinked AGENTS.md predates vibe (see above): strip it below instead.
+  if [[ ! -L "$orig" && -f "$TEMPLATE" ]] && same_normalized "$target" "$TEMPLATE"; then
     rm -f "$target"
     note "removed vibe-created AGENTS.md stub at $target (untouched template — target had none)"
     return 0
@@ -343,7 +358,12 @@ unmerge() {
   fi
 
   # A file now holding only whitespace was created entirely by vibe — remove it.
+  # Not through a symlink: the link and its target are the user's, so both stay.
   if ! grep -q '[^[:space:]]' "$target"; then
+    if [[ -L "$orig" ]]; then
+      note "removed vibe managed blocks from $target; kept it and the $orig link (they predate vibe)"
+      return 0
+    fi
     rm -f "$target"
     note "removed vibe-created AGENTS.md stub at $target (no user content remained)"
     return 0

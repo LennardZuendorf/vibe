@@ -18,6 +18,7 @@ import {
   rmSync,
   utimesSync,
   statSync,
+  symlinkSync,
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,6 +31,7 @@ import {
   runCommand,
   makeHookSandbox,
   makeContentSandbox,
+  makeNestedSandbox,
   skip,
 } from './run.mjs';
 import {
@@ -45,7 +47,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 // ---------------------------------------------------------------------------
 // Fixture — makeHookSandbox() now lives in run.mjs so parity.test.mjs's
 // guard/gate ORACLE differential builds the byte-identical install-shaped
-// layout the frozen bash hooks self-locate through (js-core/8 final review,
+// layout the bash hooks self-locate through (js-core/8 final review,
 // I3). Two hand-copied fixtures would let the two suites be honest about
 // different layouts.
 // ---------------------------------------------------------------------------
@@ -899,6 +901,36 @@ test('guard: unusable policy + the REAL detect-context.sh still hard-blocks (the
 // stop-gate
 // ---------------------------------------------------------------------------
 
+// review-hardening/9 — porcelain fakes shaped like what git REALLY emits for the
+// argv it was given. The engine asks for `status --porcelain -z`, whose records
+// are NUL-terminated and whose rename/copy records carry TWO fields, the new path
+// first: `R  new\0old\0`. A fake that answered newline rows to a `-z` request
+// would be testing a git that does not exist. Rows are `[xy, path, origin?]`,
+// with toplevel-relative paths, exactly as git prints them.
+//
+// The newline form is kept for an argv without `-z` (git's default output, with
+// the origin first: `R  old -> new`) so a fake never silently changes shape
+// under a caller. Neither form models git's C-quoting of awkward names: the
+// fakes carry plain names only, and the awkward-name cases below run real git.
+function nulPorcelain(rows) {
+  return rows.map(([xy, p, origin]) => (origin === undefined ? `${xy} ${p}\0` : `${xy} ${p}\0${origin}\0`)).join('');
+}
+
+function newlinePorcelain(rows) {
+  return rows.map(([xy, p, origin]) => (origin === undefined ? `${xy} ${p}\n` : `${xy} ${origin} -> ${p}\n`)).join('');
+}
+
+// An injectable spawnGit. `prefix` is what `rev-parse --show-prefix` answers:
+// the project's path below the git toplevel ('' at the toplevel itself).
+function fakeGit(rows, { prefix = '' } = {}) {
+  return (args) => {
+    if (args.includes('rev-parse')) {
+      return { error: null, status: 0, stdout: args.includes('--show-prefix') ? `true\n${prefix}\n` : 'true\n' };
+    }
+    return { error: null, status: 0, stdout: args.includes('-z') ? nulPorcelain(rows) : newlinePorcelain(rows) };
+  };
+}
+
 test('runGateHook: stop_hook_active suppresses every check (re-entry guard)', () => {
   const sb = makeHookSandbox({ cursor: { flow: 'feature', phase: 'verify', feature: 'demo', updated: '2026-01-01T00:00:00Z' } });
   try {
@@ -935,10 +967,7 @@ test('runGateHook predicate 1 (TDD, warn-only): src changed with no tests change
   const sb = makeHookSandbox({ cursor: { flow: 'feature', phase: 'impl', feature: 'demo', updated: '2026-01-01T00:00:00Z' } });
   try {
     const result = runGateHook(sb.root, sb.vibeDir, '{}', {
-      spawnGit: (args) =>
-        args.includes('rev-parse')
-          ? { error: null, status: 0, stdout: 'true\n' }
-          : { error: null, status: 0, stdout: ' M pkg/src/app.sh\n' },
+      spawnGit: fakeGit([[' M', 'pkg/src/app.sh']]),
     });
     assertEqual(result.code, 0);
     assertIncludes(result.stderr, 'TDD expects');
@@ -952,10 +981,7 @@ test('runGateHook predicate 1: matching a top-level (non-nested) src/ change nev
   const sb = makeHookSandbox({ cursor: { flow: 'feature', phase: 'impl', feature: 'demo', updated: '2026-01-01T00:00:00Z' } });
   try {
     const result = runGateHook(sb.root, sb.vibeDir, '{}', {
-      spawnGit: (args) =>
-        args.includes('rev-parse')
-          ? { error: null, status: 0, stdout: 'true\n' }
-          : { error: null, status: 0, stdout: ' M src/app.sh\n' },
+      spawnGit: fakeGit([[' M', 'src/app.sh']]),
     });
     assert(!result.stderr.includes('TDD expects'), 'a top-level src/ change must not trip predicate 1, matching the oracle');
   } finally {
@@ -967,10 +993,7 @@ test('runGateHook predicate 1: no warn when tests/ also changed', () => {
   const sb = makeHookSandbox({ cursor: { flow: 'feature', phase: 'impl', feature: 'demo', updated: '2026-01-01T00:00:00Z' } });
   try {
     const result = runGateHook(sb.root, sb.vibeDir, '{}', {
-      spawnGit: (args) =>
-        args.includes('rev-parse')
-          ? { error: null, status: 0, stdout: 'true\n' }
-          : { error: null, status: 0, stdout: ' M pkg/src/app.sh\n M pkg/tests/app.test.sh\n' },
+      spawnGit: fakeGit([[' M', 'pkg/src/app.sh'], [' M', 'pkg/tests/app.test.sh']]),
     });
     assert(!result.stderr.includes('TDD expects'));
   } finally {
@@ -1037,10 +1060,7 @@ test('runGateHook predicate 2: a receipt older than a changed src file is stale 
     writeFileSync(path.join(sb.dir, 'src', 'app.sh'), 'new\n');
 
     const result = runGateHook(sb.root, sb.vibeDir, '{}', {
-      spawnGit: (args) =>
-        args.includes('rev-parse')
-          ? { error: null, status: 0, stdout: 'true\n' }
-          : { error: null, status: 0, stdout: ' M src/app.sh\n' },
+      spawnGit: fakeGit([[' M', 'src/app.sh']]),
     });
     assertEqual(result.code, 2);
     assertIncludes(result.stderr, 'stale');
@@ -1077,11 +1097,7 @@ test('runGateHook predicate 2: a DIFFERENT, NEWER file under the evidence dir ne
     const siblingTs = new Date('2020-06-01T00:00:00Z');
     utimesSync(sibling, siblingTs, siblingTs);
 
-    const porcelain = ` M ${path.posix.join('.agents/skills/vibe/evidence', 'quick.md')}\n`;
-    const spawnGit = (args) =>
-      args.includes('rev-parse')
-        ? { error: null, status: 0, stdout: 'true\n' }
-        : { error: null, status: 0, stdout: porcelain };
+    const spawnGit = fakeGit([[' M', path.posix.join('.agents/skills/vibe/evidence', 'quick.md')]]);
 
     const result = runGateHook(sb.root, sb.vibeDir, '{}', { spawnGit });
     assertEqual(result.code, 0, 'a newer SIBLING receipt must never make the gate call its own receipt stale');
@@ -1093,10 +1109,7 @@ test('runGateHook predicate 2: a DIFFERENT, NEWER file under the evidence dir ne
     writeFileSync(outsidePath, 'a later note\n');
     utimesSync(outsidePath, siblingTs, siblingTs);
     const control = runGateHook(sb.root, sb.vibeDir, '{}', {
-      spawnGit: (args) =>
-        args.includes('rev-parse')
-          ? { error: null, status: 0, stdout: 'true\n' }
-          : { error: null, status: 0, stdout: ' M notes.md\n' },
+      spawnGit: fakeGit([[' M', 'notes.md']]),
     });
     assertEqual(control.code, 2, 'control: the same mtime relationship OUTSIDE evidence/ must block');
   } finally {
@@ -1116,13 +1129,8 @@ test('runGateHook predicate 2: a DIFFERENT, NEWER file under the evidence dir ne
 // ships to — stock bash 3.2 on macOS is the case that matters. Asserting a 20 ms
 // delta against the oracle differential would be pinning the RUNNER's timestamp
 // resolution, not the port. Logged as residual risk instead.
-function gateWithPorcelain(sb, porcelain) {
-  return runGateHook(sb.root, sb.vibeDir, '{}', {
-    spawnGit: (args) =>
-      args.includes('rev-parse')
-        ? { error: null, status: 0, stdout: 'true\n' }
-        : { error: null, status: 0, stdout: porcelain },
-  });
+function gateWithPorcelain(sb, rows, opts) {
+  return runGateHook(sb.root, sb.vibeDir, '{}', { spawnGit: fakeGit(rows, opts) });
 }
 
 // epochSeconds may be fractional — utimesSync takes seconds, mtimeMs reports
@@ -1162,7 +1170,7 @@ const RECEIPT_EPOCH = 1767225600; // 2026-01-01T00:00:00Z, as seconds
 test('runGateHook predicate 2: staleness is a MILLISECOND comparison — 20 ms newer already blocks', () => {
   const sb = makeStalenessFixture(RECEIPT_EPOCH, RECEIPT_EPOCH + 0.02);
   try {
-    const result = gateWithPorcelain(sb, ' M src/app.sh\n');
+    const result = gateWithPorcelain(sb, [[' M', 'src/app.sh']]);
     assertEqual(result.code, 2, 'a file 20 ms newer than the receipt is stale — the real timescale of a verify turn');
     assertIncludes(result.stderr, 'stale');
   } finally {
@@ -1173,7 +1181,7 @@ test('runGateHook predicate 2: staleness is a MILLISECOND comparison — 20 ms n
 test('runGateHook predicate 2: staleness is directional — 20 ms OLDER than the receipt never blocks', () => {
   const sb = makeStalenessFixture(RECEIPT_EPOCH, RECEIPT_EPOCH - 0.02);
   try {
-    assertEqual(gateWithPorcelain(sb, ' M src/app.sh\n').code, 0);
+    assertEqual(gateWithPorcelain(sb, [[' M', 'src/app.sh']]).code, 0);
   } finally {
     sb.cleanup();
   }
@@ -1183,7 +1191,7 @@ test('runGateHook predicate 2: an exact mtime TIE is not stale (strictly greater
   const sb = makeStalenessFixture(RECEIPT_EPOCH, RECEIPT_EPOCH);
   try {
     assertEqual(
-      gateWithPorcelain(sb, ' M src/app.sh\n').code,
+      gateWithPorcelain(sb, [[' M', 'src/app.sh']]).code,
       0,
       'bash `-nt` is strictly greater; a `>=` here would block on every file written in the receipt\'s own instant',
     );
@@ -1214,7 +1222,7 @@ test('runGateHook predicate 2: a D-flagged porcelain line is skipped even when t
     writeFileSync(path.join(sb.dir, 'unstaged.md'), 'still here\n');
 
     assertEqual(
-      gateWithPorcelain(sb, 'D  unstaged.md\n').code,
+      gateWithPorcelain(sb, [['D ', 'unstaged.md']]).code,
       0,
       'an index-deletion line must be skipped by xy, not by statSync happening to throw',
     );
@@ -1222,7 +1230,7 @@ test('runGateHook predicate 2: a D-flagged porcelain line is skipped even when t
     // Control: the identical file reported under a NON-deletion status does
     // block — so the exit 0 above is the D-skip, not an inert fixture.
     assertEqual(
-      gateWithPorcelain(sb, ' M unstaged.md\n').code,
+      gateWithPorcelain(sb, [[' M', 'unstaged.md']]).code,
       2,
       'control: the same existing, newer file blocks when its status is not a deletion',
     );
@@ -1272,20 +1280,29 @@ function makeRealGitFixture({ gitignore } = {}) {
   writeFileSync(receipt, 'commands + output\n');
   writeFileSync(path.join(sb.dir, 'src.txt'), 'v1\n');
   if (gitignore) writeFileSync(path.join(sb.dir, '.gitignore'), `${gitignore}\n`);
-  runCommand('git', ['-C', sb.dir, 'add', '-A'], { cwd: sb.dir });
-  runCommand('git', ['-C', sb.dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'init'], { cwd: sb.dir });
+  // Signing is off in makeHookSandbox's git config, and each setup command's
+  // exit status is checked: a failed commit would leave every file untracked,
+  // and every assertion below would then be about that, not about the gate.
+  for (const gitArgs of [
+    ['-C', sb.dir, 'add', '-A'],
+    ['-C', sb.dir, 'commit', '-qm', 'init'],
+  ]) {
+    const r = runCommand('git', gitArgs, { cwd: sb.dir });
+    assert(r.code === 0, `makeRealGitFixture: \`git ${gitArgs.join(' ')}\` exited ${r.code}: ${r.stderr}`);
+  }
   const past = new Date('2020-01-01T00:00:00Z');
   utimesSync(receipt, past, past);
   return sb;
 }
 
-// What the gate itself will see: the same argv gitPorcelain() runs, under the
-// same 32 MiB ceiling. The buffer is part of "what the gate sees": at Node's
+// What the gate itself will see: the same argv gitPorcelain() runs
+// (`--porcelain -z -uall -- .`, review-hardening/9), under the same 32 MiB
+// ceiling. Records are NUL-terminated, so the floors below spell `\0`. The buffer is part of "what the gate sees": at Node's
 // 1 MiB default this measurement overran on the >1 MiB fixture below and
 // reported the truncation point rather than the tree's real size — a floor that
 // could not tell a 1.1 MiB tree from a 50 MiB one.
 function realPorcelain(sb) {
-  return runCommand('git', ['-C', sb.dir, 'status', '--porcelain', '-uall'], {
+  return runCommand('git', ['-C', sb.dir, 'status', '--porcelain', '-z', '-uall', '--', '.'], {
     cwd: sb.dir,
     maxBuffer: 32 * 1024 * 1024,
   }).stdout;
@@ -1307,7 +1324,7 @@ test('runGateHook predicate 2: the inject marker never stales the receipt, on th
     const porcelain = realPorcelain(sb);
     assertEqual(
       porcelain,
-      '?? .vibe/last-inject\n',
+      '?? .vibe/last-inject\0',
       'floor: git enumerates the marker as its own row (this is what -uall buys; plain --porcelain says `?? .vibe/`)',
     );
     assertEqual(
@@ -1333,7 +1350,7 @@ test('runGateHook predicate 2: an authored block under .vibe/blocks STILL stales
 
     assertEqual(
       realPorcelain(sb),
-      '?? .vibe/blocks/team.md\n?? .vibe/last-inject\n',
+      '?? .vibe/blocks/team.md\0?? .vibe/last-inject\0',
       'floor: the marker and the authored block are SEPARATE rows — the whole premise of the exclusion',
     );
     const result = gateOnRealGit(sb);
@@ -1356,7 +1373,7 @@ test('runGateHook predicate 2: with the marker gitignored, only the authored blo
 
     mkdirSync(path.join(sb.dir, '.vibe', 'blocks'), { recursive: true });
     writeFileSync(path.join(sb.dir, '.vibe', 'blocks', 'team.md'), 'authored\n');
-    assertEqual(realPorcelain(sb), '?? .vibe/blocks/team.md\n');
+    assertEqual(realPorcelain(sb), '?? .vibe/blocks/team.md\0');
     assertEqual(gateOnRealGit(sb).code, 2, 'control: the gitignored marker is excluded, its neighbour is not');
   } finally {
     sb.cleanup();
@@ -1367,7 +1384,7 @@ test('runGateHook predicate 2: the warnings relay log is the harness writing to 
   const sb = makeRealGitFixture();
   try {
     writeFileSync(sb.warnLogPath, 'guard: something\n');
-    assertEqual(realPorcelain(sb), '?? .agents/skills/vibe/warnings.log\n', 'floor: git does report it');
+    assertEqual(realPorcelain(sb), '?? .agents/skills/vibe/warnings.log\0', 'floor: git does report it');
     assertEqual(
       gateOnRealGit(sb).code,
       0,
@@ -1392,7 +1409,7 @@ test('runGateHook predicate 2: a foreign untracked directory is enumerated per f
   try {
     mkdirSync(path.join(sb.dir, '.other'), { recursive: true });
     writeFileSync(path.join(sb.dir, '.other', 'thing.md'), 'x\n');
-    assertEqual(realPorcelain(sb), '?? .other/thing.md\n');
+    assertEqual(realPorcelain(sb), '?? .other/thing.md\0');
     const result = gateOnRealGit(sb);
     assertEqual(result.code, 2);
     assertIncludes(result.stderr, '.other/thing.md');
@@ -1409,11 +1426,232 @@ test('runGateHook predicate 2: the marker is excluded in its TRACKED spelling as
   try {
     mkdirSync(path.join(sb.dir, '.vibe'), { recursive: true });
     writeFileSync(path.join(sb.dir, '.vibe', 'last-inject'), 'quick.verify\n');
-    assertEqual(gateWithPorcelain(sb, ' M .vibe/last-inject\n').code, 0);
+    assertEqual(gateWithPorcelain(sb, [[' M', '.vibe/last-inject']]).code, 0);
   } finally {
     sb.cleanup();
   }
 });
+
+// ---------------------------------------------------------------------------
+// review-hardening/9 — the gate reads every changed path, and only the
+// project's.
+//
+// R2: plain `git status --porcelain` C-quotes any path holding a space, a
+// non-ASCII byte or a control character (`?? "my file.txt"`), and the scan
+// stat'ed the QUOTED spelling, missed, and passed a stale receipt. A rename's
+// new path went through the same quoting. `-z` emits raw bytes.
+//
+// R3: porcelain paths are relative to the git TOPLEVEL. For a project below it
+// (`<repo>/sub`) every stat looked for `<repo>/sub/sub/...`, missed, and passed.
+// The engine now asks `rev-parse --show-prefix`, scopes `status` to `-- .` and
+// strips the prefix, so every path is project-relative again — which is also
+// what lets isOwnRuntimeState() recognise the project's own runtime files.
+//
+// And a stat that fails for any reason other than "not there" blocks: the gate
+// could not judge the path, and "I could not look" is not "nothing changed".
+// ---------------------------------------------------------------------------
+
+// The decoded entries git REALLY reports for the gate's own argv — the floor
+// every real-git case below asserts before trusting its verdict.
+function realEntries(sb) {
+  const recs = realPorcelain(sb).split('\0');
+  const out = [];
+  for (let i = 0; i < recs.length; i += 1) {
+    const r = recs[i];
+    if (!r) continue;
+    const xy = r.slice(0, 2);
+    out.push({ xy, path: r.slice(3) });
+    if (xy.includes('R') || xy.includes('C')) i += 1; // the origin field
+  }
+  return out;
+}
+
+for (const name of ['my file.txt', 'café.txt', 'a\nb.txt']) {
+  test(`review-hardening/9: an untracked ${JSON.stringify(name)} stales the receipt (real git)`, () => {
+    const sb = makeRealGitFixture();
+    try {
+      writeFileSync(path.join(sb.dir, name), 'new\n');
+      assert(
+        realEntries(sb).some((e) => e.path === name),
+        `floor: real git must report ${JSON.stringify(name)} as a changed path; got ${JSON.stringify(realPorcelain(sb))}`,
+      );
+      const result = gateOnRealGit(sb);
+      assertEqual(result.code, 2, `a receipt older than ${JSON.stringify(name)} is stale`);
+      assertIncludes(result.stderr, 'the evidence receipt is stale');
+      assertIncludes(result.stderr, name);
+    } finally {
+      sb.cleanup();
+    }
+  });
+}
+
+test('review-hardening/9: a staged rename to "moved file.txt" stales the receipt by its NEW path (real git)', () => {
+  const sb = makeRealGitFixture();
+  try {
+    const mv = runCommand('git', ['-C', sb.dir, 'mv', 'src.txt', 'moved file.txt'], { cwd: sb.dir });
+    assert(mv.code === 0, `git mv exited ${mv.code}: ${mv.stderr}`);
+    assert(
+      realEntries(sb).some((e) => e.xy[0] === 'R' && e.path === 'moved file.txt'),
+      `floor: real git must report the rename; got ${JSON.stringify(realPorcelain(sb))}`,
+    );
+    const result = gateOnRealGit(sb);
+    assertEqual(result.code, 2);
+    assertIncludes(result.stderr, 'the evidence receipt is stale');
+    assertIncludes(result.stderr, 'moved file.txt');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('review-hardening/9: controls — a plain name blocks, and a receipt newer than every file passes', () => {
+  const sb = makeRealGitFixture();
+  try {
+    writeFileSync(path.join(sb.dir, 'file.txt'), 'new\n');
+    assert(realEntries(sb).some((e) => e.path === 'file.txt'), 'floor: git reports file.txt');
+    const plain = gateOnRealGit(sb);
+    assertEqual(plain.code, 2, 'control: a plain name blocks');
+    assertIncludes(plain.stderr, 'file.txt');
+
+    writeFileSync(path.join(sb.dir, 'my file.txt'), 'new\n');
+    const future = new Date('2035-01-01T00:00:00Z');
+    utimesSync(path.join(sb.vibeDir, 'evidence', 'quick.md'), future, future);
+    assertEqual(gateOnRealGit(sb).code, 0, 'control: a receipt newer than every changed file passes');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('review-hardening/9: nested project — a change under the project blocks, by its project-relative path', () => {
+  const sb = makeNestedSandbox();
+  try {
+    sb.withCeiling(() => {
+      writeFileSync(path.join(sb.dir, 'src.txt'), 'v2\n');
+      const top = runCommand('git', ['-C', sb.outer, 'status', '--porcelain'], { cwd: sb.outer }).stdout;
+      assertEqual(top, ' M sub/src.txt\n', 'floor: git reports the change toplevel-relative');
+      const result = runGateHook(sb.root, sb.vibeDir, '{}', {});
+      assertEqual(result.code, 2, 'a project below the git root must still be gated');
+      assertIncludes(result.stderr, 'changed after it was written: src.txt');
+    });
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('review-hardening/9: nested project — changes outside it and its own runtime files never block', () => {
+  const sb = makeNestedSandbox();
+  try {
+    sb.withCeiling(() => {
+      writeFileSync(path.join(sb.outer, 'other.txt'), 'outside the project\n');
+      writeFileSync(path.join(sb.dir, '.vibe', 'last-inject'), 'quick.verify\n');
+      writeFileSync(sb.warnLogPath, 'gate: something\n');
+      const top = runCommand('git', ['-C', sb.outer, 'status', '--porcelain', '-uall'], { cwd: sb.outer }).stdout;
+      for (const row of ['?? other.txt', ' M sub/.vibe/last-inject', '?? sub/.agents/skills/vibe/warnings.log']) {
+        assert(top.includes(row), `floor: git reports ${JSON.stringify(row)}; got ${JSON.stringify(top)}`);
+      }
+      assertEqual(
+        runGateHook(sb.root, sb.vibeDir, '{}', {}).code,
+        0,
+        'a change outside the project and the project\'s own inject marker and warnings log are not changes the receipt must describe',
+      );
+
+      // Discriminating control: an ordinary file in the project, same mtime
+      // relation, does block — so the pass above is the scope and the
+      // exclusion, not a scan that sees nothing below the toplevel.
+      writeFileSync(path.join(sb.dir, 'notes.md'), 'later\n');
+      const control = runGateHook(sb.root, sb.vibeDir, '{}', {});
+      assertEqual(control.code, 2, 'control: an ordinary project file blocks');
+      assertIncludes(control.stderr, 'changed after it was written: notes.md');
+    });
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('review-hardening/9: entries outside the project prefix are dropped, inside ones are made project-relative', () => {
+  const sb = makeStalenessFixture(RECEIPT_EPOCH, RECEIPT_EPOCH + 60);
+  try {
+    // sb.dir/src/app.sh exists and is newer than the receipt. Reported as
+    // toplevel-relative `sub/src/app.sh` for a project at prefix `sub/`.
+    const inside = gateWithPorcelain(sb, [[' M', 'sub/src/app.sh']], { prefix: 'sub/' });
+    assertEqual(inside.code, 2);
+    assertIncludes(inside.stderr, 'changed after it was written: src/app.sh');
+    // The same file reported WITHOUT the prefix lies outside the project (it
+    // is `<toplevel>/src/app.sh`, a sibling of the project), and is dropped.
+    assertEqual(gateWithPorcelain(sb, [[' M', 'src/app.sh']], { prefix: 'sub/' }).code, 0);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('review-hardening/9: a changed path whose stat fails with ELOOP blocks and names the path and the code', () => {
+  const sb = makeStalenessFixture(RECEIPT_EPOCH, RECEIPT_EPOCH - 60);
+  try {
+    symlinkSync('loop', path.join(sb.dir, 'loop'));
+    const result = gateWithPorcelain(sb, [['??', 'loop']]);
+    assertEqual(result.code, 2, 'a path the gate cannot stat cannot be judged, so it blocks');
+    assertIncludes(result.stderr, 'loop');
+    assertIncludes(result.stderr, 'ELOOP');
+    assertIncludes(result.stderr, 'not verifying? abort with');
+
+    // Control: a path that is simply gone (ENOENT) is not a change to judge.
+    assertEqual(gateWithPorcelain(sb, [['??', 'gone.txt']]).code, 0, 'control: a missing path passes');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('review-hardening/9: a path that did not decode as UTF-8 (U+FFFD) and cannot be stat\'ed blocks', () => {
+  const sb = makeStalenessFixture(RECEIPT_EPOCH, RECEIPT_EPOCH - 60);
+  try {
+    // spawnSync's utf8 decoding turns an invalid byte into U+FFFD, so the
+    // decoded name never exists on disk: the gate cannot tell whether the real
+    // file is stale, and must not read the miss as "gone".
+    const result = gateWithPorcelain(sb, [['??', 'bad�.txt']]);
+    assertEqual(result.code, 2);
+    assertIncludes(result.stderr, 'bad�.txt');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('review-hardening/9: a changed path below a parent that is now a file (ENOTDIR) is gone, not a block', () => {
+  const sb = makeStalenessFixture(RECEIPT_EPOCH, RECEIPT_EPOCH + 60);
+  try {
+    // src/app.sh is a regular file, so stat('src/app.sh/inner.txt') is ENOTDIR:
+    // the reported path is not there, and there is nothing to compare.
+    assertEqual(gateWithPorcelain(sb, [['??', 'src/app.sh/inner.txt']]).code, 0, 'ENOTDIR reads as gone');
+    // Control: the parent itself is stale and does block.
+    assertEqual(gateWithPorcelain(sb, [[' M', 'src/app.sh']]).code, 2, 'control: the stale file blocks');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// review-hardening/9 — a rename or copy record's second field, the origin, is
+// consumed whatever the record is (a deletion-flagged `RD` included). Each row
+// is shaped so a decoder that skips that step for the record goes wrong one of
+// two ways. The new path `new.txt` does not exist, so only `src/app.sh` (stale)
+// can block.
+//   - read on: the origin `aR-old.txt` has an `R` in its xy columns. Misread as
+//     a record, it swallows the stale `src/app.sh` record that follows as ITS
+//     origin, and a stale receipt passes.
+//   - not judged: the origin `xx-src/app.sh`, misread as a record, names the
+//     stale `src/app.sh` (its text after the three xy-and-space columns), and a
+//     rename that touched only `new.txt` blocks.
+for (const xy of ['R ', 'RD', ' R', 'C ']) {
+  test(`review-hardening/9: a ${JSON.stringify(xy)} record's origin is consumed — the next record is read, the origin is not judged`, () => {
+    const sb = makeStalenessFixture(RECEIPT_EPOCH, RECEIPT_EPOCH + 60);
+    try {
+      const readOn = gateWithPorcelain(sb, [[xy, 'new.txt', 'aR-old.txt'], [' M', 'src/app.sh']]);
+      assertEqual(readOn.code, 2, `the stale record after a ${JSON.stringify(xy)} record must still block`);
+      assertIncludes(readOn.stderr, 'changed after it was written: src/app.sh');
+      const notJudged = gateWithPorcelain(sb, [[xy, 'new.txt', 'xx-src/app.sh']]);
+      assertEqual(notJudged.code, 0, `the origin of a ${JSON.stringify(xy)} record is not a changed path; got:\n${notJudged.stderr}`);
+    } finally {
+      sb.cleanup();
+    }
+  });
+}
 
 // ---------------------------------------------------------------------------
 // FIX ROUND 2 — `-uall` made the blocking tooth fail OPEN at scale, and the

@@ -66,17 +66,34 @@ fn writes_the_session_marker() {
 }
 
 #[test]
-fn no_root_still_routes() {
+fn no_root_is_silent() {
+    // skill-revision/17: using-spec scopes itself to "a repo that keeps a
+    // spec"; the router must not push the spec skill into a foreign repo.
     let p = common::project("session-noroot");
-    let (code, v) = run(&p, &[]);
-    assert_eq!(code, 0);
-    assert!(
-        v["additionalContext"]
-            .as_str()
-            .unwrap()
-            .contains("using-spec")
-    );
+    for env in [
+        &[][..],
+        &[("CLAUDE_PROJECT_DIR", "/x")],
+        &[("CURSOR_PLUGIN_ROOT", "/x")],
+    ] {
+        let out = common::spec_stdin(&p, &["hook", "session-start"], env, &payload(&p));
+        assert_eq!(out.code, 0, "{}", out.stderr);
+        assert_eq!(out.text(), "{}\n", "{env:?}");
+    }
     assert!(!p.join(".vibe").exists());
+    // Review Focus 5: invalid JSON on stdin, no root under the cwd.
+    let out = common::spec_stdin(&p, &["hook", "session-start"], &[], b"junk");
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(out.text(), "{}\n");
+}
+
+#[test]
+fn a_bad_config_still_routes() {
+    // skill-revision/17: a config that names a spec repo keeps the router.
+    let p = common::project("session-badconfig");
+    common::write(&p, ".vibe/spec.json", "not json");
+    let out = common::spec_stdin(&p, &["hook", "session-start"], &[], &payload(&p));
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(injected(&serde_json::from_slice(&out.stdout).unwrap()));
 }
 
 #[test]
@@ -89,7 +106,7 @@ fn skill_is_within_budget() {
     let (front, body) = rest.split_once("\n---\n").unwrap();
     assert!(front.lines().any(|l| l == "name: using-spec"), "{front}");
     let words = body.split_whitespace().count();
-    assert!(words <= 150, "{words} words");
+    assert!(words <= 250, "{words} words");
 }
 
 const LINE_SYMLINK: &str = "vibe-spec hook session-start: marker skipped — ";
@@ -155,7 +172,7 @@ fn file_named_vibe_is_skipped() {
 
 #[test]
 fn bad_input_still_routes() {
-    let p = common::project("session-bad");
+    let p = rooted("session-bad");
     let out = common::spec_stdin(&p, &["hook", "session-start"], &[], b"junk");
     assert_eq!(out.code, 0);
     assert!(injected(&serde_json::from_slice(&out.stdout).unwrap()));

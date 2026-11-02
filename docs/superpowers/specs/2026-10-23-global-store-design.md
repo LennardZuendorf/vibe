@@ -3,6 +3,8 @@
 **Date:** 2026-10-23 · **Branch:** `villain/vibe-config` · **Arc:** v0.5 front door, pulled
 ahead (new row C0) · **Decision:** D48 (new)
 
+**Updated:** 2026-11-02
+
 ## 1. Intent
 
 **Outcome.** One global store under `~/.config/vibe/` holds the user's root instructions, shared
@@ -86,8 +88,11 @@ not projected. Values may hold placeholders `${NAME}` (NAME = `[A-Z_][A-Z0-9_]*`
 **Secrets.** vibe never writes a literal secret it detects. `vibe store import-mcp <file>`
 replaces likely secrets — every header value, env values whose key matches
 `KEY|TOKEN|SECRET|PASSWORD|AUTH` (case-insensitive), URL query values whose key matches the
-same — with `${VIBE_<SERVER>_<FIELD>}` placeholders and prints the variable names (never the
-values) the user must export. `--keep-literals` opts out, with a warning.
+same — with placeholders and prints the variable names (never the values) the user must
+export. An env secret of a valid key `K` uses `${K}` only when no placeholder in the store or
+input and no earlier allocation reserves `K`; otherwise it receives a collision-free
+`${VIBE_<SERVER>_<FIELD>}` name. Equal literals remain independently named across servers.
+Headers and URL query values use server-qualified names. `--keep-literals` opts out, with a warning.
 
 ## 4. Projection per harness
 
@@ -109,16 +114,27 @@ Rules every adapter obeys:
   silently.
 - **No writes through links.** A target file that is a symlink (e.g. the owner's
   `~/.claude/AGENTS.md`) is refused with one line. Skills links never replace a real directory
-  or a link vibe did not create.
+  or a link vibe did not create. The configured output root may itself be linked. Resolve
+  that root and each target parent (or its deepest existing ancestor), then refuse descendant
+  paths that escape the root or cross a dangling link before reading or mutating them.
+  Internal links remain supported; read-only linked store inputs remain separate.
 - **Atomic, all-or-nothing.** All file writes of one run go through `vibe_core::fs::commit`
   (rollback on failure). Plan in memory first; `--dry-run` runs the same plan and prints it.
-- **Lock.** An exclusive lock file (`create_new`, stale after 60 s) is taken before reading the
-  state used to build the plan. The hook skips silently when the lock is held.
+- **Lock.** An exclusive lock file (`create_new`) is taken before reading the state used to
+  build the plan. A unique owner token and a heartbeat cover blocking CLI work; state writes,
+  refresh and release check the token. Registry retirement and filesystem release share one
+  mutex, so a successor never observes its predecessor as an active owner. The hook skips
+  silently when held. Age alone never proves death or permits takeover. Under Rust 1.88,
+  safe Rust, no new dependency and no hook subprocess, an operator must independently verify
+  the holder stopped before removing its abandoned file and retrying. Token/path preflights
+  are advisory checks, not atomic fencing against forced external replacement.
 - **Formatting.** JSON targets are re-serialised with 2-space indentation, key order preserved,
   unknown content preserved; untouched files are never rewritten.
 
 **MCP translation** (placeholder `${N}`; `skip` = server not projected to that harness, with a
-one-line reason):
+one-line reason). When import allocates an env placeholder different from its key, it warns
+that an applicable Codex stdio server will be skipped; it never silently forwards the
+placeholder under the wrong variable name:
 
 | Field | Claude | Codex | OpenCode (plugin) | Factory |
 |---|---|---|---|---|

@@ -8,7 +8,7 @@ use vibe_core::json::{self, Object, Value};
 use vibe_core::markers::{self, Style, hash_bytes};
 
 use crate::adapters::Ctx;
-use crate::paths::Harness;
+use crate::paths::{Harness, Paths};
 
 /// Marker owner of every block vibe writes.
 const OWNER: &str = "store";
@@ -331,7 +331,8 @@ impl Projection {
 
 /// Reads a target file as text. `Ok(None)` when it does not exist; a symlink, a file that
 /// is not valid UTF-8 and any read error are refusals.
-pub fn guard_target(path: &Path) -> Result<Option<String>, Note> {
+pub fn guard_target(paths: &Paths, path: &Path) -> Result<Option<String>, Note> {
+    paths.guard_parent(path).map_err(Note::Refused)?;
     let refused = |why: &dyn fmt::Display| Note::Refused(format!("{}: {why}", path.display()));
     match fs::symlink_metadata(path) {
         Ok(m) if m.file_type().is_symlink() => Err(Note::Refused(format!(
@@ -362,7 +363,7 @@ pub fn block_item(
     style: Style,
     body: Option<&str>,
 ) -> Projection {
-    let current = match guard_target(path) {
+    let current = match guard_target(ctx.paths, path) {
         Ok(c) => c,
         Err(n) => return Projection::refused(n),
     };
@@ -443,12 +444,12 @@ fn push_write(p: &mut Projection, harness: Harness, path: &Path, bytes: Vec<u8>,
 /// Plans an edit of the JSON object in `path`. No item when the edit leaves the value
 /// unchanged; otherwise the file is re-serialised with two-space indentation.
 pub fn json_file_item(
-    _ctx: &Ctx,
+    ctx: &Ctx,
     harness: Harness,
     path: &Path,
     edit: impl FnOnce(&mut Object),
 ) -> Projection {
-    let current = match guard_target(path) {
+    let current = match guard_target(ctx.paths, path) {
         Ok(c) => c,
         Err(n) => return Projection::refused(n),
     };

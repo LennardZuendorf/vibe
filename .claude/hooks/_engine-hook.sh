@@ -41,7 +41,7 @@ ENGINE="${VIBE_ENGINE:-$ROOT/.agents/skills/vibe/engine}"
 
 PAYLOAD="$(cat 2>/dev/null || true)"
 
-# run_fallback — hand the same stdin to the frozen bash implementation and adopt
+# run_fallback — hand the same stdin to the bash fallback implementation and adopt
 # its exit code verbatim (that is where the block lives).
 run_fallback() {
   if [[ -n "$FALLBACK" && -f "$FALLBACK" ]]; then

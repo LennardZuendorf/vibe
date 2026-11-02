@@ -17,9 +17,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { resolveRoot, resolveVibeDir, resolveSkillsDir } from '../root.mjs';
 import { upsertBlock } from '../blocks.mjs';
-import { loadContent, renderChannel, checkContent, confinePath } from '../content.mjs';
+import { loadContent, renderChannel, checkContent, confineRealWhy } from '../content.mjs';
 
 const USAGE = [
   'usage: vibe render <channel> [--write] | --list | --check',
@@ -64,13 +65,16 @@ function writeTarget(channel, root) {
   if (!spec || typeof spec !== 'object') return undefined;
   if (typeof spec.file !== 'string' || !spec.file) return undefined;
   if (typeof spec.block !== 'string' || !spec.block) return undefined;
-  // Confined to the repo: `write.file` is project config, and `--write` creates
-  // the file it names. Unconfined, a `vibe.json` shipped in a cloned repo could
-  // write anywhere the user can.
-  const file = confinePath(root, spec.file);
-  if (file === undefined) return { escaped: spec.file };
+  // Confined to the repo on the REAL path: `write.file` is project config, and
+  // `--write` creates the file it names. Unconfined, a `vibe.json` shipped in a
+  // cloned repo could write anywhere the user can — directly, or through a
+  // symlink (the file itself, or a directory above it) that leaves the repo.
+  // An in-repo symlink resolves to its real file, which is what gets written,
+  // so the link survives; a dangling one is refused rather than created through.
+  const found = confineRealWhy(root, spec.file, { forWrite: true });
+  if (found.real === undefined) return { refused: spec.file, why: found.why };
   return {
-    file,
+    file: found.real,
     block: spec.block,
     note: typeof spec.note === 'string' ? spec.note : '',
   };
@@ -116,11 +120,17 @@ export function runRender(ctx, args) {
   if (!flags.has('--write')) return { code: result.errors.length ? 1 : 0, stdout: result.text, stderr };
 
   const target = writeTarget(channel, ctx.root);
-  if (target && target.escaped !== undefined) {
+  if (target && target.refused !== undefined) {
+    const reason =
+      target.why === 'dangling'
+        ? 'is a dangling symlink'
+        : target.why === 'escapes'
+          ? 'escapes the repo (it resolves outside the repo)'
+          : 'cannot be resolved inside the repo';
     return {
       code: 1,
       stdout: '',
-      stderr: `${stderr}render: ERROR — channel '${name}' write target '${target.escaped}' resolves outside the repo; refusing to write\n`,
+      stderr: `${stderr}render: ERROR — channel '${name}' write target '${target.refused}' ${reason}; refusing to write\n`,
     };
   }
   if (!target) {
@@ -152,17 +162,28 @@ export function runRender(ctx, args) {
     return { code: result.errors.length ? 1 : 0, stdout: `render: no change — ${target.file} already carries the current ${target.block} block\n`, stderr };
   }
 
-  // Temp + rename in the target's own directory: a crash mid-write can never
-  // truncate a document that holds user prose outside the managed block.
-  const tmp = path.join(path.dirname(target.file), `.${path.basename(target.file)}.${process.pid}.tmp`);
+  // Temp + rename in the RESOLVED target's own directory: a crash mid-write can
+  // never truncate a document that holds user prose outside the managed block,
+  // and renaming onto the real file (not the configured path) keeps an in-repo
+  // symlink a symlink. A concurrent swap between resolve and write is an
+  // accepted TOCTOU window; the read above already used the resolved path.
+  // The temp name is unpredictable and opened with 'wx' (O_CREAT|O_EXCL), so a
+  // link a repo plants at that name is never followed: open fails instead of
+  // truncating whatever the link points at. Cleanup only removes a temp file
+  // this call created, never one that was already there.
+  const tmp = path.join(path.dirname(target.file), `.${path.basename(target.file)}.${process.pid}.${randomUUID()}.tmp`);
+  let created = false;
   try {
-    fs.writeFileSync(tmp, next.text, 'utf8');
+    fs.writeFileSync(tmp, next.text, { encoding: 'utf8', flag: 'wx' });
+    created = true;
     fs.renameSync(tmp, target.file);
   } catch (err) {
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      // best-effort cleanup; the original error is what matters
+    if (created) {
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+        // best-effort cleanup; the original error is what matters
+      }
     }
     return { code: 1, stdout: '', stderr: `${stderr}render: ERROR — cannot write ${target.file}: ${err && err.message}\n` };
   }

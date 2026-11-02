@@ -804,7 +804,7 @@ fn block_item_symlink_refused() {
     assert!(p.items.is_empty());
     assert!(matches!(&p.notes[0], Note::Refused(m) if m.contains("is a symlink")));
     assert!(matches!(
-        guard_target(&home.path("AGENTS.md")),
+        guard_target(&paths(&home), &home.path("AGENTS.md")),
         Err(Note::Refused(_))
     ));
     assert_eq!(home.read("real.md"), "x\n");
@@ -1087,4 +1087,68 @@ fn apply_refreshes_the_held_lock() {
         .duration_since(fs::metadata(p.lock_file()).unwrap().modified().unwrap())
         .unwrap();
     assert!(age < std::time::Duration::from_secs(30), "{age:?}");
+}
+
+// global-store Task 7: a synchronous CLI cannot authorize a state write after losing its lease.
+#[cfg(unix)]
+#[test]
+fn apply_preserves_successor_state_after_lock_replacement() {
+    use vibe_core::lock::{Acquired, Lock, STALE};
+    let home = Home::new("exec-lost-owner");
+    let p = paths(&home);
+    let Acquired::Got(held) = Lock::acquire(&p.lock_file(), STALE).unwrap() else {
+        panic!("busy")
+    };
+    let script = home.write_exec(
+        "replace-lock",
+        &format!(
+            "#!/bin/sh\nprintf successor > '{}'\nprintf successor-state > '{}'\n",
+            p.lock_file().display(),
+            p.state_file().display()
+        ),
+    );
+    let mut plan = proj(vec![add("a")], vec![]);
+    plan.stamp = Some(Stamp {
+        store_hash: "first".into(),
+        mcp_hash: "first".into(),
+    });
+    let (out, state) = apply(&p, plan, State::default(), false, script.to_str().unwrap());
+    assert!(
+        out.failed
+            .iter()
+            .any(|line| line.contains("lock ownership lost")),
+        "{:?}",
+        out.failed
+    );
+    assert_eq!(state, State::default());
+    assert_eq!(
+        fs::read_to_string(p.state_file()).unwrap(),
+        "successor-state"
+    );
+    drop(held);
+    assert_eq!(fs::read_to_string(p.lock_file()).unwrap(), "successor");
+}
+
+// global-store Tasks 2 and 7: the real second command cannot steal an aged holder during CLI work.
+#[cfg(unix)]
+#[test]
+fn nested_sync_cannot_steal_aged_holder_during_claude_call() {
+    use vibe_core::lock::{Acquired, Lock, STALE};
+    let home = Home::with_store("exec-blocking-lease");
+    let p = paths(&home);
+    let Acquired::Got(_held) = Lock::acquire(&p.lock_file(), STALE).unwrap() else {
+        panic!("busy")
+    };
+    let script = home.write_exec("nested-sync", &format!("#!/bin/sh\ntouch -t 200001010000 '{}'\nenv -i HOME='{}' PATH=/usr/bin:/bin '{}' sync --harness codex > '{}/nested-output' 2>&1\nprintf '%s' \"$?\" > '{}/nested-code'\nexit 0\n", p.lock_file().display(), home.dir.display(), env!("CARGO_BIN_EXE_vibe"), home.dir.display(), home.dir.display()));
+    let mut plan = proj(vec![add("a")], vec![]);
+    plan.stamp = Some(Stamp {
+        store_hash: "first".into(),
+        mcp_hash: "first".into(),
+    });
+    let (out, state) = apply(&p, plan, State::default(), false, script.to_str().unwrap());
+    assert!(out.failed.is_empty(), "{:?}", out.failed);
+    assert_eq!(home.read("nested-code"), "1");
+    assert!(home.read("nested-output").contains("holds the lock"));
+    assert!(!home.path(".codex/AGENTS.md").exists());
+    assert_eq!(state.store_hash, "first");
 }

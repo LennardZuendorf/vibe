@@ -1,132 +1,122 @@
 # The spec framework
 
-> **Roadmap:** this half becomes the standalone `vibe-spec` Rust binary and
-> plugin in v0.4 — see the root [README](../README.md) and [docs/spec/plan.md](../docs/spec/plan.md). Everything below describes what ships today.
-
 > **For humans.** This README is the standalone guide to the spec half of vibe kit.
 > Agents read [SKILL.md](SKILL.md) instead — it is the router they route through.
 
 The **spec framework** is a durable planning layer for a codebase. It teaches an
-agent (or a human) to keep design docs in `docs/spec/` that are *current*, not a
-backlog: what you are building (product), how it is built (tech), the visual /
-interaction language (design), and the order of work (plan). It ships as one
-bundled skill, `spec`, plus a validator. It needs only `bash` — no runtime, no
-build step — and works with **any** agent, or none.
+agent (or a human) to keep design docs that are *current*, not a backlog: what you
+are building (product), how it is built (tech), the visual / interaction language
+(design), and the order of work (plan). It ships as the `spec` skill, the
+`using-spec` session router, two agents, and hooks, all backed by the `vibe-spec`
+binary. The binary validates and queries the spec tree. It works with **any** agent,
+or none.
 
 It is one of two halves. The other is [the vibe flow](https://github.com/LennardZuendorf/vibe/blob/main/flow/README.md); the
-[root README](https://github.com/LennardZuendorf/vibe#readme) explains the split. This half stands entirely alone.
+[root README](https://github.com/LennardZuendorf/vibe#readme) explains the split and
+holds the [Install section](https://github.com/LennardZuendorf/vibe#install). This half stands entirely alone.
 
 ## Quickstart
 
 ```bash
-/spec setup            # write docs/spec/ entrypoints from templates (+ .config.yaml)
+/spec setup            # write the config and seed a spec root (vibe-spec init)
 /spec strategy         # author the root layer: product / tech / design / plan
-/spec feature <name>   # scope and design one named feature
+/spec feature <name>   # route and scope one named feature
 /spec validate         # check structural consistency
 ```
 
-`/spec …` are Claude Code skill commands. Everywhere else, run the scripts
-directly **from your project root** — they resolve `docs/spec/` relative to the
-current directory, so cwd must be the project you want to act on:
+`/spec …` are Claude Code skill commands. Everywhere else, run `vibe-spec`
+directly from anywhere inside the project; it walks up to the git root to find the
+spec root:
 
 ```bash
-vibe-spec init       # create the spec root's entrypoints from templates
-vibe-spec validate   # check consistency (run from the project)
-vibe-spec validate --strict # promote every warning to an error (CI)
+vibe-spec root                # print the spec root and its layout
+vibe-spec init                # seed a layered spec root
+vibe-spec validate            # check consistency
+vibe-spec validate --strict   # promote every warning to an error (CI)
+vibe-spec check-drift         # compare the plan rows with the feature folders
 ```
 
 ## The two-layer model
 
+The **spec root** is the directory `vibe-spec root` prints (`docs/spec/` by default).
+It has two layouts. `vibe-spec init` creates the **layered** one.
+
 ```
-docs/spec/
-├── product.md, tech.md, design.md, plan.md, lessons.md   ← ROOT (persistent, high-level)
-├── product-{topic}.md, tech-{topic}.md                    ← ROOT branch docs (cross-cutting, rare)
-├── features/<name>/
-│   ├── product.md   required     what this feature does (requirements + Scope)
-│   ├── tech.md      required     how it is built (paths, contracts, layout)
-│   ├── plan.md      recommended  stable <name>/n unit IDs; verification per unit
-│   ├── design.md    optional     UI/UX or interaction detail
-│   └── research.md  optional     discovery artifacts
-└── archive/<name>/  transient    post-wrapup safety net (deleted before merge)
+<root>/
+├── product.md, tech.md, design.md, plan.md   ← hubs: short, link only
+├── lessons.md                                 ← tagged lessons, append-only
+├── areas/ flows/ concepts/ platform/ tech/    ← typed notes the hubs link to
+│   decisions/ questions/ parts/<part>/
+└── features/<feature>/   fallback feature layer only; see below
 ```
 
 - **Root** answers project-level questions and carries no backlog or archaeology.
-- **Features** are branch-scoped: written at design, consumed at impl, merged
-  (cross-cutting parts only) into root at compound, archived transiently, then
-  **deleted before the branch merges**. Code is truth; the archive is never read
-  for active work.
-- **Branch docs** cover only concerns that span *every* feature. Default to a
-  feature folder; extract a branch doc when the same concern keeps recurring.
+  The layered guide is `reference/layered.md`.
+- **Feature layer**, branch-scoped: by default the superpowers artifacts under
+  `docs/superpowers/specs/` and `docs/superpowers/plans/`. The fallback folder
+  `<root>/features/<feature>/` applies only when superpowers is absent, your human
+  partner says *self*, `.vibe/spec.json` sets `"featureLayer": "vibe"`, or OpenSpec
+  interchange is required. Wrap-up promotes the cross-cutting parts to the root and
+  deletes the feature artifacts **before the branch merges**. Code is truth.
+- **Flat (legacy)** roots keep `product.md`, `tech.md`, `design.md`, `plan.md`,
+  `lessons.md` and `{product,tech}-{topic}.md` topic docs side by side. The
+  templates in [reference/templates/](reference/templates/) are flat-layout only;
+  the `scripts/` validator reads a flat legacy root only.
 
 ## Day-to-day authoring
 
 **Bootstrap (strategy).** Write the root layer in order:
 `product.md → tech.md → design.md → plan.md`. The root plan holds the feature map
 and a Feature Sequence with binary whole-feature gates — never unit-level detail.
+The row for a fallback feature exists, with status `IN PROGRESS`, before its design.
 
-**A new feature** follows a six-step ladder (full steps in [feature.md](feature.md)):
+**A new feature** routes through [SKILL.md](SKILL.md) § Routing. The default is
+`superpowers:brainstorming` then `superpowers:writing-plans`. The fallback follows
+[feature.md](feature.md): step 0 sizes the work, then Locate and name, Interview for
+WHAT, Rigor gate, Sketch HOW, Plan units. Cite unit IDs in commits and tests during
+implementation. Bump each edited spec's `updated:` date, then run `/spec validate`.
 
-```
-1. Locate & name    confirm name; read root product/tech + lessons.md
-2. Interview WHAT    Scope, SHALL/MUST requirements, GWT scenarios → product.md
-3. Rigor gate        lite vs full — does it need design.md?
-4. Sketch HOW        trace the codebase → tech.md (+ design.md if full)
-5. Plan units        stable <name>/n IDs, verification per unit → plan.md
-6. Skip check        atomic, no decisions? → use the flow's quick arc instead
-```
-
-Add the feature to the root `plan.md` Feature Sequence. Cite unit IDs in commits
-and tests during implementation. Bump each edited spec's `updated:` date, then run
-`/spec validate`.
+**Wrap-up** has one sequence: [SKILL.md](SKILL.md) § Wrap-up.
 
 **Strict separation** is the core discipline: product holds *what & why* (no code
 or paths), tech holds *how* (no UX opinions), plan holds *units & order* (no code
 or requirement prose), design holds tokens and interaction patterns. Read before
 you write; keep parent ↔ child links alive both ways.
 
-**Superpowers, offered not required.** Each authoring step names an executor the
-skill offers proactively — `superpowers:brainstorming` for the WHAT interview,
-`code-explorer` + `code-architect` for the HOW trace, `superpowers:writing-plans`
-for plan units. Decline any and the skill self-executes from its own constraint
-documents. They enhance; they never gate.
+**Superpowers are optional.** Each authoring step names a delegate the skill
+suggests unless `.vibe/spec.json` sets `suggest` to false. Decline any and the skill
+does the step itself from its constraint documents. They enhance; they never gate.
 
 ## With or without the flow
 
 The spec skill is self-sufficient. Drive it directly with `/spec …` on any host,
-or let [the vibe flow](https://github.com/LennardZuendorf/vibe/blob/main/flow/README.md) drive its authoring phases
-(`strategy.spec`, `feature.design`, `feature.plan`, the compound promotions). When
-the flow is present, `docs/spec/.config.yaml` can set `vibe-flow: true` so output
-density follows the flow's single `style` note; absent that, the skill uses its own
-documented style. Either way the docs, templates, and validator are identical.
+or let [the vibe flow](https://github.com/LennardZuendorf/vibe/blob/main/flow/README.md) drive its authoring states
+(`strategy.spec`, `feature.design`, `feature.plan`, `feature.compound`). Either way
+the docs, templates, and validator are identical.
 
 ## Degrade behavior
 
-- **Bare git / any editor:** the whole framework works — `docs/spec/` docs, the
-  templates in [reference/templates/](reference/templates/), and `validate.sh`
-  (pure `bash`, no `jq` required). You lose only the `/spec` command sugar.
+- **No `vibe-spec` binary:** the skill says so and points to the install section.
+  On a flat legacy root it may run the legacy validator in `scripts/`; on any other root
+  it reports "validation unavailable" and never claims the tree validated.
 - **Other `AGENTS.md` readers:** agents follow the written authoring flow manually.
-- **Missing superpowers:** every step self-executes from its constraint document.
-
-Nothing here hard-fails on a missing dependency.
+- **Missing superpowers:** the fallback feature layer applies.
 
 ## File map
 
 Everything below is the `spec` skill, addressed at runtime under
-`.agents/skills/spec/`.
+`.agents/skills/spec/` (and `.agents/skills/using-spec/`).
 
 | Path | What it is |
 |---|---|
-| [SKILL.md](SKILL.md) | Skill router — routing table, two-layer rules, roles |
+| [SKILL.md](SKILL.md) | Skill router: routing table, layers, wrap-up, roles |
+| [using-spec/](using-spec/SKILL.md) | Session-start router that sends work to `spec` |
 | [strategy.md](strategy.md) | Root-layer authoring guide |
-| [feature.md](feature.md) | Feature-layer authoring flow (the six-step ladder) |
-| [reference/product.md](reference/product.md), [reference/tech.md](reference/tech.md), [reference/design.md](reference/design.md), [reference/plan.md](reference/plan.md) | Per-doc writing guides |
-| [reference/templates/](reference/templates/) | Copy-in templates for every root, feature, and branch doc |
-| [scripts/validate.sh](scripts/validate.sh) | Structural consistency check (frontmatter, links, folders) |
-| [scripts/setup.sh](scripts/setup.sh) | Create entrypoint templates in `docs/spec/` |
-| [scripts/list-specs.sh](scripts/list-specs.sh) | Current-state summary of the `docs/spec/` tree |
-| [scripts/promote.sh](scripts/promote.sh), [scripts/scan-merges.sh](scripts/scan-merges.sh) | Compound: merge feature blocks into root, preview pending merges |
-| [scripts/lessons-for.sh](scripts/lessons-for.sh) | Extract lessons matching a tag |
+| [feature.md](feature.md) | Fallback feature-layer authoring flow |
+| [reference/](reference/) | Per-doc writing guides (`product`, `tech`, `design`, `plan`) and [templates/](reference/templates/) |
 | [agents/](agents/) | Claude Code agents: `spec-promoter`, `spec-health` |
+| [hooks/](hooks/) | Fail-open shim that runs `vibe-spec hook <event>` |
+| `scripts/` | Bash scripts, legacy (flat root only) |
 
 ## More
 

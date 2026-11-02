@@ -135,6 +135,44 @@ jobs:
       - name: Migrate sweep (zero literals)
         run: cargo run -q --locked -p vibe-spec -- migrate --to docs/spec --check
 
+  plugin-validate:
+    # F19: `claude plugin validate --strict` is an acceptance gate only where the
+    # CLI exists — and no stock runner ships it, which made the check inside
+    # tests/run.sh a permanent SKIP (green by absence, not by passing). This job
+    # is the place the gate is real: it installs the pinned CLI and runs the
+    # script in fail-closed mode, which exits non-zero when `claude` is missing,
+    # so a dropped package, a broken install or a removed binary is a red run
+    # rather than a quiet skip. tests/run.sh keeps the soft SKIP on purpose:
+    # every other runner and every developer box without Claude Code must not go
+    # red for a tool it does not have.
+    #
+    # The version is pinned by hand: the validator's rules change between
+    # releases, and an auto-floating CLI would turn someone else's release into
+    # this repo's red build. Bump deliberately.
+    name: plugin — claude plugin validate --strict (pinned CLI)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+
+      - name: Install Claude Code CLI (pinned)
+        run: npm install --global @anthropic-ai/claude-code@2.1.310
+
+      - name: plugin validate (fail-closed)
+        # The gate owns the verdict: a missing CLI must surface as the script's
+        # own FAIL line, not as an opaque `command not found` from a diagnostic
+        # line above it, so the version probe is deliberately non-fatal.
+        run: |
+          claude --version || echo "claude --version failed — the script below owns the verdict"
+          VIBE_PLUGIN_VALIDATE=require bash spec/tests/plugin-validate.sh
+
   macos:
     # js-core/8: stock macOS ships bash 3.2 (Apple freezes it at the last
     # GPLv2 release) — the only way to know tests/run.sh's bash-3.2 fix

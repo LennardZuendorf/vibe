@@ -2,7 +2,7 @@
 type: tech
 applies:
   - "crates/vibe/**"
-updated: 2026-10-24
+updated: 2026-11-02
 ---
 
 # Global store and projection
@@ -28,9 +28,9 @@ Design: [global-store design](../../../superpowers/specs/2026-10-23-global-store
 
 **Markers** (D24, owner `store`): `<!-- vibe:store:begin v=1 hash=<h> -->` … `<!-- vibe:store:end -->` in Markdown; `# vibe:store:begin v=1 hash=<h>` … `# vibe:store:end` in TOML. Exact-line match, begin before end; reversed or duplicate markers refuse and leave the file untouched. `upsert` adds one blank line before a block; `remove` drops the block and that blank line only when the block ends the file or the blank line follows another blank line.
 
-**Ownership:** vibe changes only what state records or what sits between its markers. A same-named foreign entry wins (reported kept). Symlinked target files are refused; skills links never replace a real dir or a foreign link. All file writes of a run go through one `vibe_core::fs::commit`; an exclusive lock guards the plan (hook skips when held).
+**Ownership:** vibe changes only what state records or what sits between its markers. A same-named foreign entry wins (reported kept). Symlinked target files are refused; target parents must stay beneath the resolved configured root. Intentional root/internal links and linked read-only store inputs remain supported; escaping or dangling descendant links refuse. Skills links never replace a real dir or a foreign link. All file writes of a run go through one `vibe_core::fs::commit`; an exclusive lock guards the plan (hook skips when held). Unique owner tokens and a heartbeat cover blocking calls; state writes/release verify ownership, and one registry mutex orders retirement before filesystem release. Age alone never permits takeover: independently verify the holder stopped before manually removing its lock and retrying. This is advisory ownership on a stable filesystem, not fencing against forced external replacement.
 
-**Secrets:** `import-mcp` swaps likely secrets for placeholders (`${K}` for an env secret of key `K` unless the name has another use in the store, else `${VIBE_<SERVER>_<FIELD>}`); vibe never writes a secret it detects on import (`--keep-literals` opts out). URL userinfo always warns. Literals the user writes are projected as written; `sync`/`install` print `note <server>: literal secret-looking value projected — prefer ${VAR}` once per server.
+**Secrets:** `import-mcp` swaps likely secrets for placeholders (`${K}` for a valid env key `K` only when unreserved in both documents and prior allocations; else a collision-free `${VIBE_<SERVER>_<FIELD>}`). Equal credentials remain independently named. Codex stdio cannot rename env variables: import warns and projection skips applicable servers whose placeholder name differs from the env key; vibe never writes a secret it detects on import (`--keep-literals` opts out). URL userinfo always warns. Literals the user writes are projected as written; `sync`/`install` print `note <server>: literal secret-looking value projected — prefer ${VAR}` once per server.
 
 **Hook output:** one stdout line. For Claude, Codex and Factory it is `{"systemMessage":"vibe: …"}`; for OpenCode and `--harness` absent it is plain text. When Claude MCP is stale (`mcp.json` changed since the last `sync`), the reminder `vibe: Claude MCP changed; run \`vibe sync\`` repeats every session until `vibe sync`; `store status` prints `claude mcp: out of date — run vibe sync` and per-harness `mcp=` (`ok|out-of-date|drifted|absent|n/a`). The hook plans files and links only: `PlanItem::ClaudeCli` items are filtered out and the claude path is `/nonexistent/vibe-hook/claude`.
 

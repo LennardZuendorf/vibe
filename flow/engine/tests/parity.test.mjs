@@ -33,9 +33,12 @@ import {
   rmSync,
   utimesSync,
   symlinkSync,
+  readdirSync,
+  chmodSync,
+  statSync,
 } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   test,
   assert,
@@ -44,6 +47,7 @@ import {
   skip,
   makeSandbox,
   makeHookSandbox,
+  makeNestedSandbox,
   runCommand,
   runCli,
   mkTempRoot,
@@ -67,11 +71,19 @@ const SET_STATE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'set-state.sh');
 const DOCTOR_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'doctor.sh');
 const VALIDATE_STATE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'validate-state.sh');
 const ADAPTERS_RUN_SH = path.join(REPO_ROOT, 'flow', 'tests', 'adapters', 'run.sh');
-// The two FROZEN pre-port bash hooks (flow/hooks-fallback/, restored verbatim from
-// `main`) — the only oracles guard/gate have, because js-core/7 replaced the
-// real hooks with Node shims IN PLACE. See those files' own headers.
+// The two FROZEN pre-port bash hooks — the only oracles guard/gate have, because
+// js-core/7 replaced the real hooks with Node shims IN PLACE. See those files'
+// own headers.
+//
+// GUARD_ORACLE is still the live flow/hooks-fallback/ copy: the frozen copy under
+// oracles/ differs from it, so a repoint would change behaviour.
+// GATE_ORACLE is the byte-frozen copy under oracles/ (pinned by
+// oracles/MANIFEST.sha256), and GATE_LIVE is the shipped no-node fallback
+// (review-hardening/9). The live file is the one that gets fixed; the oracle
+// never does.
 const GUARD_ORACLE = path.join(REPO_ROOT, 'flow', 'hooks-fallback', 'pre-tool-use-guard.sh');
-const GATE_ORACLE = path.join(REPO_ROOT, 'flow', 'hooks-fallback', 'stop-gate.sh');
+const GATE_ORACLE = path.join(REPO_ROOT, 'oracles', 'bash', 'flow', 'hooks-fallback', 'stop-gate.sh');
+const GATE_LIVE = path.join(REPO_ROOT, 'flow', 'hooks-fallback', 'stop-gate.sh');
 const REAL_SKILL_MD = readFileSync(path.join(REPO_ROOT, 'flow', 'SKILL.md'), 'utf8');
 const REAL_MACHINE_SRC = path.join(REPO_ROOT, 'flow', 'state-machine.json');
 const REAL_DEPS_SRC = path.join(REPO_ROOT, 'flow', 'reference', 'deps.json');
@@ -566,8 +578,12 @@ for (const fixture of CURSOR_FIXTURES) {
 // merges `main` does not hold them either. The final review had to reconstruct
 // them from git history to run the differential once.
 //
-// flow/hooks-fallback/{pre-tool-use-guard,stop-gate}.sh are those bash originals,
-// restored verbatim and frozen. This section is the differential made
+// oracles/bash/flow/hooks-fallback/{pre-tool-use-guard,stop-gate}.sh are those
+// bash originals, restored verbatim and byte-frozen. The guard leg still spawns
+// the live flow/hooks-fallback/pre-tool-use-guard.sh, which began as the same
+// copy and has since been edited (see its banner); the live
+// flow/hooks-fallback/stop-gate.sh was forked from its oracle in
+// review-hardening/10 and runs as a third leg. This section is the differential made
 // PERMANENT: every comparison below is regenerable by anyone, in the suite, on
 // every run — which is the property the branch was missing, not the parity.
 //
@@ -703,8 +719,8 @@ for (const fixture of CURSOR_FIXTURES) {
 // checks this family against ITS table rather than the default one.
 //
 // Each case is additionally crossed with three receipt states (none / fresh /
-// stale) inside the test, over a REAL git repo so both sides read the same
-// `git status --porcelain` bytes rather than an injected fake.
+// stale) inside the test, over a REAL git repo so every leg reads what git
+// really reports for its own argv rather than an injected fake.
 // ---------------------------------------------------------------------------
 
 const GATE_FIXTURES = [
@@ -803,8 +819,9 @@ const REENTRY_TRUE_SHAPE = 'stop_hook_active true (boolean)';
 //
 // The oracle stays BYTE-FROZEN — its evidentiary value is that it is unedited,
 // so what this records is that the historical bash hook genuinely had this hole
-// and the port closed it. Nothing user-facing is affected: the shipped
-// stop-gate.sh is a three-line `exec node` shim.
+// and the port closed it. The live no-node fallback (GATE_LIVE) keeps the same
+// collapsed read — it has no `-uall` — so the pin runs on that leg too: a
+// node-less target still has this hole, and the pin says so.
 //
 // Not a skip. In the receipt states where the two disagree the ENGINE's
 // behaviour is asserted in full (blocks, names the FILE not the directory), and
@@ -902,6 +919,18 @@ function applyReceiptState(sb, state) {
   }
 }
 
+// Two bash legs per case (review-hardening/10): the FROZEN oracle under
+// oracles/, and the LIVE no-node fallback that ships. Both are compared with the
+// engine under the same carve-outs, each with its own anti-inertness flags: the
+// live file keeps predicate 3, the no-jq sed read and the collapsed untracked
+// directory (it has no `-uall`), so every pin below applies to it unchanged.
+// What the live leg adds is that it can NOT drift from the engine on any
+// existing fixture while it is being fixed for the new cases.
+const GATE_BASH_LEGS = [
+  ['frozen oracle', GATE_ORACLE],
+  ['live fallback', GATE_LIVE],
+];
+
 for (const fixture of GATE_FIXTURES) {
   for (const mode of JQ_MODES) {
     test(`parity matrix: hook stop-gate — ${fixture.name} x ${mode}`, () => {
@@ -909,121 +938,115 @@ for (const fixture of GATE_FIXTURES) {
       const sb = buildGateSandbox(fixture);
       const spawns = modeSpawn(mode, sb.root);
       const divergences = [];
-      let pred3StrippedAtLeastOnce = false;
-      let bsdSedOracleDivergedAtLeastOnce = false;
-      let untrackedOracleDivergedAtLeastOnce = false;
+      const flags = new Map(
+        GATE_BASH_LEGS.map(([leg]) => [leg, { pred3: false, bsdSed: false, untracked: false }]),
+      );
       try {
         for (const receiptState of RECEIPT_STATES) {
           applyReceiptState(sb, receiptState);
           for (const [shapeName, stdin] of GATE_STDIN_SHAPES) {
-            const label = `${shapeName} / receipt=${receiptState}`;
-
-            resetWarnLog(sb);
-            const o = runOracleScript(GATE_ORACLE, [], mode, oracleEnv(sb), { cwd: sb.root, input: stdin });
-            const oracleRun = { code: o.code, stdout: o.stdout, stderr: o.stderr, log: readWarnLog(sb) };
-
             resetWarnLog(sb);
             const e = runGateHook(sb.root, sb.vibeDir, stdin, { spawnGit: spawns.spawnGit });
             const engineRun = { code: e.code, stdout: e.stdout, stderr: e.stderr, log: readWarnLog(sb) };
 
-            // KNOWN DIVERGENCE (PLATFORM), full statement in the pin below this
-            // loop. On a sed without GNU BRE alternation the oracle's no-jq leg
-            // cannot read a bare `true` re-entry token, so it runs the gate. NOT
-            // a blanket skip: the case still runs and the ENGINE's behaviour is
-            // still asserted, against the fail-safe contract (return early, rc 0,
-            // no output, nothing queued to the relay) instead of against a leg
-            // this platform cannot execute. If the engine ever starts blocking on
-            // `stop_hook_active: true`, these assertions go red on BSD sed
-            // exactly as the byte comparison does on GNU sed.
-            if (mode === 'no-jq' && !SED_HAS_BRE_ALTERNATION && shapeName === REENTRY_TRUE_SHAPE) {
-              assertEqual(engineRun.code, 0, `${label}: ${BSD_SED_WHY}. The engine must return early — a Stop gate that blocks its own re-invocation is a block loop`);
-              assertEqual(engineRun.stdout, '', `${label}: ${BSD_SED_WHY}. A re-entrant Stop must emit nothing on stdout`);
-              assertEqual(engineRun.stderr, '', `${label}: ${BSD_SED_WHY}. A re-entrant Stop must emit nothing on stderr`);
-              assertEqual(engineRun.log, '', `${label}: ${BSD_SED_WHY}. A re-entrant Stop must queue nothing to the warnings relay`);
-              if (compareHook(label, oracleRun, engineRun) !== null) bsdSedOracleDivergedAtLeastOnce = true;
-              continue;
-            }
+            for (const [leg, script] of GATE_BASH_LEGS) {
+              const label = `${leg}: ${shapeName} / receipt=${receiptState}`;
+              const legFlags = flags.get(leg);
 
-            assert(
-              !PRED3_RE.test(engineRun.stderr) && !PRED3_LOG_RE.test(engineRun.log),
-              `${label}: the engine emitted the stuck-phase nudge — R6 deleted predicate 3, so this strip would ` +
-                'be papering over a resurrected surface instead of a declared divergence',
-            );
-            if (PRED3_RE.test(oracleRun.stderr) || PRED3_LOG_RE.test(oracleRun.log)) {
-              pred3StrippedAtLeastOnce = true;
-              oracleRun.stderr = oracleRun.stderr.replace(PRED3_RE, '');
-              oracleRun.log = oracleRun.log.replace(PRED3_LOG_RE, '');
-            }
+              resetWarnLog(sb);
+              const o = runOracleScript(script, [], mode, oracleEnv(sb), { cwd: sb.root, input: stdin });
+              const oracleRun = { code: o.code, stdout: o.stdout, stderr: o.stderr, log: readWarnLog(sb) };
 
-            // KNOWN DIVERGENCE (UNTRACKED DIRECTORY), full statement above.
-            // Deliberately placed AFTER the predicate-3 handling: the oracle
-            // PASSES these cases, so it reaches predicate 3 and emits the nudge
-            // R6 deleted — and that emission is what keeps the pred3
-            // anti-inertness control below honest for this fixture.
-            // Only where the untracked file is the ONLY thing newer than the
-            // receipt, and only on a stdin shape that actually runs the gate —
-            // a re-entrant Stop returns early on both sides and stays in the
-            // byte comparison.
-            if (fixture.untracked && ORACLE_BLIND_RECEIPTS.has(receiptState) && shapeName !== REENTRY_TRUE_SHAPE) {
-              assertEqual(engineRun.code, 2, `${label}: ${UNTRACKED_WHY}. The engine must BLOCK — this is the only blocking tooth there is`);
+              // KNOWN DIVERGENCE (PLATFORM), full statement in the pin below this
+              // loop. On a sed without GNU BRE alternation the bash leg's no-jq
+              // read cannot see a bare `true` re-entry token, so it runs the
+              // gate. NOT a blanket skip: the case still runs and the ENGINE's
+              // behaviour is still asserted, against the fail-safe contract
+              // (return early, rc 0, no output, nothing queued to the relay)
+              // instead of against a leg this platform cannot execute.
+              if (mode === 'no-jq' && !SED_HAS_BRE_ALTERNATION && shapeName === REENTRY_TRUE_SHAPE) {
+                assertEqual(engineRun.code, 0, `${label}: ${BSD_SED_WHY}. The engine must return early — a Stop gate that blocks its own re-invocation is a block loop`);
+                assertEqual(engineRun.stdout, '', `${label}: ${BSD_SED_WHY}. A re-entrant Stop must emit nothing on stdout`);
+                assertEqual(engineRun.stderr, '', `${label}: ${BSD_SED_WHY}. A re-entrant Stop must emit nothing on stderr`);
+                assertEqual(engineRun.log, '', `${label}: ${BSD_SED_WHY}. A re-entrant Stop must queue nothing to the warnings relay`);
+                if (compareHook(label, oracleRun, engineRun) !== null) legFlags.bsdSed = true;
+                continue;
+              }
+
               assert(
-                engineRun.stderr.includes(UNTRACKED_FILE_REL),
-                `${label}: ${UNTRACKED_WHY}. The engine must name the FILE (${UNTRACKED_FILE_REL}), not the directory; got:\n${engineRun.stderr}`,
+                !PRED3_RE.test(engineRun.stderr) && !PRED3_LOG_RE.test(engineRun.log),
+                `${label}: the engine emitted the stuck-phase nudge — R6 deleted predicate 3, so this strip would ` +
+                  'be papering over a resurrected surface instead of a declared divergence',
               );
-              assertEqual(
-                oracleRun.code,
-                0,
-                `${label}: the frozen oracle is expected to MISS this. If it now blocks, this platform's git or the ` +
-                  'oracle changed — re-derive the pin rather than leaving a carve-out that suppresses a real comparison',
-              );
-              if (compareHook(label, oracleRun, engineRun) !== null) untrackedOracleDivergedAtLeastOnce = true;
-              continue;
-            }
+              if (PRED3_RE.test(oracleRun.stderr) || PRED3_LOG_RE.test(oracleRun.log)) {
+                legFlags.pred3 = true;
+                oracleRun.stderr = oracleRun.stderr.replace(PRED3_RE, '');
+                oracleRun.log = oracleRun.log.replace(PRED3_LOG_RE, '');
+              }
 
-            const d = compareHook(label, oracleRun, engineRun);
-            if (d) divergences.push(d);
+              // KNOWN DIVERGENCE (UNTRACKED DIRECTORY), full statement above.
+              // Deliberately placed AFTER the predicate-3 handling: the bash leg
+              // PASSES these cases, so it reaches predicate 3 and emits the
+              // nudge R6 deleted — and that emission is what keeps the pred3
+              // anti-inertness control below honest for this fixture. Only
+              // where the untracked file is the ONLY thing newer than the
+              // receipt, and only on a stdin shape that actually runs the gate.
+              if (fixture.untracked && ORACLE_BLIND_RECEIPTS.has(receiptState) && shapeName !== REENTRY_TRUE_SHAPE) {
+                assertEqual(engineRun.code, 2, `${label}: ${UNTRACKED_WHY}. The engine must BLOCK — this is the only blocking tooth there is`);
+                assert(
+                  engineRun.stderr.includes(UNTRACKED_FILE_REL),
+                  `${label}: ${UNTRACKED_WHY}. The engine must name the FILE (${UNTRACKED_FILE_REL}), not the directory; got:\n${engineRun.stderr}`,
+                );
+                assertEqual(
+                  oracleRun.code,
+                  0,
+                  `${label}: the bash leg is expected to MISS this (no -uall). If it now blocks, this platform's git ` +
+                    'or the script changed — re-derive the pin rather than leaving a carve-out that suppresses a real comparison',
+                );
+                if (compareHook(label, oracleRun, engineRun) !== null) legFlags.untracked = true;
+                continue;
+              }
+
+              const d = compareHook(label, oracleRun, engineRun);
+              if (d) divergences.push(d);
+            }
           }
         }
         assertEqual(
           divergences,
           [],
-          `stop-gate diverged from its frozen bash oracle (${fixture.name} x ${mode}):\n${divergences.join('\n')}`,
+          `stop-gate diverged from a bash leg (${fixture.name} x ${mode}):\n${divergences.join('\n')}`,
         );
-        // The strip above must have been EXERCISED wherever it is applicable,
-        // never silently inert: with jq the oracle fires predicate 3 for every
-        // non-idle state that has legal next states, so a run in which nothing
-        // was ever stripped means the oracle stopped emitting it — and then the
-        // comparison is no longer proving the engine dropped anything.
-        // Anti-inertness control for the untracked-directory carve-out: it must
-        // have STOOD IN for a real divergence at least once, in both jq modes
-        // (the divergence is about porcelain, not jq). If the two sides agreed
-        // everywhere, the carve-out is suppressing nothing and must be deleted
-        // so the byte comparison runs — the same bar the BSD-sed pin carries.
-        if (fixture.untracked) {
-          assert(
-            untrackedOracleDivergedAtLeastOnce,
-            `untracked-directory carve-out is INERT for ${fixture.name} x ${mode}: the oracle agreed with the ` +
-              'engine on every receipt state, so it no longer stands in for a divergence — delete the carve-out ' +
-              'and let the byte comparison run',
-          );
-        }
-        if (mode === 'jq' && fixture.cursor && fixture.cursor.flow !== 'idle') {
-          assert(
-            pred3StrippedAtLeastOnce,
-            'jq: the oracle never emitted predicate 3 for a non-idle state — nothing was stripped, so this ' +
-              'matrix is no longer evidence that R6 removed anything',
-          );
-        }
-        if (mode === 'no-jq' && fixture.cursor && fixture.cursor.flow !== 'idle') {
-          // Same anti-inertness bar for the platform carve-out: on a BSD sed
-          // every non-idle fixture has at least one receipt state where the
-          // oracle really does warn or block on a re-entrant Stop. If none of
-          // them diverged, this sed grew `\|` support (or the oracle changed)
-          // and the carve-out is now silently suppressing a real comparison.
-          if (!SED_HAS_BRE_ALTERNATION) {
+        for (const [leg] of GATE_BASH_LEGS) {
+          const legFlags = flags.get(leg);
+          // Anti-inertness control for the untracked-directory carve-out: it
+          // must have STOOD IN for a real divergence at least once, in both jq
+          // modes and on both legs. If the two sides agreed everywhere, the
+          // carve-out is suppressing nothing and must be deleted so the byte
+          // comparison runs — the same bar the BSD-sed pin carries.
+          if (fixture.untracked) {
             assert(
-              bsdSedOracleDivergedAtLeastOnce,
-              `BSD-sed carve-out is INERT for ${fixture.name}: the oracle agreed with the engine on every ` +
+              legFlags.untracked,
+              `${leg}: untracked-directory carve-out is INERT for ${fixture.name} x ${mode}: the bash leg agreed ` +
+                'with the engine on every receipt state, so it no longer stands in for a divergence — delete the ' +
+                'carve-out and let the byte comparison run',
+            );
+          }
+          // The predicate-3 strip must have been EXERCISED wherever it is
+          // applicable: with jq the bash leg fires predicate 3 for every
+          // non-idle state that has legal next states.
+          if (mode === 'jq' && fixture.cursor && fixture.cursor.flow !== 'idle') {
+            assert(
+              legFlags.pred3,
+              `${leg}: jq: the bash leg never emitted predicate 3 for a non-idle state — nothing was stripped, so ` +
+                'this matrix is no longer evidence that R6 removed anything',
+            );
+          }
+          // Same anti-inertness bar for the platform carve-out.
+          if (mode === 'no-jq' && fixture.cursor && fixture.cursor.flow !== 'idle' && !SED_HAS_BRE_ALTERNATION) {
+            assert(
+              legFlags.bsdSed,
+              `${leg}: BSD-sed carve-out is INERT for ${fixture.name}: the bash leg agreed with the engine on every ` +
                 `'${REENTRY_TRUE_SHAPE}' case, so it is no longer standing in for a divergence — delete the ` +
                 'carve-out and let the byte comparison run',
             );
@@ -1035,6 +1058,483 @@ for (const fixture of GATE_FIXTURES) {
     });
   }
 }
+
+// ---------------------------------------------------------------------------
+// review-hardening/10 — THREE-WAY rows: engine, live fallback, frozen oracle.
+//
+// The engine (review-hardening/9) and the live no-node fallback both read
+// `git status --porcelain -z ... -- .` and strip the project's
+// `rev-parse --show-prefix`. The frozen oracle reads plain porcelain at the
+// toplevel, so it stats a C-quoted name or a `sub/`-prefixed path, misses, and
+// passes a stale receipt. That is pinned below as a KNOWN DIVERGENCE (engine and
+// live RIGHT, oracle WRONG): the oracle stays byte-frozen, and if it ever starts
+// blocking these rows the pin fails and must be re-derived.
+//
+// Each row runs all three legs in both jq modes. The plain-name control is
+// where all three agree, so a pin can never stand in for "the fixture is
+// inert".
+// ---------------------------------------------------------------------------
+
+const RH10_WHY =
+  'ENGINE + LIVE RIGHT / ORACLE WRONG (review-hardening/10): the frozen oracle reads plain toplevel porcelain, ' +
+  'so a C-quoted name or a path below a nested project root never matches a file and a stale receipt passes';
+
+// A committed quick.verify install at the git toplevel, receipt stamped 2020.
+function makeThreeWayFlatFixture() {
+  const sb = makeHookSandbox({ cursor: { flow: 'quick', phase: 'verify', feature: null, updated: FIXED_TS }, gitInit: true });
+  mkdirSync(path.join(sb.vibeDir, 'evidence'), { recursive: true });
+  const receipt = path.join(sb.vibeDir, 'evidence', 'quick.md');
+  writeFileSync(receipt, 'commands + output\n');
+  writeFileSync(path.join(sb.dir, 'src.txt'), 'v1\n');
+  for (const gitArgs of [['-C', sb.dir, 'add', '-A'], ['-C', sb.dir, 'commit', '-qm', 'init']]) {
+    const r = runCommand('git', gitArgs, { cwd: sb.dir });
+    assert(r.code === 0, `three-way fixture: \`git ${gitArgs.join(' ')}\` exited ${r.code}: ${r.stderr}`);
+  }
+  const past = new Date('2020-01-01T00:00:00Z');
+  utimesSync(receipt, past, past);
+  return sb;
+}
+
+// Run all three legs once. `prepare` runs before each leg, so a leg that writes
+// the warnings relay (predicate 3) cannot change what the next leg sees.
+function threeWay(sb, mode, prepare = () => {}) {
+  const spawns = modeSpawn(mode, sb.root);
+  const run = (script) => {
+    prepare();
+    const r = runOracleScript(script, [], mode, oracleEnv(sb), { cwd: sb.root, input: '{}' });
+    return { code: r.code, stderr: r.stderr };
+  };
+  prepare();
+  const e = runGateHook(sb.root, sb.vibeDir, '{}', { spawnGit: spawns.spawnGit });
+  return { engine: { code: e.code, stderr: e.stderr }, live: run(GATE_LIVE), oracle: run(GATE_ORACLE) };
+}
+
+function assertDivergentRow(label, legs, name) {
+  assertEqual(legs.engine.code, 2, `${label}: the engine must block`);
+  assert(legs.engine.stderr.includes(`changed after it was written: ${name}`), `${label}: engine names ${name}; got:\n${legs.engine.stderr}`);
+  assertEqual(legs.live.code, 2, `${label}: the live fallback must block like the engine; got:\n${legs.live.stderr}`);
+  assert(legs.live.stderr.includes(`changed after it was written: ${name}`), `${label}: live names ${name}; got:\n${legs.live.stderr}`);
+  assertEqual(
+    legs.oracle.code,
+    0,
+    `${label}: ${RH10_WHY}. If the frozen oracle now blocks, its git or its bytes changed — re-derive this pin`,
+  );
+}
+
+// A nested project the outer repo does not track at all (a new monorepo
+// package): `git status --porcelain -z -- .` in `<outer>/sub` prints the one
+// record `?? sub/`, and stripping the `sub/` prefix leaves an empty path. Every
+// file and directory under `sub/` is backdated to 2019 (`sub/` itself last, as
+// a child's utime does not move it) and the receipt is stamped 2020, so a row
+// starts from a tree no leg may call stale. `extra(sb)` adds files first.
+const RH10_TREE_TS = new Date('2019-01-01T00:00:00Z');
+function backdateTree(dir, ts) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) backdateTree(p, ts);
+    else utimesSync(p, ts, ts);
+  }
+  utimesSync(dir, ts, ts);
+}
+function makeUntrackedNestedFixture(extra = () => {}) {
+  const sb = makeNestedSandbox({ trackProject: false });
+  extra(sb);
+  backdateTree(sb.dir, RH10_TREE_TS);
+  const past = new Date('2020-01-01T00:00:00Z');
+  utimesSync(sb.receipt, past, past);
+  return sb;
+}
+function assertOneDirectoryRecord(sb) {
+  const rows = runCommand('git', ['status', '--porcelain', '-z', '--', '.'], { cwd: sb.dir }).stdout;
+  assertEqual(rows, '?? sub/\0', 'floor: git reports the untracked project as one directory record');
+}
+
+let rh10RowsRun = 0;
+
+for (const mode of JQ_MODES) {
+  test(`review-hardening/10: three-way — quoted name café.txt x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeThreeWayFlatFixture();
+    try {
+      writeFileSync(path.join(sb.dir, 'café.txt'), 'new\n');
+      const plain = runCommand('git', ['-C', sb.dir, 'status', '--porcelain'], { cwd: sb.dir }).stdout;
+      assert(plain.includes('"caf'), `floor: plain porcelain must C-quote the name; got ${JSON.stringify(plain)}`);
+      assertDivergentRow('café.txt', threeWay(sb, mode, () => resetWarnLog(sb)), 'café.txt');
+      rh10RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/10: three-way — staged rename to "moved file.txt" x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeThreeWayFlatFixture();
+    try {
+      const mv = runCommand('git', ['-C', sb.dir, 'mv', 'src.txt', 'moved file.txt'], { cwd: sb.dir });
+      assert(mv.code === 0, `git mv exited ${mv.code}: ${mv.stderr}`);
+      const plain = runCommand('git', ['-C', sb.dir, 'status', '--porcelain'], { cwd: sb.dir }).stdout;
+      assert(plain.includes('R  src.txt -> "moved file.txt"'), `floor: a quoted rename row; got ${JSON.stringify(plain)}`);
+      assertDivergentRow('rename', threeWay(sb, mode, () => resetWarnLog(sb)), 'moved file.txt');
+      rh10RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/10: three-way — nested project, stale sub/src.txt beside fresh runtime files x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeNestedSandbox();
+    try {
+      sb.withCeiling(() => {
+        writeFileSync(path.join(sb.dir, 'src.txt'), 'v2\n');
+        const freshRuntime = () => {
+          writeFileSync(path.join(sb.dir, '.vibe', 'last-inject'), 'quick.verify\n');
+          writeFileSync(sb.warnLogPath, 'gate: something\n');
+        };
+        assertDivergentRow('nested', threeWay(sb, mode, freshRuntime), 'src.txt');
+      });
+      rh10RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/10: three-way — nested project, ONLY its own runtime files fresh: engine and live pass x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeNestedSandbox();
+    try {
+      sb.withCeiling(() => {
+        const freshRuntime = () => {
+          writeFileSync(path.join(sb.dir, '.vibe', 'last-inject'), 'quick.verify\n');
+          writeFileSync(sb.warnLogPath, 'gate: something\n');
+        };
+        freshRuntime();
+        const rows = runCommand('git', ['status', '--porcelain', '-z', '--', '.'], { cwd: sb.dir }).stdout;
+        for (const row of [' M sub/.vibe/last-inject', '?? sub/.agents/skills/vibe/warnings.log']) {
+          assert(rows.includes(`${row}\0`), `floor: git reports ${JSON.stringify(row)} per file; got ${JSON.stringify(rows)}`);
+        }
+        const legs = threeWay(sb, mode, freshRuntime);
+        assertEqual(legs.engine.code, 0, `the engine excludes its own runtime files; got:\n${legs.engine.stderr}`);
+        assertEqual(legs.live.code, 0, `the live fallback excludes its own runtime files; got:\n${legs.live.stderr}`);
+        assertEqual(legs.oracle.code, 0, 'the frozen oracle passes too (it never sees a project-relative path)');
+      });
+      rh10RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/10: three-way control — a plain name blocks on all three legs x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeThreeWayFlatFixture();
+    try {
+      writeFileSync(path.join(sb.dir, 'file.txt'), 'new\n');
+      const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+      for (const leg of ['engine', 'live', 'oracle']) {
+        assertEqual(legs[leg].code, 2, `control: ${leg} blocks a plain name; got:\n${legs[leg].stderr}`);
+        assert(legs[leg].stderr.includes('changed after it was written: file.txt'), `control: ${leg} names file.txt`);
+      }
+      rh10RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  // review-hardening/10 fix round — the empty path left by the prefix strip.
+  // The fallback must compare `sub/` itself and name it `.`, not skip it.
+  test(`review-hardening/10: three-way — untracked nested project, a new file in it: engine and live block x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeUntrackedNestedFixture();
+    try {
+      sb.withCeiling(() => {
+        writeFileSync(path.join(sb.dir, 'newroot.txt'), 'new\n'); // moves the mtime of sub/ past the receipt
+        assertOneDirectoryRecord(sb);
+        const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+        assertEqual(legs.engine.code, 2, `the engine (-uall) blocks; got:\n${legs.engine.stderr}`);
+        assert(legs.engine.stderr.includes('changed after it was written: newroot.txt'), `engine names newroot.txt; got:\n${legs.engine.stderr}`);
+        assertEqual(legs.live.code, 2, `the live fallback compares the project directory and blocks; got:\n${legs.live.stderr}`);
+        assert(legs.live.stderr.includes('changed after it was written: .\n'), `live names the project directory "."; got:\n${legs.live.stderr}`);
+        assertEqual(legs.oracle.code, 0, `${RH10_WHY}. If the frozen oracle now blocks, its git or its bytes changed — re-derive this pin`);
+      });
+      rh10RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/10: three-way control — untracked nested project, nothing newer: all three pass x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeUntrackedNestedFixture();
+    try {
+      sb.withCeiling(() => {
+        assertOneDirectoryRecord(sb);
+        const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+        for (const leg of ['engine', 'live', 'oracle']) {
+          assertEqual(legs[leg].code, 0, `control: ${leg} passes an unchanged untracked project; got:\n${legs[leg].stderr}`);
+        }
+      });
+      rh10RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  // KNOWN DIVERGENCE (UNTRACKED DIRECTORY) on the untracked project itself: an
+  // in-place edit deep inside it does not move the mtime of `sub/`, and the
+  // fallback has no `-uall`, so it passes. Pinned, not fixed (tech.md R2/R3).
+  test(`review-hardening/10: three-way — untracked nested project, deep in-place edit: engine blocks, live pinned x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeUntrackedNestedFixture((s) => {
+      mkdirSync(path.join(s.dir, 'src', 'deep'), { recursive: true });
+      writeFileSync(path.join(s.dir, 'src', 'deep', 'x.txt'), 'v1\n');
+    });
+    try {
+      sb.withCeiling(() => {
+        writeFileSync(path.join(sb.dir, 'src', 'deep', 'x.txt'), 'v2\n');
+        assertOneDirectoryRecord(sb);
+        const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+        assertEqual(legs.engine.code, 2, `the engine (-uall) blocks; got:\n${legs.engine.stderr}`);
+        assert(legs.engine.stderr.includes('changed after it was written: src/deep/x.txt'), `engine names src/deep/x.txt; got:\n${legs.engine.stderr}`);
+        assertEqual(legs.live.code, 0, `${UNTRACKED_WHY}. If the live fallback now blocks, it enumerates files — re-derive this pin`);
+        assertEqual(legs.oracle.code, 0, `${UNTRACKED_WHY}. If the frozen oracle now blocks, re-derive this pin`);
+      });
+      rh10RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+}
+
+test('review-hardening/10: floor — every three-way row and control ran all three legs', () => {
+  // Registered after the rows, so it runs after them. Each row counts once per
+  // jq mode that actually executed (a mode skipped for a missing jq counts 0).
+  const modesRun = JQ_PRESENT ? 2 : 1;
+  assert(rh10RowsRun >= 8 * modesRun, `only ${rh10RowsRun} three-way row(s) ran, floor ${8 * modesRun}`);
+});
+
+// ---------------------------------------------------------------------------
+// review-hardening/9 — KNOWN DIVERGENCE (STAT ERROR): the engine fails CLOSED on
+// a changed path it cannot stat (any code but a plain not-found, and a
+// not-found whose name decoded to U+FFFD). The live no-node fallback and the
+// frozen oracle probe with `-e` and skip such a path, so they pass. Pinned, not
+// fixed: bash `-e` cannot tell ELOOP or EACCES from ENOENT without a stat(1)
+// whose flags differ between BSD and GNU. If a bash leg ever starts blocking a
+// row below, its probe changed — re-derive the pin.
+// ---------------------------------------------------------------------------
+
+const STAT_ERROR_WHY =
+  'ENGINE FAIL-CLOSED / BASH FAIL-OPEN (review-hardening/9): the engine blocks on a changed path it cannot stat, ' +
+  'while both bash gates probe it with -e (or see only its collapsed parent directory) and pass';
+const RH9_TREE_TS = new Date('2019-01-01T00:00:00Z');
+
+function assertStatErrorRow(label, legs, name, code) {
+  assertEqual(legs.engine.code, 2, `${label}: the engine must block; got:\n${legs.engine.stderr}`);
+  assert(
+    legs.engine.stderr.includes(`could not stat: ${name} (${code})`),
+    `${label}: engine names ${name} (${code}); got:\n${legs.engine.stderr}`,
+  );
+  assertEqual(legs.live.code, 0, `${label}: ${STAT_ERROR_WHY}. If the live fallback now blocks, re-derive this pin; got:\n${legs.live.stderr}`);
+  assertEqual(legs.oracle.code, 0, `${label}: ${STAT_ERROR_WHY}. If the frozen oracle now blocks, re-derive this pin; got:\n${legs.oracle.stderr}`);
+}
+
+let rh9RowsRun = 0;
+
+for (const mode of JQ_MODES) {
+  test(`review-hardening/9: three-way — untracked symlink loop: engine blocks (ELOOP), live and oracle pinned x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeThreeWayFlatFixture();
+    try {
+      symlinkSync('loop', path.join(sb.dir, 'loop'));
+      const rows = runCommand('git', ['status', '--porcelain', '-z', '-uall', '--', '.'], { cwd: sb.dir }).stdout;
+      assertEqual(rows, '?? loop\0', 'floor: git reports the loop as one untracked record');
+      assertStatErrorRow('loop', threeWay(sb, mode, () => resetWarnLog(sb)), 'loop', 'ELOOP');
+      rh9RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/9: three-way — untracked file in a non-searchable dir: engine blocks (EACCES), live and oracle pinned x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeThreeWayFlatFixture();
+    const locked = path.join(sb.dir, 'locked');
+    try {
+      mkdirSync(locked);
+      writeFileSync(path.join(locked, 'f.txt'), 'new\n');
+      utimesSync(path.join(locked, 'f.txt'), RH9_TREE_TS, RH9_TREE_TS);
+      utimesSync(locked, RH9_TREE_TS, RH9_TREE_TS);
+      chmodSync(locked, 0o644); // readable, not searchable: readdir works, stat of an entry fails
+      let statable = true;
+      try {
+        statSync(path.join(locked, 'f.txt'));
+      } catch {
+        statable = false;
+      }
+      if (statable) skip('stat inside a mode-644 directory succeeds here (running as root?)');
+      const rows = runCommand('git', ['status', '--porcelain', '-z', '-uall', '--', '.'], { cwd: sb.dir }).stdout;
+      assertEqual(rows, '?? locked/f.txt\0', 'floor: git -uall reports the file inside the non-searchable directory');
+      assertStatErrorRow('locked', threeWay(sb, mode, () => resetWarnLog(sb)), 'locked/f.txt', 'EACCES');
+      rh9RowsRun += 1;
+    } finally {
+      try {
+        chmodSync(locked, 0o755);
+      } catch {
+        // mkdirSync never ran; nothing to restore
+      }
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/9: three-way — untracked name that is not UTF-8: engine blocks (U+FFFD), live and oracle pinned x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeThreeWayFlatFixture();
+    try {
+      // a<0xff>b.txt. APFS refuses names that are not UTF-8 (EILSEQ), so this
+      // row runs on Linux CI and skips on macOS.
+      const raw = Buffer.concat([Buffer.from(path.join(sb.dir, 'a')), Buffer.from([0xff]), Buffer.from('b.txt')]);
+      try {
+        writeFileSync(raw, 'old\n');
+      } catch (err) {
+        skip(`this filesystem refuses a name that is not UTF-8 (${err && err.code})`);
+      }
+      // Older than the receipt: the bash legs judge the raw bytes (or miss the
+      // C-quoted name) and pass; only the engine's decoded name is unjudgeable.
+      utimesSync(raw, RH9_TREE_TS, RH9_TREE_TS);
+      assertStatErrorRow('non-UTF-8', threeWay(sb, mode, () => resetWarnLog(sb)), 'a�b.txt', 'ENOENT');
+      rh9RowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+}
+
+test('review-hardening/9: floor — the stat-error pins ran all three legs', () => {
+  // The ELOOP row runs everywhere; EACCES and non-UTF-8 may skip (root,
+  // APFS). Each counts once per jq mode that actually executed.
+  const modesRun = JQ_PRESENT ? 2 : 1;
+  assert(rh9RowsRun >= modesRun, `only ${rh9RowsRun} stat-error row(s) ran, floor ${modesRun}`);
+});
+
+// ---------------------------------------------------------------------------
+// review-hardening/9 — the rename origin, on real git. A `-z` rename record is
+// `R  new\0origin\0`, and both `-z` readers (the engine and the live fallback)
+// must consume the origin field whatever the record is, a deletion-flagged `RD`
+// included. Each row is shaped so a reader that skips that step goes wrong:
+//   - not judged: the origin `xx-src.txt`, misread as a record, names the
+//     committed `src.txt` (its text after the three xy-and-space columns),
+//     which is newer than the receipt. The rename only touched `b-new.txt`
+//     (backdated, or deleted for `RD`), so every leg must pass.
+//   - read on: the origin `aR-old.txt` has an `R` in its xy columns. Misread as
+//     a record, it would swallow the stale ` M z.txt` record after it as ITS
+//     origin; every leg must still block on `z.txt`.
+// The frozen oracle reads plain porcelain (`R  origin -> new`) and agrees on
+// each row; it is run as the third leg, not pinned.
+// ---------------------------------------------------------------------------
+
+function makeRenameFixture() {
+  const sb = makeThreeWayFlatFixture();
+  writeFileSync(path.join(sb.dir, 'xx-src.txt'), 'renamed, not judged\n');
+  writeFileSync(path.join(sb.dir, 'aR-old.txt'), 'renamed, read on\n');
+  writeFileSync(path.join(sb.dir, 'z.txt'), 'v1\n');
+  for (const gitArgs of [['-C', sb.dir, 'add', '-A'], ['-C', sb.dir, 'commit', '-qm', 'rename fixture']]) {
+    const r = runCommand('git', gitArgs, { cwd: sb.dir });
+    assert(r.code === 0, `rename fixture: \`git ${gitArgs.join(' ')}\` exited ${r.code}: ${r.stderr}`);
+  }
+  return sb;
+}
+
+function gitMvBackdated(sb, from, to) {
+  const mv = runCommand('git', ['-C', sb.dir, 'mv', from, to], { cwd: sb.dir });
+  assert(mv.code === 0, `git mv ${from} ${to} exited ${mv.code}: ${mv.stderr}`);
+  utimesSync(path.join(sb.dir, to), RH9_TREE_TS, RH9_TREE_TS);
+}
+
+function porcelainZ(sb) {
+  return runCommand('git', ['-C', sb.dir, 'status', '--porcelain', '-z', '-uall', '--', '.'], { cwd: sb.dir }).stdout;
+}
+
+let rh9RenameRowsRun = 0;
+
+for (const mode of JQ_MODES) {
+  test(`review-hardening/9: three-way — a rename origin is not judged as a changed path x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeRenameFixture();
+    try {
+      gitMvBackdated(sb, 'xx-src.txt', 'b-new.txt');
+      assertEqual(porcelainZ(sb), 'R  b-new.txt\0xx-src.txt\0', 'floor: the rename is the only record');
+      const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+      for (const leg of ['engine', 'live', 'oracle']) {
+        assertEqual(legs[leg].code, 0, `${leg} must not judge the origin as a path; got:\n${legs[leg].stderr}`);
+      }
+      rh9RenameRowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/9: three-way — a deletion-flagged rename (RD) still consumes its origin x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeRenameFixture();
+    try {
+      gitMvBackdated(sb, 'xx-src.txt', 'b-new.txt');
+      rmSync(path.join(sb.dir, 'b-new.txt'));
+      assertEqual(porcelainZ(sb), 'RD b-new.txt\0xx-src.txt\0', 'floor: one deletion-flagged rename record');
+      const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+      for (const leg of ['engine', 'live', 'oracle']) {
+        assertEqual(legs[leg].code, 0, `${leg} must skip the RD record and its origin; got:\n${legs[leg].stderr}`);
+      }
+      rh9RenameRowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/9: three-way — a worktree rename ( R) still consumes its origin x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeRenameFixture();
+    try {
+      // An intent-to-add copy plus a deleted source is a rename git reports in
+      // the worktree column only, so a reader that looks for R in column 0
+      // alone misreads the origin.
+      writeFileSync(path.join(sb.dir, 'b-new.txt'), readFileSync(path.join(sb.dir, 'xx-src.txt')));
+      const add = runCommand('git', ['-C', sb.dir, 'add', '-N', 'b-new.txt'], { cwd: sb.dir });
+      assert(add.code === 0, `git add -N exited ${add.code}: ${add.stderr}`);
+      rmSync(path.join(sb.dir, 'xx-src.txt'));
+      utimesSync(path.join(sb.dir, 'b-new.txt'), RH9_TREE_TS, RH9_TREE_TS);
+      assertEqual(porcelainZ(sb), ' R b-new.txt\0xx-src.txt\0', 'floor: one worktree rename record');
+      const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+      for (const leg of ['engine', 'live', 'oracle']) {
+        assertEqual(legs[leg].code, 0, `${leg} must not judge the origin as a path; got:\n${legs[leg].stderr}`);
+      }
+      rh9RenameRowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+
+  test(`review-hardening/9: three-way — the record after a rename is still read x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb = makeRenameFixture();
+    try {
+      gitMvBackdated(sb, 'aR-old.txt', 'b-new.txt');
+      writeFileSync(path.join(sb.dir, 'z.txt'), 'v2\n');
+      assertEqual(porcelainZ(sb), 'R  b-new.txt\0aR-old.txt\0 M z.txt\0', 'floor: a rename, then the stale z.txt');
+      const legs = threeWay(sb, mode, () => resetWarnLog(sb));
+      for (const leg of ['engine', 'live', 'oracle']) {
+        assertEqual(legs[leg].code, 2, `${leg} must block on z.txt; got:\n${legs[leg].stderr}`);
+        assert(legs[leg].stderr.includes('changed after it was written: z.txt'), `${leg} names z.txt; got:\n${legs[leg].stderr}`);
+      }
+      rh9RenameRowsRun += 1;
+    } finally {
+      sb.cleanup();
+    }
+  });
+}
+
+test('review-hardening/9: floor — the rename-origin rows ran all three legs', () => {
+  const modesRun = JQ_PRESENT ? 2 : 1;
+  assert(rh9RenameRowsRun >= 4 * modesRun, `only ${rh9RenameRowsRun} rename-origin row(s) ran, floor ${4 * modesRun}`);
+});
 
 // ---------------------------------------------------------------------------
 // KNOWN DIVERGENCE (PLATFORM) — `stop_hook_active: true` on a sed WITHOUT GNU
@@ -1059,8 +1559,8 @@ for (const fixture of GATE_FIXTURES) {
 // The oracle stays BYTE-FROZEN. It is a verbatim historical copy and its whole
 // evidentiary value is that it is unedited — so what this records is that the
 // historical bash hook genuinely WAS broken on a jq-less macOS, and the port
-// fixed it. Nothing user-facing is affected: the shipped
-// .claude/hooks/stop-gate.sh is a three-line `exec node` shim with no sed in it.
+// fixed it. The live no-node fallback (GATE_LIVE) keeps the same sed read, so
+// the pin runs on that leg too: a node-less, jq-less macOS target still has it.
 //
 // Runs on BOTH dialects, with dialect-conditional expectations — never skipped:
 // the engine half of the contract is asserted everywhere, and the oracle half
@@ -1128,13 +1628,14 @@ test('hermetic: an ambient status.showUntrackedFiles cannot change what the gate
     );
 
     // (d) And the engine is unaffected in every state — it passes `-uall`
-    // explicitly, so it enumerates no matter what the config says.
+    // explicitly, so it enumerates no matter what the config says. The argv is
+    // the engine's own (`-z` and the `-- .` project scope, review-hardening/9).
     for (const [label, opts] of [
       ['hostile HOME', { env: { HOME: home } }],
       ['empty HOME', { env: { HOME: emptyHome } }],
       ['hostile HOME, neutralization deleted', { env: { HOME: home }, unsetEnv: NEUTRALIZERS }],
     ]) {
-      const engineView = runCommand('git', ['-C', sb.dir, 'status', '--porcelain', '-uall'], opts).stdout;
+      const engineView = runCommand('git', ['-C', sb.dir, 'status', '--porcelain', '-z', '-uall', '--', '.'], opts).stdout;
       assert(
         engineView.includes(UNTRACKED_FILE_REL),
         `${label}: the engine's own argv must enumerate regardless of config; got:\n${engineView}`,
@@ -1145,6 +1646,106 @@ test('hermetic: an ambient status.showUntrackedFiles cannot change what the gate
     rmSync(emptyHome, { recursive: true, force: true });
     sb.cleanup();
   }
+});
+
+// review-hardening/9 — an ambient GIT_DIR (a git hook or a pre-commit wrapper
+// exports it) beats both `-C` and `cwd`, so without run.mjs deleting it every
+// fixture `git init`, `git config` and `git commit` would act on THAT repo. The
+// suite runs a git-backed row in a child runner with GIT_DIR, GIT_WORK_TREE and
+// GIT_INDEX_FILE pointing at a decoy, and asserts the decoy is untouched.
+test('review-hardening/9: hermetic: an ambient GIT_DIR, GIT_WORK_TREE or GIT_INDEX_FILE never reaches the fixtures', () => {
+  const decoy = mkTempRoot('vibe-parity-decoy-');
+  try {
+    writeFileSync(path.join(decoy, 'decoy.txt'), 'decoy\n');
+    for (const gitArgs of [
+      ['init', '-q'],
+      ['config', 'user.email', 'd@d'],
+      ['config', 'user.name', 'd'],
+      ['config', 'commit.gpgsign', 'false'],
+      ['config', 'tag.gpgsign', 'false'],
+      ['add', '-A'],
+      ['commit', '-qm', 'decoy'],
+    ]) {
+      const r = runCommand('git', gitArgs, { cwd: decoy });
+      assert(r.code === 0, `decoy: \`git ${gitArgs.join(' ')}\` exited ${r.code}: ${r.stderr}`);
+    }
+    const gitDir = path.join(decoy, '.git');
+    const configBefore = readFileSync(path.join(gitDir, 'config'), 'utf8');
+    const headBefore = runCommand('git', ['rev-parse', 'HEAD'], { cwd: decoy }).stdout;
+    const child = runCommand(
+      process.execPath,
+      [path.join(REPO_ROOT, 'flow', 'engine', 'tests', 'run.mjs'), 'three-way control — a plain name blocks on all three legs x no-jq'],
+      { env: { GIT_DIR: gitDir, GIT_WORK_TREE: decoy, GIT_INDEX_FILE: path.join(gitDir, 'index') } },
+    );
+    assertEqual(child.code, 0, `the git-backed row must pass with a hostile GIT_DIR in the env:\n${child.stdout}\n${child.stderr}`);
+    assert(child.stdout.includes('1 passed'), `floor: the child runner must run exactly the one row:\n${child.stdout}`);
+    assertEqual(readFileSync(path.join(gitDir, 'config'), 'utf8'), configBefore, "the fixtures rewrote the decoy repo's config");
+    assertEqual(runCommand('git', ['rev-parse', 'HEAD'], { cwd: decoy }).stdout, headBefore, 'the fixtures committed into the decoy repo');
+  } finally {
+    rmSync(decoy, { recursive: true, force: true });
+  }
+});
+
+// review-hardening/9 — git also takes config from the environment, not only from
+// files: `git -c k=v` exports GIT_CONFIG_PARAMETERS to the hooks it runs, and
+// GIT_CONFIG_COUNT with GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n does the same job.
+// Either one carrying status.showUntrackedFiles=all makes the frozen oracle
+// enumerate, exactly like a hostile ~/.gitconfig, and the untracked-directory
+// pins go falsely red. The child runner gets each injection and must stay green.
+const ENV_CONFIG_INJECTIONS = [
+  ['GIT_CONFIG_PARAMETERS', { GIT_CONFIG_PARAMETERS: "'status.showuntrackedfiles'='all'" }],
+  ['GIT_CONFIG_COUNT', { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'status.showUntrackedFiles', GIT_CONFIG_VALUE_0: 'all' }],
+];
+test('review-hardening/9: hermetic: env-injected git config (GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT) never reaches the fixtures', () => {
+  const fixture = GATE_FIXTURES.find((f) => f.untracked);
+  assert(fixture, 'floor: the untracked-directory fixture must exist for this test to guard anything');
+  const sb = buildGateSandbox(fixture);
+  try {
+    for (const [label, env] of ENV_CONFIG_INJECTIONS) {
+      // Floor: the injection really reaches a git that inherits it.
+      const injected = runCommand('git', ['-C', sb.dir, 'status', '--porcelain'], { env }).stdout;
+      assert(
+        injected.includes(UNTRACKED_FILE_REL),
+        `floor: ${label} must make plain --porcelain enumerate ${UNTRACKED_FILE_REL}, or this test reproduces nothing:\n${injected}`,
+      );
+      const child = runCommand(
+        process.execPath,
+        [path.join(REPO_ROOT, 'flow', 'engine', 'tests', 'run.mjs'), 'untracked nested project, deep in-place edit: engine blocks, live pinned x no-jq'],
+        { env },
+      );
+      assertEqual(child.code, 0, `${label}: the untracked-directory pin must pass with env-injected config:\n${child.stdout}\n${child.stderr}`);
+      assert(child.stdout.includes('1 passed'), `${label}: floor: the child runner must run exactly the one row:\n${child.stdout}`);
+    }
+  } finally {
+    sb.cleanup();
+  }
+});
+
+// review-hardening/9 — the exact delete list, one variable at a time. Several of
+// these leave no trace a decoy repo could show (GIT_NAMESPACE,
+// GIT_ALTERNATE_OBJECT_DIRECTORIES), so a child imports run.mjs with every one
+// set and reports which survive. The list is spelled here, not imported, so
+// dropping a name from run.mjs turns this red.
+test('review-hardening/9: run.mjs deletes every ambient repo-location and env-config variable', () => {
+  const KEYS = [
+    'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_NAMESPACE', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT',
+    'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0', 'GIT_CONFIG_KEY_12', 'GIT_CONFIG_VALUE_12',
+  ];
+  const env = Object.fromEntries(KEYS.map((k) => [k, `/nonexistent/${k}`]));
+  const probe = [
+    `const keys = ${JSON.stringify(KEYS)};`,
+    "const before = keys.filter((k) => k in process.env);",
+    `await import(${JSON.stringify(pathToFileURL(path.join(REPO_ROOT, 'flow', 'engine', 'tests', 'run.mjs')).href)});`,
+    "const after = keys.filter((k) => k in process.env);",
+    "console.log(JSON.stringify({ before, after, nosystem: process.env.GIT_CONFIG_NOSYSTEM ?? null }));",
+  ].join('\n');
+  const r = runCommand(process.execPath, ['--input-type=module', '-e', probe], { env });
+  assertEqual(r.code, 0, `the probe must run:\n${r.stdout}\n${r.stderr}`);
+  const out = JSON.parse(r.stdout.trim().split('\n').pop());
+  assertEqual(out.before, KEYS, 'floor: every variable must be set before run.mjs loads');
+  assertEqual(out.after, [], `run.mjs must delete each of these; survivors: ${out.after.join(', ')}`);
+  assertEqual(out.nosystem, '1', 'the GIT_CONFIG_(KEY|VALUE)_n sweep must not touch the neutralizers run.mjs sets');
 });
 
 test("KNOWN DIVERGENCE (BSD sed): stop_hook_active true — the ENGINE returns early (right); the ORACLE's no-jq sed leg misses the token because \\| is GNU-only", () => {
@@ -1456,7 +2057,7 @@ test('parity matrix: every family covers every cursor fixture in BOTH jq modes',
     assert(
       families.has(required),
       `'${required}' is not in the parity matrix — the two hooks that can BLOCK a tool call or a turn must ` +
-        'always be compared against their frozen bash oracles (flow/hooks-fallback/), never trusted from a port review',
+        'always be compared against their frozen bash oracles (GUARD_ORACLE, GATE_ORACLE), never trusted from a port review',
     );
   }
 
@@ -1526,16 +2127,40 @@ test('parity oracles: the differential\'s input tables have not been trimmed to 
 // each must carry the FROZEN banner, must still contain the load-bearing
 // spellings the port had to reproduce, and must contain no trace of the Node
 // shim that replaced it.
-test('parity oracles: flow/hooks-fallback/*.sh are the frozen bash originals, not shims', () => {
+test('parity oracles: the guard oracle and oracles/…/stop-gate.sh are the bash originals, not shims', () => {
   const guard = readFileSync(GUARD_ORACLE, 'utf8');
   const gate = readFileSync(GATE_ORACLE, 'utf8');
   for (const [name, src] of [['pre-tool-use-guard.sh', guard], ['stop-gate.sh', gate]]) {
-    assertMatch(src, /FROZEN PARITY ORACLE/, `${name} lost its frozen-oracle banner`);
+    assertMatch(src, /PARITY ORACLE/, `${name} lost its parity-oracle banner`);
     assert(!/cli\.mjs/.test(src), `${name} has been overwritten with the Node shim — the oracle is gone again`);
     assert(!/exec node/.test(src), `${name} has been overwritten with the Node shim — the oracle is gone again`);
   }
+  assertMatch(gate, /FROZEN PARITY ORACLE/, 'oracles/…/stop-gate.sh lost its frozen-oracle banner');
+  // GUARD_ORACLE is the live fallback, which has been edited since it was
+  // restored (the v0.4 docs/spec path classes, review-hardening/19's matcher
+  // comment). Its banner must not claim to be a frozen verbatim copy, and must
+  // name the byte-frozen original under oracles/.
+  assert(!/FROZEN PARITY ORACLE/.test(guard), 'pre-tool-use-guard.sh still calls itself frozen, but it has been edited');
+  assert(!/restored\s*(?:#\s*)?verbatim/.test(guard), 'pre-tool-use-guard.sh still claims a verbatim copy of the pre-port hook');
+  assert(
+    guard.includes('oracles/bash/flow/hooks-fallback/pre-tool-use-guard.sh'),
+    'pre-tool-use-guard.sh must name the byte-frozen original under oracles/',
+  );
   assertMatch(guard, /detect-context\.sh|"\$DETECT" decide/, 'the guard oracle no longer delegates to detect-context.sh');
   assertMatch(guard, /sniff_bash/, 'the guard oracle lost its warn-only Bash sniffer');
   assertMatch(gate, /stop_hook_active/, 'the gate oracle lost its re-entry guard');
   assertMatch(gate, /-nt "\$receipt"/, 'the gate oracle lost its receipt staleness comparison');
+
+  // The live fallback is the no-node path, so it must never become the Node
+  // shim either — that would leave a node-less target with no Stop gate at all.
+  // Since review-hardening/10 it is no longer the oracle: it is fixed, so its
+  // banner must not claim to be frozen, and must name where the frozen copy is.
+  const live = readFileSync(GATE_LIVE, 'utf8');
+  assert(!/FROZEN PARITY ORACLE/.test(live), 'flow/hooks-fallback/stop-gate.sh still calls itself the frozen oracle');
+  assert(
+    live.includes('oracles/bash/flow/hooks-fallback/stop-gate.sh'),
+    'flow/hooks-fallback/stop-gate.sh must name the frozen oracle it was forked from',
+  );
+  assert(!/cli\.mjs/.test(live), 'flow/hooks-fallback/stop-gate.sh has been overwritten with the Node shim');
+  assert(!/exec node/.test(live), 'flow/hooks-fallback/stop-gate.sh has been overwritten with the Node shim');
 });

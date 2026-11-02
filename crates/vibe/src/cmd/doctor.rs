@@ -51,10 +51,16 @@ fn lock_line(path: &Path) -> String {
         .ok()
         .and_then(|m| SystemTime::now().duration_since(m).ok());
     if age.is_some_and(|a| a > STALE) {
-        return "lock stale".to_string();
+        return format!(
+            "lock old; owner liveness unverified: {}; verify the holder stopped before removing this file, then retry",
+            path.display()
+        );
     }
     let pid = fs::read_to_string(path).unwrap_or_default();
-    format!("lock held by {}", pid.trim())
+    format!(
+        "lock held by {}",
+        pid.trim().split(':').next().unwrap_or_default()
+    )
 }
 
 /// Runs `vibe doctor` against the process environment. Exit 1 when a `problem` line is printed.

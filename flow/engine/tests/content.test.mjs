@@ -27,6 +27,7 @@ import {
   assertMatch,
   makeHookSandbox,
   makeContentSandbox,
+  mkTempRoot,
 } from './run.mjs';
 import { extractBlock, stripBlock, renderBlock, upsertBlock } from '../blocks.mjs';
 import { readCursor } from '../cursor.mjs';
@@ -41,6 +42,7 @@ import {
   cursorChangedSince,
   recordInject,
   confinePath,
+  confineReal,
 } from '../content.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -492,6 +494,66 @@ test('content: the docs/spec lessons source reads docs/spec first and falls back
     assertEqual(renderChannel('user-prompt', both.ctx).text, '- New root\n');
   } finally {
     both.cleanup();
+  }
+});
+
+// review-hardening/11 — the legacy lessons fallback goes through the same
+// physical gate as the configured read. makeEscapeFixture and SECRET are
+// defined with the other review-hardening/11 cases at the end of this file.
+const LEGACY_LESSONS_DEFAULTS = {
+  version: 1,
+  sources: { lessons: 'docs/spec/lessons.md' },
+  channels: { 'user-prompt': { render: 'summary', blocks: ['a.one'] } },
+};
+
+test('review-hardening/11: a legacy lessons file symlinked outside the repo is refused and reported', () => {
+  const out = makeEscapeFixture();
+  const sb = makeContentSandbox({ defaults: LEGACY_LESSONS_DEFAULTS, blocks: { 'a/one.md': BLOCK('a.one', 'L: {{lessons:inject}}') } });
+  try {
+    symlinkSync(out.lessonsFile, path.join(sb.dir, '.spec', 'lessons.md')); // literal
+    const result = renderChannel('user-prompt', sb.ctx);
+    assert(!result.text.includes(SECRET), 'outside legacy lessons reached the prompt');
+    assert(
+      result.errors.some((e) => e.includes('sources.lessons') && e.includes('.spec/lessons.md')), // literal
+      `the refused legacy lessons source must be reported, got: ${JSON.stringify(result.errors)}`,
+    );
+    assert(
+      checkContent(sb.ctx).errors.some((e) => e.includes('.spec/lessons.md')), // literal
+      'render --check must report the refused legacy lessons source',
+    );
+  } finally {
+    sb.cleanup();
+    out.cleanup();
+  }
+});
+
+test('review-hardening/11 control: an in-repo legacy lessons symlink is read', () => {
+  const sb = makeContentSandbox({ defaults: LEGACY_LESSONS_DEFAULTS, blocks: { 'a/one.md': BLOCK('a.one', '{{lessons:inject}}') } });
+  try {
+    mkdirSync(path.join(sb.dir, 'notes'), { recursive: true });
+    writeFileSync(path.join(sb.dir, 'notes', 'lessons.md'), '### Linked legacy lesson\n**Tags:** inject\n');
+    symlinkSync(path.join(sb.dir, 'notes', 'lessons.md'), path.join(sb.dir, '.spec', 'lessons.md')); // literal
+    const result = renderChannel('user-prompt', sb.ctx);
+    assertEqual(result.errors, []);
+    assertEqual(result.text, '- Linked legacy lesson\n');
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('review-hardening/11 control: docs/spec/lessons.md present while the legacy file links outside is no error', () => {
+  const out = makeEscapeFixture();
+  const sb = makeContentSandbox({ defaults: LEGACY_LESSONS_DEFAULTS, blocks: { 'a/one.md': BLOCK('a.one', '{{lessons:inject}}') } });
+  try {
+    mkdirSync(path.join(sb.dir, 'docs', 'spec'), { recursive: true });
+    writeFileSync(path.join(sb.dir, 'docs', 'spec', 'lessons.md'), '### New root\n**Tags:** inject\n');
+    symlinkSync(out.lessonsFile, path.join(sb.dir, '.spec', 'lessons.md')); // literal
+    const result = renderChannel('user-prompt', sb.ctx);
+    assertEqual(result.errors, []);
+    assertEqual(result.text, '- New root\n');
+  } finally {
+    sb.cleanup();
+    out.cleanup();
   }
 });
 
@@ -1317,4 +1379,305 @@ test('security: `render <channel> --write` refuses a write target outside the re
   } finally {
     sb.cleanup();
   }
+});
+
+// ---------------------------------------------------------------------------
+// review-hardening/11 — physical confinement. confinePath is lexical: a path
+// that stays inside the repo by spelling but is a SYMLINK to an outside file
+// passed it, and the outside text reached the prompt. confineReal checks the
+// resolved real path; every config-named or walked content read goes through
+// it. Symlink targets below are absolute, so the link resolves the same from
+// anywhere.
+// ---------------------------------------------------------------------------
+
+const SECRET = 'SECRET-CONTENT-42';
+
+// An outside directory holding `secret.md` (a well-formed block whose id is
+// `leak`) and a lessons-shaped `lessons.md`, both carrying SECRET.
+function makeEscapeFixture() {
+  const dir = mkTempRoot('vibe-outside-');
+  const secretFile = path.join(dir, 'secret.md');
+  writeFileSync(secretFile, `---\nid: leak\ntitle: Leak\n---\n<!-- vibe:summary -->\n${SECRET}\n<!-- /vibe:summary -->\n\n${SECRET}\n`);
+  const lessonsFile = path.join(dir, 'lessons.md');
+  writeFileSync(lessonsFile, `### ${SECRET}\n**Tags:** inject\n`);
+  return { dir, secretFile, lessonsFile, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+const LEAK_DEFAULTS = {
+  version: 1,
+  channels: { 'user-prompt': { render: 'summary', blocks: ['a.one'] } },
+};
+
+function composedAll(sb) {
+  const content = loadContent(sb.dir, sb.vibeDir);
+  return Object.keys(content.channels).map((n) => renderChannel(n, sb.ctx, content).text).join('\n');
+}
+
+test('review-hardening/11: a .vibe/blocks file symlinked outside the repo is refused and reported', () => {
+  const out = makeEscapeFixture();
+  const sb = makeContentSandbox({ defaults: LEAK_DEFAULTS, blocks: { 'a/one.md': BLOCK('a.one', 'A summary') } });
+  try {
+    mkdirSync(path.join(sb.dir, '.vibe', 'blocks'), { recursive: true });
+    const link = path.join(sb.dir, '.vibe', 'blocks', 'leak.md');
+    symlinkSync(out.secretFile, link);
+    writeFileSync(path.join(sb.dir, 'vibe.json'), `${JSON.stringify({ version: 1, channels: { 'user-prompt': { add: ['leak'] } } })}\n`);
+    const content = loadContent(sb.dir, sb.vibeDir);
+    assert(!content.blocks.has('leak'), 'the outside block was loaded');
+    assert(content.errors.some((e) => e.includes(link)), `the refused path must be reported, got: ${JSON.stringify(content.errors)}`);
+    assert(!composedAll(sb).includes(SECRET), 'outside text reached a channel');
+  } finally {
+    sb.cleanup();
+    out.cleanup();
+  }
+});
+
+test('review-hardening/11: a .vibe/blocks directory symlinked outside the repo is refused and reported', () => {
+  const out = makeEscapeFixture();
+  const sb = makeContentSandbox({ defaults: LEAK_DEFAULTS, blocks: { 'a/one.md': BLOCK('a.one', 'A summary') } });
+  try {
+    mkdirSync(path.join(sb.dir, '.vibe', 'blocks'), { recursive: true });
+    const link = path.join(sb.dir, '.vibe', 'blocks', 'dir');
+    symlinkSync(out.dir, link);
+    writeFileSync(path.join(sb.dir, 'vibe.json'), `${JSON.stringify({ version: 1, channels: { 'user-prompt': { add: ['leak'] } } })}\n`);
+    const content = loadContent(sb.dir, sb.vibeDir);
+    assert(!content.blocks.has('leak'), 'a block from the outside directory was loaded');
+    assert(content.errors.some((e) => e.includes(link)), `the refused directory must be reported, got: ${JSON.stringify(content.errors)}`);
+    assert(!composedAll(sb).includes(SECRET), 'outside text reached a channel');
+  } finally {
+    sb.cleanup();
+    out.cleanup();
+  }
+});
+
+test('review-hardening/11: the .vibe/blocks root itself symlinked outside the repo is refused and reported', () => {
+  const out = makeEscapeFixture();
+  const sb = makeContentSandbox({ defaults: LEAK_DEFAULTS, blocks: { 'a/one.md': BLOCK('a.one', 'A summary') } });
+  try {
+    mkdirSync(path.join(sb.dir, '.vibe'), { recursive: true });
+    const link = path.join(sb.dir, '.vibe', 'blocks');
+    symlinkSync(out.dir, link);
+    const content = loadContent(sb.dir, sb.vibeDir);
+    assert(!content.blocks.has('leak'), 'a block from the outside directory was loaded');
+    assert(content.errors.some((e) => e.includes(link)), `got: ${JSON.stringify(content.errors)}`);
+  } finally {
+    sb.cleanup();
+    out.cleanup();
+  }
+});
+
+test('review-hardening/11: a vibe.json blocks.*.file that is a symlink to outside is refused and reported', () => {
+  const out = makeEscapeFixture();
+  const sb = makeContentSandbox({ defaults: LEAK_DEFAULTS, blocks: { 'a/one.md': BLOCK('a.one', 'A summary') } });
+  try {
+    symlinkSync(out.secretFile, path.join(sb.dir, 'leak-link.md'));
+    writeFileSync(
+      path.join(sb.dir, 'vibe.json'),
+      `${JSON.stringify({
+        version: 1,
+        blocks: { leak: { title: 'L', channels: ['user-prompt'], file: 'leak-link.md' } },
+        channels: { 'user-prompt': { add: ['leak'] } },
+      })}\n`,
+    );
+    const content = loadContent(sb.dir, sb.vibeDir);
+    assert(
+      content.errors.some((e) => /^blocks\.leak: /.test(e) && e.includes('leak-link.md')),
+      `the refused file must be reported, got: ${JSON.stringify(content.errors)}`,
+    );
+    assert(!composedAll(sb).includes(SECRET), 'outside text reached a channel');
+  } finally {
+    sb.cleanup();
+    out.cleanup();
+  }
+});
+
+test('review-hardening/11: a sources.lessons symlink to outside answers empty and records an error', () => {
+  const out = makeEscapeFixture();
+  const sb = makeContentSandbox({
+    defaults: { ...LEAK_DEFAULTS, sources: { lessons: 'lessons-link.md' } },
+    blocks: { 'a/one.md': BLOCK('a.one', 'L: {{lessons:inject}}') },
+  });
+  try {
+    symlinkSync(out.lessonsFile, path.join(sb.dir, 'lessons-link.md'));
+    const result = renderChannel('user-prompt', sb.ctx);
+    assert(!result.text.includes(SECRET), 'outside lessons reached the prompt');
+    assertIncludes(result.text, 'L:', 'the block still renders; only the lessons are refused');
+    assert(
+      result.errors.some((e) => e.includes('sources.lessons') && e.includes('lessons-link.md')),
+      `the refused lessons source must be reported, got: ${JSON.stringify(result.errors)}`,
+    );
+  } finally {
+    sb.cleanup();
+    out.cleanup();
+  }
+});
+
+test('review-hardening/11: checkContent (render --check) returns every refusal', () => {
+  const out = makeEscapeFixture();
+  const sb = makeContentSandbox({
+    defaults: { ...LEAK_DEFAULTS, sources: { lessons: 'lessons-link.md' } },
+    blocks: { 'a/one.md': BLOCK('a.one', 'L: {{lessons:inject}}') },
+    userBlocks: { 'own.md': BLOCK('own', 'own summary') },
+  });
+  try {
+    symlinkSync(out.lessonsFile, path.join(sb.dir, 'lessons-link.md'));
+    symlinkSync(out.secretFile, path.join(sb.dir, '.vibe', 'blocks', 'leak.md'));
+    symlinkSync(out.secretFile, path.join(sb.dir, 'cfg-link.md'));
+    writeFileSync(
+      path.join(sb.dir, 'vibe.json'),
+      `${JSON.stringify({ version: 1, blocks: { cfg: { channels: ['user-prompt'], file: 'cfg-link.md' } } })}\n`,
+    );
+    const { errors } = checkContent(sb.ctx);
+    for (const needle of ['lessons-link.md', path.join('.vibe', 'blocks', 'leak.md'), 'cfg-link.md']) {
+      assert(errors.some((e) => e.includes(needle)), `checkContent must report ${needle}, got: ${JSON.stringify(errors)}`);
+    }
+  } finally {
+    sb.cleanup();
+    out.cleanup();
+  }
+});
+
+test('review-hardening/11 control: an in-repo symlink (absolute target inside the root) is read', () => {
+  const sb = makeContentSandbox({
+    defaults: { ...LEAK_DEFAULTS, sources: { lessons: 'lessons-link.md' } },
+    blocks: { 'a/one.md': BLOCK('a.one', 'L: {{lessons:inject}}') },
+  });
+  try {
+    mkdirSync(path.join(sb.dir, 'docs'), { recursive: true });
+    writeFileSync(path.join(sb.dir, 'docs', 'real-block.md'), BLOCK('own', `own ${SECRET}`));
+    writeFileSync(path.join(sb.dir, 'docs', 'lessons.md'), `### LESSON-IN-REPO\n**Tags:** inject\n`);
+    mkdirSync(path.join(sb.dir, '.vibe', 'blocks'), { recursive: true });
+    symlinkSync(path.join(sb.dir, 'docs', 'real-block.md'), path.join(sb.dir, '.vibe', 'blocks', 'own.md'));
+    symlinkSync(path.join(sb.dir, 'docs'), path.join(sb.dir, '.vibe', 'blocks', 'linked'));
+    symlinkSync(path.join(sb.dir, 'docs', 'real-block.md'), path.join(sb.dir, 'cfg-link.md'));
+    symlinkSync(path.join(sb.dir, 'docs', 'lessons.md'), path.join(sb.dir, 'lessons-link.md'));
+    writeFileSync(
+      path.join(sb.dir, 'vibe.json'),
+      `${JSON.stringify({
+        version: 1,
+        blocks: { cfg: { channels: ['user-prompt'], file: 'cfg-link.md' } },
+        channels: { 'user-prompt': { add: ['own', 'cfg'] } },
+      })}\n`,
+    );
+    const content = loadContent(sb.dir, sb.vibeDir);
+    assertEqual(content.errors, [], 'in-repo links are not refusals');
+    assert(content.blocks.has('own'), 'the in-repo linked block file was not loaded');
+    assertEqual(content.blocks.get('own').source, path.join(sb.dir, '.vibe', 'blocks', 'own.md'), 'source stays the logical path');
+    assert(content.blocks.has('linked.lessons'), 'a block under an in-repo linked directory keeps its path-derived id');
+    const result = renderChannel('user-prompt', sb.ctx, content);
+    assertEqual(result.errors, []);
+    assertIncludes(result.text, 'LESSON-IN-REPO');
+    assertIncludes(result.text, `own ${SECRET}`);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('review-hardening/11 control: a root reached through a symlink to the real dir reads normally', () => {
+  const sb = makeContentSandbox({
+    defaults: { ...LEAK_DEFAULTS, sources: { lessons: 'lessons.md' } },
+    blocks: { 'a/one.md': BLOCK('a.one', 'L: {{lessons:inject}}') },
+    userBlocks: { 'own.md': BLOCK('own', 'OWN-BLOCK') },
+  });
+  const aliasDir = mkTempRoot('vibe-alias-');
+  const alias = path.join(aliasDir, 'root');
+  try {
+    writeFileSync(path.join(sb.dir, 'lessons.md'), `### LESSON-IN-REPO\n**Tags:** inject\n`);
+    writeFileSync(path.join(sb.dir, 'cfg.md'), BLOCK('cfg', 'CFG-BLOCK'));
+    writeFileSync(
+      path.join(sb.dir, 'vibe.json'),
+      `${JSON.stringify({ version: 1, blocks: { cfg: { file: 'cfg.md' } }, channels: { 'user-prompt': { add: ['own', 'cfg'] } } })}\n`,
+    );
+    symlinkSync(sb.dir, alias);
+    const vibeDir = path.join(alias, path.relative(sb.dir, sb.vibeDir));
+    const ctx = { root: alias, vibeDir, skillsDir: path.dirname(vibeDir) };
+    const content = loadContent(alias, vibeDir);
+    assertEqual(content.errors, []);
+    const result = renderChannel('user-prompt', ctx, content);
+    assertEqual(result.errors, []);
+    for (const needle of ['LESSON-IN-REPO', 'OWN-BLOCK', 'CFG-BLOCK', 'L:']) assertIncludes(result.text, needle);
+  } finally {
+    rmSync(aliasDir, { recursive: true, force: true });
+    sb.cleanup();
+  }
+});
+
+test('review-hardening/11 control: a missing lessons source stays silent (absent is normal)', () => {
+  const sb = makeContentSandbox({
+    defaults: { ...LEAK_DEFAULTS, sources: { lessons: 'no-such-lessons.md' } },
+    blocks: { 'a/one.md': BLOCK('a.one', 'L: {{lessons:inject}}') },
+  });
+  try {
+    const result = renderChannel('user-prompt', sb.ctx);
+    assertEqual(result.errors, []);
+    assertEqual(checkContent(sb.ctx).errors, []);
+  } finally {
+    sb.cleanup();
+  }
+});
+
+test('review-hardening/11: confineReal refuses a symlinked-parent escape and a sibling prefix', () => {
+  const out = makeEscapeFixture();
+  const parent = mkTempRoot('vibe-confine-');
+  const repo = path.join(parent, 'repo');
+  const evil = path.join(parent, 'repo-evil');
+  try {
+    mkdirSync(path.join(repo, 'docs'), { recursive: true });
+    mkdirSync(evil, { recursive: true });
+    writeFileSync(path.join(repo, 'docs', 'a.md'), 'a');
+    writeFileSync(path.join(evil, 'x.md'), 'x');
+    symlinkSync(out.dir, path.join(repo, 'out'));
+    symlinkSync(evil, path.join(repo, 'evil'));
+    assertEqual(confineReal(repo, 'docs/a.md'), path.join(repo, 'docs', 'a.md'));
+    assertEqual(confineReal(repo, '.'), repo);
+    assertEqual(confineReal(repo, 'out/secret.md'), undefined, 'escape via a symlinked parent');
+    assertEqual(confineReal(repo, 'out'), undefined, 'a symlinked directory to outside');
+    assertEqual(confineReal(repo, 'evil/x.md'), undefined, 'sibling-prefix directory /repo-evil');
+    assertEqual(confineReal(repo, 'docs/missing.md'), undefined, 'a missing read target resolves to nothing');
+    assertEqual(confineReal(repo, path.join(evil, 'x.md')), undefined, 'absolute sibling-prefix path');
+    assertEqual(confineReal('', 'a.md'), undefined);
+    assertEqual(confineReal(repo, ''), undefined);
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+    out.cleanup();
+  }
+});
+
+test('review-hardening/11: confineReal forWrite accepts a missing target in an in-repo dir, refuses dangling and outside', () => {
+  const out = makeEscapeFixture();
+  const parent = mkTempRoot('vibe-confine-');
+  const repo = path.join(parent, 'repo');
+  try {
+    mkdirSync(path.join(repo, 'docs'), { recursive: true });
+    symlinkSync(out.dir, path.join(repo, 'out'));
+    symlinkSync(path.join(repo, 'docs', 'gone.md'), path.join(repo, 'dangling.md'));
+    symlinkSync(path.join(parent, 'nowhere'), path.join(repo, 'ghostdir'));
+    assertEqual(confineReal(repo, 'docs/new.md', { forWrite: true }), path.join(repo, 'docs', 'new.md'));
+    assertEqual(confineReal(repo, 'docs/sub/new.md', { forWrite: true }), path.join(repo, 'docs', 'sub', 'new.md'));
+    assertEqual(confineReal(repo, 'out/new.md', { forWrite: true }), undefined, 'missing target under an outside link');
+    assertEqual(confineReal(repo, 'out/secret.md', { forWrite: true }), undefined, 'existing outside target');
+    assertEqual(confineReal(repo, 'dangling.md', { forWrite: true }), undefined, 'a dangling symlink write target');
+    assertEqual(confineReal(repo, 'ghostdir/new.md', { forWrite: true }), undefined, 'a dangling intermediate link');
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+    out.cleanup();
+  }
+});
+
+test('review-hardening/11: the SECURITY comment states the physical guarantee', () => {
+  const src = readFileSync(path.join(REPO_VIBE_DIR, 'engine', 'content.mjs'), 'utf8');
+  const start = src.indexOf('// SECURITY.');
+  assert(start !== -1, 'content.mjs lost its SECURITY comment');
+  const lines = [];
+  for (const line of src.slice(start).split('\n')) {
+    if (!line.startsWith('//')) break;
+    lines.push(line);
+  }
+  const comment = lines.join(' ').replace(/\s*\/\/\s*/g, ' ');
+  assertIncludes(comment, 'real path');
+  assertIncludes(comment, 'in-repo symlinks are allowed');
+  assertIncludes(comment, 'reading the resolved path');
+  // Spelled in two pieces so review-hardening/13's repo-wide grep for the
+  // retired phrase only finds a real regression, never this test.
+  const retired = ['symlink', 'free'].join('-');
+  assert(!comment.includes(retired), `the comment still claims a ${retired} invariant`);
 });

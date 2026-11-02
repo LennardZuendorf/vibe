@@ -1,19 +1,26 @@
 //! `vibe-spec list-specs` — port of `spec/scripts/list-specs.sh`
-//! (byte-identical; arguments are ignored, as the oracle ignores them).
+//! (byte-identical; arguments are ignored, as the oracle ignores them,
+//! except `-h`/`--help`).
 use std::path::Path;
 
 use crate::root::{Miss, Root};
 use crate::text::{lines, md_files, name_of, remove_first, sub_dirs};
 
+const USAGE: &str =
+    "Usage: vibe-spec list-specs\n\nList spec files with type and scope. Takes no arguments.\n";
+
 /// Runs the command.
-pub fn run(found: &Result<Root, Miss>) -> (u8, Vec<u8>) {
+pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
+    if crate::wants_help(args) {
+        return (0, USAGE.as_bytes().to_vec());
+    }
     let root = match found {
         Ok(root) => root,
         Err(Miss::NotFound) => {
-            return (
-                0,
-                b"No .spec/ directory found in current project\n".to_vec(), // literal
+            eprintln!(
+                "vibe-spec list-specs: WARN: no spec root (searched docs/spec/ and the legacy root up to .git). Run: vibe-spec init"
             );
+            return (0, Vec::new());
         }
         Err(miss) => {
             eprintln!("{}", miss.message());

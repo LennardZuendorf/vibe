@@ -5,6 +5,6 @@ updated: {{today}}
 
 # Plan
 
-Current direction, open work and decisions.
+Current direction and decisions.
 
 _Not written yet. Replace this line with the first facts._

@@ -83,6 +83,10 @@ pub fn project(ctx: &Ctx, dirs: &[PathBuf]) -> Projection {
         for skill in &ctx.store.skills {
             let link = dir.join(&skill.name);
             wanted.insert(link.clone());
+            if let Err(e) = ctx.paths.guard_parent(&link) {
+                p.notes.push(Note::Refused(e));
+                continue;
+            }
             match fs::symlink_metadata(&link) {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     plan_create(&mut p, link, &skill.dir, &mut planned);
