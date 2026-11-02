@@ -95,7 +95,13 @@ pub fn run(cwd: &Path, argv: &[OsString], env: &dyn Env) -> (u8, Vec<u8>, Vec<u8
     let parsed = match Cli::try_parse_from(std::iter::once(program).chain(args)) {
         Ok(parsed) => parsed,
         Err(err) => {
-            let code = u8::try_from(err.exit_code()).unwrap_or(2);
+            // clap answers 2 for every usage error, and this platform reads 2 as
+            // BLOCK: a mistyped hook invocation would deny the tool call the
+            // hook exists to check. `--help`/`--version` are the only errors
+            // clap reports on stdout, and they keep their 0; every usage error
+            // answers 1, which is what the engine's CLI does for an unknown
+            // subcommand and for an unexpected error.
+            let code = u8::from(err.use_stderr());
             let _ = err.print();
             return (code, Vec::new(), Vec::new());
         }
