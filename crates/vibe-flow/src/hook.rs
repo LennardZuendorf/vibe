@@ -1423,22 +1423,32 @@ mod tests {
                 .contains("receipt is stale")
         );
     }
+    fn assert_stale_changed_path(name: &str) {
+        let (root, paths, _) = receipt_root("nul-path");
+        fs::write(root.join(name), "changed").unwrap();
+        stamp(&root.join(name), 1_700_000_000);
+        let tree = tree_from(true, Status::Output(format!("?? {name}\0").into_bytes()));
+        let block =
+            evidence_receipt_check(&paths, "feature.verify", Some("auth"), &tree, &mut |_| {})
+                .expect("stale path blocks");
+        assert!(block.contains("receipt is stale"));
+        assert!(
+            block.lines().skip(1).all(|l| l.starts_with("  ")),
+            "{block}"
+        );
+    }
+
     // flow-v2/F6 review: the preferred producer preserves main's NUL protocol.
+    #[cfg(unix)]
+    #[test]
+    fn newline_changed_path_is_scanned() {
+        assert_stale_changed_path("changed\nsecond.txt");
+    }
+
     #[test]
     fn nul_paths_and_every_rename_origin_are_scanned() {
-        for name in ["changed file.txt", "å.txt", "changed\nsecond.txt"] {
-            let (root, paths, _) = receipt_root("nul-path");
-            fs::write(root.join(name), "changed").unwrap();
-            stamp(&root.join(name), 1_700_000_000);
-            let tree = tree_from(true, Status::Output(format!("?? {name}\0").into_bytes()));
-            let block =
-                evidence_receipt_check(&paths, "feature.verify", Some("auth"), &tree, &mut |_| {})
-                    .expect("stale path blocks");
-            assert!(block.contains("receipt is stale"));
-            assert!(
-                block.lines().skip(1).all(|l| l.starts_with("  ")),
-                "{block}"
-            );
+        for name in ["changed file.txt", "å.txt"] {
+            assert_stale_changed_path(name);
         }
         for xy in ["R ", "RD", " R", "C "] {
             let (root, paths, _) = receipt_root("origin");

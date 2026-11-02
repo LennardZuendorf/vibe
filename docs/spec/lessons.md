@@ -567,3 +567,15 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Run each dependent verification and mutation with explicit exit-code handling. A failed check must stop before commit or push. Classify inherited parent diagnostics separately with read-only comparisons, then continue only after resolving the check's meaning; never rely on a multi-command shell's final exit status to prove every preceding step passed.
 **Tags:** git, verification, shell, publication
 **Date:** 2026-11-02
+
+### Separate platform-specific filenames from portable protocol controls
+**Pattern:** A NUL Git-status regression test created a newline filename alongside portable space, non-ASCII and rename-origin fixtures. Windows rejected the filename with `InvalidFilename` before the scanner assertions ran.
+**Rule:** Keep portable filenames and every rename/copy status code active on every platform. Isolate filenames forbidden by Windows in a separate `#[cfg(unix)]` test, and reuse the same behavioral assertions. A native pass does not establish Windows success; retain the actual CI failure and require the repaired Windows CI result.
+**Tags:** tests, windows, filenames, hooks, ci
+**Date:** 2026-11-02
+
+### Capture CI diagnostics before interpreting them
+**Pattern:** An in-progress workflow and job-selection mismatch hid the failing test. A plain HTTP 502 response also failed when interpreted as JSON. Raw job logs exposed the exact Windows filename error.
+**Rule:** Select the failing job explicitly. Capture its log through `gh api --allow-escape-sequences repos/<owner>/<repo>/actions/jobs/<job-id>/logs`, retain the raw output, and strip ANSI escapes only in a separate reading copy. Check transport status and response format before parsing JSON; do not treat unavailable in-progress `gh run view` logs as passing evidence.
+**Tags:** ci, github, diagnostics, verification
+**Date:** 2026-11-02
