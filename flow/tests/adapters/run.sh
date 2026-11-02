@@ -2918,6 +2918,14 @@ GI_OUT="$(bash "$REPO_ROOT/flow/tests/adapters/global-install.sh" 2>&1)"; GI_RC=
 printf '%s\n' "$GI_OUT"
 assert_eq "global-install/71" "temp-HOME global install lands both skills per host, idempotently" "$GI_RC" "0"
 
+# vibe#71 sub-gap 4: nothing used to ship the `vibe-spec` binary the spec skill
+# calls, so a global-install user had skills pointing at a missing command. The
+# leg proves the chosen degradation (install.sh reports the status and never
+# fails; doctor warns; the skill names what still works) and the opt-in build.
+SB_OUT="$(bash "$REPO_ROOT/flow/tests/adapters/spec-bin.sh" 2>&1)"; SB_RC=$?
+printf '%s\n' "$SB_OUT"
+assert_eq "spec-bin/71" "install.sh and doctor tell the truth about the vibe-spec binary" "$SB_RC" "0"
+
 echo ""
 echo "=== results: $PASS passed, $FAIL failed ==="
 [[ $FAIL -eq 0 ]]
