@@ -1096,7 +1096,10 @@ global_agents_file() { printf '%s/AGENTS.md' "$HOME/.agents"; }
 # $VIBE_SPEC_BIN override first (the same variable spec/hooks/run-hook.sh reads),
 # then PATH. Prints its path; fails when there is none.
 vibe_spec_on_path() {
-  if [[ -n "${VIBE_SPEC_BIN:-}" && -x "${VIBE_SPEC_BIN}" ]]; then
+  # -f AND -x: `[[ -x ]]` alone is true for a DIRECTORY, and a directory at
+  # $VIBE_SPEC_BIN made this report an install that does not exist. `command -v`
+  # already requires a regular executable.
+  if [[ -n "${VIBE_SPEC_BIN:-}" && -f "${VIBE_SPEC_BIN}" && -x "${VIBE_SPEC_BIN}" ]]; then
     printf '%s\n' "$VIBE_SPEC_BIN"
     return 0
   fi
@@ -1108,12 +1111,24 @@ vibe_spec_on_path() {
 # dir is told about the binary they actually have.
 vibe_spec_checkout_build() {
   local tdir="${CARGO_TARGET_DIR:-$SRC/target}"
-  if [[ -x "$tdir/release/vibe-spec" ]]; then
+  if [[ -f "$tdir/release/vibe-spec" && -x "$tdir/release/vibe-spec" ]]; then
     printf '%s\n' "$tdir/release/vibe-spec"
     return 0
   fi
-  [[ -x "$tdir/debug/vibe-spec" ]] && { printf '%s\n' "$tdir/debug/vibe-spec"; return 0; }
+  if [[ -f "$tdir/debug/vibe-spec" && -x "$tdir/debug/vibe-spec" ]]; then
+    printf '%s\n' "$tdir/debug/vibe-spec"
+    return 0
+  fi
   return 1
+}
+
+# vibe_spec_bin_dir_copy — the copy a previous --build-spec-bin left in the user
+# bin dir. It is not on PATH (the installer never edits a profile), but on a
+# second run it is the thing the user should add, not this checkout's target/.
+vibe_spec_bin_dir_copy() {
+  local candidate="${BIN_DIR:-$HOME/.local/bin}/vibe-spec"
+  [[ -f "$candidate" && -x "$candidate" ]] || return 1
+  printf '%s\n' "$candidate"
 }
 
 # spec_bin_status — one report line, and the degradation paragraph when absent.
@@ -1122,6 +1137,10 @@ spec_bin_status() {
   local found
   if found="$(vibe_spec_on_path)"; then
     note "vibe-spec: installed ($found)"
+    return 0
+  fi
+  if found="$(vibe_spec_bin_dir_copy)"; then
+    note "vibe-spec: installed ($found, not on PATH — add $(dirname "$found") to PATH)"
     return 0
   fi
   if found="$(vibe_spec_checkout_build)"; then
@@ -1413,14 +1432,18 @@ fi
 
 # --build-spec-bin is a GLOBAL-mode action: the global user is the one with no
 # checkout. Silently ignoring it elsewhere would read as "the binary was built".
+SPEC_BIN_REQUESTED="$BUILD_SPEC_BIN"
 if [[ "$BUILD_SPEC_BIN" -eq 1 && "$MODE" != "global" ]]; then
   err "WARN: --build-spec-bin applies to --global; ignoring it for a local install."
   BUILD_SPEC_BIN=0
 fi
 # --bin-dir only names a destination for --build-spec-bin; on its own it does
-# nothing, and saying so beats letting a user believe the binary moved.
+# nothing, and saying so beats letting a user believe the binary moved. When
+# --build-spec-bin WAS given (the branch above just disabled it), the warning
+# above already says why: adding "bin-dir without build-spec-bin" here would
+# misstate what the user typed.
 if [[ -n "$BIN_DIR" && "$BUILD_SPEC_BIN" -eq 0 ]]; then
-  err "WARN: --bin-dir only applies with --build-spec-bin; ignoring it."
+  [[ "$SPEC_BIN_REQUESTED" -eq 1 ]] || err "WARN: --bin-dir only applies with --build-spec-bin; ignoring it."
   BIN_DIR=""
 fi
 

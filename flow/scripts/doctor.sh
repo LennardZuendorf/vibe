@@ -108,14 +108,20 @@ else warn tool.node "node not installed — the four .claude/hooks are the flow'
 # failure (this script always exits 0). Probe order matches install.sh's and the
 # spec hook shim's: $VIBE_SPEC_BIN, then PATH, then this checkout's build.
 _vspec=""
-if [[ -n "${VIBE_SPEC_BIN:-}" && -x "${VIBE_SPEC_BIN}" ]]; then
+# -f AND -x: `[[ -x ]]` is true for a DIRECTORY, and "$VIBE_SPEC_BIN" pointing at
+# one made this report claim an install that does not exist (the engine requires
+# a regular file, and running the path fails). Same for the checkout builds.
+if [[ -n "${VIBE_SPEC_BIN:-}" && -f "${VIBE_SPEC_BIN}" && -x "${VIBE_SPEC_BIN}" ]]; then
   _vspec="$VIBE_SPEC_BIN"
 elif command -v vibe-spec >/dev/null 2>&1; then
   _vspec="$(command -v vibe-spec)"
-elif [[ -x "$ROOT/target/release/vibe-spec" ]]; then
-  _vspec="$ROOT/target/release/vibe-spec (checkout build, not on PATH)"
-elif [[ -x "$ROOT/target/debug/vibe-spec" ]]; then
-  _vspec="$ROOT/target/debug/vibe-spec (checkout build, not on PATH)"
+else
+  _vspec_target="${CARGO_TARGET_DIR:-$ROOT/target}"
+  if [[ -f "$_vspec_target/release/vibe-spec" && -x "$_vspec_target/release/vibe-spec" ]]; then
+    _vspec="$_vspec_target/release/vibe-spec (checkout build, not on PATH)"
+  elif [[ -f "$_vspec_target/debug/vibe-spec" && -x "$_vspec_target/debug/vibe-spec" ]]; then
+    _vspec="$_vspec_target/debug/vibe-spec (checkout build, not on PATH)"
+  fi
 fi
 if [[ -n "$_vspec" ]]; then
   ok tool.vibe-spec "vibe-spec present ($_vspec)"

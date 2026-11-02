@@ -244,8 +244,14 @@ function checkToolJq(jq) {
 
 function findOnPath(name) {
   const dirs = String(process.env.PATH || '').split(path.delimiter);
-  for (const dir of dirs) {
-    if (!dir) continue;
+  for (const raw of dirs) {
+    // POSIX: a zero-length PATH entry is the current directory, and bash's
+    // `command -v` resolves AND prints it that way (`./vibe-spec`). Skipping
+    // empty entries made the engine report "not installed" on a PATH the
+    // user's own shell happily runs (a leading `:` or `::` is ordinary
+    // env-assembly slop), so resolve it to `.` and let the concatenation below
+    // print the exact spelling the oracle prints.
+    const dir = raw === '' ? '.' : raw;
     const sep = dir.endsWith(path.sep) || dir.endsWith('/') ? '' : path.sep;
     const cand = `${dir}${sep}${name}`;
     if (isRegularFile(cand) && isExecutable(cand)) return cand;
@@ -255,13 +261,18 @@ function findOnPath(name) {
 
 function detectSpecBin(root) {
   const envBin = process.env.VIBE_SPEC_BIN;
+  // isRegularFile, not just -x: a DIRECTORY at $VIBE_SPEC_BIN is executable in
+  // the `[[ -x ]]` sense and running it fails, so it is not a binary.
   if (typeof envBin === 'string' && envBin !== '' && isRegularFile(envBin) && isExecutable(envBin)) {
     return { detail: envBin };
   }
   const onPath = findOnPath('vibe-spec');
   if (onPath) return { detail: onPath };
+  // CARGO_TARGET_DIR first, exactly like install.sh and the oracle: a user with
+  // a redirected target dir must be told about the binary they actually have.
+  const targetDir = process.env.CARGO_TARGET_DIR || joinMaybe(root, 'target');
   for (const profile of ['release', 'debug']) {
-    const build = joinMaybe(root, 'target', profile, 'vibe-spec');
+    const build = joinMaybe(targetDir, profile, 'vibe-spec');
     if (isRegularFile(build) && isExecutable(build)) {
       return { detail: `${build} (checkout build, not on PATH)` };
     }
