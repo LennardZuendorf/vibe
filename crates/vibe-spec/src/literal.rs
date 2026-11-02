@@ -116,6 +116,59 @@ pub fn file_exempt(text: &[u8]) -> bool {
     text.split(|b| *b == b'\n').take(5).any(is_marker_line)
 }
 
+/// Path exemptions: `(prefix or exact path, reason)`. A trailing `/` is a prefix.
+///
+/// These carry the legacy name as *evidence*, not as instruction: a frozen
+/// oracle, a corpus tree staged for comparison, or a parity pin recording what
+/// the oracle printed. JSON cannot carry a line tag or a file marker, so the
+/// path is the only handle — and it names the file exactly, never its
+/// neighbourhood.
+pub const EXEMPT_PATHS: [(&str, &str); 8] = [
+    (
+        "oracles/",
+        "frozen oracles of the bash and JS originals; never rewritten",
+    ),
+    (
+        "contracts/fixtures/",
+        "legacy-tree fixtures; JSON cannot carry a comment",
+    ),
+    (
+        "tests/parity/corpus/",
+        "legacy-tree corpus the parity matrix compares; JSON cannot carry a comment",
+    ),
+    (
+        "tests/parity/flow.json",
+        "pins record the frozen oracles' observed output verbatim; JSON cannot carry a comment",
+    ),
+    (
+        "tests/parity/spec.json",
+        "pins record the frozen oracles' observed output verbatim; JSON cannot carry a comment",
+    ),
+    (
+        "flow/content/policy.json",
+        "JSON holding the dual-root write rules (P4-R16)",
+    ),
+    (
+        "flow/reference/templates/AGENTS.md",
+        "ships the rendered dual-root write rules; a marker line would break unmerge",
+    ),
+    (
+        "docs/superpowers/",
+        "closes in P5, once promoted and deleted per D46",
+    ),
+];
+
+/// The repo-relative path is exempt from the sweep and from `migrate`.
+pub fn path_exempt(rel: &str) -> bool {
+    EXEMPT_PATHS.iter().any(|(path, _)| {
+        if path.ends_with('/') {
+            rel.starts_with(path)
+        } else {
+            rel == *path
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,6 +211,19 @@ mod tests {
             rewrite(tagged.as_bytes(), LEGACY, "docs/spec", &[]),
             tagged.as_bytes()
         );
+    }
+
+    #[test]
+    fn path_exemptions_are_prefixes_or_exact_paths() {
+        assert!(path_exempt("oracles/bash/x.sh"));
+        assert!(path_exempt("flow/content/policy.json"));
+        assert!(!path_exempt("flow/content/policy.json.bak"));
+        assert!(!path_exempt("docs/superpowers"));
+        assert!(!path_exempt("crates/vibe-spec/src/main.rs"));
+        // A pin file is exempt as itself only: its neighbourhood still sweeps.
+        assert!(path_exempt("tests/parity/spec.json"));
+        assert!(!path_exempt("tests/parity/spec.json.bak"));
+        assert!(!path_exempt("tests/parity/run.sh"));
     }
 
     #[test]

@@ -790,7 +790,7 @@ fn process(
     let new_path = mover.map(rel);
     let inside = mover.inside(rel);
     let links = inside.is_some() && rel.ends_with(".md") && !structural;
-    let exempt = structural || literal::file_exempt(text);
+    let exempt = structural || literal::file_exempt(text) || literal::path_exempt(rel);
     let orig: Vec<&[u8]> = text.split(|b| *b == b'\n').collect();
     let mut fences = Fences::new();
     let mut fixed: Vec<Vec<u8>> = Vec::with_capacity(orig.len());
