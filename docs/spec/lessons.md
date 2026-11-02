@@ -579,3 +579,15 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Select the failing job explicitly. Capture its log through `gh api --allow-escape-sequences repos/<owner>/<repo>/actions/jobs/<job-id>/logs`, retain the raw output, and strip ANSI escapes only in a separate reading copy. Check transport status and response format before parsing JSON; do not treat unavailable in-progress `gh run view` logs as passing evidence.
 **Tags:** ci, github, diagnostics, verification
 **Date:** 2026-11-02
+
+### Declare the dependency and producer tier of each fixture
+**Pattern:** CI physically removed jq and exposed tests that expected validate-state success, check-skills delegates and doctor state reporting despite their declared jq requirements. The restricted PATH also omitted the hook shim's POSIX discovery tools, so `tr: not found` polluted an otherwise correct block. Initial status failures hid later assertions.
+**Rule:** Exercise every affected test with jq present and physically absent. Assert each command's named prerequisite failure or degraded result, then retain absolute state and invalid-ancestor controls on readers that support them. Give a shim fixture its declared POSIX tools, assert excluded runtimes are unreachable, mark the selected producer, and compare complete forwarded blocks byte-for-byte. Resolve fixture tools from explicit known paths; inventory files before reading them, and keep patch preconditions atomic so failed lookups or edits cannot leave partial writes.
+**Tags:** tests, ci, jq, hooks, fixtures, verification
+**Date:** 2026-11-02
+
+### Keep machine cursor fixtures in the writer's format
+**Pattern:** A minified hand-written cursor lost its carried feature in the documented no-jq flat-text reader. A directly seeded newline feature also retained its JSON escape in that tier, while jq decoded it; the normal writer rejects that feature. An over-escaped replacement initially asserted the wrong diagnostic bytes.
+**Rule:** Build ordinary cursor fixtures through the canonical multiline serialization before mutating one property. For deliberately malformed persisted values, prove the writer rejects them and pin decoded-control and literal-escape diagnostics separately. Assert safe complete grammar, expected block reason and status, and exact producer-to-shim output in each tier; do not expand a historical parser to satisfy an invalid fixture. Use a serializer to construct escaped literals and verify the resulting bytes.
+**Tags:** tests, cursor, jq, fixtures, diagnostics
+**Date:** 2026-11-02

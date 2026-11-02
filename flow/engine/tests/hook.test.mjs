@@ -35,6 +35,7 @@ import {
   makeNestedSandbox,
   skip,
 } from './run.mjs';
+import { runSet } from '../commands/state.mjs';
 import {
   runDoctrineHook,
   runInjectHook,
@@ -1973,24 +1974,48 @@ for (const kind of ['changed-path', 'receipt-path', 'project-path']) {
         symlinkSync(sb.root,alias); root=alias;
       }
       if (kind === 'receipt-path') {
+        const before=readFileSync(sb.cursorPath,'utf8');
+        const rejected=runSet(sb.vibeDir,['feature.verify','line\nfeature']);
+        assertEqual(rejected.code,1); assertIncludes(rejected.stderr,'invalid feature name');
+        assertEqual(readFileSync(sb.cursorPath,'utf8'),before);
         writeCursor(sb,{flow:'feature',phase:'verify',feature:'line\nfeature'});
       } else {
         const file=path.join(sb.dir,'changed\nfile.txt'); writeFileSync(file,'new');
         assert(realEntries(sb).some(e=>e.path === 'changed\nfile.txt'),'real git names changed path');
       }
+      const reason=kind === 'receipt-path' ? "vibe-gate: BLOCKED — feature.verify needs an evidence receipt before 'done'." : 'vibe-gate: BLOCKED — the evidence receipt is stale.';
       const direct=runGateHook(root,sb.vibeDir,'{}',{});
-      assertEqual(direct.code,2);
+      assertEqual(direct.code,2); assertEqual(direct.stderr.split('\n')[0],reason);
       assert(direct.stderr.split('\n').filter(Boolean).slice(1).every(l=>l.startsWith('  ')),direct.stderr);
-      const wrapper=path.join(sb.dir,'producer');
-      writeFileSync(wrapper,`#!/bin/sh\nexec '${process.execPath}' '${path.join(REPO_ROOT,'flow/engine/cli.mjs')}' "$@"\n`,{mode:0o700});
-      const shim=runCommand('sh',[path.join(REPO_ROOT,'flow/bin/hook.sh'),'stop-gate'],{env:{CLAUDE_PROJECT_DIR:root,VIBE_FLOW_BIN:wrapper},input:'{}'});
+      // The shim needs POSIX tools even in CI's deliberately jq-stripped PATH.
+      const tools=path.join(sb.dir,'shim-tools'); mkdirSync(tools);
+      for (const tool of ['sh','bash','uname','tr','dirname','grep','sed','cat','head','awk','git']) {
+        const found=runCommand('/bin/sh',['-c','command -v "$1"','shim-tool',tool],{env:{PATH:'/usr/bin:/bin'}});
+        assertEqual(found.code,0,found.stderr); assert(path.isAbsolute(found.stdout.trim()),found.stdout);
+        symlinkSync(found.stdout.trim(),path.join(tools,tool));
+      }
+      const jq=runCommand('/bin/sh',['-c','command -v jq']);
+      if (jq.code === 0) symlinkSync(jq.stdout.trim(),path.join(tools,'jq'));
+      const shimEnv={PATH:tools,CLAUDE_PROJECT_DIR:root,CLAUDE_PLUGIN_ROOT:path.join(sb.dir,'no-plugin'),VIBE_ENGINE:path.join(sb.dir,'no-engine')};
+      for (const excluded of ['node','vibe-flow',...(jq.code === 0 ? [] : ['jq'])]) {
+        const found=runCommand('sh',['-c','command -v "$1"','excluded-tool',excluded],{env:shimEnv});
+        assert(found.code !== 0,`${excluded} must be unreachable`); assertEqual(found.stdout,'');
+      }
+      const wrapper=path.join(sb.dir,'producer'), invoked=path.join(sb.dir,'producer-invoked');
+      writeFileSync(wrapper,`#!/bin/sh\nprintf '%s\\n' "$@" > '${invoked}'\nexec '${process.execPath}' '${path.join(REPO_ROOT,'flow/engine/cli.mjs')}' "$@"\n`,{mode:0o700});
+      const shim=runCommand('sh',[path.join(REPO_ROOT,'flow/bin/hook.sh'),'stop-gate'],{env:{...shimEnv,VIBE_FLOW_BIN:wrapper},input:'{}'});
+      assertEqual(readFileSync(invoked,'utf8'),'hook\nstop-gate\n');
       assertEqual(shim.code,2,shim.stderr);
       assertEqual(shim.stderr,direct.stderr);
-      const bash=runCommand('bash',[path.join(REPO_ROOT,'flow/hooks-fallback/stop-gate.sh')],{env:{CLAUDE_PROJECT_DIR:root},input:'{}'});
+      const bash=runCommand('bash',[path.join(REPO_ROOT,'flow/hooks-fallback/stop-gate.sh')],{env:shimEnv,input:'{}'});
       assertEqual(bash.code,2,bash.stderr);
-      assert(bash.stderr.startsWith('vibe-gate: BLOCKED — '),bash.stderr);
-      assert(bash.stderr.includes('\\x0a'),bash.stderr);
+      assertEqual(bash.stderr.split('\n')[0],reason);
+      // This raw feature fixture bypasses writers; no-jq readers retain JSON escapes.
+      const encodedPath=kind === 'receipt-path' && jq.code !== 0 ? "feature-line\\\\nfeature.md" : "\\x0a";
+      assert(bash.stderr.includes(encodedPath),bash.stderr);
       assert(bash.stderr.split('\n').filter(Boolean).slice(1).every(l=>l.startsWith('  ')),bash.stderr);
+      const noNodeShim=runCommand('sh',[path.join(REPO_ROOT,'flow/bin/hook.sh'),'stop-gate'],{env:{...shimEnv,VIBE_FLOW_BIN:''},input:'{}'});
+      assertEqual(noNodeShim.code,2,noNodeShim.stderr); assertEqual(noNodeShim.stderr,bash.stderr);
     } finally {sb.cleanup();}
   });
 }

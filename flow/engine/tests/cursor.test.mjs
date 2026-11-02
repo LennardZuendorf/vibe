@@ -20,6 +20,10 @@ import { spawnSync } from 'node:child_process';
 import { readCursor, writeCursor, CursorParseError } from '../cursor.mjs';
 
 const ROOT_MJS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'root.mjs');
+const JQ_PRESENT = spawnSync('bash', ['-c', 'command -v jq >/dev/null 2>&1']).status === 0;
+const JQ_REQUIRED = 'validate-state: FAIL — jq is required but not installed.\n';
+const SKILLS_NO_JQ = 'check-skills: WARN — jq not installed — cannot read delegates; assuming all external skills present.\n';
+const DOCTOR_NO_JQ_CURSOR = 'ok   cursor flow cursor present (unverified — jq missing; validate-state.sh needs jq)';
 
 function bareDir() {
   return mkTempRoot('vibe-cursor-');
@@ -231,7 +235,7 @@ test('runtime migration: legacy setter and every shell reader prefer the new cur
     }
     const old = readFileSync(sb.cursorPath,'utf8');
     const runtime = path.join(sb.dir,'.vibe/run/flow'); mkdirSync(runtime,{recursive:true});
-    writeFileSync(path.join(runtime,'state.json'),'{"flow":"quick","phase":"fix","feature":"new"}');
+    writeFileSync(path.join(runtime,'state.json'),JSON.stringify({flow:'quick',phase:'fix',feature:'new',updated:null},null,2)+'\n');
     const result = spawnSync('bash',[path.join(scripts,'set-state.sh'),'quick.verify'],{encoding:'utf8',env:{...process.env,CLAUDE_PROJECT_DIR:sb.dir}});
     assertEqual(result.status,0,result.stderr);
     assertEqual(readCursor(sb.flowDir).state,'quick.verify');
@@ -239,8 +243,17 @@ test('runtime migration: legacy setter and every shell reader prefer the new cur
     assertEqual(readFileSync(sb.cursorPath,'utf8'),old);
     for (const reader of ['detect-context','orders','validate-state','check-skills','doctor']) {
       const out = spawnSync('bash',[path.join(scripts,`${reader}.sh`),...(reader === 'doctor' ? [sb.dir] : [])],{encoding:'utf8',env:{...process.env,CLAUDE_PROJECT_DIR:sb.dir}});
-      assertEqual(out.status,0,`${reader}: ${out.stderr}`);
-      assert((reader === 'orders' || reader === 'check-skills') ? (out.stdout+out.stderr).includes('verification-before-completion') : out.stdout.includes('quick.verify'), `${reader}: ${out.stdout} ${out.stderr}`);
+      if (reader === 'validate-state' && !JQ_PRESENT) {
+        assertEqual(out.status,1); assertEqual(out.stdout,''); assertEqual(out.stderr,JQ_REQUIRED);
+      } else if (reader === 'check-skills' && !JQ_PRESENT) {
+        assertEqual(out.status,0); assertEqual(out.stdout,''); assertEqual(out.stderr,SKILLS_NO_JQ);
+      } else if (reader === 'doctor' && !JQ_PRESENT) {
+        assertEqual(out.status,0); assert(out.stdout.split('\n').includes(DOCTOR_NO_JQ_CURSOR),out.stdout);
+        assert(!out.stdout.includes('no flow cursor (idle)'),out.stdout);
+      } else {
+        assertEqual(out.status,0,`${reader}: ${out.stderr}`);
+        assert((reader === 'orders' || reader === 'check-skills') ? (out.stdout+out.stderr).includes('verification-before-completion') : out.stdout.includes('quick.verify'), `${reader}: ${out.stdout} ${out.stderr}`);
+      }
     }
     rmSync(sb.cursorPath);
     assertEqual(readCursor(sb.flowDir).state,'quick.verify');
@@ -379,11 +392,18 @@ for (const ancestor of ['.vibe','.vibe/run','.vibe/run/flow']) {
         for (const reader of ['detect-context','orders','validate-state','check-skills','doctor']) {
           const args=reader === 'doctor' ? [sb.dir] : [];
           const out=spawnSync('bash',[path.join(scripts,`${reader}.sh`),...args],{encoding:'utf8',env:{...process.env,CLAUDE_PROJECT_DIR:sb.dir}});
-          assertEqual(out.status, !valid && reader === 'validate-state' ? 1 : 0,`${ancestor}/${kind}/${reader}: ${out.stderr}`);
+          assertEqual(out.status, reader === 'validate-state' && (!valid || !JQ_PRESENT) ? 1 : 0,`${ancestor}/${kind}/${reader}: ${out.stderr}`);
           const text=out.stdout+out.stderr;
           if (valid) {
             assert(!text.includes('invalid'),`${ancestor}/${kind}/${reader}: ${text}`);
-            assert((reader === 'orders' || reader === 'check-skills') ? text.includes(kind.endsWith('absent') ? 'test-driven-development' : 'verification-before-completion') : text.includes(expected),`${ancestor}/${kind}/${reader}: ${text}`);
+            if (reader === 'validate-state' && !JQ_PRESENT) {
+              assertEqual(out.stdout,''); assertEqual(out.stderr,JQ_REQUIRED);
+            } else if (reader === 'check-skills' && !JQ_PRESENT) {
+              assertEqual(out.stdout,''); assertEqual(out.stderr,SKILLS_NO_JQ);
+            } else if (reader === 'doctor' && !JQ_PRESENT) {
+              assert(out.stdout.split('\n').includes(DOCTOR_NO_JQ_CURSOR),out.stdout);
+              assert(!out.stdout.includes('no flow cursor (idle)'),out.stdout);
+            } else assert((reader === 'orders' || reader === 'check-skills') ? text.includes(kind.endsWith('absent') ? 'test-driven-development' : 'verification-before-completion') : text.includes(expected),`${ancestor}/${kind}/${reader}: ${text}`);
           } else {
             assert(text.includes('invalid'),`${ancestor}/${kind}/${reader}: no invalid report: ${text}`);
             assert(!out.stdout.includes('quick.fix'),`${ancestor}/${kind}/${reader}: used old state`);
