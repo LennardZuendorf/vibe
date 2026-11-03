@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-10-19
+updated: 2026-11-03
 ---
 
 # Carrier model and front door
@@ -18,7 +18,7 @@ adds the cross-tool capabilities no single tool can own — worktree lifecycle
 instruction sharing — while each tool stays independently installable; the CLI
 is the convenience, never the requirement.
 
-> **Shipped today:** vibe is still one repo running a Node engine (`flow/engine/`), with `install.sh` copying `.agents/skills/{spec,vibe}` and `.claude/**` into a target repo. The cursor lives at `.agents/skills/vibe/state.json`; specs live in `docs/spec/`. Everything three-binary and Rust above is the v0.4 target — build order and gates are in [plan.md](../plan.md).
+> **Shipped today:** vibe is still one repo running a Node engine (`flow/engine/`), with `install.sh` copying `.agents/skills/{spec,vibe}` and `.claude/**` into a target repo. The cursor lives at `.agents/skills/vibe/state.json`; specs live in `docs/spec/`. The Rust `vibe-spec` binary is implemented; the full three-binary carrier model above remains the v0.4 target — build order and gates are in [plan.md](../plan.md).
 
 Each of the three tools also ships as its own Claude Code plugin and its own
 OpenCode plugin — see Carrier model above.
