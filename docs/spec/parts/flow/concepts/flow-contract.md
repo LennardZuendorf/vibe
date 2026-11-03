@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-11-02
+updated: 2026-11-03
 ---
 
 # Vibe Flow Contract
@@ -44,3 +44,8 @@ check. The ledger records transitions, hook verdicts, and advisory signals;
 TUI and playback consume the same cursor and ledger. These target guarantees
 are not implemented by the F5/F6 writer. Full target contract:
 [tech-rust.md](../../../tech/rust.md).
+
+CLI usage errors exit 1, not hook block status 2. Spawned policy verdicts
+remove trailing newlines only; leading whitespace never becomes a verdict.
+Persisted numeric/boolean features still name evidence receipts; containers
+use compact JSON. Only null or an empty string lacks a feature name.
