@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-10-23
+updated: 2026-11-03
 ---
 
 # Feature Sequence
@@ -13,4 +13,4 @@ Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8
 
 **Delivered ahead of the arc.** `host-support` (2026-10-02, on the v0.3 bash tree): the four-host project skill/command packages — Claude Code, OpenCode, Codex (skill invocation only), Factory Droid — plus the installer's `--platform claude,opencode,codex,droid,none` selection, CLI detection default, per-target ownership manifest, and surgical uninstall. That is a slice of F21/F22 scope with different carriers; both rows keep their Rust-era acceptance and stay open, and their issue docs carry the landed-ahead notes.
 
-**Active focus.** The spec program (design: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`) runs on one branch: amendment → F1 → F25 → F2 ∥ F3 → F4 → F16 → F17 → F18 → F19 → F20 → spec slices of F21–F24. F2 and F4 are un-held and scope-cut to the spec tool. F9, F10, F11 stay held; the flow (F5–F8) and instruct (F12–F15) tracks are unchanged and not part of this program.
+**Spec program.** Delivered: F1, F2’s Spec JSON slice, F3, F4, F16–F20 and F25. Packaging, release/install, legacy retirement and documentation completion remain unfinished under F21–F24. Flow and instruct Rust ports remain separate tracks.

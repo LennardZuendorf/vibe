@@ -2,12 +2,12 @@
 type: tech
 applies:
   - "crates/vibe/**"
-updated: 2026-11-02
+updated: 2026-11-03
 ---
 
 # Global store and projection
 
-Design: [global-store design](../../../superpowers/specs/2026-10-23-global-store-design.md). Decision: [D48](../../decisions/d48-global-store-and-projection.md). Local projection only: no network (D42, D43).
+Decision: [D48](../../decisions/d48-global-store-and-projection.md). Local projection only: no network (D42, D43).
 
 **Store** (`$VIBE_STORE` overrides the whole global root, which later slices also use; else `$XDG_CONFIG_HOME/vibe`, else `~/.config/vibe`; Windows `%APPDATA%\vibe`): `AGENTS.md` (root instructions), `mcp.json`, `skills/`, `store.json`.
 - `store.json`: `harnesses.<id>.enabled` (ids `claude`, `codex`, `opencode`, `droid`), `skills.sources` (extra dirs, `~` expanded). Unknown keys tolerated.
@@ -43,3 +43,5 @@ Design: [global-store design](../../../superpowers/specs/2026-10-23-global-store
 **Env:** `VIBE_STORE`, `VIBE_STATE`, `VIBE_TOOLKIT` (toolkit skills dir), `VIBE_SPEC_BIN` (peer binary for `vibe spec`).
 
 **Known limits:** a harness switched off in `store.json` keeps its old projection until `vibe uninstall`; `markers::remove` adds a trailing newline to text that lacked one; instructions `None` leaves blocks untouched; Windows skills links skipped; Codex root inline `mcp_servers` gets no vibe MCP block; Claude MCP only via `sync` (hook prints a notice).
+
+**Executor:** File and link failures roll back both stages. Claude CLI calls run last; a failed call leaves file/link changes in place and records no ownership for that call.

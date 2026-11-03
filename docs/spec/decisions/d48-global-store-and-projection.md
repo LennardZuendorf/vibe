@@ -1,9 +1,9 @@
 ---
 type: decision
-updated: 2026-11-02
+updated: 2026-11-03
 ---
 
-- **D48 — Global store and harness projection (v0.5, row C0).** `vibe` keeps one user-level store (`~/.config/vibe/`: root `AGENTS.md`, `mcp.json`, `skills/`, `store.json`) and projects it into Claude Code, Codex, OpenCode and Factory droid. `vibe install` registers one user-level SessionStart hook entry per harness; `vibe sync` and the hook project the store into each harness's own files. Design: [global-store design](../../superpowers/specs/2026-10-23-global-store-design.md); tech: [cli-store.md](../tech/cli/cli-store.md).
+- **D48 — Global store and harness projection (v0.5, row C0).** `vibe` keeps one user-level store (`~/.config/vibe/`: root `AGENTS.md`, `mcp.json`, `skills/`, `store.json`) and projects it into Claude Code, Codex, OpenCode and Factory droid. `vibe install` registers one user-level SessionStart hook entry per harness; `vibe sync` and the hook project the store into each harness's own files. Tech: [cli-store.md](../tech/cli/cli-store.md).
   - **Hooks (D25 amended).** The front door is a fourth, user-level hook owner, beside spec, flow and instruct. Its only duty is SessionStart projection. The hook prints at most one line: a stdout notice (for Claude, Codex and Factory a `{"systemMessage":"vibe: …"}` JSON line the harness shows the user; plain text for OpenCode), or a stderr skip cause. The stale-Claude-MCP reminder repeats every session until `vibe sync` runs. It never injects instruction content (instructions reach harnesses through files), never spawns a subprocess or touches the network, and always exits 0.
   - **Plugin (D40 amended).** The vibe plugin still carries no hook: vibe registers no plugin hook. It merges one user-level entry per harness into that harness's global hooks file (`settings.json` for Claude, `hooks.json` for Codex and Factory); OpenCode gets a plugin file whose setup spawns the hook. Third-party hook entries survive install, sync and uninstall.
   - **Local only (D42, D43).** Projection is local, from the store to the harness files. It is not source sync and not a git fetch: no network code. D43's git-sourced blocks stay with `vibe-instruct`.

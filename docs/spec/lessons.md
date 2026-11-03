@@ -580,4 +580,10 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** tooling, ci, diagnostics, discovery, tests
 **Date:** 2026-11-02
 
+### Run the pre-merge artifact gate before publication
+**Pattern:** Published PRs retained temporary design and plan documents because plain `check-drift` only warned about them.
+**Rule:** After promoting durable facts and removing temporary artifacts, run `vibe-spec check-drift --pre-merge` on the final tree before publication. Inventory both `docs/superpowers/` and `.superpowers/`; the drift command scans only the former. A green plain drift check does not prove artifact cleanup.
+**Tags:** compound, drift, publication, verification
+**Date:** 2026-11-03
+
 <!-- vibe-spec: allow SF15 -->
