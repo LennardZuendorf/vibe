@@ -27,7 +27,7 @@ the clone's source revision. The local marketplace source directory is named
 
 ## Global installation
 
-`install.sh --global` installs `spec` and `vibe` into each selected host’s
+`install.sh --global` installs `spec`, `using-spec` and `vibe` into each selected host’s
 user skill directory: Claude `~/.claude/skills`, Codex `~/.codex/skills`,
 Droid `~/.factory/skills`, OpenCode `~/.config/opencode/skills`.
 Host config environment overrides apply. `--host` selects hosts; otherwise
@@ -44,3 +44,10 @@ The installer leaves shell profiles untouched and reports a missing PATH entry.
 Build failures warn and preserve the installed skills. Without the binary,
 commands such as `root`, `validate`, `promote` and `init` are unavailable;
 bundled scripts validate flat legacy roots only. Doctor reports this condition.
+
+## Skill discovery
+
+Project and global installs expose `spec`, `using-spec` and `vibe` as sibling
+skill directories. Materialized host plugin packages use the same flat shape
+and omit the nested `spec/using-spec` copy. In project installs, `--only flow`
+excludes both spec skills; `--only spec` includes the router.
