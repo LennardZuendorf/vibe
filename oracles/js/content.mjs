@@ -471,7 +471,13 @@ function lessonsFor(root, relPath, tag) {
   // name a file outside the repo and have it injected into every turn.
   const lessonsPath = confinePath(root, relPath);
   if (lessonsPath === undefined) return '';
-  const text = readText(lessonsPath);
+  let text = readText(lessonsPath);
+  // The shipped default names the docs/spec root; a project still on the legacy
+  // root keeps working through this one fallback (D33).
+  if (text === undefined && relPath === 'docs/spec/lessons.md') {
+    const legacyPath = confinePath(root, '.spec/lessons.md'); // literal
+    if (legacyPath !== undefined) text = readText(legacyPath);
+  }
   if (text === undefined) return '';
   const wanted = String(tag).toLowerCase();
   const out = [];
@@ -769,7 +775,7 @@ export function checkContent(ctx, content = loadContent(ctx.root, ctx.vibeDir)) 
     }
   }
 
-  // A check that examines nothing must fail loudly (see .spec/lessons.md):
+  // A check that examines nothing must fail loudly (see the spec lessons.md):
   // "no errors" is only evidence when there was content to examine.
   if (content.blocks.size === 0) {
     errors.push('no content blocks found — the shipped content/blocks tree is missing or unreadable');

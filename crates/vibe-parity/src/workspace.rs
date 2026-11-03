@@ -3,7 +3,7 @@
 use serde_json::Value;
 
 /// The only crates the workspace may hold (sorted).
-pub const MEMBERS: [&str; 3] = ["vibe-core", "vibe-parity", "vibe-spec"];
+pub const MEMBERS: [&str; 4] = ["vibe-core", "vibe-flow", "vibe-parity", "vibe-spec"];
 /// The shared library; the one member other members may depend on.
 pub const CORE: &str = "vibe-core";
 /// External crates a member may depend on directly (normal, dev or build).
@@ -121,13 +121,14 @@ mod tests {
             {"name": "vibe-core", "dependencies": core_deps},
             {"name": "vibe-spec", "dependencies": spec_deps},
             {"name": "vibe-parity", "dependencies": [path("vibe-core"), reg("serde_json")]},
+            {"name": "vibe-flow", "dependencies": [path("vibe-core"), reg("clap"), reg("serde_json")]},
         ]})
     }
 
     #[test]
     fn the_intended_graph_passes() {
         let m = meta(vec![path("vibe-core"), reg("clap")], vec![]);
-        assert_eq!(check_graph(&m).unwrap(), 3);
+        assert_eq!(check_graph(&m).unwrap(), 4);
     }
 
     #[test]
@@ -185,7 +186,7 @@ mod tests {
         m["packages"]
             .as_array_mut()
             .unwrap()
-            .push(json!({"name": "vibe-flow", "dependencies": []}));
+            .push(json!({"name": "vibe-other", "dependencies": []}));
         assert!(check_graph(&m).is_err());
         assert!(check_graph(&json!({"packages": []})).is_err());
     }

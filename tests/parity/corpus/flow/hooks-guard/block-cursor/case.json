@@ -1,0 +1,10 @@
+{
+  "runs": {
+    "hook-guard": [
+      []
+    ]
+  },
+  "stderr": true,
+  "stdin": "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\".agents/skills/vibe/state.json\"}}",
+  "v": 1
+}

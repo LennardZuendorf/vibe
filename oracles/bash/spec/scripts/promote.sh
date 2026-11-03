@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # scripts/promote.sh — extract merge markers from feature tech.md and promote to root spec
 set -euo pipefail
 

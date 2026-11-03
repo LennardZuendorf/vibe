@@ -28,6 +28,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 MACHINE="$SKILL_DIR/state-machine.json"
 STATE="$SKILL_DIR/state.json"
+if [[ -f "$SKILL_DIR/scripts/runtime-state.sh" ]]; then
+  # shellcheck source=flow/scripts/runtime-state.sh
+  source "$SKILL_DIR/scripts/runtime-state.sh"
+  STATE="$(runtime_state_path "$SKILL_DIR")"
+fi
 
 err() { echo "set-state: $1" >&2; }
 
@@ -191,6 +196,13 @@ if [[ "$FLOW" == "feature" && "$FEATURE_JSON" == "null" ]]; then
   err "WARN: entering '$TARGET' with no feature set. Pass one: set-state.sh $TARGET <feature>"
 fi
 
+if declare -F runtime_check_write >/dev/null; then
+  runtime_root="$(runtime_project_root "$SKILL_DIR")" || runtime_root="$SKILL_DIR"
+  if ! runtime_check_write "$runtime_root" "$STATE"; then
+    err "ERROR: unsafe cursor path (outside project, unresolved, or a directory): $STATE"
+    exit 1
+  fi
+fi
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 TMP="$(mktemp "${STATE}.XXXXXX")"
 trap 'rm -f "$TMP"' EXIT

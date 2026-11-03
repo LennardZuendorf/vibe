@@ -33,7 +33,7 @@ F23
 Phase: 4 · Tool: all · Source: `docs/spec/plan.md` row F24
 
 ## Amended 2026-10-13
-- Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.
+- Spec program: `docs/spec/parts/spec/concepts/spec-feature-sequence.md`.
 - Deliverable now: READMEs (umbrella + per tool), CHANGELOG, root specs truth sweep; drift check extended to three tools
 
 ---

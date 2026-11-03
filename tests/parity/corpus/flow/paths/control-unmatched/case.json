@@ -1,0 +1,59 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        "nope.md",
+        "feature.compound"
+      ],
+      [
+        "nope.md",
+        "feature.design"
+      ],
+      [
+        "nope.md",
+        "feature.impl"
+      ],
+      [
+        "nope.md",
+        "feature.plan"
+      ],
+      [
+        "nope.md",
+        "feature.verify"
+      ],
+      [
+        "nope.md",
+        "idle"
+      ],
+      [
+        "nope.md",
+        "quick.fix"
+      ],
+      [
+        "nope.md",
+        "quick.triage"
+      ],
+      [
+        "nope.md",
+        "quick.verify"
+      ],
+      [
+        "nope.md",
+        "setup.apply"
+      ],
+      [
+        "nope.md",
+        "setup.detect"
+      ],
+      [
+        "nope.md",
+        "strategy.brainstorm"
+      ],
+      [
+        "nope.md",
+        "strategy.spec"
+      ]
+    ]
+  },
+  "v": 1
+}

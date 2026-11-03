@@ -2164,3 +2164,22 @@ test('parity oracles: the guard oracle and oracles/…/stop-gate.sh are the bash
   assert(!/cli\.mjs/.test(live), 'flow/hooks-fallback/stop-gate.sh has been overwritten with the Node shim');
   assert(!/exec node/.test(live), 'flow/hooks-fallback/stop-gate.sh has been overwritten with the Node shim');
 });
+
+// flow-v2/F6: raw path controls are encoded by live producers; the frozen
+// oracle's quoted-name miss stays frozen. These assert absolute 2/2/0 results.
+for (const mode of JQ_MODES) {
+  test(`flow-v2/F6: newline path encoding survives live Stop grammar x ${mode}`, () => {
+    requireJqFor(mode);
+    const sb=makeThreeWayFlatFixture();
+    try {
+      writeFileSync(path.join(sb.dir,'changed\nfile.txt'),'new');
+      const records=runCommand('git',['status','--porcelain','-z','-uall','--','.'],{cwd:sb.dir}).stdout;
+      assert(records.includes('?? changed\nfile.txt\0'),'real git names newline path');
+      const legs=threeWay(sb,mode,()=>resetWarnLog(sb));
+      assertDivergentRow('newline',legs,'changed\\x0afile.txt');
+      for (const leg of [legs.engine,legs.live]) {
+        assert(leg.stderr.split('\n').filter(Boolean).slice(1).every(l=>l.startsWith('  ')),leg.stderr);
+      }
+    } finally {sb.cleanup();}
+  });
+}

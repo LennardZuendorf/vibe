@@ -1,0 +1,19 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        ".planning/STATE.md",
+        "idle"
+      ],
+      [
+        ".planning/STATE.md",
+        "feature.impl"
+      ],
+      [
+        ".planning/STATE.md",
+        "quick.fix"
+      ]
+    ]
+  },
+  "v": 1
+}

@@ -19,6 +19,7 @@ import {
   utimesSync,
   statSync,
   symlinkSync,
+  chmodSync,
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +35,7 @@ import {
   makeNestedSandbox,
   skip,
 } from './run.mjs';
+import { runSet } from '../commands/state.mjs';
 import {
   runDoctrineHook,
   runInjectHook,
@@ -1478,7 +1480,7 @@ for (const name of ['my file.txt', 'café.txt', 'a\nb.txt']) {
       const result = gateOnRealGit(sb);
       assertEqual(result.code, 2, `a receipt older than ${JSON.stringify(name)} is stale`);
       assertIncludes(result.stderr, 'the evidence receipt is stale');
-      assertIncludes(result.stderr, name);
+      assertIncludes(result.stderr, name.replace(/\n/g,'\\x0a'));
     } finally {
       sb.cleanup();
     }
@@ -1937,4 +1939,188 @@ test('CLI: `vibe hook <unknown>` degrades to a silent no-op, never breaks', () =
   } finally {
     sb.cleanup();
   }
+});
+
+// flow-v2/1.2: all live Stop implementations share receipt migration.
+test('runtime migration: new Stop receipts work in JS and no-node fallback', () => {
+  for (const feature of [null,'demo']) {
+    const sb=makeHookSandbox({cursor:{flow:feature?'feature':'quick',phase:'verify',feature,updated:null}});
+    try {
+      const runtime=path.join(sb.root,'.vibe/run/flow');mkdirSync(path.join(runtime,'evidence'),{recursive:true});
+      writeFileSync(path.join(runtime,'state.json'),JSON.stringify({flow:feature?'feature':'quick',phase:'verify',feature,updated:null}));
+      const name=feature?'feature-demo.md':'quick.md';
+      writeFileSync(path.join(runtime,'evidence',name),'observed commands and output\n');
+      assertEqual(runGateHook(sb.root,sb.vibeDir,'{}',{spawnGit:()=>({error:new Error('no git')})}).code,0);
+      const fallback=path.join(REPO_ROOT,'flow/hooks-fallback/stop-gate.sh');
+      const out=runCommand('bash',[fallback],{env:{CLAUDE_PROJECT_DIR:sb.root},input:'{}'});
+      assertEqual(out.code,0,out.stderr);
+      // A present invalid new receipt cannot fall through to a valid old one.
+      rmSync(path.join(runtime,'evidence',name));mkdirSync(path.join(runtime,'evidence',name));
+      mkdirSync(path.join(sb.vibeDir,'evidence'),{recursive:true});writeFileSync(path.join(sb.vibeDir,'evidence',name),'old valid receipt');
+      assertEqual(runGateHook(sb.root,sb.vibeDir,'{}',{spawnGit:()=>({error:new Error('no git')})}).code,2);
+      assertEqual(runCommand('bash',[fallback],{env:{CLAUDE_PROJECT_DIR:sb.root},input:'{}'}).code,2);
+    } finally {sb.cleanup();}
+  }
+});
+
+// flow-v2/F6: path values cannot inject lines into complete block diagnostics.
+for (const kind of ['changed-path', 'receipt-path', 'project-path', 'utf8-controls']) {
+  test(`flow-v2/F6: real JS and no-node Stop blocks survive the shim with newline ${kind}`, () => {
+    const sb = makeRealGitFixture();
+    try {
+      let root = sb.root;
+      if (kind === 'project-path') {
+        const alias = path.join(sb.dir, 'project\nroot');
+        symlinkSync(sb.root,alias); root=alias;
+      }
+      if (kind === 'receipt-path') {
+        const before=readFileSync(sb.cursorPath,'utf8');
+        const rejected=runSet(sb.vibeDir,['feature.verify','line\nfeature']);
+        assertEqual(rejected.code,1); assertIncludes(rejected.stderr,'invalid feature name');
+        assertEqual(readFileSync(sb.cursorPath,'utf8'),before);
+        writeCursor(sb,{flow:'feature',phase:'verify',feature:'line\nfeature'});
+      } else {
+        const name=kind === 'utf8-controls' ? 'café-日-😀\\\t\n\x7f.txt' : 'changed\nfile.txt';
+        const file=path.join(sb.dir,name); writeFileSync(file,'new');
+        assert(realEntries(sb).some(e=>e.path === name),'real git names changed path');
+      }
+      const reason=kind === 'receipt-path' ? "vibe-gate: BLOCKED — feature.verify needs an evidence receipt before 'done'." : 'vibe-gate: BLOCKED — the evidence receipt is stale.';
+      const direct=runGateHook(root,sb.vibeDir,'{}',{});
+      assertEqual(direct.code,2); assertEqual(direct.stderr.split('\n')[0],reason);
+      assert(direct.stderr.split('\n').filter(Boolean).slice(1).every(l=>l.startsWith('  ')),direct.stderr);
+      // The shim needs POSIX tools even in CI's deliberately jq-stripped PATH.
+      const tools=path.join(sb.dir,'shim-tools'); mkdirSync(tools);
+      for (const tool of ['sh','bash','uname','tr','dirname','grep','sed','cat','head','awk','git']) {
+        const found=runCommand('/bin/sh',['-c','command -v "$1"','shim-tool',tool],{env:{PATH:'/usr/bin:/bin'}});
+        assertEqual(found.code,0,found.stderr); assert(path.isAbsolute(found.stdout.trim()),found.stdout);
+        symlinkSync(found.stdout.trim(),path.join(tools,tool));
+      }
+      const jq=runCommand('/bin/sh',['-c','command -v jq']);
+      if (jq.code === 0) symlinkSync(jq.stdout.trim(),path.join(tools,'jq'));
+      const shimEnv={PATH:tools,CLAUDE_PROJECT_DIR:root,CLAUDE_PLUGIN_ROOT:path.join(sb.dir,'no-plugin'),VIBE_ENGINE:path.join(sb.dir,'no-engine')};
+      for (const excluded of ['node','vibe-flow',...(jq.code === 0 ? [] : ['jq'])]) {
+        const found=runCommand('sh',['-c','command -v "$1"','excluded-tool',excluded],{env:shimEnv});
+        assert(found.code !== 0,`${excluded} must be unreachable`); assertEqual(found.stdout,'');
+      }
+      const wrapper=path.join(sb.dir,'producer'), invoked=path.join(sb.dir,'producer-invoked');
+      writeFileSync(wrapper,`#!/bin/sh\nprintf '%s\\n' "$@" > '${invoked}'\nexec '${process.execPath}' '${path.join(REPO_ROOT,'flow/engine/cli.mjs')}' "$@"\n`,{mode:0o700});
+      const shim=runCommand('sh',[path.join(REPO_ROOT,'flow/bin/hook.sh'),'stop-gate'],{env:{...shimEnv,VIBE_FLOW_BIN:wrapper},input:'{}'});
+      assertEqual(readFileSync(invoked,'utf8'),'hook\nstop-gate\n');
+      assertEqual(shim.code,2,shim.stderr);
+      assertEqual(shim.stderr,direct.stderr);
+      const bash=runCommand('bash',[path.join(REPO_ROOT,'flow/hooks-fallback/stop-gate.sh')],{env:shimEnv,input:'{}'});
+      assertEqual(bash.code,2,bash.stderr);
+      assertEqual(bash.stderr.split('\n')[0],reason);
+      // This raw feature fixture bypasses writers; no-jq readers retain JSON escapes.
+      const encodedPath=kind === 'receipt-path' && jq.code !== 0 ? "feature-line\\\\nfeature.md" : "\\x0a";
+      assert(bash.stderr.includes(encodedPath),bash.stderr);
+      if (kind === 'utf8-controls') {
+        const expected="changed after it was written: café-日-😀\\\\\\x09\\x0a\\x7f.txt";
+        assertIncludes(direct.stderr,expected); assertIncludes(bash.stderr,expected);
+      }
+
+      assert(bash.stderr.split('\n').filter(Boolean).slice(1).every(l=>l.startsWith('  ')),bash.stderr);
+      const noNodeShim=runCommand('sh',[path.join(REPO_ROOT,'flow/bin/hook.sh'),'stop-gate'],{env:{...shimEnv,VIBE_FLOW_BIN:''},input:'{}'});
+      assertEqual(noNodeShim.code,2,noNodeShim.stderr); assertEqual(noNodeShim.stderr,bash.stderr);
+    } finally {sb.cleanup();}
+  });
+}
+
+// flow-v2/F6 final review: only established receipt absence permits fallback.
+for(const feature of [null,'auth/part']) {
+for (const kind of ['denied-parent','dangling-parent','file-parent','loop-parent','missing-parent','missing-leaf','search-only','search-only-missing','metadata-only','directory-leaf','dangling-leaf','loop-leaf','valid']) {
+  test(`receipt migration: ${feature ?? "quick"} ${kind} has absolute JS/permanent Stop outcome`, () => {
+    const flow=feature ? 'feature' : 'quick';
+    const sb=makeHookSandbox({cursor:{flow,phase:'verify',feature,updated:null}});
+    const runtime=path.join(sb.root,'.vibe/run/flow');
+    const name=feature ? `feature-${feature}.md` : 'quick.md';
+    const current=path.join(runtime,'evidence',name);const dir=path.dirname(current);
+    try {
+      mkdirSync(dir,{recursive:true});writeFileSync(path.join(runtime,'state.json'),JSON.stringify({flow,phase:'verify',feature,updated:null}));
+      const legacy=path.join(sb.vibeDir,'evidence',name);mkdirSync(path.dirname(legacy),{recursive:true});writeFileSync(legacy,'fresh legacy receipt');
+      writeFileSync(current,'current receipt');
+      if(kind === 'denied-parent') chmodSync(dir,0);
+      else if(kind === 'search-only' || kind === 'search-only-missing') {if(kind === 'search-only-missing') rmSync(current);chmodSync(dir,0o111);}
+      else if(kind === 'metadata-only') chmodSync(current,0);
+      else if(['dangling-parent','file-parent','loop-parent','missing-parent'].includes(kind)) {
+        rmSync(dir,{recursive:true});
+        if(kind === 'dangling-parent') symlinkSync('missing',dir);
+        if(kind === 'loop-parent') symlinkSync(path.basename(dir),dir);
+        if(kind === 'file-parent') writeFileSync(dir,'file');
+      } else if(['missing-leaf','directory-leaf','dangling-leaf','loop-leaf'].includes(kind)) {
+        rmSync(current);
+        if(kind === 'directory-leaf') mkdirSync(current);
+        if(kind === 'dangling-leaf') symlinkSync('missing',current);
+        if(kind === 'loop-leaf') symlinkSync(path.basename(current),current);
+      }
+      const block=['denied-parent','dangling-parent','file-parent','loop-parent','directory-leaf','dangling-leaf','loop-leaf'].includes(kind);
+      const direct=runGateHook(sb.root,sb.vibeDir,'{}',{spawnGit:()=>({error:new Error('no git')})});
+      assertEqual(direct.code,block ? 2 : 0,direct.stderr);
+      const bash=runCommand('bash',[path.join(REPO_ROOT,'flow/hooks-fallback/stop-gate.sh')],{env:{CLAUDE_PROJECT_DIR:sb.root},input:'{}'});
+      assertEqual(bash.code,block ? 2 : 0,bash.stderr);
+      if(kind === 'metadata-only') {
+        const helper=path.join(REPO_ROOT,'flow/scripts/runtime-state.sh');
+        const classify=mode=>runCommand('/bin/bash',['-c','source "$1"; runtime_cursor_status "$2" "$3"','receipt-metadata',helper,current,mode],{env:{PATH:'/nonexistent'}});
+        assertEqual(classify('metadata').code,0);assertEqual(classify('read').code,2);
+      }
+      if(block) {
+        // Frozen pre-migration Stop reads the valid legacy receipt and allows.
+        // Pin this intentional divergence with an absolute oracle outcome.
+        const frozen=runCommand('bash',[path.join(REPO_ROOT,'oracles/bash/flow/hooks-fallback/stop-gate.sh')],{env:{CLAUDE_PROJECT_DIR:sb.root},input:'{}'});
+        assertEqual(frozen.code,0,frozen.stderr);
+        for(const out of [direct,bash]) {
+          assertIncludes(out.stderr,'needs an evidence receipt');assertIncludes(out.stderr,current);
+        }
+      }
+    } finally {
+      if(kind === 'denied-parent' || kind === 'search-only' || kind === 'search-only-missing') chmodSync(dir,0o700);
+      sb.cleanup();
+    }
+  });
+}
+}
+
+for(const feature of ['auth','auth/part']) {
+  for(const placement of ['nested-current','basename-decoy','legacy']) {
+    test(`receipt name: ${feature} x ${placement} preserves relative path across JS/bash`, () => {
+      const sb=makeHookSandbox({cursor:{flow:'feature',phase:'verify',feature,updated:null}});
+      try {
+        const runtime=path.join(sb.root,'.vibe/run/flow');mkdirSync(path.join(runtime,'evidence'),{recursive:true});
+        writeFileSync(path.join(runtime,'state.json'),JSON.stringify({flow:'feature',phase:'verify',feature,updated:null}));
+        const name=`feature-${feature}.md`;
+        const current=path.join(runtime,'evidence',name);
+        const receipt=placement === 'legacy' ? path.join(sb.vibeDir,'evidence',name) : placement === 'basename-decoy' ? path.join(runtime,'evidence',path.basename(name)) : current;
+        mkdirSync(path.dirname(receipt),{recursive:true});writeFileSync(receipt,'observed commands + output');
+        const expected=placement === 'basename-decoy' && feature.includes('/') ? 2 : 0;
+        const direct=runGateHook(sb.root,sb.vibeDir,'{}',{spawnGit:()=>({error:new Error('no git')})});
+        const bash=runCommand('bash',[path.join(REPO_ROOT,'flow/hooks-fallback/stop-gate.sh')],{env:{CLAUDE_PROJECT_DIR:sb.root},input:'{}'});
+        for(const out of [direct,bash]) {assertEqual(out.code,expected,out.stderr);if(expected===2)assertIncludes(out.stderr,current);}
+        if(placement === 'nested-current') {
+          // The frozen producer requires legacy placement; new-only evidence
+          // is an intentional live0/frozen2 divergence, for both normal/nested names.
+          const frozen=runCommand('bash',[path.join(REPO_ROOT,'oracles/bash/flow/hooks-fallback/stop-gate.sh')],{env:{CLAUDE_PROJECT_DIR:sb.root},input:'{}'});
+          assertEqual(frozen.code,2,frozen.stderr);assertIncludes(frozen.stderr,'needs an evidence receipt');
+        }
+      } finally {sb.cleanup();}
+    });
+  }
+}
+
+// Accepted feature paths keep lexical ancestors: normalization cannot erase a missing component.
+test('receipt name: dot component cannot turn a basename decoy into current evidence', () => {
+  const feature='auth/../part';
+  const sb=makeHookSandbox({cursor:{flow:'feature',phase:'verify',feature,updated:null}});
+  try {
+    const runtime=path.join(sb.root,'.vibe/run/flow');mkdirSync(path.join(runtime,'evidence'),{recursive:true});
+    writeFileSync(path.join(runtime,'state.json'),JSON.stringify({flow:'feature',phase:'verify',feature,updated:null}));
+    const legacyBase=path.join(sb.vibeDir,'evidence');mkdirSync(path.join(legacyBase,'feature-auth'),{recursive:true});
+    const legacy=`${legacyBase}/feature-${feature}.md`;writeFileSync(legacy,'old verified output');
+    const decoy=path.join(runtime,'evidence/part.md');writeFileSync(decoy,'new basename decoy');
+    const changed=path.join(sb.root,'src.txt');writeFileSync(changed,'changed');
+    const stamp=(file,seconds)=>utimesSync(file,new Date(seconds*1000),new Date(seconds*1000));
+    stamp(legacy,1600000000);stamp(changed,1650000000);stamp(decoy,1700000000);
+    const result=runGateHook(sb.root,sb.vibeDir,'{}',{spawnGit:fakeGit([[' M','src.txt']])});
+    assertEqual(result.code,2,result.stderr);
+    assertIncludes(result.stderr,'receipt is stale');assertIncludes(result.stderr,'src.txt');
+  } finally {sb.cleanup();}
 });

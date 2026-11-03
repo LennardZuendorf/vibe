@@ -23,6 +23,16 @@ pub struct Suite {
     pub commands: Vec<CommandSpec>,
     /// Minimum case count per corpus class. Every class a command uses needs one.
     pub floors: BTreeMap<String, usize>,
+    /// Before file comparison, rename a snapshot key on each side to its mapped
+    /// value. Use: two engines that write the same logical file to different
+    /// paths (the JS oracle's legacy cursor vs the candidate's `.vibe/run`
+    /// cursor) compare under one key.
+    #[serde(default)]
+    pub file_aliases: BTreeMap<String, String>,
+    /// Named byte normalizers, applied to every compared file's bytes on both
+    /// sides before comparison. See [`NORMALIZERS`].
+    #[serde(default)]
+    pub normalize: Vec<String>,
     /// Known, deliberate differences between oracle and candidate.
     #[serde(default)]
     pub divergences: Vec<Divergence>,
@@ -33,6 +43,99 @@ pub struct Suite {
 
 fn default_timeout_ms() -> u64 {
     30_000
+}
+
+/// Every normalizer a suite's `normalize` list may name.
+pub const NORMALIZERS: [&str; 1] = ["cursor-updated"];
+
+/// Applies one named normalizer to a file's bytes.
+///
+/// `cursor-updated` replaces every JSON `"updated"` value with a fixed
+/// placeholder: the byte sequence `"updated":` (optional following space)
+/// followed by a quoted string has the quoted value replaced with `"T"`, so
+/// two cursors written seconds apart compare equal. Hand-written; no regex.
+pub fn normalize_bytes(name: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
+    match name {
+        "cursor-updated" => Ok(cursor_updated(bytes)),
+        other => Err(format!(
+            "unknown normalizer {other:?}; known: {}",
+            NORMALIZERS.join(", ")
+        )),
+    }
+}
+
+const UPDATED_KEY: &[u8] = b"\"updated\":";
+
+fn cursor_updated(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut rest = bytes;
+    while let Some(at) = find(rest, UPDATED_KEY) {
+        out.extend_from_slice(&rest[..at + UPDATED_KEY.len()]);
+        rest = &rest[at + UPDATED_KEY.len()..];
+        if rest.first() == Some(&b' ') {
+            out.push(b' ');
+            rest = &rest[1..];
+        }
+        match quoted_value(rest) {
+            Some(len) => {
+                out.extend_from_slice(b"\"T\"");
+                rest = &rest[len..];
+            }
+            None => continue,
+        }
+    }
+    out.extend_from_slice(rest);
+    out
+}
+
+fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+/// The length of the quoted string at the start of `bytes`, quotes included,
+/// or `None` when `bytes` does not start with a closed quoted string.
+fn quoted_value(bytes: &[u8]) -> Option<usize> {
+    if bytes.first() != Some(&b'"') {
+        return None;
+    }
+    let mut index = 1;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => index += 2,
+            b'"' => return Some(index + 1),
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+/// Renames each aliased snapshot key to its mapped value. The file's parent
+/// directories become present too, because the harness snapshots directories
+/// as keys ending in `/`: the side that never created them would otherwise
+/// differ from the side that did. When a side holds both spellings, the
+/// source key stays put so the comparison reports the extra file.
+fn apply_file_aliases(files: &mut BTreeMap<String, Vec<u8>>, aliases: &BTreeMap<String, String>) {
+    for (from, to) in aliases {
+        let Some(bytes) = files.remove(from) else {
+            continue;
+        };
+        if files.contains_key(to) {
+            files.insert(from.clone(), bytes);
+            continue;
+        }
+        let parts: Vec<&str> = to.split('/').collect();
+        let mut prefix = String::new();
+        for part in &parts[..parts.len() - 1] {
+            if !prefix.is_empty() {
+                prefix.push('/');
+            }
+            prefix.push_str(part);
+            files.entry(format!("{prefix}/")).or_default();
+        }
+        files.insert(to.clone(), bytes);
+    }
 }
 
 /// One command compared between oracle and candidate.
@@ -60,6 +163,8 @@ pub enum Field {
     Exit,
     /// The stdout bytes.
     Stdout,
+    /// The stderr bytes. Compared only for cases that set `stderr: true`.
+    Stderr,
     /// The bytes of every file left in the sandbox.
     Files,
 }
@@ -95,6 +200,21 @@ impl Divergence {
     }
 }
 
+/// Per-case git sandboxing. An empty `.git/` stub bounds marker-based
+/// root searches but NOT git's own repository discovery, so any case whose
+/// child may run git needs a real repository (and a discovery ceiling).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GitCfg {
+    /// Run `git init` in the sandbox after staging. Exit status asserted.
+    pub init: bool,
+    /// Commit the staged tree once after init, with signing and hooks off
+    /// (`user.email`/`user.name` set, `commit.gpgsign=false`,
+    /// `tag.gpgsign=false`, `core.hooksPath=/dev/null`). Exit asserted.
+    #[serde(default)]
+    pub commit: bool,
+}
+
 /// A corpus case's `case.json`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -107,6 +227,29 @@ pub struct CaseSpec {
     /// Extra argument lists per command. A command without an entry runs once with none.
     #[serde(default)]
     pub runs: BTreeMap<String, Vec<Vec<String>>>,
+    /// Stdin bytes for the run, fed to BOTH sides by file redirect (never a
+    /// pipe — a broken-pipe producer must not leak into the exit status).
+    /// Empty means no stdin, same as before.
+    #[serde(default)]
+    pub stdin: String,
+    /// Also compare stderr bytes (`Field::Stderr`). Block and warn messages
+    /// are the hook contract, so hook cases set this.
+    #[serde(default)]
+    pub stderr: bool,
+    /// Extra environment variables for the child, added on top of the
+    /// harness's cleared environment. Everything else stays deleted — the
+    /// delete-not-unset discipline is structural.
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+    /// Sandbox-relative path → RFC3339 `YYYY-MM-DDTHH:MM:SSZ` timestamp.
+    /// Applied to both sides after staging, before the run, so freshness
+    /// ordering is deterministic without sleeps. The timestamp must parse;
+    /// an unreadable or unparsable path fails the case loudly.
+    #[serde(default)]
+    pub stamps: BTreeMap<String, String>,
+    /// Git sandboxing for this case.
+    #[serde(default)]
+    pub git: Option<GitCfg>,
 }
 
 /// A corpus case on disk.
@@ -143,6 +286,52 @@ impl Case {
     }
 }
 
+/// Seconds since the unix epoch for an RFC3339 `YYYY-MM-DDTHH:MM:SSZ`
+/// timestamp. Hand-written (no chrono): days-from-civil (Howard Hinnant).
+pub fn parse_rfc3339(text: &str) -> Result<u64, String> {
+    let bytes = text.as_bytes();
+    let bad = || format!("stamp {text:?} is not YYYY-MM-DDTHH:MM:SSZ");
+    let digits = |from: usize, len: usize| -> Result<u64, String> {
+        let part = bytes
+            .get(from..from + len)
+            .ok_or_else(bad)?
+            .iter()
+            .try_fold(0u64, |acc, b| {
+                b.is_ascii_digit()
+                    .then(|| acc * 10 + u64::from(b - b'0'))
+                    .ok_or_else(bad)
+            })?;
+        Ok(part)
+    };
+    if bytes.len() != 20
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[10] != b'T'
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+        || bytes[19] != b'Z'
+    {
+        return Err(bad());
+    }
+    let (year, month, day) = (digits(0, 4)?, digits(5, 2)?, digits(8, 2)?);
+    let (hour, minute, second) = (digits(11, 2)?, digits(14, 2)?, digits(17, 2)?);
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return Err(bad());
+    }
+    if hour > 23 || minute > 59 || second > 59 {
+        return Err(bad());
+    }
+    let y = year as i64;
+    let y = if month <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy as i64;
+    let days = era * 146_097 + doe - 719_468;
+    Ok(days as u64 * 86_400 + hour * 3_600 + minute * 60 + second)
+}
+
 fn validate_spec(spec: &CaseSpec) -> Result<(), String> {
     let confined = Path::new(&spec.cwd)
         .components()
@@ -158,10 +347,32 @@ fn validate_spec(spec: &CaseSpec) -> Result<(), String> {
             return Err(format!("runs for command {command} has no argument lists"));
         }
     }
+    for (path, stamp) in &spec.stamps {
+        parse_rfc3339(stamp).map_err(|e| {
+            let _ = path;
+            format!("stamps[{path:?}]: {e}")
+        })?;
+    }
     Ok(())
 }
 
 impl Suite {
+    /// The suite's view of one side's snapshot: aliased keys renamed, then
+    /// every file's bytes passed through the named normalizers. Applied to
+    /// both sides alike, so a self-check (oracle vs oracle) stays green too.
+    pub fn canonical_files(
+        &self,
+        mut files: BTreeMap<String, Vec<u8>>,
+    ) -> Result<BTreeMap<String, Vec<u8>>, String> {
+        apply_file_aliases(&mut files, &self.file_aliases);
+        for name in &self.normalize {
+            for bytes in files.values_mut() {
+                *bytes = normalize_bytes(name, bytes)?;
+            }
+        }
+        Ok(files)
+    }
+
     /// Loads a suite file; `corpus` and `oracle_root` resolve against its directory.
     pub fn load(path: &Path) -> Result<Suite, String> {
         let text = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -173,6 +384,17 @@ impl Suite {
                 path.display(),
                 suite.v
             ));
+        }
+        for name in &suite.normalize {
+            normalize_bytes(name, &[]).map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        for (from, to) in &suite.file_aliases {
+            if from.is_empty() || to.is_empty() {
+                return Err(format!(
+                    "{}: file alias {from:?} -> {to:?} must map two non-empty paths",
+                    path.display()
+                ));
+            }
         }
         let base = path.parent().unwrap_or_else(|| Path::new("."));
         suite.corpus = base.join(&suite.corpus);

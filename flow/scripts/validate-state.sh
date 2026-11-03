@@ -14,6 +14,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 MACHINE="$SKILL_DIR/state-machine.json"
 STATE="$SKILL_DIR/state.json"
+if [[ -f "$SKILL_DIR/scripts/runtime-state.sh" ]]; then
+  # shellcheck source=flow/scripts/runtime-state.sh
+  source "$SKILL_DIR/scripts/runtime-state.sh"
+  STATE="$(runtime_state_path "$SKILL_DIR")"
+fi
 
 ok() { echo "validate-state: OK — $1"; }
 bad() { echo "validate-state: FAIL — $1" >&2; }
@@ -29,7 +34,7 @@ if [[ ! -f "$MACHINE" ]]; then
 fi
 
 if [[ ! -f "$STATE" ]]; then
-  bad "state.json not found. Copy the template: cp $SKILL_DIR/state.example.json $STATE"
+  bad "state.json absent or invalid; not found. Copy the template: cp $SKILL_DIR/state.example.json $STATE"
   exit 1
 fi
 

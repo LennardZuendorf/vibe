@@ -150,6 +150,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "vibe-flow"
+version = "0.4.0"
+dependencies = [
+ "clap",
+ "serde_json",
+ "vibe-core",
+]
+
+[[package]]
 name = "vibe-parity"
 version = "0.4.0"
 dependencies = [

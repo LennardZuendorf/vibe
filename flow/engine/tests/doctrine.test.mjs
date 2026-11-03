@@ -122,6 +122,9 @@ test('parity: doctrine block emitted verbatim, and NO cursor line follows it', (
       // IS a payload to examine.
       assertMatch(engineResult.stdout, /^vibe flow — working model\./, 'doctrine block content leads the output');
       assert(engineResult.stdout.length > 200, 'sanity: the block really was emitted, so the negative below has input');
+      assertIncludes(engineResult.stdout, '.vibe/run/flow/state.json', 'doctrine names the runtime cursor');
+      assertIncludes(engineResult.stdout, 'vibe-flow state set', 'doctrine names the canonical writer');
+      assertIncludes(engineResult.stdout, 'vibe-flow policy decide', 'doctrine names the policy command');
       assert(!engineResult.stdout.includes('Cursor:'), 'SessionStart output must not carry the cursor — it replays stale on --resume');
       assert(!oracleResult.stdout.includes('Cursor:'), 'oracle sanity: the bash side dropped the same line');
     });

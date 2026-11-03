@@ -324,12 +324,14 @@ The shipped rules, in one sentence each:
 
 1. **`.agents/skills/vibe/state.json`** — blocked in every state; the cursor is
    written only by `set-state.sh`.
-2. **`docs/spec/lessons.md`** — blocked outside the flow-end states that carry the
-   conditional lesson step.
-3. **Root `docs/spec/{product,tech,design,plan}.md`** — blocked outside the states
-   that own the root specs.
-4. **`docs/spec/features/*`**, **`CLAUDE.md` / `AGENTS.md`**, **`src/*` + `tests/*`** —
-   warn-only bands.
+2. **Lessons under `docs/spec/` and the legacy dot-spec root** — blocked outside the
+   flow-end states that carry the conditional lesson step.
+3. **Root specs under `docs/spec/` and the legacy dot-spec root** — blocked outside the
+   states that own the root specs.
+4. **Feature specs under `docs/spec/` and the legacy dot-spec root**, plus
+   **`docs/superpowers/specs/*`**, **`CLAUDE.md` / `AGENTS.md`**, and
+   **`src/*` + `tests/*`** — warn-only bands.
+5. **`.planning/*`** — GSD's read-only state store; writes block except at idle.
 
 The *authoritative* state lists are in the file, and `policy render` prints them;
 this README deliberately does not copy them.
@@ -362,6 +364,7 @@ All under `.agents/skills/vibe/scripts/` at runtime.
 
 | Script | Role |
 |---|---|
+| [runtime-state.sh](scripts/runtime-state.sh) | shared migrated-cursor selection and physical write checks |
 | [set-state.sh](scripts/set-state.sh) | the only sanctioned cursor writer (validates the target state name; `/flow` enforces the graph edge) |
 | [validate-state.sh](scripts/validate-state.sh) | check the cursor is a legal state in the machine |
 | [detect-context.sh](scripts/detect-context.sh) | write policy (allow/warn/block) + state snapshot |
@@ -390,8 +393,7 @@ The flow half. Addressed at runtime under `.agents/skills/vibe/`.
 
 | Path | What it is |
 |---|---|
-| [SKILL.md](SKILL.md) | `vibe` router — routing table + the D12 orders blocks |
-| [setup.md](setup.md), [strategy.md](strategy.md), [feature.md](feature.md), [quick.md](quick.md), [verify.md](verify.md), [compound.md](compound.md) | per-phase procedure files |
+| [SKILL.md](SKILL.md) | the `vibe` flow procedures, doctrine, and D12 orders blocks |
 | [state-machine.json](state-machine.json) | static machine — states, skills, `style`, `next` (data, not prose) |
 | [state.example.json](state.example.json) | cursor template; copy to `state.json` to test transitions |
 | `state.json` | runtime cursor — gitignored; created by the installer / `set-state.sh` |
@@ -410,3 +412,17 @@ The flow half. Addressed at runtime under `.agents/skills/vibe/`.
 - [the root README](https://github.com/LennardZuendorf/vibe#readme) — the umbrella: the spec/flow split and install.
 - [`spec/README.md`](https://github.com/LennardZuendorf/vibe/blob/main/spec/README.md) — the other half: the spec framework.
 - [SKILL.md](SKILL.md) — the router agents actually follow.
+
+### Runtime migration compatibility (F5/F6)
+
+Rust `state set` writes `.vibe/run/flow/state.json`. Active JS and shell readers
+and writers prefer that cursor once present. A legacy-only project keeps its
+existing `.agents/skills/vibe/state.json` until the Rust writer migrates it.
+Migration leaves the legacy file untouched. Cursor writers refuse symlinks
+whose physical target leaves the project.
+
+Stop prefers `.vibe/run/flow/evidence/feature-<feature>.md` or `quick.md`.
+It uses the corresponding legacy receipt only when the new receipt is absent.
+A present stale or invalid new receipt cannot fall back to an older location.
+Legacy-only projects retain legacy missing-receipt diagnostics. Receipt contents
+have the existing freshness contract; verdict enforcement belongs to F7.

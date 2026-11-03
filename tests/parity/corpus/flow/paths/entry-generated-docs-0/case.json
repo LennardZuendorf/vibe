@@ -1,0 +1,59 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        "CLAUDE.md",
+        "feature.compound"
+      ],
+      [
+        "CLAUDE.md",
+        "feature.design"
+      ],
+      [
+        "CLAUDE.md",
+        "feature.impl"
+      ],
+      [
+        "CLAUDE.md",
+        "feature.plan"
+      ],
+      [
+        "CLAUDE.md",
+        "feature.verify"
+      ],
+      [
+        "CLAUDE.md",
+        "idle"
+      ],
+      [
+        "CLAUDE.md",
+        "quick.fix"
+      ],
+      [
+        "CLAUDE.md",
+        "quick.triage"
+      ],
+      [
+        "CLAUDE.md",
+        "quick.verify"
+      ],
+      [
+        "CLAUDE.md",
+        "setup.apply"
+      ],
+      [
+        "CLAUDE.md",
+        "setup.detect"
+      ],
+      [
+        "CLAUDE.md",
+        "strategy.brainstorm"
+      ],
+      [
+        "CLAUDE.md",
+        "strategy.spec"
+      ]
+    ]
+  },
+  "v": 1
+}
