@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-10-19
+updated: 2026-11-03
 ---
 
 # Vibe Flow Contract
@@ -17,11 +17,17 @@ Cursor JSON is unchanged in shape, at a new path,
 }
 ```
 
-`state-machine.json` defines each `<flow>.<phase>` state's phase-file link,
-delegates, write surface, exit predicate, and legal `next`; edge-keyed
-`gates` name the two human approvals. **The writer is the gate:** `vibe-flow
-state set` refuses a target outside `next` and a gated edge without
-`--confirm` — `/flow` becomes a thin wrapper over the same check. A
-`.vibe/run/flow/ledger.jsonl` records every transition, hook verdict, and
-advisory signal; `vibe-flow tui` reads the same cursor and ledger for a live
-pane and recorded-flow playback. Full contract: [tech-rust.md](../../../tech/rust.md).
+`state-machine.json` defines each state's skill link, delegates, write
+surface, exit predicate and legal `next`; edge-keyed `gates` name the two
+human approvals. F5/F6 currently validate target names and write the new
+cursor atomically. Reads prefer the new cursor, falling back to the legacy
+cursor after a not-found read. This branch predates the newer ancestor,
+receipt-location and physical-confinement hardening in its refreshed parent.
+
+F7 legal-edge/approval enforcement, ledger and receipt verdicts remain
+pending. F8 Rust injection/payloads, signals and TUI remain pending.
+
+CLI usage errors exit 1, not hook block status 2. Spawned policy verdicts
+remove trailing newlines only; leading whitespace never becomes a verdict.
+Persisted numeric/boolean features still name evidence receipts; containers
+use compact JSON. Only null or an empty string lacks a feature name.

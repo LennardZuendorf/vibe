@@ -5,7 +5,7 @@ applies:
   - "*/bin/fallback/**"
   - "spec/hooks/**"
   - "flow/hooks-fallback/**"
-updated: 2026-10-28
+updated: 2026-11-03
 ---
 
 # Shim and discovery
@@ -34,16 +34,11 @@ merely unset, from the child environment.
 
 ## Exit codes
 
-A hook reports through its exit code, and the shim decides which code to report
-**from the child's output**, never from the child's own status: `0` = pass or
-degrade, `2` = block, only for a line that proves one — `block:<reason>`, or the
-shipped `vibe-guard: BLOCKED — <reason>` / `vibe-gate: BLOCKED — <reason>`.
-A crash, a stack trace, a banner, a reasonless verdict or a verdict-shaped line
-that is not at the start of a line is an allow. The one exception keeps the hard
-blocks from evaporating: when a tier exits an unexpected code, the shim re-runs
-the frozen bash fallback with the same payload, so the guard still blocks when
-the chosen runtime is broken. An event the shim does not know reads no stdin and
-exits 0.
+The current shim recognizes a nonempty `block:` or shipped guard/gate block
+line anywhere in producer output. It retries the frozen fallback after an
+unexpected status. It does not yet require complete-output proof or escape
+all diagnostic values; the newer F6 hardening is pending this stack refresh.
+Unknown events read no stdin and exit 0.
 
 `flow/tests/hooks.sh` is the test surface: the five-tier matrix
 (`f6/tier1`–`f6/tier5`), the crash/proved-block pair, the corrupt-policy

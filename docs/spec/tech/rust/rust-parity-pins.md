@@ -4,7 +4,7 @@ applies:
   - "oracles/**"
   - "tests/parity/**"
   - "crates/vibe-parity/**"
-updated: 2026-11-02
+updated: 2026-11-03
 ---
 
 # Parity pins and port order
@@ -32,7 +32,7 @@ A rendered line escapes non-UTF-8 bytes as `\xNN`, so pins are ambiguous in
 principle with candidate text that spells that escape; accepted.
 
 Pins are per argument set and may be scoped to one OS (`"os": "macos"` for
-BSD-tool differences; never stale-checked). No CI leg runs parity: the `parity`
+BSD-tool differences; never stale-checked). macOS CI does not run parity: the `parity`
 job is ubuntu-only and `tests/run.sh` never calls it, so an os-scoped pin runs
 only under `bash tests/parity/run.sh` by hand on that OS — the macOS pin is
 unverified until someone does.

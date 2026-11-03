@@ -37,7 +37,7 @@ F16
 Phase: 3 · Tool: spec · Source: `docs/spec/plan.md` row F17
 
 ## Amended 2026-10-13
-- Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.
+- Spec program: `docs/spec/parts/spec/concepts/spec-feature-sequence.md`.
 - Deliverable now: Substring-bug fixes; strictness config + `--strict`; grammar checks + unified R-ID; `trace`; layered-layout checks (D44: allowlist, budgets, link resolution, unique names, typed frontmatter, `code:` existence, hub reachability); superpowers artifact name + `**Spec:**` link checks
 
 ---

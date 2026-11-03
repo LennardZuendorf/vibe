@@ -35,7 +35,7 @@ parent: epic
 Phase: 0 · Tool: spec · Source: `docs/spec/plan.md` row F2
 
 ## Amended 2026-10-13
-- Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.
+- Spec program: `docs/spec/parts/spec/concepts/spec-feature-sequence.md`.
 - Un-held; scope-cut to the spec tool.
 
 ---
