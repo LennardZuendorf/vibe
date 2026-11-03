@@ -5,16 +5,17 @@ applies:
   - ".claude/settings.json"
   - "plugin/hooks/**"
   - "crates/vibe-spec/**"
-updated: 2026-10-19
+updated: 2026-11-03
 ---
 
 # Hooks
 
 Spec hooks need no flow. Hooks run through the shim `spec/hooks/run-hook.sh
 <event>`. It resolves the binary from `$VIBE_SPEC_BIN`, then `vibe-spec` on
-`PATH`, then `$CLAUDE_PROJECT_DIR/target/{release,debug}/vibe-spec`. With no
-binary it prints one stderr line and exits 0. It passes exit codes 0 and 2
-through. Any other code becomes a warning line and exit 0.
+`PATH`, then the newer executable in `$CLAUDE_PROJECT_DIR/target/{release,debug}`. With no
+binary it prints one stderr line and exits 0. Only `guard` exit 2 with
+exactly one stderr line beginning `blocked: ` passes through as a block.
+Other failures warn and exit 0.
 
 Wiring: `build-plugin.sh` writes `plugin/hooks/hooks.json`, and this repo
 carries `.claude/settings.json`. Both wire the same four events with

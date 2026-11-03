@@ -36,7 +36,7 @@ F3, F4
 Phase: 3 · Tool: spec · Source: `docs/spec/plan.md` row F16
 
 ## Amended 2026-10-13
-- Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.
+- Spec program: [Feature Sequence](../../spec/concepts/feature-sequence.md).
 - Unchanged deliverable; part of the spec program.
 
 ---

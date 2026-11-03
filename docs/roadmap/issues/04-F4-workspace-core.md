@@ -34,7 +34,7 @@ F2
 Phase: 0 · Tool: all · Source: `docs/spec/plan.md` row F4
 
 ## Amended 2026-10-13
-- Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.
+- Spec program: [Feature Sequence](../../spec/concepts/feature-sequence.md).
 - Un-held; scope-cut to the spec tool.
 
 ---

@@ -36,7 +36,7 @@ Freeze today's implementation as permanent oracles before any Rust line is writt
 Phase: 0 · Tool: all · Source: `docs/spec/plan.md` row F3
 
 ## Amended 2026-10-13
-- Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.
+- Spec program: [Feature Sequence](../../spec/concepts/feature-sequence.md).
 - Deliverable now: Frozen `oracles/js`+`oracles/bash` + `MANIFEST.sha256`; generic `vibe-parity` differential harness; spec corpus classes with floors (flow classes land with F5)
 
 ---

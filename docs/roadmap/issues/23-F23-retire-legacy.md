@@ -36,7 +36,7 @@ F15, F20, F22
 Phase: 4 · Tool: all · Source: `docs/spec/plan.md` row F23
 
 ## Amended 2026-10-13
-- Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.
+- Spec program: [Feature Sequence](../../spec/concepts/feature-sequence.md).
 - Deliverable now: Delete `flow/engine/`, node tests, `build-plugin.sh`, old `install.sh` paths; `vibe-flow migrate`; spec slice deletes `spec/scripts/*.sh`
 
 ---
