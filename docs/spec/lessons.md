@@ -536,6 +536,20 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** git, patch, porting, hygiene
 **Date:** 2026-10-24
 
+
+### Compound before reporting merge readiness
+**Pattern:** Open PRs retained branch-only design and plan artifacts after their implemented facts already lived in the durable spec. Strict validation passed while the pre-merge drift check failed.
+**Rule:** Inventory the whole candidate tree before reporting merge readiness. Promote only missing current facts into the durable spec, remove branch-only artifacts, and run strict validation plus `check-drift --pre-merge`. A green validator alone does not establish compound completion. Check promoted facts against the implementing branch and installation mode.
+**Tags:** spec, compound, verification, pre-merge
+**Date:** 2026-11-03
+
+
+### Read verification command requirements
+**Pattern:** A batched migration check omitted required `--to docs/spec` and exited 2. An unquoted optional diagnostic glob failed in zsh before the command ran. The sandbox also blocked a process-list probe.
+**Rule:** Read the repository’s verification command before batching checks. Preserve its required flags and quote optional search patterns so the tool handles absent matches. Use bounded tool waits and saved check receipts when process inventory is restricted.
+**Tags:** tooling, verification, commands
+**Date:** 2026-11-03
+
 <!-- vibe-spec: allow SF15 -->
 
 ### Migrate every live cursor reader and writer together
