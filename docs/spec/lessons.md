@@ -604,4 +604,10 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** compound, drift, publication, verification
 **Date:** 2026-11-03
 
+### Reconcile stacked lessons before regenerating digests
+**Pattern:** Independent cleanup commits appended the same lesson after different branch-specific lessons and regenerated different digests, making the stacked PR conflict after publication.
+**Rule:** Merge the updated parent before publishing stacked documentation cleanup. Preserve the union of lessons once, regenerate the active-rules digest from that union, and prove the candidate merges with the parent. Matching edits on separate branches do not prove mergeability.
+**Tags:** git, merge, compound, lessons, generated, publication
+**Date:** 2026-11-03
+
 <!-- vibe-spec: allow SF15 -->
