@@ -609,3 +609,9 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Clear inherited project context at shared fixture bootstrap. Preserve explicit per-case environment injection and production precedence. Add a child-runner regression with an unrelated ambient project and a direct-production control proving that the same explicit root still wins, outside writes fail and bytes remain unchanged. Identify the failing CI step from full logs before attributing the difference to checkout layout; cover normal, ambient, physically no-jq and spaced fixture contexts.
 **Tags:** tests, ci, hermeticity, cursor, confinement, environment
 **Date:** 2026-11-02
+
+### Finish promotion across the whole retained feature layer
+**Pattern:** Completed source retained branch-scoped plans and designs, including inherited phase plans. Exact-topic promotion removed only its bound pair, and index enumeration still listed files already deleted from disk. A dry-run merge command also attempted an object write during a read-only audit. A test entrypoint present on one stack branch was absent on another, and shared wording initially claimed parent hardening that the older branch did not contain.
+**Rule:** Promote only missing current contracts, keep later work explicitly pending, and inventory every retained artifact before deletion. Check on-disk existence separately from the index; verify the staged commit tree after staging. Use non-writing Git queries for read-only audits. Inventory commands and verify behavior separately on every stack head before sharing wording. Run strict validation and pre-merge drift after cleanup; never infer compound completion from green source tests.
+**Tags:** compound, spec, git, artifacts, verification
+**Date:** 2026-11-03

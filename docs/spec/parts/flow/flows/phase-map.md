@@ -1,6 +1,6 @@
 ---
 type: flow
-updated: 2026-10-24
+updated: 2026-11-03
 ---
 
 # Phase map
@@ -25,4 +25,4 @@ Delegates, write surfaces, and legal edges are **data** — read them from `stat
 | `quick.fix` | Implement the bounded fix test-first. |
 | `quick.verify` | Prove the fix works and breaks nothing. |
 
-Each state also emits per-turn **orders**, authored as `<!-- vibe:orders:<state> -->` blocks in the linked skill's `SKILL.md` and resolved by `flow` at the cursor (`.vibe/run/flow/state.json`). `instruct` composes these orders into the level/edge/event channels; `flow` works standalone off its own `AGENTS.md` block when `instruct` is absent. The six former phase files are removed.
+Each state also emits per-turn **orders**, authored as `<!-- vibe:orders:<state> -->` blocks in the linked skill's `SKILL.md` and resolved by `flow` at the cursor (`.vibe/run/flow/state.json`). JS currently composes injection. Rust instruct composition and standalone flow AGENTS output remain pending F8/F12 work. The six former phase files are removed.

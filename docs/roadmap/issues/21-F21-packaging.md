@@ -36,7 +36,7 @@ F8, F14, F19
 Phase: 4 · Tool: all · Source: `docs/spec/plan.md` row F21
 
 ## Amended 2026-10-13
-- Spec program: `docs/superpowers/specs/2026-10-13-spec-v04-design.md`.
+- Spec program: `docs/spec/parts/spec/concepts/spec-feature-sequence.md`.
 - Deliverable now: Three plugin dirs (manifests, skills, commands, agents, hooks, bin, opencode); `marketplace.json`; `doctor` peer checks — spec slice in the spec program
 
 ---
