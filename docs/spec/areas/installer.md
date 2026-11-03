@@ -35,3 +35,12 @@ a host CLI or existing config directory enables detection. No host CLI is
 required for copying skills. `--plugin` optionally installs the Claude plugin.
 One marker-delimited block in `~/.agents/AGENTS.md` preserves surrounding
 user content; each host still reads its own instruction file.
+
+## Spec binary availability
+
+Global install reports whether `vibe-spec` is available. `--build-spec-bin`
+builds it and copies it to `~/.local/bin`; `--bin-dir` overrides that directory.
+The installer leaves shell profiles untouched and reports a missing PATH entry.
+Build failures warn and preserve the installed skills. Without the binary,
+commands such as `root`, `validate`, `promote` and `init` are unavailable;
+bundled scripts validate flat legacy roots only. Doctor reports this condition.

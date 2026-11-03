@@ -28,7 +28,7 @@ under `--to`, else the discovered root, else `<project>/docs/spec`. It never
 overwrites: an existing file prints `SKIP: <rel>`. It is a redesign, not a port of `setup.sh`.
 
 Known limits:
-- Project and global installs leave spec creation to the user. Default installs ship no binary; bundled scripts validate flat legacy roots only.
+- Project and global installs leave spec creation to the user. Default installs ship no binary. Global `--build-spec-bin` can build and install it; without it, bundled scripts validate flat legacy roots only. See [Installer](../../areas/installer.md).
 - `install.sh` does not wire spec hooks into targets (P5). They reach targets through the plugin.
 - The OpenCode shim has not run against live OpenCode.
 - A hooks dir outside the project (a linked worktree or an external `core.hooksPath`) skips the symlink walk.
