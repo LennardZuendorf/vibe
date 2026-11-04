@@ -722,3 +722,87 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Merge the updated parent before publishing stacked documentation cleanup. Preserve the union of lessons once, regenerate the active-rules digest from that union, and prove the candidate merges with the parent. Matching edits on separate branches do not prove mergeability.
 **Tags:** git, merge, compound, lessons, generated, publication
 **Date:** 2026-11-03
+
+### Host install tests need an environment allowlist
+**Pattern:** Plugin-install tests replaced HOME but inherited host-specific config paths, project settings, and credentials. Real CLIs could write outside the temporary homes.
+**Rule:** Launch each host with a clean environment, explicit config/data/cache/state paths, and a temporary working directory. Confirm the host's actual override variables. Prove external paths stay untouched with safe CLI doubles before live install probes.
+**Tags:** tests, install, hermeticity, environment, credentials
+**Date:** 2026-11-02
+
+### A host cache identity can differ from the manifest version
+**Pattern:** Droid registered a local marketplace by its directory basename and cached installed skills under hashed names plus a source revision. Tests assumed the manifest name and version, so a successful installation failed lookup.
+**Rule:** Verify each host's registration and cache identity from an isolated real installation. Pin the installed clone's identity and compare real cached files with canonical source. Preserve manifest-version assertions for hosts that use them.
+**Tags:** tests, plugins, cache, install, identity
+**Date:** 2026-11-02
+
+### Corrected fixtures must fail against the original source
+**Pattern:** The first CLI double counted install arguments and failure summaries incorrectly. Its failing output mixed the inherited-config defect with fixture errors.
+**Rule:** Derive fixture contracts from actual calls and outputs. After correcting a fixture, run it against the original source again and confirm failure for the intended cause before using its passing result as regression evidence.
+**Tags:** tests, fixtures, tdd, review
+**Date:** 2026-11-02
+
+### Isolated builds must remain visible to the test harness
+**Pattern:** Cargo built successfully in an isolated target directory, but spec and skill tests hardcoded the worktree's target/debug path and reported a missing binary. A temporary target symlink was untracked despite the target/ ignore rule.
+**Rule:** Check binary lookup paths before moving build output. If a harness hardcodes target/debug, bridge that path to the isolated build for verification and remove the owned bridge afterward. Verify ignore behavior for symlinks separately from directories.
+**Tags:** tests, cargo, isolation, fixtures, gitignore
+**Date:** 2026-11-02
+
+### Check generated content and permissions separately
+**Pattern:** Canonical active-rules regeneration produced the approved bytes but replaced AGENTS.md with a mode0600 temporary file. A complete source-identity assertion correctly detected its difference from the mode0644 preview.
+**Rule:** Check content and filesystem mode separately after atomic generators. Preserve the accepted source-file permissions before publication, then verify both again. Do not change generator behavior during an unrelated repair merely to satisfy its verification fixture.
+**Tags:** generators, permissions, verification, git
+**Date:** 2026-11-02
+
+### Use authorized network access for remote Git checks
+**Pattern:** The sandbox could not resolve github.com during an authorized remote-head check. The same narrowly scoped command succeeded with approved network access and returned the expected PR head.
+**Rule:** Distinguish sandbox network admission from repository authentication. Use a scoped escalation for an already authorized remote Git action, verify the exact branch and expected head, and retain the returned SHA before pushing without force.
+**Tags:** git, network, sandbox, publication
+**Date:** 2026-11-02
+
+### Prepare verification paths before execution
+**Pattern:** Exploration opened guessed pinned files and a nonexistent probe script; an early Cargo check also used a target directory outside its admitted write surface. A native fixture exposed physical temporary-path aliases, and a failed preparation was followed by a dependent read.
+**Rule:** Discover tracked paths with git ls-tree or rg --files before reading them. Use cataloged skill paths and an explicit admitted CARGO_TARGET_DIR from the first check. Canonicalize disposable roots before exact-path assertions; preserve the asserted file identity. Inspect each prerequisite result before dependent commands. Record setup failures separately from product failures.
+**Tags:** verification, tooling, paths, sandbox
+**Date:** 2026-11-04
+
+### Validate the budget after merging spec notes
+**Pattern:** Combining valid parity notes preserved their contracts but produced a69-line note above the60-line budget.
+**Rule:** Run strict validation after joining durable notes. Condense or split the merged concern without dropping executable contracts or newer sections. Parent validation does not validate the combined note.
+**Tags:** spec, compound, merge, validation
+**Date:** 2026-11-04
+
+### Isolate host capability probes from the first call
+**Pattern:** A help probe attempted to open the real user log before the later native probes received isolated configuration paths.
+**Rule:** Apply the host environment allowlist, neutral working directory and temporary HOME/config/cache/state paths to help and version commands as well as execution. Match actual help command rows, including qualified and bare spellings. Wait for host plugin activation before inspecting discovery output. Verify native effect separately from server readiness and process exit status.
+**Tags:** tests, hosts, isolation, environment
+**Date:** 2026-11-04
+
+### Integrate intended deltas across rewritten ancestry
+**Pattern:** A branch based on pre-squash history conflicted with current flow code and left an empty old corpus case after its files were discarded.
+**Rule:** Preserve the current tree and integrate the branch’s native change when ancestry was rewritten. Retain every requested head as an ancestor, preserve newer contracts and test ownership, and verify the actual generated corpus including obsolete empty directories. Remove only merge-owned leftovers.
+**Tags:** git, integration, parity, corpus
+**Date:** 2026-11-04
+
+### Keep JSON sentinels distinct from their strings
+**Pattern:** Stringifying every non-string feature turned JSON false into a blocking feature-false receipt even though both frozen readers treat false as unnamed.
+**Rule:** Test null, false, true, zero and their string spellings independently. Preserve agreed sentinel semantics and document jq, no-jq and JS disagreements explicitly. Prove the failing read path before changing it; never rewrite the frozen oracle to make the port agree.
+**Tags:** json, hooks, parity, regression
+**Date:** 2026-11-04
+
+### Require unique keys in expected file differences
+**Pattern:** A pin listed one changed file twice, matched the observed difference count, and hid a second unlisted changed file.
+**Rule:** Reject duplicate expected keys and compare the exact unique expected and observed key sets before matching values. Enforce the invariant at load and matching boundaries, including programmatically constructed inputs. Start from a valid multi-file control and mutate one key to prove the rejection.
+**Tags:** parity, validation, metadata, regression
+**Date:** 2026-11-04
+
+### Signal only owned live child processes
+**Pattern:** Host-probe cleanup attempted to signal process groups for help and API commands that had already exited and been reaped.
+**Rule:** Track child lifecycle and signal only live owned children. Keep a live supervisor when descendants can outlive their command, and reclaim the group under that ownership. A stored numeric PID is not ongoing ownership after exit. Test both completed-command exclusion and retained-server timeout cleanup. Use a bounded condition-based descendant-disappearance assertion, retaining a persistent-survivor failure control; signal delivery and OS reaping are asynchronous.
+**Tags:** tests, processes, ownership, cleanup
+**Date:** 2026-11-04
+
+### Clone-based acceptance needs the intended commit
+**Pattern:** The staged installer payload was valid, but clean-clone acceptance checked the previous HEAD and therefore tested missing old packages.
+**Rule:** Bind clone-based acceptance to the intended committed candidate or an explicit disposable Git snapshot. Verify the cloned SHA and package bytes before host probes. A working-tree check does not establish what a clean clone installs.
+**Tags:** tests, git, snapshots, plugins, verification
+**Date:** 2026-11-04

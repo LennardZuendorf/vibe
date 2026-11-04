@@ -774,6 +774,12 @@ fn pin_matches(expect: &Expect, observed: &Observed) -> bool {
             pins.len() == found.len()
                 && pins
                     .iter()
+                    .map(|pin| &pin.key)
+                    .collect::<BTreeSet<_>>()
+                    .len()
+                    == pins.len()
+                && pins
+                    .iter()
                     .all(|pin| found.iter().any(|file| file_pin_matches(pin, file)))
         }),
     }

@@ -27,7 +27,7 @@ byte-identical ports of `list-specs`, `lessons-for`, `scan-merges` and
 corpus. The live leg on this repo is retired (P4-R17), because the oracle
 scripts cannot read the layered root. CI runs `vibe-spec validate --strict`,
 `check-drift` and `migrate --check`. The skill and the template call
-`vibe-spec`; global Claude plugin installs still seed missing specs through `setup.sh`; local installs leave spec creation to the user.
+`vibe-spec`; project and global installs leave spec creation to the user.
 F17 adds `validate --strict`, `--format text|json` (`--json`), the check registry and strictness config, and `trace`. `--changed`, `--file` and `--format hook` arrive with F19 (see Hooks). The fixes (R-ID prefix, RFC 2119 boundary, Scope scoping, zero-requirement short-circuit) land in Rust only; `spec/scripts/validate.sh` keeps the oracle's behaviour until the binary ships.
 F18 adds `check-drift` (`--pre-merge`, `--json`), `promote` (deltas, the superpowers checklist, `--done`, `--json`), `export --openspec` and `import --openspec` to `vibe-spec`, with byte parity for the two ports over the corpus. Skills, CI and flow called `spec/scripts/*.sh` until F20 (P3c-R2); they now call `vibe-spec`. The OpenSpec gate runs in its own CI job (`tests/openspec/run.sh`, network).
 F20 adds `init` and `migrate`, and this repo now keeps its spec as a layered tree at `docs/spec/`.

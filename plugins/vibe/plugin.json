@@ -1,5 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "vibe",
-  "description": "Spec-first workflow harness: the spec + vibe skills, packaged for repo-scoped Codex discovery. Identity and metadata only — no version field, so there is no second source of truth beside package.json."
+  "description": "Spec-first workflow harness: the spec + vibe skills, packaged for Codex and Droid marketplace installs. Version comes from package.json — no second source of truth.",
+  "version": "0.4.0"
 }

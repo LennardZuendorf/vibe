@@ -94,7 +94,7 @@ assert_eq "skill-revision/27" "README has no F1–F24 count and no create-issues
 _has "$_README" 'cargo install --locked' && _r=0 || _r=1
 assert_eq "skill-revision/27" "README installs vibe-spec with cargo install --locked" "0" "$_r"
 assert_contains "skill-revision/27" "README tells how to check the binary" "$(_flat "$_README")" 'vibe-spec --version'
-assert_contains "skill-revision/27" "README says install.sh does not ship the binary" "$(_flat "$_README")" '`install.sh` does not ship the binary yet'
+assert_contains "skill-revision/27" "README says a plain install does not ship the binary" "$(_flat "$_README")" 'A plain install does **not** ship it'
 assert_contains "skill-revision/27" "README shipped heading names the dev build" "$(cat "$_README")" 'v0.3.x, plus the vibe-spec dev build'
 _has "$_README" '^#+ Install' && _r=0 || _r=1
 assert_eq "skill-revision/27" "README has an Install section" "0" "$_r"

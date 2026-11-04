@@ -1,22 +1,40 @@
 #!/usr/bin/env bash
-# build-plugin.sh — generate the vibe Claude Code plugin scaffold: the manifests,
-# the self-detecting SessionStart doctrine hook, and SYMLINKED skill dirs pointing
-# at the canonical spec/ + flow/ trees. Zero duplication, always in sync.
+# build-plugin.sh — generate the vibe plugin scaffold: the host manifests, the
+# self-detecting SessionStart doctrine hook, and the skill dirs each host can
+# actually consume.
 #
-#   ./build-plugin.sh            # (re)generate ./plugin and ./.claude-plugin/marketplace.json
+#   ./build-plugin.sh            # (re)generate ./plugin, ./.claude-plugin/marketplace.json,
+#                                #   plugins/vibe/plugin.json, and the MATERIALIZED skill trees
+#                                #   under plugins/vibe/skills and factory-plugin/skills
 #   ./build-plugin.sh --check    # verify the committed scaffold matches a fresh build
 #                                #   (exit 1 on mismatch). Writes nothing.
 #
-# Why symlinks (not copies): `claude plugin` mis-scans a plugin that also ships a
-# commands/ dir (a phantom skill), but symlinked skill dirs discover cleanly, and
-# `claude plugin install` DEREFERENCES them into the per-user cache as real dirs
-# (verified against the live CLI: Skills (2) spec, vibe). So the repo commits two
-# symlinks instead of ~6.7k duplicated lines, and there is nothing to drift.
-# Note: `find` does not descend symlinks, so source-only artifacts (tests/,
-# AGENTS.md) and gitignored runtime state (cursor, receipts) are never counted as
-# committed payload; a clean marketplace fetch has no runtime state anyway.
+# Two delivery mechanisms, because the hosts differ and both were verified live:
 #
-# What the plugin carries (the STATELESS, portable surface):
+#   - Claude (`./plugin`) keeps SYMLINKED skill dirs (skills/spec -> ../../spec,
+#     skills/vibe -> ../../flow). `claude plugin install` DEREFERENCES them into
+#     its per-user cache (verified against the live CLI: Skills (2) spec, vibe),
+#     so the link costs nothing at runtime. A `commands/` dir is what mis-scans
+#     as a phantom skill, so the plugin ships none.
+#   - Codex (`plugins/vibe`) and Factory Droid (`factory-plugin`) ship REAL skill
+#     dirs. `codex plugin add` drops a symlinked dir into its cache (leaving an
+#     empty skills/) and `droid plugin install` does the same (vibe#71), so a
+#     link is not a portable payload for them: the trees are materialized here
+#     and pinned to spec/ + flow/ by --check.
+#
+# `using-spec` ships as a SIBLING skill dir in every package, never nested
+# inside `skills/spec/` (vibe#71 sub-gap 3): OpenCode documents its skill
+# discovery as `skills/*/SKILL.md`, and a router that only exists one level down
+# is invisible to a single-level scan.
+#
+# The materialized trees are the skill that SHIPS, not the contributor tree:
+# `tests/` and the half's own AGENTS.md are pruned, exactly as install.sh prunes
+# them ("source-only, never ships" — spec/AGENTS.md, flow/AGENTS.md). The file
+# list comes from `git ls-files`, so gitignored runtime state (the flow cursor,
+# evidence receipts, warnings.log) can never ride along, and `cp -p` keeps the
+# shipped scripts executable.
+#
+# What the Claude plugin carries (the STATELESS, portable surface):
 #   - skills/spec -> ../../spec   the spec framework skill
 #   - skills/vibe -> ../../flow   the vibe flow skill (working-model guidance)
 #   - skills/using-spec -> ../../spec/using-spec   the spec session-start skill
@@ -54,10 +72,94 @@ fi
 MODE="build"
 case "${1:-}" in
   --check) MODE="check" ;;
-  -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+  -h|--help)
+    # Print the header comment block only (every leading line starting with #),
+    # so the help text cannot drift out of the line range it used to name.
+    awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"
+    exit 0 ;;
   "") ;;
   *) echo "build-plugin: unknown option '$1'" >&2; exit 1 ;;
 esac
+
+# ── materialized skill trees (Codex + Factory Droid) ─────────────────────────
+# The two host packages that cannot consume a symlinked skill dir ship copies.
+# SKILL_PKGS lists the package roots; SKILL_TREES maps <skill dir>:<source tree>.
+# `using-spec` is materialized as a SIBLING skill dir, never left nested inside
+# `skills/spec/` (vibe#71 sub-gap 3): OpenCode documents its discovery as
+# `skills/*/SKILL.md`, so a router that only exists one level down is found by
+# today's build only by luck. Ship the flat shape everywhere.
+SKILL_PKGS=("plugins/vibe" "factory-plugin")
+SKILL_TREES=("spec:spec" "vibe:flow" "using-spec:spec/using-spec")
+# The one skill dir that must NOT stay inside another skill's materialized tree.
+SKILL_NESTED_PRUNE=("spec/using-spec")
+
+# copy_skill_tree SRC_REL DEST — materialize the tracked, shipped files of
+# SRC_REL under DEST. `git ls-files` is the manifest (tracked only, so runtime
+# state cannot leak in) and `cp -p` preserves the executable bit. Outside a git
+# checkout (a tarball export) it warns and copies the tree, still applying the
+# source-only prune, rather than failing the build.
+copy_skill_tree() {
+  local rel="$1" dest="$2" files f base
+  if ! files="$( cd "$SRC" && git ls-files -- "$rel" 2>/dev/null )"; then
+    files=""
+  fi
+  if [[ -z "$files" ]]; then
+    echo "build-plugin: WARN — no tracked files under $rel (not a git checkout?); copying the tree as-is" >&2
+    mkdir -p "$dest"
+    cp -R "$SRC/$rel/." "$dest/" 2>/dev/null || return 1
+    find "$dest" -depth -type d -name tests -exec rm -rf {} + 2>/dev/null || true
+    rm -f "$dest/AGENTS.md"
+    return 0
+  fi
+  while IFS= read -r f; do
+    base="${f#"$rel"/}"
+    case "$base" in
+      tests/*|*/tests/*|AGENTS.md) continue ;;   # source-only artifacts
+    esac
+    mkdir -p "$dest/$(dirname "$base")"
+    cp -p "$SRC/$f" "$dest/$base" || return 1
+  done <<< "$files"
+}
+
+# emit_skill_trees DEST — materialize every package's skills/ tree under DEST.
+emit_skill_trees() {
+  local dest="$1" pkg pair name src prune
+  for pkg in ${SKILL_PKGS[@]+"${SKILL_PKGS[@]}"}; do
+    for pair in ${SKILL_TREES[@]+"${SKILL_TREES[@]}"}; do
+      name="${pair%%:*}"
+      src="${pair#*:}"
+      copy_skill_tree "$src" "$dest/$pkg/skills/$name"
+    done
+    # Flatten: a nested copy inside the skill that CONTAINS it would register the
+    # same skill twice on a host that walks recursively, and is invisible on a
+    # host that does not. Exactly one location, always a sibling.
+    for prune in ${SKILL_NESTED_PRUNE[@]+"${SKILL_NESTED_PRUNE[@]}"}; do
+      rm -rf "${dest:?}/$pkg/skills/$prune"
+    done
+  done
+}
+
+# sync_tree FRESH DEST — make DEST equal FRESH: drop what FRESH lacks (files AND
+# symlinks, which is what replaces the committed links on the first build),
+# refresh every file keeping its mode, then prune the dirs that emptied.
+# Per-file, never a blanket `rm -rf` of the enclosing package.
+sync_tree() {
+  local fresh="$1" dest="$2" existing p rel
+  existing="$(find "$dest" \( -type f -o -type l \) 2>/dev/null || true)"
+  while IFS= read -r p; do
+    [[ -n "$p" ]] || continue
+    rel="${p#"$dest"/}"
+    [[ -f "$fresh/$rel" ]] || rm -f "$p"
+  done <<< "$existing"
+  existing="$(find "$fresh" -type f 2>/dev/null || true)"
+  while IFS= read -r p; do
+    [[ -n "$p" ]] || continue
+    rel="${p#"$fresh"/}"
+    mkdir -p "$dest/$(dirname "$rel")"
+    cp -p "$p" "$dest/$rel" || return 1
+  done <<< "$existing"
+  find "$dest" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+}
 
 # The real files a build generates (everything except the symlinks).
 GEN_FILES=(
@@ -65,12 +167,13 @@ GEN_FILES=(
   "plugin/.claude-plugin/plugin.json"
   "plugin/hooks/hooks.json"
   "plugin/hooks/session-start.sh"
+  "plugins/vibe/plugin.json"
 )
 
 # emit_files DEST — write the generated (non-symlink) plugin files rooted at DEST.
 emit_files() {
   local dest="$1"
-  mkdir -p "$dest/.claude-plugin" "$dest/plugin/.claude-plugin" "$dest/plugin/hooks"
+  mkdir -p "$dest/.claude-plugin" "$dest/plugin/.claude-plugin" "$dest/plugin/hooks" "$dest/plugins/vibe"
 
   # Plugin manifest. NO "hooks" field — hooks/hooks.json at the plugin root is
   # auto-loaded; declaring it too double-loads and fails plugin load. NO "commands"
@@ -172,6 +275,20 @@ SH
   ]
 }
 JSON
+
+  # The Codex package manifest. `version` is GENERATED from package.json for the
+  # same reason as the Claude one: a hand-written second copy drifts, and a
+  # manifest with no version makes Codex fall back to 1.0.0 (vibe#71) — the
+  # per-user cache then names a version this repo never released. \$schema is
+  # escaped: the heredoc is unquoted so $VERSION expands.
+  cat > "$dest/plugins/vibe/plugin.json" <<JSON
+{
+  "\$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "vibe",
+  "description": "Spec-first workflow harness: the spec + vibe skills, packaged for Codex and Droid marketplace installs. Version comes from package.json — no second source of truth.",
+  "version": "$VERSION"
+}
+JSON
 }
 
 if [[ "$MODE" == "check" ]]; then
@@ -189,6 +306,40 @@ if [[ "$MODE" == "check" ]]; then
   [[ "$(readlink "$SRC/plugin/skills/vibe" 2>/dev/null)" == "../../flow" ]] || { drift=1; echo "build-plugin: plugin/skills/vibe is not a symlink -> ../../flow" >&2; }
   [[ "$(readlink "$SRC/plugin/skills/using-spec" 2>/dev/null)" == "../../spec/using-spec" ]] || { drift=1; echo "build-plugin: plugin/skills/using-spec is not a symlink -> ../../spec/using-spec" >&2; }
   [[ "$(readlink "$SRC/plugin/agents" 2>/dev/null)" == "../spec/agents" ]] || { drift=1; echo "build-plugin: plugin/agents is not a symlink -> ../spec/agents" >&2; }
+
+  # The Codex + Droid packages must carry a REAL tree equal to a fresh
+  # materialization (content and executable bits), and no symlink at all: a
+  # symlinked skill dir is exactly what both hosts drop from their cache.
+  emit_skill_trees "$tmp"
+  for pkg in ${SKILL_PKGS[@]+"${SKILL_PKGS[@]}"}; do
+    for pair in ${SKILL_TREES[@]+"${SKILL_TREES[@]}"}; do
+      name="${pair%%:*}"
+      fresh="$tmp/$pkg/skills/$name"
+      if ! diff -r "$fresh" "$SRC/$pkg/skills/$name" >/dev/null 2>&1; then
+        drift=1
+        echo "build-plugin: stale $pkg/skills/$name — committed tree differs from a fresh materialization" >&2
+        continue
+      fi
+      while IFS= read -r f; do
+        rel="${f#"$fresh"/}"
+        committed="$SRC/$pkg/skills/$name/$rel"
+        # diff -r compares content only; the shipped scripts must also still be
+        # executable, so compare the bit against the fresh materialization.
+        if [[ -x "$f" && ! -x "$committed" ]] || [[ ! -x "$f" && -x "$committed" ]]; then
+          drift=1
+          echo "build-plugin: $pkg/skills/$name/$rel has the wrong executable bit" >&2
+        fi
+      done < <(find "$fresh" -type f 2>/dev/null)
+    done
+  done
+  linked="$(find "$SRC/plugins" "$SRC/factory-plugin" -type l 2>/dev/null || true)"
+  if [[ -n "$linked" ]]; then
+    drift=1
+    while IFS= read -r l; do
+      echo "build-plugin: symlink ${l#"$SRC"/} — codex and droid drop linked skills; materialize them" >&2
+    done <<< "$linked"
+  fi
+
   if [[ "$drift" -eq 1 ]]; then
     echo "build-plugin: DRIFT — run ./build-plugin.sh and commit." >&2
     exit 1
@@ -214,5 +365,19 @@ ln -s ../../spec "$SRC/plugin/skills/spec"
 ln -s ../../flow "$SRC/plugin/skills/vibe"
 ln -s ../../spec/using-spec "$SRC/plugin/skills/using-spec"
 ln -s ../spec/agents "$SRC/plugin/agents"
-echo "build-plugin: built ./plugin (vibe $VERSION, symlinked skills) and ./.claude-plugin/marketplace.json"
+
+# Materialize the two host packages' skills. Built in a temp dir first, then
+# synced in per file, so a skill deleted upstream disappears here too and the
+# committed links of the old design are replaced by real trees.
+fresh="$(mktemp -d)"
+trap 'rm -rf "$fresh"' EXIT
+emit_skill_trees "$fresh"
+for pkg in ${SKILL_PKGS[@]+"${SKILL_PKGS[@]}"}; do
+  for pair in ${SKILL_TREES[@]+"${SKILL_TREES[@]}"}; do
+    name="${pair%%:*}"
+    sync_tree "$fresh/$pkg/skills/$name" "$SRC/$pkg/skills/$name"
+  done
+done
+echo "build-plugin: built ./plugin (vibe $VERSION, symlinked skills), ./.claude-plugin/marketplace.json, plugins/vibe/plugin.json"
+echo "build-plugin: materialized skills in ${SKILL_PKGS[*]:-} (real dirs — codex and droid drop symlinks)"
 echo "build-plugin: validate with  claude plugin validate $SRC"

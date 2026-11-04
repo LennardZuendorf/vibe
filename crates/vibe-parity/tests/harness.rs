@@ -1037,3 +1037,66 @@ fn cli_reports_an_unusable_temp_root_without_panicking() {
     assert!(output.stdout.is_empty());
     assert_eq!(fs::read_to_string(unusable).unwrap(), "not a directory");
 }
+
+// Start with a valid two-file pin; mutate one key to prove duplicates cannot
+// hide the second changed file, either at load or through the public structs.
+fn two_file_pin_fixture(name: &str) -> (vibe_core::testscratch::Scratch, Value, Mode) {
+    let dir = work(name);
+    let oracle = dir.join("oracle");
+    fs::create_dir_all(&oracle).unwrap();
+    fs::create_dir_all(dir.join("corpus/basic/one/tree")).unwrap();
+    fs::write(dir.join("corpus/basic/one/case.json"), "{\"v\":1}").unwrap();
+    fs::write(
+        oracle.join("echo.sh"),
+        "printf 'old\\n' > a; printf 'old\\n' > b\n",
+    )
+    .unwrap();
+    let suite = json!({
+        "v": 1, "name": "two-file-pin", "corpus": dir.join("corpus"),
+        "oracle_root": oracle, "floors": { "basic": 1 },
+        "commands": [{ "name": "echo", "classes": ["basic"],
+            "oracle": ["bash", "{oracle}/echo.sh"],
+            "candidate": ["bash", "-c", "printf 'new\\n' > a; printf 'new\\n' > b"] }],
+        "divergences": [{ "command": "echo", "case": "basic/one", "field": "files",
+            "reason": "Both changed files were reviewed", "expect": { "files": [
+                { "key": "a", "oracle": { "present": true, "first_line": "old" },
+                    "candidate": { "present": true, "first_line": "new" } },
+                { "key": "b", "oracle": { "present": true, "first_line": "old" },
+                    "candidate": { "present": true, "first_line": "new" } }
+            ] } }]
+    });
+    (dir, suite, candidate())
+}
+
+#[test]
+fn duplicate_file_pin_keys_fail_suite_load() {
+    let (dir, mut suite, mode) = two_file_pin_fixture("duplicate-file-load");
+    let report = run("two-file-valid", suite.clone(), &mode);
+    assert!(report.ok(), "{report:#?}");
+    assert_eq!(report.pinned(), 1, "{report:#?}");
+    suite["divergences"][0]["expect"]["files"][1]["key"] = json!("a");
+    let path = dir.join("suite.json");
+    fs::write(&path, serde_json::to_vec(&suite).unwrap()).unwrap();
+    let err = Suite::load(&path).expect_err("duplicate file keys must fail load");
+    assert!(err.contains("duplicate") && err.contains("a"), "{err}");
+}
+
+#[test]
+fn duplicate_file_pin_keys_cannot_hide_an_unreviewed_file() {
+    let (dir, suite, mode) = two_file_pin_fixture("duplicate-file-direct");
+    let path = dir.join("suite.json");
+    fs::write(&path, serde_json::to_vec(&suite).unwrap()).unwrap();
+    let mut loaded = Suite::load(&path).unwrap();
+    let valid = run_suite(&loaded, &mode, &dir.join("valid"));
+    assert!(valid.ok(), "{valid:#?}");
+    assert_eq!(valid.pinned(), 1, "{valid:#?}");
+    loaded.divergences[0].expect.files.as_mut().unwrap()[1].key = "a".into();
+    let report = run_suite(&loaded, &mode, &dir.join("duplicate"));
+    assert_eq!(report.pinned(), 0, "{report:#?}");
+    assert_eq!(report.failed(), 1, "{report:#?}");
+    assert!(
+        matches!(&report.results[0].status,
+        Status::Fail(messages) if messages.iter().any(|m| m.starts_with("pin drift"))),
+        "{report:#?}"
+    );
+}

@@ -12,9 +12,9 @@ updated: 2026-11-04
 A pin requires validated `expect` values. An `exit` pin names both codes.
 A `stdout`/`stderr` pin names prefixes of both first differing lines:
 `null` means no such line; `""` matches only an empty line.
-A `files` pin names the exact set of differing keys, each side's presence,
+A `files` pin names the exact unique set of differing keys, each side's presence,
 and prefixes of its first differing line (first line for a one-sided file).
-Missing or malformed expectations fail suite load. A crash cannot satisfy
+Missing, malformed or duplicate-key expectations fail suite load. A crash cannot satisfy
 an exit pin that states another code. `pin drift` fails the run and prints
 expected and observed values; `stale pin` means the field no longer diverges.
 

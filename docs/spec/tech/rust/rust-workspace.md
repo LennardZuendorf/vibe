@@ -5,20 +5,22 @@ applies:
   - "Cargo.toml"
   - "rust-toolchain.toml"
   - "deny.toml"
-updated: 2026-11-03
+updated: 2026-11-04
 ---
 
 # Workspace
 
 ```text
 crates/
+├── vibe            # bin: vibe (C0 store/projection front door)
 ├── vibe-core       # lib, publish = false — internal only
 ├── vibe-spec       # bin: vibe-spec
 ├── vibe-flow       # bin: vibe-flow (F5/F6 source)
 └── vibe-parity     # dev-only differential harness
 ```
 
-The Rust spec baseline and F5/F6 are present. `vibe-instruct`,
+The Rust spec baseline, F5/F6 and C0 are present. C1–C6 remain pending.
+`vibe-instruct`,
 `vibe-signals`, TUI features and their extra dependencies remain pending.
 
 Each tool binary path-depends on `vibe-core` only; no tool crate depends on

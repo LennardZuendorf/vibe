@@ -1,5 +1,5 @@
 //! Parity suite files and corpus cases.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -330,7 +330,11 @@ fn validate_expect(d: &Divergence) -> Result<(), String> {
                     ));
                 }
             };
+            let mut keys = BTreeSet::new();
             for file in files {
+                if !keys.insert(&file.key) {
+                    return Err(format!("{}duplicate files pin key {:?}", at(), file.key));
+                }
                 if file.key.is_empty() {
                     return Err(format!("{}a files pin names an empty key", at()));
                 }

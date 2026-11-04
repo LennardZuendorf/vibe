@@ -139,6 +139,30 @@ function noJqShimDir() {
     `mkshim jq produced a dir where jq is STILL reachable (${probe.stdout.trim()}) — every "no-jq" leg below would silently run with jq`,
   );
 
+  // No `vibe-spec` in this shim either. Unlike doctor.test.mjs's own farm, this
+  // one does NOT scan every PATH entry — mkshim() links a fixed tool whitelist
+  // (bash sh mkdir … jq), so it carries neither tool by construction. The
+  // invariant still needs a mouth: the no-jq doctor legs below hand the ENGINE
+  // an explicit `specBin: undefined` while the oracle can only see this PATH,
+  // so a whitelist that grew a `vibe-spec` (or a runner that put one in the
+  // shim) would make the two sides describe different machines — five red legs
+  // with no visible link back to here. Same shape as the jq postcondition
+  // above: it cannot fail while mkshim stays what it is, and it names the
+  // invariant the moment that changes.
+  // Node-side, not `command -v`: bash resolves a NON-executable regular file
+  // too, which neither probe under test reports as an install.
+  let shimSpecBin = false;
+  try {
+    const st = statSync(path.join(dir, 'vibe-spec'));
+    shimSpecBin = st.isFile() && (st.mode & 0o111) !== 0;
+  } catch {
+    shimSpecBin = false;
+  }
+  assert(
+    !shimSpecBin,
+    'mkshim jq shim now resolves vibe-spec — the no-jq doctor legs hand the engine a pinned absence, so the oracle would describe a different machine',
+  );
+
   cachedNoJqShimDir = dir;
   return cachedNoJqShimDir;
 }
@@ -477,7 +501,14 @@ for (const fixture of CURSOR_FIXTURES) {
       requireJqFor(mode);
       const sandbox = makeDoctorSandbox(fixture);
       try {
-        const oracleResult = runOracleScript(sandbox.scriptPath, [], mode, { HOME: DOCTOR_HOME });
+        // 'no-jq' mode: the oracle runs in the shim (no jq, and — see
+        // noJqShimDir() — no vibe-spec), so the ENGINE's verdicts have to be
+        // pinned rather than detected from this process's real environment.
+        // Without the pins, a runner with `vibe-spec` on PATH (the state
+        // install.sh --global --build-spec-bin creates) or an exported
+        // $VIBE_SPEC_BIN splits the two reports on the ambient machine.
+        const noJqOpts = mode === 'no-jq' ? { unsetEnv: ['VIBE_SPEC_BIN', 'CARGO_TARGET_DIR'] } : {};
+        const oracleResult = runOracleScript(sandbox.scriptPath, [], mode, { HOME: DOCTOR_HOME }, noJqOpts);
         // 'jq' mode: omit the override entirely so runDoctor() does REAL jq
         // detection (spawns `jq --version`), matching production — a
         // forced `jqPresent: true` with no version text would wrongly
@@ -485,6 +516,9 @@ for (const fixture of CURSOR_FIXTURES) {
         const engineOpts = { home: DOCTOR_HOME };
         if (mode === 'no-jq') {
           engineOpts.jqPresent = false;
+          // Present only in the shim's machine, which the engine cannot read
+          // (it reads process.env): pin it absent, exactly like jqPresent.
+          engineOpts.specBin = undefined;
           // The no-jq shim is built from the adapters suite's mkshim(), whose
           // tool list carries no `node` — deliberately, because the adapters
           // suite reuses it as its NODE-ABSENT shim. So the ORACLE leg genuinely

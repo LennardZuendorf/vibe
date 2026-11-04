@@ -17,10 +17,26 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Path exemptions: `(prefix or exact path, reason)`. A trailing `/` is a prefix.
-const EXEMPT: [(&str, &str); 6] = [
+const EXEMPT: [(&str, &str); 10] = [
     (
         "oracles/",
         "frozen oracles of the bash and JS originals; never rewritten",
+    ),
+    (
+        "plugins/vibe/skills/vibe/content/policy.json",
+        "generated copy of the exempted flow/content/policy.json shipped to Codex/Droid, which drop symlinks; byte-identity is proven by build-plugin.sh --check",
+    ),
+    (
+        "plugins/vibe/skills/vibe/reference/templates/AGENTS.md",
+        "generated copy of the exempted flow/reference/templates/AGENTS.md shipped to Codex/Droid; same proof as flow/",
+    ),
+    (
+        "factory-plugin/skills/vibe/content/policy.json",
+        "generated copy of the exempted flow/content/policy.json shipped to Factory Droid; same proof as flow/",
+    ),
+    (
+        "factory-plugin/skills/vibe/reference/templates/AGENTS.md",
+        "generated copy of the exempted flow/reference/templates/AGENTS.md shipped to Factory Droid; same proof as flow/",
     ),
     (
         "contracts/fixtures/",
@@ -69,6 +85,17 @@ fn repo_root() -> PathBuf {
 fn exemptions_are_prefixes_or_exact_paths() {
     assert!(exempt("oracles/bash/x.sh"));
     assert!(exempt("flow/content/policy.json"));
+    assert!(exempt("flow/reference/templates/AGENTS.md"));
+    // The materialized copies are exempt file-by-file, never by package prefix:
+    // a blanket `plugins/vibe/skills/` rule would blind the sweep to a whole
+    // subtree, and a new file there must be seen, not skipped.
+    assert!(exempt("plugins/vibe/skills/vibe/content/policy.json"));
+    assert!(exempt(
+        "factory-plugin/skills/vibe/reference/templates/AGENTS.md"
+    ));
+    assert!(!exempt("plugins/vibe/skills/vibe/content/policy.json.bak"));
+    assert!(!exempt("plugins/vibe/skills/vibe/verify.md"));
+    assert!(!exempt("factory-plugin/skills/anything-else"));
     assert!(!exempt("flow/content/policy.json.bak"));
     assert!(!exempt("docs/superpowers"));
     assert!(!exempt("crates/vibe-spec/src/main.rs"));
