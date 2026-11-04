@@ -76,7 +76,7 @@ else
   [[ "$scenario" != install-failure ]] || { echo 'Error: test install refusal' >&2; exit 1; }
   source="$(cat "$probe/source-$host")"
   version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^" ]*\)".*/\1/p' "$source/package.json" | head -n1)"
-  for pair in spec:spec vibe:flow; do
+  for pair in spec:spec using-spec:spec/using-spec vibe:flow; do
     skill="${pair%%:*}"; canon="${pair#*:}"
     if [[ "$host" == droid ]]; then
       revision="$(git -C "$source" rev-parse --short=12 HEAD)"
@@ -112,7 +112,7 @@ SHIM
   case "$scenario" in
     success)
       check test "$rc" = 0
-      check grep -q '11 passed, 0 failed, 0 skipped' "$probe/output"
+      check grep -q '14 passed, 0 failed, 0 skipped' "$probe/output"
       ;;
     marketplace-failure)
       check test "$rc" = 1
@@ -128,7 +128,7 @@ SHIM
       ;;
     bad-cache)
       check test "$rc" = 1
-      check grep -q '6 failed, 0 skipped' "$probe/output"
+      check grep -q '9 failed, 0 skipped' "$probe/output"
       ;;
   esac
   if [[ "$scenario" != missing ]]; then
