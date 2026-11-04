@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-11-03
+updated: 2026-11-04
 ---
 
 # Vibe Flow Contract
@@ -47,5 +47,7 @@ are not implemented by the F5/F6 writer. Full target contract:
 
 CLI usage errors exit 1, not hook block status 2. Spawned policy verdicts
 remove trailing newlines only; leading whitespace never becomes a verdict.
-Persisted numeric/boolean features still name evidence receipts; containers
-use compact JSON. Only null or an empty string lacks a feature name.
+Persisted numbers and true still name evidence receipts; containers use compact
+JSON. Null, false and an empty string are unnamed. Numeric zero follows Bash
+with jq and names a receipt; JS warns instead. Bash without jq reads only
+quoted feature strings. The cursor writer still accepts only strings or null.

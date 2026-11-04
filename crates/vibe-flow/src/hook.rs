@@ -451,20 +451,16 @@ fn cursor_state_feature(paths: &FlowPaths) -> (String, Option<String>) {
     }
 }
 
-/// The receipt name a cursor `feature` value resolves to.
+/// The receipt name a persisted cursor feature resolves to.
 ///
-/// The cursor carries the feature verbatim, whatever its JSON type, and the
-/// receipt is the one blocking tooth in this module — so a non-string value
-/// must still name a receipt instead of falling into the warn-only "names no
-/// feature" degrade. Both frozen oracles stringify it and block on the missing
-/// `feature-<value>.md`: `jq -r` in the bash fallback, a template literal in
-/// the engine. Scalars therefore render exactly as `jq -r` prints them
-/// (`123`, `true`); a container — which the cursor writer never produces, and
-/// which the two oracles already spell differently — renders as compact JSON,
-/// so the block still names a path instead of vanishing.
+/// Null, false and an empty string remain unnamed. Other scalar values follow
+/// the frozen Bash reader with jq; numeric zero therefore names a receipt even
+/// though the JS oracle treats it as unnamed. Bash without jq extracts quoted
+/// strings only. Containers already differ between the oracles; use compact
+/// JSON here. The cursor writer still accepts only strings or null.
 fn feature_name(feature: &Value) -> Option<String> {
     match feature {
-        Value::Null => None,
+        Value::Null | Value::Bool(false) => None,
         Value::String(text) if text.is_empty() => None,
         Value::String(text) => Some(text.clone()),
         scalar => Some(scalar.to_string()),
@@ -1254,7 +1250,7 @@ mod tests {
     }
 
     #[test]
-    fn a_non_string_feature_still_names_a_receipt_and_blocks() {
+    fn a_numeric_feature_still_names_a_receipt_and_blocks() {
         let (root, paths) = root_with_policy("stop-numeric-feature");
         fs::write(
             root.join(".agents/skills/vibe/state.json"),
@@ -1263,8 +1259,7 @@ mod tests {
         .expect("write cursor");
         let (state, feature) = cursor_state_feature(&paths);
         assert_eq!(state, "feature.verify");
-        // The cursor carries the feature verbatim; both oracles stringify it as
-        // `jq -r` prints a number, so the receipt name survives the type.
+        // Bash with jq and JS both stringify this nonzero numeric feature.
         assert_eq!(feature.as_deref(), Some("123"));
         let out = stop(&paths, b"{}");
         assert_eq!(out.code, 2, "{}", out.stderr);
@@ -1282,8 +1277,48 @@ mod tests {
     }
 
     #[test]
-    fn only_a_null_or_empty_feature_is_unnamable() {
+    fn false_features_warn_but_false_strings_and_zero_name_receipts() {
+        for (feature, expected_code, expected_name) in [
+            (serde_json::json!(false), 0, None),
+            (serde_json::json!("false"), 2, Some("false")),
+            (serde_json::json!(0), 2, Some("0")),
+            (serde_json::json!(true), 2, Some("true")),
+        ] {
+            let (root, paths) = root_with_policy("stop-feature-types");
+            let cursor = serde_json::json!({
+                "flow": "feature", "phase": "verify", "feature": feature
+            });
+            fs::write(
+                root.join(".agents/skills/vibe/state.json"),
+                cursor.to_string(),
+            )
+            .expect("write cursor");
+            let out = stop(&paths, b"{}");
+            assert_eq!(out.code, expected_code, "{feature}: {}", out.stderr);
+            if let Some(name) = expected_name {
+                assert!(
+                    out.stderr.contains(&format!("feature-{name}.md")),
+                    "{}",
+                    out.stderr
+                );
+            } else {
+                assert!(
+                    out.stderr.contains("cursor names no feature"),
+                    "{}",
+                    out.stderr
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn null_false_and_empty_features_are_unnamable() {
         assert_eq!(feature_name(&Value::Null), None);
+        assert_eq!(feature_name(&serde_json::json!(false)), None);
+        assert_eq!(
+            feature_name(&serde_json::json!("false")),
+            Some("false".into())
+        );
         assert_eq!(feature_name(&serde_json::json!("")), None);
         assert_eq!(
             feature_name(&serde_json::json!("auth")),

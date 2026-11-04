@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use vibe_parity::harness::{Mode, Report, Status, execute, run_suite};
-use vibe_parity::suite::{Suite, normalize_bytes};
+use vibe_parity::suite::{Field, Suite, normalize_bytes};
 
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixture")
@@ -124,8 +124,12 @@ fn an_empty_class_fails() {
 #[test]
 fn pinned_divergences_pass_and_stale_pins_fail() {
     let pins = json!([
-        { "command": "echo", "case": "basic/one", "field": "stdout", "reason": "test" },
-        { "command": "echo", "case": "basic/two", "field": "stdout", "reason": "test" }
+        { "command": "echo", "case": "basic/one", "args": ["a"], "field": "stdout",
+          "expect": { "oracle": "args:a", "candidate": "args:a!" }, "reason": "test" },
+        { "command": "echo", "case": "basic/one", "args": ["b", "c"], "field": "stdout",
+          "expect": { "oracle": "args:b c", "candidate": "args:b c!" }, "reason": "test" },
+        { "command": "echo", "case": "basic/two", "field": "stdout",
+          "expect": { "oracle": "args:", "candidate": "args:!" }, "reason": "test" }
     ]);
     let mut suite = base();
     suite["divergences"] = pins.clone();
@@ -144,7 +148,223 @@ fn pinned_divergences_pass_and_stale_pins_fail() {
             .iter()
             .filter(|e| e.starts_with("stale pin"))
             .count(),
-        2
+        3
+    );
+}
+
+#[test]
+fn a_pin_that_states_no_values_fails_suite_load() {
+    // The defect this guards: a pin naming only a field matched any
+    // difference on it, so a crash on a pinned exit reported as PINNED.
+    let dir = work("pin-no-values");
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "exit", "reason": "test" }
+    ]);
+    let path = dir.join("suite.json");
+    fs::write(&path, serde_json::to_vec(&suite).unwrap()).unwrap();
+    let err = Suite::load(&path).unwrap_err();
+    assert!(err.contains("expect"), "{err}");
+
+    for (field, expect) in [
+        ("exit", json!({ "oracle": "zero", "candidate": 3 })),
+        ("exit", json!({ "oracle": 0 })),
+        ("stdout", json!({ "oracle": null, "candidate": null })),
+        ("files", json!({ "files": [] })),
+    ] {
+        let mut suite = base();
+        suite["divergences"] = json!([
+            { "command": "echo", "case": "basic/two", "field": field, "expect": expect, "reason": "test" }
+        ]);
+        fs::write(&path, serde_json::to_vec(&suite).unwrap()).unwrap();
+        assert!(
+            Suite::load(&path).is_err(),
+            "{field} pin with expect {expect} loaded"
+        );
+    }
+}
+
+#[test]
+fn a_crashing_candidate_is_pin_drift_not_pinned() {
+    // The mutation the field-name-only matcher let through: the candidate
+    // prints exactly what the oracle prints and then panics, so stdout and
+    // every file agree and only `exit` differs. That difference satisfies an
+    // exit pin that names the code 3 the mutant was written for, but not the
+    // 101 a crash produces.
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "exit",
+          "expect": { "oracle": 0, "candidate": 3 }, "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=crash"]);
+    let report = run("crash", suite, &candidate());
+    assert_eq!(report.pinned(), 0, "{report:#?}");
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    let two = report
+        .results
+        .iter()
+        .find(|r| r.case == "basic/two")
+        .expect("basic/two ran");
+    let Status::Fail(msgs) = &two.status else {
+        panic!("a crash on a pinned exit reported {:?}", two.status)
+    };
+    let drift = msgs
+        .iter()
+        .find(|m| m.starts_with("pin drift: pin 0: exit:"))
+        .unwrap_or_else(|| panic!("no exit drift in {msgs:?}"));
+    assert!(
+        drift.contains("expected {\"candidate\":3,\"oracle\":0}")
+            && drift.contains("observed {\"candidate\":101,\"oracle\":0}"),
+        "{drift}"
+    );
+}
+
+#[test]
+fn a_candidate_without_the_final_newline_fails_instead_of_passing() {
+    // The mutation the line-based matcher let through: the oracle's stdout
+    // and the candidate's are equal as lines, and only the trailing byte
+    // differs. Bytes decide the difference, and no pin can state a difference
+    // with no differing line — even one that names both sides as identical.
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "stdout",
+          "expect": { "oracle": "args:", "candidate": "args:" }, "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=newline"]);
+    let report = run("final-newline", suite, &candidate());
+    assert_eq!(report.pinned(), 0, "{report:#?}");
+    assert!(
+        report.errors.is_empty(),
+        "the pin is claimed, not stale: {:?}",
+        report.errors
+    );
+    let two = report
+        .results
+        .iter()
+        .find(|r| r.case == "basic/two")
+        .expect("basic/two ran");
+    let Status::Fail(msgs) = &two.status else {
+        panic!("a missing final newline reported {:?}", two.status)
+    };
+    assert!(
+        msgs.iter().any(|m| m
+            == "stdout: unpinnable — the lines all agree, and only the final newline \
+                differs (oracle does, candidate does not)"),
+        "{msgs:?}"
+    );
+}
+
+#[test]
+fn a_file_equal_as_lines_but_not_as_bytes_fails_instead_of_pinning() {
+    // The same hole one level down: `Present(None)` on both sides reads as
+    // "two files with no lines", which a pin can state. When the bytes differ
+    // only in the final newline, no pin may claim it.
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "files",
+          "expect": { "files": [
+              { "key": "out.txt",
+                "oracle": { "present": true },
+                "candidate": { "present": true } }
+          ] }, "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=file-newline"]);
+    let report = run("file-final-newline", suite, &candidate());
+    assert_eq!(report.pinned(), 0, "{report:#?}");
+    assert!(
+        report.errors.is_empty(),
+        "the pin is claimed, not stale: {:?}",
+        report.errors
+    );
+    let two = report
+        .results
+        .iter()
+        .find(|r| r.case == "basic/two")
+        .expect("basic/two ran");
+    let Status::Fail(msgs) = &two.status else {
+        panic!("a file missing its final newline reported {:?}", two.status)
+    };
+    assert!(
+        msgs.iter().any(|m| m.starts_with("files: unpinnable")),
+        "{msgs:?}"
+    );
+}
+
+#[test]
+fn a_pin_that_states_the_wrong_values_fails_as_drift() {
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "exit",
+          "expect": { "oracle": 0, "candidate": 4 }, "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=exit"]);
+    let report = run("drift", suite, &candidate());
+    assert_eq!(report.pinned(), 0, "{report:#?}");
+    assert!(
+        report.errors.is_empty(),
+        "drift is a run failure, not a suite error: {:?}",
+        report.errors
+    );
+    let two = report
+        .results
+        .iter()
+        .find(|r| r.case == "basic/two")
+        .expect("basic/two ran");
+    let Status::Fail(msgs) = &two.status else {
+        panic!("a drifted pin reported {:?}", two.status)
+    };
+    assert!(msgs[0].starts_with("pin drift: pin 0: exit: "), "{msgs:?}");
+    assert!(
+        msgs[0].contains("expected {\"candidate\":4,\"oracle\":0}")
+            && msgs[0].contains("observed {\"candidate\":3,\"oracle\":0}"),
+        "{msgs:?}"
+    );
+}
+
+#[test]
+fn an_empty_prefix_pins_an_empty_line_not_any_line() {
+    // `""` is a real expectation (an empty line), never "matches anything":
+    // a pin that could match any text would be the field-name-only pin again.
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "stdout",
+          "expect": { "oracle": "", "candidate": "" }, "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=stdout"]);
+    let report = run("empty-prefix", suite, &candidate());
+    let two = report
+        .results
+        .iter()
+        .find(|r| r.case == "basic/two")
+        .expect("basic/two ran");
+    assert!(
+        matches!(&two.status, Status::Fail(msgs) if msgs[0].starts_with("pin drift")),
+        "{:?}",
+        two.status
+    );
+}
+
+#[test]
+fn a_pinned_stdout_prefix_stands_for_the_rest_of_the_line() {
+    // A prefix is a predicate, so the same pin covers the variable tail of a
+    // line (an absolute path in a sandbox), and the observed values it names
+    // still have to match.
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "stdout",
+          "expect": { "oracle": "args", "candidate": "args:" }, "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=stdout"]);
+    let report = run("prefix", suite, &candidate());
+    let two = report
+        .results
+        .iter()
+        .find(|r| r.case == "basic/two")
+        .expect("basic/two ran");
+    assert_eq!(
+        two.status,
+        Status::Pinned(vec![Field::Stdout]),
+        "{report:#?}"
     );
 }
 
@@ -328,7 +548,8 @@ fn a_command_over_no_class_fails() {
 fn a_pin_with_args_covers_only_that_run() {
     let mut suite = base();
     suite["divergences"] = json!([
-        { "command": "echo", "case": "basic/one", "args": ["a"], "field": "stdout", "reason": "test" }
+        { "command": "echo", "case": "basic/one", "args": ["a"], "field": "stdout",
+          "expect": { "oracle": "args:a", "candidate": "args:a!" }, "reason": "test" }
     ]);
     suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=stdout"]);
     let report = run("pin-args", suite, &candidate());
@@ -341,7 +562,8 @@ fn a_pin_with_args_covers_only_that_run() {
 fn a_pin_with_args_that_match_no_run_is_stale() {
     let mut suite = base();
     suite["divergences"] = json!([
-        { "command": "echo", "case": "basic/one", "args": ["zzz"], "field": "stdout", "reason": "test" }
+        { "command": "echo", "case": "basic/one", "args": ["zzz"], "field": "stdout",
+          "expect": { "oracle": "args:zzz", "candidate": "args:zzz!" }, "reason": "test" }
     ]);
     let report = run("pin-args-stale", suite, &candidate());
     assert!(
@@ -358,7 +580,8 @@ fn a_pin_with_args_that_match_no_run_is_stale() {
 fn an_os_pin_is_inactive_elsewhere_and_never_stale() {
     let mut suite = base();
     suite["divergences"] = json!([
-        { "command": "echo", "case": "basic/one", "field": "stdout", "os": "plan9", "reason": "test" }
+        { "command": "echo", "case": "basic/one", "args": ["a"], "field": "stdout",
+          "expect": { "oracle": "args:a", "candidate": "args:a!" }, "os": "plan9", "reason": "test" }
     ]);
     suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=stdout"]);
     let report = run("pin-os-other", suite.clone(), &candidate());
@@ -367,12 +590,14 @@ fn an_os_pin_is_inactive_elsewhere_and_never_stale() {
 
     suite["divergences"][0]["os"] = json!(std::env::consts::OS);
     let report = run("pin-os-here", suite, &candidate());
-    assert_eq!(report.pinned(), 2, "{report:#?}");
-    assert_eq!(report.failed(), 1, "{report:#?}");
+    assert_eq!(report.pinned(), 1, "{report:#?}");
+    assert_eq!(report.failed(), 2, "{report:#?}");
 
     let mut suite = base();
     suite["divergences"] = json!([
-        { "command": "echo", "case": "basic/one", "field": "stdout", "os": std::env::consts::OS, "reason": "test" }
+        { "command": "echo", "case": "basic/one", "args": ["a"], "field": "stdout",
+          "expect": { "oracle": "args:a", "candidate": "args:a!" },
+          "os": std::env::consts::OS, "reason": "test" }
     ]);
     let report = run("pin-os-unhit", suite, &candidate());
     assert!(
