@@ -30,6 +30,9 @@ Ubuntu, and `tests/run.sh` does not call it. Run `bash tests/parity/run.sh`
 on macOS to verify the macOS pin; report that result separately.
 
 Thirty-seven spec pins and ten flow pins cover the current suites.
+The exact `tests/parity/{spec,flow}.json` paths preserve legacy-output evidence
+through shared migration/sweep exemptions in `crates/vibe-spec/src/literal.rs`;
+neighboring files remain scanned. Generated package exceptions stay exact-path.
 Legacy `--format json` escapes quotes, backslashes and control characters;
 invalid UTF-8 becomes U+FFFD (`lessons-for`, `scan-merges`). Tags and the
 `validate` I1 own-feature filter match literally. SF14 compares scope bytes

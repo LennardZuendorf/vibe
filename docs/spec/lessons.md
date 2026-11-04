@@ -806,3 +806,9 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Bind clone-based acceptance to the intended committed candidate or an explicit disposable Git snapshot. Verify the cloned SHA and package bytes before host probes. A working-tree check does not establish what a clean clone installs.
 **Tags:** tests, git, snapshots, plugins, verification
 **Date:** 2026-11-04
+
+### Audit branch-native behavior after conflict resolution
+**Pattern:** The integrated parity pins retained legacy-path evidence, but conflict resolution omitted their source branch's shared migration exemptions. The final migration and literal sweeps failed. A public CLI regression reproduced unwanted rewrites of the pin files. A restoration patch also needed rustfmt, guessed script paths failed during inspection, and a reviewer build used an unapproved target path.
+**Rule:** Inventory every branch-native changed file and reconcile its producer and consumer behavior after a conflict. Share exact evidence-path exemptions between migration and the sweep; retain neighboring-file rejection tests. Discover paths before reading them, use the admitted shared build target for review probes, format restored source before checking it, and run each final CI gate against the integrated tree.
+**Tags:** integration, parity, migration, verification, discovery
+**Date:** 2026-11-04

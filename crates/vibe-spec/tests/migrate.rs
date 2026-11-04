@@ -200,6 +200,60 @@ fn file_level_marker_exempts_a_file_only_in_its_first_five_lines() {
 }
 
 #[test]
+fn parity_pin_paths_are_exempt_without_exempting_their_neighbours() {
+    let p = repo("migrate-pin-paths");
+    put(&p, "docs/spec/product.md", "---\ntype: hub\n---\n\n# P\n");
+    for name in ["spec", "flow"] {
+        put(
+            &p,
+            &format!("tests/parity/{name}.json"),
+            "{\"expected\":\"@/product.md\"}\n",
+        );
+        put(
+            &p,
+            &format!("tests/parity/{name}.json.bak"),
+            "{\"expected\":\"@/product.md\"}\n",
+        );
+    }
+    put(&p, "tests/parity/run.sh", "ROOT=@\n");
+    let before = snapshot(&p);
+    let out = spec(
+        &p,
+        &["migrate", "--to", "docs/spec", "--check", "--json"],
+        &[],
+    );
+    assert_eq!(out.code, 1, "{}\n{}", out.text(), out.stderr);
+    let v = json(&out);
+    let files: Vec<&str> = v["rewrites"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["file"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        files,
+        [
+            "tests/parity/flow.json.bak",
+            "tests/parity/run.sh",
+            "tests/parity/spec.json.bak",
+        ],
+        "{v}"
+    );
+    assert_eq!(snapshot(&p), before, "check must not rewrite pin evidence");
+    for rel in files {
+        fs::remove_file(p.join(rel)).unwrap();
+    }
+    let out = spec(&p, &["migrate", "--to", "docs/spec", "--check"], &[]);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    for name in ["spec", "flow"] {
+        assert_eq!(
+            fs::read_to_string(p.join(format!("tests/parity/{name}.json"))).unwrap(),
+            d("{\"expected\":\"@/product.md\"}\n")
+        );
+    }
+}
+
+#[test]
 fn dry_run_prints_the_table_and_writes_nothing() {
     let p = corpus("migrate-dry");
     let before = snapshot(&p);
