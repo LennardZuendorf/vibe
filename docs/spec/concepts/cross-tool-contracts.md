@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-10-19
+updated: 2026-10-24
 ---
 
 # Cross-Tool Contracts
@@ -12,8 +12,11 @@ tested byte-exact by every tool's CI:
   fields plus `session` doctrine lines and `seq` for edge detection.
 - **Provider manifest v1** — `.vibe/providers/<id>.json`: command or file
   source, channel, trigger, budget, timeout.
-- **Marker grammar v1** — `<!-- vibe:<owner>:begin v=1 hash=<sha256:12> -->`
-  … `<!-- vibe:<owner>:end -->`, owners spec/flow/instruct.
+- **Marker grammar v1** — `<!-- vibe:<owner>:begin v=1 hash=<fnv1a64:16> -->`
+  … `<!-- vibe:<owner>:end -->`, owners spec/flow/instruct, plus `store` for the
+  `vibe` binary. The hash is FNV-1a 64-bit, 16 lowercase hex digits (a change
+  detector, not a security hash). A malformed marker makes `vibe` refuse that
+  target (exit 1, file untouched).
 - **Spec JSON v1** — `root`, `lessons-for`, `plan`, `feature` queries,
   exit 3 on no tree. v0.5 adds an additive `global: true` flag on
   `lessons-for`.

@@ -1,6 +1,6 @@
 ---
 type: hub
-updated: 2026-10-19
+updated: 2026-10-24
 ---
 
 # Decisions
@@ -44,3 +44,4 @@ Index of the architecture decisions; each decision is its own note in this folde
 - [D45 — Superpowers-first feature layer](d45-superpowers-first-feature-layer.md)
 - [D46 — Promote, then delete](d46-promote-then-delete.md)
 - [D47 — Router + tooth](d47-router-tooth.md)
+- [D48 — Global store and harness projection (v0.5)](d48-global-store-and-projection.md)

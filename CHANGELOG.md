@@ -14,6 +14,8 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Changed
 
+- **Global store safety (C0)** — retain locks while owner death is unproven, keep blocking CLI work alive with a token-checked heartbeat, and retire ownership before releasing the filesystem lock. Keep imported credentials independently named and report Codex env-remapping skips. Confine projection to resolved configured roots while preserving intentional root/internal and read-only store links.
+
 - **Direction: v0.4 re-architecture** — three independent tools (spec, flow,
   instruct) as static Rust binaries, Claude Code + OpenCode plugins, contracts
   as the only coupling; root specs rewritten, roadmap F1–F24 authored as an
@@ -22,6 +24,7 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Added
 
+- Global store and harness projection (C0, D48): `vibe` binary (`crates/vibe`) with `store init|import-mcp|status`, `sync`, `hook session-start`, `install`, `uninstall`, `doctor` and `spec` dispatch. One store under `~/.config/vibe/` (root `AGENTS.md`, `mcp.json`, `skills/`) is projected into Claude Code, Codex, OpenCode and Factory droid through marker blocks, owned MCP entries, skills links and one user-level SessionStart hook per harness. Secrets become `${VIBE_<SERVER>_<FIELD>}` placeholders. `vibe-core` gains `dirs`, `lock`, `markers` and an order-preserving `json`; `contracts/` gains the store and state schemas; CI runs the OpenCode plugin node test on all three OSes.
 - Spec hooks and agents (F19): `vibe-spec hook {session-start,guard,validate}`, `validate --changed|--file|--format hook`, and `vibe-spec setup [--git-hooks] [--opencode] [--agents-md]`. A shim (`spec/hooks/run-hook.sh`) wires four events into the plugin `hooks.json` and `.claude/settings.json`. The `guard` tooth blocks spec-root edits made without `Skill(spec)`, and edits under `docs/superpowers/specs/` or `plans/` made without `spec` or the matching superpowers skill (`superpowers:brainstorming`, `superpowers:writing-plans`). Agents `spec-promoter` and `spec-health` replace `spec-interviewer` and `spec-tracer`.
 - Spec migration (F20): `vibe-spec init [--to <dir>]` seeds a layered spec root; `vibe-spec migrate --to <dir> [--layout layered] [--dry-run] [--check]` moves the root, rewrites legacy literals with a population assertion and reverts on failure or on newly introduced validate errors. This repo now lives under `docs/spec/`; CI runs `validate --strict` and `migrate --to docs/spec --check`.
 - `vibe-spec check-drift [--pre-merge]` and `vibe-spec promote` ported (F18), with byte parity for `.spec` roots. `promote` applies `## ADDED|MODIFIED|REMOVED Requirements` deltas, prints the superpowers promotion checklist, and `promote <feature> --done` deletes the artifacts once the spec changed since the branch base.

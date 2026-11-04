@@ -536,6 +536,56 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** git, patch, porting, hygiene
 **Date:** 2026-10-24
 
+
+### Do not infer lock-owner death from age
+**Pattern:** A blocking Claude call outlived the freshness window, so a second run stole its lock and the first later overwrote ownership state.
+**Rule:** Keep liveness active through blocking work, check the unique owner token before state commit and release, and retain unknown owners when death cannot be established safely. Age and PID alone do not authorize removal; require independently verified manual recovery when portable safe liveness proof is unavailable.
+**Tags:** rust, locks, ownership, safety, process
+**Date:** 2026-11-02
+
+### Retire registry ownership before releasing the filesystem lock
+**Pattern:** Drop unlinked the file before unregistering its token. A real successor registered alongside that retired token and failed its ownership check during an ordinary handoff.
+**Rule:** Order registry retirement and filesystem release under the same mutex. Test a real successor acquiring and verifying while its predecessor's Drop is paused at the release boundary; stress alone can miss the race.
+**Tags:** rust, locks, concurrency, tests, review
+**Date:** 2026-11-02
+
+### Reserve placeholder names across credential owners
+**Pattern:** Two imported servers with distinct API_KEY values both became ${API_KEY}; a pre-existing placeholder could also be reused for a new credential.
+**Rule:** Reserve placeholders in both input and stored documents and every prior allocation. Give separate credentials distinct names even when their current literals match. When a target cannot translate the allocated name, explicitly report and skip it instead of forwarding the wrong environment variable.
+**Tags:** credentials, import, namespaces, translation, tests
+**Date:** 2026-11-02
+
+### Make test runtime paths explicit
+**Pattern:** A build-note test assumed Cargo's executable path contained /target/, a legacy hook suite required a local target/debug binary despite isolated Cargo output, and direct plugin tests lacked the fixture variables supplied by their wrapper.
+**Rule:** Discover test entrypoints before invoking internals, create complete harness fixtures, and supply every runtime path explicitly. Put path-specific assertions under fixture-owned paths, and bridge legacy binary expectations to isolated build output without using global binaries or user configuration.
+**Tags:** tests, fixtures, paths, hermeticity, tooling
+**Date:** 2026-11-02
+
+
+### Pin store roots across fixture process boundaries
+**Pattern:** Windows CI failed `import_keeps_per_server_env_credentials_distinct` because its injected Unix-flavour Env wrote `.config/vibe`, while the public CLI resolved `%APPDATA%\vibe` and produced no Codex config.
+**Rule:** When a test mixes injected paths with a real CLI, pass the fixture's resolved `VIBE_STORE` explicitly. Keep the projection and credential assertions intact; do not change global helpers or skip the host.
+**Tags:** tests, fixtures, paths, windows, import
+**Date:** 2026-11-02
+
+### Avoid writable executable copies for path-only fixtures
+**Pattern:** Ubuntu stable CI failed the build-note fixture at process spawn with `ExecutableFileBusy` / `Text file busy` after copying the binary into its fixture build directory.
+**Rule:** A path-warning test can link the already-built executable and put that fixture directory first on PATH when the product preserves matching PATH spelling. Assert the exact registered hook path and warning through the public CLI instead of adding launch retries.
+**Tags:** tests, fixtures, executables, paths, ci
+**Date:** 2026-11-02
+
+### Preserve CI diagnostic evidence before changing code
+**Pattern:** The pinned diagnostics endpoint returned 502 for a failed job; sandbox network access failed, then `gh api` refused terminal escapes. A guessed dated plan path was absent, and a scanner-config search had no matches.
+**Rule:** Discover document paths with `rg --files`. Read logs for the exact failed job and head; when the dedicated reader is unavailable, retrieve through the authorized API and preserve escaped log bytes with `--allow-escape-sequences`. Treat a no-match search as evidence, and keep scanner findings distinct from runtime failures.
+**Tags:** tooling, ci, diagnostics, discovery, tests
+**Date:** 2026-11-02
+
+### Run the pre-merge artifact gate before publication
+**Pattern:** Published PRs retained temporary design and plan documents because plain `check-drift` only warned about them.
+**Rule:** After promoting durable facts and removing temporary artifacts, run `vibe-spec check-drift --pre-merge` on the final tree before publication. Inventory both `docs/superpowers/` and `.superpowers/`; the drift command scans only the former. A green plain drift check does not prove artifact cleanup.
+**Tags:** compound, drift, publication, verification
+**Date:** 2026-11-03
+
 <!-- vibe-spec: allow SF15 -->
 
 ### Migrate every live cursor reader and writer together
@@ -614,4 +664,18 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Pattern:** Completed source retained branch-scoped plans and designs, including inherited phase plans. Exact-topic promotion removed only its bound pair, and index enumeration still listed files already deleted from disk. A dry-run merge command also attempted an object write during a read-only audit. A test entrypoint present on one stack branch was absent on another, and shared wording initially claimed parent hardening that the older branch did not contain.
 **Rule:** Promote only missing current contracts, keep later work explicitly pending, and inventory every retained artifact before deletion. Check on-disk existence separately from the index; verify the staged commit tree after staging. Use non-writing Git queries for read-only audits. Inventory commands and verify behavior separately on every stack head before sharing wording. Run strict validation and pre-merge drift after cleanup; never infer compound completion from green source tests.
 **Tags:** compound, spec, git, artifacts, verification
+**Date:** 2026-11-03
+
+<!-- vibe-spec: allow SF15 -->
+
+### Check stacked integrations at executable boundaries
+**Pattern:** A conflict-free base merge introduced a copied binary and shell fixtures outside the shared write/spawn guard, reopening the executable-file-busy window that the stacked test repair closed.
+**Rule:** When a base adds executable fixtures, route writers through the shared write_exec/copy_exec helpers and direct test spawns through output/status. Preserve the original behavioral assertions. A clean textual merge does not establish the producer/consumer contract.
+**Tags:** rust, tests, merge, concurrency, fixtures
+**Date:** 2026-11-02
+
+### Reconcile stacked lessons before regenerating digests
+**Pattern:** Independent cleanup commits appended the same lesson after different branch-specific lessons and regenerated different digests, making the stacked PR conflict after publication.
+**Rule:** Merge the updated parent before publishing stacked documentation cleanup. Preserve the union of lessons once, regenerate the active-rules digest from that union, and prove the candidate merges with the parent. Matching edits on separate branches do not prove mergeability.
+**Tags:** git, merge, compound, lessons, generated, publication
 **Date:** 2026-11-03
