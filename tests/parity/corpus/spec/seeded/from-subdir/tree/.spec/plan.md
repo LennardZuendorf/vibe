@@ -23,7 +23,7 @@ updated: {YYYY-MM-DD}
 
 | Feature | Product | Plan | Status |
 |---|---|---|---|
-| [{name}](features/{name}/product.md) | `.spec/` + {layer} | [plan.md](features/{name}/plan.md) | {planned / in progress / done} |
+| [{name}](features/{name}/product.md) | `docs/spec/` + {layer} | [plan.md](features/{name}/plan.md) | {planned / in progress / done} |
 
 ---
 

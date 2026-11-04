@@ -37,7 +37,7 @@ F17, F19
 Phase: 3 · Tool: spec · Source: `.spec/plan.md` row F20 <!-- literal -->
 
 ## Amended 2026-10-13
-- Spec program: [Feature Sequence](../../spec/concepts/feature-sequence.md).
+- Spec program: `docs/spec/parts/spec/concepts/spec-feature-sequence.md`.
 - Deliverable now: `setup.sh` port (`init`); `migrate --to docs/spec` (population assertion, allow-markers) + `--layout layered`; this repo → layered `docs/spec/` in one commit; `.spec/archive/` deleted <!-- literal -->
 
 ---

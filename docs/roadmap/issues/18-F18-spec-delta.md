@@ -35,7 +35,7 @@ F17
 Phase: 3 · Tool: spec · Source: `docs/spec/plan.md` row F18
 
 ## Amended 2026-10-13
-- Spec program: [Feature Sequence](../../spec/concepts/feature-sequence.md).
+- Spec program: `docs/spec/parts/spec/concepts/spec-feature-sequence.md`.
 - Deliverable now: Header-keyed ADDED/MODIFIED/REMOVED promotion engine; `promote.sh` port incl. superpowers promotion checklist and `promote <feature> --done` (D46); `check-drift` port with `--pre-merge`; `export\|import --openspec`
 
 ---

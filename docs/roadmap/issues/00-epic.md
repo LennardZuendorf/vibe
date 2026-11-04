@@ -32,7 +32,7 @@ Old `plan.md` rows 15–20 are superseded by this sequence: machine-teeth→F7, 
 <!-- checklist filled in by create-issues.sh -->
 
 ## Amended 2026-10-13
-- Spec program: [Feature Sequence](../../spec/concepts/feature-sequence.md).
+- Spec program: `docs/spec/parts/spec/concepts/spec-feature-sequence.md`.
 - Unchanged deliverable; part of the spec program.
 
 ---

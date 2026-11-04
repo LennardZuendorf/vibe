@@ -4,7 +4,7 @@
 #   orders.sh                 # orders for the current cursor state (default idle)
 #   orders.sh <flow.phase>    # orders for an explicit state (testing)
 #
-# D12: the orders live in the linked vibe skill (the state's phase file) as a
+# D12: the orders live in the linked vibe skill's SKILL.md as a
 #   <!-- vibe:orders:<state> -->
 #   skill=... · ... · next: ...
 #   <!-- /vibe:orders -->
@@ -53,6 +53,11 @@ else
 fi
 MACHINE="$SKILL_DIR/state-machine.json"
 STATE="$SKILL_DIR/state.json"
+if [[ -f "$SKILL_DIR/scripts/runtime-state.sh" ]]; then
+  # shellcheck source=flow/scripts/runtime-state.sh
+  source "$SKILL_DIR/scripts/runtime-state.sh"
+  STATE="$(runtime_state_path "$SKILL_DIR")"
+fi
 
 GENERIC_FALLBACK="state=unknown · read .agents/skills/vibe/state-machine.json and pick the matching vibe phase · transition via set-state.sh"
 

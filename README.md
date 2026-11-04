@@ -26,7 +26,7 @@ never through code. One repo, one installer, three release trains.
 |  | **spec** | **flow** | **instruct** |
 |---|---|---|---|
 | **What it is** | Durable `docs/spec/` planning layer — product / tech / design / plan / lessons — with templates and a validator. | State-machine workflow: routes each phase to the right skills, injects per-turn orders, guards its own write invariants with hooks. | ⏳ Planned — layered, budgeted instruction injection (global → repo → local → session tiers). |
-| **Works with** | Any coding agent, or none. | Claude Code, OpenCode, and Factory Droid via `/flow`; Codex via skill invocation. Other agents read the same rules as prose. | Claude Code + OpenCode, both ⏳ planned. |
+| **Works with** | Any coding agent, or none. | Claude Code, OpenCode, and Factory Droid via `/flow`; Codex via skill invocation. Hooks are Claude Code-only. Other agents read the same rules as prose. | Claude Code + OpenCode, both ⏳ planned. |
 | **Needs** | `bash`; the `vibe-spec` binary (dev build) for validation | `bash`, plus Node ≥18 for today's engine — a static Rust binary in v0.4. | Nothing today (unbuilt) — a static Rust binary in v0.4. |
 | **Install** | `./install.sh <repo> --only spec` | `./install.sh <repo> --only flow` | ⏳ planned: `./install.sh <repo> --only instruct` |
 | **Deep dive** | [`spec/README.md`](spec/README.md) | [`flow/README.md`](flow/README.md) | [`docs/spec/tech/instruct.md`](docs/spec/tech/instruct.md) |
@@ -369,11 +369,10 @@ configured host. Paths below are relative to the installed root.
 | **Bare git / any editor** | — (spec framework only) | — | `docs/spec/` docs, templates, `vibe-spec`. |
 
 The **spec** workflow is skill-invoked on every host (the skill is
-user-invocable, so hosts that list skills as commands offer it as `/spec`). The
-flow's per-turn inject, guard and stop-gate hooks are wired for Claude Code only
-in this slice: OpenCode, Codex, and Factory Droid get skills and a workflow entry
-point — and no host gets native agent/droid registration. (The `vibe` store hook
-below is separate and covers all four harnesses.)
+user-invocable, so hosts that list skills as commands offer it as `/spec`). Hooks are **Claude Code-only** in this slice: OpenCode, Codex,
+and Factory Droid get skills and a workflow entry point, not per-turn inject,
+guard, or stop-gate wiring — and no host gets native agent/droid registration.
+(The `vibe` store hook below is separate and covers all four harnesses.)
 The install summary reports a host's hooks only when their wiring actually
 installed. Budgeted instruction injection (`instruct`) remains ⏳ planned.
 

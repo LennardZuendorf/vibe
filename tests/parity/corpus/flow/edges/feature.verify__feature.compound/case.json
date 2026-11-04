@@ -1,0 +1,10 @@
+{
+  "runs": {
+    "state-set": [
+      [
+        "feature.compound"
+      ]
+    ]
+  },
+  "v": 1
+}

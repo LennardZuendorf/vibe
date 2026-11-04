@@ -1,0 +1,10 @@
+{
+  "runs": {
+    "hook-stop": [
+      []
+    ]
+  },
+  "stderr": true,
+  "stdin": "{\"stop_hook_active\":true}",
+  "v": 1
+}

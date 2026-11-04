@@ -33,7 +33,7 @@
 # all lives once in .agents/skills/vibe/scripts/detect-context.sh decide.
 #
 # Bash is a WARN-ONLY sniffer, never a block: the three hard blocks intercept
-# file-tool calls only, so a raw `echo >> .spec/lessons.md` would otherwise slip
+# file-tool calls only, so a raw `echo >> .spec/lessons.md` would otherwise slip # literal
 # past them undocumented. When tool_name is Bash the command is scanned for a
 # write-shaped operation (>, >>, tee, sed -i, truncate, mv/cp/rm) aimed at one of
 # the three guarded path classes; a hit emits a WARN through the relay and exits 0.
@@ -53,9 +53,9 @@
 #
 # The three hard blocks are coded in detect-context.sh (single source of truth),
 # shipped warn-first elsewhere ("earn the teeth"):
-#   1. .spec/lessons.md    — allowed only in feature.compound | setup.apply |
+#   1. .spec/lessons.md    — allowed only in feature.compound | setup.apply | # literal
 #                            strategy.spec | quick.verify
-#   2. root .spec/{product,tech,design,plan}.md
+#   2. root .spec/{product,tech,design,plan}.md # literal
 #                          — allowed only in strategy.spec | feature.compound | setup.apply
 #   3. .agents/skills/vibe/state.json — never by direct edit (set-state.sh only)
 #
@@ -101,11 +101,11 @@ sniff_bash() {
   # truncate, or a destructive mv/cp/rm). No write op -> nothing to warn about.
   grep -Eq '(>>?|(^|[[:space:]])(tee|truncate|mv|cp|rm)([[:space:]]|$)|(^|[[:space:]])sed([[:space:]]|$).*-i)' <<<"$cmd" || return 0
 
-  if grep -Eq '(^|[^[:alnum:]_])\.spec/lessons\.md' <<<"$cmd"; then
-    warn_bash ".spec/lessons.md"; return 0
+  if grep -Eq '(^|[^[:alnum:]_])(docs/spec|\.spec)/lessons\.md' <<<"$cmd"; then # literal
+    warn_bash "$(grep -Eo '(docs/spec|\.spec)/lessons\.md' <<<"$cmd" | head -n1)"; return 0 # literal
   fi
-  if grep -Eq '(^|[^[:alnum:]_])\.spec/(product|tech|design|plan)\.md' <<<"$cmd"; then
-    warn_bash "a root .spec/{product,tech,design,plan}.md doc"; return 0
+  if grep -Eq '(^|[^[:alnum:]_])(docs/spec|\.spec)/(product|tech|design|plan)\.md' <<<"$cmd"; then # literal
+    warn_bash "a root $(grep -Eo '(docs/spec|\.spec)/' <<<"$cmd" | head -n1){product,tech,design,plan}.md doc"; return 0 # literal
   fi
   if grep -Eq '(\.agents/skills/vibe/state\.json|(^|[^[:alnum:]_])flow/state\.json)' <<<"$cmd"; then
     grep -q 'set-state\.sh' <<<"$cmd" && return 0   # sanctioned writer: never warn

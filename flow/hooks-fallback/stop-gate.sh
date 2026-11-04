@@ -50,9 +50,47 @@ set -euo pipefail
 
 STDIN="$(cat 2>/dev/null || true)"   # capture stdin (stop_hook_active lives here)
 
+# 0: regular entry (readable unless metadata mode); 1: absent; 2: invalid chain.
+# Check each parent before interpreting a failed child probe as absence.
+# Keep this body identical to the standalone permanent Stop classifier.
+runtime_cursor_status() {
+  local target="$1" access="${2:-read}" current=/ rest part
+  [[ "$target" == /* ]] || target="$PWD/$target"
+  rest="${target#/}"
+  [[ -d "$current" && -x "$current" ]] || return 2
+  while [[ "$rest" == */* ]]; do
+    part="${rest%%/*}"; rest="${rest#*/}"
+    [[ -n "$part" ]] || continue
+    current="${current%/}/$part"
+    if [[ -e "$current" || -L "$current" ]]; then
+      [[ -d "$current" && -x "$current" ]] || return 2
+    else
+      return 1
+    fi
+  done
+  current="${current%/}/$rest"
+  if [[ -e "$current" || -L "$current" ]]; then
+    [[ -f "$current" ]] || return 2
+    [[ "$access" == metadata || -r "$current" ]] || return 2
+    return 0
+  fi
+  return 1
+}
+
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
 DETECT="$ROOT/.agents/skills/vibe/scripts/detect-context.sh"
-STATE_FILE="$ROOT/.agents/skills/vibe/state.json"
+STATE_FILE="$ROOT/.vibe/run/flow/state.json"
+cursor_status=0
+runtime_cursor_status "$STATE_FILE" || cursor_status=$?
+if [[ "$cursor_status" == 1 ]]; then
+  STATE_FILE="$ROOT/.agents/skills/vibe/state.json"
+  cursor_status=0
+  runtime_cursor_status "$STATE_FILE" || cursor_status=$?
+fi
+if [[ "$cursor_status" == 2 ]]; then
+  printf 'vibe-gate: cursor present but invalid; skipping checks: %s\n' "$STATE_FILE" >&2
+  exit 0
+fi
 EVID_REL=".agents/skills/vibe/evidence"
 WARN_LOG="$ROOT/.agents/skills/vibe/warnings.log"
 
@@ -102,6 +140,21 @@ warn() {
   printf 'gate: %s\n' "$1" >> "$WARN_LOG" 2>/dev/null || true
 }
 
+# Escape backslash and every C0/DEL byte so values cannot inject diagnostic lines.
+diagnostic_value() {
+  local value="$1" out="" ch code i
+  local LC_ALL=C
+  for ((i=0; i<${#value}; i++)); do
+    ch="${value:i:1}"
+    printf -v code '%d' "'$ch"
+    code=$((code & 255)) # Bash 3.2 printf reports high bytes as signed values.
+    if [[ "$ch" == \\ ]]; then out+="\\\\"
+    elif [[ "$code" -lt 32 || "$code" -eq 127 ]]; then printf -v ch '\\x%02x' "$code"; out+="$ch"
+    else out+="$ch"; fi
+  done
+  printf '%s' "$out"
+}
+
 git_changed() {
   command -v git >/dev/null 2>&1 || return 1
   git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
@@ -136,11 +189,12 @@ fi
 # warn-only. Fixed receipt names under $ROOT/.agents/skills/vibe/evidence/:
 # feature-<feature>.md for feature.verify, quick.md for quick.verify.
 if [[ "$STATE" == "feature.verify" || "$STATE" == "quick.verify" ]]; then
-  receipt=""
+  receipt=""; receipt_name=""
   case "$STATE" in
     feature.verify)
       if [[ -n "$FEATURE" ]]; then
-        receipt="$ROOT/$EVID_REL/feature-$FEATURE.md"
+        receipt_name="feature-$FEATURE.md"
+        receipt="$ROOT/$EVID_REL/$receipt_name"
       else
         # Cursor names no feature -> the receipt path is ambiguous; degrade to
         # warn-only rather than block on ambiguity.
@@ -148,15 +202,20 @@ if [[ "$STATE" == "feature.verify" || "$STATE" == "quick.verify" ]]; then
       fi
       ;;
     quick.verify)
-      receipt="$ROOT/$EVID_REL/quick.md"
+      receipt_name="quick.md"
+      receipt="$ROOT/$EVID_REL/$receipt_name"
       ;;
   esac
 
   if [[ -n "$receipt" ]]; then
+    current="$ROOT/.vibe/run/flow/evidence/$receipt_name"
+    receipt_status=0
+    runtime_cursor_status "$current" metadata || receipt_status=$?
+    if [[ "$receipt_status" != 1 || ( ! -e "$receipt" && -d "$ROOT/.vibe/run/flow" ) ]]; then receipt="$current"; fi
     if [[ ! -f "$receipt" ]]; then
       {
         echo "vibe-gate: BLOCKED — $STATE needs an evidence receipt before 'done'."
-        echo "  expected: $receipt"
+        echo "  expected: $(diagnostic_value "$receipt")"
         echo "  it must record the commands you ran and their observed output (per unit ID for a feature)."
         echo "  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle"
       } >&2
@@ -199,12 +258,14 @@ if [[ "$STATE" == "feature.verify" || "$STATE" == "quick.verify" ]]; then
       case "$xy" in *D*) continue ;; esac                    # skip deletions
       if [[ -n "$prefix" ]]; then
         case "$path" in
+        .vibe/run/*) continue ;;
           "$prefix"*) path="${path#"$prefix"}" ;;
           *) continue ;;                                     # outside the project
         esac
         [[ -n "$path" ]] || path=.                           # the project dir itself
       fi
       case "$path" in
+        .vibe/run/*) continue ;;
         "$EVID_REL"/*|.vibe/last-inject|.agents/skills/vibe/warnings.log) continue ;;
       esac
       f="$ROOT/$path"
@@ -216,8 +277,8 @@ if [[ "$STATE" == "feature.verify" || "$STATE" == "quick.verify" ]]; then
     if [[ -n "$stale" ]]; then
       {
         echo "vibe-gate: BLOCKED — the evidence receipt is stale."
-        echo "  receipt: $receipt"
-        echo "  changed after it was written: $stale"
+        echo "  receipt: $(diagnostic_value "$receipt")"
+        echo "  changed after it was written: $(diagnostic_value "$stale")"
         echo "  re-run verification and rewrite the receipt with fresh commands + output."
         echo "  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle"
       } >&2

@@ -15,7 +15,7 @@
       "delegates": [],
       "reads": ["docs/spec/lessons.md", "docs/spec/plan.md"],
       "writes": [],
-      "inject": "state=idle · no active flow · pick a flow → run set-state.sh {setup.detect | strategy.brainstorm | feature.design | quick.triage}",
+      "inject": "state=idle · no active flow · pick a flow → vibe-flow state set {setup.detect | strategy.brainstorm | feature.design | quick.triage}",
       "next": ["setup.detect", "strategy.brainstorm", "feature.design", "quick.triage"],
       "exit": "user has named the work; agent has chosen a flow and called set-state.sh"
     },
@@ -62,7 +62,7 @@
       "skill": "vibe",
       "delegates": ["superpowers:brainstorming", "code-explorer", "code-architect"],
       "reads": ["docs/spec/lessons.md", "docs/spec/product.md", "docs/spec/tech.md"],
-      "writes": ["docs/superpowers/specs/*-<feature>-design.md", "docs/spec/features/<feature>/product.md", "docs/spec/features/<feature>/tech.md", "docs/spec/features/<feature>/design.md", "docs/spec/features/<feature>/research.md"],
+      "writes": ["docs/superpowers/specs/*-<feature>-design.md"],
       "inject": null,
       "next": ["feature.plan", "idle"],
       "exit": "superpowers design doc written (or fallback product.md + tech.md; design.md when full rigor); approach chosen"
@@ -70,8 +70,8 @@
     "feature.plan": {
       "skill": "vibe",
       "delegates": ["superpowers:writing-plans", "code-architect"],
-      "reads": ["docs/superpowers/specs/*-<feature>-design.md", "docs/spec/features/<feature>/product.md", "docs/spec/features/<feature>/tech.md"],
-      "writes": ["docs/superpowers/plans/*-<feature>.md", "docs/spec/features/<feature>/plan.md"],
+      "reads": ["docs/superpowers/specs/*-<feature>-design.md"],
+      "writes": ["docs/superpowers/plans/*-<feature>.md"],
       "inject": null,
       "next": ["feature.impl", "feature.design", "idle"],
       "exit": "superpowers plan (or fallback plan.md with stable unit IDs) written; human approved moving to impl"
@@ -89,16 +89,16 @@
       "skill": "vibe",
       "delegates": ["superpowers:verification-before-completion", "superpowers:requesting-code-review", "superpowers:systematic-debugging", "code-reviewer"],
       "reads": ["docs/superpowers/plans/*-<feature>.md", "docs/spec/features/<feature>/plan.md", "src/**", "tests/**"],
-      "writes": ["evidence: test/build output, review notes"],
+      "writes": [".vibe/run/flow/evidence/feature-<feature>.md", "evidence: review notes"],
       "inject": null,
       "next": ["feature.compound", "feature.impl", "feature.plan", "idle"],
       "exit": "evidence shows plan units satisfied; review clean; human approved shipping"
     },
     "feature.compound": {
       "skill": "vibe",
-      "delegates": ["superpowers:finishing-a-development-branch", "spec"],
-      "reads": ["docs/superpowers/specs/*-<feature>-design.md", "docs/superpowers/plans/*-<feature>.md", "docs/spec/features/<feature>/product.md", "docs/spec/features/<feature>/tech.md", "docs/spec/features/<feature>/plan.md", "docs/spec/lessons.md"],
-      "writes": ["docs/spec/lessons.md", "docs/spec/product.md", "docs/spec/tech.md", "docs/spec/design.md", "docs/spec/plan.md", "CLAUDE.md#active-rules", "AGENTS.md#active-rules", "docs/spec/archive/<feature>/**"],
+      "delegates": ["superpowers:finishing-a-development-branch"],
+      "reads": ["docs/superpowers/specs/*-<feature>-design.md", "docs/superpowers/plans/*-<feature>.md", "docs/spec/lessons.md"],
+      "writes": ["docs/spec/lessons.md", "docs/spec/product.md", "docs/spec/tech.md", "docs/spec/design.md", "docs/spec/plan.md", "CLAUDE.md#active-rules", "AGENTS.md#active-rules"],
       "inject": null,
       "next": ["idle"],
       "exit": "lesson recorded; cross-cutting decisions promoted; feature archived; digest regenerated"
@@ -126,7 +126,7 @@
       "skill": "vibe",
       "delegates": ["superpowers:verification-before-completion", "code-reviewer"],
       "reads": ["src/**", "tests/**"],
-      "writes": ["evidence: test/build output, review notes", "docs/spec/lessons.md"],
+      "writes": [".vibe/run/flow/evidence/quick.md", "docs/spec/lessons.md"],
       "inject": null,
       "next": ["quick.fix", "idle"],
       "exit": "evidence shows fix works and regressions clear; if a durable lesson surfaced, record it before going idle"

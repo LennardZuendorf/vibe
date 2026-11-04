@@ -1,0 +1,59 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        ".planning/STATE.md",
+        "feature.compound"
+      ],
+      [
+        ".planning/STATE.md",
+        "feature.design"
+      ],
+      [
+        ".planning/STATE.md",
+        "feature.impl"
+      ],
+      [
+        ".planning/STATE.md",
+        "feature.plan"
+      ],
+      [
+        ".planning/STATE.md",
+        "feature.verify"
+      ],
+      [
+        ".planning/STATE.md",
+        "idle"
+      ],
+      [
+        ".planning/STATE.md",
+        "quick.fix"
+      ],
+      [
+        ".planning/STATE.md",
+        "quick.triage"
+      ],
+      [
+        ".planning/STATE.md",
+        "quick.verify"
+      ],
+      [
+        ".planning/STATE.md",
+        "setup.apply"
+      ],
+      [
+        ".planning/STATE.md",
+        "setup.detect"
+      ],
+      [
+        ".planning/STATE.md",
+        "strategy.brainstorm"
+      ],
+      [
+        ".planning/STATE.md",
+        "strategy.spec"
+      ]
+    ]
+  },
+  "v": 1
+}

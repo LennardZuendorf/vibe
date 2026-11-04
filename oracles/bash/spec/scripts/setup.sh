@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # Initialize a .spec/ directory in the current project
 # Copies templates as starting points for product, tech, design, and plan entrypoints
 

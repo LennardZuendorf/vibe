@@ -587,3 +587,81 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Date:** 2026-11-03
 
 <!-- vibe-spec: allow SF15 -->
+
+### Migrate every live cursor reader and writer together
+**Pattern:** Rust preferred the new runtime cursor while the legacy setter and JS injection still used old state. Stop read receipts from the old directory. Each implementation passed its own tests while the live surfaces disagreed. The preferred Rust tier also bypassed main hardening retained only in lower tiers. Checking only a cursor and its immediate parent still hid invalid higher ancestors; dangling intermediate links also fooled Rust and JS. Receipt selection repeated the same absence mistake, and basename/lexical normalization selected a different feature receipt.
+**Rule:** Define one primary location with an explicit absence-only fallback, preserve legacy bytes, and test legacy-only, new-only, both-present, present-invalid, and no-node controls, using distinct old/new states and absolute expectations for every reader. Port the active producer contract, including NUL Git records, nested roots, rename origins and stat failures, into every preferred tier. Establish absence through the full ancestor chain: require directory type and search permission, reject dangling/looping links, and accept execute-only directories. Apply the same established-absence rule to evidence selection, while keeping receipt metadata validity separate from cursor read permission. Preserve accepted receipt-relative components until filesystem resolution; neither basename truncation nor normalization may hide a missing ancestor. Keep standalone and shared shell classifiers identical with an executable pin. Keep root/layout resolution in its existing primitive owner; run the capability guard before the expensive suite.
+**Tags:** flow, migration, cursor, receipts, ownership, parity
+**Date:** 2026-11-02
+
+### A block proof covers the complete output and the restricted runtime
+**Pattern:** A usage banner containing a block example became a hard block. The first whole-output fix added an awk requirement that the restricted-PATH hook controls did not provide. Shell mv also treated a directory cursor as a destination directory and returned success. Raw newline paths defeated the whole-output grammar, and truthful merged instructions exceeded a binding budget.
+**Rule:** Validate the complete block grammar and allowed status, keep the shim within its declared runtime, and escape backslash and C0/DEL bytes in every diagnostic value, and pair real multiline producers with usage/crash and restricted-PATH controls. Assert binding content budgets in executable tests. Refuse a directory leaf before atomic cursor replacement. Update integration fixtures from canonical content rather than pinning an obsolete heading or repo-only configuration.
+**Tags:** hooks, shim, fail-safe, cursor, filesystem, tests
+**Date:** 2026-11-02
+
+### Keep frozen integrity separate from reviewed source divergence
+**Pattern:** A missing live source directory skipped freshness in a partial checkout. Merged hardening also left valid source fixes different from frozen references; re-freezing would erase the behavior comparison.
+**Rule:** Skip freshness only for a bare oracle copy. Keep frozen bytes immutable and pin a reviewed divergence with both exact hashes, a known manifest path, and a reason. Reject malformed, duplicate, unknown, missing-source, and stale rows. Report byte-identical sources separately from accepted differences. A source-availability preflight does not make copying transactional.
+**Tags:** oracles, freshness, integrity, verification, migration
+**Date:** 2026-11-02
+
+### Use read-only Git queries for identity checks
+**Pattern:** A final identity check called `git write-tree` only to compare a previously recorded index tree. Git attempted to create `index.lock` and the sandbox refused it, even though the task needed no index mutation.
+**Rule:** Compare the index with the recorded tree using `git diff --cached --quiet <tree>`. Use `git rev-parse`, `git ls-files` and source hashes for read-only identity checks. Reserve object-writing commands for an explicitly required mutation; do not escalate a failed write when a read-only query answers the question.
+**Tags:** git, verification, sandbox, ownership
+**Date:** 2026-11-02
+
+### Stop dependent mutations after a failed check
+**Pattern:** A Python staging check raised on inherited main whitespace, but the outer shell continued to `git commit` because the next command had no explicit failure gate. The signed commit contained the approved tree; the required stop did not happen before it.
+**Rule:** Run each dependent verification and mutation with explicit exit-code handling. A failed check must stop before commit or push. Classify inherited parent diagnostics separately with read-only comparisons, then continue only after resolving the check's meaning; never rely on a multi-command shell's final exit status to prove every preceding step passed.
+**Tags:** git, verification, shell, publication
+**Date:** 2026-11-02
+
+### Separate platform-specific filenames from portable protocol controls
+**Pattern:** A NUL Git-status regression test created a newline filename alongside portable space, non-ASCII and rename-origin fixtures. Windows rejected the filename with `InvalidFilename` before the scanner assertions ran.
+**Rule:** Keep portable filenames and every rename/copy status code active on every platform. Isolate filenames forbidden by Windows in a separate `#[cfg(unix)]` test, and reuse the same behavioral assertions. A native pass does not establish Windows success; retain the actual CI failure and require the repaired Windows CI result.
+**Tags:** tests, windows, filenames, hooks, ci
+**Date:** 2026-11-02
+
+### Capture CI diagnostics before interpreting them
+**Pattern:** An in-progress workflow and job-selection mismatch hid the failing test. A plain HTTP 502 response also failed when interpreted as JSON. Raw job logs exposed the exact Windows filename error.
+**Rule:** Select the failing job explicitly. Capture its log through `gh api --allow-escape-sequences repos/<owner>/<repo>/actions/jobs/<job-id>/logs`, retain the raw output, and strip ANSI escapes only in a separate reading copy. Check transport status and response format before parsing JSON; do not treat unavailable in-progress `gh run view` logs as passing evidence.
+**Tags:** ci, github, diagnostics, verification
+**Date:** 2026-11-02
+
+### Declare the dependency and producer tier of each fixture
+**Pattern:** CI physically removed jq and exposed tests that expected validate-state success, check-skills delegates and doctor state reporting despite their declared jq requirements. The restricted PATH also omitted the hook shim's POSIX discovery tools, so `tr: not found` polluted an otherwise correct block. Initial status failures hid later assertions.
+**Rule:** Exercise every affected test with jq present and physically absent. Assert each command's named prerequisite failure or degraded result, then retain absolute state and invalid-ancestor controls on readers that support them. Give a shim fixture its declared POSIX tools, assert excluded runtimes are unreachable, mark the selected producer, and compare complete forwarded blocks byte-for-byte. Resolve fixture tools from explicit known paths; inventory files before reading them, and keep patch preconditions atomic so failed lookups or edits cannot leave partial writes.
+**Tags:** tests, ci, jq, hooks, fixtures, verification
+**Date:** 2026-11-02
+
+### Keep machine cursor fixtures in the writer's format
+**Pattern:** A minified hand-written cursor lost its carried feature in the documented no-jq flat-text reader. A directly seeded newline feature also retained its JSON escape in that tier, while jq decoded it; the normal writer rejects that feature. An over-escaped replacement initially asserted the wrong diagnostic bytes.
+**Rule:** Build ordinary cursor fixtures through the canonical multiline serialization before mutating one property. For deliberately malformed persisted values, prove the writer rejects them and pin decoded-control and literal-escape diagnostics separately. Assert safe complete grammar, expected block reason and status, and exact producer-to-shim output in each tier; do not expand a historical parser to satisfy an invalid fixture. Use a serializer to construct escaped literals and verify the resulting bytes.
+**Tags:** tests, cursor, jq, fixtures, diagnostics
+**Date:** 2026-11-02
+
+### Normalize byte arithmetic on the actual supported shell
+**Pattern:** Stock Bash 3.2 `printf` returned negative integers for UTF-8 bytes above127. The diagnostic encoder classified those as C0 controls and printed sign-extended hex instead of the original filename. Native checks had selected Homebrew Bash5 through PATH, so they missed the supported-interpreter defect.
+**Rule:** Normalize a shell byte to an unsigned octet before classifying control bytes. Preserve non-control UTF-8 bytes exactly and test Latin, multibyte and emoji names beside backslash, tab, newline and DEL. Pin the actual supported interpreter on subprocess PATH and assert its version; invoking a top-level script with that shell does not prove its children use it. Run real producers and exact shim forwarding with jq present and physically absent; keep frozen references unchanged.
+**Tags:** bash, portability, utf8, hooks, diagnostics, tests
+**Date:** 2026-11-02
+
+### Preserve checker diagnostics on an unexpected result
+**Pattern:** The oracle suite reduced a macOS CI failure to rc1/want0 and discarded the actual checker's output. The exact committed source and local stock-shell checks passed, so neither the failed path nor its cause could be recovered from CI.
+**Rule:** Capture checker stdout and stderr, and print them when the observed exit differs from the expected exit. Keep successful and expected-negative output unchanged. Prove the reporter with a disposable real mutation, and report an unreproduced CI cause as unresolved; do not waive integrity or change hashes to explain a missing diagnostic.
+**Tags:** tests, ci, oracles, diagnostics, verification
+**Date:** 2026-11-02
+
+### Isolate inherited project context at the fixture boundary
+**Pattern:** Normal, no-jq and spaced CI engine runs passed, but the explicit ambient CLAUDE_PROJECT_DIR leg failed60 tests. Direct fixture writers correctly refused to escape the caller's checkout. The shared test bootstrap scrubbed Git environment but retained the caller's project root; ordinary temporary projects therefore inherited the wrong confinement anchor.
+**Rule:** Clear inherited project context at shared fixture bootstrap. Preserve explicit per-case environment injection and production precedence. Add a child-runner regression with an unrelated ambient project and a direct-production control proving that the same explicit root still wins, outside writes fail and bytes remain unchanged. Identify the failing CI step from full logs before attributing the difference to checkout layout; cover normal, ambient, physically no-jq and spaced fixture contexts.
+**Tags:** tests, ci, hermeticity, cursor, confinement, environment
+**Date:** 2026-11-02
+
+### Finish promotion across the whole retained feature layer
+**Pattern:** Completed source retained branch-scoped plans and designs, including inherited phase plans. Exact-topic promotion removed only its bound pair, and index enumeration still listed files already deleted from disk. A dry-run merge command also attempted an object write during a read-only audit. A test entrypoint present on one stack branch was absent on another, and shared wording initially claimed parent hardening that the older branch did not contain.
+**Rule:** Promote only missing current contracts, keep later work explicitly pending, and inventory every retained artifact before deletion. Check on-disk existence separately from the index; verify the staged commit tree after staging. Use non-writing Git queries for read-only audits. Inventory commands and verify behavior separately on every stack head before sharing wording. Run strict validation and pre-merge drift after cleanup; never infer compound completion from green source tests.
+**Tags:** compound, spec, git, artifacts, verification
+**Date:** 2026-11-03

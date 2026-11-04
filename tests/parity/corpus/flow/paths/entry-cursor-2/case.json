@@ -1,0 +1,59 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        ".agents/flow/state.json",
+        "feature.compound"
+      ],
+      [
+        ".agents/flow/state.json",
+        "feature.design"
+      ],
+      [
+        ".agents/flow/state.json",
+        "feature.impl"
+      ],
+      [
+        ".agents/flow/state.json",
+        "feature.plan"
+      ],
+      [
+        ".agents/flow/state.json",
+        "feature.verify"
+      ],
+      [
+        ".agents/flow/state.json",
+        "idle"
+      ],
+      [
+        ".agents/flow/state.json",
+        "quick.fix"
+      ],
+      [
+        ".agents/flow/state.json",
+        "quick.triage"
+      ],
+      [
+        ".agents/flow/state.json",
+        "quick.verify"
+      ],
+      [
+        ".agents/flow/state.json",
+        "setup.apply"
+      ],
+      [
+        ".agents/flow/state.json",
+        "setup.detect"
+      ],
+      [
+        ".agents/flow/state.json",
+        "strategy.brainstorm"
+      ],
+      [
+        ".agents/flow/state.json",
+        "strategy.spec"
+      ]
+    ]
+  },
+  "v": 1
+}
