@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# regen-active-rules.sh — project a capped top-5 digest of .spec/lessons.md into # literal
+# regen-active-rules.sh — project a capped top-5 digest of the spec root's lessons.md into # literal
 # the managed active-rules block of CLAUDE.md and AGENTS.md.
 #
 # This is generated output (like a committed lockfile), NOT a second source of

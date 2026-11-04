@@ -41,6 +41,11 @@ SPEC_SKILL="$ROOT/.agents/skills/spec"
 VIBE_SKILL="$ROOT/.agents/skills/vibe"
 MACHINE="$VIBE_SKILL/state-machine.json"
 STATE="$VIBE_SKILL/state.json"
+if [[ -f "$SCRIPT_DIR/runtime-state.sh" ]]; then
+  # shellcheck source=flow/scripts/runtime-state.sh
+  source "$SCRIPT_DIR/runtime-state.sh"
+  STATE="$(runtime_state_path "$VIBE_SKILL" "$ROOT")"
+fi
 CLAUDE_HOOKS_DIR="$ROOT/.claude/hooks"
 SETTINGS="$ROOT/.claude/settings.json"
 DEPS="$VIBE_SKILL/reference/deps.json"
@@ -115,7 +120,15 @@ fi
 # validate-state.sh cannot run (it requires jq), so a valid cursor would otherwise
 # be misreported "present but invalid — reseed". Degrade to an unverified OK
 # instead: report the cursor as present-but-unverified and never advise reseeding.
-if [[ -f "$STATE" ]]; then
+cursor_status=1
+if declare -F runtime_cursor_status >/dev/null; then
+  cursor_status=0
+  runtime_cursor_status "$STATE" || cursor_status=$?
+elif [[ -f "$STATE" ]]; then cursor_status=0
+fi
+if [[ "$cursor_status" == 2 ]]; then
+  warn cursor "flow cursor present but invalid — run validate-state.sh"
+elif [[ "$cursor_status" == 0 ]]; then
   if ! have_jq; then
     ok cursor "flow cursor present (unverified — jq missing; validate-state.sh needs jq)"
   elif [[ -x "$VIBE_SKILL/scripts/validate-state.sh" ]] && bash "$VIBE_SKILL/scripts/validate-state.sh" >/dev/null 2>&1; then
