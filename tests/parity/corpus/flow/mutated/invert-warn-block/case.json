@@ -1,0 +1,19 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        ".spec/features/x/tech.md",
+        "feature.impl"
+      ],
+      [
+        ".spec/features/x/tech.md",
+        "quick.fix"
+      ],
+      [
+        ".spec/features/x/tech.md",
+        "idle"
+      ]
+    ]
+  },
+  "v": 1
+}

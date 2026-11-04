@@ -25,6 +25,7 @@ import {
   copyFileSync,
   rmSync,
   cpSync,
+  symlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -65,6 +66,7 @@ function makeOrdersSandbox({ cursor, skillMd = REAL_SKILL_MD, includeSkillFile =
   const skillsDir = path.join(sandbox.dir, '.agents', 'skills');
   const vibeSkillDir = path.join(skillsDir, 'vibe');
   mkdirSync(vibeSkillDir, { recursive: true });
+  symlinkSync('../flow', path.join(sandbox.dir, '.agents', 'flow'));
   if (includeSkillFile) {
     writeFileSync(path.join(vibeSkillDir, 'SKILL.md'), skillMd);
   }
@@ -125,14 +127,14 @@ test('parity: idle resolves through the machine inline inject, not a skill block
 
 test('parity: current-state resolution from the cursor (no explicit arg) matches the oracle', () => {
   const sandbox = makeOrdersSandbox({
-    cursor: { flow: 'feature', phase: 'impl', feature: 'widget', updated: '2026-01-01T00:00:00Z' },
+    cursor: { flow: 'feature', phase: 'verify', feature: 'widget', updated: '2026-01-01T00:00:00Z' },
   });
   try {
     const oracleResult = runOracle(sandbox.scriptPath, []);
     const engineResult = runEngine(sandbox, []);
     assertEqual(engineResult.stdout, oracleResult.stdout);
-    assertMatch(engineResult.stdout, /widget\/n/, 'feature interpolated into the block');
-    assertMatch(engineResult.stdout, /^skill=vibe/, 'feature.impl resolves through the vibe skill block');
+    assertIncludes(engineResult.stdout, 'feature-widget.md', 'feature interpolated into the receipt path');
+    assertMatch(engineResult.stdout, /^skill=vibe/, 'feature.verify resolves through the vibe skill block');
   } finally {
     sandbox.cleanup();
   }
@@ -160,7 +162,7 @@ test('parity: <feature> interpolation replaces every occurrence, no leftover pla
     const oracleResult = runOracle(sandbox.scriptPath, ['feature.plan']);
     const engineResult = runEngine(sandbox, ['feature.plan']);
     assertEqual(engineResult.stdout, oracleResult.stdout);
-    assertMatch(engineResult.stdout, /demo\/n/);
+    assertIncludes(engineResult.stdout, 'demo.md');
     assert(!engineResult.stdout.includes('<feature>'), 'no literal placeholder should survive interpolation');
   } finally {
     sandbox.cleanup();
@@ -172,10 +174,10 @@ test('parity: <feature> placeholder survives verbatim when the cursor has no fea
     cursor: { flow: 'idle', phase: 'idle', feature: null, updated: '2026-01-01T00:00:00Z' },
   });
   try {
-    const oracleResult = runOracle(sandbox.scriptPath, ['feature.impl']);
-    const engineResult = runEngine(sandbox, ['feature.impl']);
+    const oracleResult = runOracle(sandbox.scriptPath, ['feature.verify']);
+    const engineResult = runEngine(sandbox, ['feature.verify']);
     assertEqual(engineResult.stdout, oracleResult.stdout);
-    assertMatch(engineResult.stdout, /<feature>\/n/);
+    assertIncludes(engineResult.stdout, 'feature-<feature>.md');
   } finally {
     sandbox.cleanup();
   }
@@ -334,20 +336,20 @@ test('parity: corrupt cursor with an explicit state arg still resolves that stat
 test('feature interpolation survives quotes, backslashes, and non-ASCII characters', () => {
   const tricky = 'o"Brien\\path\\name — π';
   const sandbox = makeOrdersSandbox({
-    cursor: { flow: 'feature', phase: 'plan', feature: tricky, updated: '2026-01-01T00:00:00Z' },
+    cursor: { flow: 'feature', phase: 'verify', feature: tricky, updated: '2026-01-01T00:00:00Z' },
   });
   try {
-    const engineResult = runEngine(sandbox, ['feature.plan']);
+    const engineResult = runEngine(sandbox, ['feature.verify']);
     assertEqual(engineResult.code, 0);
     assertMatch(engineResult.stdout, /^skill=vibe/);
     assert(
-      engineResult.stdout.includes(`${tricky}/n`),
-      `expected interpolated feature '${tricky}/n' in: ${JSON.stringify(engineResult.stdout)}`,
+      engineResult.stdout.includes(`feature-${tricky}.md`),
+      `expected interpolated feature receipt in: ${JSON.stringify(engineResult.stdout)}`,
     );
     assert(!engineResult.stdout.includes('<feature>'), 'no literal placeholder should survive');
 
     if (JQ_PRESENT) {
-      const oracleResult = runOracle(sandbox.scriptPath, ['feature.plan']);
+      const oracleResult = runOracle(sandbox.scriptPath, ['feature.verify']);
       assertEqual(
         engineResult.stdout,
         oracleResult.stdout,
@@ -541,6 +543,7 @@ test('CLI: `vibe orders` on a fresh non-git install-layout fixture returns idle 
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
+  symlinkSync('skills/vibe', path.join(installRoot, '.agents', 'flow'));
   cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {
     recursive: true,
     filter: (src) => !src.includes(`${path.sep}tests${path.sep}`) && !src.endsWith(`${path.sep}tests`),
@@ -581,6 +584,7 @@ test('CLI: `vibe orders` with an explicit state arg on the install-layout fixtur
   const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
+  symlinkSync('skills/vibe', path.join(installRoot, '.agents', 'flow'));
   cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {
     recursive: true,
     filter: (src) => !src.includes(`${path.sep}tests${path.sep}`) && !src.endsWith(`${path.sep}tests`),
@@ -602,7 +606,7 @@ test('CLI: `vibe orders` with an explicit state arg on the install-layout fixtur
       { cwd: unrelatedCwd },
     );
     assertEqual(result.code, 0, `stderr: ${result.stderr}`);
-    assertMatch(result.stdout, /^skill=vibe · READ the spec root's lessons\.md first/);
+    assertMatch(result.stdout, /^skill=vibe · read lessons\.md/);
   } finally {
     rmSync(installRoot, { recursive: true, force: true });
     rmSync(unrelatedCwd, { recursive: true, force: true });
@@ -623,12 +627,12 @@ test('parity: a numeric feature of 0 is interpolated (jq truthy, JS-falsy mismat
     cursor: { flow: 'feature', phase: 'plan', feature: 0, updated: '2026-01-01T00:00:00Z' },
   });
   try {
-    const engineResult = runEngine(sandbox, ['feature.plan']);
+    const engineResult = runEngine(sandbox, ['feature.verify']);
     assertEqual(engineResult.code, 0);
-    assertIncludes(engineResult.stdout, 'docs/spec/features/0/plan.md', 'feature=0 must interpolate, not leave the placeholder');
+    assertIncludes(engineResult.stdout, '.vibe/run/flow/evidence/feature-0.md', 'feature=0 must interpolate, not leave the placeholder');
     assert(!engineResult.stdout.includes('<feature>'), 'no literal placeholder should survive');
     if (JQ_PRESENT) {
-      const oracleResult = runOracle(sandbox.scriptPath, ['feature.plan']);
+      const oracleResult = runOracle(sandbox.scriptPath, ['feature.verify']);
       assertEqual(engineResult.stdout, oracleResult.stdout);
     }
   } finally {
@@ -641,11 +645,11 @@ test('parity: a boolean-false feature is treated as absent, same as jq (the plac
     cursor: { flow: 'feature', phase: 'plan', feature: false, updated: '2026-01-01T00:00:00Z' },
   });
   try {
-    const engineResult = runEngine(sandbox, ['feature.plan']);
+    const engineResult = runEngine(sandbox, ['feature.verify']);
     assertEqual(engineResult.code, 0);
     assertIncludes(engineResult.stdout, '<feature>', 'feature=false must leave the literal placeholder, matching jq falsy');
     if (JQ_PRESENT) {
-      const oracleResult = runOracle(sandbox.scriptPath, ['feature.plan']);
+      const oracleResult = runOracle(sandbox.scriptPath, ['feature.verify']);
       assertEqual(engineResult.stdout, oracleResult.stdout);
     }
   } finally {
@@ -658,11 +662,11 @@ test('parity: an object feature interpolates as pretty (2-space) JSON, matching 
     cursor: { flow: 'feature', phase: 'plan', feature: { x: 1, y: 2 }, updated: '2026-01-01T00:00:00Z' },
   });
   try {
-    const engineResult = runEngine(sandbox, ['feature.plan']);
+    const engineResult = runEngine(sandbox, ['feature.verify']);
     assertEqual(engineResult.code, 0);
     assertIncludes(engineResult.stdout, '{\n  "x": 1,\n  "y": 2\n}');
     if (JQ_PRESENT) {
-      const oracleResult = runOracle(sandbox.scriptPath, ['feature.plan']);
+      const oracleResult = runOracle(sandbox.scriptPath, ['feature.verify']);
       assertEqual(engineResult.stdout, oracleResult.stdout);
     }
   } finally {

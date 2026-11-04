@@ -29,7 +29,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { resolveRoot, resolveVibeDir, resolveSkillsDir } from '../root.mjs';
+import { resolveRoot, resolveVibeDir, resolveSkillsDir, flowRuntimeDir, cursorEntryAbsent } from '../root.mjs';
 import { readCursor } from '../cursor.mjs';
 import { loadPolicy, decide } from '../policy.mjs';
 import { runDoctrine } from './doctrine.mjs';
@@ -124,6 +124,7 @@ function toPosix(p) {
 // Enumerated rows make the claim true, and it is pinned by a test that reads
 // the porcelain git ACTUALLY emits rather than a hand-written one.
 function isOwnRuntimeState(root, p) {
+  if (p.startsWith('.vibe/run/')) return true;
   const evidRel = '.agents/skills/vibe/evidence';
   if (p === evidRel || p.startsWith(`${evidRel}/`)) return true;
   if (p === toPosix(path.relative(root, warnLogPath(root)))) return true;
@@ -778,7 +779,7 @@ function gitPorcelain(root, opts) {
     // A stub that answers only `true\n` gives an empty prefix.
     const check = spawnGit(['-C', root, 'rev-parse', '--is-inside-work-tree', '--show-prefix']);
     if (!check || check.error || check.status !== 0) return { determined: false, noGit: true, text: '', entries: [] };
-    const prefix = typeof check.stdout === 'string' ? (check.stdout.split('\n')[1] ?? '') : '';
+    const prefix = typeof check.stdout === 'string' ? (check.stdout.slice(check.stdout.indexOf('\n') + 1).replace(/\n$/, '')) : '';
     const res = spawnGit(['-C', root, 'status', '--porcelain', '-z', '-uall', '--', '.'], { maxBuffer });
     if (!res || res.error || res.status !== 0 || typeof res.stdout !== 'string') {
       const why = res && res.error && res.error.code ? res.error.code : 'git status failed';
@@ -810,10 +811,16 @@ function predicateTdd(state, changed) {
 // fresh evidence receipt. Returns {stderr} to block (exit 2), or undefined to
 // continue. `warn` is a callback so the "no feature named" degrade can queue
 // its own warn-only line without this function owning stderr accumulation.
+// Escape all line-control bytes and the escape introducer in diagnostic values.
+function diagnosticValue(value) {
+  return value.replace(/[\\\x00-\x1f\x7f]/g, c => c === '\\' ? '\\\\' : `\\x${c.charCodeAt(0).toString(16).padStart(2,'0')}`);
+}
+
 function evidenceReceiptCheck(root, state, feature, tree, warn) {
   if (state !== 'feature.verify' && state !== 'quick.verify') return undefined;
 
   let receipt;
+  let receiptName;
   if (state === 'feature.verify') {
     if (!feature) {
       warn(
@@ -821,10 +828,17 @@ function evidenceReceiptCheck(root, state, feature, tree, warn) {
       );
       return undefined;
     }
-    receipt = path.join(vibeLogDir(root), 'evidence', `feature-${feature}.md`);
+    receiptName = `feature-${feature}.md`;
+    receipt = path.join(vibeLogDir(root), 'evidence', receiptName);
   } else {
-    receipt = path.join(vibeLogDir(root), 'evidence', 'quick.md');
+    receiptName = 'quick.md';
+    receipt = path.join(vibeLogDir(root), 'evidence', receiptName);
   }
+
+  const current = `${path.join(flowRuntimeDir(root), 'evidence')}${path.sep}${receiptName}`;
+  try {
+    if (!cursorEntryAbsent(current) || (!fs.existsSync(receipt) && fs.existsSync(flowRuntimeDir(root)))) receipt = current;
+  } catch { receipt = current; }
 
   let receiptStat;
   try {
@@ -836,7 +850,7 @@ function evidenceReceiptCheck(root, state, feature, tree, warn) {
     return {
       stderr:
         line(`vibe-gate: BLOCKED — ${state} needs an evidence receipt before 'done'.`) +
-        line(`  expected: ${receipt}`) +
+        line(`  expected: ${diagnosticValue(receipt)}`) +
         line(`  it must record the commands you ran and their observed output (per unit ID for a feature).`) +
         line(ABORT_HINT),
     };
@@ -860,7 +874,7 @@ function evidenceReceiptCheck(root, state, feature, tree, warn) {
     return {
       stderr:
         line('vibe-gate: BLOCKED — the working tree state could not be determined, so the receipt cannot be trusted.') +
-        line(`  receipt: ${receipt}`) +
+        line(`  receipt: ${diagnosticValue(receipt)}`) +
         line(`  git status --porcelain -z -uall did not answer (${tree.why}).`) +
         line('  a huge UN-IGNORED untracked tree is the usual cause — gitignore it (or commit it) and re-run the Stop.') +
         line('  "I could not look" is not "nothing changed", so this blocks rather than passing you through.') +
@@ -889,8 +903,8 @@ function evidenceReceiptCheck(root, state, feature, tree, warn) {
       return {
         stderr:
           line('vibe-gate: BLOCKED — a changed path could not be checked, so the receipt cannot be trusted.') +
-          line(`  receipt: ${receipt}`) +
-          line(`  could not stat: ${p} (${code})`) +
+          line(`  receipt: ${diagnosticValue(receipt)}`) +
+          line(`  could not stat: ${diagnosticValue(p)} (${code})`) +
           line('  fix or remove that path, then re-run verification and rewrite the receipt.') +
           line(ABORT_HINT),
       };
@@ -899,8 +913,8 @@ function evidenceReceiptCheck(root, state, feature, tree, warn) {
       return {
         stderr:
           line('vibe-gate: BLOCKED — the evidence receipt is stale.') +
-          line(`  receipt: ${receipt}`) +
-          line(`  changed after it was written: ${p}`) +
+          line(`  receipt: ${diagnosticValue(receipt)}`) +
+          line(`  changed after it was written: ${diagnosticValue(p)}`) +
           line('  re-run verification and rewrite the receipt with fresh commands + output.') +
           line(ABORT_HINT),
       };

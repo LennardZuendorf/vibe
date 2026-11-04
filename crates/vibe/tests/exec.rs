@@ -1093,20 +1093,24 @@ fn apply_refreshes_the_held_lock() {
 #[cfg(unix)]
 #[test]
 fn apply_preserves_successor_state_after_lock_replacement() {
+    use std::os::unix::fs::PermissionsExt;
     use vibe_core::lock::{Acquired, Lock, STALE};
     let home = Home::new("exec-lost-owner");
     let p = paths(&home);
     let Acquired::Got(held) = Lock::acquire(&p.lock_file(), STALE).unwrap() else {
         panic!("busy")
     };
-    let script = home.write_exec(
-        "replace-lock",
-        &format!(
+    let script = home.path("replace-lock");
+    fs::write(
+        &script,
+        format!(
             "#!/bin/sh\nprintf successor > '{}'\nprintf successor-state > '{}'\n",
             p.lock_file().display(),
             p.state_file().display()
         ),
-    );
+    )
+    .unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
     let mut plan = proj(vec![add("a")], vec![]);
     plan.stamp = Some(Stamp {
         store_hash: "first".into(),
@@ -1133,13 +1137,16 @@ fn apply_preserves_successor_state_after_lock_replacement() {
 #[cfg(unix)]
 #[test]
 fn nested_sync_cannot_steal_aged_holder_during_claude_call() {
+    use std::os::unix::fs::PermissionsExt;
     use vibe_core::lock::{Acquired, Lock, STALE};
     let home = Home::with_store("exec-blocking-lease");
     let p = paths(&home);
     let Acquired::Got(_held) = Lock::acquire(&p.lock_file(), STALE).unwrap() else {
         panic!("busy")
     };
-    let script = home.write_exec("nested-sync", &format!("#!/bin/sh\ntouch -t 200001010000 '{}'\nenv -i HOME='{}' PATH=/usr/bin:/bin '{}' sync --harness codex > '{}/nested-output' 2>&1\nprintf '%s' \"$?\" > '{}/nested-code'\nexit 0\n", p.lock_file().display(), home.dir.display(), env!("CARGO_BIN_EXE_vibe"), home.dir.display(), home.dir.display()));
+    let script = home.path("nested-sync");
+    fs::write(&script, format!("#!/bin/sh\ntouch -t 200001010000 '{}'\nenv -i HOME='{}' PATH=/usr/bin:/bin '{}' sync --harness codex > '{}/nested-output' 2>&1\nprintf '%s' \"$?\" > '{}/nested-code'\nexit 0\n", p.lock_file().display(), home.dir.display(), env!("CARGO_BIN_EXE_vibe"), home.dir.display(), home.dir.display())).unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
     let mut plan = proj(vec![add("a")], vec![]);
     plan.stamp = Some(Stamp {
         store_hash: "first".into(),

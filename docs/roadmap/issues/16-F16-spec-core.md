@@ -36,7 +36,7 @@ F3, F4
 Phase: 3 · Tool: spec · Source: `docs/spec/plan.md` row F16
 
 ## Amended 2026-10-13
-- Spec program: [Feature Sequence](../../spec/concepts/feature-sequence.md).
+- Spec program: `docs/spec/parts/spec/concepts/spec-feature-sequence.md`.
 - Unchanged deliverable; part of the spec program.
 
 ---

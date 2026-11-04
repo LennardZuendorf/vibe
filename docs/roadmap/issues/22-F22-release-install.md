@@ -36,7 +36,7 @@ F21
 Phase: 4 · Tool: all · Source: `docs/spec/plan.md` row F22
 
 ## Amended 2026-10-13
-- Spec program: [Feature Sequence](../../spec/concepts/feature-sequence.md).
+- Spec program: `docs/spec/parts/spec/concepts/spec-feature-sequence.md`.
 - Deliverable now: `cargo-dist` 5 targets, per-tool tags, `SHA256SUMS`; `install.sh` (subsets, platforms, uninstall, cargo fallback) — spec slice in the spec program
 
 ---

@@ -1,0 +1,59 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        ".spec/features/auth/tech.md",
+        "feature.compound"
+      ],
+      [
+        ".spec/features/auth/tech.md",
+        "feature.design"
+      ],
+      [
+        ".spec/features/auth/tech.md",
+        "feature.impl"
+      ],
+      [
+        ".spec/features/auth/tech.md",
+        "feature.plan"
+      ],
+      [
+        ".spec/features/auth/tech.md",
+        "feature.verify"
+      ],
+      [
+        ".spec/features/auth/tech.md",
+        "idle"
+      ],
+      [
+        ".spec/features/auth/tech.md",
+        "quick.fix"
+      ],
+      [
+        ".spec/features/auth/tech.md",
+        "quick.triage"
+      ],
+      [
+        ".spec/features/auth/tech.md",
+        "quick.verify"
+      ],
+      [
+        ".spec/features/auth/tech.md",
+        "setup.apply"
+      ],
+      [
+        ".spec/features/auth/tech.md",
+        "setup.detect"
+      ],
+      [
+        ".spec/features/auth/tech.md",
+        "strategy.brainstorm"
+      ],
+      [
+        ".spec/features/auth/tech.md",
+        "strategy.spec"
+      ]
+    ]
+  },
+  "v": 1
+}

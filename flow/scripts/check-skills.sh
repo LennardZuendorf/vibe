@@ -18,6 +18,11 @@ SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILLS_DIR="$(cd "$SKILL_DIR/.." && pwd)"
 MACHINE="$SKILL_DIR/state-machine.json"
 STATE="$SKILL_DIR/state.json"
+if [[ -f "$SKILL_DIR/scripts/runtime-state.sh" ]]; then
+  # shellcheck source=flow/scripts/runtime-state.sh
+  source "$SKILL_DIR/scripts/runtime-state.sh"
+  STATE="$(runtime_state_path "$SKILL_DIR")"
+fi
 
 warn() { echo "check-skills: WARN — $1" >&2; }
 note() { echo "check-skills: $1"; }

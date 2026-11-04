@@ -8,7 +8,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 SHIM="$ROOT/spec/hooks/run-hook.sh"
 FIX="$ROOT/crates/vibe-spec/tests/fixtures/hooks"
-BIN="$ROOT/target/debug/vibe-spec"
+# Honour an out-of-tree target dir, exactly as tests/parity/run.sh does: a
+# `CARGO_TARGET_DIR` outside the repo is what makes off-tree verification work.
+BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug/vibe-spec"
 PASS=0
 FAIL=0
 pass() { echo "  PASS [$1] $2"; PASS=$((PASS + 1)); }

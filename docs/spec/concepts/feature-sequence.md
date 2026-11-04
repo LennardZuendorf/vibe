@@ -13,4 +13,4 @@ Parallel tracks after F4: flow (F5→F10), instruct (F11→F15, F12 waits for F8
 
 **Delivered ahead of the arc.** `host-support` (2026-10-02, on the v0.3 bash tree): the four-host project skill/command packages — Claude Code, OpenCode, Codex (skill invocation only), Factory Droid — plus the installer's `--platform claude,opencode,codex,droid,none` selection, CLI detection default, per-target ownership manifest, and surgical uninstall. That is a slice of F21/F22 scope with different carriers; both rows keep their Rust-era acceptance and stay open, and their issue docs carry the landed-ahead notes.
 
-**Spec program.** Delivered: F1, F2’s Spec JSON slice, F3, F4, F16–F20 and F25. Packaging, release/install, legacy retirement and documentation completion remain unfinished under F21–F24. Flow and instruct Rust ports remain separate tracks.
+**Active focus.** The [spec sequence](../parts/spec/concepts/spec-feature-sequence.md) records the completed Rust spec baseline. Track 0 and F5/F6 are implemented in source; [flow rows](../parts/flow/concepts/flow-feature-sequence.md) retain F7 and later as pending. Instruct, packaging, release and retirement remain pending.

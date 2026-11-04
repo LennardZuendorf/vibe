@@ -4,7 +4,7 @@ applies:
   - "crates/**"
   - "oracles/**"
   - "tests/parity/**"
-updated: 2026-10-19
+updated: 2026-11-03
 ---
 
 # Rust Workspace — Tech
@@ -13,16 +13,7 @@ updated: 2026-10-19
 
 Branch doc for the Rust implementation: workspace layout, the port from the
 Node engine and bash scripts, the hook shim, the TUI, and distribution.
-**Shipped today:** `flow/engine/` (Node/ESM) and the bash scripts still
-drive everything. F2–F4 delivered the foundations: frozen oracles under
-`oracles/` (43 files, `MANIFEST.sha256`), the Cargo workspace (`vibe-core`
-with glob matching and atomic write, `vibe-spec`, `vibe-parity`), and the
-parity harness. F16 made `vibe-spec` the first candidate. `list-specs`,
-`lessons-for` and `scan-merges` are parity-green over
-`tests/parity/corpus/spec/` and live on this repo (`tests/parity/run.sh`);
-`validate` is parity-green over the corpus with F17's checks off
-(`tests/parity/legacy-strictness.json`, P3b-R2).
-`init` stays self-check only until F20.
+**Current source:** the workspace contains `vibe-core`, `vibe-spec`, `vibe-parity` and `vibe-flow`. The Rust spec baseline and flow F5/F6 are implemented. JS still composes injection; migration shell shims remain. Flow transition enforcement, ledger, Rust orders/payloads, instruct, signals and TUI remain pending. Source completion does not establish release or installed runtime behavior.
 
 ## Notes
 

@@ -1,0 +1,59 @@
+{
+  "runs": {
+    "policy-decide": [
+      [
+        "AGENTS.md",
+        "feature.compound"
+      ],
+      [
+        "AGENTS.md",
+        "feature.design"
+      ],
+      [
+        "AGENTS.md",
+        "feature.impl"
+      ],
+      [
+        "AGENTS.md",
+        "feature.plan"
+      ],
+      [
+        "AGENTS.md",
+        "feature.verify"
+      ],
+      [
+        "AGENTS.md",
+        "idle"
+      ],
+      [
+        "AGENTS.md",
+        "quick.fix"
+      ],
+      [
+        "AGENTS.md",
+        "quick.triage"
+      ],
+      [
+        "AGENTS.md",
+        "quick.verify"
+      ],
+      [
+        "AGENTS.md",
+        "setup.apply"
+      ],
+      [
+        "AGENTS.md",
+        "setup.detect"
+      ],
+      [
+        "AGENTS.md",
+        "strategy.brainstorm"
+      ],
+      [
+        "AGENTS.md",
+        "strategy.spec"
+      ]
+    ]
+  },
+  "v": 1
+}

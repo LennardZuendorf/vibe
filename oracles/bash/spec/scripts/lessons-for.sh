@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# vibe-spec: literal-file
 # scripts/lessons-for.sh — extract lessons matching tags from lessons.md
 set -euo pipefail
 

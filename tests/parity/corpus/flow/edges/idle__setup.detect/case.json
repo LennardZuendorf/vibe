@@ -1,0 +1,10 @@
+{
+  "runs": {
+    "state-set": [
+      [
+        "setup.detect"
+      ]
+    ]
+  },
+  "v": 1
+}

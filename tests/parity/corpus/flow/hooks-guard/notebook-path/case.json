@@ -1,0 +1,10 @@
+{
+  "runs": {
+    "hook-guard": [
+      []
+    ]
+  },
+  "stderr": true,
+  "stdin": "{\"tool_name\":\"NotebookEdit\",\"tool_input\":{\"notebook_path\":\"docs/spec/plan.md\"}}",
+  "v": 1
+}

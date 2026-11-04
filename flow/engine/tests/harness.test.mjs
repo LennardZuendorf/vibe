@@ -4,6 +4,7 @@
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { test, assert, assertEqual, assertIncludes, makeSandbox, makeHookSandbox, runCommand } from './run.mjs';
 
 test('sandbox: creates flow/state.json and flow/state-machine.json, then cleans up', () => {
@@ -102,4 +103,27 @@ test('makeHookSandbox({gitInit:true}): the sandbox really IS a git repository', 
   } finally {
     plain.cleanup();
   }
+});
+
+// Fixtures must not inherit a caller's project, while production still honors it.
+test('harness: inherited project context is isolated and explicit production context still confines writes', () => {
+  const context=makeSandbox(), outside=makeSandbox();
+  try {
+    const before=readFileSync(outside.cursorPath,'utf8');
+    const stateUrl=pathToFileURL(fileURLToPath(new URL('../commands/state.mjs',import.meta.url))).href;
+    const rootUrl=pathToFileURL(fileURLToPath(new URL('../root.mjs',import.meta.url))).href;
+    const probe=`import { runSet } from ${JSON.stringify(stateUrl)};
+      import { resolveCursorRoot } from ${JSON.stringify(rootUrl)};
+      process.stdout.write(JSON.stringify({root:resolveCursorRoot(${JSON.stringify(outside.flowDir)}),result:runSet(${JSON.stringify(outside.flowDir)},['quick.fix'])}));`;
+    const direct=runCommand(process.execPath,['--input-type=module','-e',probe],{env:{CLAUDE_PROJECT_DIR:context.dir}});
+    assertEqual(direct.code,0,direct.stderr);
+    const observed=JSON.parse(direct.stdout);
+    assertEqual(observed.root,context.dir); assertEqual(observed.result.code,1);
+    assertIncludes(observed.result.stderr,'escapes project');
+    assertEqual(readFileSync(outside.cursorPath,'utf8'),before);
+    const runner=fileURLToPath(new URL('./run.mjs',import.meta.url));
+    const child=runCommand(process.execPath,[runner,'runSet: feature carry-forward preserved when no new feature is given'],{env:{CLAUDE_PROJECT_DIR:context.dir}});
+    assertEqual(child.code,0,child.stdout+child.stderr);
+    assertIncludes(child.stdout,'1 passed, 0 failed');
+  } finally { outside.cleanup(); context.cleanup(); }
 });

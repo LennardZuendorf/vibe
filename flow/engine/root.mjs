@@ -187,3 +187,60 @@ export function resolveProjectCursorDir(opts = {}) {
   // instead, so a SECOND cursor-file literal in root.mjs still fails.
   return fs.existsSync(path.join(candidate, 'state.json')) ? candidate : undefined;
 }
+
+// Runtime layout and physical write anchors belong with root resolution.
+export function flowRuntimeDir(root) {
+  return path.join(root, '.vibe', 'run', 'flow');
+}
+
+export function resolveCursorRoot(vibeDir) {
+  if (process.env.CLAUDE_PROJECT_DIR) return process.env.CLAUDE_PROJECT_DIR;
+  const dir = path.resolve(vibeDir);
+  if (path.basename(dir) === 'vibe' && path.basename(path.dirname(dir)) === 'skills'
+      && path.basename(path.dirname(path.dirname(dir))) === '.agents') {
+    return path.dirname(path.dirname(path.dirname(dir)));
+  }
+  if (path.basename(dir) === 'flow') return path.basename(path.dirname(dir)) === '.agents'
+    ? path.dirname(path.dirname(dir)) : path.dirname(dir);
+  return undefined;
+}
+
+export function assertCursorWithinRoot(root, target) {
+  if (!root) return;
+  const realRoot = fs.realpathSync(root);
+  let existing = target;
+  for (;;) {
+    try { fs.lstatSync(existing); break; }
+    catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+      const parent = path.dirname(existing);
+      if (parent === existing) throw err;
+      existing = parent;
+    }
+  }
+  const rel = path.relative(realRoot, fs.realpathSync(existing));
+  if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+    throw new Error(`cursor path ${target} escapes project ${realRoot}`);
+  }
+}
+
+// Only a missing child below established searchable directories proves absence.
+export function cursorEntryAbsent(target) {
+  const absolute=path.isAbsolute(target) ? target : `${process.cwd()}${path.sep}${target}`;
+  let current=path.parse(absolute).root;
+  const parts=absolute.slice(current.length).split(path.sep === '\\' ? /[\\/]/ : path.sep).filter(Boolean);
+  fs.accessSync(current,fs.constants.X_OK);
+  for (let i=0; i<parts.length; i+=1) {
+    current=`${current.endsWith(path.sep) ? current : current+path.sep}${parts[i]}`;
+    try { fs.lstatSync(current); }
+    catch (err) { if (err.code === 'ENOENT') return true; throw err; }
+    const stat=fs.statSync(current);
+    if (i === parts.length-1) {
+      if (!stat.isFile()) throw new Error(`cursor entry ${current} is not a regular file`);
+    } else {
+      if (!stat.isDirectory()) throw new Error(`cursor ancestor ${current} is not a directory`);
+      fs.accessSync(current,fs.constants.X_OK);
+    }
+  }
+  return false;
+}

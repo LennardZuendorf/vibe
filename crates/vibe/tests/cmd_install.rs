@@ -577,22 +577,23 @@ fn install_notes_a_hook_binary_inside_a_build_directory() {
     let bin = home.path("build/target/debug/vibe");
     fs::create_dir_all(bin.parent().unwrap()).unwrap();
     std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_vibe"), &bin).unwrap();
-    let mut cmd = Command::new(&bin);
-    cmd.args([
-        "install",
-        "--toolkit",
-        kit.to_str().unwrap(),
-        "--harness",
-        "codex",
-    ])
-    .current_dir(&home.dir)
-    .env_clear()
-    .env("HOME", &home.dir)
-    .env(
-        "PATH",
-        format!("{}:/usr/bin:/bin", bin.parent().unwrap().display()),
-    );
-    let output = common::output(&mut cmd).unwrap();
+    let output = Command::new(&bin)
+        .args([
+            "install",
+            "--toolkit",
+            kit.to_str().unwrap(),
+            "--harness",
+            "codex",
+        ])
+        .current_dir(&home.dir)
+        .env_clear()
+        .env("HOME", &home.dir)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", bin.parent().unwrap().display()),
+        )
+        .output()
+        .unwrap();
     let out = Out {
         code: output.status.code().unwrap(),
         stdout: output.stdout,
