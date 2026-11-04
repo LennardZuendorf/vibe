@@ -535,6 +535,49 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** After `patch`, run `git status --porcelain` and delete every `.orig` and `.rej` file before `git add`.
 **Tags:** git, patch, porting, hygiene
 **Date:** 2026-10-24
+### Test scratch is reaped, not leaked
+**Pattern:** Every `cargo test` process left one directory per test case in `TMPDIR` and never removed it; a day of worker runs left 14 500 dead directories and 4.3 GiB on a disk with 5.7 GiB free, and the only reclamation was an external 24 h pruner.
+**Rule:** Build test scratch through `vibe_core::testscratch::scratch`, which sweeps siblings idle for more than six hours on first use in a process. Never hand-roll a `std::env::temp_dir()` path in a test, and never assume a later process will clean up after this one.
+**Tags:** tests, scratch, tmpdir, disk
+**Date:** 2026-10-28
+
+### Scratch cleanup requires an explicit owner
+**Pattern:** The six-hour sweep recommended by the 2026-10-28 lesson deleted unrelated `vibe-*` data and another live process's scratch. Reusing a computed path deleted collision contents. A scoped owner also leaked its container when a caller had already removed the workspace.
+**Rule:** This supersedes the 2026-10-28 six-hour sweep rule. Reserve scratch with exclusive directory creation and retry collisions. Retain the `Scratch` owner through every helper and derived path's last use. On drop, reclaim only the original container with unchanged ownership metadata and marker; an already removed workspace permits removing its owned container. Age, a PID, a name and a marker alone do not prove ownership or inactivity. Leave abandoned or legacy data for separately verified cleanup. CLI callers report reservation errors through the fallible helper; the panic-based shortcut is for tests.
+**Tags:** tests, scratch, tmpdir, safety, ownership
+**Date:** 2026-11-02
+
+### Fixture adapters retain lifetime owners
+**Pattern:** Replacing a `PathBuf` scratch helper with a scope guard left transitive fixture return types, tuple fields and JSON conversions expecting bare paths. A temporary `.join()` discarded the guard before the derived path was used.
+**Rule:** Audit the entire fixture return chain when adding cleanup guards. Return the owner alongside derived paths, keep it alive until the last use, and convert only borrowed paths for serialization. Compile all test targets before running suites, then run strict Clippy; express Unix permission modes as octal literals.
+**Tags:** tests, rust, ownership, tooling
+**Date:** 2026-11-02
+
+### Verify tool availability before invoking matrix commands
+**Pattern:** A Homebrew Cargo installation had no `rustup`; a toolchain-list command failed. An unquoted optional glob also failed in zsh before `rg` ran. A rejecting host-CLI shim was still detected as installed, and hooks.sh could not find its hardcoded target/debug binary when Cargo used an isolated build root. A first PATH allowlist omitted grep and basename, producing environment-only failures.
+**Rule:** Probe the executable needed by a verification command, rather than inferring it from a related tool. Quote search globs that may match no files. Keep required system utilities in a host-CLI-free allowlisted PATH for optional-tool skip tests, and use an ignored target/debug bridge for suites with a fixed binary path. Report an unavailable toolchain as an unverified matrix leg.
+**Tags:** tooling, verification, rust
+**Date:** 2026-11-02
+
+### A Windows sharing hold needs data access
+**Pattern:** PR66 commit `fe29557` passed macOS checks, but Windows Rust 1.88 CI job `125298715909` renamed the empty workspace while its `access_mode(0)` handle omitted `FILE_SHARE_DELETE`. The metadata-only handle did not protect ownership.
+**Rule:** Request directory data-read access with `read(true)` before relying on a Windows no-delete sharing mode. Preserve the original rename-denial regression and add a bare empty-directory hold/release control. If ownership handles are missing, preserve the tree. Use Windows CI on both MSRV and stable as platform evidence; non-Windows green cannot establish Windows sharing semantics.
+**Tags:** tests, rust, windows, ownership, safety
+**Date:** 2026-11-02
+
+
+### Compound before reporting merge readiness
+**Pattern:** Open PRs retained branch-only design and plan artifacts after their implemented facts already lived in the durable spec. Strict validation passed while the pre-merge drift check failed.
+**Rule:** Inventory the whole candidate tree before reporting merge readiness. Promote only missing current facts into the durable spec, remove branch-only artifacts, and run strict validation plus `check-drift --pre-merge`. A green validator alone does not establish compound completion. Check promoted facts against the implementing branch and installation mode.
+**Tags:** spec, compound, verification, pre-merge
+**Date:** 2026-11-03
+
+
+### Read verification command requirements
+**Pattern:** A batched migration check omitted required `--to docs/spec` and exited 2. An unquoted optional diagnostic glob failed in zsh before the command ran. The sandbox also blocked a process-list probe.
+**Rule:** Read the repository’s verification command before batching checks. Preserve its required flags and quote optional search patterns so the tool handles absent matches. Use bounded tool waits and saved check receipts when process inventory is restricted.
+**Tags:** tooling, verification, commands
+**Date:** 2026-11-03
 
 
 ### Do not infer lock-owner death from age

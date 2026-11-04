@@ -1102,9 +1102,7 @@ mod tests {
 
     #[test]
     fn a_failed_write_removes_what_it_made() {
-        let base = std::env::temp_dir().join(format!("vibe-import-rb-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
-        std::fs::create_dir_all(&base).unwrap();
+        let base = vibe_core::testscratch::scratch("vibe-import-rb", "failed-write");
         let features = base.join("features");
         let plan = vec![
             (
@@ -1128,6 +1126,5 @@ mod tests {
         let err = write_folders(&features, ".spec", &plan).unwrap_err(); // literal
         assert_eq!(err, ".spec/features/a/ already exists"); // literal
         assert!(features.join("a").is_dir());
-        let _ = std::fs::remove_dir_all(&base);
     }
 }

@@ -9,7 +9,7 @@ use common::{project, spec, write};
 const ENTRY: &str = "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n# P\n\n[f](features/ghost/)\n";
 
 /// A tree whose only finding is one SF13 warning (a stale `features/ghost/` link).
-fn sf13_tree(name: &str) -> std::path::PathBuf {
+fn sf13_tree(name: &str) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     write(&p, ".spec/product.md", ENTRY);
     p
@@ -191,18 +191,18 @@ fn no_spec_root_error_cannot_be_silenced() {
 }
 
 use common::{assert_spec_json, validate_json};
-use std::path::PathBuf;
+use vibe_core::testscratch::Scratch;
 
 /// A project that makes check `id` report at least one finding whose
 /// message contains `needle`, run with `args` and `env`.
 struct Trigger {
-    project: PathBuf,
+    project: Scratch,
     env: Vec<(String, String)>,
     args: Vec<String>,
     needle: &'static str,
 }
 
-fn plain(project: PathBuf, needle: &'static str) -> Option<Trigger> {
+fn plain(project: Scratch, needle: &'static str) -> Option<Trigger> {
     Some(Trigger {
         project,
         env: Vec::new(),
@@ -215,7 +215,7 @@ const FEATURE_PRODUCT: &str = "---\ntype: feature-product\nfeature: auth\nparent
 const FEATURE_TECH: &str = "---\ntype: feature-tech\nfeature: auth\nparent: ../../tech.md\nsibling: product.md\nupdated: 2026-01-15\n---\n\n# auth — Tech\n";
 
 /// A clean flat tree with one feature; triggers add the one defect they need.
-fn base(name: &str) -> PathBuf {
+fn base(name: &str) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     write(
         &p,

@@ -97,7 +97,7 @@ fn snapshot(dir: &Path) -> Vec<(String, Vec<u8>)> {
 const TAGGED: &str =
     "# Lessons\n\n### Dash h\n**Rule:** Keep it.\n**Tags:** -h\n**Date:** 2026-01-02\n";
 
-fn fixture(name: &str) -> std::path::PathBuf {
+fn fixture(name: &str) -> vibe_core::testscratch::Scratch {
     let p = common::project(name);
     common::write(&p, ".vibe/spec.json", common::LEGACY_STRICTNESS);
     common::write(&p, "docs/spec/lessons.md", TAGGED);

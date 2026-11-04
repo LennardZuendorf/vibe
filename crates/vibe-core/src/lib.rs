@@ -10,5 +10,6 @@ pub mod glob;
 pub mod json;
 pub mod lock;
 pub mod markers;
+pub mod testscratch;
 
 pub use error::{Error, Result};

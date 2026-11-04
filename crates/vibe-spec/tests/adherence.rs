@@ -5,7 +5,7 @@
 mod common;
 
 use common::{git, project, validate_json, write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const PRODUCT: &str =
     "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n# P\n";
@@ -13,7 +13,7 @@ const PLAN: &str = "---\ntype: entrypoint\nscope: implementation\nchildren:\nupd
 const FPRODUCT: &str = "---\ntype: feature-product\nfeature: {f}\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n## Scope\n\n| Owns | Does not own |\n|---|---|\n| {f} things | other |\n\n### Requirement: A\nUsers MUST a.\n\n#### Scenario: a\n- WHEN x\n- THEN y\n";
 const FTECH: &str = "---\ntype: feature-tech\nfeature: {f}\nparent: ../../tech.md\nsibling: product.md\nupdated: 2026-01-15\n---\n";
 
-fn tree(name: &str, features: &[&str]) -> PathBuf {
+fn tree(name: &str, features: &[&str]) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     write(&p, ".spec/product.md", PRODUCT);
     write(&p, ".spec/plan.md", PLAN);
@@ -224,7 +224,7 @@ fn a_fenced_plan_row_does_not_count() {
     );
 }
 
-fn committed(name: &str, date: &str) -> PathBuf {
+fn committed(name: &str, date: &str) -> vibe_core::testscratch::Scratch {
     let p = tree(name, &["auth"]);
     git(&p, date, &["init", "-q"]);
     git(&p, date, &["add", "-A"]);
@@ -371,7 +371,8 @@ fn a_shallow_clone_is_silent() {
     let new = "2026-03-01T12:00:00Z";
     git(&p, new, &["add", "-A"]);
     git(&p, new, &["commit", "-q", "-m", "other"]);
-    let dest = project("ad-shallow-dst").join("clone");
+    let destination = project("ad-shallow-dst");
+    let dest = destination.join("clone");
     let url = format!("file://{}", p.display());
     git(
         &p,

@@ -165,13 +165,10 @@ mod tests {
     use super::{write_atomic, write_via};
     use crate::Error;
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("vibe-core-fs-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    fn scratch(name: &str) -> crate::testscratch::Scratch {
+        crate::testscratch::scratch("vibe-core-fs", name)
     }
 
     fn entries(dir: &Path) -> Vec<String> {

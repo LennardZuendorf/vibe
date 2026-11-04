@@ -6,14 +6,13 @@
 mod common;
 
 use common::{project, validate_json, write};
-use std::path::PathBuf;
 
 const HEAD: &str = "---\ntype: feature-product\nfeature: auth\nparent: ../../product.md\nsibling: tech.md\nupdated: 2026-01-15\n---\n\n";
 const SCOPE: &str = "## Scope\n\n| Owns | Does not own |\n|---|---|\n| sessions | billing |\n\n";
 const TECH: &str = "---\ntype: feature-tech\nfeature: auth\nparent: ../../tech.md\nsibling: product.md\nupdated: 2026-01-15\n---\n";
 
 /// A project whose only feature product body is `body` (after the frontmatter).
-fn feature(name: &str, body: &str) -> PathBuf {
+fn feature(name: &str, body: &str) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     write(
         &p,

@@ -9,14 +9,14 @@ mod common;
 use common::{project, spec, write};
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Expands `@` to the legacy root name.
 fn d(text: &str) -> String {
     text.replace('@', ".spec")
 }
 
-fn repo(name: &str) -> PathBuf {
+fn repo(name: &str) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     fs::remove_dir_all(p.join(".git")).unwrap();
     common::git(&p, "2026-03-01T12:00:00Z", &["init", "-q"]);
@@ -29,7 +29,7 @@ fn put(p: &Path, rel: &str, text: &str) {
 
 /// A flat legacy tree plus config, scripts and a decoy outside the file set.
 /// Six literals in six files.
-fn corpus(name: &str) -> PathBuf {
+fn corpus(name: &str) -> vibe_core::testscratch::Scratch {
     let p = repo(name);
     put(
         &p,
@@ -1414,7 +1414,7 @@ fn crlf_decision_files_keep_every_line_ending() {
 /// A committed corpus with staged, unstaged and untracked changes in the
 /// root, and a `CLAUDE.md` link that only breaks once the root has moved
 /// (validate checks it against the root's new name).
-fn staged_corpus(name: &str, breaking: bool) -> PathBuf {
+fn staged_corpus(name: &str, breaking: bool) -> vibe_core::testscratch::Scratch {
     let p = corpus(name);
     put(
         &p,

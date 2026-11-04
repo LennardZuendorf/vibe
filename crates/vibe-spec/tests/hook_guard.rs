@@ -25,7 +25,7 @@ fn fixture(name: &str) -> Value {
 }
 
 /// A project with a `docs/spec/` root and a main transcript holding `lines`.
-fn setup(name: &str, lines: &[String]) -> (PathBuf, PathBuf) {
+fn setup(name: &str, lines: &[String]) -> (vibe_core::testscratch::Scratch, PathBuf) {
     let p = common::project(name);
     common::write(&p, "docs/spec/README.md", "# Spec\n");
     let t = p.join(format!("{SID}.jsonl"));
@@ -155,7 +155,7 @@ fn fail_open_causes() {
     ));
     // A target outside the project.
     let mut v = fixture("main-write.json");
-    v["cwd"] = json!(p);
+    v["cwd"] = json!(&*p);
     v["transcript_path"] = json!(t);
     v["tool_input"]["file_path"] = json!("/elsewhere/docs/spec/a.md");
     check(guard(&p, v.to_string().as_bytes()));
@@ -188,7 +188,7 @@ fn bash_writes_warn() {
     let (p, t) = setup("g-bash", &[]);
     let run = |command: &str| {
         let mut v = fixture("main-write.json");
-        v["cwd"] = json!(p);
+        v["cwd"] = json!(&*p);
         v["transcript_path"] = json!(t);
         v["tool_name"] = json!("Bash");
         v["tool_input"] = json!({ "command": command });
@@ -224,14 +224,14 @@ fn targets_survive_symlinked_cwd_and_dotdot() {
     v["tool_input"]["file_path"] = json!(link.join("docs/spec/a.md"));
     assert_eq!(guard(&p, v.to_string().as_bytes()).code, 2);
     // `..` in the path.
-    v["cwd"] = json!(p);
+    v["cwd"] = json!(&*p);
     v["tool_input"]["file_path"] = json!(p.join("docs/x/../spec/a.md"));
     assert_eq!(guard(&p, v.to_string().as_bytes()).code, 2);
     v["tool_input"]["file_path"] = json!("docs/x/../spec/a.md");
     assert_eq!(guard(&p, v.to_string().as_bytes()).code, 2);
 }
 
-fn big_transcript(name: &str) -> (PathBuf, PathBuf) {
+fn big_transcript(name: &str) -> (vibe_core::testscratch::Scratch, PathBuf) {
     let (p, t) = setup(name, &[]);
     let filler = format!(
         r#"{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"{}"}}]}}}}"#,
