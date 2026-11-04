@@ -9,14 +9,14 @@ mod common;
 use common::{project, spec, write};
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Expands `@` to the legacy root name.
 fn d(text: &str) -> String {
     text.replace('@', ".spec")
 }
 
-fn repo(name: &str) -> PathBuf {
+fn repo(name: &str) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     fs::remove_dir_all(p.join(".git")).unwrap();
     common::git(&p, "2026-03-01T12:00:00Z", &["init", "-q"]);
@@ -29,7 +29,7 @@ fn put(p: &Path, rel: &str, text: &str) {
 
 /// A flat legacy tree plus config, scripts and a decoy outside the file set.
 /// Six literals in six files.
-fn corpus(name: &str) -> PathBuf {
+fn corpus(name: &str) -> vibe_core::testscratch::Scratch {
     let p = repo(name);
     put(
         &p,
@@ -197,6 +197,60 @@ fn file_level_marker_exempts_a_file_only_in_its_first_five_lines() {
         .map(|r| r["file"].as_str().unwrap())
         .collect();
     assert_eq!(files, ["b.md", "c.md"], "{v}");
+}
+
+#[test]
+fn parity_pin_paths_are_exempt_without_exempting_their_neighbours() {
+    let p = repo("migrate-pin-paths");
+    put(&p, "docs/spec/product.md", "---\ntype: hub\n---\n\n# P\n");
+    for name in ["spec", "flow"] {
+        put(
+            &p,
+            &format!("tests/parity/{name}.json"),
+            "{\"expected\":\"@/product.md\"}\n",
+        );
+        put(
+            &p,
+            &format!("tests/parity/{name}.json.bak"),
+            "{\"expected\":\"@/product.md\"}\n",
+        );
+    }
+    put(&p, "tests/parity/run.sh", "ROOT=@\n");
+    let before = snapshot(&p);
+    let out = spec(
+        &p,
+        &["migrate", "--to", "docs/spec", "--check", "--json"],
+        &[],
+    );
+    assert_eq!(out.code, 1, "{}\n{}", out.text(), out.stderr);
+    let v = json(&out);
+    let files: Vec<&str> = v["rewrites"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["file"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        files,
+        [
+            "tests/parity/flow.json.bak",
+            "tests/parity/run.sh",
+            "tests/parity/spec.json.bak",
+        ],
+        "{v}"
+    );
+    assert_eq!(snapshot(&p), before, "check must not rewrite pin evidence");
+    for rel in files {
+        fs::remove_file(p.join(rel)).unwrap();
+    }
+    let out = spec(&p, &["migrate", "--to", "docs/spec", "--check"], &[]);
+    assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
+    for name in ["spec", "flow"] {
+        assert_eq!(
+            fs::read_to_string(p.join(format!("tests/parity/{name}.json"))).unwrap(),
+            d("{\"expected\":\"@/product.md\"}\n")
+        );
+    }
 }
 
 #[test]
@@ -1414,7 +1468,7 @@ fn crlf_decision_files_keep_every_line_ending() {
 /// A committed corpus with staged, unstaged and untracked changes in the
 /// root, and a `CLAUDE.md` link that only breaks once the root has moved
 /// (validate checks it against the root's new name).
-fn staged_corpus(name: &str, breaking: bool) -> PathBuf {
+fn staged_corpus(name: &str, breaking: bool) -> vibe_core::testscratch::Scratch {
     let p = corpus(name);
     put(
         &p,

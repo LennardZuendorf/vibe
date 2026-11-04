@@ -14,6 +14,26 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Changed
 
+- **Global store safety (C0)** — retain locks while owner death is unproven, keep blocking CLI work alive with a token-checked heartbeat, and retire ownership before releasing the filesystem lock. Keep imported credentials independently named and report Codex env-remapping skips. Confine projection to resolved configured roots while preserving intentional root/internal and read-only store links.
+
+- **`install.sh --global` is no longer Claude-only** (vibe#71): it installs the
+  `spec`, `using-spec` and `vibe` skills into each selected host's own user-level
+  skills dir
+  (Claude `~/.claude/skills`, Codex `~/.codex/skills`, Droid `~/.factory/skills`,
+  OpenCode `~/.config/opencode/skills`) and maintains one shared
+  `~/.agents/AGENTS.md` block between markers. Hosts are detected (CLI on PATH or
+  an existing config dir) or forced with `--host <claude|codex|droid|opencode|all>`;
+  no host CLI is required, and a second run changes no file and says so. The Claude
+  per-user plugin — and its doctrine hook — moved behind `--plugin`, because it
+  would load the same three skills a second time. A `--global` run as root is
+  refused: everything it writes must stay user-owned.
+- **`using-spec` ships as its own sibling skill dir on every host** (vibe#71
+  sub-gap 3): OpenCode documents skill discovery as `skills/*/SKILL.md`, a
+  single-level scan, so the session-start router that used to sit nested at
+  `skills/spec/using-spec/` was invisible to it. `install.sh` (local and
+  `--global`), `build-plugin.sh`'s materialized Codex/Droid packages and the
+  Claude plugin all place `using-spec` beside `spec` and `vibe`, and the nested
+  copy is dropped so no host registers it twice.
 - **Direction: v0.4 re-architecture** — three independent tools (spec, flow,
   instruct) as static Rust binaries, Claude Code + OpenCode plugins, contracts
   as the only coupling; root specs rewritten, roadmap F1–F24 authored as an
@@ -22,6 +42,17 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
 
 ### Added
 
+- Global store and harness projection (C0, D48): `vibe` binary (`crates/vibe`) with `store init|import-mcp|status`, `sync`, `hook session-start`, `install`, `uninstall`, `doctor` and `spec` dispatch. One store under `~/.config/vibe/` (root `AGENTS.md`, `mcp.json`, `skills/`) is projected into Claude Code, Codex, OpenCode and Factory droid through marker blocks, owned MCP entries, skills links and one user-level SessionStart hook per harness. Secrets become `${VIBE_<SERVER>_<FIELD>}` placeholders. `vibe-core` gains `dirs`, `lock`, `markers` and an order-preserving `json`; `contracts/` gains the store and state schemas; CI runs the OpenCode plugin node test on all three OSes.
+- **The `vibe-spec` binary is reported, not assumed** (vibe#71): a plain
+  `./install.sh --global` now prints whether `vibe-spec` is installed — and what
+  still works when it is not — instead of leaving a skill that shells out to a
+  missing command. `--build-spec-bin [--bin-dir DIR]` opts into building it from
+  this checkout with cargo and installing it into a user-owned bin dir
+  (`~/.local/bin` by default, never editing a shell profile). `doctor` reports the
+  same state as `tool.vibe-spec` on both sides of the port, and the shipped `spec`
+  skill states the fallback (bundled bash scripts, flat legacy roots only) instead
+  of failing. No prebuilt release artifacts: the repo publishes none, and the
+  installer will not fetch a binary it cannot verify.
 - Spec hooks and agents (F19): `vibe-spec hook {session-start,guard,validate}`, `validate --changed|--file|--format hook`, and `vibe-spec setup [--git-hooks] [--opencode] [--agents-md]`. A shim (`spec/hooks/run-hook.sh`) wires four events into the plugin `hooks.json` and `.claude/settings.json`. The `guard` tooth blocks spec-root edits made without `Skill(spec)`, and edits under `docs/superpowers/specs/` or `plans/` made without `spec` or the matching superpowers skill (`superpowers:brainstorming`, `superpowers:writing-plans`). Agents `spec-promoter` and `spec-health` replace `spec-interviewer` and `spec-tracer`.
 - Spec migration (F20): `vibe-spec init [--to <dir>]` seeds a layered spec root; `vibe-spec migrate --to <dir> [--layout layered] [--dry-run] [--check]` moves the root, rewrites legacy literals with a population assertion and reverts on failure or on newly introduced validate errors. This repo now lives under `docs/spec/`; CI runs `validate --strict` and `migrate --to docs/spec --check`.
 - `vibe-spec check-drift [--pre-merge]` and `vibe-spec promote` ported (F18), with byte parity for `.spec` roots. `promote` applies `## ADDED|MODIFIED|REMOVED Requirements` deltas, prints the superpowers promotion checklist, and `promote <feature> --done` deletes the artifacts once the spec changed since the branch base.
@@ -172,6 +203,13 @@ fresh-install stranger-eval pass that hardens the no-git / no-jq / no-awk target
   target gets an unpredictable name and is opened exclusively (`wx`), so a link a
   repo plants at the temp name is never followed (review-hardening/12).
 - **The spec hook shim keeps a guard block without a temp file** — `spec/hooks/run-hook.sh` `guard` keeps a real `blocked:` exit 2 when the temp directory is missing. The shim captures stderr with a descriptor swap and no longer creates a temp file; `spec/tests/hooks.sh` checks that with a probe binary that counts temp files while it runs. (review-hardening/17)
+- **Test scratch is reaped, not leaked** — every `cargo test` process left one
+  directory per test case in `TMPDIR` forever (14 500 of them, 4.3 GiB, after a day
+  of worker runs). Test helpers now build scratch through
+  `vibe_core::testscratch::scratch`, whose first call in a process sweeps `vibe-*`
+  entries idle for over six hours, skipping this process's own and anything that
+  cannot be read.
+
 - **The hard blocks survive a node-less target** — the hook shims were
   `command -v node || exit 0`, so a machine without node silently lost the
   PreToolUse write guard and the Stop evidence gate, while the docs still called

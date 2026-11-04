@@ -1,6 +1,8 @@
 //! Test candidate for the parity harness. Reproduces
-//! `tests/fixture/oracle/echo.sh`; `--mutate=<exit|stdout|file|dir|hang|path|updated>`
+//! `tests/fixture/oracle/echo.sh`;
+//! `--mutate=<exit|stdout|file|dir|hang|path|updated|crash|newline|file-newline>`
 //! makes it diverge on purpose so tests can prove the harness turns red.
+use std::io::Write;
 use std::process::ExitCode;
 
 const BODY: &str = "{\"updated\": \"2026-01-01T00:00:00Z\"}\n";
@@ -21,10 +23,19 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
     let mark = if mutate == "stdout" { "!" } else { "" };
-    println!("args:{}{mark}", args.join(" "));
+    let line = format!("args:{}{mark}", args.join(" "));
+    if mutate == "newline" {
+        // Same text, no final newline: equal as lines, different as bytes.
+        // The difference no pin can state, which used to read as PASS.
+        print!("{line}");
+        let _ = std::io::stdout().flush();
+    } else {
+        println!("{line}");
+    }
     let body = match mutate.as_str() {
         "file" => "y\n".to_string(),
         "updated" => "{\"updated\": \"2030-01-01T00:00:00Z\"}\n".to_string(),
+        "file-newline" => BODY.trim_end_matches('\n').to_string(),
         _ => BODY.to_string(),
     };
     let name = if mutate == "path" {
@@ -34,6 +45,13 @@ fn main() -> ExitCode {
     };
     if std::fs::write(name, body).is_err() {
         return ExitCode::from(1);
+    }
+    if mutate == "crash" {
+        // A panic leaves stdout and the files it already wrote intact, so
+        // only the exit code differs: exactly the shape that satisfied an
+        // exit pin by field name alone.
+        eprintln!("thread 'main' panicked at src/main.rs:1:1:\nboom");
+        return ExitCode::from(101);
     }
     ExitCode::from(if mutate == "exit" { 3 } else { 0 })
 }

@@ -39,8 +39,16 @@ const REQUIRED = {
   'check-level': ['id', 'level'],
   finding: ['check', 'message', 'severity'],
 };
+const STORE_DEFS = ['store', 'mcp', 'state', 'sync'];
+// Required sets of vibe-store.schema.json; `mcp` is the mcp.json file, which carries no "v".
+const REQUIRED_STORE = {
+  store: ['v'],
+  mcp: ['mcpServers'],
+  state: ['owned', 'store_hash', 'targets', 'v'],
+  sync: ['changes', 'dry_run', 'failed', 'notes', 'v'],
+};
 const EXIT_CODES = { cli: ['0', '1', '2'], 'vibe-spec-query': ['3'], hook: ['0', '2'] };
-const FLOOR = { schemas: 2, validPerQuery: 2, invalidPerQuery: 2 };
+const FLOOR = { schemas: 3, validPerQuery: 2, invalidPerQuery: 2 };
 
 const at = process.argv.indexOf('--dir');
 const dir = at > 0 ? process.argv[at + 1] : dirname(fileURLToPath(import.meta.url));
@@ -103,6 +111,38 @@ for (const [name, want] of Object.entries(REQUIRED)) {
   if (!def) { if (!QUERIES.includes(name)) errors.push(`spec-json: $defs.${name} missing`); continue; }
   const got = [...(def.required ?? [])].sort();
   if (JSON.stringify(got) !== JSON.stringify(want)) errors.push(`spec-json: ${name} requires ${JSON.stringify(got)}, contract pins ${JSON.stringify(want)}`);
+}
+
+const store = schemas['vibe-store.schema.json'];
+if (!store) errors.push('vibe-store.schema.json missing');
+for (const q of store ? STORE_DEFS : []) {
+  const def = store.$defs?.[q];
+  if (!def) { errors.push(`vibe-store: $defs.${q} missing`); continue; }
+  if (q !== 'mcp' && (def.properties?.v?.const !== 1 || !def.required?.includes('v'))) errors.push(`vibe-store: ${q} must require "v" with const 1`);
+  const got = [...(def.required ?? [])].sort();
+  if (JSON.stringify(got) !== JSON.stringify(REQUIRED_STORE[q])) errors.push(`vibe-store: ${q} requires ${JSON.stringify(got)}, contract pins ${JSON.stringify(REQUIRED_STORE[q])}`);
+  const base = join(dir, 'fixtures', 'vibe-store', q);
+  const goods = jsonFiles(join(base, 'valid'));
+  const bads = jsonFiles(join(base, 'invalid'));
+  if (goods.length < FLOOR.validPerQuery) errors.push(`vibe-store ${q}: ${goods.length} valid golden(s) (floor ${FLOOR.validPerQuery})`);
+  if (bads.length < FLOOR.invalidPerQuery) errors.push(`vibe-store ${q}: ${bads.length} invalid golden(s) (floor ${FLOOR.invalidPerQuery})`);
+  if (!goods.includes('unknown-field.json')) errors.push(`vibe-store ${q}: valid/unknown-field.json missing`);
+  for (const f of goods) {
+    const v = readJson(join(base, 'valid', f));
+    if (v === undefined) continue;
+    valid += 1;
+    const e = validate(store, def, v);
+    if (e.length) errors.push(`vibe-store ${q}/valid/${f}: ${e.join('; ')}`);
+    if (f === 'unknown-field.json' && !Object.keys(v ?? {}).some((k) => !(k in (def.properties ?? {})))) {
+      errors.push(`vibe-store ${q}/valid/unknown-field.json: holds no field outside the schema`);
+    }
+  }
+  for (const f of bads) {
+    const v = readJson(join(base, 'invalid', f));
+    if (v === undefined) continue;
+    invalid += 1;
+    if (validate(store, def, v).length === 0) errors.push(`vibe-store ${q}/invalid/${f}: validates, but must fail`);
+  }
 }
 
 const exitSchema = schemas['exit-codes.schema.json'];

@@ -5,7 +5,7 @@ applies:
   - "spec/**"
   - ".vibe/spec.json"
   - "docs/spec/**"
-updated: 2026-10-19
+updated: 2026-11-03
 ---
 
 # Spec Framework — Tech
@@ -13,10 +13,10 @@ updated: 2026-10-19
 [tech.md](../tech.md)
 
 Branch doc for the spec tool: root discovery and migration, OpenSpec
-interchange, the strictness ratchet, adherence checks, and the four
-subagents. **Shipped today:** bash scripts (`validate.sh`, `list-specs.sh`,
-`lessons-for.sh`, `scan-merges.sh`, `promote.sh`, `check-drift.sh`) run
-cwd-relative or install-relative; see the note at the end.
+interchange, the strictness ratchet, adherence checks, and the spec
+subagents. **Shipped today:** the Rust `vibe-spec` binary implements the
+spec commands; bundled bash scripts remain legacy flat-root fallbacks.
+See [Shipped today](spec/spec-shipped.md) for delivered capabilities.
 
 ## Notes
 

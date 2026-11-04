@@ -15,19 +15,16 @@ fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn scratch(name: &str) -> PathBuf {
-    let dir =
-        std::env::temp_dir().join(format!("vibe-parity-corpus-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
+fn scratch(name: &str) -> vibe_core::testscratch::Scratch {
+    vibe_core::testscratch::scratch("vibe-parity-corpus", name)
 }
 
 const TEMPLATES: &str = "oracles/bash/spec/reference/templates";
 
 #[test]
 fn committed_corpus_matches_the_generator() {
-    let out = scratch("regen").join("spec");
+    let workspace = scratch("regen");
+    let out = workspace.join("spec");
     let n = generate(&repo().join(TEMPLATES), &out).unwrap();
     assert!(n >= 12, "generated only {n} cases");
     let committed = snapshot(&repo().join("tests/parity/corpus/spec")).unwrap();

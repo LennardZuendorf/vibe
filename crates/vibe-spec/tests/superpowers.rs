@@ -5,9 +5,9 @@
 mod common;
 
 use common::{project, validate_json, write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-fn sp(name: &str) -> PathBuf {
+fn sp(name: &str) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     write(
         &p,

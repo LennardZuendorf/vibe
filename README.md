@@ -44,7 +44,7 @@ Commands are byte-exact — copy them as written.
 **Prerequisites:** `bash` and `curl` (or `wget`), plus `git` for the target repo.
 [`jq`](https://jqlang.github.io/jq/) and [Node](https://nodejs.org) ≥18 are
 recommended — both halves degrade without them, but with no Node the flow's
-hooks fall back to bash (guard, Stop gate) or go quiet. `claude` CLI is needed only for `--global`.
+hooks fall back to bash (guard, Stop gate) or go quiet. The `claude` CLI is needed only for the optional `--global --plugin` (and `--with-plugins`).
 
 No clone required — run from inside the repo you want vibe in:
 
@@ -69,8 +69,8 @@ plain directory with no Git ancestor uses the current directory.
 
 | Mode | Command | What you get |
 |---|---|---|
-| **local** (default) | `./install.sh <repo>` | The full **stateful** kit at the resolved root: both skills, the engine, and the native surface of every configured host. For Claude Code that is `/flow` plus the hooks wired via `.claude/settings.json`. |
-| **global** | `./install.sh --global` | The **per-user plugin** (`vibe@vibe`): the portable, stateless surface only — both skills plus the doctrine hook — in **every** repo. Needs the `claude` CLI. |
+| **local** (default) | `./install.sh <repo>` | The full **stateful** kit at the resolved root: the `spec`, `using-spec` and `vibe` skills, the engine, and the native surface of every configured host. For Claude Code that is `/flow` plus the hooks wired via `.claude/settings.json`. |
+| **global** | `./install.sh --global` | The **per-user skills**: `spec`, `using-spec` and `vibe` installed into each selected host's own user-level skills dir (Claude `~/.claude/skills`, Codex `~/.codex/skills`, Droid `~/.factory/skills`, OpenCode `~/.config/opencode/skills`) plus one shared `~/.agents/AGENTS.md` block. No host CLI needed, and re-running it changes nothing. It also reports the `vibe-spec` binary status (absent by default — see [The `vibe-spec` binary](#the-vibe-spec-binary)); `--build-spec-bin` builds and installs it. `--host <claude\|codex\|droid\|opencode\|all>` overrides detection; `--plugin` also installs the Claude plugin for its doctrine hook. |
 
 ```bash
 ./install.sh <repo> --only spec       # the spec framework alone
@@ -123,13 +123,24 @@ inverts every host, regardless of `--platform`.
 
 #### The `vibe-spec` binary
 
-`/spec validate` and the spec hooks run `vibe-spec`. `install.sh` does not ship
-the binary yet; build it from a clone:
+`/spec validate`, `vibe-spec root` and the spec hooks call the `vibe-spec`
+binary. A plain install does **not** ship it (no release artifacts exist yet), so
+`./install.sh --global` prints its status instead of pretending the skill set is
+complete. Two ways to get it:
 
 ```bash
-cargo install --locked --path crates/vibe-spec
-vibe-spec --version
+./install.sh --global --build-spec-bin      # build from this checkout, install to ~/.local/bin
+cargo install --locked --path crates/vibe-spec   # from a clone
+vibe-spec --version                              # confirm which binary you got
 ```
+
+`--bin-dir DIR` puts it somewhere else; the installer prints a note when that
+directory is not on PATH (it never edits a shell profile). Without the binary the
+harness still runs: the `spec` skill reports the absence and falls back to the
+bundled bash scripts, which validate a **flat legacy** root only. A layered
+`docs/spec/` tree cannot be validated at all — the skill says so in its finish
+line rather than claiming a pass. `doctor.sh` reports the same status as
+`tool.vibe-spec`, and `install.sh` never fails because the binary is missing.
 
 ### spec — the planning layer
 
@@ -225,8 +236,8 @@ your-repo/                     # after install
 Each host surface appears only when that host was configured — a Claude-only
 install writes `.claude/` and nothing under `.opencode/`, `plugins/`, or
 `factory-plugin/`. In **this** repo the canonical halves live at
-[`spec/`](spec/) and [`flow/`](flow/); `.agents/skills/{spec,vibe}` are
-compatibility symlinks.
+[`spec/`](spec/) and [`flow/`](flow/); `.agents/skills/{spec,using-spec,vibe}` are
+compatibility symlinks (three sibling skill dirs, `using-spec` never nested).
 
 ## Tests
 
@@ -361,19 +372,60 @@ configured host. Paths below are relative to the installed root.
 
 | Host | Start the flow workflow | Skills live at | Wired per host |
 |---|---|---|---|
-| **Claude Code** | `/flow` — native project command (`.claude/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `.claude/skills/{spec,vibe}` | All hooks, via `.claude/settings.json`. |
-| **OpenCode** | `/flow` — native project command (`.opencode/commands/flow.md`) | `.agents/skills/{spec,vibe}` | No hook integration. |
-| **Codex** | Skill invocation only — `$vibe` (or the skill picker `/skills`); there is no synthetic `/flow` command | `.agents/skills/{spec,vibe}` + `plugins/vibe/skills` | No hook integration; no native agent registration. |
-| **Factory Droid** | `/flow` — native project command (`factory-plugin/commands/flow.md`) | `.agents/skills/{spec,vibe}` + `factory-plugin/skills` | No hook integration; no native droid registration. |
-| **Other `AGENTS.md` readers** | Manual — the agent follows the `AGENTS.md` rules as prose | `.agents/skills/{spec,vibe}` (plain files) | No hooks, no native command. |
+| **Claude Code** | `/flow` — native project command (`.claude/commands/flow.md`) | `.agents/skills/{spec,using-spec,vibe}` + `.claude/skills/{spec,using-spec,vibe}` | All hooks, via `.claude/settings.json`. |
+| **OpenCode** | `/flow` — native project command (`.opencode/commands/flow.md`) | `.agents/skills/{spec,using-spec,vibe}` | No hook integration. |
+| **Codex** | Skill invocation only — `$vibe` (or the skill picker `/skills`); there is no synthetic `/flow` command | `.agents/skills/{spec,using-spec,vibe}` + `plugins/vibe/skills` | No hook integration; no native agent registration. |
+| **Factory Droid** | `/flow` — native project command (`factory-plugin/commands/flow.md`) | `.agents/skills/{spec,using-spec,vibe}` + `factory-plugin/skills` | No hook integration; no native droid registration. |
+| **Other `AGENTS.md` readers** | Manual — the agent follows the `AGENTS.md` rules as prose | `.agents/skills/{spec,using-spec,vibe}` (plain files) | No hooks, no native command. |
 | **Bare git / any editor** | — (spec framework only) | — | `docs/spec/` docs, templates, `vibe-spec`. |
 
 The **spec** workflow is skill-invoked on every host (the skill is
 user-invocable, so hosts that list skills as commands offer it as `/spec`). Hooks are **Claude Code-only** in this slice: OpenCode, Codex,
 and Factory Droid get skills and a workflow entry point, not per-turn inject,
 guard, or stop-gate wiring — and no host gets native agent/droid registration.
+(The `vibe` store hook below is separate and covers all four harnesses.)
 The install summary reports a host's hooks only when their wiring actually
 installed. Budgeted instruction injection (`instruct`) remains ⏳ planned.
+
+## Global store
+
+`vibe` (crate `crates/vibe`) keeps one user-level store and projects it into Claude Code, Codex, OpenCode and Factory droid. Decision: [D48](docs/spec/decisions/d48-global-store-and-projection.md); tech note: [`cli-store.md`](docs/spec/tech/cli/cli-store.md).
+
+```bash
+vibe install [--harness claude,codex] [--dry-run]   # store init, one SessionStart hook per detected harness, OpenCode plugin, then sync
+vibe store import-mcp ~/old/mcp.json                # merge servers; secrets become ${VIBE_<SERVER>_<FIELD>}
+vibe sync [--dry-run] [--json]                      # full projection, including Claude MCP via `claude mcp add-json`
+vibe store status                                   # per-harness drift, skips, conflicts
+vibe uninstall [--dry-run]                          # reverse exactly what vibe created; the store stays
+```
+
+Store layout (`~/.config/vibe/`):
+
+```text
+store.json   # harness switches, extra skill sources
+AGENTS.md    # root instructions, the single source
+mcp.json     # {"mcpServers":{...}}
+skills/      # one dir per skill, each with SKILL.md
+```
+
+`install` wires the harnesses it detects (configuration directory present, or its CLI `claude`, `codex`, `opencode`, `droid` on `PATH`); an undetected one gets a note, and `--harness <id>` forces it. Without the `claude` CLI, `install` and `sync` skip the Claude MCP step with one note and exit 0; after you install the CLI, run `vibe sync` once to project MCP.
+
+After install, every harness session start re-projects the store. When something changed, the hook prints one notice line: a `{"systemMessage":"vibe: …"}` JSON line for Claude, Codex and Factory (shown to you), plain text for OpenCode. The hook never injects instruction content and always exits 0. Claude MCP changes need `vibe sync`; until you run it, every session start repeats the notice, and `vibe store status` shows `claude mcp: out of date`. vibe changes only its own marker blocks and the entries it recorded in `state.json`; everything else survives install, sync and uninstall.
+
+**Secrets.** vibe never writes a secret it detects on import. Keep API keys in your environment and reference them as `${NAME}` placeholders in `mcp.json`; `store import-mcp` does the replacement and prints variable names only (`--keep-literals` opts out). An env secret of a valid key `K` becomes `${K}` only when the name is unreserved in the store/input and earlier allocations; otherwise it gets a collision-free `${VIBE_<SERVER>_<FIELD>}` name. Credentials remain independently named across servers, even when their literal values match. Codex stdio cannot rename env variables: import warns and Codex skips an applicable server whose placeholder name differs from its env key. Headers and URLs get server-qualified names. Literals you write into `mcp.json` yourself are projected as written, with a `literal secret-looking value projected` note. URL userinfo is never rewritten and always warns.
+
+Projection allows intentionally linked configuration roots and internal directory links. It refuses symlinked target files and descendant paths that escape the resolved root or cross dangling links. Linked read-only store inputs remain supported.
+
+A heartbeat keeps the exclusive projection lock fresh during CLI work. Age alone does not prove its holder stopped. If a crash leaves a lock, `vibe doctor` identifies it; independently verify the holder stopped, then remove that exact lock file and retry.
+
+| Variable | Effect |
+|---|---|
+| `VIBE_STORE` | the whole global root (default `~/.config/vibe`): the store files and what later CLI slices keep beside them |
+| `VIBE_STATE` | state dir (default `~/.local/state/vibe`) |
+| `VIBE_TOOLKIT` | directory holding vibe's own skills, added as a skill source by `install` |
+| `VIBE_SPEC_BIN` | `vibe-spec` binary used by `vibe spec …` |
+
+Known limits: Windows skills links are skipped; a Codex `config.toml` with a root inline `mcp_servers = {…}` gets no vibe MCP block.
 
 ## Documentation
 

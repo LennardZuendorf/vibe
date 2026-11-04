@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Vibe store v1",
+  "description": "The JSON files of the vibe global store and its projection state, and the answer of `vibe sync --json`: store.json, mcp.json, state.json and the sync output. The validator subset has no map schemas, so keys chosen by the user or by vibe (harness ids, MCP server names, target keys) are typed only as objects; the Rust reader holds the per-key rules.",
+  "x-vibe-compat": "additive-within-major; readers-ignore-unknown-fields",
+  "$defs": {
+    "store": {
+      "type": "object",
+      "required": ["v"],
+      "properties": {
+        "v": { "const": 1 },
+        "harnesses": { "type": "object", "description": "Harness id to {\"enabled\": boolean}. Unknown harness ids are ignored. A harness not listed keeps its default." },
+        "skills": { "$ref": "#/$defs/store-skills" }
+      }
+    },
+    "store-skills": {
+      "type": "object",
+      "properties": {
+        "sources": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "Extra skill source directories; a leading ~ expands to the home directory." }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "required": ["mcpServers"],
+      "description": "The canonical MCP server list. This file carries no \"v\".",
+      "properties": {
+        "mcpServers": { "type": "object", "description": "Server name to server object (type stdio|http, command, args, env, url, headers, enabled, harnesses)." }
+      }
+    },
+    "state": {
+      "type": "object",
+      "required": ["v", "store_hash", "targets", "owned"],
+      "properties": {
+        "v": { "const": 1 },
+        "store_hash": { "type": "string", "pattern": "^([0-9a-f]{16})?$", "description": "Store hash of the last fully successful run; empty when no run has fully succeeded yet (a partial failure on a fresh install still saves the state)." },
+        "mcp_hash": { "type": "string", "pattern": "^([0-9a-f]{16})?$", "description": "Hash of mcp.json at the last fully successful run." },
+        "targets": { "type": "object", "description": "Target key (a free string such as codex:mcp) to {\"hash\": 16 lowercase hex} vibe last wrote there." },
+        "owned": { "$ref": "#/$defs/owned" }
+      }
+    },
+    "owned": {
+      "type": "object",
+      "properties": {
+        "mcp": { "type": "object", "description": "claude: server name to the canonical JSON vibe added; every other harness id: array of owned server names." },
+        "hooks": { "type": "object", "description": "Harness id to the hook command vibe wrote." },
+        "plugins": { "type": "object", "description": "Harness id to the plugin path vibe wrote." },
+        "links": { "type": "array", "items": { "$ref": "#/$defs/owned-link" } },
+        "created": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "Paths vibe created, sorted." }
+      }
+    },
+    "owned-link": {
+      "type": "object",
+      "required": ["path", "target"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "minLength": 1 }
+      }
+    },
+    "sync": {
+      "type": "object",
+      "required": ["v", "dry_run", "changes", "notes", "failed"],
+      "properties": {
+        "v": { "const": 1 },
+        "dry_run": { "type": "boolean" },
+        "changes": { "type": "array", "items": { "type": "string" }, "description": "One line per applied item, in the stable text grammar." },
+        "notes": { "type": "array", "items": { "type": "string" }, "description": "kept/skip/refused/note lines." },
+        "failed": { "type": "array", "items": { "type": "string" }, "description": "One entry per failed item; non-empty means exit code 1." }
+      }
+    }
+  }
+}

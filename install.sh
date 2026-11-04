@@ -4,8 +4,10 @@
 #   ./install.sh                 # single command: default to THIS repo; on a TTY,
 #                                #   ask local vs global first.
 #   ./install.sh <repo>          # local: full vibe into <repo> (explicit target).
-#   ./install.sh --global        # per-user plugin (spec + vibe skills + doctrine,
-#                                #   applies across every repo) via the claude CLI.
+#   ./install.sh --global        # per-user install: spec + using-spec + vibe into
+#                                #   every detected host's user-level skills dir (Claude,
+#                                #   Codex, Droid, OpenCode) + one shared user-level
+#                                #   AGENTS.md block.
 #   ./install.sh --with-plugins  # also offer companion plugins (superpowers, …).
 #
 # No checkout required — run straight from the web (installs into the current repo):
@@ -15,7 +17,7 @@
 #
 # LOCAL install (copy the platform-neutral core; merge the instruction file with
 # markers; never blind-overwrite user content):
-#   1. Copy the core   .agents/skills/{spec,vibe} (skills + vibe flow engine).
+#   1. Copy the core   .agents/skills/{spec,using-spec,vibe} (skills + vibe flow engine).
 #   2. Copy the Claude adapter   .claude/commands + .claude/hooks/*.sh scripts.
 #   3. Wire the flow hooks into   .claude/settings.json (merge, never clobber).
 #   3b. Deploy the SELECTED native host surfaces (--platform, else the host CLIs
@@ -32,13 +34,38 @@
 #   8. Report the configured hosts + entry points, that hooks are live (Claude
 #      Code only, and only when wired), and that /flow is a native command.
 #
-# GLOBAL install installs the per-user vibe plugin (marketplace add + plugin
-# install) so the skills + doctrine apply everywhere; the full STATEFUL flow
+# GLOBAL install places the three shipped skills (`spec`, `using-spec`, `vibe`) —
+# each its OWN sibling skill dir, never nested one inside another (vibe#71
+# sub-gap 3: OpenCode documents `skills/*/SKILL.md`) — in each selected host's
+# OWN user-level skills directory, so a user of Codex, Droid or OpenCode no longer
+# has to hand-copy trees out of `git archive` (vibe#71), and maintains ONE shared
+# user-level AGENTS.md block (tracked template, marker-delimited, appended once).
+# No host CLI is required: the payload is files. The optional Claude plugin
+# (`--plugin`) stays available for the per-user doctrine hook, but is off by
+# default — it would load the same skills a second time. The full STATEFUL flow
 # (cursor, /flow, hooks) is a per-repo `--local` install.
+#
+# The `vibe-spec` BINARY is NOT part of a plain install (vibe#71 sub-gap 4): the
+# `spec` skill shells out to it, and no release artifact exists for it, so a
+# global install REPORTS its status (present / absent + what still works) instead
+# of pretending the skill set is complete. `--build-spec-bin` opts into building
+# it from this checkout with cargo and installing it into a user-owned bin dir.
 #
 # Flags:
 #   --local            full per-repo install into the target (the default).
-#   --global           per-user plugin install via the claude CLI.
+#   --global           per-user install: spec + using-spec + vibe into each
+#                      selected host's user-level skills dir, plus the shared
+#                      AGENTS.md block.
+#   --host LIST        hosts for --global, comma-separated or `all`:
+#                      claude, codex, droid, opencode. Default: detect a host when
+#                      its CLI is on PATH or its user-level config dir exists.
+#                      Same selector vocabulary as --platform (last one wins).
+#   --plugin           (with --global) ALSO install the Claude plugin at user scope
+#                      for its doctrine hook. Needs the `claude` CLI.
+#   --build-spec-bin   (with --global) build the `vibe-spec` binary from this
+#                      checkout (needs cargo) and install it into --bin-dir.
+#   --bin-dir DIR      where --build-spec-bin puts `vibe-spec`
+#                      (default: $HOME/.local/bin).
 #   --with-plugins     also install companion plugins (superpowers; feature-dev slot).
 #   --only spec|flow   install (or uninstall) a single half (default: both).
 #   --platform LIST    native host surfaces to configure, comma-separated:
@@ -622,19 +649,24 @@ skill_present() {
   [[ -e "$TARGET/.agents/skills/$1" ]] && return 0
   case "$1" in
     spec) [[ "$WANT_SPEC" -eq 1 ]] && return 0 ;;
+    using-spec) [[ "$WANT_SPEC" -eq 1 ]] && return 0 ;;
     vibe) [[ "$WANT_FLOW" -eq 1 ]] && return 0 ;;
   esac
   return 1
 }
 
-# deploy_package HOST PKG — copy a host package directory into the target,
-# REWRITING every skill symlink inside it so it resolves against the target's own
-# core (.agents/skills/<name>) instead of the source checkout's top-level spec/ +
-# flow/ — which a target does not have, so a verbatim copy would dangle. A link
-# whose skill was not installed at all (--only flow has no spec half) is skipped
-# rather than deployed dangling. Records one action per created file and per
-# created link; in dry-run it reports each planned path instead. Enumerated
-# WITHOUT following symlinks, so the rewrite never walks into the real skill tree.
+# deploy_package HOST PKG — copy a host package directory into the target and
+# LINK its skills to the target's own core (.agents/skills/<name>).
+#
+# The package ships REAL skill dirs (build-plugin.sh materializes them, because
+# `codex plugin add` and `droid plugin install` DROP a symlinked dir from their
+# per-user cache — vibe#71), but a repo-scoped install must not fork a second
+# copy of a skill into the target: the target's own .agents/skills/<name> is the
+# copy the flow updates, and it is what every other host surface points at. So
+# the skills/ subtree is pruned from the file copy and re-created as the same
+# relative symlink this package used to carry, keeping the skip-on-missing-half,
+# collision and ownership semantics unchanged. Enumerated WITHOUT following
+# symlinks, so the copy never walks into a real skill tree.
 deploy_package() {
   local host="$1" pkg="$2" src="$SRC/$2" f l rel dst name d want reason
   if [[ ! -d "$src" ]]; then
@@ -644,10 +676,11 @@ deploy_package() {
   while IFS= read -r f; do
     rel="${f#"$src"/}"
     deploy_file "$host" "$f" "$pkg/$rel"
-  done < <(find "$src" -type f 2>/dev/null)
+  done < <(find "$src" -path "$src/skills" -prune -o -type f -print 2>/dev/null)
   while IFS= read -r l; do
-    rel="${l#"$src"/}"
-    name="$(basename "$rel")"
+    [[ -n "$l" ]] || continue
+    name="$(basename "$l")"
+    rel="skills/$name"
     d="$(dirname "$pkg/$rel")"
     want="$(rel_up "$(count_components "$d")").agents/skills/$name"
     dst="$TARGET/$pkg/$rel"
@@ -704,7 +737,7 @@ deploy_package() {
     mkdir -p "$(dirname "$dst")"
     ln -s "$want" "$dst"
     record_action "$host" symlink "$pkg/$rel" "$want"
-  done < <(find "$src" -type l 2>/dev/null)
+  done < <(find "$src/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
 }
 
 # remove_host_file REL — remove one recorded vibe artifact. Never a directory:
@@ -765,8 +798,10 @@ dry_remove_rel() {
 # remove_host_package PKG — the per-file inverse of deploy_package. Removes the
 # files the SOURCE package ships (never a path the source lacks, which is how a
 # user's co-located file survives), and removes a skill link only while it is a
-# symlink still pointing at the rewrite deploy_package created — a user's real
-# directory, or a link they aimed elsewhere, is never touched. Then prunes dirs
+# symlink still pointing at the target-relative path deploy_package created — a
+# user's real directory, or a link they aimed elsewhere, is never touched. The
+# skills/ subtree is skipped in the file pass for the same reason deploy_package
+# skips it: it is a link to the target's own core, not a copy. Then prunes dirs
 # this emptied. In dry-run it removes nothing and prints the paths it would. A
 # package dir that resolves outside the target (a symlink to a shared copy) is
 # left whole with a warning, and so is any file behind a symlinked subdirectory.
@@ -784,30 +819,32 @@ remove_host_package() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
     while IFS= read -r f; do
       dry_remove_rel "${f#"$SRC"/}"
-    done < <(find "$src" -type f 2>/dev/null)
+    done < <(find "$src" -path "$src/skills" -prune -o -type f -print 2>/dev/null)
     while IFS= read -r l; do
-      rel="${l#"$src"/}"
-      name="$(basename "$rel")"
+      [[ -n "$l" ]] || continue
+      name="$(basename "$l")"
+      rel="skills/$name"
       d="$(dirname "$pkg/$rel")"
       want="$(rel_up "$(count_components "$d")").agents/skills/$name"
       dst="$TARGET/$pkg/$rel"
       if [[ -L "$dst" && "$(readlink "$dst")" == "$want" ]]; then dry_remove_rel "$pkg/$rel"; fi
-    done < <(find "$src" -type l 2>/dev/null)
+    done < <(find "$src/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
     return 0
   fi
   [[ -d "$TARGET/$pkg" ]] || return 0
   while IFS= read -r f; do
     rel="${f#"$src"/}"
     if target_owned "$pkg/$rel"; then rm -f "$TARGET/$pkg/$rel"; fi
-  done < <(find "$src" -type f 2>/dev/null)
+  done < <(find "$src" -path "$src/skills" -prune -o -type f -print 2>/dev/null)
   while IFS= read -r l; do
-    rel="${l#"$src"/}"
-    name="$(basename "$rel")"
+    [[ -n "$l" ]] || continue
+    name="$(basename "$l")"
+    rel="skills/$name"
     d="$(dirname "$pkg/$rel")"
     want="$(rel_up "$(count_components "$d")").agents/skills/$name"
     dst="$TARGET/$pkg/$rel"
     if [[ -L "$dst" && "$(readlink "$dst")" == "$want" ]] && target_owned "$pkg/$rel"; then rm -f "$dst"; fi
-  done < <(find "$src" -type l 2>/dev/null)
+  done < <(find "$src/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
   prune_empty "$TARGET/$pkg"
 }
 
@@ -874,43 +911,369 @@ install_companion_plugins() {
   done
 }
 
-# ── global (per-user plugin) install ───────────────────────────────────────────
-# Install the vibe plugin at user scope so its spec + vibe skills and the doctrine
-# hook apply in every vibe-enabled repo. The full STATEFUL flow stays a per-repo
-# --local install. Respects --dry-run and degrades without the claude CLI.
+# ── global (per-user skills + shared instruction block) install ───────────────
+# vibe#71 sub-gap 2: this path used to be Claude-only (it shelled out to
+# `claude plugin install` and wrote nothing else), so a Codex, Droid or OpenCode
+# user had to hand-copy skill trees out of `git archive`. It now writes the two
+# skills into each selected host's OWN user-level skills directory and maintains
+# one shared user-level AGENTS.md block. Files only — no host CLI required.
+
+# The marker pair around the shared user-level AGENTS.md block. The block is
+# rewritten IN PLACE between the markers, so a re-run can neither duplicate nor
+# reorder it, and everything outside them stays user-owned.
+GLOBAL_MARK_START='<!-- vibe:global:start -->'
+GLOBAL_MARK_END='<!-- vibe:global:end -->'
+# The block ships as a TRACKED template (never as a file named AGENTS.md at a
+# path this installer writes blindly): the markers live inside it.
+GLOBAL_TEMPLATE="flow/reference/templates/agents-global.md"
+
+# global_host_root HOST — a host's per-user config root. Each is the user-scope
+# mirror of that host's project-level root in flow/reference/host-surfaces.json
+# (`claude` -> .claude, `opencode` -> .config/opencode, ...). The documented env
+# override wins where the host has one, so a relocated install still lands right.
+global_host_root() {
+  case "$1" in
+    claude)   printf '%s' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" ;;
+    codex)    printf '%s' "${CODEX_HOME:-$HOME/.codex}" ;;
+    droid)    printf '%s' "${FACTORY_HOME:-$HOME/.factory}" ;;
+    opencode) printf '%s' "${XDG_CONFIG_HOME:-$HOME/.config}/opencode" ;;
+    *) return 1 ;;
+  esac
+}
+
+# global_skills_dir HOST — where that host discovers USER-level skills.
+# OpenCode deliberately gets `~/.config/opencode/skills` (its own documented
+# global root), NOT the shared `~/.agents/skills`: the point of this path is that
+# each host's discovery is real and checkable on its own, and `~/.agents` is
+# already the tree the #71 workaround puts hand-copies in.
+global_skills_dir() { printf '%s/skills' "$(global_host_root "$1")"; }
+
+# global_host_detected HOST — the default global selection: the host's CLI is on
+# PATH, or its user-level config dir already exists (a user who installed the CLI
+# but has it off PATH still gets their skills). Never guessed from another host.
+global_host_detected() {
+  local host="$1" root
+  command -v "$host" >/dev/null 2>&1 && return 0
+  root="$(global_host_root "$host")" || return 1
+  [[ -n "$root" && -d "$root" ]]
+}
+
+detect_global_hosts() {
+  local h found=""
+  for h in ${HOST_IDS[@]+"${HOST_IDS[@]}"}; do
+    global_host_detected "$h" || continue
+    found="${found:+$found,}$h"
+  done
+  printf '%s' "$found"
+}
+
+# global_stage_skill NAME STAGE_DIR — copy the SHIPPED tree of skill NAME into
+# STAGE_DIR/NAME, scrubbed exactly as a repo install scrubs it (co-located tests
+# at any depth, the contributor AGENTS.md, source-side evidence/warnings.log) and
+# minus the source checkout's runtime cursor. Nothing is written to the target
+# here: the caller compares first, so an unchanged install touches no file.
+global_stage_skill() {
+  local name="$1" stage="$2" src="$SRC/.agents/skills/$1"
+  [[ -f "$src/SKILL.md" ]] || return 1
+  cp -RpL "$src" "$stage/" || return 1
+  scrub_source_only "$src" "$stage/$name"
+  rm -f "$stage/$name/state.json"
+  # Flatten (vibe#71 sub-gap 3): `using-spec` is installed as its own sibling
+  # skill dir, so the copy nested inside the spec tree must not ship a second
+  # time — a duplicate registers the same skill twice on a host that walks the
+  # tree recursively, and a single-level scan (OpenCode's documented
+  # `skills/*/SKILL.md`) would miss it anyway.
+  rm -rf "$stage/${name:?}/using-spec"
+  return 0
+}
+
+# global_tree_matches STAGED DEST — content-identical? A missing DEST is a
+# mismatch. Content is the criterion (the suite hashes it); modes come from the
+# staged copy when the tree is written.
+global_tree_matches() {
+  [[ -d "$2" ]] || return 1
+  diff -r "$1" "$2" >/dev/null 2>&1
+}
+
+# install_global_skill HOST NAME — install one skill for one host, idempotently.
+install_global_skill() {
+  local host="$1" name="$2" dir dest stage
+  dir="$(global_skills_dir "$host")" || return 1
+  dest="$dir/$name"
+  stage="$(mktemp -d "${TMPDIR:-/tmp}/vibe-global.XXXXXX")" || return 1
+  if ! global_stage_skill "$name" "$stage"; then
+    rm -rf "$stage"
+    err "WARN: could not stage the '$name' skill for $host; skipping."
+    return 1
+  fi
+  if global_tree_matches "$stage/$name" "$dest"; then
+    note "already installed: $name -> $dest ($host, unchanged)"
+    rm -rf "$stage"
+    return 0
+  fi
+  say "install the $name skill -> $dest ($host)"
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    mkdir -p "$dir"
+    rm -rf "${dest:?}"
+    if ! cp -Rp "$stage/$name" "$dest"; then
+      rm -rf "$stage"
+      err "WARN: could not install the '$name' skill for $host (under $dir)."
+      return 1
+    fi
+  fi
+  rm -rf "$stage"
+  return 0
+}
+
+# install_global_agents_block — maintain the shared user-level AGENTS.md block.
+# Appended once between the marker pair; on a re-run the region between the
+# markers is REWRITTEN IN PLACE from the tracked template, so it is never
+# duplicated, never reordered, and a run whose result is byte-identical writes
+# nothing at all. Everything outside the markers is left exactly as it was.
+install_global_agents_block() {
+  local file tpl tmp
+  file="$(global_agents_file)"
+  tpl="$SRC/$GLOBAL_TEMPLATE"
+  if [[ ! -f "$tpl" ]]; then
+    err "WARN: the global AGENTS.md template is missing ($tpl); skipping the shared block."
+    return 1
+  fi
+  # An unterminated marker is ambiguous: never guess where the block ended.
+  if [[ -f "$file" ]] && grep -qF "$GLOBAL_MARK_START" "$file" && ! grep -qF "$GLOBAL_MARK_END" "$file"; then
+    err "WARN: $file has an unterminated vibe:global block — leaving it alone; close it by hand."
+    return 1
+  fi
+  tmp="$(mktemp "${TMPDIR:-/tmp}/vibe-global-agents.XXXXXX")" || return 1
+  # A missing file is the "create it" case: awk reads /dev/null and the END rule
+  # still emits the block, so no branch is needed here.
+  local input="$file"
+  [[ -f "$file" ]] || input=/dev/null
+  awk -v start="$GLOBAL_MARK_START" -v end="$GLOBAL_MARK_END" -v body="$tpl" '
+    function emit(   line) {
+      while ((getline line < body) > 0) print line
+      close(body)
+      done = 1
+    }
+    {
+      if ($0 == start) { if (!done) emit(); inblock = 1; next }
+      if (inblock) { if ($0 == end) inblock = 0; next }
+      print
+      last = $0
+    }
+    END { if (!done) { if (last != "") print ""; emit() } }
+  ' "$input" > "$tmp" || { rm -f "$tmp"; err "WARN: could not compose the shared AGENTS.md block."; return 1; }
+  if [[ -f "$file" ]] && cmp -s "$tmp" "$file"; then
+    note "already installed: shared AGENTS.md block -> $file (unchanged)"
+    rm -f "$tmp"
+    return 0
+  fi
+  say "maintain the shared AGENTS.md block -> $file"
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    mkdir -p "$(dirname "$file")"
+    # `cat >` (not `mv`) so an existing file keeps its mode and a new one gets
+    # the invoking user's umask — the block never lands 0600 or root-owned.
+    cat "$tmp" > "$file"
+  fi
+  rm -f "$tmp"
+  return 0
+}
+
+# global_agents_file — the ONE shared user-level instruction file. The hosts each
+# read their own (Claude `~/.claude/CLAUDE.md`, Codex `~/.codex/AGENTS.md`, Droid
+# `~/.factory/AGENTS.md`, OpenCode `~/.config/opencode/AGENTS.md`), so vibe keeps
+# a single host-neutral block here and prints the include lines; writing into a
+# host's own memory file would clobber user prose the installer does not own.
+global_agents_file() { printf '%s/AGENTS.md' "$HOME/.agents"; }
+
+# ── the vibe-spec binary (vibe#71 sub-gap 4) ───────────────────────────────────
+# The shipped `spec` skill shells out to `vibe-spec` (root, validate, promote,
+# check-drift). install.sh ships SKILL FILES, and a global-install user has no
+# checkout to `cargo build` in, so the honest contract is:
+#
+#   - a plain `--global` REPORTS the binary's status and never fails on it: an
+#     absent binary degrades the spec skill (flat legacy roots still validate
+#     through the bundled bash scripts), it does not break the install;
+#   - `--build-spec-bin` OPTS INTO the real thing: cargo-build from this
+#     checkout and copy the artifact into a user-owned bin dir (~/.local/bin),
+#     noting when that dir is not on PATH — install.sh never edits a shell
+#     profile.
+#
+# REJECTED: fetching prebuilt release artifacts with a pinned checksum. That
+# needs published per-platform release assets (a release action this installer
+# cannot take on its own) and it would ship a binary nothing in the repo can
+# rebuild reproducibly per target today. Recorded in the PR body, not here.
+
+# vibe_spec_on_path — the `vibe-spec` an agent would actually run: the documented
+# $VIBE_SPEC_BIN override first (the same variable spec/hooks/run-hook.sh reads),
+# then PATH. Prints its path; fails when there is none.
+vibe_spec_on_path() {
+  # -f AND -x: `[[ -x ]]` alone is true for a DIRECTORY, and a directory at
+  # $VIBE_SPEC_BIN made this report an install that does not exist. `command -v`
+  # already requires a regular executable.
+  if [[ -n "${VIBE_SPEC_BIN:-}" && -f "${VIBE_SPEC_BIN}" && -x "${VIBE_SPEC_BIN}" ]]; then
+    printf '%s\n' "$VIBE_SPEC_BIN"
+    return 0
+  fi
+  command -v vibe-spec 2>/dev/null
+}
+
+# vibe_spec_checkout_build — this checkout's own build artifact, if one exists
+# (release preferred). CARGO_TARGET_DIR wins, so a user with a redirected target
+# dir is told about the binary they actually have.
+vibe_spec_checkout_build() {
+  local tdir="${CARGO_TARGET_DIR:-$SRC/target}"
+  if [[ -f "$tdir/release/vibe-spec" && -x "$tdir/release/vibe-spec" ]]; then
+    printf '%s\n' "$tdir/release/vibe-spec"
+    return 0
+  fi
+  if [[ -f "$tdir/debug/vibe-spec" && -x "$tdir/debug/vibe-spec" ]]; then
+    printf '%s\n' "$tdir/debug/vibe-spec"
+    return 0
+  fi
+  return 1
+}
+
+# vibe_spec_bin_dir_copy — the copy a previous --build-spec-bin left in the user
+# bin dir. It is not on PATH (the installer never edits a profile), but on a
+# second run it is the thing the user should add, not this checkout's target/.
+vibe_spec_bin_dir_copy() {
+  local candidate="${BIN_DIR:-$HOME/.local/bin}/vibe-spec"
+  [[ -f "$candidate" && -x "$candidate" ]] || return 1
+  printf '%s\n' "$candidate"
+}
+
+# spec_bin_status — one report line, and the degradation paragraph when absent.
+# Never returns non-zero: this is a report, not a gate.
+spec_bin_status() {
+  local found
+  if found="$(vibe_spec_on_path)"; then
+    note "vibe-spec: installed ($found)"
+    return 0
+  fi
+  if found="$(vibe_spec_bin_dir_copy)"; then
+    note "vibe-spec: installed ($found, not on PATH — add $(dirname "$found") to PATH)"
+    return 0
+  fi
+  if found="$(vibe_spec_checkout_build)"; then
+    note "vibe-spec: built in this checkout but NOT on PATH — add $(dirname "$found") to PATH"
+    return 0
+  fi
+  err "vibe-spec: NOT installed — the spec skill's binary commands (root, validate,"
+  err "  promote, init) are unavailable. What still works: the bundled scripts beside"
+  err "  the skill validate a FLAT legacy root only (bash <skill>/scripts/validate.sh);"
+  err "  a layered docs/spec/ tree cannot be validated at all."
+  err "  To install it: re-run with --build-spec-bin (needs cargo), or from a clone:"
+  err "    cargo install --locked --path crates/vibe-spec"
+  return 0
+}
+
+# build_spec_bin — cargo build the binary and copy it into the user bin dir.
+# Every failure is a WARN (+ a non-zero return the caller may ignore): a build
+# that cannot run must leave the documented degradation in place, not abort an
+# install that has already written the skills.
+build_spec_bin() {
+  local bin_dir="${BIN_DIR:-$HOME/.local/bin}"
+  local tdir="${CARGO_TARGET_DIR:-$SRC/target}"
+  local dest="$bin_dir/vibe-spec" artifact="$tdir/release/vibe-spec"
+  if ! command -v cargo >/dev/null 2>&1; then
+    err "WARN: --build-spec-bin needs cargo on PATH — skipping the build (skills degrade as reported below)."
+    return 1
+  fi
+  if [[ ! -f "$SRC/Cargo.toml" || ! -d "$SRC/crates/vibe-spec" ]]; then
+    err "WARN: no crates/vibe-spec in this tree — nothing to build (skills degrade as reported below)."
+    return 1
+  fi
+  # Never clobber a file at that path that is demonstrably not ours.
+  if [[ -e "$dest" ]] && ! "$dest" --version 2>/dev/null | grep -q 'vibe-spec'; then
+    err "WARN: $dest exists and is not a vibe-spec binary — leaving it alone."
+    return 1
+  fi
+  say "build vibe-spec (cargo build --release -p vibe-spec) and install it to $dest"
+  [[ "$DRY_RUN" -eq 1 ]] && return 0
+  if ! ( cd "$SRC" && cargo build --release -p vibe-spec ); then
+    err "WARN: cargo build failed — vibe-spec not installed (skills degrade as reported below)."
+    return 1
+  fi
+  if [[ ! -f "$artifact" ]]; then
+    err "WARN: cargo reported success but $artifact is missing — not installed."
+    return 1
+  fi
+  if ! mkdir -p "$bin_dir" || ! cp "$artifact" "$dest" || ! chmod 755 "$dest"; then
+    err "WARN: could not install $dest (is $bin_dir writable?) — not installed."
+    return 1
+  fi
+  note "vibe-spec: installed ($dest, $("$dest" --version 2>/dev/null || echo 'version unknown'))"
+  # PATH is the user's to change: a profile edit here would be a guess about
+  # their shell, and install.sh never touches one.
+  case ":$PATH:" in
+    *":$bin_dir:"*) ;;
+    *) err "note: $bin_dir is not on PATH — add it (export PATH=\"$bin_dir:\$PATH\") and restart the host CLI." ;;
+  esac
+  return 0
+}
+
 install_global() {
-  local have_claude=0
-  command -v claude >/dev/null 2>&1 && have_claude=1
-  # A dry-run never touches anything, so it prints the plan even without the CLI. A
-  # REAL global install needs the claude CLI to add the marketplace + install.
-  if [[ "$DRY_RUN" -eq 0 && "$have_claude" -eq 0 ]]; then
-    err "ERROR: --global needs the 'claude' CLI on PATH (it installs the vibe plugin per-user)."
-    err "       Install Claude Code, or run a per-repo install: ./install.sh <repo> --local"
+  local hosts h rc=0 built=0
+  # Every write lands under $HOME, so it must belong to the invoking user. Root
+  # would leave files the user cannot edit or remove.
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    err "ERROR: --global installs into \$HOME and must not run as root (the files would be root-owned)."
+    err "       Run it as yourself; a shared/system-wide install is out of scope."
     exit 1
   fi
-  # Marketplace source: the local checkout normally, the GitHub slug when this
-  # tree came from the curl bootstrap — that tree is a temp dir the bootstrap's
-  # EXIT trap removes, so registering it would point a marketplace at nothing
-  # (and `curl … | bash -s -- --global` is a documented path).
-  local market="$SRC"
-  if [[ "${VIBE_BOOTSTRAPPED:-0}" == "1" ]]; then market="$VIBE_REPO"; fi
-  say "add the vibe marketplace ($market) at user scope"
-  say "install plugin vibe@vibe at user scope (applies across all your repos)"
-  if [[ "$DRY_RUN" -eq 1 && "$have_claude" -eq 0 ]]; then
-    note "(dry-run) note: the 'claude' CLI is not on PATH — a real --global run needs it."
+  if [[ -z "${HOME:-}" ]]; then
+    err "ERROR: --global needs \$HOME (it installs the skills per user)."
+    exit 1
   fi
-  if [[ "$DRY_RUN" -eq 0 ]]; then
-    claude plugin marketplace add "$market" --scope user >/dev/null 2>&1 \
-      || err "WARN: could not add the vibe marketplace (already added?); continuing."
-    if claude plugin install vibe@vibe --scope user >/dev/null 2>&1; then
-      note "installed vibe@vibe (user scope)"
+  if [[ "$PLATFORM_GIVEN" -eq 1 ]]; then
+    hosts="$PLATFORMS"
+    HOSTS_SOURCE="selected with --host/--platform"
+  else
+    hosts="$(detect_global_hosts)"
+    HOSTS_SOURCE="detected by CLI or an existing user config dir"
+  fi
+  say "install the spec + using-spec + vibe skills at user scope for ${hosts:-no host} ($HOSTS_SOURCE)"
+  # shellcheck disable=SC2086  # ${hosts//,/ } is the intended word split
+  for h in ${hosts//,/ }; do
+    install_global_skill "$h" spec || rc=1
+    install_global_skill "$h" using-spec || rc=1
+    install_global_skill "$h" vibe || rc=1
+  done
+  install_global_agents_block || rc=1
+  # The `vibe-spec` binary (vibe#71 sub-gap 4). Always REPORTED, because the spec
+  # skill's commands depend on it and a silent absence is the bug this fixes;
+  # built only when asked, and a build that cannot run must never fail the run.
+  if [[ "$BUILD_SPEC_BIN" -eq 1 ]]; then
+    if build_spec_bin; then built=1; fi
+  fi
+  if [[ "$built" -eq 0 ]]; then
+    spec_bin_status
+  fi
+  # The Claude per-user plugin stays available, but only on request: it carries
+  # the doctrine hook AND the same three skills, so a default run would load every
+  # skill twice (the duplicate-load problem #71's workaround note calls out).
+  if [[ "$WANT_PLUGIN" -eq 1 ]]; then
+    if ! command -v claude >/dev/null 2>&1; then
+      err "WARN: --plugin needs the 'claude' CLI on PATH; skipping the per-user plugin."
     else
-      err "WARN: could not install vibe@vibe — run 'claude plugin install vibe@vibe' by hand."
+      local market="$SRC"
+      if [[ "${VIBE_BOOTSTRAPPED:-0}" == "1" ]]; then market="$VIBE_REPO"; fi
+      say "add the vibe marketplace ($market) at user scope"
+      say "install plugin vibe@vibe at user scope (doctrine hook)"
+      if [[ "$DRY_RUN" -eq 0 ]]; then
+        claude plugin marketplace add "$market" --scope user >/dev/null 2>&1 \
+          || err "WARN: could not add the vibe marketplace (already added?); continuing."
+        if claude plugin install vibe@vibe --scope user >/dev/null 2>&1; then
+          note "installed vibe@vibe (user scope)"
+        else
+          err "WARN: could not install vibe@vibe — run 'claude plugin install vibe@vibe' by hand."
+        fi
+      fi
     fi
   fi
   # Per-repo home for the spec framework: seed the legacy tree in the current repo
-  # if it is a git repo with neither root (docs/spec or the legacy tree); the plugin
-  # carries the skills, each repo still needs its own spec memory. The seed is the
+  # if it is a git repo with neither root (docs/spec or the legacy tree); the skills
+  # apply across repos, each repo still needs its own spec memory. The seed is the
   # bash setup.sh until F22 retires it. The full stateful flow is a separate --local
   # install.
   if [[ -e "$TARGET/.git" && ! -d "$TARGET/docs/spec" && ! -d "$TARGET/$LEGACY_SPEC" ]]; then
@@ -923,17 +1286,23 @@ install_global() {
   [[ "$WITH_PLUGINS" -eq 1 ]] && install_companion_plugins
   if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "install: [dry-run] global plan complete — nothing was written."
-  else
-    cat <<EOF
-install: done (global / per-user plugin).
-install:   vibe@vibe is installed at user scope — its spec + vibe skills and the
-install:   SessionStart doctrine hook now apply in every vibe-enabled repo (one with
-install:   a docs/spec/ or $LEGACY_SPEC/ tree). Restart Claude Code to load it.
+    exit 0
+  fi
+  cat <<EOF
+install: done (global / per-user skills).
+install:   ${hosts:-no host} — spec + using-spec + vibe skill dirs placed in the user-level skills dir.
+install:   ${hosts:+Restart the host CLI (or reload its skills) to pick them up.}
+install:   Shared AGENTS.md block: $(global_agents_file)
+install:     each host reads its OWN instruction file, so include the block there if
+install:     you want it applied globally: ~/.claude/CLAUDE.md (Claude Code),
+install:     ~/.codex/AGENTS.md (Codex), ~/.factory/AGENTS.md (Droid),
+install:     ~/.config/opencode/AGENTS.md (OpenCode).
+install:   vibe-spec: see the status above — without it /spec validate falls back to the
+install:     bundled bash scripts (flat legacy roots only); --build-spec-bin installs it.
 install:   For the FULL stateful flow (cursor, /flow, hooks) in a repo, run:
 install:     ./install.sh <repo> --local
 EOF
-  fi
-  exit 0
+  exit "$rc"
 }
 
 # ── interactive mode prompt (bare TTY run only) ────────────────────────────────
@@ -942,7 +1311,7 @@ prompt_mode() {
   {
     echo "vibe install — choose a mode:"
     echo "  [1] local   full vibe into THIS repo ($TARGET): spec + flow + Claude adapter (default)"
-    echo "  [2] global  per-user plugin (spec + vibe skills + doctrine, every repo)"
+    echo "  [2] global  per-user plugin (spec + using-spec + vibe skills + doctrine, every repo)"
     printf 'Mode [1/2]? '
   } >&2
   read -r ans || ans=""
@@ -963,6 +1332,9 @@ UNINSTALL=0
 ASSUME_YES=0
 MODE=""
 WITH_PLUGINS=0
+WANT_PLUGIN=0
+BUILD_SPEC_BIN=0
+BIN_DIR=""
 TARGET=""
 TARGET_GIVEN=0
 ADAPTERS=""
@@ -979,12 +1351,25 @@ while [[ $# -gt 0 ]]; do
       PLATFORM_RAW="$2"; PLATFORM_GIVEN=1; shift 2 ;;
     --platform=*)
       PLATFORM_RAW="${1#*=}"; PLATFORM_GIVEN=1; shift ;;
+    --host)
+      [[ $# -ge 2 && -n "$2" ]] || { err "ERROR: --host needs a value: claude, codex, droid, opencode, or all"; exit 1; }
+      PLATFORM_RAW="$2"; PLATFORM_GIVEN=1; shift 2 ;;
+    --host=*)
+      PLATFORM_RAW="${1#*=}"; PLATFORM_GIVEN=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     --yes|-y) ASSUME_YES=1; shift ;;
     --local)  MODE=local;  shift ;;
     --global) MODE=global; shift ;;
     --with-plugins) WITH_PLUGINS=1; shift ;;
+    --plugin) WANT_PLUGIN=1; shift ;;
+    --build-spec-bin) BUILD_SPEC_BIN=1; shift ;;
+    --bin-dir)
+      [[ $# -ge 2 && -n "$2" ]] || { err "ERROR: --bin-dir needs a directory (e.g. --bin-dir \"\$HOME/.local/bin\")"; exit 1; }
+      BIN_DIR="$2"; shift 2 ;;
+    --bin-dir=*)
+      [[ -n "${1#*=}" ]] || { err "ERROR: --bin-dir needs a directory (e.g. --bin-dir=\"\$HOME/.local/bin\")"; exit 1; }
+      BIN_DIR="${1#*=}"; shift ;;
     --only)
       case "${2:-}" in
         spec|flow) ONLY="$2" ;;
@@ -1015,6 +1400,9 @@ esac
 # bad token is a usage error before anything is created.
 HOSTS_SOURCE="detected on PATH"
 if [[ "$PLATFORM_GIVEN" -eq 1 ]]; then
+  # `all` is the --host shorthand for the whole supported set; it expands to the
+  # canonical list before validation so one code path decides the ordering.
+  [[ "$PLATFORM_RAW" == "all" ]] && PLATFORM_RAW="claude,opencode,codex,droid"
   resolve_platforms "$PLATFORM_RAW" || exit 1
   HOSTS_SOURCE="selected with --platform"
 else
@@ -1052,6 +1440,23 @@ if [[ -z "$MODE" ]]; then
   else
     MODE=local
   fi
+fi
+
+# --build-spec-bin is a GLOBAL-mode action: the global user is the one with no
+# checkout. Silently ignoring it elsewhere would read as "the binary was built".
+SPEC_BIN_REQUESTED="$BUILD_SPEC_BIN"
+if [[ "$BUILD_SPEC_BIN" -eq 1 && "$MODE" != "global" ]]; then
+  err "WARN: --build-spec-bin applies to --global; ignoring it for a local install."
+  BUILD_SPEC_BIN=0
+fi
+# --bin-dir only names a destination for --build-spec-bin; on its own it does
+# nothing, and saying so beats letting a user believe the binary moved. When
+# --build-spec-bin WAS given (the branch above just disabled it), the warning
+# above already says why: adding "bin-dir without build-spec-bin" here would
+# misstate what the user typed.
+if [[ -n "$BIN_DIR" && "$BUILD_SPEC_BIN" -eq 0 ]]; then
+  [[ "$SPEC_BIN_REQUESTED" -eq 1 ]] || err "WARN: --bin-dir only applies with --build-spec-bin; ignoring it."
+  BIN_DIR=""
 fi
 
 # Resolve TARGET to an absolute path. Create it only for a real install; a
@@ -1124,10 +1529,17 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     [[ "$DRY_RUN" -eq 1 ]] || remove_shipped \
       "$SRC/.agents/skills/spec" "$TARGET/.agents/skills/spec" tests AGENTS.md
   fi
+  if [[ "$WANT_SPEC" -eq 1 && -e "$TARGET/.agents/skills/using-spec" ]]; then
+    say "remove the shipped files under .agents/skills/using-spec (user files preserved)"
+    [[ "$DRY_RUN" -eq 1 ]] || remove_shipped \
+      "$SRC/.agents/skills/using-spec" "$TARGET/.agents/skills/using-spec" tests AGENTS.md
+  fi
   # Undo the spec skill registration — only our own .claude/skills/spec symlink.
   if [[ "$WANT_SPEC" -eq 1 ]]; then
     say "unregister .claude/skills/spec (only the vibe symlink; a user entry is kept)"
     [[ "$DRY_RUN" -eq 1 ]] || unregister_skill spec
+    say "unregister .claude/skills/using-spec (only the vibe symlink; a user entry is kept)"
+    [[ "$DRY_RUN" -eq 1 ]] || unregister_skill using-spec
   fi
 
   if [[ "$WANT_FLOW" -eq 1 ]]; then
@@ -1333,7 +1745,9 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   exit 0
 fi
 
-# 1. Core (platform-neutral). Copy the spec + vibe skill trees. The cursor is
+# 1. Core (platform-neutral). Copy the spec, using-spec and vibe skill trees —
+# three SIBLING dirs, using-spec never left nested inside spec/ (vibe#71 sub-gap
+# 3: a host that scans `skills/*/SKILL.md` would miss it). The cursor is
 # per-project runtime state: never inherit the source's, never clobber the
 # target's — preserve any live target cursor across the copy. Halves are copied
 # independently so --only can install one without the other.
@@ -1352,6 +1766,22 @@ if [[ "$WANT_SPEC" -eq 1 ]]; then
     # Source-only artifacts (co-located tests at ANY depth, contributor
     # AGENTS.md) never ship — enumerated from the source, not hardcoded.
     scrub_source_only "$SRC/.agents/skills/spec" "$TARGET/.agents/skills/spec"
+    # Flatten (vibe#71 sub-gap 3): `using-spec` is copied below as its OWN sibling
+    # skill dir. Leaving a second copy nested inside `spec/` registers it twice on
+    # a host that walks a skill tree recursively and hides it on a host that does
+    # not (OpenCode documents `skills/*/SKILL.md`).
+    rm -rf "$TARGET/.agents/skills/spec/using-spec"
+  fi
+  say "copy using-spec skill -> $TARGET/.agents/skills/using-spec"
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    # Graceful degrade: a source tree without the router (an older bundle, a
+    # partial copy) must not abort the whole install — warn and continue.
+    if [[ -e "$SRC/.agents/skills/using-spec" ]]; then
+      cp -RL "$SRC/.agents/skills/using-spec" "$TARGET/.agents/skills/"
+      scrub_source_only "$SRC/.agents/skills/using-spec" "$TARGET/.agents/skills/using-spec"
+    else
+      err "WARN: the source has no using-spec skill; the session-start router is not installed."
+    fi
   fi
 fi
 if [[ "$WANT_FLOW" -eq 1 ]]; then
@@ -1405,6 +1835,10 @@ if [[ "$WANT_SPEC" -eq 1 ]]; then
   if host_selected claude; then
     say "register spec skill at .claude/skills/spec -> ../../.agents/skills/spec"
     [[ "$DRY_RUN" -eq 1 ]] || register_skill spec
+    # The session-start router is its own skill dir (not nested inside spec/),
+    # so it needs its own registration or Claude Code never discovers it.
+    say "register using-spec skill at .claude/skills/using-spec -> ../../.agents/skills/using-spec"
+    [[ "$DRY_RUN" -eq 1 ]] || register_skill using-spec
   fi
 fi
 if [[ "$WANT_FLOW" -eq 1 ]] && host_selected claude; then
@@ -1519,6 +1953,7 @@ if host_selected claude; then
     fi
   fi
   [[ "$WANT_SPEC" -eq 1 ]] && record_action claude symlink ".claude/skills/spec" "../../.agents/skills/spec"
+  [[ "$WANT_SPEC" -eq 1 ]] && record_action claude symlink ".claude/skills/using-spec" "../../.agents/skills/using-spec"
   [[ "$WANT_FLOW" -eq 1 ]] && record_action claude symlink ".claude/skills/vibe" "../../.agents/skills/vibe"
 fi
 
@@ -1691,8 +2126,8 @@ EOF
     # R5 again: name only the skills that ARE installed. --only flow installs no
     # spec half, and the completion banner directly above says so — a skills claim
     # of `{spec,vibe}` contradicted it.
-    _rskills=".agents/skills/{spec,vibe}"
-    _rcl=".claude/skills/{spec,vibe}"
+    _rskills=".agents/skills/{spec,using-spec,vibe}"
+    _rcl=".claude/skills/{spec,using-spec,vibe}"
     if [[ "$WANT_SPEC" -eq 0 ]]; then
       _rskills=".agents/skills/{vibe}"
       _rcl=".claude/skills/vibe"
@@ -1768,7 +2203,7 @@ EOF
     echo "install: done. The host-neutral core is installed; no Claude Code adapter was selected."
   fi
   if [[ "$WANT_SPEC" -eq 1 ]]; then
-    echo "install: the spec + vibe skills are installed as project files under .agents/skills/."
+    echo "install: the spec, using-spec and vibe skills are installed as project files under .agents/skills/."
     # A local install deliberately creates NO project content — the spec tree is
     # yours, and orders.sh's self-location is regression-tested against a target
     # with no marker at all. But AGENTS.md opens by telling the agent to read the

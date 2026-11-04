@@ -5,7 +5,7 @@
 mod common;
 
 use common::{assert_spec_json, project, spec, write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 const BAD: &str = "---\ntype: entry\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n# P\n";
@@ -25,7 +25,7 @@ fn good() -> String {
     )
 }
 
-fn repo(name: &str) -> PathBuf {
+fn repo(name: &str) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     std::fs::remove_dir_all(p.join(".git")).unwrap();
     common::git(&p, "2026-03-01T12:00:00Z", &["init", "-q"]);

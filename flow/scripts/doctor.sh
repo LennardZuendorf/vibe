@@ -101,6 +101,34 @@ if command -v node >/dev/null 2>&1; then
   esac
 else warn tool.node "node not installed — the four .claude/hooks are the flow's enforcement, and without node they fall back to flow/hooks-fallback (guard + Stop gate) or no-op (inject + doctrine)"; fi
 
+# vibe-spec binary (vibe#71 sub-gap 4): the shipped spec skill shells out to
+# `vibe-spec` (root, validate, promote, check-drift) and install.sh does not ship
+# a release binary, so an install can be healthy for the FLOW and still be unable
+# to validate a layered docs/spec tree. Report that in one line — warn, never a
+# failure (this script always exits 0). Probe order matches install.sh's and the
+# spec hook shim's: $VIBE_SPEC_BIN, then PATH, then this checkout's build.
+_vspec=""
+# -f AND -x: `[[ -x ]]` is true for a DIRECTORY, and "$VIBE_SPEC_BIN" pointing at
+# one made this report claim an install that does not exist (the engine requires
+# a regular file, and running the path fails). Same for the checkout builds.
+if [[ -n "${VIBE_SPEC_BIN:-}" && -f "${VIBE_SPEC_BIN}" && -x "${VIBE_SPEC_BIN}" ]]; then
+  _vspec="$VIBE_SPEC_BIN"
+elif command -v vibe-spec >/dev/null 2>&1; then
+  _vspec="$(command -v vibe-spec)"
+else
+  _vspec_target="${CARGO_TARGET_DIR:-$ROOT/target}"
+  if [[ -f "$_vspec_target/release/vibe-spec" && -x "$_vspec_target/release/vibe-spec" ]]; then
+    _vspec="$_vspec_target/release/vibe-spec (checkout build, not on PATH)"
+  elif [[ -f "$_vspec_target/debug/vibe-spec" && -x "$_vspec_target/debug/vibe-spec" ]]; then
+    _vspec="$_vspec_target/debug/vibe-spec (checkout build, not on PATH)"
+  fi
+fi
+if [[ -n "$_vspec" ]]; then
+  ok tool.vibe-spec "vibe-spec present ($_vspec)"
+else
+  warn tool.vibe-spec "vibe-spec not installed — the spec skill's binary commands (root, validate, promote, init) are unavailable; a flat legacy root still validates: bash $SPEC_SKILL/scripts/validate.sh; build it from a checkout with 'cargo build -p vibe-spec' or './install.sh --global --build-spec-bin'"
+fi
+
 # core skills present + integrity.
 check_link_or_dir core.spec "$SPEC_SKILL"
 check_link_or_dir core.vibe "$VIBE_SKILL"

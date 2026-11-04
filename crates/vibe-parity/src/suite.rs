@@ -1,9 +1,10 @@
 //! Parity suite files and corpus cases.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::sandbox::refuse_symlink;
 
@@ -169,8 +170,204 @@ pub enum Field {
     Files,
 }
 
+impl Field {
+    /// The field's suite-file spelling, used in pin files and messages.
+    pub fn name(self) -> &'static str {
+        match self {
+            Field::Exit => "exit",
+            Field::Stdout => "stdout",
+            Field::Stderr => "stderr",
+            Field::Files => "files",
+        }
+    }
+}
+
+/// The values a pin expects to observe, in the shape a drift message prints.
+///
+/// A pin that named a field but stated no values would match *any* difference
+/// on that field — which is how a crashing candidate once reported as
+/// `PINNED` on an `exit` pin. So `expect` is required and [`validate_expect`]
+/// refuses a pin whose expectation cannot describe a difference.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Expect {
+    /// `exit`: the oracle's code. `stdout`/`stderr`: the text the oracle's
+    /// first differing line must start with, or `null` when that side has no
+    /// such line.
+    #[serde(default)]
+    pub oracle: Value,
+    /// The same for the candidate side.
+    #[serde(default)]
+    pub candidate: Value,
+    /// `files`: one record per snapshot key that must differ.
+    #[serde(default)]
+    pub files: Option<Vec<FileExpect>>,
+}
+
+impl Expect {
+    /// The pin shape, for messages: pasting it under `expect` states exactly
+    /// these values. A `null` side is printed as `null` rather than dropped,
+    /// so a drift message reads expected and observed symmetrically (`{"oracle":
+    /// "x", "candidate": null}`, not `{"oracle": "x"}`, which looks like an
+    /// absent field).
+    pub fn as_json(&self) -> String {
+        let mut map = serde_json::Map::new();
+        // A stream/exit pin always prints both sides; a files pin prints only
+        // the sides it carries (it has `files` instead).
+        let both_sides = self.files.is_none();
+        if both_sides || !self.oracle.is_null() {
+            map.insert("oracle".to_string(), self.oracle.clone());
+        }
+        if both_sides || !self.candidate.is_null() {
+            map.insert("candidate".to_string(), self.candidate.clone());
+        }
+        if let Some(files) = &self.files {
+            map.insert(
+                "files".to_string(),
+                Value::Array(files.iter().map(FileExpect::as_value).collect()),
+            );
+        }
+        Value::Object(map).to_string()
+    }
+}
+
+/// One differing snapshot key, as a `files` pin states it.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileExpect {
+    /// The snapshot key (a path, or a directory spelled with a trailing `/`).
+    pub key: String,
+    /// What the oracle side must show for that key.
+    pub oracle: FileSideExpect,
+    /// What the candidate side must show for that key.
+    pub candidate: FileSideExpect,
+}
+
+impl FileExpect {
+    fn as_value(&self) -> Value {
+        serde_json::json!({
+            "key": self.key,
+            "oracle": { "present": self.oracle.present, "first_line": self.oracle.first_line },
+            "candidate": { "present": self.candidate.present, "first_line": self.candidate.first_line },
+        })
+    }
+}
+
+/// One side of a differing key: whether the side left it in the sandbox, and
+/// the text its first line (or first differing line) must start with.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileSideExpect {
+    /// True when the side must have left the key in its snapshot.
+    pub present: bool,
+    /// The line's prefix. `""` asserts an empty line; `null` asserts the side
+    /// has no such line (an absent key, a directory, or an empty file).
+    #[serde(default)]
+    pub first_line: Option<String>,
+}
+
+/// Checks one pin states the values its field needs. Every gap here is a pin
+/// that would match a difference it never described, so all of them are
+/// suite errors rather than warnings.
+fn validate_expect(d: &Divergence) -> Result<(), String> {
+    let at = || format!("{} {} {}: ", d.command, d.case, d.field.name());
+    match d.field {
+        Field::Exit => {
+            if d.expect.files.is_some() {
+                return Err(format!("{}an exit pin carries no `files`", at()));
+            }
+            for (side, value) in [
+                ("oracle", &d.expect.oracle),
+                ("candidate", &d.expect.candidate),
+            ] {
+                if exit_code(value).is_none() {
+                    return Err(format!(
+                        "{}expect.{side} must be an exit code; an exit pin states \
+                         {{\"oracle\": <code>, \"candidate\": <code>}}",
+                        at()
+                    ));
+                }
+            }
+            Ok(())
+        }
+        Field::Stdout | Field::Stderr => {
+            if d.expect.files.is_some() {
+                return Err(format!(
+                    "{}a {} pin carries no `files`",
+                    at(),
+                    d.field.name()
+                ));
+            }
+            for value in [&d.expect.oracle, &d.expect.candidate] {
+                if !(value.is_null() || value.as_str().is_some()) {
+                    return Err(format!(
+                        "{}expect sides must be a line prefix or null, not {value}",
+                        at()
+                    ));
+                }
+            }
+            if d.expect.oracle.is_null() && d.expect.candidate.is_null() {
+                return Err(format!(
+                    "{}expects no line on either side, so it cannot describe a difference",
+                    at()
+                ));
+            }
+            Ok(())
+        }
+        Field::Files => {
+            if !d.expect.oracle.is_null() || !d.expect.candidate.is_null() {
+                return Err(format!(
+                    "{}a files pin carries no oracle/candidate values; it lists `files`",
+                    at()
+                ));
+            }
+            let files = match &d.expect.files {
+                Some(files) if !files.is_empty() => files,
+                _ => {
+                    return Err(format!(
+                        "{}expect.files must name at least one differing key",
+                        at()
+                    ));
+                }
+            };
+            let mut keys = BTreeSet::new();
+            for file in files {
+                if !keys.insert(&file.key) {
+                    return Err(format!("{}duplicate files pin key {:?}", at(), file.key));
+                }
+                if file.key.is_empty() {
+                    return Err(format!("{}a files pin names an empty key", at()));
+                }
+                if !file.oracle.present && !file.candidate.present {
+                    return Err(format!(
+                        "{}key {:?} is present on neither side, so it cannot differ",
+                        at(),
+                        file.key
+                    ));
+                }
+                for (side, value) in [("oracle", &file.oracle), ("candidate", &file.candidate)] {
+                    if !value.present && value.first_line.is_some() {
+                        return Err(format!(
+                            "{}key {:?} is absent on the {side} side, so it has no first line",
+                            at(),
+                            file.key
+                        ));
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+/// A pin's exit code, or `None` when the value is not an `i32`.
+pub fn exit_code(value: &Value) -> Option<i32> {
+    value.as_i64().and_then(|code| i32::try_from(code).ok())
+}
+
 /// A pinned `expected-divergence`: the candidate differs from the oracle on
-/// purpose (an oracle bug fixed only in the port, or a deliberate change).
+/// purpose (an oracle bug fixed only in the port, or a deliberate change),
+/// and says exactly how.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Divergence {
@@ -183,6 +380,9 @@ pub struct Divergence {
     pub args: Option<Vec<String>>,
     /// The field that differs.
     pub field: Field,
+    /// The values that difference must show. Required: a pin that states no
+    /// values matches any difference on its field.
+    pub expect: Expect,
     /// Only on this `std::env::consts::OS`. Elsewhere the pin is inactive.
     /// An os-scoped pin is never reported stale: local tools vary.
     #[serde(default)]
@@ -395,6 +595,9 @@ impl Suite {
                     path.display()
                 ));
             }
+        }
+        for divergence in &suite.divergences {
+            validate_expect(divergence).map_err(|e| format!("{}: {e}", path.display()))?;
         }
         let base = path.parent().unwrap_or_else(|| Path::new("."));
         suite.corpus = base.join(&suite.corpus);

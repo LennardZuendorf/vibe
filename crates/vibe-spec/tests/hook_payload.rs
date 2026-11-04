@@ -74,8 +74,12 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 /// `<tmp>/<sid>.jsonl` holding `main` (fixture name or literal text), plus an
-/// optional `<tmp>/<sid>/subagents/agent-<id>.jsonl`. Returns the main path.
-fn layout(name: &str, main: &str, sub: Option<(&str, &str)>) -> PathBuf {
+/// optional `<tmp>/<sid>/subagents/agent-<id>.jsonl`. Returns its owner and the main path.
+fn layout(
+    name: &str,
+    main: &str,
+    sub: Option<(&str, &str)>,
+) -> (vibe_core::testscratch::Scratch, PathBuf) {
     let dir = common::project(name);
     let sid = "11111111-2222-3333-4444-555555555555";
     let path = dir.join(format!("{sid}.jsonl"));
@@ -85,7 +89,7 @@ fn layout(name: &str, main: &str, sub: Option<(&str, &str)>) -> PathBuf {
         fs::create_dir_all(&sdir).unwrap();
         fs::write(sdir.join(format!("agent-{id}.jsonl")), body).unwrap();
     }
-    path
+    (dir, path)
 }
 
 fn read(name: &str) -> String {
@@ -145,19 +149,19 @@ fn payload_fields_and_errors() {
 
 #[test]
 fn skill_loads_are_found() {
-    let main = layout("t1-main", &read("transcript-main-skill.jsonl"), None);
+    let (_owner_0, main) = layout("t1-main", &read("transcript-main-skill.jsonl"), None);
     assert!(transcript::loaded(&main, None, &["spec"]).unwrap());
     assert!(!transcript::loaded(&main, None, &["brainstorming"]).unwrap());
     assert!(!transcript::loaded(&main, None, &["pec"]).unwrap());
     assert!(transcript::loaded(&main, None, &["brainstorming", "spec"]).unwrap());
 
-    let slash = layout("t1-slash", &read("transcript-slash-command.jsonl"), None);
+    let (_owner_1, slash) = layout("t1-slash", &read("transcript-slash-command.jsonl"), None);
     assert!(transcript::loaded(&slash, None, &["spec"]).unwrap());
 
-    let nosk = layout("t1-nosk", &read("transcript-subagent-no-skill.jsonl"), None);
+    let (_owner_2, nosk) = layout("t1-nosk", &read("transcript-subagent-no-skill.jsonl"), None);
     assert!(!transcript::loaded(&nosk, None, &["spec"]).unwrap());
 
-    let parent = layout(
+    let (_owner_3, parent) = layout(
         "t1-parent",
         &read("transcript-parent-of-subagents.jsonl"),
         None,
@@ -165,7 +169,7 @@ fn skill_loads_are_found() {
     assert!(transcript::loaded(&parent, Some("a6d9f9d932ee550ba"), &["spec"]).unwrap());
 
     let own = read("transcript-subagent-own-skill.jsonl");
-    let p = layout(
+    let (_owner_4, p) = layout(
         "t1-own",
         &read("transcript-subagent-no-skill.jsonl"),
         Some(("a6d9f9d932ee550ba", &own)),
@@ -179,35 +183,35 @@ fn skill_loads_are_found() {
 #[test]
 fn namespaced_skills_count() {
     let tool = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Skill","input":{"skill":"plugin:spec"}}]}}"#;
-    let p = layout("t1-ns", tool, None);
+    let (_owner_5, p) = layout("t1-ns", tool, None);
     assert!(transcript::loaded(&p, None, &["spec"]).unwrap());
     assert!(!transcript::loaded(&p, None, &["other"]).unwrap());
     let cmd = r#"{"type":"user","message":{"content":"<command-name>/superpowers:brainstorming</command-name>"}}"#;
-    let p = layout("t1-ns2", cmd, None);
+    let (_owner_6, p) = layout("t1-ns2", cmd, None);
     assert!(transcript::loaded(&p, None, &["brainstorming"]).unwrap());
     assert!(!transcript::loaded(&p, None, &["spec"]).unwrap());
     // `/xspec` is a different skill, not a suffix match without a namespace colon.
     let cmd = r#"{"type":"user","message":{"content":"<command-name>/xspec</command-name>"}}"#;
-    let p = layout("t1-ns3", cmd, None);
+    let (_owner_7, p) = layout("t1-ns3", cmd, None);
     assert!(!transcript::loaded(&p, None, &["spec"]).unwrap());
     let tool = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Skill","input":{"skill":"xspec"}}]}}"#;
-    let p = layout("t1-ns4", tool, None);
+    let (_owner_8, p) = layout("t1-ns4", tool, None);
     assert!(!transcript::loaded(&p, None, &["spec"]).unwrap());
 }
 
 #[test]
 fn prose_and_tool_results_do_not_count() {
     let prose = r#"{"type":"user","message":{"role":"user","content":"please use Skill(spec) and \"name\":\"Skill\",\"input\":{\"skill\":\"spec\"}"}}"#;
-    let p = layout("t1-prose", prose, None);
+    let (_owner_9, p) = layout("t1-prose", prose, None);
     assert!(!transcript::loaded(&p, None, &["spec"]).unwrap());
 
     let result = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"{\"name\":\"Skill\",\"input\":{\"skill\":\"spec\"}}"}]}}"#;
-    let p = layout("t1-result", result, None);
+    let (_owner_10, p) = layout("t1-result", result, None);
     assert!(!transcript::loaded(&p, None, &["spec"]).unwrap());
 
     // Embedded as raw JSON inside a tool_result, not as a content item.
     let nested = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":[{"type":"tool_use","name":"Skill","input":{"skill":"spec"}}]}]}}"#;
-    let p = layout("t1-nested", nested, None);
+    let (_owner_11, p) = layout("t1-nested", nested, None);
     assert!(!transcript::loaded(&p, None, &["spec"]).unwrap());
 
     // A user-role tool_use and an assistant-role command tag do not count either.
@@ -219,12 +223,12 @@ fn prose_and_tool_results_do_not_count() {
         r#"{"type":"user","message":{"content":[{"type":"text","text":"<command-name>/spec</command-name>"}]}}"#,
         "\n"
     );
-    let p = layout("t1-role", wrong_role, None);
+    let (_owner_12, p) = layout("t1-role", wrong_role, None);
     assert!(!transcript::loaded(&p, None, &["spec"]).unwrap());
 
     // A different tool named in the assistant record does not count.
     let other = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"skill":"spec"}}]}}"#;
-    let p = layout("t1-other", other, None);
+    let (_owner_13, p) = layout("t1-other", other, None);
     assert!(!transcript::loaded(&p, None, &["spec"]).unwrap());
 }
 
@@ -234,12 +238,12 @@ fn malformed_lines_are_skipped() {
     let text = format!(
         "{{\"type\":\"user\",\"message\":{{\"content\":\"hi\"}}}}\nSkill <command-name> not json\n{good}\n"
     );
-    let p = layout("t1-bad", &text, None);
+    let (_owner_14, p) = layout("t1-bad", &text, None);
     assert!(transcript::loaded(&p, None, &["spec"]).unwrap());
     // Without a trailing newline, and with CRLF.
-    let p = layout("t1-nonl", good, None);
+    let (_owner_15, p) = layout("t1-nonl", good, None);
     assert!(transcript::loaded(&p, None, &["spec"]).unwrap());
-    let p = layout("t1-crlf", &format!("{good}\r\n"), None);
+    let (_owner_16, p) = layout("t1-crlf", &format!("{good}\r\n"), None);
     assert!(transcript::loaded(&p, None, &["spec"]).unwrap());
 }
 

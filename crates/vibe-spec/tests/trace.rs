@@ -5,7 +5,7 @@
 mod common;
 
 use common::{assert_spec_json, git, git_out, project, spec, write};
-use std::path::PathBuf;
+use vibe_core::testscratch::Scratch;
 
 const ENTRY: &str = "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n";
 const AUTH_PLAN: &str = "---\ntype: feature-plan\n---\n\n### auth/1 — Login\n\n### auth/2 — Logout\n\n### auth/3 — Reset\n\n```\n### auth/4 — fenced, not a unit\n```\n";
@@ -13,7 +13,7 @@ const AUTH_PLAN: &str = "---\ntype: feature-plan\n---\n\n### auth/1 — Login\n\
 /// Units auth/1–3 and billing/1. Commit 1 cites auth/1; commit 2 cites
 /// auth/9 and auth/4 (no such units); tests/ cites auth/2, billing/1 and
 /// unknown/4 (not a feature).
-fn repo(name: &str) -> (PathBuf, String) {
+fn repo(name: &str) -> (Scratch, String) {
     let p = project(name);
     write(&p, ".spec/product.md", ENTRY);
     write(&p, ".spec/features/auth/plan.md", AUTH_PLAN);

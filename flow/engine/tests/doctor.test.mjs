@@ -43,6 +43,9 @@ import {
   rmSync,
   chmodSync,
   cpSync,
+  accessSync,
+  statSync,
+  constants as fsConstants,
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -66,18 +69,53 @@ const HOOK_SCRIPTS = [
 const JQ_PRESENT = runCommand('bash', ['-c', 'command -v jq >/dev/null 2>&1']).code === 0;
 
 // ---------------------------------------------------------------------------
-// A PATH with jq genuinely absent, built once (lazily) via a symlink farm
-// that carries every OTHER binary on the real PATH (bash, node, coreutils,
-// ...). Excluding jq's whole directory from PATH would also drop bash —
-// this is the same problem the CI "jq stripped from PATH" leg has to solve,
-// solved here in-process for a couple of pinned no-jq divergence tests that
-// spawn the real oracle. Memoized: readdir'ing every PATH dir is not free.
+// Two PATH shims, both built lazily (readdir'ing every PATH dir is not free)
+// and both POSTCONDITION-ASSERTED at build time. Without that, a shim that
+// quietly failed to exclude its tool would surface as a byte mismatch five
+// tests later — or not at all.
+//
+// Each shim exists because the divergence pins below hand the ENGINE an
+// explicit verdict (`jqPresent: false`, `specBin: undefined`) while the oracle
+// can only reach its verdict from its own PATH. So the shim has to carry
+// neither the named tool NOR `vibe-spec`: on a machine that installed the
+// binary — `install.sh --global --build-spec-bin`, i.e. exactly what this
+// feature tells users to do — an ambient `vibe-spec` would reach the oracle
+// through the shim while the engine stays pinned absent, and the two sides
+// would then be describing two different machines. That is a suite that goes
+// red for following the README, which is how this round was found.
 // ---------------------------------------------------------------------------
+
+function regularExecutableIn(dir, name) {
+  const full = path.join(dir, name);
+  try {
+    if (!statSync(full).isFile()) return false;
+    accessSync(full, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Resolve a PATH-shaped directory list the way the probes do: a zero-length
+// entry is the current directory (POSIX), and only a regular executable
+// counts. Never `command -v` — bash resolves a non-executable regular file
+// too, which is not what either probe reports.
+function pathResolvesIn(dirs, name) {
+  return dirs.some((dir) => regularExecutableIn(dir === '' ? '.' : dir, name));
+}
+
+function pathHas(name) {
+  return pathResolvesIn((process.env.PATH ?? '').split(':'), name);
+}
 
 let cachedNoJqPath;
 function noJqPath() {
   if (cachedNoJqPath !== undefined) return cachedNoJqPath;
-  if (!JQ_PRESENT) {
+  const exclude = new Set(['jq']);
+  if (pathHas('vibe-spec')) exclude.add('vibe-spec');
+  if (!JQ_PRESENT && exclude.size === 1) {
+    // Nothing to strip and jq already absent: the ambient PATH IS the shim
+    // (CI's "jq stripped from PATH" leg runs the suite in exactly this state).
     cachedNoJqPath = process.env.PATH ?? '';
     return cachedNoJqPath;
   }
@@ -91,7 +129,7 @@ function noJqPath() {
       continue;
     }
     for (const name of entries) {
-      if (name === 'jq') continue;
+      if (exclude.has(name)) continue;
       const link = path.join(shimDir, name);
       try {
         symlinkSync(path.join(dir, name), link);
@@ -101,8 +139,49 @@ function noJqPath() {
       }
     }
   }
+  for (const name of exclude) {
+    assert(
+      !pathResolvesIn([shimDir], name),
+      `no-jq shim still resolves ${name} — the divergence pins below would compare the code against the ambient machine instead of pinning it`,
+    );
+  }
   cachedNoJqPath = shimDir;
   return cachedNoJqPath;
+}
+
+let cachedNoSpecBinPath;
+function specBinOnPath() {
+  return pathHas('vibe-spec');
+}
+function noSpecBinPath() {
+  if (cachedNoSpecBinPath !== undefined) return cachedNoSpecBinPath;
+  if (!specBinOnPath()) {
+    cachedNoSpecBinPath = process.env.PATH ?? '';
+    return cachedNoSpecBinPath;
+  }
+  const shimDir = mkTempRoot('vibe-doctor-nospecbin-');
+  for (const dir of (process.env.PATH ?? '').split(':').filter(Boolean)) {
+    let entries;
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      if (name === 'vibe-spec') continue;
+      try {
+        symlinkSync(path.join(dir, name), path.join(shimDir, name));
+      } catch {
+        // duplicate name across PATH dirs (first writer wins) — normal precedence.
+      }
+    }
+  }
+  assert(
+    !pathResolvesIn([shimDir], 'vibe-spec'),
+    'no-spec-bin shim still resolves vibe-spec — every "genuinely absent" pin below would run against the ambient machine',
+  );
+  cachedNoSpecBinPath = shimDir;
+  return cachedNoSpecBinPath;
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +289,24 @@ function makeHealthySandbox() {
   addHooks(sandbox);
   addSettings(sandbox, HOOK_SCRIPTS);
   addDeps(sandbox);
+  sandbox.specBin = addSpecBin(sandbox);
   return sandbox;
+}
+
+// A stub `vibe-spec` binary inside the sandbox — the healthy install's seventh
+// check. The spec skill's binary is NOT installed by install.sh (vibe#71
+// sub-gap 4), so a sandbox without this reports a legitimate
+// `warn tool.vibe-spec`; the healthy fixture carries the binary so "every check
+// ok" stays a real statement. Both sides are pointed at it the same way: the
+// oracle through $VIBE_SPEC_BIN (its documented override), the engine through
+// opts.specBin, so neither leg reads the runner's ambient PATH.
+function addSpecBin(sandbox) {
+  const binDir = path.join(sandbox.dir, 'bin');
+  mkdirSync(binDir, { recursive: true });
+  const dest = path.join(binDir, 'vibe-spec');
+  writeFileSync(dest, '#!/bin/sh\necho "vibe-spec 0.4.0"\n');
+  chmodSync(dest, 0o755);
+  return dest;
 }
 
 function makeHomeFixture({ skills = [], plugins = [] } = {}) {
@@ -225,13 +321,22 @@ function makeHomeFixture({ skills = [], plugins = [] } = {}) {
 }
 
 function runOracle(sandbox, opts = {}) {
-  return runCommand('bash', [sandbox.scriptPath], { env: { HOME: opts.home ?? '/nonexistent-home', ...opts.env } });
+  const specBin = 'specBin' in opts ? opts.specBin : sandbox.specBin;
+  const env = { HOME: opts.home ?? '/nonexistent-home' };
+  if (typeof specBin === 'string' && specBin !== '') env.VIBE_SPEC_BIN = specBin;
+  return runCommand('bash', [sandbox.scriptPath], { env: { ...env, ...opts.env } });
 }
 
 function runEngine(sandbox, opts = {}) {
+  const engineOpts = { ...opts.engineOpts };
+  const specBin = 'specBin' in opts ? opts.specBin : sandbox.specBin;
+  // An explicit specBin (string = present, undefined = absent) pins the check;
+  // without a fixture the engine detects for real, exactly like the oracle.
+  if ('specBin' in opts) engineOpts.specBin = specBin === undefined ? undefined : { detail: specBin };
+  else if (typeof sandbox.specBin === 'string') engineOpts.specBin = { detail: sandbox.specBin };
   return runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, {
     home: opts.home ?? '/nonexistent-home',
-    ...opts.engineOpts,
+    ...engineOpts,
   });
 }
 
@@ -262,6 +367,194 @@ test('parity: fully healthy install — every check ok, exit 0', () => {
     assertMatch(engineResult.stdout, /^# vibe doctor — /);
   } finally {
     cleanupAll(sandbox, home);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// tool.vibe-spec (vibe#71 sub-gap 4). The binary is NOT part of a plain
+// install, so the check has to tell the truth in both directions: present when
+// a probe finds it, and an explicit, non-fatal degradation message when not.
+// ---------------------------------------------------------------------------
+
+test('parity: tool.vibe-spec — a binary found through $VIBE_SPEC_BIN is reported present', () => {
+  const sandbox = makeHealthySandbox();
+  try {
+    const oracleResult = runOracle(sandbox);
+    const engineResult = runEngine(sandbox);
+    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertIncludes(engineResult.stdout, `ok   tool.vibe-spec vibe-spec present (${sandbox.specBin})`);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('divergence pin: tool.vibe-spec — genuinely no binary on PATH reports the fallback, never fails', () => {
+  const sandbox = makeHealthySandbox();
+  try {
+    const oracleResult = runCommand('bash', [sandbox.scriptPath], {
+      env: { HOME: '/nonexistent-home', PATH: noSpecBinPath() },
+      // "Genuinely absent" has to mean it: an exported $VIBE_SPEC_BIN (the
+      // override spec/hooks/run-hook.sh and install.sh both document, i.e. an
+      // ordinary dev/testing variable) or a $CARGO_TARGET_DIR build would reach
+      // the oracle while the engine below is pinned absent.
+      unsetEnv: ['VIBE_SPEC_BIN', 'CARGO_TARGET_DIR'],
+    });
+    const engineResult = runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, {
+      home: '/nonexistent-home',
+      specBin: undefined,
+    });
+    assertEqual(oracleResult.code, 0);
+    assertEqual(engineResult.code, 0);
+    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertMatch(engineResult.stdout, /warn tool\.vibe-spec vibe-spec not installed/);
+    // The message must name the thing that DOES still work, byte-exactly.
+    assertIncludes(engineResult.stdout, `bash ${sandbox.dir}/.agents/skills/spec/scripts/validate.sh`);
+    assertIncludes(engineResult.stdout, './install.sh --global --build-spec-bin');
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Seam-free detection (review round 1, finding 3). The tests above pin
+// opts.specBin, so detectSpecBin()/findOnPath() never runs in them — a probe
+// regression there stays green. These drive the real probe on BOTH sides: the
+// oracle through its documented env/PATH, the engine through the process env
+// and cwd it actually reads, so the two have to agree by construction.
+// ---------------------------------------------------------------------------
+
+function withEnv(vars, fn) {
+  const before = new Map();
+  for (const [key, value] of Object.entries(vars)) {
+    before.set(key, process.env[key]);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    return fn();
+  } finally {
+    for (const [key, value] of before) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+function withCwd(dir, fn) {
+  const before = process.cwd();
+  process.chdir(dir);
+  try {
+    return fn();
+  } finally {
+    process.chdir(before);
+  }
+}
+
+// Every seam-free case unsets CARGO_TARGET_DIR as well: a checkout build
+// reachable through it would satisfy the probe before PATH does and make the
+// test pass on a developer machine for the wrong reason.
+function runEngineDetect(sandbox) {
+  return runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, { home: '/nonexistent-home' });
+}
+
+test('parity: tool.vibe-spec — a binary found on PATH is reported present (seam-free)', () => {
+  const sandbox = makeHealthySandbox();
+  const farm = path.join(sandbox.dir, 'farm');
+  mkdirSync(farm, { recursive: true });
+  symlinkSync(sandbox.specBin, path.join(farm, 'vibe-spec'));
+  const pathValue = `${farm}:/usr/bin:/bin`;
+  try {
+    const result = withEnv({ VIBE_SPEC_BIN: undefined, CARGO_TARGET_DIR: undefined }, () => {
+      const oracleResult = runCommand('bash', [sandbox.scriptPath], {
+        env: { HOME: '/nonexistent-home', PATH: pathValue },
+        unsetEnv: ['VIBE_SPEC_BIN'],
+      });
+      const engineResult = withEnv({ PATH: pathValue }, () => runEngineDetect(sandbox));
+      return { oracleResult, engineResult };
+    });
+    assertEqual(result.oracleResult.code, 0);
+    assertEqual(result.engineResult.code, 0);
+    assertEqual(result.engineResult.stdout, result.oracleResult.stdout);
+    assertIncludes(result.engineResult.stdout, `ok   tool.vibe-spec vibe-spec present (${farm}/vibe-spec)`);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+test('parity: tool.vibe-spec — a binary found through $VIBE_SPEC_BIN is reported present (seam-free)', () => {
+  const sandbox = makeHealthySandbox();
+  const pathValue = noSpecBinPath();
+  try {
+    const result = withEnv(
+      { VIBE_SPEC_BIN: sandbox.specBin, CARGO_TARGET_DIR: undefined },
+      () => {
+        const oracleResult = runCommand('bash', [sandbox.scriptPath], {
+          env: { HOME: '/nonexistent-home', PATH: pathValue, VIBE_SPEC_BIN: sandbox.specBin },
+        });
+        const engineResult = withEnv({ PATH: pathValue }, () => runEngineDetect(sandbox));
+        return { oracleResult, engineResult };
+      },
+    );
+    assertEqual(result.engineResult.stdout, result.oracleResult.stdout);
+    assertIncludes(result.engineResult.stdout, `ok   tool.vibe-spec vibe-spec present (${sandbox.specBin})`);
+  } finally {
+    sandbox.cleanup();
+  }
+});
+
+// POSIX: a zero-length PATH entry is the current directory. Bash's `command -v`
+// resolves it AND prints it as `./vibe-spec`; an engine probe that skips empty
+// entries reports "not installed" for a PATH the user's own shell runs.
+test('parity: tool.vibe-spec — an empty PATH entry resolves to the cwd (./vibe-spec)', () => {
+  const sandbox = makeHealthySandbox();
+  const cwdDir = mkTempRoot('vibe-doctor-relcwd-');
+  const stub = path.join(cwdDir, 'vibe-spec');
+  writeFileSync(stub, '#!/bin/sh\necho "vibe-spec 0.4.0"\n');
+  chmodSync(stub, 0o755);
+  const pathValue = ':/usr/bin:/bin';
+  try {
+    const result = withEnv({ VIBE_SPEC_BIN: undefined, CARGO_TARGET_DIR: undefined }, () => {
+      const oracleResult = runCommand('bash', [sandbox.scriptPath], {
+        cwd: cwdDir,
+        env: { HOME: '/nonexistent-home', PATH: pathValue },
+        unsetEnv: ['VIBE_SPEC_BIN'],
+      });
+      const engineResult = withEnv({ PATH: pathValue }, () => withCwd(cwdDir, () => runEngineDetect(sandbox)));
+      return { oracleResult, engineResult };
+    });
+    assertEqual(result.oracleResult.code, 0);
+    assertEqual(result.engineResult.stdout, result.oracleResult.stdout);
+    assertIncludes(result.engineResult.stdout, 'ok   tool.vibe-spec vibe-spec present (./vibe-spec)');
+  } finally {
+    sandbox.cleanup();
+    rmSync(cwdDir, { recursive: true, force: true });
+  }
+});
+
+// `[[ -x ]]` is true for a DIRECTORY, so a probe built on it alone reports an
+// install that does not exist (the path cannot be run). Both sides must agree
+// with the engine's regular-file test.
+test('parity: tool.vibe-spec — a DIRECTORY at $VIBE_SPEC_BIN is not an install', () => {
+  const sandbox = makeHealthySandbox();
+  const dirAt = path.join(sandbox.dir, 'fake-bin', 'vibe-spec');
+  mkdirSync(dirAt, { recursive: true });
+  const pathValue = noSpecBinPath();
+  try {
+    const result = withEnv(
+      { VIBE_SPEC_BIN: dirAt, CARGO_TARGET_DIR: undefined },
+      () => {
+        const oracleResult = runCommand('bash', [sandbox.scriptPath], {
+          env: { HOME: '/nonexistent-home', PATH: pathValue, VIBE_SPEC_BIN: dirAt },
+        });
+        const engineResult = withEnv({ PATH: pathValue }, () => runEngineDetect(sandbox));
+        return { oracleResult, engineResult };
+      },
+    );
+    assertEqual(result.oracleResult.code, 0);
+    assertEqual(result.engineResult.stdout, result.oracleResult.stdout);
+    assertMatch(result.engineResult.stdout, /warn tool\.vibe-spec vibe-spec not installed/);
+  } finally {
+    sandbox.cleanup();
   }
 });
 
@@ -358,10 +651,17 @@ test('divergence pin: machine — invalid JSON but jq absent still reports ok (d
     addMachine(sandbox, '{ this is not json');
     const oracleResult = runCommand('bash', [sandbox.scriptPath], {
       env: { HOME: '/nonexistent-home', PATH: noJqPath() },
+      // The shim carries neither jq nor vibe-spec, but the ENGINE below reads
+      // this process's real environment — so its verdict is PINNED absent
+      // instead of detected. Otherwise a developer (or CI) with a vibe-spec on
+      // PATH, or a $CARGO_TARGET_DIR holding a checkout build, would make this
+      // leg compare the shim's machine against the runner's.
+      unsetEnv: ['VIBE_SPEC_BIN', 'CARGO_TARGET_DIR'],
     });
     const engineResult = runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, {
       home: '/nonexistent-home',
       jqPresent: false,
+      specBin: undefined,
     });
     assertEqual(oracleResult.code, 0);
     assertEqual(engineResult.code, 0);
@@ -496,10 +796,17 @@ test('divergence pin: cursor — present without jq is unverified-ok, never runs
     addCursor(sandbox, '{ not even json'); // would be invalid if validated
     const oracleResult = runCommand('bash', [sandbox.scriptPath], {
       env: { HOME: '/nonexistent-home', PATH: noJqPath() },
+      // The shim carries neither jq nor vibe-spec, but the ENGINE below reads
+      // this process's real environment — so its verdict is PINNED absent
+      // instead of detected. Otherwise a developer (or CI) with a vibe-spec on
+      // PATH, or a $CARGO_TARGET_DIR holding a checkout build, would make this
+      // leg compare the shim's machine against the runner's.
+      unsetEnv: ['VIBE_SPEC_BIN', 'CARGO_TARGET_DIR'],
     });
     const engineResult = runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, {
       home: '/nonexistent-home',
       jqPresent: false,
+      specBin: undefined,
     });
     assertEqual(oracleResult.code, 0);
     assertEqual(engineResult.code, 0);
@@ -814,10 +1121,17 @@ test('divergence pin: deps.manifest — jq absent warns "unavailable", never rea
   try {
     const oracleResult = runCommand('bash', [sandbox.scriptPath], {
       env: { HOME: '/nonexistent-home', PATH: noJqPath() },
+      // The shim carries neither jq nor vibe-spec, but the ENGINE below reads
+      // this process's real environment — so its verdict is PINNED absent
+      // instead of detected. Otherwise a developer (or CI) with a vibe-spec on
+      // PATH, or a $CARGO_TARGET_DIR holding a checkout build, would make this
+      // leg compare the shim's machine against the runner's.
+      unsetEnv: ['VIBE_SPEC_BIN', 'CARGO_TARGET_DIR'],
     });
     const engineResult = runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, {
       home: '/nonexistent-home',
       jqPresent: false,
+      specBin: undefined,
     });
     assertEqual(oracleResult.code, 0);
     assertEqual(engineResult.code, 0);
@@ -935,10 +1249,17 @@ test('divergence pin: tool.jq — genuinely no jq on PATH', () => {
   try {
     const oracleResult = runCommand('bash', [sandbox.scriptPath], {
       env: { HOME: '/nonexistent-home', PATH: noJqPath() },
+      // The shim carries neither jq nor vibe-spec, but the ENGINE below reads
+      // this process's real environment — so its verdict is PINNED absent
+      // instead of detected. Otherwise a developer (or CI) with a vibe-spec on
+      // PATH, or a $CARGO_TARGET_DIR holding a checkout build, would make this
+      // leg compare the shim's machine against the runner's.
+      unsetEnv: ['VIBE_SPEC_BIN', 'CARGO_TARGET_DIR'],
     });
     const engineResult = runDoctor(sandbox.dir, sandbox.vibeDir, sandbox.skillsDir, {
       home: '/nonexistent-home',
       jqPresent: false,
+      specBin: undefined,
     });
     assertEqual(engineResult.stdout, oracleResult.stdout);
     assertMatch(

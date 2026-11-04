@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-11-02
+updated: 2026-11-04
 ---
 
 # Vibe Flow Contract
@@ -44,3 +44,10 @@ check. The ledger records transitions, hook verdicts, and advisory signals;
 TUI and playback consume the same cursor and ledger. These target guarantees
 are not implemented by the F5/F6 writer. Full target contract:
 [tech-rust.md](../../../tech/rust.md).
+
+CLI usage errors exit 1, not hook block status 2. Spawned policy verdicts
+remove trailing newlines only; leading whitespace never becomes a verdict.
+Persisted numbers and true still name evidence receipts; containers use compact
+JSON. Null, false and an empty string are unnamed. Numeric zero follows Bash
+with jq and names a receipt; JS warns instead. Bash without jq reads only
+quoted feature strings. The cursor writer still accepts only strings or null.

@@ -16,44 +16,6 @@ mod text;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Path exemptions: `(prefix or exact path, reason)`. A trailing `/` is a prefix.
-const EXEMPT: [(&str, &str); 6] = [
-    (
-        "oracles/",
-        "frozen oracles of the bash and JS originals; never rewritten",
-    ),
-    (
-        "contracts/fixtures/",
-        "legacy-tree fixtures; JSON cannot carry a comment",
-    ),
-    (
-        "tests/parity/corpus/",
-        "legacy-tree corpus the parity matrix compares; JSON cannot carry a comment",
-    ),
-    (
-        "flow/content/policy.json",
-        "JSON holding the dual-root write rules (P4-R16)",
-    ),
-    (
-        "flow/reference/templates/AGENTS.md",
-        "ships the rendered dual-root write rules; a marker line would break unmerge",
-    ),
-    (
-        "docs/superpowers/",
-        "closes in P5, once promoted and deleted per D46",
-    ),
-];
-
-fn exempt(rel: &str) -> bool {
-    EXEMPT.iter().any(|(p, _)| {
-        if p.ends_with('/') {
-            rel.starts_with(p)
-        } else {
-            rel == *p
-        }
-    })
-}
-
 /// The tree to sweep: `LITERALS_ROOT` (a probe checkout), else this repo.
 fn repo_root() -> PathBuf {
     if let Some(dir) = std::env::var_os("LITERALS_ROOT") {
@@ -67,8 +29,25 @@ fn repo_root() -> PathBuf {
 
 #[test]
 fn exemptions_are_prefixes_or_exact_paths() {
+    use literal::path_exempt as exempt;
     assert!(exempt("oracles/bash/x.sh"));
     assert!(exempt("flow/content/policy.json"));
+    assert!(exempt("flow/reference/templates/AGENTS.md"));
+    assert!(exempt("tests/parity/spec.json"));
+    assert!(exempt("tests/parity/flow.json"));
+    assert!(!exempt("tests/parity/spec.json.bak"));
+    assert!(!exempt("tests/parity/flow.json.bak"));
+    assert!(!exempt("tests/parity/run.sh"));
+    // The materialized copies are exempt file-by-file, never by package prefix:
+    // a blanket `plugins/vibe/skills/` rule would blind the sweep to a whole
+    // subtree, and a new file there must be seen, not skipped.
+    assert!(exempt("plugins/vibe/skills/vibe/content/policy.json"));
+    assert!(exempt(
+        "factory-plugin/skills/vibe/reference/templates/AGENTS.md"
+    ));
+    assert!(!exempt("plugins/vibe/skills/vibe/content/policy.json.bak"));
+    assert!(!exempt("plugins/vibe/skills/vibe/verify.md"));
+    assert!(!exempt("factory-plugin/skills/anything-else"));
     assert!(!exempt("flow/content/policy.json.bak"));
     assert!(!exempt("docs/superpowers"));
     assert!(!exempt("crates/vibe-spec/src/main.rs"));
@@ -97,7 +76,7 @@ fn no_tracked_file_carries_a_literal() {
             findings.push(format!("{}: non-UTF-8 path", String::from_utf8_lossy(raw)));
             continue;
         };
-        if exempt(rel) {
+        if literal::path_exempt(rel) {
             continue;
         }
         let path = root.join(rel);

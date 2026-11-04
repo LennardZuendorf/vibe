@@ -524,6 +524,24 @@ fn vibe_tree(
     state: &str,
     feature: Option<&str>,
 ) -> Files {
+    vibe_tree_value(
+        policy,
+        machine,
+        detect,
+        state,
+        feature.map_or(Value::Null, |name| json!(name)),
+    )
+}
+
+/// [`vibe_tree`] with the cursor's `feature` written verbatim, whatever its JSON
+/// type — the shape a hand-edited or half-written cursor can carry.
+fn vibe_tree_value(
+    policy: Option<&str>,
+    machine: &str,
+    detect: Option<&str>,
+    state: &str,
+    feature: Value,
+) -> Files {
     let mut files = Vec::new();
     if let Some(policy) = policy {
         files.push((format!("{VIBE}/content/policy.json"), policy.to_string()));
@@ -536,7 +554,6 @@ fn vibe_tree(
         ));
     }
     let (flow, phase) = split_state(state);
-    let feature = feature.map_or(Value::Null, |name| json!(name));
     files.push((format!("{VIBE}/state.json"), cursor(flow, phase, feature)));
     files
 }
@@ -554,6 +571,10 @@ fn bash_payload(command: &str) -> String {
 const FAKE_EMPTY_REASON: &str = "#!/usr/bin/env bash\nprintf 'block:\\n'\n";
 /// A real block line followed by a second line — also not provable.
 const FAKE_TWO_LINES: &str = "#!/usr/bin/env bash\nprintf 'block:real reason\\nsecond line\\n'\n";
+/// A verdict line with leading whitespace: both oracle verdict shapes are
+/// anchored on the first byte, so this is a diagnostic that contains a block,
+/// not a block.
+const FAKE_LEADING_SPACE: &str = "#!/usr/bin/env bash\nprintf '  block:real reason\\n'\n";
 /// One reason-bearing line: both sides block, so the fallback is exercised
 /// without a divergence.
 const FAKE_CLEAN_BLOCK: &str = "#!/usr/bin/env bash\nprintf 'block:real reason\\n'\n";
@@ -677,14 +698,21 @@ fn hook_cases(flow_dir: &Path) -> Result<Vec<HookDef>, String> {
     ));
 
     // guard: the block-vs-crash shape gate. Two of these are pinned as expected
-    // divergences (the oracle prefix-matches `block:*`); the third proves a real
-    // block still travels through the spawned fallback unchanged.
+    // divergences (the oracle prefix-matches `block:*`); `decide-leading-space`
+    // proves a block line that is not anchored at the first byte stays an
+    // allow on both sides, and `decide-clean-block` proves a real block still
+    // travels through the spawned fallback unchanged.
     defs.push(fake_decide(
         "decide-empty-reason",
         FAKE_EMPTY_REASON,
         &machine,
     ));
     defs.push(fake_decide("decide-two-lines", FAKE_TWO_LINES, &machine));
+    defs.push(fake_decide(
+        "decide-leading-space",
+        FAKE_LEADING_SPACE,
+        &machine,
+    ));
     defs.push(fake_decide(
         "decide-clean-block",
         FAKE_CLEAN_BLOCK,
@@ -721,6 +749,22 @@ fn hook_cases(flow_dir: &Path) -> Result<Vec<HookDef>, String> {
         "verify-no-feature",
         "{}",
         tree("feature.verify", None),
+        None,
+    ));
+    // A feature the cursor carries as a number is still a name: both oracles
+    // stringify it (`jq -r` / a template literal) and block on the missing
+    // `feature-123.md`, so the one blocking tooth must not degrade to the
+    // warn-only "names no feature" path over a non-string value.
+    defs.push(stop(
+        "verify-numeric-feature",
+        "{}",
+        vibe_tree_value(
+            Some(&policy),
+            &machine,
+            Some(&detect),
+            "feature.verify",
+            json!(123),
+        ),
         None,
     ));
     defs.push(stop(

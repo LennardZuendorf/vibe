@@ -9,17 +9,14 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use vibe_parity::harness::{Mode, Report, Status, execute, run_suite};
-use vibe_parity::suite::{Suite, normalize_bytes};
+use vibe_parity::suite::{Field, Suite, normalize_bytes};
 
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixture")
 }
 
-fn work(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("vibe-parity-test-{name}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
+fn work(name: &str) -> vibe_core::testscratch::Scratch {
+    vibe_core::testscratch::scratch("vibe-parity-test", name)
 }
 
 fn candidate() -> Mode {
@@ -127,8 +124,12 @@ fn an_empty_class_fails() {
 #[test]
 fn pinned_divergences_pass_and_stale_pins_fail() {
     let pins = json!([
-        { "command": "echo", "case": "basic/one", "field": "stdout", "reason": "test" },
-        { "command": "echo", "case": "basic/two", "field": "stdout", "reason": "test" }
+        { "command": "echo", "case": "basic/one", "args": ["a"], "field": "stdout",
+          "expect": { "oracle": "args:a", "candidate": "args:a!" }, "reason": "test" },
+        { "command": "echo", "case": "basic/one", "args": ["b", "c"], "field": "stdout",
+          "expect": { "oracle": "args:b c", "candidate": "args:b c!" }, "reason": "test" },
+        { "command": "echo", "case": "basic/two", "field": "stdout",
+          "expect": { "oracle": "args:", "candidate": "args:!" }, "reason": "test" }
     ]);
     let mut suite = base();
     suite["divergences"] = pins.clone();
@@ -147,7 +148,223 @@ fn pinned_divergences_pass_and_stale_pins_fail() {
             .iter()
             .filter(|e| e.starts_with("stale pin"))
             .count(),
-        2
+        3
+    );
+}
+
+#[test]
+fn a_pin_that_states_no_values_fails_suite_load() {
+    // The defect this guards: a pin naming only a field matched any
+    // difference on it, so a crash on a pinned exit reported as PINNED.
+    let dir = work("pin-no-values");
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "exit", "reason": "test" }
+    ]);
+    let path = dir.join("suite.json");
+    fs::write(&path, serde_json::to_vec(&suite).unwrap()).unwrap();
+    let err = Suite::load(&path).unwrap_err();
+    assert!(err.contains("expect"), "{err}");
+
+    for (field, expect) in [
+        ("exit", json!({ "oracle": "zero", "candidate": 3 })),
+        ("exit", json!({ "oracle": 0 })),
+        ("stdout", json!({ "oracle": null, "candidate": null })),
+        ("files", json!({ "files": [] })),
+    ] {
+        let mut suite = base();
+        suite["divergences"] = json!([
+            { "command": "echo", "case": "basic/two", "field": field, "expect": expect, "reason": "test" }
+        ]);
+        fs::write(&path, serde_json::to_vec(&suite).unwrap()).unwrap();
+        assert!(
+            Suite::load(&path).is_err(),
+            "{field} pin with expect {expect} loaded"
+        );
+    }
+}
+
+#[test]
+fn a_crashing_candidate_is_pin_drift_not_pinned() {
+    // The mutation the field-name-only matcher let through: the candidate
+    // prints exactly what the oracle prints and then panics, so stdout and
+    // every file agree and only `exit` differs. That difference satisfies an
+    // exit pin that names the code 3 the mutant was written for, but not the
+    // 101 a crash produces.
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "exit",
+          "expect": { "oracle": 0, "candidate": 3 }, "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=crash"]);
+    let report = run("crash", suite, &candidate());
+    assert_eq!(report.pinned(), 0, "{report:#?}");
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    let two = report
+        .results
+        .iter()
+        .find(|r| r.case == "basic/two")
+        .expect("basic/two ran");
+    let Status::Fail(msgs) = &two.status else {
+        panic!("a crash on a pinned exit reported {:?}", two.status)
+    };
+    let drift = msgs
+        .iter()
+        .find(|m| m.starts_with("pin drift: pin 0: exit:"))
+        .unwrap_or_else(|| panic!("no exit drift in {msgs:?}"));
+    assert!(
+        drift.contains("expected {\"candidate\":3,\"oracle\":0}")
+            && drift.contains("observed {\"candidate\":101,\"oracle\":0}"),
+        "{drift}"
+    );
+}
+
+#[test]
+fn a_candidate_without_the_final_newline_fails_instead_of_passing() {
+    // The mutation the line-based matcher let through: the oracle's stdout
+    // and the candidate's are equal as lines, and only the trailing byte
+    // differs. Bytes decide the difference, and no pin can state a difference
+    // with no differing line — even one that names both sides as identical.
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "stdout",
+          "expect": { "oracle": "args:", "candidate": "args:" }, "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=newline"]);
+    let report = run("final-newline", suite, &candidate());
+    assert_eq!(report.pinned(), 0, "{report:#?}");
+    assert!(
+        report.errors.is_empty(),
+        "the pin is claimed, not stale: {:?}",
+        report.errors
+    );
+    let two = report
+        .results
+        .iter()
+        .find(|r| r.case == "basic/two")
+        .expect("basic/two ran");
+    let Status::Fail(msgs) = &two.status else {
+        panic!("a missing final newline reported {:?}", two.status)
+    };
+    assert!(
+        msgs.iter().any(|m| m
+            == "stdout: unpinnable — the lines all agree, and only the final newline \
+                differs (oracle does, candidate does not)"),
+        "{msgs:?}"
+    );
+}
+
+#[test]
+fn a_file_equal_as_lines_but_not_as_bytes_fails_instead_of_pinning() {
+    // The same hole one level down: `Present(None)` on both sides reads as
+    // "two files with no lines", which a pin can state. When the bytes differ
+    // only in the final newline, no pin may claim it.
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "files",
+          "expect": { "files": [
+              { "key": "out.txt",
+                "oracle": { "present": true },
+                "candidate": { "present": true } }
+          ] }, "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=file-newline"]);
+    let report = run("file-final-newline", suite, &candidate());
+    assert_eq!(report.pinned(), 0, "{report:#?}");
+    assert!(
+        report.errors.is_empty(),
+        "the pin is claimed, not stale: {:?}",
+        report.errors
+    );
+    let two = report
+        .results
+        .iter()
+        .find(|r| r.case == "basic/two")
+        .expect("basic/two ran");
+    let Status::Fail(msgs) = &two.status else {
+        panic!("a file missing its final newline reported {:?}", two.status)
+    };
+    assert!(
+        msgs.iter().any(|m| m.starts_with("files: unpinnable")),
+        "{msgs:?}"
+    );
+}
+
+#[test]
+fn a_pin_that_states_the_wrong_values_fails_as_drift() {
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "exit",
+          "expect": { "oracle": 0, "candidate": 4 }, "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=exit"]);
+    let report = run("drift", suite, &candidate());
+    assert_eq!(report.pinned(), 0, "{report:#?}");
+    assert!(
+        report.errors.is_empty(),
+        "drift is a run failure, not a suite error: {:?}",
+        report.errors
+    );
+    let two = report
+        .results
+        .iter()
+        .find(|r| r.case == "basic/two")
+        .expect("basic/two ran");
+    let Status::Fail(msgs) = &two.status else {
+        panic!("a drifted pin reported {:?}", two.status)
+    };
+    assert!(msgs[0].starts_with("pin drift: pin 0: exit: "), "{msgs:?}");
+    assert!(
+        msgs[0].contains("expected {\"candidate\":4,\"oracle\":0}")
+            && msgs[0].contains("observed {\"candidate\":3,\"oracle\":0}"),
+        "{msgs:?}"
+    );
+}
+
+#[test]
+fn an_empty_prefix_pins_an_empty_line_not_any_line() {
+    // `""` is a real expectation (an empty line), never "matches anything":
+    // a pin that could match any text would be the field-name-only pin again.
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "stdout",
+          "expect": { "oracle": "", "candidate": "" }, "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=stdout"]);
+    let report = run("empty-prefix", suite, &candidate());
+    let two = report
+        .results
+        .iter()
+        .find(|r| r.case == "basic/two")
+        .expect("basic/two ran");
+    assert!(
+        matches!(&two.status, Status::Fail(msgs) if msgs[0].starts_with("pin drift")),
+        "{:?}",
+        two.status
+    );
+}
+
+#[test]
+fn a_pinned_stdout_prefix_stands_for_the_rest_of_the_line() {
+    // A prefix is a predicate, so the same pin covers the variable tail of a
+    // line (an absolute path in a sandbox), and the observed values it names
+    // still have to match.
+    let mut suite = base();
+    suite["divergences"] = json!([
+        { "command": "echo", "case": "basic/two", "field": "stdout",
+          "expect": { "oracle": "args", "candidate": "args:" }, "reason": "test" }
+    ]);
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=stdout"]);
+    let report = run("prefix", suite, &candidate());
+    let two = report
+        .results
+        .iter()
+        .find(|r| r.case == "basic/two")
+        .expect("basic/two ran");
+    assert_eq!(
+        two.status,
+        Status::Pinned(vec![Field::Stdout]),
+        "{report:#?}"
     );
 }
 
@@ -331,7 +548,8 @@ fn a_command_over_no_class_fails() {
 fn a_pin_with_args_covers_only_that_run() {
     let mut suite = base();
     suite["divergences"] = json!([
-        { "command": "echo", "case": "basic/one", "args": ["a"], "field": "stdout", "reason": "test" }
+        { "command": "echo", "case": "basic/one", "args": ["a"], "field": "stdout",
+          "expect": { "oracle": "args:a", "candidate": "args:a!" }, "reason": "test" }
     ]);
     suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=stdout"]);
     let report = run("pin-args", suite, &candidate());
@@ -344,7 +562,8 @@ fn a_pin_with_args_covers_only_that_run() {
 fn a_pin_with_args_that_match_no_run_is_stale() {
     let mut suite = base();
     suite["divergences"] = json!([
-        { "command": "echo", "case": "basic/one", "args": ["zzz"], "field": "stdout", "reason": "test" }
+        { "command": "echo", "case": "basic/one", "args": ["zzz"], "field": "stdout",
+          "expect": { "oracle": "args:zzz", "candidate": "args:zzz!" }, "reason": "test" }
     ]);
     let report = run("pin-args-stale", suite, &candidate());
     assert!(
@@ -361,7 +580,8 @@ fn a_pin_with_args_that_match_no_run_is_stale() {
 fn an_os_pin_is_inactive_elsewhere_and_never_stale() {
     let mut suite = base();
     suite["divergences"] = json!([
-        { "command": "echo", "case": "basic/one", "field": "stdout", "os": "plan9", "reason": "test" }
+        { "command": "echo", "case": "basic/one", "args": ["a"], "field": "stdout",
+          "expect": { "oracle": "args:a", "candidate": "args:a!" }, "os": "plan9", "reason": "test" }
     ]);
     suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=stdout"]);
     let report = run("pin-os-other", suite.clone(), &candidate());
@@ -370,12 +590,14 @@ fn an_os_pin_is_inactive_elsewhere_and_never_stale() {
 
     suite["divergences"][0]["os"] = json!(std::env::consts::OS);
     let report = run("pin-os-here", suite, &candidate());
-    assert_eq!(report.pinned(), 2, "{report:#?}");
-    assert_eq!(report.failed(), 1, "{report:#?}");
+    assert_eq!(report.pinned(), 1, "{report:#?}");
+    assert_eq!(report.failed(), 2, "{report:#?}");
 
     let mut suite = base();
     suite["divergences"] = json!([
-        { "command": "echo", "case": "basic/one", "field": "stdout", "os": std::env::consts::OS, "reason": "test" }
+        { "command": "echo", "case": "basic/one", "args": ["a"], "field": "stdout",
+          "expect": { "oracle": "args:a", "candidate": "args:a!" },
+          "os": std::env::consts::OS, "reason": "test" }
     ]);
     let report = run("pin-os-unhit", suite, &candidate());
     assert!(
@@ -724,4 +946,157 @@ fn a_case_can_feed_stdin_and_compare_stderr_through_a_full_run() {
     let report = run_suite(&loaded, &Mode::SelfCheck, &dir.join("work"));
     assert!(report.ok(), "{:?}", report.errors);
     assert_eq!(report.passed(), 1);
+}
+
+// PR66: the CLI owns a fresh reservation; a legacy PID path is foreign data.
+#[test]
+fn cli_preserves_legacy_pid_workdir_and_reclaims_its_reservation() {
+    let dir = work("cli-ownership");
+    let tmp = dir.join("tmp");
+    fs::create_dir(&tmp).unwrap();
+    let ready = dir.join("ready");
+    let finish = dir.join("finish");
+    let mut suite = base();
+    suite["commands"][0]["oracle"] = json!([
+        "bash",
+        "-c",
+        "touch \"$1\"; while test ! -f \"$2\"; do sleep 0.01; done",
+        "oracle",
+        ready,
+        finish
+    ]);
+    let suite_path = dir.join("suite.json");
+    fs::write(&suite_path, serde_json::to_vec(&suite).unwrap()).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_vibe-parity"))
+        .args(["run", suite_path.to_str().unwrap(), "--self"])
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", &*dir)
+        .env("TMPDIR", &tmp)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !ready.exists() {
+        if Instant::now() >= deadline || child.try_wait().unwrap().is_some() {
+            let _ = child.kill();
+            let output = child.wait_with_output().unwrap();
+            panic!(
+                "CLI did not reach oracle: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let legacy = tmp.join(format!("vibe-parity-{}", child.id()));
+    fs::create_dir_all(&legacy).unwrap();
+    fs::write(legacy.join("keep"), "foreign").unwrap();
+    fs::write(&finish, "").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert_eq!(fs::read_to_string(legacy.join("keep")).unwrap(), "foreign");
+    let remaining: Vec<_> = fs::read_dir(&tmp)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert_eq!(
+        remaining,
+        vec![legacy],
+        "CLI must reclaim its own reservation"
+    );
+}
+
+// PR66: scratch reservation failures remain CLI findings, not panic exits.
+#[test]
+fn cli_reports_an_unusable_temp_root_without_panicking() {
+    let dir = work("cli-invalid-temp");
+    let unusable = dir.join("file");
+    fs::write(&unusable, "not a directory").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_vibe-parity"))
+        .arg("run")
+        .arg(fixture().join("suite.json"))
+        .arg("--self")
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("HOME", &*dir)
+        .env("TMPDIR", &unusable)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).starts_with("vibe-parity: create scratch: "));
+    assert!(output.stdout.is_empty());
+    assert_eq!(fs::read_to_string(unusable).unwrap(), "not a directory");
+}
+
+// Start with a valid two-file pin; mutate one key to prove duplicates cannot
+// hide the second changed file, either at load or through the public structs.
+fn two_file_pin_fixture(name: &str) -> (vibe_core::testscratch::Scratch, Value, Mode) {
+    let dir = work(name);
+    let oracle = dir.join("oracle");
+    fs::create_dir_all(&oracle).unwrap();
+    fs::create_dir_all(dir.join("corpus/basic/one/tree")).unwrap();
+    fs::write(dir.join("corpus/basic/one/case.json"), "{\"v\":1}").unwrap();
+    fs::write(
+        oracle.join("echo.sh"),
+        "printf 'old\\n' > a; printf 'old\\n' > b\n",
+    )
+    .unwrap();
+    let suite = json!({
+        "v": 1, "name": "two-file-pin", "corpus": dir.join("corpus"),
+        "oracle_root": oracle, "floors": { "basic": 1 },
+        "commands": [{ "name": "echo", "classes": ["basic"],
+            "oracle": ["bash", "{oracle}/echo.sh"],
+            "candidate": ["bash", "-c", "printf 'new\\n' > a; printf 'new\\n' > b"] }],
+        "divergences": [{ "command": "echo", "case": "basic/one", "field": "files",
+            "reason": "Both changed files were reviewed", "expect": { "files": [
+                { "key": "a", "oracle": { "present": true, "first_line": "old" },
+                    "candidate": { "present": true, "first_line": "new" } },
+                { "key": "b", "oracle": { "present": true, "first_line": "old" },
+                    "candidate": { "present": true, "first_line": "new" } }
+            ] } }]
+    });
+    (dir, suite, candidate())
+}
+
+#[test]
+fn duplicate_file_pin_keys_fail_suite_load() {
+    let (dir, mut suite, mode) = two_file_pin_fixture("duplicate-file-load");
+    let report = run("two-file-valid", suite.clone(), &mode);
+    assert!(report.ok(), "{report:#?}");
+    assert_eq!(report.pinned(), 1, "{report:#?}");
+    suite["divergences"][0]["expect"]["files"][1]["key"] = json!("a");
+    let path = dir.join("suite.json");
+    fs::write(&path, serde_json::to_vec(&suite).unwrap()).unwrap();
+    let err = Suite::load(&path).expect_err("duplicate file keys must fail load");
+    assert!(err.contains("duplicate") && err.contains("a"), "{err}");
+}
+
+#[test]
+fn duplicate_file_pin_keys_cannot_hide_an_unreviewed_file() {
+    let (dir, suite, mode) = two_file_pin_fixture("duplicate-file-direct");
+    let path = dir.join("suite.json");
+    fs::write(&path, serde_json::to_vec(&suite).unwrap()).unwrap();
+    let mut loaded = Suite::load(&path).unwrap();
+    let valid = run_suite(&loaded, &mode, &dir.join("valid"));
+    assert!(valid.ok(), "{valid:#?}");
+    assert_eq!(valid.pinned(), 1, "{valid:#?}");
+    loaded.divergences[0].expect.files.as_mut().unwrap()[1].key = "a".into();
+    let report = run_suite(&loaded, &mode, &dir.join("duplicate"));
+    assert_eq!(report.pinned(), 0, "{report:#?}");
+    assert_eq!(report.failed(), 1, "{report:#?}");
+    assert!(
+        matches!(&report.results[0].status,
+        Status::Fail(messages) if messages.iter().any(|m| m.starts_with("pin drift"))),
+        "{report:#?}"
+    );
 }

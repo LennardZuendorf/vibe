@@ -11,7 +11,7 @@ use std::time::{Duration, SystemTime};
 const OK_HUB: &str = "---\ntype: hub\nupdated: 2026-01-15\n---\n\n# H\n";
 
 /// A layered tree whose stray a.md and b.md are SF30 errors.
-fn tree(name: &str) -> std::path::PathBuf {
+fn tree(name: &str) -> vibe_core::testscratch::Scratch {
     let p = project(name);
     write(
         &p,
@@ -206,7 +206,7 @@ fn hook_validate_never_fails() {
     }
 }
 
-fn committed(name: &str) -> std::path::PathBuf {
+fn committed(name: &str) -> vibe_core::testscratch::Scratch {
     let p = tree(name);
     write(&p, "sub/y.txt", "y\n");
     fs::remove_dir_all(p.join(".git")).unwrap();
