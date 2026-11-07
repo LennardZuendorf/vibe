@@ -2,7 +2,9 @@
   "runs": {
     "state-set": [
       [
-        "feature.compound"
+        "feature.compound",
+        "auth",
+        "--confirm"
       ]
     ]
   },

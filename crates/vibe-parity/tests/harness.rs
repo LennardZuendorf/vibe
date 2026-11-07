@@ -785,6 +785,33 @@ fn an_alias_never_clobbers_a_key_the_side_already_holds() {
     );
 }
 
+#[test]
+fn an_ignored_file_is_not_compared_on_either_side() {
+    // `out.txt` is the only file either side writes; the mutant changes its
+    // bytes. Ignoring the key must turn that red green, and the same suite
+    // without the ignore must stay red — otherwise the test proves nothing.
+    let mut suite = base();
+    suite["commands"][0]["candidate"] = json!(["{candidate}", "--mutate=file"]);
+    let control = run("ignore-control", suite.clone(), &candidate());
+    assert_eq!(control.failed(), 3, "{control:#?}");
+
+    suite["ignore_files"] = json!(["out.txt"]);
+    let ignored = run("ignore", suite, &candidate());
+    assert!(ignored.ok(), "{ignored:#?}");
+    assert_eq!(ignored.passed(), 3);
+}
+
+#[test]
+fn an_empty_ignore_entry_is_refused_at_load() {
+    let mut suite = base();
+    suite["ignore_files"] = json!([""]);
+    let dir = work("ignore-empty");
+    let path = dir.join("suite.json");
+    fs::write(&path, serde_json::to_vec(&suite).unwrap()).unwrap();
+    let err = Suite::load(&path).expect_err("empty ignore entry");
+    assert!(err.contains("ignore_files entry \"\" is empty"), "{err}");
+}
+
 // ---------------------------------------------------------------------------
 // Hook-shaped case fields: stdin, stderr, env, stamps, git. The mechanism is
 // proven directly on run_child/apply_stamps/sandbox_git; the suite-level
