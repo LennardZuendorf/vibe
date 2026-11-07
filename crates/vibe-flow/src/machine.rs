@@ -1,10 +1,16 @@
-//! The state machine: a pure loader plus queries (mirrors `machine.mjs`).
+//! The state machine: a pure loader, queries, and the one transition check
+//! (mirrors `machine.mjs` for the loader half).
 //!
-//! No transition enforcement lives here; `check_transition` is F7's job.
+//! `check_transition` is the single enforcement point D27 names: the CLI, the
+//! hooks and (later) the TUI all ask it, so no two callers can disagree about
+//! what is legal. It reads the document and writes nothing.
 
 use std::path::Path;
 
 use serde_json::Value;
+
+/// The one state every state may move to: the flow's abort.
+pub const IDLE: &str = "idle";
 
 /// A loaded `state-machine.json`. Queries are own-key lookups only, so a
 /// state key spelled like an inherited member resolves to nothing.
@@ -81,10 +87,25 @@ impl Machine {
 
     /// Whether `from > to` is a gated edge.
     pub fn gate(&self, from: &str, to: &str) -> bool {
+        self.gate_text(from, to).is_some()
+    }
+
+    /// The gate requirement for `from > to`, or `None` when the edge is not
+    /// gated. A gate whose value is not a string still gates: the edge key
+    /// stands in for the text rather than letting a malformed value open the
+    /// edge.
+    pub fn gate_text(&self, from: &str, to: &str) -> Option<String> {
+        let key = format!("{from}>{to}");
         self.value
             .get("gates")
             .and_then(Value::as_object)
-            .is_some_and(|gates| gates.contains_key(&format!("{from}>{to}")))
+            .and_then(|gates| gates.get(&key))
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| key.clone())
+            })
     }
 
     /// Every gated edge key, sorted.
@@ -97,6 +118,119 @@ impl Machine {
             .unwrap_or_default();
         keys.sort_unstable();
         keys
+    }
+
+    /// The one transition check (D27). Pure: a refusal writes nothing, and an
+    /// acceptance only says the move is legal — the caller still writes.
+    ///
+    /// Rules, in order:
+    /// 1. the target must name a state;
+    /// 2. `idle` is legal from every state, including an unknown one (the
+    ///    abort is the repair path, so it is never gated shut);
+    /// 3. the target must be in the current state's `next`;
+    /// 4. an edge listed in `gates` needs `confirm`.
+    pub fn check_transition(
+        &self,
+        current: &str,
+        target: &str,
+        confirm: bool,
+    ) -> Result<(), Refusal> {
+        if self.state_of(target).is_none() {
+            return Err(Refusal::UnknownState {
+                target: target.to_string(),
+                known: self.state_keys(),
+            });
+        }
+        if target == IDLE {
+            return Ok(());
+        }
+        let next = self.next(current);
+        if !next.iter().any(|key| key == target) {
+            return Err(Refusal::NotInNext {
+                current: current.to_string(),
+                target: target.to_string(),
+                next,
+            });
+        }
+        if let Some(requirement) = self.gate_text(current, target).filter(|_| !confirm) {
+            return Err(Refusal::Gated {
+                current: current.to_string(),
+                target: target.to_string(),
+                requirement,
+            });
+        }
+        Ok(())
+    }
+}
+
+/// Why [`Machine::check_transition`] refused a move. The wording lives with
+/// the refusal so the CLI, the hooks and the TUI print one story.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Refusal {
+    /// The target names no state in the machine.
+    UnknownState {
+        /// The requested state key.
+        target: String,
+        /// Every state key, sorted.
+        known: Vec<String>,
+    },
+    /// The target exists but is not in the current state's `next`.
+    NotInNext {
+        /// The state the cursor names.
+        current: String,
+        /// The requested state key.
+        target: String,
+        /// The current state's legal `next` keys (empty when `current` names
+        /// no state at all).
+        next: Vec<String>,
+    },
+    /// The edge is listed in `gates` and no approval was given.
+    Gated {
+        /// The state the cursor names.
+        current: String,
+        /// The requested state key.
+        target: String,
+        /// The gate's requirement, verbatim from the machine.
+        requirement: String,
+    },
+}
+
+impl Refusal {
+    /// The refusal as the CLI prints it: an `ERROR` line plus the repair.
+    pub fn message(&self) -> String {
+        match self {
+            Refusal::UnknownState { target, known } => format!(
+                "vibe state: ERROR: '{target}' is not a known state.\n\
+                 vibe state: Known states: {}\n",
+                known.join(", ")
+            ),
+            Refusal::NotInNext {
+                current,
+                target,
+                next,
+            } => {
+                let legal = if next.is_empty() {
+                    format!(
+                        "none — the cursor names no known state; run `vibe state set {IDLE}` to recover"
+                    )
+                } else {
+                    next.join(", ")
+                };
+                format!(
+                    "vibe state: ERROR: '{target}' is not in next of '{current}'.\n\
+                     vibe state: Legal next: {legal}\n"
+                )
+            }
+            Refusal::Gated {
+                current,
+                target,
+                requirement,
+            } => format!(
+                "vibe state: ERROR: '{current}' -> '{target}' is a human gate: {requirement}.\n\
+                 vibe state: Re-run with --confirm once the human has approved: \
+                 vibe state set {target} [feature] --confirm\n"
+            ),
+        }
     }
 }
 

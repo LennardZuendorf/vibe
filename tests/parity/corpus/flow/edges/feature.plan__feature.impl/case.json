@@ -2,7 +2,9 @@
   "runs": {
     "state-set": [
       [
-        "feature.impl"
+        "feature.impl",
+        "auth",
+        "--confirm"
       ]
     ]
   },

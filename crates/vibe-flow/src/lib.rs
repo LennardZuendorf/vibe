@@ -8,6 +8,7 @@ pub mod cli;
 pub mod cmd;
 pub mod cursor;
 pub mod hook;
+pub mod ledger;
 pub mod machine;
 pub mod paths;
 pub mod policy;

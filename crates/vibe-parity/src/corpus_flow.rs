@@ -428,7 +428,14 @@ fn cases(flow_dir: &Path) -> Result<Vec<CaseDef>, String> {
         });
     }
 
-    // edges: one case per legal next entry, derived from the machine.
+    // edges: one case per legal next entry, derived from the machine. A gated
+    // edge (F7: `state set` refuses it without `--confirm`) carries the
+    // approval, which is the call a real caller makes. The frozen oracle knows
+    // no gate and ignores arguments past `[target, feature]`, so it writes the
+    // same cursor and prints the same line: the case stays a like-for-like
+    // comparison instead of pinning a difference the oracle cannot have an
+    // opinion about. The refusal itself is covered by vibe-flow's own suite.
+    let gates = machine.get("gates").and_then(Value::as_object);
     for state in &states {
         let next = machine
             .get("states")
@@ -439,11 +446,29 @@ fn cases(flow_dir: &Path) -> Result<Vec<CaseDef>, String> {
             .map(|list| list.iter().filter_map(Value::as_str).collect::<Vec<_>>())
             .unwrap_or_default();
         for target in next {
+            let gated = gates.is_some_and(|gates| gates.contains_key(&format!("{state}>{target}")));
+            let args = if gated {
+                vec![
+                    target.to_string(),
+                    "auth".to_string(),
+                    "--confirm".to_string(),
+                ]
+            } else {
+                vec![target.to_string()]
+            };
+            // The case is named for an edge, so it has to start on that edge's
+            // source. Without a seeded cursor both engines begin at idle and
+            // the case proves only that the *target* is a state name — which
+            // the `errors` class already covers.
+            let (flow, phase) = split_state(state);
             defs.push(CaseDef {
                 class: "edges",
                 name: format!("{state}__{target}"),
-                runs: vec![("state-set".to_string(), vec![vec![target.to_string()]])],
-                files: vec![(MACHINE_TREE.to_string(), machine_text.clone())],
+                runs: vec![("state-set".to_string(), vec![args])],
+                files: vec![
+                    (MACHINE_TREE.to_string(), machine_text.clone()),
+                    (CURSOR_TREE.to_string(), cursor(flow, phase, Value::Null)),
+                ],
             });
         }
     }

@@ -53,12 +53,16 @@ enum Command {
 enum StateCommand {
     /// Print the resolved cursor as pretty JSON.
     Get,
-    /// Write the cursor: `set <flow.phase> [feature]`.
+    /// Write the cursor: `set <flow.phase> [feature] [--confirm]`.
     Set {
         /// The target state, e.g. `feature.impl` or `idle`.
         target: Option<String>,
         /// The feature to attach; carried forward when omitted.
         feature: Option<String>,
+        /// Approve a gated edge (`gates` in the machine). Without it the write
+        /// is refused; there is no override.
+        #[arg(long)]
+        confirm: bool,
     },
 }
 
@@ -123,9 +127,11 @@ fn dispatch(paths: &FlowPaths, command: Command) -> Outcome {
     match command {
         Command::State { command } => match command {
             StateCommand::Get => cmd::state::run_get(paths),
-            StateCommand::Set { target, feature } => {
-                cmd::state::run_set(paths, target.as_deref(), feature.as_deref())
-            }
+            StateCommand::Set {
+                target,
+                feature,
+                confirm,
+            } => cmd::state::run_set(paths, target.as_deref(), feature.as_deref(), confirm),
         },
         Command::Policy { command } => match command {
             PolicyCommand::Decide { path, state } => {

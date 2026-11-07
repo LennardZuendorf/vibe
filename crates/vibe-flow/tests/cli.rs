@@ -67,6 +67,7 @@ fn state_set_refuses_an_unknown_target_with_the_sorted_state_list() {
 #[test]
 fn state_set_writes_and_echoes_the_next_states() {
     let root = support::root("set-ok");
+    assert_eq!(run(&root, &["state", "set", "feature.design", "auth"]).0, 0);
     let (code, stdout, stderr) = run(&root, &["state", "set", "feature.plan", "auth"]);
     assert_eq!(code, 0);
     assert_eq!(
@@ -78,24 +79,75 @@ fn state_set_writes_and_echoes_the_next_states() {
     assert!(cursor.starts_with("{\n  \"flow\": \"feature\",\n  \"phase\": \"plan\",\n  \"feature\": \"auth\",\n  \"updated\": \""), "{cursor}");
 }
 
+// Rewritten for F7: `idle -> feature.impl` is neither a legal next nor an
+// ungated edge, so the warning is reached by walking design -> plan instead.
 #[test]
 fn state_set_warns_about_a_feature_state_without_a_feature() {
     let root = support::root("set-warn");
-    let (code, _, stderr) = run(&root, &["state", "set", "feature.impl"]);
+    assert_eq!(run(&root, &["state", "set", "feature.design"]).0, 0);
+    let (code, _, stderr) = run(&root, &["state", "set", "feature.plan"]);
     assert_eq!(code, 0);
     assert_eq!(
         stderr,
-        "vibe state: WARN: entering 'feature.impl' with no feature set. Pass one: vibe state set feature.impl <feature>\n"
+        "vibe state: WARN: entering 'feature.plan' with no feature set. Pass one: vibe state set feature.plan <feature>\n"
     );
 }
 
+// Rewritten for F7: `idle -> quick.fix` is not a legal next; the flow enters at
+// quick.triage. `idle` stays legal from every state, which is what this pins.
 #[test]
 fn state_set_moving_to_idle_clears_the_feature() {
     let root = support::root("set-idle");
-    assert_eq!(run(&root, &["state", "set", "quick.fix", "bug"]).0, 0);
+    assert_eq!(run(&root, &["state", "set", "quick.triage", "bug"]).0, 0);
+    assert_eq!(run(&root, &["state", "set", "quick.fix"]).0, 0);
     assert_eq!(run(&root, &["state", "set", "idle"]).0, 0);
     let (_, stdout, _) = run(&root, &["state", "get"]);
     assert!(stdout.contains("\"feature\": null"), "{stdout}");
+}
+
+#[test]
+fn state_set_refuses_an_illegal_edge_with_exit_one_and_the_legal_next_list() {
+    let root = support::root("set-illegal");
+    let (code, stdout, stderr) = run(&root, &["state", "set", "feature.impl", "auth"]);
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        stderr,
+        "vibe state: ERROR: 'feature.impl' is not in next of 'idle'.\n\
+         vibe state: Legal next: setup.detect, strategy.brainstorm, feature.design, quick.triage\n"
+    );
+    assert!(!root.join(".vibe/run/flow/state.json").exists());
+    assert!(!root.join(".vibe/run/flow/ledger.jsonl").exists());
+}
+
+#[test]
+fn state_set_refuses_a_gated_edge_until_confirm_allows_it() {
+    let root = support::root("set-gate");
+    assert_eq!(run(&root, &["state", "set", "feature.design", "auth"]).0, 0);
+    assert_eq!(run(&root, &["state", "set", "feature.plan"]).0, 0);
+
+    let (code, stdout, stderr) = run(&root, &["state", "set", "feature.impl"]);
+    assert_eq!(code, 1);
+    assert!(stdout.is_empty());
+    assert!(
+        stderr.starts_with(
+            "vibe state: ERROR: 'feature.plan' -> 'feature.impl' is a human gate: human approves plan units + picks impl mode.\n"
+        ),
+        "{stderr}"
+    );
+    assert!(stderr.contains("--confirm"), "{stderr}");
+
+    let (code, stdout, stderr) = run(&root, &["state", "set", "feature.impl", "--confirm"]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout, "-> feature.impl\n   next: feature.verify, idle\n");
+    assert!(stderr.is_empty());
+
+    // The flag parses as a flag, not a feature: before the target as well as
+    // after it.
+    assert_eq!(run(&root, &["state", "set", "feature.verify"]).0, 0);
+    let (code, stdout, _) = run(&root, &["state", "set", "--confirm", "feature.compound"]);
+    assert_eq!(code, 0);
+    assert_eq!(stdout, "-> feature.compound\n   next: idle\n");
 }
 
 #[test]
