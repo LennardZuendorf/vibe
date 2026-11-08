@@ -21,5 +21,6 @@ Node engine and bash scripts, the hook shim, the TUI, and distribution.
 - [Shim and discovery](rust/rust-shim-discovery.md) — hook shim and the five-tier binary discovery
 - [Oracles and parity](rust/rust-oracles-parity.md) — frozen oracles, the differential harness, glob matching
 - [Parity pins and port order](rust/rust-parity-pins.md) — pinned divergences, port order, carried rows
-- [Machine teeth, ledger and TUI](rust/rust-flow-runtime.md) — state set, ledger and signals, TUI v1
+- [Flow runtime](rust/rust-flow-runtime.md) — surface, repo-local layout, skill contracts, pending targets
+- [Machine teeth and ledger](rust/rust-flow-gates.md) — the transition check, ledger events, pending ledger and signals
 - [Distribution and CI matrix](rust/rust-distribution-ci.md) — cargo-dist targets, installer steps, CI jobs
