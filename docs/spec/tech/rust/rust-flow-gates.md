@@ -26,6 +26,16 @@ was not enforced). Ledger rotation is still pending.
 Still pending in F7: ledger rotation, and executable GSD aliases. The current
 alias table is data, not executable command support.
 
+## Recorded divergence between the two writers
+
+One difference between them is deliberate and recorded rather than fixed: when
+the cursor leaf is an in-project symlink to a *directory*, the fallback writer
+refuses it (`unsafe cursor path`) while the binary permits it and replaces the
+link with a regular file, never following it. Both fail safe — the target
+directory and its contents are untouched, and neither writer writes through a
+link out of the project. The engine suite records it as a KNOWN DIVERGENCE on
+the shell-refusal fixture in `flow/engine/tests/cursor.test.mjs`.
+
 ## Pending ledger contract
 
 `.vibe/run/flow/ledger.jsonl`, `O_APPEND`, rotate at 5 MB retaining one

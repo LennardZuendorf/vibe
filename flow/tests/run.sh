@@ -905,6 +905,55 @@ assert_contains "f7/wrappers" "the fallback writer still moves the cursor" "$(ca
 rm -rf "$STUB"
 
 echo ""
+echo "=== f7/hermetic — an ambient vibe-flow cannot change what the engine suite measures ==="
+# The engine suite drives the FALLBACK writer too, so it masks an ambient
+# `vibe-flow` in run.mjs: once, at module load, on process.env.PATH. That single
+# mask is what makes its spawned fixtures and its in-process probes (the doctor
+# parity matrix runs `command -v vibe-spec` inside the engine and through bash)
+# agree. It was NOT always single: masking only the children left the in-process
+# legs reading the real PATH, so on any machine holding both binaries in one
+# directory (`cargo install` -> ~/.cargo/bin, or ./target/debug) six doctor cases
+# split `warn tool.vibe-spec … not installed` against `ok tool.vibe-spec …
+# present` and one cursor fixture delegated for real — 7 red locally, green in
+# CI, which never has the binary. Prove it on the REAL suite rather than on a
+# filtered slice: a stub that records every call and fails must never be reached.
+if command -v node >/dev/null 2>&1; then
+  HSTUB="$(mktemp -d)"
+  cat > "$HSTUB/vibe-flow" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${VIBE_FLOW_STUB_LOG:-/dev/null}"
+echo "vibe state: ERROR: the engine suite must never delegate to an ambient vibe-flow" >&2
+exit 1
+EOF
+  chmod +x "$HSTUB/vibe-flow"
+  : > "$HSTUB/argv.log"
+  engine_log="$HSTUB/engine.log"
+  # rc captured directly (not through command substitution) so a crash keeps its
+  # status; the log is inspected for the summary and for WHAT failed, so a red
+  # leg names the cases instead of dumping 900 lines.
+  VIBE_FLOW_STUB_LOG="$HSTUB/argv.log" PATH="$HSTUB:$PATH" \
+    node "$SRC_ROOT/flow/engine/tests/run.mjs" >"$engine_log" 2>&1
+  engine_rc=$?
+  engine_summary="$(grep -E '^[0-9]+ passed, [0-9]+ failed' "$engine_log" | tail -n 1)"
+  assert_eq "f7/hermetic" "the engine suite is green with an ambient vibe-flow on PATH" "$engine_rc" "0"
+  [[ -n "$engine_summary" ]] || engine_summary="(no summary line — the runner did not finish)"
+  assert_contains "f7/hermetic" "the engine suite reports no failures under that ambient binary" "$engine_summary" ", 0 failed"
+  if [[ "$engine_rc" -ne 0 ]]; then
+    echo "        failing cases:"
+    grep -E '^  FAIL' "$engine_log" | head -n 10 | sed 's/^/        /'
+  fi
+  if [[ -s "$HSTUB/argv.log" ]]; then
+    fail "f7/hermetic" "no engine fixture delegated to the ambient vibe-flow"
+    echo "        the stub was invoked with: $(head -n 5 "$HSTUB/argv.log")"
+  else
+    pass "f7/hermetic" "no engine fixture delegated to the ambient vibe-flow"
+  fi
+  rm -rf "$HSTUB"
+else
+  echo "  note: node not on PATH — the engine-suite hermeticity leg did not run" >&2
+fi
+
+echo ""
 echo "=== orders.sh on a fresh non-git install (stranger-eval regression) ==="
 # A fresh full install creates neither .git nor .spec. orders.sh must still
 # resolve the linked skill's block by self-locating the skills dir from its own
