@@ -1,26 +1,31 @@
 #!/usr/bin/env bash
-# set-state.sh — the ONLY sanctioned writer of .agents/skills/vibe/state.json.
+# set-state.sh — the only sanctioned entry point for writing the flow cursor.
 #
 # Usage:
-#   set-state.sh <flow.phase> [feature]
+#   set-state.sh <flow.phase> [feature] [--confirm]
 #   set-state.sh idle
 #
 # Examples:
 #   set-state.sh strategy.brainstorm
 #   set-state.sh feature.design auth-tokens
-#   set-state.sh feature.impl            # preserves the current feature
+#   set-state.sh feature.impl              # preserves the current feature
+#   set-state.sh feature.impl --confirm    # crosses a human gate
 #   set-state.sh idle
 #
 # Behaviour:
-#   - Validates the target state exists in state-machine.json.
-#   - Splits <flow>.<phase> into the cursor's flow/phase fields.
-#   - Preserves `feature` unless a new one is given (or moving to idle clears it).
-#   - Writes atomically (temp file + mv). Never touches anything turn-varying
-#     beyond the `updated` timestamp, which lives in the cursor only — never in
-#     any injected text.
-#
-# This script does NOT enforce transition legality; the /flow command and the
-# vibe-* skills check `next` before calling it. This is the writer, not the gate.
+#   - With `vibe-flow` on PATH it execs `vibe-flow state set` with the same argv.
+#     The binary is the one gate (D27); this script is a caller, not a second
+#     copy of the rules. `--root`/`--vibe-dir` pin the layout resolved here, so
+#     the caller's working directory cannot redirect the write. The binary's
+#     refusal and its `-> <state>` line pass through verbatim.
+#   - Without the binary — every install target that has no Rust build — it
+#     keeps the ungated writer below and says on stderr that the gate was not
+#     enforced. Installs stay functional; they are never silently gated shut.
+#   - The fallback writer validates the target state exists in
+#     state-machine.json, splits <flow>.<phase> into flow/phase, preserves
+#     `feature` unless a new one is given (idle clears it), and writes atomically
+#     (temp file + mv). It touches nothing turn-varying beyond `updated`, which
+#     lives in the cursor only — never in any injected text.
 
 set -euo pipefail
 
@@ -36,6 +41,24 @@ fi
 
 err() { echo "set-state: $1" >&2; }
 
+# One gate, one writer (D27). When the binary is on PATH it owns the write and
+# this script's whole job is to hand it the same argv — including `--confirm`,
+# which the binary parses as a flag. The root and data home are pinned to what
+# this script already resolved: a caller's working directory must not be able to
+# point the cursor at another project.
+if command -v vibe-flow >/dev/null 2>&1; then
+  DELEGATE_ROOT=""
+  if declare -F runtime_project_root >/dev/null; then
+    DELEGATE_ROOT="$(runtime_project_root "$SKILL_DIR")" || DELEGATE_ROOT=""
+  fi
+  if [[ -n "$DELEGATE_ROOT" ]]; then
+    exec vibe-flow --root "$DELEGATE_ROOT" --vibe-dir "$SKILL_DIR" state set "$@"
+  fi
+  err "WARN: no project root resolved — the transition gate was not enforced."
+else
+  err "WARN: vibe-flow is not on PATH — the transition gate was not enforced."
+fi
+
 # jq is recommended, not required. Without it the cursor is still written (via
 # printf, byte-identical to the jq path — the cursor is a flat 4-key JSON) and the
 # target state is validated by a text match instead of a JSON query.
@@ -47,8 +70,22 @@ if [[ ! -f "$MACHINE" ]]; then
   exit 1
 fi
 
-TARGET="${1:-}"
-NEW_FEATURE="${2:-}"
+TARGET=""
+NEW_FEATURE=""
+# `--confirm` may appear anywhere after the target (the /flow contract). The
+# ungated writer below has no gate to confirm, so the flag is dropped there
+# rather than read as a feature name.
+POSITIONAL=0
+for arg in "$@"; do
+  if [[ "$arg" == "--confirm" ]]; then
+    continue
+  fi
+  POSITIONAL=$((POSITIONAL + 1))
+  case "$POSITIONAL" in
+    1) TARGET="$arg" ;;
+    2) NEW_FEATURE="$arg" ;;
+  esac
+done
 # An empty feature argument means "no feature argument" (carry forward / clear),
 # exactly as in the engine writer (`vibe state set`).
 FEATURE_GIVEN=0
@@ -83,7 +120,7 @@ validate_args() {
 }
 
 if [[ -z "$TARGET" ]]; then
-  err "ERROR: no target state given. Usage: set-state.sh <flow.phase> [feature]"
+  err "ERROR: no target state given. Usage: set-state.sh <flow.phase> [feature] [--confirm]"
   exit 1
 fi
 

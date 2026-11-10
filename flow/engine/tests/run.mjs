@@ -38,6 +38,27 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TESTS_DIR = __dirname;
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
+
+// The ambient `vibe-flow`, resolved once. `set-state.sh` delegates to it when it
+// is on PATH (F7), so a spawned shell oracle would take the binary's path
+// instead of the fallback writer these suites pin. Nothing here installs it, so
+// hiding it keeps a developer's machine and bare CI running the same code.
+const VIBE_FLOW_BIN_DIR = (() => {
+  const probe = spawnSync('bash', ['-c', 'command -v vibe-flow 2>/dev/null'], {
+    encoding: 'utf8',
+  });
+  const found = (probe.stdout || '').trim();
+  return found ? path.dirname(found) : null;
+})();
+
+function maskedPath(pathValue) {
+  if (!VIBE_FLOW_BIN_DIR) return pathValue;
+  return pathValue
+    .split(':')
+    .filter((entry) => entry !== VIBE_FLOW_BIN_DIR)
+    .join(':');
+}
+
 const CLI_PATH = path.join(REPO_ROOT, 'flow', 'engine', 'cli.mjs');
 
 // ---------------------------------------------------------------------------
@@ -256,6 +277,14 @@ export async function assertThrows(fn, msg) {
 // in both directions in runner.test.mjs.
 export function runCommand(cmd, args = [], opts = {}) {
   const env = { ...process.env };
+  // F7: `set-state.sh` delegates to `vibe-flow state set` when that binary is on
+  // PATH (one gate, one writer). Nothing under engine/tests/ installs it: these
+  // suites drive the shell fallback writer and its JS twin. An ambient binary
+  // from a developer's `cargo install` would therefore change what a spawned
+  // oracle does and redden the local run while CI — which never installs it —
+  // stayed green. Strip its directory from the inherited PATH; an explicit
+  // `opts.env.PATH` (the jq-less shims) still wins below and never contains it.
+  if (process.env.PATH) env.PATH = maskedPath(process.env.PATH);
   for (const key of opts.unsetEnv ?? []) delete env[key];
   Object.assign(env, opts.env ?? {});
   const result = spawnSync(cmd, args, {
