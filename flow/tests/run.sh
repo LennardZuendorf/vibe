@@ -917,6 +917,16 @@ echo "=== f7/hermetic — an ambient vibe-flow cannot change what the engine sui
 # present` and one cursor fixture delegated for real — 7 red locally, green in
 # CI, which never has the binary. Prove it on the REAL suite rather than on a
 # filtered slice: a stub that records every call and fails must never be reached.
+#
+# The stub set must MIRROR THE LAYOUT THE DEFECT NEEDS — one directory holding
+# BOTH binaries. Round 2 caught this fixture shipping `vibe-flow` alone: no
+# engine case can split when it is by itself, so the fixture stayed green (350
+# passed, 0 failed) with the module-load mask deleted, i.e. it did not guard the
+# line it was added for. Measured at this head, run.mjs:76 commented out:
+#   stub dir {vibe-flow}            -> 350 passed, 0 failed   (blind)
+#   stub dir {vibe-flow, vibe-spec} -> 348 passed, 2 failed   (the six doctor
+#                                      cases fail by name inside the leg)
+# and 350 passed, 0 failed with the mask intact either way. Keep both stubs.
 if command -v node >/dev/null 2>&1; then
   HSTUB="$(mktemp -d)"
   cat > "$HSTUB/vibe-flow" <<'EOF'
@@ -926,6 +936,15 @@ echo "vibe state: ERROR: the engine suite must never delegate to an ambient vibe
 exit 1
 EOF
   chmod +x "$HSTUB/vibe-flow"
+  # Beside it, the second half of the pair: `command -v vibe-spec` is what the
+  # doctor parity matrix compares in-process against through-bash. It must be
+  # executable and answer like a real binary on the happy path, but it is only
+  # ever probed here — the mask is expected to hide it from every leg.
+  cat > "$HSTUB/vibe-spec" <<'EOF'
+#!/usr/bin/env bash
+echo "0.0.0-stub"
+EOF
+  chmod +x "$HSTUB/vibe-spec"
   : > "$HSTUB/argv.log"
   engine_log="$HSTUB/engine.log"
   # rc captured directly (not through command substitution) so a crash keeps its
