@@ -19,11 +19,14 @@ appends one `transition` event to `.vibe/run/flow/ledger.jsonl`. The callers do
 not re-implement the check: `/flow` is a thin wrapper over `vibe-flow state set`,
 and `set-state.sh` delegates to the same binary when it is on `PATH` (an install
 without the Rust build keeps the plain writer and says on stderr that the gate
-was not enforced). Ledger rotation is still pending.
+was not enforced). When the live ledger reaches 5 MB it is rotated to
+`ledger.jsonl.1` — one generation kept, any older one replaced — and a fresh
+file starts. Rotation runs before the cursor is written, so an append that
+cannot be recorded, rotated or not, leaves the cursor where it was.
 
 ## Pending F7 remainder
 
-Still pending in F7: ledger rotation, and executable GSD aliases. The current
+Still pending in F7: executable GSD aliases. The current
 alias table is data, not executable command support.
 
 ## Recorded divergence between the two writers
@@ -36,10 +39,11 @@ directory and its contents are untouched, and neither writer writes through a
 link out of the project. The engine suite records it as a KNOWN DIVERGENCE on
 the shell-refusal fixture in `flow/engine/tests/cursor.test.mjs`.
 
-## Pending ledger contract
+## Ledger contract
 
-`.vibe/run/flow/ledger.jsonl`, `O_APPEND`, rotate at 5 MB retaining one
-generation; kinds `transition | hook | signal`.
+`.vibe/run/flow/ledger.jsonl`, `O_APPEND`, rotates to `ledger.jsonl.1` at 5 MB
+retaining one generation; kinds `transition | hook | signal` (only
+`transition` is emitted today).
 
 ## Pending signals
 
