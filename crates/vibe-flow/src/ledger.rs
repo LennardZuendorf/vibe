@@ -118,12 +118,13 @@ fn live_len(path: &Path) -> Result<u64, String> {
 
 /// Moves the live file onto the one retained generation.
 ///
-/// The old generation is removed first so Unix and Windows agree (`rename`
-/// replaces silently on one, fails on the other). That loses nothing: at the
-/// moment the old generation is dropped the live file still holds every line
-/// written since the previous rotation, so no acknowledged line has stopped
-/// existing anywhere.
+/// Unix `rename` replaces the target atomically, so the older generation only
+/// stops existing as a consequence of the new one appearing. Windows refuses
+/// an existing target, so it is dropped first there — and that drop loses
+/// nothing, because the live file still holds every line written since the
+/// previous rotation until the rename lands.
 fn rotate(live: &Path, rotated: &Path) -> Result<(), String> {
+    #[cfg(windows)]
     match std::fs::symlink_metadata(rotated) {
         Ok(_) => {
             std::fs::remove_file(rotated).map_err(|err| {
