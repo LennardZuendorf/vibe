@@ -143,22 +143,22 @@ test('sandbox self-check: makeSandbox\'s own cursor never triggers CursorParseEr
 // js-core/2 review, Finding 1 (CRITICAL) — install targets have no flow/ dir.
 //
 // readCursor(root) used to hardcode path.join(root, 'flow', 'state.json').
-// That only ever worked in this dogfood repo, where .agents/skills/vibe is a
+// That only ever worked in this dogfood repo, where .agents/skills/flow is a
 // symlink to flow/. A real install target (built by `cp -RL` into
-// <TARGET>/.agents/skills/vibe/, per install.sh) has no flow/ directory at
+// <TARGET>/.agents/skills/flow/, per install.sh) has no flow/ directory at
 // all — the old code would hit ENOENT and silently report "idle" while the
 // real cursor said otherwise: exactly the wrong-answer class the
 // CursorParseError fix above exists to prevent, just one layer up.
 //
 // This builds a fixture laid out exactly like a real install target
-// (<tmp>/.agents/skills/vibe/{engine,state.json,state-machine.json}, no
+// (<tmp>/.agents/skills/flow/{engine,state.json,state-machine.json}, no
 // flow/, no .git, no .spec anywhere) and drives the *real* resolution path:
 // a copy of root.mjs physically placed at the nested engine/ location (so
 // its self-relative resolution triggers for real) resolves vibeDir, and the
 // real (uncopied) cursor.mjs reads through it.
 test('CRITICAL (Finding 1): cursor reads correctly from an install-target layout with no flow/ dir', async () => {
   const installRoot = mkTempRoot('vibe-install-cursor-');
-  const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
+  const vibeDir = path.join(installRoot, '.agents', 'skills', 'flow');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(engineDir, { recursive: true });
   copyFileSync(ROOT_MJS, path.join(engineDir, 'root.mjs'));
@@ -227,7 +227,7 @@ test('runtime migration: legacy setter and every shell reader prefer the new cur
   try {
     const scripts = path.join(sb.flowDir,'scripts'); mkdirSync(scripts);
     mkdirSync(path.join(sb.dir,'.agents/skills'),{recursive:true});
-    symlinkSync(sb.flowDir,path.join(sb.dir,'.agents/skills/vibe'));
+    symlinkSync(sb.flowDir,path.join(sb.dir,'.agents/skills/flow'));
     copyFileSync(path.resolve(path.dirname(ROOT_MJS),'../SKILL.md'),path.join(sb.flowDir,'SKILL.md'));
     const source = path.resolve(path.dirname(ROOT_MJS),'../scripts');
     for (const name of ['runtime-state','set-state','detect-context','orders','validate-state','check-skills','doctor']) {
@@ -252,7 +252,7 @@ test('runtime migration: legacy setter and every shell reader prefer the new cur
         assert(!out.stdout.includes('no flow cursor (idle)'),out.stdout);
       } else {
         assertEqual(out.status,0,`${reader}: ${out.stderr}`);
-        assert((reader === 'orders' || reader === 'check-skills') ? (out.stdout+out.stderr).includes('verification-before-completion') : out.stdout.includes('quick.verify'), `${reader}: ${out.stdout} ${out.stderr}`);
+        assert(reader === 'orders' ? out.stdout.includes('evidence/quick.md') : reader === 'check-skills' ? (out.stdout+out.stderr).includes('verification-before-completion') : out.stdout.includes('quick.verify'), `${reader}: ${out.stdout} ${out.stderr}`);
       }
     }
     rmSync(sb.cursorPath);
@@ -331,7 +331,7 @@ test('runtime migration: dangling, directory and unreadable new cursors report i
     try {
       const scripts = path.join(sb.flowDir,'scripts'); mkdirSync(scripts);
     mkdirSync(path.join(sb.dir,'.agents/skills'),{recursive:true});
-    symlinkSync(sb.flowDir,path.join(sb.dir,'.agents/skills/vibe'));
+    symlinkSync(sb.flowDir,path.join(sb.dir,'.agents/skills/flow'));
     copyFileSync(path.resolve(path.dirname(ROOT_MJS),'../SKILL.md'),path.join(sb.flowDir,'SKILL.md'));
       const source = path.resolve(path.dirname(ROOT_MJS),'../scripts');
       for (const name of ['runtime-state','detect-context','orders','validate-state','check-skills','doctor']) {
@@ -368,7 +368,7 @@ for (const ancestor of ['.vibe','.vibe/run','.vibe/run/flow']) {
       const target=path.join(sb.dir,ancestor);
       try {
         mkdirSync(path.join(sb.dir,'.agents/skills'),{recursive:true});
-        symlinkSync(sb.flowDir,path.join(sb.dir,'.agents/skills/vibe'));
+        symlinkSync(sb.flowDir,path.join(sb.dir,'.agents/skills/flow'));
         copyFileSync(path.resolve(path.dirname(ROOT_MJS),'../SKILL.md'),path.join(sb.flowDir,'SKILL.md'));
         const scripts=path.join(sb.flowDir,'scripts');mkdirSync(scripts);
         for (const name of ['runtime-state','detect-context','orders','validate-state','check-skills','doctor']) {
@@ -403,7 +403,7 @@ for (const ancestor of ['.vibe','.vibe/run','.vibe/run/flow']) {
             } else if (reader === 'doctor' && !JQ_PRESENT) {
               assert(out.stdout.split('\n').includes(DOCTOR_NO_JQ_CURSOR),out.stdout);
               assert(!out.stdout.includes('no flow cursor (idle)'),out.stdout);
-            } else assert((reader === 'orders' || reader === 'check-skills') ? text.includes(kind.endsWith('absent') ? 'test-driven-development' : 'verification-before-completion') : text.includes(expected),`${ancestor}/${kind}/${reader}: ${text}`);
+            } else assert(reader === 'orders' ? text.includes(kind.endsWith('absent') ? 'bounded TDD' : 'evidence/quick.md') : reader === 'check-skills' ? text.includes(kind.endsWith('absent') ? 'test-driven-development' : 'verification-before-completion') : text.includes(expected),`${ancestor}/${kind}/${reader}: ${text}`);
           } else {
             assert(text.includes('invalid'),`${ancestor}/${kind}/${reader}: no invalid report: ${text}`);
             assert(!out.stdout.includes('quick.fix'),`${ancestor}/${kind}/${reader}: used old state`);

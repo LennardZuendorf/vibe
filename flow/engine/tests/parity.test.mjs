@@ -286,7 +286,7 @@ function makeReadSandbox(fixture) {
   copyFileSync(DOCTRINE_SRC, path.join(scriptsDir, 'doctrine.sh'));
 
   const skillsDir = path.join(sandbox.dir, '.agents', 'skills');
-  const vibeSkillDir = path.join(skillsDir, 'vibe');
+  const vibeSkillDir = path.join(skillsDir, 'flow');
   mkdirSync(vibeSkillDir, { recursive: true });
   writeFileSync(path.join(vibeSkillDir, 'SKILL.md'), REAL_SKILL_MD);
 
@@ -305,6 +305,8 @@ function makeStateOracleSandbox(fixture) {
   mkdirSync(scriptsDir, { recursive: true });
   const scriptPath = path.join(scriptsDir, 'set-state.sh');
   copyFileSync(SET_STATE_SRC, scriptPath);
+  // Task 8: the current writer calls its runtime helpers unconditionally.
+  copyFileSync(path.join(REPO_ROOT, 'flow', 'scripts', 'runtime-state.sh'), path.join(scriptsDir, 'runtime-state.sh'));
   return { ...sandbox, scriptPath };
 }
 
@@ -326,7 +328,7 @@ function makeDoctorSandbox(fixture) {
   copyFileSync(DOCTOR_SRC, scriptPath);
 
   const skillsDir = path.join(dir, '.agents', 'skills');
-  const vibeDir = path.join(skillsDir, 'vibe');
+  const vibeDir = path.join(skillsDir, 'flow');
   mkdirSync(path.join(skillsDir, 'spec'), { recursive: true }); // core.spec: ok
   mkdirSync(vibeDir, { recursive: true });
   copyFileSync(REAL_MACHINE_SRC, path.join(vibeDir, 'state-machine.json'));
@@ -485,6 +487,28 @@ for (const fixture of CURSOR_FIXTURES) {
 // oracle leg actually had on PATH for that run.
 // ---------------------------------------------------------------------------
 
+// Task 8 resource/trust diagnostics have behavioral coverage in doctor.test.mjs.
+// This matrix retains exact parity for every legacy-owned row. Require each ID
+// once so an empty projection or a missing check cannot make the matrix pass.
+function legacyDoctorReport(stdout, mode) {
+  const ids = ['tool.jq', 'tool.node', 'tool.vibe-spec', 'core.spec', 'core.vibe',
+    'machine', 'cursor', ...DOCTOR_HOOK_SCRIPTS.map(name => `adapter.script.${name}`),
+    'adapter.activation', 'instruction.coverage', 'deps.manifest'];
+  if (mode === 'jq') ids.push('dep.superpowers', 'dep.feature-dev');
+  const lines = stdout.trimEnd().split('\n');
+  assert(/^# vibe doctor — /.test(lines[0]), 'doctor parity requires its report header');
+  const selected = lines.filter(line => {
+    const match = /^(?:ok {3}|warn )([^ ]+) /.exec(line);
+    return match && ids.includes(match[1]);
+  });
+  assertEqual(selected.length, ids.length, `doctor legacy-row population must be ${ids.length} for ${mode}`);
+  for (const id of ids) {
+    assertEqual(selected.filter(line => line.slice(5).startsWith(`${id} `)).length, 1,
+      `doctor parity requires exactly one ${id} row`);
+  }
+  return [lines[0], ...selected].join('\n');
+}
+
 const DOCTOR_HOME = mkTempRoot('vibe-parity-doctor-home-');
 
 // Module-scope tmpdirs have no per-test finally to clean them, so they leaked
@@ -532,8 +556,8 @@ for (const fixture of CURSOR_FIXTURES) {
         assertEqual(oracleResult.code, 0, `oracle failed (${mode}): ${oracleResult.stderr}`);
         assertEqual(engineResult.code, 0);
         assertEqual(
-          engineResult.stdout,
-          oracleResult.stdout,
+          legacyDoctorReport(engineResult.stdout, mode),
+          legacyDoctorReport(oracleResult.stdout, mode),
           `doctor parity broke for ${fixture.name} x ${mode}\noracle:\n${oracleResult.stdout}\nengine:\n${engineResult.stdout}`,
         );
       } finally {
@@ -691,13 +715,13 @@ const GUARD_STDIN_SHAPES = [
   ['Bash, append to lessons', () => '{"tool_name":"Bash","tool_input":{"command":"echo x >> .spec/lessons.md"}}'],
   ['Bash, sed -i a root spec', () => '{"tool_name":"Bash","tool_input":{"command":"sed -i s/a/b/ .spec/product.md"}}'],
   ['Bash, tee a root spec', () => '{"tool_name":"Bash","tool_input":{"command":"tee .spec/tech.md"}}'],
-  ['Bash, redirect into the cursor', () => '{"tool_name":"Bash","tool_input":{"command":"echo x > .agents/skills/vibe/state.json"}}'],
-  ['Bash, cursor write VIA set-state.sh (sanctioned)', () => '{"tool_name":"Bash","tool_input":{"command":"bash .agents/skills/vibe/scripts/set-state.sh idle > .agents/skills/vibe/state.json"}}'],
+  ['Bash, redirect into the cursor', () => '{"tool_name":"Bash","tool_input":{"command":"echo x > .agents/skills/flow/state.json"}}'],
+  ['Bash, cursor write VIA set-state.sh (sanctioned)', () => '{"tool_name":"Bash","tool_input":{"command":"bash .agents/skills/flow/scripts/set-state.sh idle > .agents/skills/flow/state.json"}}'],
   ['Bash, rm the flow/ cursor spelling', () => '{"tool_name":"Bash","tool_input":{"command":"rm flow/state.json"}}'],
   ['Write, no path key', () => '{"tool_name":"Write","tool_input":{}}'],
   ['Write, lessons.md', () => '{"tool_name":"Write","tool_input":{"file_path":".spec/lessons.md"}}'],
   ['Write, root product.md', () => '{"tool_name":"Write","tool_input":{"file_path":".spec/product.md"}}'],
-  ['Edit, the cursor itself', () => '{"tool_name":"Edit","tool_input":{"file_path":".agents/skills/vibe/state.json"}}'],
+  ['Edit, the cursor itself', () => '{"tool_name":"Edit","tool_input":{"file_path":".agents/skills/flow/state.json"}}'],
   ['Write, ordinary source file', () => '{"tool_name":"Write","tool_input":{"file_path":"src/app.ts"}}'],
   ['Write, a FEATURE spec (not a root one)', () => '{"tool_name":"Write","tool_input":{"file_path":".spec/features/demo/product.md"}}'],
   ['Write, ./-prefixed lessons', () => '{"tool_name":"Write","tool_input":{"file_path":"./.spec/lessons.md"}}'],
@@ -790,7 +814,7 @@ const GATE_STDIN_SHAPES = [
 // receipt beside it. Without the exclusion the gate calls its own receipt stale
 // and a *.verify state blocks forever. Both receipts are committed in
 // buildGateSandbox() so porcelain names them individually — an untracked
-// evidence dir collapses to `?? .agents/skills/vibe/evidence/` and the loop only
+// evidence dir collapses to `?? .agents/skills/flow/evidence/` and the loop only
 // ever sees a directory, which is true of both sides and therefore proof of
 // nothing.
 const RECEIPT_STATES = ['none', 'fresh', 'stale', 'evidence-sibling'];
@@ -965,6 +989,27 @@ const GATE_BASH_LEGS = [
   ['live fallback', GATE_LIVE],
 ];
 
+// Task 8 intentionally renames only these frozen-oracle diagnostic paths.
+// Both spellings address the same fixture directory; keep the current engine
+// on the canonical Flow resource so its public diagnostics remain exercised.
+function migrateFrozenGateDiagnostic(stderr, sb) {
+  const legacy = path.join(sb.root, '.agents', 'skills', 'vibe');
+  const oldStat = statSync(legacy);
+  const currentStat = statSync(sb.vibeDir);
+  assert(oldStat.dev === currentStat.dev && oldStat.ino === currentStat.ino,
+    'frozen gate alias must address the canonical fixture resources');
+  const lines = new Map();
+  for (const receipt of RECEIPT_NAMES) {
+    for (const label of ['expected', 'receipt']) {
+      lines.set(`  ${label}: ${path.join(legacy, 'evidence', receipt)}`,
+        `  ${label}: ${path.join(sb.vibeDir, 'evidence', receipt)}`);
+    }
+  }
+  lines.set('  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle',
+    '  not verifying? abort with: bash .agents/skills/flow/scripts/set-state.sh idle');
+  return stderr.split('\n').map(line => lines.get(line) ?? line).join('\n');
+}
+
 for (const fixture of GATE_FIXTURES) {
   for (const mode of JQ_MODES) {
     test(`parity matrix: hook stop-gate — ${fixture.name} x ${mode}`, () => {
@@ -973,7 +1018,7 @@ for (const fixture of GATE_FIXTURES) {
       const spawns = modeSpawn(mode, sb.root);
       const divergences = [];
       const flags = new Map(
-        GATE_BASH_LEGS.map(([leg]) => [leg, { pred3: false, bsdSed: false, untracked: false }]),
+        GATE_BASH_LEGS.map(([leg]) => [leg, { pred3: false, bsdSed: false, untracked: false, namespace: false, evidenceSibling: 0 }]),
       );
       try {
         for (const receiptState of RECEIPT_STATES) {
@@ -990,6 +1035,11 @@ for (const fixture of GATE_FIXTURES) {
               resetWarnLog(sb);
               const o = runOracleScript(script, [], mode, oracleEnv(sb), { cwd: sb.root, input: stdin });
               const oracleRun = { code: o.code, stdout: o.stdout, stderr: o.stderr, log: readWarnLog(sb) };
+              if (leg === 'frozen oracle') {
+                const migrated = migrateFrozenGateDiagnostic(oracleRun.stderr, sb);
+                if (migrated !== oracleRun.stderr) legFlags.namespace = true;
+                oracleRun.stderr = migrated;
+              }
 
               // KNOWN DIVERGENCE (PLATFORM), full statement in the pin below this
               // loop. On a sed without GNU BRE alternation the bash leg's no-jq
@@ -1041,6 +1091,30 @@ for (const fixture of GATE_FIXTURES) {
                 continue;
               }
 
+              // The frozen oracle excludes only its old namespace. Git names
+              // this fixture's tracked sibling under canonical Flow, so the old
+              // exclusion blocks it. Pin this one migration artifact exactly;
+              // stale product-file cases above retain full verdict parity.
+              if (fixture.cursor?.flow === 'feature' && fixture.cursor.phase === 'verify'
+                  && fixture.cursor.feature === 'demo' && receiptState === 'evidence-sibling'
+                  && shapeName !== REENTRY_TRUE_SHAPE) {
+                const passed = { code: 0, stdout: '', stderr: '', log: '' };
+                assertEqual(engineRun, passed, `${label}: sibling evidence must not stale the product candidate`);
+                if (leg === 'frozen oracle') {
+                  assertEqual(oracleRun, {
+                    code: 2, stdout: '', log: '',
+                    stderr: 'vibe-gate: BLOCKED — the evidence receipt is stale.\n' +
+                      `  receipt: ${path.join(sb.vibeDir, 'evidence', 'feature-demo.md')}\n` +
+                      '  changed after it was written: .agents/skills/flow/evidence/quick.md\n' +
+                      '  re-run verification and rewrite the receipt with fresh commands + output.\n' +
+                      '  not verifying? abort with: bash .agents/skills/flow/scripts/set-state.sh idle\n',
+                  }, `${label}: only the exact frozen namespace-exclusion diagnostic is admitted`);
+                  legFlags.evidenceSibling += 1;
+                  continue;
+                }
+                assertEqual(oracleRun, passed, `${label}: live fallback must exclude canonical sibling evidence`);
+              }
+
               const d = compareHook(label, oracleRun, engineRun);
               if (d) divergences.push(d);
             }
@@ -1053,6 +1127,15 @@ for (const fixture of GATE_FIXTURES) {
         );
         for (const [leg] of GATE_BASH_LEGS) {
           const legFlags = flags.get(leg);
+          if (leg === 'frozen oracle' && fixture.cursor?.phase === 'verify'
+              && (fixture.cursor.flow === 'quick' || fixture.cursor.feature)) {
+            assert(legFlags.namespace, 'frozen gate namespace migration must exercise the exact diagnostic path change');
+          }
+          if (leg === 'frozen oracle' && fixture.cursor?.flow === 'feature'
+              && fixture.cursor.phase === 'verify' && fixture.cursor.feature === 'demo') {
+            assertEqual(legFlags.evidenceSibling, GATE_STDIN_SHAPES.length - 1,
+              'exactly six non-reentry shapes must exercise the frozen sibling namespace pin in each jq mode');
+          }
           // Anti-inertness control for the untracked-directory carve-out: it
           // must have STOOD IN for a real divergence at least once, in both jq
           // modes and on both legs. If the two sides agreed everywhere, the
@@ -1244,7 +1327,7 @@ for (const mode of JQ_MODES) {
         };
         freshRuntime();
         const rows = runCommand('git', ['status', '--porcelain', '-z', '--', '.'], { cwd: sb.dir }).stdout;
-        for (const row of [' M sub/.vibe/last-inject', '?? sub/.agents/skills/vibe/warnings.log']) {
+        for (const row of [' M sub/.vibe/last-inject', '?? sub/.agents/skills/flow/warnings.log']) {
           assert(rows.includes(`${row}\0`), `floor: git reports ${JSON.stringify(row)} per file; got ${JSON.stringify(rows)}`);
         }
         const legs = threeWay(sb, mode, freshRuntime);

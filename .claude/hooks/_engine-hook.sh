@@ -37,7 +37,7 @@ FALLBACK="${2:-}"
 [[ -n "$HOOK_NAME" ]] || exit 0
 
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-ENGINE="${VIBE_ENGINE:-$ROOT/.agents/skills/vibe/engine}"
+ENGINE="${VIBE_ENGINE:-$ROOT/.agents/skills/flow/engine}"
 
 PAYLOAD="$(cat 2>/dev/null || true)"
 

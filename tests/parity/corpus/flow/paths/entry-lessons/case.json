@@ -19,6 +19,10 @@
       ],
       [
         ".spec/lessons.md",
+        "feature.ship"
+      ],
+      [
+        ".spec/lessons.md",
         "feature.verify"
       ],
       [

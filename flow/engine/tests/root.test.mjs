@@ -28,7 +28,7 @@ test('resolveRoot: a bare mktemp -d with no .git/.spec and no CLAUDE_PROJECT_DIR
   try {
     // No .git, no .spec anywhere under bareDir's own tree. Self-relative
     // fails too (this module's real __dirname isn't nested under
-    // .agents/skills/vibe), so this exercises the final cwd fallback — the
+    // .agents/skills/flow), so this exercises the final cwd fallback — the
     // exact "install target has neither marker" scenario from the lesson.
     const resolved = resolveRoot({ cwd: bareDir });
     assertEqual(resolved, bareDir);
@@ -70,14 +70,14 @@ test('resolveRoot: marker search finds a project with only docs/spec/ (no .git, 
   }
 });
 
-test('resolveRoot: self-relative resolves an installed-layout engine (.agents/skills/vibe/engine) with no markers present', async () => {
+test('resolveRoot: self-relative resolves an installed-layout engine (.agents/skills/flow/engine) with no markers present', async () => {
   const prev = process.env.CLAUDE_PROJECT_DIR;
   delete process.env.CLAUDE_PROJECT_DIR;
 
   // Build a fresh, marker-less "install target" and copy root.mjs into the
-  // exact nested layout the hook shim expects: <ROOT>/.agents/skills/vibe/engine.
+  // exact nested layout the hook shim expects: <ROOT>/.agents/skills/flow/engine.
   const installRoot = mkTempRoot('vibe-root-install-');
-  const engineDir = path.join(installRoot, '.agents', 'skills', 'vibe', 'engine');
+  const engineDir = path.join(installRoot, '.agents', 'skills', 'flow', 'engine');
   mkdirSync(engineDir, { recursive: true });
   const copiedRootMjs = path.join(engineDir, 'root.mjs');
   copyFileSync(ROOT_MJS, copiedRootMjs);
@@ -109,7 +109,7 @@ test('resolveRoot: self-relative resolves an installed-layout engine (.agents/sk
 // does not:
 //
 //   /mono/.git                         <- marker search stops HERE
-//   /mono/pkg/.agents/skills/vibe/engine  <- self-relative resolves to /mono/pkg
+//   /mono/pkg/.agents/skills/flow/engine  <- self-relative resolves to /mono/pkg
 //
 // resolveRoot() feeds hook.mjs's warnings log, the evidence-receipt paths and the
 // detect-context.sh location, so the wrong answer points enforcement at the wrong
@@ -122,7 +122,7 @@ test('resolveRoot: self-relative BEATS marker search — an installed package in
   const monoRoot = mkTempRoot('vibe-root-mono-');
   mkdirSync(path.join(monoRoot, '.git'), { recursive: true }); // the ENCLOSING marker
   const pkgDir = path.join(monoRoot, 'pkg');
-  const engineDir = path.join(pkgDir, '.agents', 'skills', 'vibe', 'engine');
+  const engineDir = path.join(pkgDir, '.agents', 'skills', 'flow', 'engine');
   mkdirSync(engineDir, { recursive: true });
   const copiedRootMjs = path.join(engineDir, 'root.mjs');
   copyFileSync(ROOT_MJS, copiedRootMjs);
@@ -186,7 +186,7 @@ test('resolveVibeDir: self-relative resolves an installed layout to the vibe dir
   delete process.env.CLAUDE_PROJECT_DIR;
 
   const installRoot = mkTempRoot('vibe-vibedir-install-');
-  const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
+  const vibeDir = path.join(installRoot, '.agents', 'skills', 'flow');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(engineDir, { recursive: true });
   const copiedRootMjs = path.join(engineDir, 'root.mjs');
@@ -206,10 +206,10 @@ test('resolveVibeDir: self-relative resolves an installed layout to the vibe dir
   }
 });
 
-test('resolveVibeDir: dogfood layout falls back to root + .agents/skills/vibe, which resolves through the flow/ symlink', async () => {
+test('resolveVibeDir: dogfood layout falls back to root + .agents/skills/flow, which resolves through the flow/ symlink', async () => {
   // Sanity check against the real, in-repo flow/engine/root.mjs:
   // self-relative fails here (the skill dir is named "flow", not "vibe"),
-  // so this exercises the fallback. In THIS repo .agents/skills/vibe is a
+  // so this exercises the fallback. In THIS repo .agents/skills/flow is a
   // real symlink to flow/, so reading through the fallback path must land
   // on the same state-machine.json content as flow/state-machine.json —
   // proving the fallback isn't just string-equal to the right answer by
@@ -220,7 +220,7 @@ test('resolveVibeDir: dogfood layout falls back to root + .agents/skills/vibe, w
   try {
     const repoRoot = path.resolve(path.dirname(ROOT_MJS), '..', '..');
     const resolved = resolveVibeDir({ cwd: repoRoot });
-    assertEqual(resolved, path.join(repoRoot, '.agents', 'skills', 'vibe'));
+    assertEqual(resolved, path.join(repoRoot, '.agents', 'skills', 'flow'));
 
     const viaFallback = readFileSync(path.join(resolved, 'state-machine.json'), 'utf8');
     const viaFlow = readFileSync(path.join(repoRoot, 'flow', 'state-machine.json'), 'utf8');
@@ -245,7 +245,7 @@ test('resolveSkillsDir: installed layout resolves via the sibling vibe/SKILL.md 
 
   const installRoot = mkTempRoot('vibe-skillsdir-install-');
   const skillsDir = path.join(installRoot, '.agents', 'skills');
-  const vibeDir = path.join(skillsDir, 'vibe');
+  const vibeDir = path.join(skillsDir, 'flow');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(engineDir, { recursive: true });
   writeFileSync(path.join(vibeDir, 'SKILL.md'), '# vibe\n');
@@ -271,7 +271,7 @@ test('resolveSkillsDir: no sibling vibe/SKILL.md falls back to root + .agents/sk
   const projectDir = mkTempRoot('vibe-skillsdir-fallback-');
   mkdirSync(path.join(projectDir, '.spec'), { recursive: true });
   // vibeDir override points somewhere with no sibling SKILL.md at all.
-  const lonelyVibeDir = path.join(projectDir, 'somewhere', 'vibe');
+  const lonelyVibeDir = path.join(projectDir, 'somewhere', 'flow');
   mkdirSync(lonelyVibeDir, { recursive: true });
 
   try {
@@ -285,18 +285,18 @@ test('resolveSkillsDir: no sibling vibe/SKILL.md falls back to root + .agents/sk
 
 // ---------------------------------------------------------------------------
 // js-core/5 review round 1, Finding 2 — the per-user PLUGIN layout
-// (<PLUGIN_ROOT>/skills/vibe/engine, no `.agents/` wrapper — see
+// (<PLUGIN_ROOT>/skills/flow/engine, no `.agents/` wrapper — see
 // build-plugin.sh and plugin/hooks/session-start.sh's own
-// `${CLAUDE_PLUGIN_ROOT}/skills/vibe/scripts/doctrine.sh`). Before this fix,
+// `${CLAUDE_PLUGIN_ROOT}/skills/flow/scripts/doctrine.sh`). Before this fix,
 // resolveVibeDir()/resolveSkillsDir() only recognized the vendored 3-level
-// `.agents/skills/vibe` chain, so a plugin-shaped engine fell through to
+// `.agents/skills/flow` chain, so a plugin-shaped engine fell through to
 // the CLAUDE_PROJECT_DIR-honouring fallback and resolved to the WRONG
 // (project's, not plugin's) skill dir.
 // ---------------------------------------------------------------------------
 
 function buildPluginFixture() {
   const pluginRoot = mkTempRoot('vibe-plugin-');
-  const vibeDir = path.join(pluginRoot, 'skills', 'vibe');
+  const vibeDir = path.join(pluginRoot, 'skills', 'flow');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(engineDir, { recursive: true });
   writeFileSync(path.join(vibeDir, 'SKILL.md'), '# vibe (plugin)\n');
@@ -325,14 +325,14 @@ test('resolveVibeDir: recognizes the per-user plugin layout (skills/vibe/engine,
 test('resolveVibeDir: the plugin layout is NOT hijacked by an ambient CLAUDE_PROJECT_DIR (the actual regression)', async () => {
   const { pluginRoot, vibeDir, copiedRootMjs } = buildPluginFixture();
 
-  // A DIFFERENT project, with its own real .agents/skills/vibe — the exact
+  // A DIFFERENT project, with its own real .agents/skills/flow — the exact
   // shape that used to win via resolveVibeDir()'s old CLAUDE_PROJECT_DIR
   // fallback. If the plugin layout is recognized correctly, this must be
   // completely ignored for the SKILL location (doctrine.mjs's own,
   // separate resolveProjectCursorDir() is the only thing allowed to look
   // at CLAUDE_PROJECT_DIR, and only for the cursor).
   const projectDir = mkTempRoot('vibe-plugin-project-');
-  mkdirSync(path.join(projectDir, '.agents', 'skills', 'vibe'), { recursive: true });
+  mkdirSync(path.join(projectDir, '.agents', 'skills', 'flow'), { recursive: true });
 
   const prev = process.env.CLAUDE_PROJECT_DIR;
   process.env.CLAUDE_PROJECT_DIR = projectDir;
@@ -341,7 +341,7 @@ test('resolveVibeDir: the plugin layout is NOT hijacked by an ambient CLAUDE_PRO
     const { resolveVibeDir } = await import(pathToFileURL(copiedRootMjs).href);
     const resolved = resolveVibeDir({ cwd: projectDir });
     assertEqual(resolved, vibeDir, 'the plugin must resolve to its OWN skill dir, not the project one');
-    assert(resolved !== path.join(projectDir, '.agents', 'skills', 'vibe'), 'must not be hijacked by CLAUDE_PROJECT_DIR');
+    assert(resolved !== path.join(projectDir, '.agents', 'skills', 'flow'), 'must not be hijacked by CLAUDE_PROJECT_DIR');
   } finally {
     rmSync(pluginRoot, { recursive: true, force: true });
     rmSync(projectDir, { recursive: true, force: true });
@@ -419,7 +419,7 @@ test('resolveProjectCursorDir: undefined when CLAUDE_PROJECT_DIR is set but has 
 test('resolveProjectCursorDir: the project vibe dir when its state.json exists', async () => {
   const { resolveProjectCursorDir } = await import(pathToFileURL(ROOT_MJS).href + '?k');
   const projectDir = mkTempRoot('vibe-projectcursor-present-');
-  const projectVibeDir = path.join(projectDir, '.agents', 'skills', 'vibe');
+  const projectVibeDir = path.join(projectDir, '.agents', 'skills', 'flow');
   mkdirSync(projectVibeDir, { recursive: true });
   writeFileSync(path.join(projectVibeDir, 'state.json'), '{}\n');
   try {

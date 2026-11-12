@@ -89,7 +89,7 @@ esac
 # `skills/*/SKILL.md`, so a router that only exists one level down is found by
 # today's build only by luck. Ship the flat shape everywhere.
 SKILL_PKGS=("plugins/vibe" "factory-plugin")
-SKILL_TREES=("spec:spec" "vibe:flow" "using-spec:spec/using-spec")
+SKILL_TREES=("spec:spec" "flow:flow" "vibe:skills/vibe")
 # The one skill dir that must NOT stay inside another skill's materialized tree.
 SKILL_NESTED_PRUNE=("spec/using-spec")
 
@@ -100,7 +100,7 @@ SKILL_NESTED_PRUNE=("spec/using-spec")
 # source-only prune, rather than failing the build.
 copy_skill_tree() {
   local rel="$1" dest="$2" files f base
-  if ! files="$( cd "$SRC" && git ls-files -- "$rel" 2>/dev/null )"; then
+  if ! files="$( cd "$SRC" && git ls-files --cached --others --exclude-standard -- "$rel" 2>/dev/null )"; then
     files=""
   fi
   if [[ -z "$files" ]]; then
@@ -108,13 +108,15 @@ copy_skill_tree() {
     mkdir -p "$dest"
     cp -R "$SRC/$rel/." "$dest/" 2>/dev/null || return 1
     find "$dest" -depth -type d -name tests -exec rm -rf {} + 2>/dev/null || true
-    rm -f "$dest/AGENTS.md"
+    rm -f "$dest/AGENTS.md" "$dest/state.json" "$dest/warnings.log"
+    rm -rf "$dest/evidence"
     return 0
   fi
   while IFS= read -r f; do
+    [[ -f "$SRC/$f" ]] || continue  # tracked deletions are absent from this candidate
     base="${f#"$rel"/}"
     case "$base" in
-      tests/*|*/tests/*|AGENTS.md) continue ;;   # source-only artifacts
+      tests/*|*/tests/*|AGENTS.md|state.json|evidence/*|warnings.log) continue ;;   # source-only artifacts
     esac
     mkdir -p "$dest/$(dirname "$base")"
     cp -p "$SRC/$f" "$dest/$base" || return 1
@@ -182,7 +184,7 @@ emit_files() {
   cat > "$dest/plugin/.claude-plugin/plugin.json" <<JSON
 {
   "name": "vibe",
-  "description": "Spec-first workflow harness: the spec + vibe skills and a self-detecting working-model doctrine hook.",
+  "description": "Spec-first workflow harness: the Vibe toolkit + Flow + Spec skills and a self-detecting working-model doctrine hook.",
   "version": "$VERSION",
   "author": { "name": "Lennard Zuendorf", "url": "https://github.com/LennardZuendorf" },
   "homepage": "https://github.com/LennardZuendorf/vibe",
@@ -241,7 +243,7 @@ fi
 # without the engine, with a node too old for it or with a broken engine it
 # prints nothing; none of those is a signal to stay silent. "Can answer" is
 # probed, not inferred: the same engine command the repo hook runs must print.
-ENGINE="${VIBE_ENGINE:-$ROOT/.agents/skills/vibe/engine}"
+ENGINE="${VIBE_ENGINE:-$ROOT/.agents/skills/flow/engine}"
 if command -v node >/dev/null 2>&1 && [[ -f "$ENGINE/cli.mjs" ]]; then
   for f in "$ROOT/.claude/settings.json" "$ROOT/.claude/settings.local.json"; do
     if [[ -f "$f" ]] && grep -qF 'session-start-doctrine.sh' "$f" 2>/dev/null; then
@@ -253,9 +255,9 @@ if command -v node >/dev/null 2>&1 && [[ -f "$ENGINE/cli.mjs" ]]; then
 fi
 # flow installed = the project carries the flow's state machine. A docs/spec tree
 # alone is a spec repo, not a flow repo: the doctrine is flow doctrine.
-[[ -f "$ROOT/.agents/skills/vibe/state-machine.json" ]] || exit 0
+[[ -f "$ROOT/.agents/skills/flow/state-machine.json" ]] || exit 0
 
-DOCTRINE="${CLAUDE_PLUGIN_ROOT:-}/skills/vibe/scripts/doctrine.sh"
+DOCTRINE="${CLAUDE_PLUGIN_ROOT:-}/skills/flow/scripts/doctrine.sh"
 [[ -f "$DOCTRINE" ]] || exit 0
 # doctrine.sh reads no project state, self-degrades, exit 0.
 bash "$DOCTRINE" 2>/dev/null || true
@@ -268,7 +270,7 @@ SH
   cat > "$dest/.claude-plugin/marketplace.json" <<'JSON'
 {
   "name": "vibe",
-  "description": "vibe — spec-first workflow harness (spec + vibe skills, working-model doctrine hook).",
+  "description": "vibe — spec-first workflow harness (toolkit + Flow + Spec skills, working-model doctrine hook).",
   "owner": { "name": "Lennard Zuendorf", "url": "https://github.com/LennardZuendorf" },
   "plugins": [
     { "name": "vibe", "source": "./plugin" }
@@ -285,7 +287,7 @@ JSON
 {
   "\$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "vibe",
-  "description": "Spec-first workflow harness: the spec + vibe skills, packaged for Codex and Droid marketplace installs. Version comes from package.json — no second source of truth.",
+  "description": "Spec-first workflow harness: the Vibe toolkit + Flow + Spec skills, packaged for Codex and Droid marketplace installs. Version comes from package.json — no second source of truth.",
   "version": "$VERSION"
 }
 JSON
@@ -303,8 +305,9 @@ if [[ "$MODE" == "check" ]]; then
   done
   # The skill and agents symlinks must point at the canonical trees.
   [[ "$(readlink "$SRC/plugin/skills/spec" 2>/dev/null)" == "../../spec" ]] || { drift=1; echo "build-plugin: plugin/skills/spec is not a symlink -> ../../spec" >&2; }
-  [[ "$(readlink "$SRC/plugin/skills/vibe" 2>/dev/null)" == "../../flow" ]] || { drift=1; echo "build-plugin: plugin/skills/vibe is not a symlink -> ../../flow" >&2; }
-  [[ "$(readlink "$SRC/plugin/skills/using-spec" 2>/dev/null)" == "../../spec/using-spec" ]] || { drift=1; echo "build-plugin: plugin/skills/using-spec is not a symlink -> ../../spec/using-spec" >&2; }
+  [[ "$(readlink "$SRC/plugin/skills/vibe" 2>/dev/null)" == "../../skills/vibe" ]] || { drift=1; echo "build-plugin: plugin/skills/vibe is not a symlink -> ../../skills/vibe" >&2; }
+  [[ "$(readlink "$SRC/plugin/skills/flow" 2>/dev/null)" == "../../flow" ]] || { drift=1; echo "build-plugin: plugin/skills/flow is not a symlink -> ../../flow" >&2; }
+  [[ ! -e "$SRC/plugin/skills/using-spec" && ! -L "$SRC/plugin/skills/using-spec" ]] || { drift=1; echo "build-plugin: stale owned using-spec registration" >&2; }
   [[ "$(readlink "$SRC/plugin/agents" 2>/dev/null)" == "../spec/agents" ]] || { drift=1; echo "build-plugin: plugin/agents is not a symlink -> ../spec/agents" >&2; }
 
   # The Codex + Droid packages must carry a REAL tree equal to a fresh
@@ -356,14 +359,14 @@ fi
 for f in ${GEN_FILES[@]+"${GEN_FILES[@]}"}; do
   rm -f "${SRC:?}/$f"
 done
-rm -f "$SRC/plugin/skills/spec" "$SRC/plugin/skills/vibe" "$SRC/plugin/skills/using-spec" "$SRC/plugin/agents"
+rm -f "$SRC/plugin/skills/spec" "$SRC/plugin/skills/vibe" "$SRC/plugin/skills/using-spec" "$SRC/plugin/skills/flow" "$SRC/plugin/agents"
 find "$SRC/plugin" "$SRC/.claude-plugin" -type d -empty -delete 2>/dev/null || true
 
 emit_files "$SRC"
 mkdir -p "$SRC/plugin/skills"
 ln -s ../../spec "$SRC/plugin/skills/spec"
-ln -s ../../flow "$SRC/plugin/skills/vibe"
-ln -s ../../spec/using-spec "$SRC/plugin/skills/using-spec"
+ln -s ../../flow "$SRC/plugin/skills/flow"
+ln -s ../../skills/vibe "$SRC/plugin/skills/vibe"
 ln -s ../spec/agents "$SRC/plugin/agents"
 
 # Materialize the two host packages' skills. Built in a temp dir first, then
@@ -372,6 +375,12 @@ ln -s ../spec/agents "$SRC/plugin/agents"
 fresh="$(mktemp -d)"
 trap 'rm -rf "$fresh"' EXIT
 emit_skill_trees "$fresh"
+for pkg in ${SKILL_PKGS[@]+"${SKILL_PKGS[@]}"}; do
+  while IFS= read -r old; do
+    [[ -n "$old" ]] && rm -f "$SRC/$old"
+  done < <(cd "$SRC" && git ls-files -- "$pkg/skills/using-spec")
+  find "$SRC/$pkg/skills/using-spec" -depth -type d -empty -delete 2>/dev/null || true
+done
 for pkg in ${SKILL_PKGS[@]+"${SKILL_PKGS[@]}"}; do
   for pair in ${SKILL_TREES[@]+"${SKILL_TREES[@]}"}; do
     name="${pair%%:*}"

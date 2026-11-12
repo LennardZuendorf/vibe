@@ -27,7 +27,7 @@ SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Walk up for a docs/spec, .spec or .git marker rather than counting `..` hops: the skill dir # literal
 # sits one level under the repo root on the canonical flow/ path but three levels
-# under it via the .agents/skills/vibe symlink alias (and in the test sandbox).
+# under it via the .agents/skills/flow symlink alias (and in the test sandbox).
 find_repo_root() {
   local d="$1"
   while [[ -n "$d" && "$d" != "/" ]]; do
@@ -37,14 +37,14 @@ find_repo_root() {
   return 1
 }
 # Self-relative first, marker walk second. In an installed target the skill sits
-# at <root>/.agents/skills/vibe, so the skills dir is the skill's own parent and
+# at <root>/.agents/skills/flow, so the skills dir is the skill's own parent and
 # the root is two levels above it — knowable with no marker at all. The old order
 # asked for a .spec/.git marker first and fell back to "$SKILL_DIR/.." on a target # literal
 # that has neither, which resolves to .agents/skills: every path below then
 # pointed at .agents/skills/{.spec,AGENTS.md,CLAUDE.md}, so the digest silently # literal
 # regenerated nothing while exiting 0. Same shape as orders.sh / doctrine.sh.
 SKILL_PARENT="$(cd "$SKILL_DIR/.." && pwd)"
-if [[ -f "$SKILL_PARENT/vibe/SKILL.md" ]]; then
+if [[ "${SKILL_PARENT##*/}" == skills && "$(basename "$(dirname "$SKILL_PARENT")")" == .agents && -f "$SKILL_PARENT/flow/SKILL.md" ]]; then
   REPO_ROOT="$(cd "$SKILL_PARENT/../.." && pwd)"
 else
   REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")" || REPO_ROOT="$SKILL_PARENT"

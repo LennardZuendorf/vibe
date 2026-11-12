@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vibe Flow"
+  short_description: "Guide approved development work"
+  default_prompt: "Use $flow to resume or route this development task."

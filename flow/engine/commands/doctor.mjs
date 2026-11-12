@@ -21,7 +21,7 @@
 // No CLI positional ROOT override (doctor.sh's `doctor.sh [<repo-root>]`):
 // when the oracle is given an explicit root it joins VIBE_SKILL/SPEC_SKILL
 // off it literally, bypassing self-location entirely. Reproducing that
-// would mean re-deriving the `.agents/skills/vibe` join in this file, which
+// would mean re-deriving the `.agents/skills/flow` join in this file, which
 // the task brief forbids — root.mjs is the one place that constant lives.
 // This port only serves the no-arg path (`vibe doctor`), the only path
 // unit 7's hook shims and the CLI actually exercise.
@@ -42,7 +42,7 @@
 // — a real divergence from the oracle (which never reads CLAUDE_PROJECT_DIR
 // for ROOT at all) in the ordinary vendored-install case, not just a
 // mismatched plugin layout: `CLAUDE_PROJECT_DIR=<other-project> vibe doctor`
-// run from an installed `<root>/.agents/skills/vibe/engine` would otherwise
+// run from an installed `<root>/.agents/skills/flow/engine` would otherwise
 // compute the header line and every `.claude/**` check against the WRONG
 // tree, while core.spec/core.vibe/machine/cursor/deps (all vibeDir/
 // skillsDir-based, which DO resolve self-relative-first) still correctly
@@ -59,6 +59,7 @@ import { resolveRoot, resolveVibeDir, resolveSkillsDir } from '../root.mjs';
 import { readCursor, cursorPath } from '../cursor.mjs';
 import { loadMachine, machinePath } from '../machine.mjs';
 import { readJson } from '../json.mjs';
+import { legacyAdapterUnavailable } from '../cursor.mjs';
 
 const HOOK_SCRIPTS = [
   'session-start-doctrine.sh',
@@ -605,6 +606,71 @@ function checkDeps(vibeDir, jqPresent, home) {
 // non-string path rather than throwing on a bad path.join.
 // ---------------------------------------------------------------------------
 
+// Task 8: filesystem observations only. Host discovery precedence and trust
+// cannot be inferred from installed files or a declared package version.
+function resourceMetadata(dir) {
+  let name = 'undeclared';
+  let version = 'undeclared';
+  try {
+    const text = fs.readFileSync(joinMaybe(dir, 'SKILL.md'), 'utf8');
+    name = /^---\r?\n[\s\S]*?^name:\s*([^\r\n]+)/m.exec(text)?.[1]?.trim() ?? name;
+  } catch { /* Report unavailable metadata without rejecting the install. */ }
+  try {
+    const manifest = readJson(joinMaybe(dir, 'package.json'));
+    if (typeof manifest?.version === 'string') version = manifest.version;
+  } catch { /* A skill need not ship a package manifest. */ }
+  return { name, version };
+}
+
+function physicalResource(dir) {
+  try { return fs.realpathSync(dir); } catch { return undefined; }
+}
+
+export function capabilityReport(root, vibeDir, skillsDir, home) {
+  let lines = '# Flow capability report\n';
+  const locations = [skillsDir, joinMaybe(root, '.claude', 'skills'),
+    joinMaybe(home, '.claude', 'skills')];
+  // Retain the selected install's wrapper convention without inventing another
+  // resolver or asserting that all hosts use its precedence.
+  if (typeof skillsDir === 'string') {
+    locations.push(joinMaybe(home, path.basename(path.dirname(skillsDir)), 'skills'));
+  }
+  const components = [['vibe', 'toolkit-orientation'], ['flow', 'workflow'], ['spec', 'project-knowledge']];
+  for (const [name, capability] of components) {
+    const selected = name === 'flow' ? vibeDir : joinMaybe(skillsDir, name);
+    const source = physicalResource(selected);
+    const present = isRegularFile(joinMaybe(selected, 'SKILL.md'));
+    const metadata = resourceMetadata(selected);
+    lines += (present ? ok : warn)(`resource.${name}`,
+      `selected=${selected} source=${source ?? 'unavailable'} version=${metadata.version} declared-name=${metadata.name} capability=${present ? capability : 'unavailable'} (declared resources; behavior unverified)`);
+    const seen = new Set(source ? [source] : []);
+    for (const location of locations) {
+      const alternative = joinMaybe(location, name);
+      const real = physicalResource(alternative);
+      if (!real || seen.has(real) || !isRegularFile(joinMaybe(alternative, 'SKILL.md'))) continue;
+      seen.add(real);
+      const other = resourceMetadata(alternative);
+      lines += warn(`shadow.${name}`, `${alternative} source=${real} version=${other.version} declared-name=${other.name}; potential duplicate/shadow; update through its package manager; no files changed`);
+    }
+  }
+  lines += warn('resource.discovery', 'bounded project/user skill-directory scan; marketplace caches and host selection precedence unverified');
+  try {
+    const adopted = typeof vibeDir === 'string' && legacyAdapterUnavailable(vibeDir, root);
+    // readCursor owns corruption classification. Do not treat unreadable state
+    // as an idle legacy runtime, even when no adoption marker can be read.
+    if (typeof vibeDir === 'string') readCursor(vibeDir, root);
+    lines += (adopted ? warn : ok)('runtime.mode', adopted
+      ? 'versioned/adopted runtime detected; explicit-v2 validation unverified; legacy writers refuse versioned state'
+      : 'legacy-v1 (or absent/idle); gates are conventions; explicit-v2 adoption required for revision-checked transitions');
+  } catch {
+    lines += warn('runtime.mode', 'invalid/unreadable cursor; explicit recovery required; runtime version unverified');
+  }
+  lines += warn('trusted.approval', 'unavailable/deny; installed hooks and confirmation tokens do not prove human origin');
+  lines += warn('trusted.evidence', 'unavailable/deny; model-authored receipts do not prove readiness');
+  lines += warn('native.coverage', 'unverified for Claude Code, OpenCode and Codex; configured files do not prove activation or complete blocking; no host process invoked');
+  return lines;
+}
+
 export function runDoctor(root, vibeDir, skillsDir, opts = {}) {
   const home = opts && typeof opts.home === 'string' ? opts.home : process.env.HOME;
   const jq = jqStatus(opts);
@@ -623,6 +689,7 @@ export function runDoctor(root, vibeDir, skillsDir, opts = {}) {
   stdout += adapter.lines;
   stdout += checkInstructionCoverage(vibeDir, adapter, home);
   stdout += checkDeps(vibeDir, jq.present, home);
+  stdout += capabilityReport(root, vibeDir, skillsDir, home);
 
   return { code: 0, stdout, stderr: '' };
 }
@@ -635,7 +702,7 @@ export function runDoctor(root, vibeDir, skillsDir, opts = {}) {
 // on its root-based fallback leg (which built skillsDir from that SAME
 // resolveRoot(opts) value in the first place) — so two path.dirname() calls
 // recover exactly the root each leg already used, without re-joining the
-// `.agents/skills/vibe` literal anywhere in this file. This is pure
+// `.agents/skills/flow` literal anywhere in this file. This is pure
 // directory-structure walking off an already-resolved primitive, not a new
 // resolution algorithm. It does not hold for the per-user PLUGIN layout
 // (skillsDir there is only `<pluginRoot>/skills`, one level shallower, and
@@ -657,7 +724,7 @@ function rootForReport(skillsDir, opts) {
 export default async function run(argv, opts = {}) {
   // REFUSE a positional root rather than ignoring it. doctor.sh accepts
   // `doctor.sh [<repo-root>]`; this port deliberately does not (see the header —
-  // reproducing it means re-deriving the `.agents/skills/vibe` join, which
+  // reproducing it means re-deriving the `.agents/skills/flow` join, which
   // root.mjs owns). Swallowing the argument was worse than not supporting it:
   // `vibe doctor /some/other/repo` printed a clean report about the SELF-LOCATED
   // tree and exited 0, so the answer looked like it was about the path given.

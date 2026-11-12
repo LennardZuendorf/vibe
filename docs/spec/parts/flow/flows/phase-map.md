@@ -1,28 +1,38 @@
 ---
 type: flow
-updated: 2026-11-03
+updated: 2026-11-11
 ---
 
 # Phase map
 
-Each phase, the skill link that drives it, the external skills and subagents it delegates to, the spec artifact it reads/writes, and what the stage is for. This is the canonical workflow contract; the full per-state record (skill link, `next` arrays, exit predicates) lives in `flow`'s `state-machine.json`. The two human gates are keyed by **edge** in the machine's `gates` object (`feature.plan>feature.impl`, `feature.verify>feature.compound`), not by state — so `feature.verify`'s fix/drift back-edges to `feature.impl`/`feature.plan` stay ungated while its ship edge stops for approval.
+`flow/state-machine.json` owns legal edges, write surfaces and delegate metadata.
+D12 orders live once in `flow/SKILL.md`; procedure files explain bounded methods.
+The feature gates are plan → impl and verify → ship. Compound prepares docs
+before final candidate checks. Any v2 implementation re-entry requires approval;
+production trusted verifiers are unavailable, so those entries currently deny.
 
-Delegates, write surfaces, and legal edges are **data** — read them from `state-machine.json`, the only place they are stated. This table carries only what the machine cannot say: what each stage is *for*.
-
-| Phase | What the stage does |
+| Phase | Purpose |
 |---|---|
-| `idle` | Resting hub between flows. Read lessons/plan, then pick the flow that matches the request. |
-| `setup.detect` | Read-only audit of repo + harness; report present vs missing and preflight required plugins. |
-| `setup.apply` | Write/merge the bootstrap without clobbering: AGENTS.md block, flow scaffold, baseline specs. |
-| `strategy.brainstorm` | Shape project direction in dialogue; scratch only, no writes yet. |
-| `strategy.spec` | Commit the agreed direction into the root specs and validate. |
-| `feature.design` | Trace the codebase and sketch approaches, then write a superpowers design doc. |
-| `feature.plan` | Turn the design into a verified task plan. Human gate before impl. |
-| `feature.impl` | Execute the plan test-first. |
-| `feature.verify` | Gather evidence per plan task and review. Human gate before ship. |
-| `feature.compound` | Record the lesson, promote cross-cutting decisions to root, finish the branch. |
-| `quick.triage` | Diagnose the small issue; don't fix yet. Escalate to `feature.design` if scope balloons. |
-| `quick.fix` | Implement the bounded fix test-first. |
-| `quick.verify` | Prove the fix works and breaks nothing. |
+| `idle` | Select a flow from user intent; abort does not imply completion. |
+| `setup.detect` | Read-only inventory and missing-resource diagnosis. |
+| `setup.apply` | Legacy compatibility; no blanket repair authorization. |
+| `strategy.brainstorm` | Discuss project direction without product writes. |
+| `strategy.spec` | Request a bounded root-artifact update and validate it. |
+| `feature.design` | Explore and write the design in the selected feature layer. |
+| `feature.plan` | Define exact task scopes, dependencies and checks for approval. |
+| `feature.impl` | Dispatch bounded workers; freeze approved design and plan. |
+| `feature.compound` | Prepare additive docs, lessons and regenerated rules. |
+| `feature.verify` | Check and independently review the final integrated candidate. |
+| `feature.ship` | Execute only the approved candidate's named action. |
+| `quick.triage` | Diagnose and mechanically confirm Quick scope. |
+| `quick.fix` | Implement the bounded fix; escalate contract changes. |
+| `quick.verify` | Verify the fix and record durable lessons. |
 
-Each state also emits per-turn **orders**, authored as `<!-- vibe:orders:<state> -->` blocks in the linked skill's `SKILL.md` and resolved by `flow` at the cursor (`.vibe/run/flow/state.json`). JS currently composes injection. Rust instruct composition and standalone flow AGENTS output remain pending F8/F12 work. The six former phase files are removed.
+Runtime progress lives outside frozen plans. Worker results are claims until
+checked. Resume preserves accepted dependencies and redispatches incomplete or
+invalidated work. Candidate changes invalidate final review/readiness.
+No phase implies commit, push, merge, release, destructive promotion or cleanup.
+
+JS still composes injection; Rust orders/payload and Instruct composition remain
+separate work. See [workflow surface](workflow-surface.md) and
+[runtime](../../../tech/rust/rust-flow-runtime.md).

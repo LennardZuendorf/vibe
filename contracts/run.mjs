@@ -145,6 +145,26 @@ for (const q of store ? STORE_DEFS : []) {
   }
 }
 
+// Flow runtime JSON records are claims; trust and semantic checks live in Rust.
+const flow = schemas['flow-runtime.schema.json'];
+if (!flow) errors.push('flow-runtime.schema.json missing');
+for (const q of ['cursor', 'request', 'result', 'check', 'evidence', 'task-brief', 'task-result']) {
+  const def = flow?.$defs?.[q];
+  if (!def) { errors.push(`flow-runtime: $defs.${q} missing`); continue; }
+  for (const kind of ['valid', 'invalid']) {
+    const base = join(dir, 'fixtures', 'flow-runtime', q, kind);
+    const files = jsonFiles(base);
+    if (files.length < 2) errors.push(`flow-runtime ${q}: too few ${kind} goldens`);
+    for (const f of files) {
+      const value = readJson(join(base, f));
+      if (value === undefined) continue;
+      const result = validate(flow, def, value);
+      if (kind === 'valid') { valid += 1; if (result.length) errors.push(`flow-runtime ${q}/${kind}/${f}: ${result.join('; ')}`); }
+      else { invalid += 1; if (!result.length) errors.push(`flow-runtime ${q}/${kind}/${f}: validates, but must fail`); }
+    }
+  }
+}
+
 const exitSchema = schemas['exit-codes.schema.json'];
 const codes = existsSync(join(dir, 'exit-codes.json')) ? readJson(join(dir, 'exit-codes.json')) : undefined;
 if (!exitSchema || codes === undefined) errors.push('exit-codes.json or exit-codes.schema.json missing');

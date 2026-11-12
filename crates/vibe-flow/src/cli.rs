@@ -51,6 +51,29 @@ enum Command {
 
 #[derive(Subcommand, Debug)]
 enum StateCommand {
+    /// Print the full worktree candidate identity without a commit.
+    Candidate,
+    /// Record an untrusted TaskBrief/TaskResult pair at the expected revision.
+    TaskResult {
+        expected_revision: u64,
+        brief: String,
+        result: String,
+    },
+    /// Recover damaged current bytes into a new unapproved idle run.
+    Recover {
+        expected_digest: String,
+        run_id: String,
+        plan_digest: String,
+        scope_digest: String,
+    },
+    /// Explicitly adopt revision-checked v2 state.
+    Upgrade {
+        run_id: String,
+        plan_digest: String,
+        scope_digest: String,
+    },
+    /// Apply a v1 TransitionRequest JSON document.
+    Transition { request: String },
     /// Print the resolved cursor as pretty JSON.
     Get,
     /// Write the cursor: `set <flow.phase> [feature]`.
@@ -122,6 +145,11 @@ pub fn run(cwd: &Path, argv: &[OsString], env: &dyn Env) -> (u8, Vec<u8>, Vec<u8
 fn dispatch(paths: &FlowPaths, command: Command) -> Outcome {
     match command {
         Command::State { command } => match command {
+            StateCommand::Candidate => crate::runtime::outcome(crate::candidate::snapshot(paths.root()).map(|digest|serde_json::json!({"candidate_digest":digest,"source":"agent","exclusions":[".vibe/run/flow","target"]}))),
+            StateCommand::TaskResult { expected_revision, brief, result } => crate::runtime::outcome(serde_json::from_str(&brief).map_err(|e|e.to_string()).and_then(|brief| serde_json::from_str(&result).map_err(|e|e.to_string()).and_then(|result|crate::runtime::record_task(paths, expected_revision, &brief, &result)))),
+            StateCommand::Recover { expected_digest, run_id, plan_digest, scope_digest } => crate::runtime::outcome(crate::runtime::recover(paths, &expected_digest, &run_id, &plan_digest, &scope_digest)),
+            StateCommand::Upgrade { run_id, plan_digest, scope_digest } => crate::runtime::outcome(crate::runtime::upgrade(paths, &run_id, &plan_digest, &scope_digest)),
+            StateCommand::Transition { request } => crate::runtime::outcome(serde_json::from_str(&request).map_err(|e|e.to_string()).and_then(|r|crate::runtime::transition(paths,&r))),
             StateCommand::Get => cmd::state::run_get(paths),
             StateCommand::Set { target, feature } => {
                 cmd::state::run_set(paths, target.as_deref(), feature.as_deref())

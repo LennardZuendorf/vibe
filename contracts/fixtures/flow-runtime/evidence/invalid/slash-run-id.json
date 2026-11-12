@@ -1,0 +1,27 @@
+{
+  "v": 1,
+  "evidence_id": "ev-1",
+  "run_id": "run/1",
+  "task_ids": [
+    "task-6"
+  ],
+  "candidate_digest": "candidate-a",
+  "source": "agent",
+  "checks": [
+    {
+      "id": "tests",
+      "argv": [
+        "cargo",
+        "test"
+      ],
+      "cwd": "/repo",
+      "exit_code": 0,
+      "output_digest": "output-a",
+      "output_path": "output.txt",
+      "started_at": "2026-11-11T10:00:00Z",
+      "finished_at": "2026-11-11T10:01:00Z"
+    }
+  ],
+  "review": {},
+  "verdict": "passed"
+}

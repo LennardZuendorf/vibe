@@ -108,7 +108,7 @@ pub fn snapshot(home: &Home) -> std::collections::BTreeMap<String, Entry> {
 
 /// A valid toolkit (`spec`, `vibe`, `using-spec`) at `<home>/kit`.
 pub fn toolkit(home: &Home) -> PathBuf {
-    for name in ["spec", "vibe", "using-spec"] {
+    for name in ["spec", "vibe", "flow"] {
         home.write(
             &format!("kit/{name}/SKILL.md"),
             &format!("---\nname: {name}\ndescription: Toolkit {name}.\n---\n"),

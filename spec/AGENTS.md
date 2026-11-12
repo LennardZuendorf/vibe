@@ -8,13 +8,13 @@ local to this half. Read the root guide first.
 
 Markdown skills and agents, a hook shim, legacy bash scripts, and the tests. The
 `vibe-spec` binary (`crates/vibe-spec/`) does the work the skills call. Ships to
-targets as `.agents/skills/spec/` and `.agents/skills/using-spec/` (a `-L`
-dereferenced copy).
+targets as `.agents/skills/spec/` (a `-L` dereferenced copy). Toolkit
+orientation and lifecycle discovery live in the sibling `vibe` and `flow` skills.
 
 | Path | Role |
 |---|---|
 | `SKILL.md` | Skill router — entry point the agent loads |
-| `using-spec/` | Session-start router skill |
+| `reference/session-start.md` | Read-only standalone discovery context |
 | `strategy.md`, `feature.md` | Guides (root strategy, fallback feature authoring) |
 | `reference/` | Templates + per-doc authoring references |
 | `scripts/` | Legacy bash scripts, flat root only — deterministic, shellcheck-clean |

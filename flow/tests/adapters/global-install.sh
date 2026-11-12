@@ -4,7 +4,7 @@
 #
 # `install.sh --global` used to be Claude-only (`claude plugin install`), so a
 # Codex, Droid or OpenCode user had to hand-copy skill trees. It now writes the
-# shipped skills (`spec`, `using-spec`, `vibe` — three SIBLING dirs) into each
+# shipped skills (`spec`, `flow`, `vibe` — three SIBLING dirs) into each
 # selected host's OWN user-level skills dir and maintains one shared user-level
 # AGENTS.md block. This leg proves that against a throwaway HOME, per host, and
 # proves the SECOND run changes no byte.
@@ -105,12 +105,12 @@ for host in claude codex droid opencode; do
     || fail "$TAG" "$host: skills/spec/SKILL.md is installed ($dir)"
   [[ -f "$dir/vibe/SKILL.md" ]] && pass "$TAG" "$host: skills/vibe/SKILL.md is installed" \
     || fail "$TAG" "$host: skills/vibe/SKILL.md is installed ($dir)"
-  # vibe#71 sub-gap 3: the session-start router ships as its own SIBLING skill
+  # vibe#71 sub-gap 3: the Flow lifecycle ships as its own SIBLING skill
   # dir. Nested one level down it is invisible to a host whose documented scan is
   # `skills/*/SKILL.md` (OpenCode), and it double-registers on a host that walks
   # the tree recursively.
-  [[ -f "$dir/using-spec/SKILL.md" ]] && pass "$TAG" "$host: skills/using-spec/SKILL.md is installed (sibling)" \
-    || fail "$TAG" "$host: skills/using-spec/SKILL.md is installed ($dir)"
+  [[ -f "$dir/flow/SKILL.md" ]] && pass "$TAG" "$host: skills/flow/SKILL.md is installed (sibling)" \
+    || fail "$TAG" "$host: skills/flow/SKILL.md is installed ($dir)"
   [[ ! -e "$dir/spec/using-spec" ]] && pass "$TAG" "$host: using-spec is NOT also nested inside skills/spec/" \
     || fail "$TAG" "$host: using-spec is duplicated inside skills/spec/ ($dir/spec/using-spec)"
   # Exactly one host tree: --host must not fan out to the others.
@@ -168,7 +168,7 @@ git_before="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null; git -C "$REPO_
 run_global "$H" "$FARM" --global --host all >/dev/null 2>&1
 for host in claude codex droid opencode; do
   dir="$(skill_dir "$H" "$host")"
-  [[ -f "$dir/spec/SKILL.md" && -f "$dir/using-spec/SKILL.md" && -f "$dir/vibe/SKILL.md" ]] \
+  [[ -f "$dir/spec/SKILL.md" && -f "$dir/flow/SKILL.md" && -f "$dir/vibe/SKILL.md" ]] \
     && pass "$TAG" "--host all installs $host" || fail "$TAG" "--host all installs $host"
 done
 git_after="$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null; git -C "$REPO_ROOT" ls-files -o --exclude-standard 2>/dev/null)"
@@ -189,7 +189,7 @@ rm -rf "$H"
 FARM_C="$(mkhost "$(mkfarm)" codex)"
 H="$(tmp)"
 run_global "$H" "$FARM_C" --global >/dev/null 2>&1
-[[ -f "$H/.codex/skills/spec/SKILL.md" && -f "$H/.codex/skills/vibe/SKILL.md" ]] \
+[[ -f "$H/.codex/skills/spec/SKILL.md" && -f "$H/.codex/skills/flow/SKILL.md" ]] \
   && pass "$TAG" "detection: a codex CLI on PATH installs codex" \
   || fail "$TAG" "detection: a codex CLI on PATH installs codex"
 [[ ! -d "$H/.claude" && ! -d "$H/.factory" && ! -d "$H/.config/opencode" ]] \
@@ -236,7 +236,7 @@ if [[ -n "$OC_BIN" ]] && command -v jq >/dev/null 2>&1 && command -v node >/dev/
     fail "$TAG" "opencode native discovery runs against the installed HOME (rc=$ocrc)"
     cat "$H/discovery.stderr" >&2
   else
-    for s in spec using-spec vibe; do
+    for s in spec flow vibe; do
       want="$ocdir/$s/SKILL.md"
       got="$(printf '%s' "$ocout" | jq -r --arg n "$s" '.[] | select(.name == $n) | .location' 2>/dev/null | head -n1)"
       assert_eq "$TAG" "opencode discovers the '$s' skill at its installed path" "$got" "$want"

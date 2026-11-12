@@ -20,7 +20,7 @@
 //
 // Root-relative, not vibeDir-relative: the detect-context.sh path, the
 // warnings relay log, and the evidence receipts all mirror the ORIGINAL
-// hooks' own `$ROOT/.agents/skills/vibe/...` literals exactly (never
+// hooks' own `$ROOT/.agents/skills/flow/...` literals exactly (never
 // vibeDir-derived) — these are the real .sh scripts' own paths, not a vibe
 // primitive's resolution, so there is nothing to single-source them against.
 // orders/doctrine calls use vibeDir/skillsDir, matching those commands' own
@@ -30,7 +30,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { resolveRoot, resolveVibeDir, resolveSkillsDir, flowRuntimeDir, cursorEntryAbsent } from '../root.mjs';
-import { readCursor } from '../cursor.mjs';
+import { legacyAdapterUnavailable, readCursor } from '../cursor.mjs';
 import { loadPolicy, decide } from '../policy.mjs';
 import { runDoctrine } from './doctrine.mjs';
 import { runOrders } from './orders.mjs';
@@ -53,14 +53,14 @@ function line(s) {
 // (an undeterminable working tree) and a third copy of this literal, which is
 // precisely the "second re-derivation" the duplicate-primitive scan exists to
 // catch. One constant, one occurrence, one waiver.
-const ABORT_HINT = '  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle';
+const ABORT_HINT = '  not verifying? abort with: bash .agents/skills/flow/scripts/set-state.sh idle';
 
 // ---------------------------------------------------------------------------
 // Shared root-relative paths (mirror each hook's own literal exactly).
 // ---------------------------------------------------------------------------
 
 function vibeLogDir(root) {
-  return path.join(root, '.agents', 'skills', 'vibe');
+  return path.join(root, '.agents', 'skills', 'flow');
 }
 
 function detectScriptPath(root) {
@@ -125,7 +125,7 @@ function toPosix(p) {
 // the porcelain git ACTUALLY emits rather than a hand-written one.
 function isOwnRuntimeState(root, p) {
   if (p.startsWith('.vibe/run/')) return true;
-  const evidRel = '.agents/skills/vibe/evidence';
+  const evidRel = '.agents/skills/flow/evidence';
   if (p === evidRel || p.startsWith(`${evidRel}/`)) return true;
   if (p === toPosix(path.relative(root, warnLogPath(root)))) return true;
   return p === toPosix(LAST_INJECT_RELPATH);
@@ -455,7 +455,7 @@ export function runInjectHook(root, vibeDir, skillsDir, opts = {}) {
 const BASH_WRITE_OP_RE = /(>>?|(^|\s)(tee|truncate|mv|cp|rm)(\s|$)|(^|\s)sed(\s|$).*-i)/;
 const LESSONS_RE = /(^|[^A-Za-z0-9_])(docs\/spec|\.spec)\/lessons\.md/; // literal
 const ROOT_SPEC_RE = /(^|[^A-Za-z0-9_])(docs\/spec|\.spec)\/(product|tech|design|plan)\.md/; // literal
-const STATE_JSON_RE = /(\.agents\/skills\/vibe\/state\.json|(^|[^A-Za-z0-9_])flow\/state\.json)/;
+const STATE_JSON_RE = /(\.agents\/skills\/(?:flow|vibe)\/state\.json|(^|[^A-Za-z0-9_])flow\/state\.json)/;
 const SET_STATE_RE = /set-state\.sh/;
 
 // Returns the guarded-path-class label to warn about, or undefined for "no
@@ -468,7 +468,7 @@ function sniffBash(cmd) {
   if (rootSpec) return `a root ${rootSpec[2]}/{product,tech,design,plan}.md doc`;
   if (STATE_JSON_RE.test(cmd)) {
     if (SET_STATE_RE.test(cmd)) return undefined; // sanctioned writer: never warn
-    return '.agents/skills/vibe/state.json (use set-state.sh)';
+    return '.agents/skills/flow/state.json (use set-state.sh)';
   }
   return undefined;
 }
@@ -528,6 +528,9 @@ function inProcessVerdict(root, relPath) {
 }
 
 export function runGuardHook(root, stdinText, opts = {}) {
+  if (legacyAdapterUnavailable(vibeLogDir(root), root)) {
+    return { code: 2, stdout: '', stderr: 'block:legacy Flow adapter cannot evaluate adopted runtime; use the Rust Flow runtime\n' };
+  }
   const detectPath = detectScriptPath(root);
   if (!fs.existsSync(detectPath)) return { code: 0, stdout: '', stderr: '' };
   if (!stdinText) return { code: 0, stdout: '', stderr: '' };
@@ -932,6 +935,9 @@ function isVerdict(text) {
 }
 
 export function runGateHook(root, vibeDir, stdinText, opts = {}) {
+  if (legacyAdapterUnavailable(vibeDir, root)) {
+    return { code: 2, stdout: '', stderr: 'block:legacy Flow adapter cannot evaluate adopted runtime; use the Rust Flow runtime\n' };
+  }
   if (readStopHookActive(stdinText)) return { code: 0, stdout: '', stderr: '' };
 
   const detectPath = detectScriptPath(root);

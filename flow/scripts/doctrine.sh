@@ -40,13 +40,13 @@ find_repo_root() {
   return 1
 }
 SKILL_PARENT="$(cd "$SKILL_DIR/.." && pwd)"
-if [[ -f "$SKILL_PARENT/vibe/SKILL.md" ]]; then
+if [[ -f "$SKILL_PARENT/flow/SKILL.md" ]]; then
   SKILLS_DIR="$SKILL_PARENT"
 else
   REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")" || REPO_ROOT="$SKILL_PARENT"
   SKILLS_DIR="$REPO_ROOT/.agents/skills"
 fi
-SKILL_MD="$SKILLS_DIR/vibe/SKILL.md"
+SKILL_MD="$SKILLS_DIR/flow/SKILL.md"
 
 # Extract the doctrine block (marker lines excluded). Pure sed — no jq, no awk — so
 # the no-jq degrade path is byte-identical, matching orders.sh's extract_block.

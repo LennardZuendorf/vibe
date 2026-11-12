@@ -1,135 +1,322 @@
 {
-  "$comment": "vibe flow state machine. Static source of truth for the flow. States are compound <flow>.<phase> keys. Under D12 the per-turn orders are NOT stored here: skill-owning states carry inject:null and the orders live in the linked vibe skill's SKILL.md `## Orders (D12)` section (a <!-- vibe:orders:<state> --> block), resolved by .agents/skills/vibe/scripts/orders.sh. Only `idle` keeps an inline inject (skill-less fallback). The orders block is byte-stable; only <feature> interpolates, so the per-turn inject stays prompt-cache safe. set-state.sh is the only sanctioned writer of state.json. A single top-level `style` note governs output density for every state.",
+  "$comment": "Flow lifecycle data. D12 orders live only in flow/SKILL.md; machine links name flow. The Rust runtime owns upgraded transitions and state. Legacy writers refuse adopted/versioned runtime. Verified human authority remains unavailable/deny.",
   "version": "1",
   "initial": "idle",
-  "flows": ["idle", "setup", "strategy", "feature", "quick"],
-  "phases": ["idle", "detect", "apply", "brainstorm", "spec", "design", "plan", "impl", "verify", "compound", "triage", "fix"],
+  "flows": [
+    "idle",
+    "setup",
+    "strategy",
+    "feature",
+    "quick"
+  ],
+  "phases": [
+    "idle",
+    "detect",
+    "apply",
+    "brainstorm",
+    "spec",
+    "design",
+    "plan",
+    "impl",
+    "verify",
+    "compound",
+    "triage",
+    "fix",
+    "ship"
+  ],
   "gates": {
-    "feature.plan>feature.impl": "human approves plan units + picks impl mode",
-    "feature.verify>feature.compound": "human approves ship"
+    "feature.plan>feature.impl": "verified human approval of reviewed plan and scope; unavailable means deny",
+    "feature.verify>feature.ship": "verified human approval of final candidate and named action; unavailable means deny"
   },
   "style": "No filler or hedging. Compress receipts and subagent summaries. Security warnings and irreversible-action confirmations always stay in full prose. Compression never reduces reasoning depth; code, paths, commands stay byte-exact.",
   "states": {
     "idle": {
       "skill": null,
       "delegates": [],
-      "reads": ["docs/spec/lessons.md", "docs/spec/plan.md"],
+      "reads": [
+        "docs/spec/lessons.md",
+        "docs/spec/plan.md"
+      ],
       "writes": [],
       "inject": "state=idle · no active flow · pick a flow → vibe-flow state set {setup.detect | strategy.brainstorm | feature.design | quick.triage}",
-      "next": ["setup.detect", "strategy.brainstorm", "feature.design", "quick.triage"],
+      "next": [
+        "setup.detect",
+        "strategy.brainstorm",
+        "feature.design",
+        "quick.triage"
+      ],
       "exit": "user has named the work; agent has chosen a flow and called set-state.sh"
     },
-
     "setup.detect": {
-      "skill": "vibe",
+      "skill": "flow",
       "delegates": [],
-      "reads": ["repo tree", "CLAUDE.md", "AGENTS.md", ".agents/**", "docs/spec/**"],
+      "reads": [
+        "repo tree",
+        "CLAUDE.md",
+        "AGENTS.md",
+        ".agents/**",
+        "docs/spec/**"
+      ],
       "writes": [],
       "inject": null,
-      "next": ["setup.apply", "idle"],
+      "next": [
+        "feature.design",
+        "idle"
+      ],
       "exit": "audit complete: missing/present harness pieces listed, plugin preflight run"
     },
     "setup.apply": {
-      "skill": "vibe",
-      "delegates": ["spec"],
-      "reads": [".agents/skills/vibe/state-machine.json"],
-      "writes": [".agents/**", "CLAUDE.md#active-rules", "AGENTS.md#active-rules", "docs/spec/lessons.md", "docs/spec/product.md", "docs/spec/tech.md", "docs/spec/design.md", "docs/spec/plan.md"],
-      "inject": null,
-      "next": ["idle"],
-      "exit": "instructions block present, .agents/skills/vibe scaffolded, lessons.md exists, never clobbered user content"
-    },
-
-    "strategy.brainstorm": {
-      "skill": "vibe",
-      "delegates": ["superpowers:brainstorming"],
-      "reads": ["docs/spec/lessons.md"],
+      "skill": "flow",
+      "delegates": [
+        "spec"
+      ],
+      "reads": [
+        ".agents/skills/flow/state-machine.json"
+      ],
       "writes": [],
       "inject": null,
-      "next": ["strategy.spec", "idle"],
+      "next": [
+        "feature.design",
+        "idle"
+      ],
+      "exit": "legacy readable state only; no new mutation authority; requested non-Quick work routes to feature planning"
+    },
+    "strategy.brainstorm": {
+      "skill": "flow",
+      "delegates": [
+        "superpowers:brainstorming"
+      ],
+      "reads": [
+        "docs/spec/lessons.md"
+      ],
+      "writes": [],
+      "inject": null,
+      "next": [
+        "strategy.spec",
+        "idle"
+      ],
       "exit": "direction is clear enough to write into root specs"
     },
     "strategy.spec": {
-      "skill": "vibe",
-      "delegates": ["spec"],
-      "reads": ["docs/spec/product.md", "docs/spec/tech.md", "docs/spec/design.md", "docs/spec/plan.md"],
-      "writes": ["docs/spec/product.md", "docs/spec/tech.md", "docs/spec/design.md", "docs/spec/plan.md", "docs/spec/lessons.md"],
+      "skill": "flow",
+      "delegates": [
+        "spec"
+      ],
+      "reads": [
+        "docs/spec/product.md",
+        "docs/spec/tech.md",
+        "docs/spec/design.md",
+        "docs/spec/plan.md"
+      ],
+      "writes": [
+        "docs/spec/product.md",
+        "docs/spec/tech.md",
+        "docs/spec/design.md",
+        "docs/spec/plan.md",
+        "docs/spec/lessons.md"
+      ],
       "inject": null,
-      "next": ["strategy.brainstorm", "idle"],
+      "next": [
+        "strategy.brainstorm",
+        "feature.design",
+        "idle"
+      ],
       "exit": "root specs updated and validated; if a durable lesson surfaced, record it before going idle"
     },
-
     "feature.design": {
-      "skill": "vibe",
-      "delegates": ["superpowers:brainstorming", "code-explorer", "code-architect"],
-      "reads": ["docs/spec/lessons.md", "docs/spec/product.md", "docs/spec/tech.md"],
-      "writes": ["docs/superpowers/specs/*-<feature>-design.md"],
+      "skill": "flow",
+      "delegates": [
+        "superpowers:brainstorming",
+        "code-explorer",
+        "code-architect"
+      ],
+      "reads": [
+        "docs/spec/lessons.md",
+        "docs/spec/product.md",
+        "docs/spec/tech.md"
+      ],
+      "writes": [
+        "docs/superpowers/specs/*-<feature>-design.md"
+      ],
       "inject": null,
-      "next": ["feature.plan", "idle"],
+      "next": [
+        "feature.plan",
+        "idle"
+      ],
       "exit": "superpowers design doc written (or fallback product.md + tech.md; design.md when full rigor); approach chosen"
     },
     "feature.plan": {
-      "skill": "vibe",
-      "delegates": ["superpowers:writing-plans", "code-architect"],
-      "reads": ["docs/superpowers/specs/*-<feature>-design.md"],
-      "writes": ["docs/superpowers/plans/*-<feature>.md"],
+      "skill": "flow",
+      "delegates": [
+        "superpowers:writing-plans",
+        "code-architect"
+      ],
+      "reads": [
+        "docs/superpowers/specs/*-<feature>-design.md"
+      ],
+      "writes": [
+        "docs/superpowers/plans/*-<feature>.md"
+      ],
       "inject": null,
-      "next": ["feature.impl", "feature.design", "idle"],
+      "next": [
+        "feature.impl",
+        "feature.design",
+        "idle"
+      ],
       "exit": "superpowers plan (or fallback plan.md with stable unit IDs) written; human approved moving to impl"
     },
     "feature.impl": {
-      "skill": "vibe",
-      "delegates": ["superpowers:executing-plans", "superpowers:subagent-driven-development", "superpowers:test-driven-development", "superpowers:receiving-code-review"],
-      "reads": ["docs/superpowers/plans/*-<feature>.md", "docs/spec/features/<feature>/plan.md"],
-      "writes": ["src/**", "tests/**"],
+      "skill": "flow",
+      "delegates": [
+        "implementer",
+        "superpowers:test-driven-development",
+        "superpowers:receiving-code-review",
+        "code-reviewer"
+      ],
+      "reads": [
+        "docs/superpowers/plans/*-<feature>.md",
+        "docs/spec/features/<feature>/plan.md"
+      ],
+      "writes": [
+        "src/**",
+        "tests/**"
+      ],
       "inject": null,
-      "next": ["feature.verify", "idle"],
+      "next": [
+        "feature.compound",
+        "feature.plan",
+        "feature.design",
+        "idle"
+      ],
       "exit": "plan units implemented with tests that cite their unit IDs and pass"
     },
     "feature.verify": {
-      "skill": "vibe",
-      "delegates": ["superpowers:verification-before-completion", "superpowers:requesting-code-review", "superpowers:systematic-debugging", "code-reviewer"],
-      "reads": ["docs/superpowers/plans/*-<feature>.md", "docs/spec/features/<feature>/plan.md", "src/**", "tests/**"],
-      "writes": [".vibe/run/flow/evidence/feature-<feature>.md", "evidence: review notes"],
+      "skill": "flow",
+      "delegates": [
+        "superpowers:verification-before-completion",
+        "superpowers:requesting-code-review",
+        "superpowers:systematic-debugging",
+        "code-reviewer"
+      ],
+      "reads": [
+        "docs/superpowers/plans/*-<feature>.md",
+        "docs/spec/features/<feature>/plan.md",
+        "src/**",
+        "tests/**"
+      ],
+      "writes": [
+        ".vibe/run/flow/evidence/feature-<feature>.md",
+        "evidence: review notes"
+      ],
       "inject": null,
-      "next": ["feature.compound", "feature.impl", "feature.plan", "idle"],
-      "exit": "evidence shows plan units satisfied; review clean; human approved shipping"
+      "next": [
+        "feature.ship",
+        "feature.compound",
+        "feature.impl",
+        "feature.plan",
+        "idle"
+      ],
+      "exit": "candidate-bound check results and independent review complete; final approval applies to exact named action"
     },
     "feature.compound": {
-      "skill": "vibe",
-      "delegates": ["superpowers:finishing-a-development-branch"],
-      "reads": ["docs/superpowers/specs/*-<feature>-design.md", "docs/superpowers/plans/*-<feature>.md", "docs/spec/lessons.md"],
-      "writes": ["docs/spec/lessons.md", "docs/spec/product.md", "docs/spec/tech.md", "docs/spec/design.md", "docs/spec/plan.md", "CLAUDE.md#active-rules", "AGENTS.md#active-rules"],
+      "skill": "flow",
+      "delegates": [
+        "spec"
+      ],
+      "reads": [
+        "docs/superpowers/specs/*-<feature>-design.md",
+        "docs/superpowers/plans/*-<feature>.md",
+        "docs/spec/lessons.md"
+      ],
+      "writes": [
+        "docs/spec/lessons.md",
+        "docs/spec/product.md",
+        "docs/spec/tech.md",
+        "docs/spec/design.md",
+        "docs/spec/plan.md",
+        "CLAUDE.md#active-rules",
+        "AGENTS.md#active-rules"
+      ],
       "inject": null,
-      "next": ["idle"],
-      "exit": "lesson recorded; cross-cutting decisions promoted; feature archived; digest regenerated"
+      "next": [
+        "feature.verify",
+        "feature.impl",
+        "feature.plan",
+        "idle"
+      ],
+      "exit": "additive candidate documentation and generated rules prepared; feature artifacts retained; no automatic promotion/removal or finishing"
     },
-
     "quick.triage": {
-      "skill": "vibe",
-      "delegates": ["superpowers:systematic-debugging"],
-      "reads": ["docs/spec/lessons.md"],
+      "skill": "flow",
+      "delegates": [
+        "superpowers:systematic-debugging"
+      ],
+      "reads": [
+        "docs/spec/lessons.md"
+      ],
       "writes": [],
       "inject": null,
-      "next": ["quick.fix", "feature.design", "idle"],
-      "exit": "root cause identified; fix is small and bounded (else escalate to feature)"
+      "next": [
+        "quick.fix",
+        "feature.design",
+        "idle"
+      ],
+      "exit": "at most two files, twenty changed lines and no interface/schema/contract change; otherwise feature planning"
     },
     "quick.fix": {
-      "skill": "vibe",
-      "delegates": ["superpowers:test-driven-development", "superpowers:receiving-code-review"],
-      "reads": ["docs/spec/lessons.md"],
-      "writes": ["src/**", "docs/spec/quick/<slug>.md"],
+      "skill": "flow",
+      "delegates": [
+        "superpowers:test-driven-development",
+        "superpowers:receiving-code-review"
+      ],
+      "reads": [
+        "docs/spec/lessons.md"
+      ],
+      "writes": [
+        "src/**",
+        "docs/spec/quick/<slug>.md"
+      ],
       "inject": null,
-      "next": ["quick.verify", "idle"],
+      "next": [
+        "quick.verify",
+        "idle"
+      ],
       "exit": "fix implemented with a test that reproduces and resolves the issue"
     },
     "quick.verify": {
-      "skill": "vibe",
-      "delegates": ["superpowers:verification-before-completion", "code-reviewer"],
-      "reads": ["src/**", "tests/**"],
-      "writes": [".vibe/run/flow/evidence/quick.md", "docs/spec/lessons.md"],
+      "skill": "flow",
+      "delegates": [
+        "superpowers:verification-before-completion",
+        "code-reviewer"
+      ],
+      "reads": [
+        "src/**",
+        "tests/**"
+      ],
+      "writes": [
+        ".vibe/run/flow/evidence/quick.md",
+        "docs/spec/lessons.md"
+      ],
       "inject": null,
-      "next": ["quick.fix", "idle"],
+      "next": [
+        "quick.fix",
+        "idle"
+      ],
       "exit": "evidence shows fix works and regressions clear; if a durable lesson surfaced, record it before going idle"
+    },
+    "feature.ship": {
+      "skill": "flow",
+      "delegates": [],
+      "reads": [
+        "candidate-bound evidence",
+        "verified named-action approval"
+      ],
+      "writes": [],
+      "inject": null,
+      "next": [
+        "idle"
+      ],
+      "exit": "only the expressly approved action succeeded; no implicit commit, release or cleanup"
     }
   }
 }

@@ -1,0 +1,61 @@
+{
+  "suite": "flow",
+  "kind": "selection",
+  "queries": [
+    {
+      "id": "orientation",
+      "query": "What is Vibe and which component should I use?",
+      "expect": "vibe"
+    },
+    {
+      "id": "direct-flow",
+      "query": "$flow: plan a CSV exporter",
+      "expect": "flow"
+    },
+    {
+      "id": "direct-spec",
+      "query": "$spec: validate the project knowledge",
+      "expect": "spec"
+    },
+    {
+      "id": "feature",
+      "query": "Build CSV export with a reviewed implementation plan.",
+      "expect": "flow"
+    },
+    {
+      "id": "quick",
+      "query": "Fix a misspelled output string.",
+      "expect": "flow"
+    },
+    {
+      "id": "knowledge",
+      "query": "Record this durable architectural decision in the spec.",
+      "expect": "spec"
+    },
+    {
+      "id": "no-root",
+      "query": "Explain how Vibe starts in a repository without a spec.",
+      "expect": "vibe"
+    },
+    {
+      "id": "missing-component",
+      "query": "Flow is missing; explain how I can repair my installation.",
+      "expect": "vibe"
+    },
+    {
+      "id": "conflicting-providers",
+      "query": "Two Flow versions appear. Explain the selected source and safe remediation.",
+      "expect": "vibe"
+    },
+    {
+      "id": "near-miss",
+      "query": "Explain this regular expression.",
+      "expect": "none"
+    },
+    {
+      "id": "delegated-worker",
+      "query": "TaskBrief task_id export-2: read only the encoder and return findings. Do not start a lifecycle.",
+      "expect": "none"
+    }
+  ]
+}

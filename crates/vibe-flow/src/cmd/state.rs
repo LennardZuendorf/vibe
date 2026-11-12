@@ -17,6 +17,11 @@ fn line(text: &str) -> String {
 
 /// `state get`: the resolved cursor as pretty JSON, `state` last.
 pub fn run_get(paths: &FlowPaths) -> Outcome {
+    match crate::runtime::hook_cursor(paths) {
+        Ok(Some(v)) => return crate::runtime::outcome(Ok(v)),
+        Err(_) => {}
+        Ok(None) => {}
+    }
     match read_cursor(paths) {
         Ok(cursor) => Outcome::new(0, format!("{}\n", cursor_json(&cursor)), String::new()),
         Err(err) => Outcome::new(1, String::new(), line(&format!("vibe state: ERROR: {err}"))),

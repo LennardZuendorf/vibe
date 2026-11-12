@@ -22,12 +22,12 @@ test('extractBlock: extracts a well-formed symmetric block (doctrine grammar)', 
 test('extractBlock: accepts the legacy asymmetric closer (orders grammar)', () => {
   const text = [
     '<!-- vibe:orders:setup.detect -->',
-    'skill=vibe · do the thing · next: setup.apply, idle',
+    'skill=flow · do the thing · next: setup.apply, idle',
     '<!-- /vibe:orders -->',
   ].join('\n');
   assertEqual(
     extractBlock(text, 'vibe:orders:setup.detect'),
-    'skill=vibe · do the thing · next: setup.apply, idle',
+    'skill=flow · do the thing · next: setup.apply, idle',
   );
 });
 

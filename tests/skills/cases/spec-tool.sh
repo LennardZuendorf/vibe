@@ -32,5 +32,5 @@ assert_eq "skill-revision/17" "session-start prints {} in a repo with no spec ro
 mkdir -p "$_tmp/docs/spec"
 printf '# Spec\n' > "$_tmp/docs/spec/README.md"
 _out="$(cd "$_tmp" && printf '{}' | "$_bin" hook session-start 2>/dev/null)"
-assert_contains "skill-revision/17" "session-start routes when a spec root exists" "$_out" "using-spec"
+assert_contains "skill-revision/17" "session-start routes when a spec root exists" "$_out" "Vibe Spec context"
 rm -rf "$_tmp"

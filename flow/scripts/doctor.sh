@@ -18,7 +18,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Resolve the repo root by upward marker search (never fixed hop counts — the
-# script is reachable via the .agents/skills/vibe symlink and the canonical
+# script is reachable via the .agents/skills/flow symlink and the canonical
 # flow/ path; both must agree). A repo/install is marked by .spec, .git, or the # literal
 # .agents/skills tree an install lays down.
 find_root() {
@@ -38,7 +38,7 @@ if [[ -z "$ROOT" ]]; then
 fi
 
 SPEC_SKILL="$ROOT/.agents/skills/spec"
-VIBE_SKILL="$ROOT/.agents/skills/vibe"
+VIBE_SKILL="$ROOT/.agents/skills/flow"
 MACHINE="$VIBE_SKILL/state-machine.json"
 STATE="$VIBE_SKILL/state.json"
 if [[ -f "$SCRIPT_DIR/runtime-state.sh" ]]; then
@@ -240,6 +240,22 @@ else
     if dep_present "$name"; then ok "dep.$name" "$kind '$name' present on disk"
     else warn "dep.$name" "$kind '$name' not found — degrade: $degrade"; fi
   done < <(jq -r '.deps[] | [.name, .kind, .degrade] | @tsv' "$DEPS")
+fi
+
+# Task 8: share the read-only resource report with the Node entry point.
+if command -v node >/dev/null 2>&1 && [[ -f "$SCRIPT_DIR/../engine/commands/doctor.mjs" ]]; then
+  node --input-type=module - "$SCRIPT_DIR/../engine/commands/doctor.mjs" "$ROOT" "$VIBE_SKILL" "$ROOT/.agents/skills" "${HOME:-}" <<'JS'
+import { pathToFileURL } from 'node:url';
+const [modulePath, root, flowDir, skillsDir, home] = process.argv.slice(2);
+try {
+  const { capabilityReport } = await import(pathToFileURL(modulePath).href);
+  process.stdout.write(capabilityReport(root, flowDir, skillsDir, home));
+} catch {
+  process.stdout.write('warn resource.report unavailable; capability and trust remain unverified\n');
+}
+JS
+else
+  warn resource.report "unavailable (Node engine missing); capability, runtime version and native coverage unverified; trusted approval/evidence unavailable/deny"
 fi
 
 exit 0

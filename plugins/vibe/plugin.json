@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "vibe",
-  "description": "Spec-first workflow harness: the spec + vibe skills, packaged for Codex and Droid marketplace installs. Version comes from package.json — no second source of truth.",
+  "description": "Spec-first workflow harness: the Vibe toolkit + Flow + Spec skills, packaged for Codex and Droid marketplace installs. Version comes from package.json — no second source of truth.",
   "version": "0.4.0"
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# set-state.sh — the ONLY sanctioned writer of .agents/skills/vibe/state.json.
+# set-state.sh — the ONLY sanctioned writer of .agents/skills/flow/state.json.
 #
 # Usage:
 #   set-state.sh <flow.phase> [feature]
@@ -162,6 +162,55 @@ read_cur_feature() {
   esac
 }
 
+# Legacy fallback shares Rust's O_EXCL file lock and rechecks version while held.
+# It never evicts an existing lock. A versioned cursor needs the Rust runtime.
+runtime_root="$(runtime_project_root "$SKILL_DIR")" || runtime_root="$SKILL_DIR"
+LOCK_DIR="$runtime_root/.vibe/run/flow"
+for parent in "$runtime_root/.vibe" "$runtime_root/.vibe/run" "$LOCK_DIR"; do
+  if [[ -e "$parent" || -L "$parent" ]]; then
+    if ! runtime_check_write "$runtime_root" "$parent/.lock-anchor"; then
+      err "ERROR: runtime parent escapes project: $parent"; exit 1
+    fi
+  else
+    mkdir "$parent"
+  fi
+done
+LOCK="$LOCK_DIR/runtime.lock"
+LOCK_TOKEN="legacy-$$-$(date -u +%s)"
+if [[ -e "$LOCK" || -L "$LOCK" ]]; then
+  err "ERROR: runtime busy: $LOCK"
+  exit 1
+fi
+if ! (set -o noclobber; printf '%s\n' "$LOCK_TOKEN" > "$LOCK") 2>/dev/null; then
+  err "ERROR: runtime busy: $LOCK"
+  exit 1
+fi
+release_lock() {
+  if [[ -f "$LOCK" && ! -L "$LOCK" ]] && [[ "$(cat "$LOCK")" == "$LOCK_TOKEN" ]]; then rm -f "$LOCK"; fi
+}
+trap release_lock EXIT
+if [[ -e "$LOCK_DIR/runs" || -L "$LOCK_DIR/runs" ]]; then
+  err "ERROR: adopted runtime requires the Rust Flow runtime; legacy writer refused"
+  exit 1
+fi
+STATE="$(runtime_state_path "$SKILL_DIR")"
+# Parse version keys when a full parser is present, including JSON escapes.
+# The parser-free legacy path admits no escaped canonical metadata.
+if [[ -f "$STATE" ]] && { command -v node >/dev/null 2>&1 || command -v jq >/dev/null 2>&1; }; then
+  cursor_kind="$(runtime_cursor_kind "$STATE")"
+  if [[ "$cursor_kind" == versioned || ( "$STATE" == "$LOCK_DIR/state.json" && "$cursor_kind" != legacy ) ]]; then
+    err "ERROR: versioned or invalid canonical cursor requires the Rust Flow runtime; legacy writer refused"
+    exit 1
+  fi
+elif [[ "$STATE" == "$LOCK_DIR/state.json" && -f "$STATE" ]] && grep -qF '\' "$STATE"; then
+  err "ERROR: escaped canonical metadata cannot be verified without a JSON parser"
+  exit 1
+fi
+if [[ -f "$STATE" ]] && grep -qE '"v"[[:space:]]*:' "$STATE"; then
+  err "ERROR: versioned cursor requires the Rust Flow runtime; legacy writer refused"
+  exit 1
+fi
+
 # Determine the feature to carry forward. CUR_FEATURE stays empty when there is
 # none. A corrupt cursor must not be re-emitted: reuse only a string feature
 # that passes the same check as a new one; drop any other value with a WARN.
@@ -205,7 +254,7 @@ if declare -F runtime_check_write >/dev/null; then
 fi
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 TMP="$(mktemp "${STATE}.XXXXXX")"
-trap 'rm -f "$TMP"' EXIT
+trap 'rm -f "$TMP"; release_lock' EXIT
 
 if [[ "$HAVE_JQ" -eq 1 ]]; then
   jq -n \
@@ -222,6 +271,7 @@ else
 fi
 
 mv -f "$TMP" "$STATE"
+release_lock
 trap - EXIT
 
 # Echo the new state and its legal next states for the caller (jq-only hint).

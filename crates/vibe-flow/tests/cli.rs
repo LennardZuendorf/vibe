@@ -60,7 +60,7 @@ fn state_set_refuses_an_unknown_target_with_the_sorted_state_list() {
     assert_eq!(lines[0], "vibe state: ERROR: 'nope' is not a known state.");
     assert_eq!(
         lines[1],
-        "vibe state: Known states: feature.compound, feature.design, feature.impl, feature.plan, feature.verify, idle, quick.fix, quick.triage, quick.verify, setup.apply, setup.detect, strategy.brainstorm, strategy.spec"
+        "vibe state: Known states: feature.compound, feature.design, feature.impl, feature.plan, feature.ship, feature.verify, idle, quick.fix, quick.triage, quick.verify, setup.apply, setup.detect, strategy.brainstorm, strategy.spec"
     );
 }
 
@@ -175,7 +175,7 @@ fn policy_list_prints_one_line_per_rule() {
     assert_eq!(stdout.lines().count(), 12);
     assert_eq!(stdout.lines().next(), Some("policy: 11 rule(s)"));
     assert!(
-        stdout.contains("cursor  match=.vibe/run/flow/state.json, .agents/skills/vibe/state.json, .agents/flow/state.json  arms=[*->block]"),
+        stdout.contains("cursor  match=.vibe/run/flow/state.json, .agents/skills/flow/state.json, .agents/skills/vibe/state.json, .agents/flow/state.json  arms=[*->block]"),
         "{stdout}"
     );
     assert!(

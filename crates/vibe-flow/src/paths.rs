@@ -47,7 +47,13 @@ impl FlowPaths {
             Some(path) => absolute(cwd, path),
             None => resolve_root(cwd, env),
         };
-        let legacy_data = root.join(".agents").join("skills").join("vibe");
+        let old_skill = root.join(".agents").join("skills").join("vibe");
+        let flow_skill = root.join(".agents").join("skills").join("flow");
+        let legacy_data = if flow_skill.join("state.json").is_file() {
+            flow_skill
+        } else {
+            old_skill
+        };
         let data = match vibe_dir_override {
             Some(path) => absolute(cwd, path),
             None => {
@@ -55,7 +61,12 @@ impl FlowPaths {
                 if current.is_dir() {
                     current
                 } else {
-                    legacy_data.clone()
+                    let skill = root.join(".agents").join("skills").join("flow");
+                    if skill.join("state-machine.json").is_file() {
+                        skill
+                    } else {
+                        legacy_data.clone()
+                    }
                 }
             }
         };

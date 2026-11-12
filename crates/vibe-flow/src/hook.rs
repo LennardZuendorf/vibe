@@ -104,6 +104,19 @@ fn append_warn(paths: &FlowPaths, message: &str) {
 /// The `PreToolUse` tooth: the write policy for file tools, a warn-only text
 /// sniffer for `Bash`.
 pub fn guard(paths: &FlowPaths, stdin: &[u8]) -> Outcome {
+    match crate::runtime::hook_cursor(paths) {
+        Err(e) => return Outcome::new(2, String::new(), format!("vibe-guard: BLOCKED — {e}\n")),
+        Ok(Some(cursor)) => {
+            let result = serde_json::from_slice::<Value>(stdin)
+                .map_err(|e| e.to_string())
+                .and_then(|payload| crate::runtime::guard(paths, &cursor, &payload));
+            return match result {
+                Ok(()) => pass(),
+                Err(e) => Outcome::new(2, String::new(), format!("vibe-guard: BLOCKED — {e}\n")),
+            };
+        }
+        Ok(None) => {}
+    }
     if !paths.detect_script().exists() || stdin.is_empty() {
         return pass();
     }
@@ -392,6 +405,18 @@ fn hits_state_json(command: &str) -> bool {
 /// The `Stop` gate: re-entry guard, TDD nudge (warn-only), evidence receipt
 /// (the one promoted block).
 pub fn stop(paths: &FlowPaths, stdin: &[u8]) -> Outcome {
+    match crate::runtime::hook_cursor(paths) {
+        Err(e) => return Outcome::new(2, String::new(), format!("vibe-gate: BLOCKED — {e}\n")),
+        Ok(Some(cursor)) => {
+            if matches!(cursor["phase"].as_str(), Some("verify" | "ship"))
+                && let Err(e) = crate::evidence::production_readiness(&cursor, None)
+            {
+                return Outcome::new(2, String::new(), format!("vibe-gate: BLOCKED — {e}\n"));
+            }
+            return pass();
+        }
+        Ok(None) => {}
+    }
     if stop_hook_active(stdin) {
         return pass();
     }

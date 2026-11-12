@@ -123,7 +123,7 @@ assert_eq "skill-revision/1" "fixed_root_hits skips the defining lines" "0" "$(f
 # --- links --------------------------------------------------------------------
 mkdir -p "$_t/repo/spec/sub" "$_t/repo/flow" "$_t/repo/.agents/skills"
 ln -s ../../spec "$_t/repo/.agents/skills/spec"
-ln -s ../../flow "$_t/repo/.agents/skills/vibe"
+ln -s ../../flow "$_t/repo/.agents/skills/flow"
 printf 'x\n' > "$_t/repo/spec/sub/a.md"
 cat > "$_t/repo/spec/SKILL.md" <<'FIX'
 See [a](sub/a.md#frag), [web](https://example.com/x), [anchor](#top) and [gone](sub/missing.md).

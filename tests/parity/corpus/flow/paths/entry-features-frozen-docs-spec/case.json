@@ -19,6 +19,10 @@
       ],
       [
         "docs/spec/features/auth/tech.md",
+        "feature.ship"
+      ],
+      [
+        "docs/spec/features/auth/tech.md",
         "feature.verify"
       ],
       [

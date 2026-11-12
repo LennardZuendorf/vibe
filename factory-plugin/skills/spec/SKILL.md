@@ -1,13 +1,6 @@
 ---
 name: spec
-description: |
-  You MUST use this before changing what the product does, how it is built,
-  or any file under the spec root (docs/spec) or docs/superpowers: features,
-  refactors, architecture, decisions, PRDs, plans, roadmaps, and also
-  one-line fixes, typos and new flags. "Quick" and "just fix it" still
-  route here first. Invoke it before reading files, before writing code,
-  before brainstorming alone, before answering "how should X be built",
-  and whenever the user mentions spec, PRD, design doc, plan, or roadmap.
+description: Use when directly discovering, querying, authoring, validating or promoting project specs, PRDs, decisions and durable knowledge, or when Flow requests a bounded artifact operation. Direct $spec requests work standalone. Toolkit orientation uses vibe; development lifecycle requests use flow.
 user-invocable: true
 argument-hint: "[strategy|feature [<feature>]|interview [<feature>]|promote <feature>|diff <feature>|health|research <feature>|lessons-for <tag>|product|tech|design|plan|lessons|setup|validate]"
 allowed-tools:
@@ -29,6 +22,10 @@ prompt holds your orders.
 </SUBAGENT-STOP>
 
 ## Overview
+
+Under Flow, perform only the requested artifact operation and return its result.
+Do not restart the toolkit or take lifecycle ownership. Direct Spec requests
+remain standalone; toolkit onboarding belongs to `vibe`.
 
 **Core principle:** the spec holds current decisions, never history or backlog;
 code is truth, so when spec and code disagree, fix the spec in the same change.

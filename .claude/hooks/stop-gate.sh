@@ -20,8 +20,8 @@ HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
 
 # Two layouts, matching install.sh: the installed skill at
-# `.agents/skills/vibe/bin/hook.sh`, then this repo's own `flow/bin/hook.sh`.
-SHIM="${VIBE_FLOW_SHIM:-$ROOT/.agents/skills/vibe/bin/hook.sh}"
+# `.agents/skills/flow/bin/hook.sh`, then this repo's own `flow/bin/hook.sh`.
+SHIM="${VIBE_FLOW_SHIM:-$ROOT/.agents/skills/flow/bin/hook.sh}"
 [[ -f "$SHIM" ]] || SHIM="$HOOKS_DIR/../../flow/bin/hook.sh"
 if [[ ! -f "$SHIM" ]]; then
   echo "vibe-gate: flow hook shim not found ($SHIM) — the evidence tooth is NOT enforced" >&2

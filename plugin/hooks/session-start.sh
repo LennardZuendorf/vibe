@@ -25,7 +25,7 @@ fi
 # without the engine, with a node too old for it or with a broken engine it
 # prints nothing; none of those is a signal to stay silent. "Can answer" is
 # probed, not inferred: the same engine command the repo hook runs must print.
-ENGINE="${VIBE_ENGINE:-$ROOT/.agents/skills/vibe/engine}"
+ENGINE="${VIBE_ENGINE:-$ROOT/.agents/skills/flow/engine}"
 if command -v node >/dev/null 2>&1 && [[ -f "$ENGINE/cli.mjs" ]]; then
   for f in "$ROOT/.claude/settings.json" "$ROOT/.claude/settings.local.json"; do
     if [[ -f "$f" ]] && grep -qF 'session-start-doctrine.sh' "$f" 2>/dev/null; then
@@ -37,9 +37,9 @@ if command -v node >/dev/null 2>&1 && [[ -f "$ENGINE/cli.mjs" ]]; then
 fi
 # flow installed = the project carries the flow's state machine. A docs/spec tree
 # alone is a spec repo, not a flow repo: the doctrine is flow doctrine.
-[[ -f "$ROOT/.agents/skills/vibe/state-machine.json" ]] || exit 0
+[[ -f "$ROOT/.agents/skills/flow/state-machine.json" ]] || exit 0
 
-DOCTRINE="${CLAUDE_PLUGIN_ROOT:-}/skills/vibe/scripts/doctrine.sh"
+DOCTRINE="${CLAUDE_PLUGIN_ROOT:-}/skills/flow/scripts/doctrine.sh"
 [[ -f "$DOCTRINE" ]] || exit 0
 # doctrine.sh reads no project state, self-degrades, exit 0.
 bash "$DOCTRINE" 2>/dev/null || true

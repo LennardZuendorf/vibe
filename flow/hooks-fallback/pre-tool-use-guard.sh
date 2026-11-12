@@ -37,7 +37,7 @@
 # Event: PreToolUse, matcher Edit|Write|MultiEdit|NotebookEdit|Bash. For the file tools it
 # reads the target path from stdin and asks the shared decision policy whether the
 # write is allowed in the current flow state. NO path policy lives here (R8) — it
-# all lives once in .agents/skills/vibe/scripts/detect-context.sh decide.
+# all lives once in .agents/skills/flow/scripts/detect-context.sh decide.
 #
 # Bash is a WARN-ONLY sniffer, never a block: the three hard blocks intercept
 # file-tool calls only, so a raw `echo >> .spec/lessons.md` would otherwise slip # literal
@@ -55,7 +55,7 @@
 #
 # Warnings relay: a warn on stderr with exit 0 is invisible to the model (Claude
 # Code surfaces stderr only on a block/exit 2). So each warn is also appended to
-# .agents/skills/vibe/warnings.log; the UserPromptSubmit inject hook drains that
+# .agents/skills/flow/warnings.log; the UserPromptSubmit inject hook drains that
 # log to stdout (which IS injected) next turn, then truncates it.
 #
 # The three hard blocks are coded in detect-context.sh (single source of truth),
@@ -64,7 +64,7 @@
 #                            strategy.spec | quick.verify
 #   2. root .spec/{product,tech,design,plan}.md # literal
 #                          — allowed only in strategy.spec | feature.compound | setup.apply
-#   3. .agents/skills/vibe/state.json — never by direct edit (set-state.sh only)
+#   3. .agents/skills/flow/state.json — never by direct edit (set-state.sh only)
 #
 # Graceful degrade (R9): missing detect-context.sh / empty or unparseable stdin ->
 # exit 0. jq is preferred for reading the path; without it a best-effort sed
@@ -74,8 +74,18 @@
 set -euo pipefail
 
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-DETECT="$ROOT/.agents/skills/vibe/scripts/detect-context.sh"
-WARN_LOG="$ROOT/.agents/skills/vibe/warnings.log"
+# Any persisted adoption marker or version key requires upgraded readiness.
+legacy_adopted=0
+[[ ! -e "$ROOT/.vibe/run/flow/runs" && ! -L "$ROOT/.vibe/run/flow/runs" ]] || legacy_adopted=1
+for cursor in "$ROOT/.vibe/run/flow/state.json" "$ROOT/.agents/skills/flow/state.json" "$ROOT/.agents/skills/vibe/state.json"; do
+  if [[ -f "$cursor" ]] && grep -qE '"v"[[:space:]]*:' "$cursor"; then legacy_adopted=1; fi
+done
+if [[ "$legacy_adopted" -eq 1 ]]; then
+  echo "block:legacy Flow adapter cannot evaluate adopted runtime; use the Rust Flow runtime" >&2
+  exit 2
+fi
+DETECT="$ROOT/.agents/skills/flow/scripts/detect-context.sh"
+WARN_LOG="$ROOT/.agents/skills/flow/warnings.log"
 
 have_jq() { command -v jq >/dev/null 2>&1; }
 
@@ -87,7 +97,7 @@ INPUT="$(cat 2>/dev/null || true)"
 # Append a one-line warning to the relay log for the inject hook to surface.
 # Graceful: no vibe dir or an unwritable log is a silent no-op (never fail).
 log_warn() {
-  local dir="$ROOT/.agents/skills/vibe"
+  local dir="$ROOT/.agents/skills/flow"
   [[ -d "$dir" ]] || return 0
   printf 'guard: %s\n' "$1" >> "$WARN_LOG" 2>/dev/null || true
 }
@@ -114,9 +124,9 @@ sniff_bash() {
   if grep -Eq '(^|[^[:alnum:]_])(docs/spec|\.spec)/(product|tech|design|plan)\.md' <<<"$cmd"; then # literal
     warn_bash "a root $(grep -Eo '(docs/spec|\.spec)/' <<<"$cmd" | head -n1){product,tech,design,plan}.md doc"; return 0 # literal
   fi
-  if grep -Eq '(\.agents/skills/vibe/state\.json|(^|[^[:alnum:]_])flow/state\.json)' <<<"$cmd"; then
+  if grep -Eq '(\.agents/skills/flow/state\.json|(^|[^[:alnum:]_])flow/state\.json)' <<<"$cmd"; then
     grep -q 'set-state\.sh' <<<"$cmd" && return 0   # sanctioned writer: never warn
-    warn_bash ".agents/skills/vibe/state.json (use set-state.sh)"; return 0
+    warn_bash ".agents/skills/flow/state.json (use set-state.sh)"; return 0
   fi
 }
 

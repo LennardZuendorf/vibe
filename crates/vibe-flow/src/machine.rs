@@ -150,9 +150,9 @@ mod tests {
     }
 
     #[test]
-    fn the_shipped_machine_has_thirteen_states() {
+    fn the_shipped_machine_has_fourteen_states() {
         let machine = shipped_machine();
-        assert_eq!(machine.state_keys().len(), 13);
+        assert_eq!(machine.state_keys().len(), 14);
         assert_eq!(
             machine.state_keys(),
             [
@@ -160,6 +160,7 @@ mod tests {
                 "feature.design",
                 "feature.impl",
                 "feature.plan",
+                "feature.ship",
                 "feature.verify",
                 "idle",
                 "quick.fix",
@@ -174,14 +175,14 @@ mod tests {
     }
 
     #[test]
-    fn the_shipped_machine_has_thirty_legal_edges() {
+    fn the_shipped_machine_has_thirty_nine_legal_edges() {
         let machine = shipped_machine();
         let edges: usize = machine
             .state_keys()
             .iter()
             .map(|key| machine.next(key).len())
             .sum();
-        assert_eq!(edges, 30);
+        assert_eq!(edges, 39);
     }
 
     #[test]
@@ -191,11 +192,11 @@ mod tests {
             machine.gates(),
             [
                 "feature.plan>feature.impl".to_string(),
-                "feature.verify>feature.compound".to_string()
+                "feature.verify>feature.ship".to_string()
             ]
         );
         assert!(machine.gate("feature.plan", "feature.impl"));
-        assert!(machine.gate("feature.verify", "feature.compound"));
+        assert!(machine.gate("feature.verify", "feature.ship"));
         assert!(!machine.gate("feature.impl", "feature.plan"));
     }
 
@@ -205,7 +206,7 @@ mod tests {
         assert_eq!(machine.skill("idle"), Some(&serde_json::Value::Null));
         assert_eq!(
             machine.skill("feature.impl"),
-            Some(&serde_json::json!("vibe"))
+            Some(&serde_json::json!("flow"))
         );
         assert!(machine.inject("feature.impl").is_some_and(|v| v.is_null()));
         assert!(

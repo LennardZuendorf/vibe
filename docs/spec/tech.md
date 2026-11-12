@@ -2,7 +2,7 @@
 type: hub
 scope: technical
 children: [tech/contracts.md, tech/rust.md, tech/instruct.md, tech/spec.md, tech/cli.md]
-updated: 2026-11-02
+updated: 2026-11-11
 ---
 
 # vibe — Technical Architecture
@@ -17,8 +17,8 @@ injection while it ships. Rust writes `.vibe/run/flow/state.json`; active JS and
 shell readers/writers prefer that file once present and retain the legacy
 cursor as an absence-only fallback. Legacy-only targets keep their existing
 cursor until Rust migrates them. This source status does not establish a
-published release or an installed runtime. F7 transition gates/ledger and F8
-Rust injection remain target work. The queued v0.5 arc adds one front door —
+published release or an installed runtime. F7 has explicit v2 progression and task records; trusted gates remain unavailable/deny
+and its shared audit ledger remains pending. F8 Rust injection remains target work. The queued v0.5 arc adds one front door —
 the `vibe` CLI — plus worktree lifecycle and a global spec space over the same
 three tools ([tech-cli.md](tech/cli.md)).
 

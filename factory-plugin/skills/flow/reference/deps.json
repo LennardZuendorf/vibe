@@ -1,0 +1,28 @@
+{
+  "$comment": "Single source of external skill/subagent dependencies the vibe flow assumes. Consumed by doctor.sh (presence + degrade report) and rendered into the docs dependency table. Keep required_by coarse (family globs), not per-phase, to avoid drift.",
+  "deps": [
+    {
+      "name": "superpowers",
+      "kind": "skill-collection",
+      "source": "https://github.com/obra/superpowers",
+      "required_by": [
+        "idle",
+        "setup.apply",
+        "strategy.*",
+        "feature.*",
+        "quick.*"
+      ],
+      "degrade": "use the bounded procedure method; never invoke a lifecycle executor or automatic finishing"
+    },
+    {
+      "name": "feature-dev",
+      "kind": "subagent-collection",
+      "source": "Claude Code plugin: feature-dev (code-explorer, code-architect, code-reviewer)",
+      "required_by": [
+        "feature.*",
+        "quick.*"
+      ],
+      "degrade": "use generic independent agents with packaged role briefs; required independent review unavailable means blocked"
+    }
+  ]
+}

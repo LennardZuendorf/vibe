@@ -28,6 +28,7 @@ import {
   realpathSync,
   rmSync,
   utimesSync,
+  symlinkSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -384,7 +385,7 @@ export function makeSandbox({ cursor } = {}) {
   return { dir, flowDir, cursorPath, machinePath, cleanup };
 }
 
-// makeHookSandbox — a real INSTALL-shaped layout: <root>/.agents/skills/vibe/
+// makeHookSandbox — a real INSTALL-shaped layout: <root>/.agents/skills/flow/
 // {state.json, state-machine.json, SKILL.md, scripts/detect-context.sh,
 // warnings.log?, evidence/}. Mirrors what `install.sh` lays down, handcrafted
 // (not run through bash install.sh) to keep the suite fast and hermetic.
@@ -394,15 +395,17 @@ export function makeSandbox({ cursor } = {}) {
 // (flow/hooks-fallback/pre-tool-use-guard.sh and
 // oracles/bash/flow/hooks-fallback/stop-gate.sh) and the live stop-gate
 // fallback, which self-locate through exactly this layout
-// ($ROOT/.agents/skills/vibe/scripts/detect-context.sh, and detect-context.sh's
+// ($ROOT/.agents/skills/flow/scripts/detect-context.sh, and detect-context.sh's
 // own SKILL_DIR=scripts/..). A second, hand-copied fixture in the parity file
 // could drift from the one hook.test.mjs asserts against, and then the two
 // suites would be honest about DIFFERENT layouts.
 export function makeHookSandbox({ cursor, includeDetect = true, gitInit = false } = {}) {
   const dir = mkTempRoot('vibe-hook-test-');
-  const vibeDir = path.join(dir, '.agents', 'skills', 'vibe');
+  const vibeDir = path.join(dir, '.agents', 'skills', 'flow');
   const scriptsDir = path.join(vibeDir, 'scripts');
   mkdirSync(scriptsDir, { recursive: true });
+  // Historical oracle resource spelling only; public installed discovery is tested separately.
+  symlinkSync('flow', path.join(dir, '.agents', 'skills', 'vibe'));
   copyFileSync(path.join(REPO_ROOT, 'flow', 'state-machine.json'), path.join(vibeDir, 'state-machine.json'));
   writeFileSync(
     path.join(vibeDir, 'SKILL.md'),
@@ -460,7 +463,7 @@ export function makeHookSandbox({ cursor, includeDetect = true, gitInit = false 
 //
 // Layout (all committed, then the receipt is stamped 2020 so anything written
 // later is newer):
-//   <outer>/sub/.agents/skills/vibe/{state.json, state-machine.json, SKILL.md,
+//   <outer>/sub/.agents/skills/flow/{state.json, state-machine.json, SKILL.md,
 //     scripts/detect-context.sh, evidence/quick.md}
 //   <outer>/sub/src.txt
 //   <outer>/sub/.vibe/last-inject   tracked, so an edit reports the FILE (a
@@ -480,7 +483,7 @@ export function makeHookSandbox({ cursor, includeDetect = true, gitInit = false 
 export function makeNestedSandbox({ cursor, trackProject = true } = {}) {
   const outer = mkTempRoot('vibe-nested-test-');
   const dir = path.join(outer, 'sub');
-  const vibeDir = path.join(dir, '.agents', 'skills', 'vibe');
+  const vibeDir = path.join(dir, '.agents', 'skills', 'flow');
   const scriptsDir = path.join(vibeDir, 'scripts');
   mkdirSync(scriptsDir, { recursive: true });
   copyFileSync(path.join(REPO_ROOT, 'flow', 'state-machine.json'), path.join(vibeDir, 'state-machine.json'));
@@ -733,7 +736,7 @@ async function main() {
 // realpath'd — so argv[1] must be realpath'd too, not merely path.resolve'd
 // (which normalizes `.`/`..` but never follows symlinks). Without this the
 // runner silently no-ops to exit 0 whenever any component of its invocation path
-// is a symlink: `.agents/skills/vibe` -> `flow/`, a symlinked checkout, or every
+// is a symlink: `.agents/skills/flow` -> `flow/`, a symlinked checkout, or every
 // macOS temp dir (/var -> private/var). realpathSync throws on a path that does
 // not exist, so fall back to the plain resolution.
 const argvPath = (() => {

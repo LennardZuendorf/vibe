@@ -40,7 +40,7 @@ fn cases_of(class: &str) -> usize {
 fn committed_corpus_matches_the_generator() {
     let out = scratch("regen").join("flow");
     let n = generate(&repo().join("flow"), &out).unwrap();
-    assert_eq!(n, 118, "generated only {n} cases");
+    assert_eq!(n, 129, "generated only {n} cases");
     let committed = snapshot(&corpus()).unwrap();
     let fresh = snapshot(&out).unwrap();
     assert_eq!(
@@ -77,7 +77,7 @@ fn edges_case_count_equals_the_sum_of_next_arrays() {
         .values()
         .map(|state| state["next"].as_array().map(|list| list.len()).unwrap_or(0))
         .sum();
-    assert_eq!(sum, 30, "the shipped machine's next arrays sum to {sum}");
+    assert_eq!(sum, 39, "the shipped machine's next arrays sum to {sum}");
     assert_eq!(
         cases_of("edges"),
         sum,

@@ -19,6 +19,10 @@
       ],
       [
         ".spec/product.md",
+        "feature.ship"
+      ],
+      [
+        ".spec/product.md",
         "feature.verify"
       ],
       [

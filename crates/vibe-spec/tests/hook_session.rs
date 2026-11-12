@@ -38,7 +38,7 @@ fn claude_shape() {
     assert_eq!(h["hookEventName"], "SessionStart");
     let ctx = h["additionalContext"].as_str().unwrap();
     assert!(ctx.starts_with("<EXTREMELY_IMPORTANT>"), "{ctx}");
-    assert!(ctx.contains("using-spec"), "{ctx}");
+    assert!(ctx.contains("Vibe Spec context"), "{ctx}");
     assert!(ctx.ends_with("</EXTREMELY_IMPORTANT>"), "{ctx}");
     let (_, v) = run(&p, &[("CLAUDE_PLUGIN_ROOT", "/x")]);
     assert!(v["hookSpecificOutput"]["additionalContext"].is_string());
@@ -99,12 +99,11 @@ fn a_bad_config_still_routes() {
 #[test]
 fn skill_is_within_budget() {
     // A Windows checkout may convert the file to CRLF.
-    let text = fs::read_to_string(common::repo().join("spec/using-spec/SKILL.md"))
+    let body = fs::read_to_string(common::repo().join("spec/reference/session-start.md"))
         .unwrap()
         .replace("\r\n", "\n");
-    let rest = text.strip_prefix("---\n").unwrap();
-    let (front, body) = rest.split_once("\n---\n").unwrap();
-    assert!(front.lines().any(|l| l == "name: using-spec"), "{front}");
+    assert!(body.starts_with("# Vibe Spec context"));
+    assert!(!body.contains("name: using-spec"));
     let words = body.split_whitespace().count();
     assert!(words <= 250, "{words} words");
 }
@@ -114,7 +113,7 @@ const LINE_SYMLINK: &str = "vibe-spec hook session-start: marker skipped — ";
 fn injected(v: &Value) -> bool {
     v["additionalContext"]
         .as_str()
-        .is_some_and(|c| c.contains("using-spec"))
+        .is_some_and(|c| c.contains("Vibe Spec context"))
 }
 
 #[cfg(unix)]

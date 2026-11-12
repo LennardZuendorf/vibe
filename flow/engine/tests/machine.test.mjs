@@ -41,8 +41,10 @@ test('stateOf: looks up a known compound state', () => {
     const machine = loadMachine(sandbox.flowDir);
     const rec = stateOf(machine, 'feature.impl');
     assert(rec, 'expected a state record for feature.impl');
-    assertEqual(rec.skill, 'vibe');
-    assert(Array.isArray(rec.next) && rec.next.includes('feature.verify'));
+    assertEqual(rec.skill, 'flow');
+    assertEqual(rec.next, ['feature.compound', 'feature.plan', 'feature.design', 'idle']);
+    assertEqual(stateOf(machine, 'feature.compound').next, ['feature.verify', 'feature.impl', 'feature.plan', 'idle']);
+    assertEqual(stateOf(machine, 'feature.verify').next, ['feature.ship', 'feature.compound', 'feature.impl', 'feature.plan', 'idle']);
   } finally {
     sandbox.cleanup();
   }

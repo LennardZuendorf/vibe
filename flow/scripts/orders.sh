@@ -32,7 +32,7 @@ SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Resolve the skills dir (where sibling skills like vibe + spec live) from the
 # script's own location — never from a repo-root marker, which a freshly-installed
 # target may not have yet (no .git, no .spec). In an installed target and via the # literal
-# .agents/skills/vibe symlink alias, the skill's own parent IS the skills dir. Only
+# .agents/skills/flow symlink alias, the skill's own parent IS the skills dir. Only
 # the source repo's canonical flow/ path is different (SKILL_DIR is flow/, whose
 # parent is the repo root) — detected because its parent does not contain vibe/ —
 # and there the .spec/.git marker is always present, so fall back to a marker walk. # literal
@@ -45,7 +45,7 @@ find_repo_root() {
   return 1
 }
 SKILL_PARENT="$(cd "$SKILL_DIR/.." && pwd)"
-if [[ -f "$SKILL_PARENT/vibe/SKILL.md" ]]; then
+if [[ -f "$SKILL_PARENT/flow/SKILL.md" ]]; then
   SKILLS_DIR="$SKILL_PARENT"
 else
   REPO_ROOT="$(find_repo_root "$SCRIPT_DIR")" || REPO_ROOT="$SKILL_PARENT"
@@ -59,7 +59,7 @@ if [[ -f "$SKILL_DIR/scripts/runtime-state.sh" ]]; then
   STATE="$(runtime_state_path "$SKILL_DIR")"
 fi
 
-GENERIC_FALLBACK="state=unknown · read .agents/skills/vibe/state-machine.json and pick the matching vibe phase · transition via set-state.sh"
+GENERIC_FALLBACK="state=unknown · read .agents/skills/flow/state-machine.json and pick the matching vibe phase · transition via set-state.sh"
 
 have_jq() { command -v jq >/dev/null 2>&1; }
 
@@ -144,7 +144,7 @@ machine_skill() {
     jq -r --arg s "$state" '.states[$s].skill // empty' "$MACHINE" 2>/dev/null
   else
     [[ "$state" == "idle" ]] && return 1
-    printf 'vibe\n'
+    printf 'flow\n'
   fi
 }
 

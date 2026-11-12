@@ -345,7 +345,7 @@ export function stringLiterals(src) {
 // paths relative to `dir`.
 //
 // EXEMPTION (the only one): flow/engine/tests/. Test files legitimately name
-// state.json, build .agents/skills/vibe fixture layouts, and re-derive paths
+// state.json, build .agents/skills/flow fixture layouts, and re-derive paths
 // on purpose — they are fixtures, not shipped engine code, and R1's
 // "one implementation per primitive" is a statement about the engine, not
 // about its test scaffolding. Nothing else under flow/engine/ is exempt.
@@ -709,12 +709,12 @@ const INGREDIENTS = [
     id: 'vibe-layout',
     // `.agents` alone misses the PLUGIN leg of the layout, which is one level
     // shallower and never names `.agents` at all: pluginVibeDir()'s
-    // `<PLUGIN_ROOT>/skills/vibe`. Both the joined-literal and the
+    // `<PLUGIN_ROOT>/skills/flow`. Both the joined-literal and the
     // slash-separated spelling of that partial path count (re-review
     // Finding 4, E8).
-    re: /\\?\.agents|['"`]skills['"`]\s*,\s*['"`]vibe['"`]|skills\/vibe/,
+    re: /\\?\.agents|['"`]skills['"`]\s*,\s*['"`](?:flow|vibe)['"`]|skills\/(?:flow|vibe)/,
     owners: ['root.mjs'],
-    why: 'hardcodes the `.agents/skills/vibe` (or plugin `skills/vibe`) layout — resolveVibeDir()/resolveProjectCursorDir() (root.mjs) single-source it',
+    why: 'hardcodes the `.agents/skills/flow` (or plugin `skills/vibe`) layout — resolveVibeDir()/resolveProjectCursorDir() (root.mjs) single-source it',
   },
   {
     id: 'root-markers',
@@ -914,24 +914,24 @@ const WAIVERS = [
   // — resolveProjectCursorDir() is still root.mjs's, and mutant E17 still
   // proves a second consumer is caught — it simply has no consumers now.
 
-  { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'hook-root-literal', line: "return path.join(root, '.agents', 'skills', 'vibe');" },
+  { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'hook-root-literal', line: "return path.join(root, '.agents', 'skills', 'flow');" },
   { file: 'commands/hook.mjs', id: 'root-markers', reason: 'bash-sniffer', line: 'const LESSONS_RE = /(^|[^A-Za-z0-9_])(docs\\/spec|\\.spec)\\/lessons\\.md/;' },
   { file: 'commands/hook.mjs', id: 'root-markers', reason: 'bash-sniffer', line: 'const ROOT_SPEC_RE = /(^|[^A-Za-z0-9_])(docs\\/spec|\\.spec)\\/(product|tech|design|plan)\\.md/;' },
   { file: 'content.mjs', id: 'root-markers', reason: 'legacy-lessons-fallback', line: "const legacyRel = '.spec/lessons.md';" },
-  { file: 'commands/hook.mjs', id: 'cursor-file', reason: 'bash-sniffer', line: 'const STATE_JSON_RE = /(\\.agents\\/skills\\/vibe\\/state\\.json|(^|[^A-Za-z0-9_])flow\\/state\\.json)/;' },
-  { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'bash-sniffer', line: 'const STATE_JSON_RE = /(\\.agents\\/skills\\/vibe\\/state\\.json|(^|[^A-Za-z0-9_])flow\\/state\\.json)/;' },
-  { file: 'commands/hook.mjs', id: 'cursor-file', reason: 'bash-sniffer', line: "return '.agents/skills/vibe/state.json (use set-state.sh)';" },
-  { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'bash-sniffer', line: "return '.agents/skills/vibe/state.json (use set-state.sh)';" },
+  { file: 'commands/hook.mjs', id: 'cursor-file', reason: 'bash-sniffer', line: "const STATE_JSON_RE = /(\\.agents\\/skills\\/(?:flow|vibe)\\/state\\.json|(^|[^A-Za-z0-9_])flow\\/state\\.json)/;" },
+  { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'bash-sniffer', line: "const STATE_JSON_RE = /(\\.agents\\/skills\\/(?:flow|vibe)\\/state\\.json|(^|[^A-Za-z0-9_])flow\\/state\\.json)/;" },
+  { file: 'commands/hook.mjs', id: 'cursor-file', reason: 'bash-sniffer', line: "return '.agents/skills/flow/state.json (use set-state.sh)';" },
+  { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'bash-sniffer', line: "return '.agents/skills/flow/state.json (use set-state.sh)';" },
   // inject-triggers/6 fix round 2: the gate grew a THIRD block (an
   // undeterminable working tree) and with it a third copy of the abort line.
   // Three literals would have been three waivers for one sentence, so the
   // sentence is now a single named constant — two waivers retired, one added,
   // and a second spelling anywhere in the file is a violation again.
-  { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'oracle-text', line: "const ABORT_HINT = '  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle';" },
-  { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'hook-root-literal', line: "const evidRel = '.agents/skills/vibe/evidence';" },
+  { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'oracle-text', line: "const ABORT_HINT = '  not verifying? abort with: bash .agents/skills/flow/scripts/set-state.sh idle';" },
+  { file: 'commands/hook.mjs', id: 'vibe-layout', reason: 'hook-root-literal', line: "const evidRel = '.agents/skills/flow/evidence';" },
 
-  { file: 'commands/orders.mjs', id: 'machine-file', reason: 'oracle-text', line: "'state=unknown · read .agents/skills/vibe/state-machine.json and pick the matching vibe phase · transition via set-state.sh';" },
-  { file: 'commands/orders.mjs', id: 'vibe-layout', reason: 'oracle-text', line: "'state=unknown · read .agents/skills/vibe/state-machine.json and pick the matching vibe phase · transition via set-state.sh';" },
+  { file: 'commands/orders.mjs', id: 'machine-file', reason: 'oracle-text', line: "'state=unknown · read .agents/skills/flow/state-machine.json and pick the matching vibe phase · transition via set-state.sh';" },
+  { file: 'commands/orders.mjs', id: 'vibe-layout', reason: 'oracle-text', line: "'state=unknown · read .agents/skills/flow/state-machine.json and pick the matching vibe phase · transition via set-state.sh';" },
 ];
 
 function waiverKey(w) {
@@ -1111,7 +1111,7 @@ test('primitive scan: every waiver carries a known, spelled-out reason code', ()
 
 test('primitive scan: comments quoting the banned ingredients do not trip it', () => {
   // Every module in this engine narrates the review lessons that produced
-  // these bans, quoting `state.json`, `.agents/skills/vibe`,
+  // these bans, quoting `state.json`, `.agents/skills/flow`,
   // `CLAUDE_PROJECT_DIR` and `<!-- vibe:doctrine -->` verbatim in prose. If
   // the stripper regressed, the clean-tree test above would go red on files
   // that are already correct — this pins the specific prose it depends on.
@@ -1251,10 +1251,10 @@ export const MUTANTS = [
     code: "function dupResolveRoot(start) {\n  let dir = start;\n  for (;;) {\n    if (fs.existsSync(path.join(dir, '.spec')) || fs.existsSync(path.join(dir, '.git'))) return dir;\n    const up = path.dirname(dir);\n    if (up === dir) return undefined;\n    dir = up;\n  }\n}\n",
   },
   {
-    id: 'M19 re-derived `.agents/skills/vibe` layout join',
+    id: 'M19 re-derived `.agents/skills/flow` layout join',
     expect: ['vibe-layout'],
     primitive: 'root resolver',
-    code: "function dupVibeDir(root) {\n  return path.join(root, '.agents', 'skills', 'vibe');\n}\n",
+    code: "function dupVibeDir(root) {\n  return path.join(root, '.agents', 'skills', 'flow');\n}\n",
   },
   {
     id: 'M20 self-relative resolution from the module\'s own URL',
@@ -1368,16 +1368,16 @@ export const MUTANTS = [
     code: 'const { PWD: _pwd } = process.env;\nfunction dupCwdRoot6() {\n  return _pwd;\n}\n',
   },
   {
-    id: "E8 partial-path join — path.join(root, 'skills', 'vibe') (pluginVibeDir's leg, never names .agents)",
+    id: "E8 partial-path join — path.join(root, 'skills', 'flow') (pluginVibeDir's leg, never names .agents)",
     expect: ['vibe-layout'],
     primitive: 'root resolver',
-    code: "function dupPluginVibeDir(root) {\n  return path.join(root, 'skills', 'vibe');\n}\n",
+    code: "function dupPluginVibeDir(root) {\n  return path.join(root, 'skills', 'flow');\n}\n",
   },
   {
-    id: 'E8b partial-path join as a template literal (`${root}/skills/vibe`)',
+    id: 'E8b partial-path join as a template literal (`${root}/skills/flow`)',
     expect: ['vibe-layout'],
     primitive: 'root resolver',
-    code: 'function dupPluginVibeDir2(root) {\n  return `${root}/skills/vibe`;\n}\n',
+    code: 'function dupPluginVibeDir2(root) {\n  return `${root}/skills/flow`;\n}\n',
   },
   {
     id: 'E18 self-location off the entry script (process.argv[1])',
@@ -1550,7 +1550,7 @@ test('discriminating: cursor reader — E20 a SYMLINKED module under flow/engine
   // readdirSync(withFileTypes) reports a symlink as neither isFile() nor
   // isDirectory(), so an enumerator that tests those two predicates skips it
   // silently — while Node imports it perfectly well. This repo already ships
-  // `.agents/skills/vibe -> flow`, so symlinks into the engine tree are not a
+  // `.agents/skills/flow -> flow`, so symlinks into the engine tree are not a
   // hypothetical shape here.
   const dir = makeScratchEngine();
   const outside = mkTempRoot('vibe-primscan-outside-');
@@ -1880,7 +1880,7 @@ test('matcher: a waived line WRAPPED is no longer waived (the waiver is a line, 
   try {
     const target = path.join(dir, 'commands', 'hook.mjs');
     const src = readFileSync(target, 'utf8');
-    const waived = "return path.join(root, '.agents', 'skills', 'vibe');";
+    const waived = "return path.join(root, '.agents', 'skills', 'flow');";
     assert(src.includes(waived), 'sanity: the waived hook.mjs layout line must still exist');
     writeFileSync(
       target,

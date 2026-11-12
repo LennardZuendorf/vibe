@@ -10,12 +10,11 @@ _dt="$(mktemp -d)"
 _cleanup_docs() { rm -rf "$_dt"; }
 trap _cleanup_docs EXIT
 mkdir -p "$_dt/.agents/skills"
-ln -s "$REPO_ROOT/flow" "$_dt/.agents/skills/vibe"
+ln -s "$REPO_ROOT/flow" "$_dt/.agents/skills/flow"
 _shipped="$(CLAUDE_PROJECT_DIR="$_dt" node "$_ENGINE" render agents-md 2>&1)"
 
-for _tier in haiku sonnet opus; do
-  assert_contains "skill-revision/25" "shipped agents-md names $_tier" "$_shipped" "\`$_tier\`"
-done
+assert_contains "skill-revision/25" "shipped agents-md keeps controlling model preferences" "$_shipped" "model preferences"
+assert_contains "skill-revision/25" "shipped agents-md selects capability before model" "$_shipped" "capability before"
 for _w in '\bme\b' '\bmy\b' 'fable' 'ultracode'; do
   if printf '%s\n' "$_shipped" | grep -Eiq "$_w"; then
     fail "skill-revision/25" "shipped agents-md has no personal wording ($_w)"
@@ -23,7 +22,7 @@ for _w in '\bme\b' '\bmy\b' 'fable' 'ultracode'; do
     pass "skill-revision/25" "shipped agents-md has no personal wording ($_w)"
   fi
 done
-assert_contains "skill-revision/25" "shipped agents-md keeps delegation.workflows" "$_shipped" "Dynamic workflows"
+assert_contains "skill-revision/25" "shipped agents-md keeps delegation.workflows" "$_shipped" "Coordinating independent work"
 _dr="$(grep -c 'render agents-md' "$REPO_ROOT/flow/content/vibe.default.json" || true)"
 _dr_bad="$(grep -E 'vibe render agents-md' "$REPO_ROOT/flow/content/vibe.default.json" | grep -vc 'cli.mjs render agents-md' || true)"
 assert_eq "skill-revision/25" "default config has no bare 'vibe render agents-md'" "0" "$_dr_bad"
@@ -44,11 +43,13 @@ for _gone in 'The gate teeth live in' 'Approvals are enforced by' 'until F22 shi
   if [[ "$_tt" == *"$_gone"* ]]; then fail "skill-revision/26" "template drops '$_gone'"; else pass "skill-revision/26" "template drops '$_gone'"; fi
 done
 assert_contains "skill-revision/26" "template says gates are a convention" "$_tt" \
-  'Gates are a convention today: `/flow` asks for a `confirm` token, and no hook or script checks it.'
+  'Gates are a convention today for legacy v1:'
 assert_contains "skill-revision/26" "template says the writer does not gate" "$_tt" \
-  '`set-state.sh` writes the cursor; it does not gate. No hook enforces the two approvals; honor them yourself.'
+  '`set-state.sh` writes the cursor; it does not gate.'
 assert_contains "skill-revision/26" "template working model line" "$_tt" \
-  'design → plan →[gate] impl → verify →[gate] compound'
+  'design → plan →[gate] impl → compound → verify →[gate] ship'
+assert_contains "flow-workflow/8" "template reports trusted checks unavailable" "$_tt" 'Production trusted approval/evidence checks remain unavailable/deny.'
+assert_contains "flow-workflow/8" "template distinguishes adopted transition writer" "$_tt" 'Use `vibe-flow state transition` for adopted runs'
 _cmds="$(awk '/^## Commands/{f=1;next} /^## /{f=0} f' "$_tmpl")"
 assert_contains "skill-revision/26" "Commands block names vibe-spec validate" "$_cmds" 'vibe-spec validate'
 if printf '%s\n' "$_cmds" | grep -Eq 'legacy|validate\.sh'; then

@@ -108,7 +108,7 @@ _layout_path() {
   case "$rel" in
     spec/using-spec/*) printf '%s/.agents/skills/using-spec/%s\n' "$2" "${rel#spec/using-spec/}" ;;
     spec/*) printf '%s/.agents/skills/spec/%s\n' "$2" "${rel#spec/}" ;;
-    flow/*) printf '%s/.agents/skills/vibe/%s\n' "$2" "${rel#flow/}" ;;
+    flow/*) printf '%s/.agents/skills/flow/%s\n' "$2" "${rel#flow/}" ;;
     *) printf '%s\n' "$1" ;;
   esac
 }
