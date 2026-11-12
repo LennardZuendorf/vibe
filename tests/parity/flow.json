@@ -4,7 +4,7 @@
   "corpus": "corpus/flow",
   "oracle_root": "../../oracles",
   "file_aliases": { ".agents/skills/vibe/state.json": ".vibe/run/flow/state.json" },
-  "ignore_files": [".vibe/run/flow/ledger.jsonl", ".agents/skills/vibe/state.json"],
+  "ignore_files": [".vibe/run/flow/ledger.jsonl", ".agents/skills/vibe/state.json", ".vibe/run/inject/flow.json", ".vibe/run/inject/"],
   "normalize": ["cursor-updated"],
   "commands": [
     { "name": "policy-decide", "oracle": ["node", "{oracle}/js/cli.mjs", "policy", "--vibe-dir", ".agents/skills/vibe", "decide"], "candidate": ["{candidate}", "policy", "--vibe-dir", ".agents/skills/vibe", "decide"], "classes": ["paths", "mutated", "corrupt"] },

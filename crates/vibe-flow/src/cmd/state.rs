@@ -14,6 +14,7 @@ use crate::cursor::{read_cursor, write_cursor};
 use crate::ledger;
 use crate::machine::{IDLE, Machine, split_target};
 use crate::paths::FlowPaths;
+use crate::payload;
 
 fn line(text: &str) -> String {
     format!("{text}\n")
@@ -105,6 +106,19 @@ pub fn run_set(
             )),
         );
     }
+    // The payload is the second record of the same write (FV-R7). It is
+    // pre-flighted here for the same reason: a payload append refused after the
+    // cursor moved would bump nothing but leave the report stale, and a linked
+    // leaf must be refused before anything is committed.
+    if let Err(err) = payload::prepare(paths) {
+        return Outcome::new(
+            1,
+            String::new(),
+            line(&format!(
+                "vibe state: ERROR: the payload cannot record this write, so the cursor did not move: {err}"
+            )),
+        );
+    }
     if let Err(err) = write_cursor(paths, &flow, &phase, &feature) {
         return Outcome::new(
             1,
@@ -121,12 +135,20 @@ pub fn run_set(
             )),
         );
     }
+    // Advisory (FV-R7): the cursor and the ledger already carry the write, so a
+    // payload that cannot be written warns and the transition still stands.
+    let mut stderr_tail = String::new();
+    if let Err(err) = payload::write_transition(paths) {
+        stderr_tail.push_str(&line(&format!(
+            "vibe state: WARN — the cursor moved but the payload did not: {err}"
+        )));
+    }
     let mut stdout = line(&format!("-> {target}"));
     let next = machine.next(target);
     if !next.is_empty() {
         stdout.push_str(&line(&format!("   next: {}", next.join(", "))));
     }
-    Outcome::new(0, stdout, stderr)
+    Outcome::new(0, stdout, stderr + &stderr_tail)
 }
 
 /// The state the cursor names. A corrupt cursor degrades to `idle`: the gate

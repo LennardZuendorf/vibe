@@ -97,6 +97,13 @@ fn append_warn(paths: &FlowPaths, message: &str) {
     let _ = file.write_all(line(message).as_bytes());
 }
 
+/// Queues one payload event (F8). Advisory: a refused payload write never
+/// changes the hook's verdict, and the pre-flight inside the writer refuses a
+/// symlinked leaf rather than following it.
+fn append_event(paths: &FlowPaths, message: &str) {
+    let _ = crate::payload::append_event(paths, message);
+}
+
 // ---------------------------------------------------------------------------
 // pre-tool-use-guard
 // ---------------------------------------------------------------------------
@@ -129,6 +136,10 @@ pub fn guard(paths: &FlowPaths, stdin: &[u8]) -> Outcome {
                 "guard: bash command appears to write {hit} (bypasses the file-tool guard) (warn-only)"
             ),
         );
+        append_event(
+            paths,
+            &format!("guard: bash command appears to write {hit} (warn-only)"),
+        );
         return Outcome::new(
             0,
             String::new(),
@@ -145,6 +156,7 @@ pub fn guard(paths: &FlowPaths, stdin: &[u8]) -> Outcome {
     let verdict =
         in_process_verdict(paths, &relative).unwrap_or_else(|| spawned_verdict(paths, &relative));
     if let Some(reason) = verdict.strip_prefix("block:") {
+        append_event(paths, &format!("guard: blocked {relative} — {reason}"));
         return Outcome::new(
             2,
             String::new(),
@@ -156,6 +168,7 @@ pub fn guard(paths: &FlowPaths, stdin: &[u8]) -> Outcome {
     }
     if let Some(reason) = verdict.strip_prefix("warn:") {
         append_warn(paths, &format!("guard: {reason}"));
+        append_event(paths, &format!("guard: {reason}"));
         return Outcome::new(
             0,
             String::new(),
@@ -411,13 +424,21 @@ pub fn stop(paths: &FlowPaths, stdin: &[u8]) -> Outcome {
     let mut warn = |message: &str| {
         stderr.push_str(&line(&format!("vibe-gate: {message}")));
         append_warn(paths, &format!("gate: {message}"));
+        append_event(paths, &format!("gate: {message}"));
     };
     if let Some(message) = predicate_tdd(&state, &tree.text) {
         warn(&message);
     }
     let blocked = evidence_receipt_check(paths, &state, feature.as_deref(), &tree, &mut warn);
     match blocked {
-        Some(blocked) => Outcome::new(2, String::new(), stderr + &blocked),
+        Some(blocked) => {
+            let first = blocked.lines().next().unwrap_or("");
+            let detail = first
+                .strip_prefix("vibe-gate: BLOCKED — ")
+                .unwrap_or(first);
+            append_event(paths, &format!("gate: blocked — {detail}"));
+            Outcome::new(2, String::new(), stderr + &blocked)
+        }
         None => Outcome::new(0, String::new(), stderr),
     }
 }
