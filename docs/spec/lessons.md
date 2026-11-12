@@ -860,3 +860,9 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Run CI's exact lint command against the final tracked file set, including generated scripts. For equivalent quoting fixes, compare old/new behavior on accepted and refused inputs, regenerate packages and update only the reviewed live-source hash; preserve frozen oracles.
 **Tags:** verification, shell, packaging, flow
 **Date:** 2026-11-12
+
+### Preserve compact formatting before fixture generation
+**Pattern:** Expanded JSON formatting multiplied across parity fixtures and host packages, inflating a PR by tens of thousands of lines. The reduction check initially tried to parse invalid-JSON fixtures and compared tuple/list representations; a shell wrapper also used a reserved variable name.
+**Rule:** Preserve the canonical compact JSON style before regenerating copies. Compare ordered parsed values for valid JSON, exact bytes for intentionally invalid JSON and other files, and the complete case inventory. Run generator consistency and behavioral parity separately; use task-specific shell variables and report baseline failures without changing assertions to hide them.
+**Tags:** flow, parity, generation, verification, review
+**Date:** 2026-11-12
