@@ -51,10 +51,13 @@ fn isolated_smoke_command(
     home: &common::Home,
 ) -> Command {
     let mut command = Command::new(program);
+    let path = home.path("bin");
+    #[cfg(windows)]
+    let path = std::env::join_paths([path, home.path("git-runtime/cmd")]).unwrap();
     command
         .current_dir(cwd)
         .env_clear()
-        .env("PATH", home.path("bin"))
+        .env("PATH", path)
         .env("HOME", home.path("home"))
         .env("USERPROFILE", home.path("home"))
         .env("XDG_CONFIG_HOME", home.path("config"))
@@ -75,6 +78,38 @@ fn isolated_smoke_command(
         }
     }
     command
+}
+
+#[cfg(windows)]
+fn copy_git_installation(real_git: &std::path::Path, home: &common::Home) -> std::path::PathBuf {
+    fn copy_tree(source: &std::path::Path, target: &std::path::Path) {
+        std::fs::create_dir(target).unwrap();
+        for entry in std::fs::read_dir(source).unwrap() {
+            let entry = entry.unwrap();
+            let kind = entry.file_type().unwrap();
+            let target = target.join(entry.file_name());
+            if kind.is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                assert!(
+                    kind.is_file(),
+                    "unexpected Git installation link: {:?}",
+                    entry.path()
+                );
+                std::fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+    let installation = real_git
+        .ancestors()
+        .find(|root| {
+            root.join("cmd/git.exe").is_file() && root.join("mingw64/bin/git.exe").is_file()
+        })
+        .expect("complete Git for Windows installation required for copied smoke");
+    let runtime = home.path("git-runtime");
+    copy_tree(installation, &runtime);
+    assert!(runtime.join("mingw64/share/git-core/templates").is_dir());
+    runtime.join("cmd/git.exe")
 }
 
 fn smoke_output(mut command: Command) -> std::process::Output {
@@ -187,22 +222,48 @@ fn copied_central_vibe_project_mcp_with_git_only() {
     let vibe_name = format!("vibe{}", std::env::consts::EXE_SUFFIX);
     let git_name = format!("git{}", std::env::consts::EXE_SUFFIX);
     let vibe = home.path("bin").join(&vibe_name);
-    let git = home.path("bin").join(&git_name);
     let real_git = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
         .map(|directory| directory.join(&git_name))
         .find(|candidate| candidate.is_file())
         .map(|candidate| std::fs::canonicalize(candidate).unwrap())
         .expect("real Git required for clean-install smoke");
     common::copy_exec(std::path::Path::new(env!("CARGO_BIN_EXE_vibe")), &vibe);
+    #[cfg(not(windows))]
+    let git = home.path("bin").join(&git_name);
+    #[cfg(not(windows))]
     common::copy_exec(&real_git, &git);
+    #[cfg(windows)]
+    let git = copy_git_installation(&real_git, &home);
     let inventory = || {
         std::fs::read_dir(home.path("bin"))
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect::<std::collections::BTreeSet<_>>()
     };
+    #[cfg(not(windows))]
     let expected_bin = std::collections::BTreeSet::from([vibe_name, git_name]);
+    #[cfg(windows)]
+    let expected_bin = std::collections::BTreeSet::from([vibe_name]);
     assert_eq!(inventory(), expected_bin);
+    #[cfg(windows)]
+    {
+        let mut command = isolated_smoke_command(&git, &code, &home);
+        let output = smoke_output({
+            command.arg("--exec-path");
+            command
+        });
+        let helpers =
+            std::fs::canonicalize(String::from_utf8(output.stdout).unwrap().trim()).unwrap();
+        assert!(helpers.starts_with(std::fs::canonicalize(home.path("git-runtime")).unwrap()));
+        for directory in [home.path("bin"), home.path("git-runtime/cmd")] {
+            for forbidden in ["node.exe", "vibe-spec.exe"] {
+                assert!(
+                    !directory.join(forbidden).exists(),
+                    "unexpected runtime: {forbidden}"
+                );
+            }
+        }
+    }
     for args in [
         vec!["init", "-b", "release-live"],
         vec!["config", "maintenance.auto", "false"],
@@ -273,7 +334,10 @@ fn copied_central_vibe_project_mcp_with_git_only() {
     assert_eq!(selected["project_id"], project);
     assert_eq!(selected["mode"], "global-first");
     assert_eq!(selected["code_ref"], "refs/heads/release-live");
-    assert_eq!(selected["checkout"], json!(code));
+    assert_eq!(
+        std::fs::canonicalize(selected["checkout"].as_str().unwrap()).unwrap(),
+        std::fs::canonicalize(&code).unwrap()
+    );
     assert_eq!(selected["code_available"], true);
     for field in [
         "code_head",
@@ -285,7 +349,11 @@ fn copied_central_vibe_project_mcp_with_git_only() {
         assert_eq!(selected[field], context[field], "{field}");
     }
     let root = std::path::Path::new(selected["spec_root"].as_str().unwrap());
-    assert!(root.starts_with(home.path("store/spec/projects")));
+    assert!(
+        std::fs::canonicalize(root)
+            .unwrap()
+            .starts_with(std::fs::canonicalize(home.path("store/spec/projects")).unwrap())
+    );
     assert_eq!(
         root.with_file_name("superpowers"),
         std::path::Path::new(selected["artifact_root"].as_str().unwrap())

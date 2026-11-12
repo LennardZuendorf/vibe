@@ -920,3 +920,21 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Keep promotion edits within the existing note budget. Consolidate repeated status and links, then rerun strict validation before completing promotion.
 **Tags:** spec, promotion, documentation, validation
 **Date:** 2026-11-12
+
+### Separate physical authority from Git path operands
+**Pattern:** Windows CI exposed verbatim paths rejected by Git, missing directory variables, a relocated Git launcher without its runtime, and embedded templates converted to CRLF.
+**Rule:** Keep canonical native paths for confinement and identity; translate only Git path operands without losing native units. Isolate platform directory variables and preserve Git's installed runtime. Pin embedded templates to LF and normalize logical document identifiers separately from physical paths.
+**Tags:** windows, paths, confinement, fixtures, portability
+**Date:** 2026-11-12
+
+### Retire admitted lock owners before a timed hook exits
+**Pattern:** A hook returned success at its work deadline while its detached worker held a project lock. A fixed wall-clock test sometimes expired before acquisition and missed the defect.
+**Rule:** Admit managed work atomically against timeout, cancel it through the same control, and join its worker through guard cleanup and publication bookkeeping. Reproduce timeout only after observing the real acquired lock. Test successful rendering with an independent generous work budget; test deadline behavior separately.
+**Tags:** hooks, cancellation, locks, deadlines, tests
+**Date:** 2026-11-12
+
+### Prove convergence and the complete validation surface
+**Pattern:** Live setup exceeded the bounded lock wait, targeted literal checks missed tracked files, and interrupted or guessed diagnostic probes obscured which result was proven.
+**Rule:** Accept bounded Busy only with a successful peer, unchanged foreign ownership, and fresh post-completion reads proving one project identity. Run the full tracked sweep and native Windows CI; cross-compilation proves a separate boundary. Retain exact failed receipts, discover paths before reads, quote optional globs, and use task-specific variables before retrying probes.
+**Tags:** concurrency, validation, ci, receipts, tooling
+**Date:** 2026-11-12

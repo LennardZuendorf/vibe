@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 fn error(code: &str, message: impl Into<String>) -> SpecError {
@@ -927,7 +927,7 @@ fn apply_locked(
         let content = if *remove { None } else { Some(w.bytes.clone()) };
         json!({"path":w.show,"original":w.original,"original_hash":digest(&w.original),"written":content,"written_hash":digest(&content)})
     }).collect();
-    let mut journal = json!({"v":1,"mode":context.mode.as_str(),"checkout":context.checkout.as_deref().map(registry::path_value),"code_ref":context.code_ref,"code_head":context.code_head,"spec_root":registry::path_value(&context.spec_root),"artifact_root":registry::path_value(&context.artifact_root),"spec_ref":locked.spec_ref,"base":context.spec_revision,"planned":null,"state":"prepared","entries":entries});
+    let mut journal = json!({"v":1,"mode":context.mode.as_str(),"checkout":context.checkout.as_deref().map(physical_path_value).transpose()?,"code_ref":context.code_ref,"code_head":context.code_head,"spec_root":physical_path_value(&context.spec_root)?,"artifact_root":physical_path_value(&context.artifact_root)?,"spec_ref":locked.spec_ref,"base":context.spec_revision,"planned":null,"state":"prepared","entries":entries});
     if let Some(merge) = merge {
         journal["reconciliation"] = merge.record_id.as_str().into();
     }
@@ -1184,6 +1184,22 @@ fn journal_bytes(value: &Value) -> Result<Option<Vec<u8>>, SpecError> {
         .collect::<Result<Vec<_>, _>>()
         .map(Some)
 }
+fn physical_path_value(path: &Path) -> Result<Value, SpecError> {
+    registry::confined(path, path)?;
+    Ok(registry::path_value(&storage::future_physical(path)?))
+}
+fn journal_root_matches(saved: &Value, current: &Path) -> Result<bool, SpecError> {
+    registry::confined(current, current)?;
+    let physical = storage::future_physical(current)?;
+    let Ok(saved) = registry::path(saved) else {
+        return Ok(false);
+    };
+    // Admit old ordinary Windows spellings lexically, never follow a saved alias.
+    if registry::confined(&saved, &saved).is_err() {
+        return Ok(false);
+    }
+    Ok(crate::git::argument_path(&saved) == crate::git::argument_path(&physical))
+}
 fn recover(api: &SpecApi, context: &SpecContext, locked: &Locked) -> Result<(), SpecError> {
     api.check_control()?;
     registry::confined(&locked.anchor, &locked.journal)?;
@@ -1195,8 +1211,8 @@ fn recover(api: &SpecApi, context: &SpecContext, locked: &Locked) -> Result<(), 
     };
     if journal["v"] != 1
         || journal["mode"] != context.mode.as_str()
-        || journal["spec_root"] != registry::path_value(&context.spec_root)
-        || journal["artifact_root"] != registry::path_value(&context.artifact_root)
+        || !journal_root_matches(&journal["spec_root"], &context.spec_root)?
+        || !journal_root_matches(&journal["artifact_root"], &context.artifact_root)?
         || journal["spec_ref"]
             != locked
                 .spec_ref
@@ -1212,22 +1228,17 @@ fn recover(api: &SpecApi, context: &SpecContext, locked: &Locked) -> Result<(), 
     // Repo-first roots are reused by every code branch. Absence after an
     // interrupted deletion is transaction-owned only in the exact saved context.
     if context.mode == StorageMode::RepoFirst
-        && (journal.get("checkout")
+        && (match context.checkout.as_deref() {
+            Some(checkout) => !journal_root_matches(&journal["checkout"], checkout)?,
+            None => !journal["checkout"].is_null(),
+        } || journal.get("code_ref")
             != Some(
                 &context
-                    .checkout
-                    .as_deref()
-                    .map(registry::path_value)
+                    .code_ref
+                    .clone()
+                    .map(Value::from)
                     .unwrap_or(Value::Null),
             )
-            || journal.get("code_ref")
-                != Some(
-                    &context
-                        .code_ref
-                        .clone()
-                        .map(Value::from)
-                        .unwrap_or(Value::Null),
-                )
             || journal.get("code_head")
                 != Some(
                     &context
@@ -2772,6 +2783,94 @@ pub(crate) mod tests {
                 .cwd
                 .join(".vibe/run/spec-transaction.json")
                 .exists()
+        );
+    }
+    #[test]
+    fn spec_ci_portability_recovery_binds_physical_roots_without_changing_display() {
+        // spec-projects-mcp/4: equivalent spellings recover; another root never does.
+        let (_owner, mut api, context) = fixture_mode(StorageMode::RepoFirst);
+        let registry = registry::load(&api.runtime).unwrap();
+        fs::remove_file(registry.root.join("spec/registry.json")).unwrap();
+        api.runtime.cwd.push(".");
+        let roots = crate::context::LegacyRoots {
+            code_anchor: api.runtime.cwd.clone(),
+            spec_root: context.spec_root.clone(),
+            artifact_root: context.artifact_root.clone(),
+            initialization: false,
+            explicit_target: None,
+        };
+        let before = fs::read(context.spec_root.join("tech.md")).unwrap();
+        let error = apply_inner(
+            &api,
+            &ContextSelector::default(),
+            None,
+            Some(&roots),
+            false,
+            &[],
+            |_| {
+                Ok(vec![Change {
+                    path: "spec/tech.md".into(),
+                    content: Some(b"interrupted".to_vec()),
+                }])
+            },
+            |point| {
+                if point == Checkpoint::AfterWrites {
+                    Err(SpecError::new("cancelled", "test interruption"))
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "cancelled");
+        let path = api.runtime.cwd.join(".vibe/run/spec-transaction.json");
+        let bytes = fs::read(&path).unwrap();
+        let mut journal: Value = serde_json::from_slice(&bytes).unwrap();
+        #[cfg(unix)]
+        {
+            let alias = api.runtime.cwd.join("saved-alias");
+            std::os::unix::fs::symlink(&context.spec_root, &alias).unwrap();
+            assert!(
+                !journal_root_matches(&registry::path_value(&alias), &context.spec_root).unwrap()
+            );
+        }
+        assert_eq!(
+            journal["spec_root"],
+            registry::path_value(&fs::canonicalize(&context.spec_root).unwrap())
+        );
+        journal["spec_root"] = registry::path_value(&api.runtime.cwd.join("other-root"));
+        fs::write(&path, serde_json::to_vec(&journal).unwrap()).unwrap();
+        assert_eq!(
+            api.read_document(&ContextSelector::default(), "spec/tech.md")
+                .unwrap_err()
+                .code,
+            "recovery_conflict"
+        );
+        assert_eq!(
+            fs::read(context.spec_root.join("tech.md")).unwrap(),
+            b"interrupted"
+        );
+        fs::write(&path, &bytes).unwrap();
+        let read = api
+            .read_document(&ContextSelector::default(), "spec/tech.md")
+            .unwrap();
+        assert_eq!(read.document.content.as_bytes(), before);
+        assert_eq!(
+            read.context.spec_root.as_os_str(),
+            api.runtime.cwd.join("docs/spec").as_os_str()
+        );
+    }
+    #[cfg(windows)]
+    #[test]
+    fn spec_ci_portability_old_journal_paths_keep_representation_compatibility() {
+        // spec-projects-mcp/4: old ordinary paths equal their verbatim spelling only.
+        let owner = vibe_core::testscratch::scratch("spec-recovery", "old-path");
+        let physical = fs::canonicalize(&owner).unwrap();
+        let ordinary = crate::git::argument_path(&physical);
+        assert!(journal_root_matches(&registry::path_value(&ordinary), &physical).unwrap());
+        assert!(
+            !journal_root_matches(&registry::path_value(&ordinary.join("other")), &physical)
+                .unwrap()
         );
     }
     #[test]

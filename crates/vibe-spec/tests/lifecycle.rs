@@ -74,7 +74,12 @@ fn snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
                 walk(root, &p, out);
             } else {
                 out.insert(
-                    p.strip_prefix(root).unwrap().to_string_lossy().into_owned(),
+                    p.strip_prefix(root)
+                        .unwrap()
+                        .components()
+                        .map(|part| part.as_os_str().to_str().unwrap())
+                        .collect::<Vec<_>>()
+                        .join("/"),
                     std::fs::read(p).unwrap(),
                 );
             }
@@ -1032,7 +1037,7 @@ fn unregistered_mutation_preserves_symlinked_root_and_initialization() {
         "features/auth/tech.md",
         "<!-- merge -->\nA fact.\n<!-- /merge -->\n",
     );
-    std::os::unix::fs::symlink(&real, code.join(".spec")).unwrap();
+    std::os::unix::fs::symlink(&real, code.join(".spec")).unwrap(); // literal
     let store = owner.join("store");
     let env = [("VIBE_STORE", store.to_str().unwrap())];
     let out = common::spec(&code, &["promote", "auth", "--json"], &env);
@@ -1043,7 +1048,7 @@ fn unregistered_mutation_preserves_symlinked_root_and_initialization() {
             .contains("A fact.")
     );
     assert!(
-        std::fs::symlink_metadata(code.join(".spec"))
+        std::fs::symlink_metadata(code.join(".spec")) // literal
             .unwrap()
             .file_type()
             .is_symlink()

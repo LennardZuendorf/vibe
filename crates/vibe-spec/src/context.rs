@@ -857,10 +857,17 @@ fn token(context: &SpecContext, metadata: &[&[u8]]) -> Result<String, SpecError>
         Some(context.spec_root.as_path()),
         Some(context.artifact_root.as_path()),
     ] {
+        let path = path
+            .map(|path| {
+                registry::confined(path, path)?;
+                crate::storage::future_physical(path)
+            })
+            .transpose()?;
         framed(&mut bytes, if path.is_some() { b"some" } else { b"none" });
         framed(
             &mut bytes,
-            path.map(|p| p.as_os_str().as_encoded_bytes())
+            path.as_deref()
+                .map(|p| p.as_os_str().as_encoded_bytes())
                 .unwrap_or_default(),
         );
     }
@@ -870,4 +877,54 @@ fn token(context: &SpecContext, metadata: &[&[u8]]) -> Result<String, SpecError>
     documents(&context.spec_root, b"spec-root", &mut bytes)?;
     documents(&context.artifact_root, b"artifact-root", &mut bytes)?;
     Ok(format!("v1:{}", vibe_core::markers::hash_bytes(&bytes)))
+}
+
+#[cfg(all(test, unix))]
+mod identity_tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    #[test]
+    fn spec_ci_portability_alias_roots_share_revision_identity() {
+        // spec-projects-mcp/2: display spelling cannot split physical authority.
+        let owner = vibe_core::testscratch::scratch("spec-context", "alias-identity");
+        let code = owner.join("code");
+        let alias = owner.join("alias");
+        std::fs::create_dir_all(code.join("docs/spec")).unwrap();
+        std::fs::create_dir_all(code.join(".git")).unwrap();
+        std::fs::write(code.join("docs/spec/tech.md"), b"retained").unwrap();
+        std::os::unix::fs::symlink(&code, &alias).unwrap();
+        let mut runtime = Runtime {
+            cwd: alias.clone(),
+            env: std::collections::BTreeMap::from([(
+                "VIBE_STORE".into(),
+                owner.join("store").into_os_string(),
+            )]),
+        };
+        assert_eq!(
+            resolve_for_transaction(&runtime, &ContextSelector::default())
+                .unwrap_err()
+                .code,
+            "invalid_registry"
+        );
+        runtime.cwd = code.join(".");
+        let roots =
+            LegacyRoots::from_root(&crate::root::discover(&runtime.cwd, None, None).unwrap())
+                .unwrap();
+        let ordinary = resolve_for_transaction(&runtime, &ContextSelector::default()).unwrap();
+        let legacy = resolve_for_legacy(&runtime, &ContextSelector::default(), &roots).unwrap();
+        assert_eq!(
+            ordinary.spec_root.as_os_str(),
+            runtime.cwd.join("docs/spec").as_os_str()
+        );
+        assert_eq!(ordinary.revision_token, legacy.revision_token);
+        let other = owner.join("other");
+        std::fs::create_dir_all(&other).unwrap();
+        let mut different = ordinary.clone();
+        different.spec_root = other;
+        assert_ne!(
+            token(&ordinary, &[]).unwrap(),
+            token(&different, &[]).unwrap()
+        );
+    }
 }

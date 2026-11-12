@@ -743,8 +743,14 @@ pub(crate) fn spec_git_output(
     }
     for (key, value) in [
         ("GIT_CONFIG_NOSYSTEM", std::ffi::OsString::from("1")),
-        ("GIT_CONFIG_GLOBAL", empty.as_os_str().to_owned()),
-        ("GIT_CONFIG_SYSTEM", empty.as_os_str().to_owned()),
+        (
+            "GIT_CONFIG_GLOBAL",
+            crate::git::argument_path(&empty).into_os_string(),
+        ),
+        (
+            "GIT_CONFIG_SYSTEM",
+            crate::git::argument_path(&empty).into_os_string(),
+        ),
         ("GIT_ATTR_NOSYSTEM", "1".into()),
         ("GIT_TERMINAL_PROMPT", "0".into()),
         ("GIT_ALLOW_PROTOCOL", "".into()),
@@ -762,11 +768,13 @@ pub(crate) fn spec_git_output(
     } else {
         history.to_path_buf()
     };
-    command.arg("--git-dir").arg(gitdir);
+    command
+        .arg("--git-dir")
+        .arg(crate::git::argument_path(&gitdir));
     if let Some(worktree) = worktree {
         command
             .arg("--work-tree")
-            .arg(worktree)
+            .arg(crate::git::argument_path(worktree))
             .current_dir(worktree);
     }
     command.args([
@@ -789,9 +797,9 @@ pub(crate) fn spec_git_output(
         "core.safecrlf=false",
     ]);
     let mut hooks = std::ffi::OsString::from("core.hooksPath=");
-    hooks.push(project.join("disabled-hooks"));
+    hooks.push(crate::git::argument_path(&project.join("disabled-hooks")));
     let mut attributes = std::ffi::OsString::from("core.attributesFile=");
-    attributes.push(&empty);
+    attributes.push(crate::git::argument_path(&empty));
     command
         .arg("-c")
         .arg(hooks)
@@ -981,7 +989,7 @@ impl AdmissionWorktree {
                 "worktree".into(),
                 "add".into(),
                 "--detach".into(),
-                owner.path().into_os_string(),
+                crate::git::argument_path(&owner.path()).into_os_string(),
                 target.into(),
             ],
         )?;
@@ -1208,7 +1216,7 @@ pub(crate) fn initialize_global(
             ));
         }
         let mut command = args(&["worktree", "add", "--quiet"]);
-        command.push(anchor.as_os_str().to_owned());
+        command.push(crate::git::argument_path(&anchor).into_os_string());
         command.push(
             record
                 .spec_ref

@@ -3,3 +3,6 @@
 oracles/** -text
 contracts/fixtures/** -text
 tests/parity/corpus/** -text
+
+# Embedded Rust templates must keep their frontmatter delimiters byte-exact.
+crates/vibe-spec/src/templates/** text eol=lf

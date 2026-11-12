@@ -1248,7 +1248,7 @@ fn git_mv(
     let out = cx
         .command("git")
         .arg("-C")
-        .arg(project)
+        .arg(crate::git::argument_path(project))
         .arg("--literal-pathspecs")
         .args(["mv", "--", from, to])
         .stdin(Stdio::null())

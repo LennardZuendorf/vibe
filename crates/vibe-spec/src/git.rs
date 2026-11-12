@@ -8,12 +8,38 @@ use std::process::Stdio;
 
 use crate::text::lossy;
 
+/// Git for Windows does not accept Win32 verbatim prefixes in path operands.
+pub(crate) fn argument_path(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+        if let Some(Component::Prefix(prefix)) = path.components().next() {
+            let mut plain = match prefix.kind() {
+                Prefix::VerbatimDisk(drive) => PathBuf::from(format!("{}:", char::from(drive))),
+                Prefix::VerbatimUNC(server, share) => {
+                    let mut name = std::ffi::OsString::from(r"\\");
+                    name.push(server);
+                    name.push(r"\");
+                    name.push(share);
+                    PathBuf::from(name)
+                }
+                _ => return path.to_path_buf(),
+            };
+            for component in path.components().skip(1) {
+                plain.push(component.as_os_str());
+            }
+            return plain;
+        }
+    }
+    path.to_path_buf()
+}
+
 /// `git -C dir --literal-pathspecs <args>` stdout when it exits 0.
 pub(crate) fn git(cx: &crate::api::Execution<'_>, dir: &Path, args: &[&str]) -> Option<Vec<u8>> {
     let out = cx
         .command("git")
         .arg("-C")
-        .arg(dir)
+        .arg(argument_path(dir))
         .arg("--literal-pathspecs")
         .args(args)
         .stdin(Stdio::null())
@@ -269,6 +295,27 @@ pub fn changed_files(cx: &crate::api::Execution<'_>, top: &Path) -> Option<Vec<S
 #[cfg(test)]
 mod context_tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn spec_ci_portability_git_paths_preserve_native_units() {
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+        for (input, expected) in [
+            (r"\\?\C:\managed\history.git", r"C:\managed\history.git"),
+            (
+                r"\\?\UNC\server\share\history.git",
+                r"\\server\share\history.git",
+            ),
+            (r"C:\managed\history.git", r"C:\managed\history.git"),
+            (r"relative\history.git", r"relative\history.git"),
+        ] {
+            assert_eq!(argument_path(Path::new(input)), PathBuf::from(expected));
+        }
+        let mut native: Vec<u16> = r"\\?\C:\managed\".encode_utf16().collect();
+        native.push(0xd800);
+        let input = PathBuf::from(std::ffi::OsString::from_wide(&native));
+        let actual: Vec<u16> = argument_path(&input).as_os_str().encode_wide().collect();
+        assert_eq!(actual, native[4..]);
+    }
     #[test]
     fn new_domain_git_configuration_omits_ambient_core_worktree_injection() {
         // spec-projects-mcp/2: no ambient config override reaches domain Git children.

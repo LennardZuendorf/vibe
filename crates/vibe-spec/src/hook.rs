@@ -297,6 +297,46 @@ fn cap_ms(cx: &crate::api::Execution<'_>, default: u64) -> u64 {
 /// exit code is always 0. `PostToolUse` validates the edited file within
 /// 500 ms; `Stop` validates the changed files within 2 000 ms.
 pub fn validate(cx: &crate::api::Execution<'_>, stdin: &[u8], _cwd: &Path) -> (u8, Vec<u8>) {
+    validate_with_wait(cx, stdin, |rx, cap| {
+        rx.recv_timeout(std::time::Duration::from_millis(cap))
+    })
+}
+type ValidationReply = (Option<Result<(u8, Vec<u8>), String>>, Vec<u8>);
+const PENDING: u8 = 0;
+const MANAGED: u8 = 1;
+const LEGACY: u8 = 2;
+const CANCELLED: u8 = 3;
+fn admit_validation(state: &std::sync::atomic::AtomicU8, kind: u8) -> bool {
+    use std::sync::atomic::Ordering::SeqCst;
+    state
+        .compare_exchange(PENDING, kind, SeqCst, SeqCst)
+        .is_ok()
+}
+fn finish_validation_worker(
+    state: &std::sync::atomic::AtomicU8,
+    worker: std::thread::JoinHandle<()>,
+    timed_out: bool,
+) {
+    use std::sync::atomic::Ordering::SeqCst;
+    let admitted = if timed_out {
+        state.swap(CANCELLED, SeqCst)
+    } else {
+        state.load(SeqCst)
+    };
+    // Managed guards and publication bookkeeping must retire before process exit.
+    // An in-flight command can make this cleanup exceed the validation-work budget.
+    if admitted == MANAGED {
+        let _ = worker.join();
+    }
+}
+fn validate_with_wait(
+    cx: &crate::api::Execution<'_>,
+    stdin: &[u8],
+    wait: impl FnOnce(
+        std::sync::mpsc::Receiver<ValidationReply>,
+        u64,
+    ) -> Result<ValidationReply, std::sync::mpsc::RecvTimeoutError>,
+) -> (u8, Vec<u8>) {
     let payload = match parse(stdin) {
         Ok(p) => p,
         Err(e) => return allow_validate(cx, &e),
@@ -322,15 +362,26 @@ pub fn validate(cx: &crate::api::Execution<'_>, stdin: &[u8], _cwd: &Path) -> (u
     let env = env_root(cx);
     let (tx, rx) = std::sync::mpsc::channel();
     let runtime = cx.runtime.clone();
-    std::thread::spawn(move || {
+    let admission = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(PENDING));
+    let worker_admission = admission.clone();
+    let worker = std::thread::spawn(move || {
         let cx = &crate::api::Execution::new(&runtime);
         let mut selected_runtime = runtime.clone();
         selected_runtime.cwd = cwd.clone();
         let selected_cx = crate::api::Execution::new(&selected_runtime);
-        match managed_context(&selected_cx, &cwd) {
+        match managed_routing(&selected_cx, &cwd) {
             Ok(Some(_)) => {
+                if !admit_validation(&worker_admission, MANAGED) {
+                    return;
+                }
+                let cancelled = worker_admission.clone();
+                let control = crate::InvocationControl::new(move || {
+                    cancelled.load(std::sync::atomic::Ordering::SeqCst) == CANCELLED
+                });
                 let result = crate::SpecApi::new(selected_runtime.clone())
                     .and_then(|api| {
+                        let api = api.with_control(control);
+                        api.resolve_context(&crate::ContextSelector::default())?;
                         crate::transaction::read_typed(
                             &api,
                             &crate::ContextSelector::default(),
@@ -366,6 +417,9 @@ pub fn validate(cx: &crate::api::Execution<'_>, stdin: &[u8], _cwd: &Path) -> (u
             }
             Ok(None) => {}
         }
+        if !admit_validation(&worker_admission, LEGACY) {
+            return;
+        }
         let found = crate::root::discover(&cwd, None, env.as_deref());
         let out = match found {
             Ok(_) => Some(crate::validate::run_checked(
@@ -385,12 +439,11 @@ pub fn validate(cx: &crate::api::Execution<'_>, stdin: &[u8], _cwd: &Path) -> (u
         let diagnostics = cx.take_diagnostics();
         let _ = tx.send((out, diagnostics));
     });
-    let received =
-        rx.recv_timeout(std::time::Duration::from_millis(cap))
-            .map(|(out, diagnostics)| {
-                cx.diagnostic_bytes(&diagnostics);
-                out
-            });
+    let received = wait(rx, cap).map(|(out, diagnostics)| {
+        cx.diagnostic_bytes(&diagnostics);
+        out
+    });
+    finish_validation_worker(&admission, worker, received.is_err());
     match received {
         Ok(Some(Ok((_, out)))) => (0, out),
         Ok(Some(Err(why))) => allow_validate(cx, &why),
@@ -521,6 +574,19 @@ fn managed_context(
     cx: &crate::api::Execution<'_>,
     cwd: &Path,
 ) -> Result<Option<crate::SpecContext>, crate::SpecError> {
+    managed_routing(cx, cwd)?
+        .map(|_| {
+            let mut runtime = cx.runtime.clone();
+            runtime.cwd = cwd.to_owned();
+            crate::SpecApi::new(runtime)?.resolve_context(&crate::ContextSelector::default())
+        })
+        .transpose()
+}
+/// Routing performs no lock-owning API work before managed-worker admission.
+fn managed_routing(
+    cx: &crate::api::Execution<'_>,
+    cwd: &Path,
+) -> Result<Option<crate::SpecContext>, crate::SpecError> {
     let mut runtime = cx.runtime.clone();
     runtime.cwd = cwd.to_owned();
     let registry = crate::registry::store_root(&runtime)?.join("spec/registry.json");
@@ -530,9 +596,7 @@ fn managed_context(
     }
 
     match crate::context::resolve_for_routing(&runtime, &crate::ContextSelector::default()) {
-        Ok(context) if context.mode == crate::StorageMode::GlobalFirst => Ok(Some(
-            crate::SpecApi::new(runtime)?.resolve_context(&crate::ContextSelector::default())?,
-        )),
+        Ok(context) if context.mode == crate::StorageMode::GlobalFirst => Ok(Some(context)),
         Ok(_) => Ok(None),
         Err(error)
             if !matches!(
@@ -634,7 +698,166 @@ fn managed_guard(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
+
+    #[test]
+    fn spec_ci_portability_timeout_before_admission_prevents_late_lock() {
+        use std::sync::{Arc, atomic::AtomicU8, mpsc};
+        let owner = vibe_core::testscratch::scratch("hook-admission", "pending");
+        let lock = owner.join("late.lock");
+        let state = Arc::new(AtomicU8::new(PENDING));
+        let shared = state.clone();
+        let target = lock.clone();
+        let (release, wait) = mpsc::channel();
+        let (done, result) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            wait.recv().unwrap();
+            let admitted = admit_validation(&shared, MANAGED);
+            if admitted {
+                let held = vibe_core::lock::Lock::acquire(&target, vibe_core::lock::STALE).unwrap();
+                done.send(true).unwrap();
+                drop(held);
+            } else {
+                done.send(false).unwrap();
+            }
+        });
+        finish_validation_worker(&state, worker, true);
+        release.send(()).unwrap();
+        assert!(
+            !result
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap()
+        );
+        assert!(!lock.exists());
+    }
+
+    #[test]
+    fn spec_ci_portability_managed_admission_finishes_owned_cleanup() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicU8, Ordering},
+            mpsc,
+        };
+        let owner = vibe_core::testscratch::scratch("hook-admission", "managed");
+        let lock = owner.join("owned.lock");
+        let completed = owner.join("completed");
+        let state = Arc::new(AtomicU8::new(PENDING));
+        let shared = state.clone();
+        let target = lock.clone();
+        let output = completed.clone();
+        let (ready, acquired) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            assert!(admit_validation(&shared, MANAGED));
+            let held = vibe_core::lock::Lock::acquire(&target, vibe_core::lock::STALE).unwrap();
+            let watched = shared.clone();
+            let control =
+                crate::InvocationControl::new(move || watched.load(Ordering::SeqCst) == CANCELLED);
+            let completion = control.completing();
+            ready.send(()).unwrap();
+            while shared.load(Ordering::SeqCst) != CANCELLED {
+                std::thread::yield_now();
+            }
+            // A publication fence must finish its bookkeeping despite cancellation.
+            control.check().unwrap();
+            std::fs::write(output, b"completed").unwrap();
+            drop(completion);
+            drop(held);
+        });
+        acquired
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        finish_validation_worker(&state, worker, true);
+        assert_eq!(std::fs::read(completed).unwrap(), b"completed");
+        assert!(!lock.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn spec_ci_portability_managed_deadline_releases_real_child_lock() {
+        // spec-projects-mcp/8: a timed-out hook must retire its own acquired guard.
+        use std::{
+            fs,
+            os::unix::fs::PermissionsExt,
+            process::Command,
+            time::{Duration, Instant},
+        };
+        const CHILD_MARKER: &str = "VIBE_TEST_HOOK_ACQUIRED";
+        if let Some(marker) = std::env::var_os(CHILD_MARKER) {
+            let runtime = crate::Runtime::from_process().unwrap();
+            let cx = crate::api::Execution::new(&runtime);
+            let payload = serde_json::to_vec(
+                &serde_json::json!({"hook_event_name":"Stop","cwd":runtime.cwd}),
+            )
+            .unwrap();
+            let result = validate_with_wait(&cx, &payload, |_, _| {
+                let deadline = Instant::now() + Duration::from_secs(30);
+                while !Path::new(&marker).exists() {
+                    assert!(
+                        Instant::now() < deadline,
+                        "managed worker never acquired its lock"
+                    );
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            });
+            assert_eq!(result, (0, Vec::new()));
+            assert!(
+                String::from_utf8(cx.take_diagnostics())
+                    .unwrap()
+                    .contains("skipped — over")
+            );
+            return;
+        }
+        let (owner, api, context) = crate::transaction::tests::fixture();
+        let registry = crate::registry::load(&api.runtime).unwrap();
+        let project = crate::registry::project_dir(&registry, context.project_id.as_ref().unwrap());
+        let lock = project.join("project.lock");
+        let marker = owner.join("acquired");
+        let once = owner.join("pause-once");
+        let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+            .map(|p| p.join("git"))
+            .find(|p| p.is_file())
+            .unwrap()
+            .canonicalize()
+            .unwrap();
+        let quote = |p: &Path| format!("'{}'", p.to_str().unwrap().replace('\'', "'\\''"));
+        let bin = owner.join("bin");
+        fs::create_dir(&bin).unwrap();
+        let shim = bin.join("git");
+        fs::write(&shim, format!("#!/bin/sh\nset -eu\nif [ -f {lock} ] && /bin/mkdir {once} 2>/dev/null; then\n/bin/cat {lock} > {marker}\n/bin/sleep 3\nfi\nexec {git} \"$@\"\n", lock=quote(&lock),once=quote(&once),marker=quote(&marker),git=quote(&git))).unwrap();
+        fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).unwrap();
+        let path = std::env::join_paths(
+            std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+        )
+        .unwrap();
+        let child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "hook::tests::spec_ci_portability_managed_deadline_releases_real_child_lock",
+                "--nocapture",
+            ])
+            .current_dir(&api.runtime.cwd)
+            .env_clear()
+            .envs(&api.runtime.env)
+            .env("PATH", path)
+            .env(CHILD_MARKER, &marker)
+            .output()
+            .unwrap();
+        assert!(
+            child.status.success(),
+            "{}",
+            String::from_utf8_lossy(&child.stderr)
+        );
+        assert!(!fs::read(&marker).unwrap().is_empty());
+        assert!(
+            !lock.exists(),
+            "child retained acquired lock: {:?}",
+            fs::read(&lock)
+        );
+        api.resolve_context(&crate::ContextSelector::default())
+            .unwrap();
+    }
 
     #[test]
     fn backslash_paths_classify() {

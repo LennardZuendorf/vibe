@@ -268,7 +268,7 @@ fn parity_with(oracle: &Path, additive_top_help: bool) {
     for args in &cases {
         if additive_top_help && args.len() == 1 && args[0] == "--help" {
             let want = standalone(oracle, &r, args);
-            let got = invoke(&r, args);
+            let got = invoke_standalone_argv(oracle, &r, args);
             assert_eq!(want.status.code(), Some(0));
             assert_eq!(got.exit, 0);
             assert!(want.stderr.is_empty() && got.stderr.is_empty());
@@ -357,12 +357,30 @@ fn standalone(oracle: &Path, r: &Runtime, args: &[OsString]) -> std::process::Ou
 }
 fn assert_frozen(oracle: &Path, r: &Runtime, args: &[OsString]) {
     let want = standalone(oracle, r, args);
-    let got = invoke(r, args);
+    let got = invoke_standalone_argv(oracle, r, args);
     assert_eq!(
         (i32::from(got.exit), &got.stdout, &got.stderr),
         (want.status.code().unwrap(), &want.stdout, &want.stderr),
         "{args:?}"
     );
+}
+
+fn invoke_standalone_argv(
+    oracle: &Path,
+    runtime: &Runtime,
+    args: &[OsString],
+) -> vibe_spec::CommandOutput {
+    // Unix standalone() sets arg0 explicitly; Windows keeps the real basename.
+    #[cfg(unix)]
+    let program = {
+        let _ = oracle;
+        OsString::from("vibe-spec")
+    };
+    #[cfg(not(unix))]
+    let program = oracle.file_name().unwrap().to_owned();
+    let mut argv = vec![program];
+    argv.extend_from_slice(args);
+    run_cli(&argv, runtime, &mut &b""[..])
 }
 
 #[cfg(unix)]

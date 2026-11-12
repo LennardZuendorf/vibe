@@ -341,6 +341,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn spec_ci_portability_embedded_templates_seed_valid_frontmatter() {
+        // spec-projects-mcp/1: checkout conversion must not corrupt embedded seeds.
+        for (name, template) in FILES {
+            if matches!(name, "product.md" | "tech.md" | "design.md" | "plan.md") {
+                assert_eq!(
+                    crate::text::first_line(template.as_bytes()),
+                    b"---",
+                    "{name}"
+                );
+                assert!(
+                    crate::frontmatter::parse(template.as_bytes()).is_some(),
+                    "{name}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_failing_write_removes_everything_created() {
         let base = vibe_core::testscratch::scratch("vibe-spec-init-unit", "failed-write");
         fs::create_dir_all(&base).unwrap();

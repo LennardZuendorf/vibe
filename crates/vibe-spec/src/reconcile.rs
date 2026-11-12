@@ -1041,7 +1041,7 @@ pub(crate) fn apply_locked(
                 std::ffi::OsString::from("worktree"),
                 "add".into(),
                 "--detach".into(),
-                path.as_os_str().to_owned(),
+                crate::git::argument_path(&path).into_os_string(),
                 plan.target_spec_oid.clone().into(),
             ],
         )?;

@@ -42,8 +42,17 @@ fn run(mut cmd: Command, cwd: &Path, env: &[(&str, &str)]) -> Out {
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env("HOME", cwd)
+        .env("USERPROFILE", cwd)
+        .env("APPDATA", cwd.join(".appdata"))
+        .env("LOCALAPPDATA", cwd.join(".localappdata"))
         .env("LC_ALL", "C")
         .env("TZ", "UTC");
+    #[cfg(windows)]
+    for name in ["SystemRoot", "WINDIR"] {
+        if let Some(value) = std::env::var_os(name) {
+            cmd.env(name, value);
+        }
+    }
     for (k, v) in env {
         cmd.env(k, v);
     }
@@ -340,11 +349,20 @@ pub fn spec_stdin(cwd: &Path, args: &[&str], env: &[(&str, &str)], stdin: &[u8])
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env("HOME", cwd)
+        .env("USERPROFILE", cwd)
+        .env("APPDATA", cwd.join(".appdata"))
+        .env("LOCALAPPDATA", cwd.join(".localappdata"))
         .env("LC_ALL", "C")
         .env("TZ", "UTC")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    #[cfg(windows)]
+    for name in ["SystemRoot", "WINDIR"] {
+        if let Some(value) = std::env::var_os(name) {
+            cmd.env(name, value);
+        }
+    }
     for (k, v) in env {
         cmd.env(k, v);
     }

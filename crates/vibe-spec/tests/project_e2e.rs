@@ -61,6 +61,9 @@ fn clean_command(program: impl AsRef<OsStr>, cwd: &Path, home: &Path, store: &Pa
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env("HOME", home)
+        .env("USERPROFILE", home)
+        .env("APPDATA", home.join("appdata"))
+        .env("LOCALAPPDATA", home.join("localappdata"))
         .env("VIBE_STORE", store)
         .env("XDG_CONFIG_HOME", home.join("config"))
         .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -414,7 +417,10 @@ fn assert_inventory(response: &Value, expected: &Files) {
 fn assert_context(context: &Value, project: &str, mode: &str, code: &Path, branch: &str) {
     assert_eq!(context["project_id"], project);
     assert_eq!(context["mode"], mode);
-    assert_eq!(context["checkout"], json!(code));
+    assert_eq!(
+        fs::canonicalize(context["checkout"].as_str().unwrap()).unwrap(),
+        fs::canonicalize(code).unwrap()
+    );
     assert_eq!(context["code_ref"], format!("refs/heads/{branch}"));
     assert_eq!(context["code_head"], git(code, &["rev-parse", "HEAD"]));
     assert_eq!(context["code_available"], true);
@@ -424,10 +430,13 @@ fn assert_context(context: &Value, project: &str, mode: &str, code: &Path, branc
             .is_some_and(|token| !token.is_empty())
     );
     if mode == "repo-first" {
-        assert_eq!(context["spec_root"], json!(code.join("docs/spec")));
         assert_eq!(
-            context["artifact_root"],
-            json!(code.join("docs/superpowers"))
+            fs::canonicalize(context["spec_root"].as_str().unwrap()).unwrap(),
+            fs::canonicalize(code.join("docs/spec")).unwrap()
+        );
+        assert_eq!(
+            fs::canonicalize(context["artifact_root"].as_str().unwrap()).unwrap(),
+            fs::canonicalize(code.join("docs/superpowers")).unwrap()
         );
         assert!(context["spec_revision"].is_null());
     } else {
@@ -1486,7 +1495,10 @@ fn global_first_clone_tree_squash_saved_plan_conflict_and_reopen() {
     );
     assert_eq!(plan["target_spec_oid"], selected["spec_revision"]);
     assert_eq!(plan["source_spec_oid"], source["spec_revision"]);
-    assert_eq!(plan["target_checkout"], json!(f.code));
+    assert_eq!(
+        fs::canonicalize(plan["target_checkout"].as_str().unwrap()).unwrap(),
+        fs::canonicalize(&f.code).unwrap()
+    );
     let plan_path = f.owner.join("saved-plan.json");
     fs::write(&plan_path, serde_json::to_vec(&plan).unwrap()).unwrap();
     let apply_args = [
