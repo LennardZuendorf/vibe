@@ -24,7 +24,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use vibe_core::exit;
 use vibe_core::fs::{Write, commit, restore};
@@ -1131,11 +1131,16 @@ fn render_text(label: &str, plan: &Plan, done: Option<&Outcome>) -> Vec<u8> {
 }
 
 /// Runs the command.
-pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u8>) {
+pub fn run(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    opts: &Options,
+) -> (u8, Vec<u8>) {
     let root = match found {
         Ok(root) => root,
         Err(miss) => {
-            eprintln!("{}", miss.message());
+            diag!(cx, "{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };
@@ -1144,7 +1149,8 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     let to = match target.strip_prefix(&project) {
         Ok(rel) if !rel.as_os_str().is_empty() => slash(rel),
         _ => {
-            eprintln!(
+            diag!(
+                cx,
                 "vibe-spec migrate: --to {} must be a directory inside the project {}",
                 opts.to.display(),
                 project.display()
@@ -1153,11 +1159,11 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         }
     };
     if let Err(why) = crate::root::migrate_config(&root.project) {
-        eprintln!("vibe-spec migrate: {why}");
+        diag!(cx, "vibe-spec migrate: {why}");
         return (exit::USAGE, Vec::new());
     }
     let fail = |why: String| {
-        eprintln!("migrate: ERROR: {why}");
+        diag!(cx, "migrate: ERROR: {why}");
         (exit::FINDINGS, Vec::new())
     };
     let from = match root_rel(&root.project, root) {
@@ -1212,7 +1218,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     if opts.dry_run {
         return (exit::OK, show("dry run", None));
     }
-    match execute(&root.project, &from, &to, &plan) {
+    match execute(cx, &root.project, &from, &to, &plan) {
         Ok(done) => (exit::OK, show("done", Some(&done))),
         Err(why) => fail(why),
     }
@@ -1233,8 +1239,14 @@ struct Journal {
 }
 
 /// `git -C <project> --literal-pathspecs mv -- <from> <to>`, with git's own error text.
-fn git_mv(project: &Path, from: &str, to: &str) -> Result<(), String> {
-    let out = Command::new("git")
+fn git_mv(
+    cx: &crate::api::Execution<'_>,
+    project: &Path,
+    from: &str,
+    to: &str,
+) -> Result<(), String> {
+    let out = cx
+        .command("git")
         .arg("-C")
         .arg(project)
         .arg("--literal-pathspecs")
@@ -1252,8 +1264,8 @@ fn git_mv(project: &Path, from: &str, to: &str) -> Result<(), String> {
 }
 
 /// True when git tracks something at `rel`.
-fn tracked(project: &Path, rel: &str) -> bool {
-    crate::git::git(project, &["ls-files", "-z", "--", rel]).is_some_and(|b| !b.is_empty())
+fn tracked(cx: &crate::api::Execution<'_>, project: &Path, rel: &str) -> bool {
+    crate::git::git(cx, project, &["ls-files", "-z", "--", rel]).is_some_and(|b| !b.is_empty())
 }
 
 impl Journal {
@@ -1284,14 +1296,14 @@ impl Journal {
     }
 
     /// `git mv` when git tracks `from`, otherwise a rename.
-    fn mv(&mut self, from: &str, to: &str) -> Result<(), String> {
+    fn mv(&mut self, cx: &crate::api::Execution<'_>, from: &str, to: &str) -> Result<(), String> {
         let target = self.project.join(to);
         if let Some(parent) = target.parent() {
             self.mkdirs(parent)?;
         }
-        let git = tracked(&self.project, from);
+        let git = tracked(cx, &self.project, from);
         if git {
-            git_mv(&self.project, from, to)?;
+            git_mv(cx, &self.project, from, to)?;
         } else {
             fs::rename(self.project.join(from), self.project.join(to))
                 .map_err(|e| format!("{from}: {e}"))?;
@@ -1306,7 +1318,7 @@ impl Journal {
 
     /// Puts the originals back, reverses the moves and removes the
     /// directories it made, newest first. Returns what could not be undone.
-    fn rollback(&self) -> Vec<String> {
+    fn rollback(&self, cx: &crate::api::Execution<'_>) -> Vec<String> {
         let (_, mut failed) = restore(self.writes.iter().rev());
         for step in self.steps.iter().rev() {
             let done = match step {
@@ -1317,7 +1329,7 @@ impl Journal {
                     from,
                     to,
                     git: true,
-                } => git_mv(&self.project, to, from),
+                } => git_mv(cx, &self.project, to, from),
                 Step::Move {
                     from,
                     to,
@@ -1589,7 +1601,11 @@ struct Findings {
     markable: BTreeSet<(String, String)>,
 }
 
-fn validate_root(project: &Path, dir: &str) -> Result<Findings, String> {
+fn validate_root(
+    cx: &crate::api::Execution<'_>,
+    project: &Path,
+    dir: &str,
+) -> Result<Findings, String> {
     let root = Root {
         dir: project.join(dir),
         project: project.to_path_buf(),
@@ -1597,6 +1613,7 @@ fn validate_root(project: &Path, dir: &str) -> Result<Findings, String> {
         depth: 0,
     };
     let (_, out) = validate::run_checked(
+        cx,
         &Ok(root),
         project,
         &validate::Options {
@@ -1643,16 +1660,22 @@ struct Outcome {
 /// Moves, rewrites, creates and verifies; undoes everything on failure.
 /// Returns the markers inserted (`<file> <check>`). An `Err` is the cause
 /// and says what happened to the tree (`reverted`).
-fn execute(project: &Path, from: &str, to: &str, plan: &Plan) -> Result<Outcome, String> {
+fn execute(
+    cx: &crate::api::Execution<'_>,
+    project: &Path,
+    from: &str,
+    to: &str,
+    plan: &Plan,
+) -> Result<Outcome, String> {
     let mut j = Journal {
         project: project.to_path_buf(),
         steps: Vec::new(),
         writes: Vec::new(),
     };
-    match steps(&mut j, from, to, plan) {
+    match steps(cx, &mut j, from, to, plan) {
         Ok(done) => Ok(done),
         Err(cause) => {
-            let failed = j.rollback();
+            let failed = j.rollback(cx);
             if failed.is_empty() {
                 Err(format!("{cause} \u{2014} reverted"))
             } else {
@@ -1665,13 +1688,19 @@ fn execute(project: &Path, from: &str, to: &str, plan: &Plan) -> Result<Outcome,
     }
 }
 
-fn steps(j: &mut Journal, from: &str, to: &str, plan: &Plan) -> Result<Outcome, String> {
+fn steps(
+    cx: &crate::api::Execution<'_>,
+    j: &mut Journal,
+    from: &str,
+    to: &str,
+    plan: &Plan,
+) -> Result<Outcome, String> {
     const CONFIG: &str = ".vibe/spec.json";
     let project = j.project.clone();
     let moving = from != to;
-    let before_errors = validate_root(&project, from)?.errors;
+    let before_errors = validate_root(cx, &project, from)?.errors;
     for (a, b) in &plan.moves {
-        j.mv(a, b)?;
+        j.mv(cx, a, b)?;
     }
     let today = today_utc();
 
@@ -1808,7 +1837,7 @@ fn steps(j: &mut Journal, from: &str, to: &str, plan: &Plan) -> Result<Outcome, 
     let mut marked: BTreeSet<(String, String)> = BTreeSet::new();
     let mut settled = false;
     for _ in 0..3 {
-        let found = validate_root(&project, to)?;
+        let found = validate_root(cx, &project, to)?;
         let fresh: Vec<(String, String)> = found
             .markable
             .into_iter()
@@ -1837,7 +1866,7 @@ fn steps(j: &mut Journal, from: &str, to: &str, plan: &Plan) -> Result<Outcome, 
         j.writes.extend(batch);
         marked.extend(fresh);
     }
-    let found = validate_root(&project, to)?;
+    let found = validate_root(cx, &project, to)?;
     let unmarked: Vec<String> = if settled {
         Vec::new()
     } else {

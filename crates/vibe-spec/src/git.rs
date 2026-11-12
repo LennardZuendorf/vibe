@@ -4,13 +4,14 @@
 //! reports every file as added in the boundary commit.
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use crate::text::lossy;
 
 /// `git -C dir --literal-pathspecs <args>` stdout when it exits 0.
-pub(crate) fn git(dir: &Path, args: &[&str]) -> Option<Vec<u8>> {
-    let out = Command::new("git")
+pub(crate) fn git(cx: &crate::api::Execution<'_>, dir: &Path, args: &[&str]) -> Option<Vec<u8>> {
+    let out = cx
+        .command("git")
         .arg("-C")
         .arg(dir)
         .arg("--literal-pathspecs")
@@ -23,27 +24,80 @@ pub(crate) fn git(dir: &Path, args: &[&str]) -> Option<Vec<u8>> {
 }
 
 /// The top directory of the work tree holding `dir`.
-pub fn top(dir: &Path) -> Option<PathBuf> {
-    let out = git(dir, &["rev-parse", "--show-toplevel"])?;
-    let s = String::from_utf8(out).ok()?;
-    let t = s.trim_end_matches('\n');
-    (!t.is_empty()).then(|| PathBuf::from(t))
+pub fn top(cx: &crate::api::Execution<'_>, dir: &Path) -> Option<PathBuf> {
+    let out = git(cx, dir, &["rev-parse", "--show-toplevel"])?;
+    output_path(&out)
+}
+
+pub(crate) fn output_path(out: &[u8]) -> Option<PathBuf> {
+    let bytes = out.strip_suffix(b"\n").unwrap_or(out);
+    if bytes.is_empty() {
+        return None;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        Some(PathBuf::from(std::ffi::OsStr::from_bytes(bytes)))
+    }
+    #[cfg(not(unix))]
+    {
+        std::str::from_utf8(bytes).ok().map(PathBuf::from)
+    }
+}
+
+/// Git locators from the caller must never retarget an explicitly selected tree.
+pub(crate) fn context_runtime(runtime: &crate::Runtime) -> crate::Runtime {
+    let mut clean = runtime.clone();
+    clean.env.retain(|key, _| {
+        let key = key.to_string_lossy();
+        let key = if cfg!(windows) {
+            key.to_ascii_uppercase()
+        } else {
+            key.into_owned()
+        };
+        !matches!(
+            key.as_str(),
+            "GIT_DIR"
+                | "GIT_WORK_TREE"
+                | "GIT_COMMON_DIR"
+                | "GIT_INDEX_FILE"
+                | "GIT_OBJECT_DIRECTORY"
+                | "GIT_ALTERNATE_OBJECT_DIRECTORIES"
+                | "GIT_CEILING_DIRECTORIES"
+                | "GIT_DISCOVERY_ACROSS_FILESYSTEM"
+                | "GIT_NAMESPACE"
+                | "GIT_PREFIX"
+                | "GIT_CONFIG"
+                | "GIT_CONFIG_COUNT"
+                | "GIT_CONFIG_PARAMETERS"
+                | "GIT_CONFIG_GLOBAL"
+                | "GIT_CONFIG_SYSTEM"
+        ) && !key.starts_with("GIT_CONFIG_KEY_")
+            && !key.starts_with("GIT_CONFIG_VALUE_")
+    });
+    clean.env.insert("GIT_OPTIONAL_LOCKS".into(), "0".into());
+    clean
 }
 
 /// True when the repository holding `dir` is a shallow clone.
-pub fn shallow(dir: &Path) -> bool {
-    git(dir, &["rev-parse", "--is-shallow-repository"]).is_some_and(|b| b.starts_with(b"true"))
+pub fn shallow(cx: &crate::api::Execution<'_>, dir: &Path) -> bool {
+    git(cx, dir, &["rev-parse", "--is-shallow-repository"]).is_some_and(|b| b.starts_with(b"true"))
 }
 
 /// For each file under `under` (top-relative, `/`-joined, `.` for the
 /// top), the committer date `YYYY-MM-DD` of the last commit touching it.
-pub fn last_dates(top: &Path, under: &str) -> BTreeMap<String, String> {
+pub fn last_dates(
+    cx: &crate::api::Execution<'_>,
+    top: &Path,
+    under: &str,
+) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
-    if shallow(top) {
+    if shallow(cx, top) {
         return out;
     }
     // Fails without commits: nothing to report.
     let Some(log) = git(
+        cx,
         top,
         &["log", "-z", "--format=%x01%cs", "--name-only", "--", under],
     ) else {
@@ -71,25 +125,31 @@ pub type Commit = (String, Vec<u8>);
 /// error when `since` was given); `Err` for a `since` git cannot resolve.
 /// A shallow clone without `since` also gives `Ok(None)`: its history ends
 /// at an arbitrary boundary.
-pub fn commits(dir: &Path, since: Option<&str>) -> Result<Option<Vec<Commit>>, String> {
+pub fn commits(
+    cx: &crate::api::Execution<'_>,
+    dir: &Path,
+    since: Option<&str>,
+) -> Result<Option<Vec<Commit>>, String> {
     if let Some(s) = since
         && (s.is_empty() || s.starts_with('-'))
     {
         return Err(format!("--since '{s}' is not a revision"));
     }
-    let Some(top) = top(dir).filter(|t| git(t, &["rev-parse", "--verify", "-q", "HEAD"]).is_some())
+    let Some(top) =
+        top(cx, dir).filter(|t| git(cx, t, &["rev-parse", "--verify", "-q", "HEAD"]).is_some())
     else {
         return match since {
             Some(_) => Err("--since needs git history".to_string()),
             None => Ok(None),
         };
     };
-    if since.is_none() && shallow(&top) {
+    if since.is_none() && shallow(cx, &top) {
         return Ok(None);
     }
     let range = match since {
         Some(s) => {
             if git(
+                cx,
                 &top,
                 &["rev-parse", "--verify", "-q", &format!("{s}^{{commit}}")],
             )
@@ -117,7 +177,7 @@ pub fn commits(dir: &Path, since: Option<&str>) -> Result<Option<Vec<Commit>>, S
     if let Some(scope) = &scope {
         args.extend(["--", scope]);
     }
-    let log = git(&top, &args).ok_or_else(|| format!("git log {range} failed"))?;
+    let log = git(cx, &top, &args).ok_or_else(|| format!("git log {range} failed"))?;
     let mut out = Vec::new();
     for record in log.split(|&b| b == 0) {
         let record = record.strip_prefix(b"\n").unwrap_or(record);
@@ -140,9 +200,13 @@ pub fn commits(dir: &Path, since: Option<&str>) -> Result<Option<Vec<Commit>>, S
 /// where `<base>` is `explicit` or the first of `origin/HEAD`,
 /// `origin/main`, `main`, `master` that names a commit. None without git,
 /// history or a base, and in a shallow clone.
-pub fn branch_base(dir: &Path, explicit: Option<&str>) -> Option<String> {
+pub fn branch_base(
+    cx: &crate::api::Execution<'_>,
+    dir: &Path,
+    explicit: Option<&str>,
+) -> Option<String> {
     // A shallow history ends at an arbitrary boundary: no trustworthy base.
-    if shallow(dir) {
+    if shallow(cx, dir) {
         return None;
     }
     let candidates: Vec<&str> = match explicit {
@@ -152,24 +216,26 @@ pub fn branch_base(dir: &Path, explicit: Option<&str>) -> Option<String> {
     let base = candidates.into_iter().find(|c| {
         !c.starts_with('-')
             && git(
+                cx,
                 dir,
                 &["rev-parse", "--verify", "-q", &format!("{c}^{{commit}}")],
             )
             .is_some()
     })?;
-    let out = git(dir, &["merge-base", "HEAD", base])?;
+    let out = git(cx, dir, &["merge-base", "HEAD", base])?;
     let hash = String::from_utf8_lossy(&out).trim().to_string();
     (!hash.is_empty()).then_some(hash)
 }
 
 /// Whether the tree under `dir` differs from `base`: tracked changes,
 /// committed or not, or untracked files. None when git fails.
-pub fn changed_since(dir: &Path, base: &str) -> Option<bool> {
-    let diff = git(dir, &["diff", "--name-only", base, "--", "."])?;
+pub fn changed_since(cx: &crate::api::Execution<'_>, dir: &Path, base: &str) -> Option<bool> {
+    let diff = git(cx, dir, &["diff", "--name-only", base, "--", "."])?;
     if !diff.is_empty() {
         return Some(true);
     }
     let untracked = git(
+        cx,
         dir,
         &["ls-files", "--others", "--exclude-standard", "--", "."],
     )?;
@@ -179,8 +245,9 @@ pub fn changed_since(dir: &Path, base: &str) -> Option<bool> {
 /// Staged, unstaged and untracked files in the work tree at `top`
 /// (`git status --porcelain=v1 -z --untracked-files=all`), top-relative and
 /// `/`-joined. A rename lists its new path. None when git fails.
-pub fn changed_files(top: &Path) -> Option<Vec<String>> {
+pub fn changed_files(cx: &crate::api::Execution<'_>, top: &Path) -> Option<Vec<String>> {
     let out = git(
+        cx,
         top,
         &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
     )?;
@@ -197,4 +264,40 @@ pub fn changed_files(top: &Path) -> Option<Vec<String>> {
         files.push(lossy(name));
     }
     Some(files)
+}
+
+#[cfg(test)]
+mod context_tests {
+    use super::*;
+    #[test]
+    fn new_domain_git_configuration_omits_ambient_core_worktree_injection() {
+        // spec-projects-mcp/2: no ambient config override reaches domain Git children.
+        let runtime = crate::Runtime {
+            cwd: PathBuf::from("fixture"),
+            env: BTreeMap::from([
+                ("GIT_CONFIG_COUNT".into(), "1".into()),
+                ("GIT_CONFIG_KEY_0".into(), "core.worktree".into()),
+                ("GIT_CONFIG_VALUE_0".into(), "outside-checkout".into()),
+                (
+                    "GIT_CONFIG_PARAMETERS".into(),
+                    "'core.worktree=outside-checkout'".into(),
+                ),
+                ("GIT_CONFIG_GLOBAL".into(), "outside-config".into()),
+                ("GIT_CONFIG_SYSTEM".into(), "outside-config".into()),
+                ("GIT_CONFIG".into(), "outside-config".into()),
+                ("HOME".into(), "fixture-home".into()),
+                ("GIT_CONFIG_NOSYSTEM".into(), "1".into()),
+            ]),
+        };
+        let clean = context_runtime(&runtime);
+        assert_eq!(
+            clean.env,
+            BTreeMap::from([
+                ("HOME".into(), "fixture-home".into()),
+                ("GIT_CONFIG_NOSYSTEM".into(), "1".into()),
+                ("GIT_OPTIONAL_LOCKS".into(), "0".into())
+            ])
+        );
+        assert_eq!(runtime.env.len(), 9);
+    }
 }

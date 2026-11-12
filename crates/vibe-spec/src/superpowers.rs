@@ -13,6 +13,14 @@ pub const SPECS: &str = "docs/superpowers/specs";
 /// Plans, `YYYY-MM-DD-<topic>.md`.
 pub const PLANS: &str = "docs/superpowers/plans";
 
+/// Context-aware artifact anchor; the old repo-relative constants remain compatible.
+pub(crate) fn context_root(mode: crate::StorageMode, anchor: &Path) -> PathBuf {
+    match mode {
+        crate::StorageMode::RepoFirst => anchor.join("docs/superpowers"),
+        crate::StorageMode::GlobalFirst => anchor.join("superpowers"),
+    }
+}
+
 fn kebab(s: &str) -> bool {
     !s.is_empty()
         && s.split('-').all(|w| {
@@ -138,12 +146,24 @@ fn spec_link(r: &mut Report, project: &Path, rel: &str, path: &Path) {
 }
 
 /// SF35 and SF36 when the artifact directories exist.
+#[expect(
+    dead_code,
+    reason = "legacy artifact adapter retained for internal compatibility"
+)]
 pub fn run(r: &mut Report, project: &Path) {
+    run_anchored(
+        r,
+        Some(project),
+        &project.join("docs/superpowers"),
+        "docs/superpowers",
+    )
+}
+pub(crate) fn run_anchored(r: &mut Report, project: Option<&Path>, artifacts: &Path, label: &str) {
     for (dir, suffix, shape) in [
-        (SPECS, "-design.md", "YYYY-MM-DD-<topic>-design.md"),
-        (PLANS, ".md", "YYYY-MM-DD-<topic>.md"),
+        ("specs", "-design.md", "YYYY-MM-DD-<topic>-design.md"),
+        ("plans", ".md", "YYYY-MM-DD-<topic>.md"),
     ] {
-        let Ok(read) = std::fs::read_dir(project.join(dir)) else {
+        let Ok(read) = std::fs::read_dir(artifacts.join(dir)) else {
             continue;
         };
         let mut entries: Vec<_> = read.flatten().collect();
@@ -153,7 +173,7 @@ pub fn run(r: &mut Report, project: &Path) {
             if name.starts_with('.') {
                 continue;
             }
-            let rel = format!("{dir}/{name}");
+            let rel = format!("{label}/{dir}/{name}");
             let file = std::fs::metadata(e.path()).is_ok_and(|m| m.is_file());
             if file {
                 r.examine(&rel);
@@ -169,8 +189,14 @@ pub fn run(r: &mut Report, project: &Path) {
                 r.warn("SF35", format!("{rel}: not named {shape}").as_bytes());
                 continue;
             }
-            if dir == PLANS {
-                spec_link(r, project, &rel, &e.path());
+            if dir == "plans" {
+                if label == "docs/superpowers"
+                    && let Some(project) = project
+                {
+                    spec_link(r, project, &rel, &e.path());
+                } else {
+                    spec_link_anchored(r, artifacts, &rel, &e.path());
+                }
             }
         }
     }
@@ -232,4 +258,39 @@ pub fn artifacts(project: &Path, feature: &str) -> io::Result<Vec<PathBuf>> {
     }
     out.sort_by_key(|p| crate::query::rel(project, p));
     Ok(out)
+}
+
+fn spec_link_anchored(r: &mut Report, artifacts: &Path, rel: &str, path: &Path) {
+    let text = std::fs::read(path).unwrap_or_default();
+    let mut fences = Fences::new();
+    let target = lines(&text)
+        .into_iter()
+        .find(|l| !fences.skip(l) && l.starts_with(b"**Spec:**"))
+        .and_then(|l| first_path(&l[9..]))
+        .map(|t| clean_target(&t));
+    let Some(target) = target else {
+        r.warn(
+            "SF36",
+            format!("{rel}: no '**Spec:**' line naming the design it implements").as_bytes(),
+        );
+        return;
+    };
+    let shown = lossy(&target);
+    let mapped = shown
+        .strip_prefix("docs/superpowers/")
+        .or_else(|| shown.strip_prefix("superpowers/"));
+    let candidate = match mapped {
+        Some(p) => artifacts.join(p),
+        None => path.parent().unwrap_or(artifacts).join(&shown),
+    };
+    let candidate = crate::layered::lexical(&candidate);
+    if crate::registry::confined(artifacts, &candidate).is_err() || !candidate.is_file() {
+        r.warn(
+            "SF36",
+            format!(
+                "{rel}: **Spec:** path '{shown}' does not exist or is outside the artifact root"
+            )
+            .as_bytes(),
+        );
+    }
 }

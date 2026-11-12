@@ -21,7 +21,12 @@ struct Block {
 const USAGE: &str = "Usage: vibe-spec scan-merges [<feature>] [--format table|json|plain]\n\nReport pending merge blocks in feature tech docs.\n";
 
 /// Runs the command.
-pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<u8>) {
+pub fn run(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    args: &[String],
+) -> (u8, Vec<u8>) {
     if crate::wants_help(args) {
         return (exit::OK, USAGE.as_bytes().to_vec());
     }
@@ -38,14 +43,14 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
                     continue;
                 }
                 None => {
-                    eprintln!("scan-merges: --format requires table|json|plain");
+                    diag!(cx, "scan-merges: --format requires table|json|plain");
                     return (exit::USAGE, Vec::new());
                 }
             }
         } else if let Some(v) = a.strip_prefix("--format=") {
             format = v.to_string();
         } else if a.starts_with('-') {
-            eprintln!("Unknown option: {a}");
+            diag!(cx, "Unknown option: {a}");
             return (exit::USAGE, Vec::new());
         } else {
             feature = Some(a.to_string()).filter(|f| !f.is_empty());
@@ -58,7 +63,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
         Ok(root) => (root.dir.clone(), root.display()),
         Err(Miss::NotFound) => (cwd.join(".spec"), ".spec".to_string()), // literal
         Err(miss) => {
-            eprintln!("{}", miss.message());
+            diag!(cx, "{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };
@@ -75,7 +80,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
             .collect(),
     };
     if targets.is_empty() {
-        eprintln!("No feature tech.md files found.");
+        diag!(cx, "No feature tech.md files found.");
         return (exit::OK, Vec::new());
     }
     let mut unclosed = false;
@@ -91,7 +96,8 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
             let lineno = n + 1;
             if line == b"<!-- merge -->" {
                 if let Some((start, _)) = &open {
-                    eprintln!(
+                    diag!(
+                        cx,
                         "ERROR: unclosed <!-- merge --> at line {start} in {file} (nested open at {lineno})"
                     );
                     unclosed = true;
@@ -108,7 +114,8 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
                         preview,
                     }),
                     None => {
-                        eprintln!(
+                        diag!(
+                            cx,
                             "ERROR: <!-- /merge --> without opener at line {lineno} in {file}"
                         );
                         unclosed = true;
@@ -122,7 +129,10 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
             }
         }
         if let Some((start, _)) = open {
-            eprintln!("ERROR: unclosed <!-- merge --> block starting at line {start} in {file}");
+            diag!(
+                cx,
+                "ERROR: unclosed <!-- merge --> block starting at line {start} in {file}"
+            );
             unclosed = true;
         }
     }
@@ -196,4 +206,128 @@ fn feature_name(f: &str) -> String {
         return "features".to_string();
     }
     trimmed.rsplit('/').next().unwrap_or(trimmed).to_string()
+}
+
+pub(crate) fn data(
+    files: &crate::documents::Files,
+    feature: Option<&str>,
+) -> Result<serde_json::Value, crate::SpecError> {
+    if feature.is_some_and(|f| !crate::query::valid_name(f)) {
+        return Err(crate::SpecError::new(
+            "invalid_feature",
+            "expected lowercase-kebab feature name",
+        ));
+    }
+    let mut blocks = Vec::new();
+    let mut diagnostics = Vec::new();
+    for (path, text) in files
+        .iter()
+        .filter(|(p, _)| p.starts_with("spec/features/") && p.ends_with("/tech.md"))
+    {
+        let name = path.split('/').nth(2).unwrap_or_default();
+        if feature.is_some_and(|f| f != name) {
+            continue;
+        }
+        let mut open = None;
+        for (index, line) in read_lines(text).into_iter().enumerate() {
+            let n = index + 1;
+            if line == b"<!-- merge -->" {
+                if open.is_some() {
+                    diagnostics.push(serde_json::json!({"code":"invalid_merge","path":path,"line":n,"message":"nested merge block"}));
+                } else {
+                    open = Some((n, Vec::new()));
+                }
+            } else if line == b"<!-- /merge -->" {
+                if let Some((start, preview)) = open.take() {
+                    blocks.push(serde_json::json!({"feature":name,"file":path,"start":start,"end":n,"preview":String::from_utf8_lossy(&preview)}));
+                } else {
+                    diagnostics.push(serde_json::json!({"code":"invalid_merge","path":path,"line":n,"message":"merge closer without opener"}));
+                }
+            } else if let Some((_, preview)) = open.as_mut()
+                && preview.is_empty()
+                && !line.is_empty()
+            {
+                *preview = line.get(..60).unwrap_or(line).to_vec();
+            }
+        }
+        if open.is_some() {
+            diagnostics.push(serde_json::json!({"code":"invalid_merge","path":path,"message":"unclosed merge block"}));
+        }
+    }
+    Ok(serde_json::json!({"blocks":blocks,"diagnostics":diagnostics}))
+}
+
+pub(crate) fn render_managed(
+    files: &crate::documents::Files,
+    args: &[String],
+) -> Result<(u8, Vec<u8>), crate::SpecError> {
+    if crate::wants_help(args) {
+        return Ok((0, USAGE.as_bytes().to_vec()));
+    }
+    let mut feature = None;
+    let mut format = "table";
+    let mut i = 0;
+    while let Some(arg) = args.get(i) {
+        if arg == "--format" {
+            i += 1;
+            format = args.get(i).ok_or_else(|| {
+                crate::SpecError::new(
+                    "invalid_request",
+                    "scan-merges: --format requires table|json|plain",
+                )
+            })?;
+        } else if let Some(value) = arg.strip_prefix("--format=") {
+            format = value;
+        } else if arg.starts_with('-') {
+            return Err(crate::SpecError::new(
+                "invalid_request",
+                format!("Unknown option: {arg}"),
+            ));
+        } else {
+            feature = Some(arg.as_str());
+        }
+        i += 1;
+    }
+    let result = data(files, feature)?;
+    let blocks = result["blocks"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let code = if result["diagnostics"]
+        .as_array()
+        .is_some_and(|d| !d.is_empty())
+    {
+        1
+    } else {
+        0
+    };
+    if format == "json" {
+        return Ok((code, format!("{}\n", result["blocks"]).into_bytes()));
+    }
+    if blocks.is_empty() {
+        return Ok((code, b"No merge blocks found.\n".to_vec()));
+    }
+    let mut out = Vec::new();
+    if format != "plain" {
+        row(&mut out, b"feature", b"file", b"lines", b"preview");
+    }
+    for block in blocks {
+        let feature = block["feature"].as_str().unwrap_or_default();
+        let path = block["file"].as_str().unwrap_or_default();
+        let preview = block["preview"].as_str().unwrap_or_default();
+        let start = block["start"].as_u64().unwrap_or(0);
+        let end = block["end"].as_u64().unwrap_or(0);
+        if format == "plain" {
+            out.extend(format!("{path}:{start}-{end}: {preview}\n").bytes());
+        } else {
+            row(
+                &mut out,
+                feature.as_bytes(),
+                path.as_bytes(),
+                format!("{start}-{end}").as_bytes(),
+                preview.as_bytes(),
+            );
+        }
+    }
+    Ok((code, out))
 }

@@ -55,6 +55,7 @@ pub struct Report {
     file: String,
     examined: BTreeSet<String>,
     markers: BTreeMap<String, Vec<&'static str>>,
+    anchors: Vec<(String, PathBuf)>,
 }
 
 impl Report {
@@ -70,7 +71,12 @@ impl Report {
             file: String::new(),
             examined: BTreeSet::new(),
             markers: BTreeMap::new(),
+            anchors: Vec::new(),
         }
+    }
+
+    pub(crate) fn bind(&mut self, label: &str, path: &Path) {
+        self.anchors.push((label.to_owned(), path.to_owned()));
     }
 
     /// The levels in force.
@@ -146,7 +152,13 @@ impl Report {
             return false;
         }
         if !self.markers.contains_key(&self.file) {
-            let path = if self.file.starts_with('/') {
+            let path = if let Some(path) = self.anchors.iter().find_map(|(prefix, root)| {
+                self.file
+                    .strip_prefix(&format!("{prefix}/"))
+                    .map(|rel| root.join(rel))
+            }) {
+                path
+            } else if self.file.starts_with('/') {
                 PathBuf::from(&self.file)
             } else {
                 self.project.join(&self.file)

@@ -49,61 +49,154 @@ fn member_graph_holds() {
 }
 
 #[test]
-fn every_resolved_package_builds_at_msrv() {
+fn resolved_msrv_declarations_and_exact_reviewed_exceptions_hold() {
     let n = check_msrv(&metadata(&[])).unwrap_or_else(|e| panic!("{e:#?}"));
     assert!(n >= 10, "examined only {n} packages");
 }
 
-/// Every package `Cargo.lock` resolves today: 5 members plus the reviewed
-/// transitive closure of clap, serde and serde_json. Sorted; duplicates kept.
-const REVIEWED_PACKAGES: [&str; 22] = [
-    "anstyle",
-    "clap",
-    "clap_builder",
-    "clap_derive",
-    "clap_lex",
-    "heck",
-    "itoa",
-    "memchr",
-    "proc-macro2",
-    "quote",
-    "serde",
-    "serde_core",
-    "serde_derive",
-    "serde_json",
-    "syn",
-    "unicode-ident",
-    "vibe",
-    "vibe-core",
-    "vibe-flow",
-    "vibe-parity",
-    "vibe-spec",
-    "zmij",
-];
-
 #[test]
 fn resolved_packages_are_the_reviewed_set() {
     let meta = metadata(&[]);
-    let mut resolved: Vec<&str> = meta["packages"]
+    vibe_parity::workspace::check_resolved_graph(&meta).unwrap();
+    for feature in ["client", "auth", "transport-streamable-http-server"] {
+        let mut bad = meta.clone();
+        let id = bad["packages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["name"] == "rmcp")
+            .unwrap()["id"]
+            .clone();
+        bad["resolve"]["nodes"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|n| n["id"] == id)
+            .unwrap()["features"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!(feature));
+        assert!(vibe_parity::workspace::check_resolved_graph(&bad).is_err());
+    }
+    let mut bad = meta.clone();
+    bad["packages"][0]["version"] = serde_json::json!("999.0.0");
+    assert!(vibe_parity::workspace::check_resolved_graph(&bad).is_err());
+}
+
+#[test]
+fn spec_mcp_exception_cannot_spread_or_broaden_features() {
+    // spec-projects-mcp/8: already-reviewed names cannot hide new capability edges.
+    let original = metadata(&["--no-deps"]);
+    check_graph(&original).unwrap();
+    for member in ["vibe", "vibe-core", "vibe-flow", "vibe-parity"] {
+        let mut bad = original.clone();
+        let packages = bad["packages"].as_array_mut().unwrap();
+        let spec = packages.iter().find(|p| p["name"] == "vibe-spec").unwrap();
+        let dep = spec["dependencies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["name"] == "tokio")
+            .unwrap()
+            .clone();
+        packages.iter_mut().find(|p| p["name"] == member).unwrap()["dependencies"]
+            .as_array_mut()
+            .unwrap()
+            .push(dep);
+        assert!(
+            check_graph(&bad).is_err(),
+            "async dependency escaped into {member}"
+        );
+    }
+    for (dependency, feature) in [
+        ("rmcp", "client"),
+        ("rmcp", "transport-streamable-http-server"),
+        ("rmcp", "auth"),
+        ("tokio", "process"),
+        ("tokio", "full"),
+    ] {
+        let mut bad = original.clone();
+        let spec = bad["packages"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["name"] == "vibe-spec")
+            .unwrap();
+        spec["dependencies"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|d| d["name"] == dependency)
+            .unwrap()["features"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!(feature));
+        assert!(
+            check_graph(&bad).is_err(),
+            "extra {dependency}/{feature} capability escaped"
+        );
+    }
+}
+
+#[test]
+fn reviewed_package_names_cannot_hide_renamed_target_build_edges() {
+    let mut meta = metadata(&["--no-deps"]);
+    check_graph(&meta).unwrap();
+    let packages = meta["packages"].as_array_mut().unwrap();
+    let mut dep = packages.iter().find(|p| p["name"] == "vibe-spec").unwrap()["dependencies"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|p| p["name"].as_str().unwrap())
-        .collect();
-    resolved.sort_unstable();
-    let added: Vec<&str> = resolved
+        .find(|d| d["name"] == "tokio")
+        .unwrap()
+        .clone();
+    dep["rename"] = serde_json::json!("innocent_alias");
+    dep["kind"] = serde_json::json!("build");
+    dep["target"] = serde_json::json!("cfg(unix)");
+    packages
+        .iter_mut()
+        .find(|p| p["name"] == "vibe-core")
+        .unwrap()["dependencies"]
+        .as_array_mut()
+        .unwrap()
+        .push(dep);
+    assert!(check_graph(&meta).is_err());
+    let original = metadata(&[]);
+    for field in ["source", "version"] {
+        let mut bad = original.clone();
+        let pkg = bad["packages"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["name"] == "ident_case")
+            .unwrap();
+        pkg[field] = serde_json::json!(if field == "source" {
+            "registry+https://example.invalid/index"
+        } else {
+            "1.0.2"
+        });
+        assert!(check_msrv(&bad).is_err());
+        assert!(vibe_parity::workspace::check_resolved_graph(&bad).is_err());
+    }
+    let mut bad = original.clone();
+    bad["packages"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|p| p["name"] == "ident_case")
+        .unwrap()["rust_version"] = serde_json::json!("1.89");
+    assert!(check_msrv(&bad).is_err());
+    let mut bad = original.clone();
+    let target = bad["resolve"]["nodes"]
+        .as_array()
+        .unwrap()
         .iter()
-        .filter(|n| !REVIEWED_PACKAGES.contains(n))
-        .copied()
-        .collect();
-    let removed: Vec<&str> = REVIEWED_PACKAGES
-        .iter()
-        .filter(|n| !resolved.contains(n))
-        .copied()
-        .collect();
-    assert_eq!(
-        resolved, REVIEWED_PACKAGES,
-        "resolved packages differ from the reviewed set; added {added:?}, removed {removed:?}. \
-         A dependency change must update REVIEWED_PACKAGES in a reviewed edit."
-    );
+        .find(|n| n["deps"].as_array().is_some_and(|a| !a.is_empty()))
+        .unwrap()["deps"][0]
+        .clone();
+    bad["resolve"]["nodes"].as_array_mut().unwrap()[0]["deps"]
+        .as_array_mut()
+        .unwrap()
+        .push(target);
+    assert!(vibe_parity::workspace::check_resolved_graph(&bad).is_err());
 }

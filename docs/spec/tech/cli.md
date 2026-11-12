@@ -3,7 +3,7 @@ type: hub
 applies:
   - "crates/vibe/**"
   - "vibe/**"
-updated: 2026-10-24
+updated: 2026-11-12
 ---
 
 # vibe CLI — Tech
@@ -11,8 +11,11 @@ updated: 2026-10-24
 [tech.md](../tech.md)
 
 Branch doc for the v0.5 front door: the `vibe` binary, the worktree
-lifecycle, and the global spec space. C0 `global-store` (D48) is DONE on this branch (not shipped until the owner's ship gate); the rest of the arc is
+lifecycle, and the global spec space. C0 `global-store` (D48) is implemented in source; the rest of the arc is
 spec-ahead-of-code and gates on v0.4's F22 (installer/release surface).
+
+The approved [spec-projects-mcp](spec/spec-projects-mcp.md) surface is the sole
+additional spec-only C1/F22 exception. General C1–C6 remain queued.
 
 ## Notes
 

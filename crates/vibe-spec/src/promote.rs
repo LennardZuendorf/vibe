@@ -134,18 +134,25 @@ fn merge_plan(target: &[u8], blocks: &[Vec<u8>]) -> MergePlan {
     p
 }
 
-fn fail(msg: &str) -> (u8, Vec<u8>) {
-    eprintln!("{msg}");
+fn fail(cx: &crate::api::Execution<'_>, msg: &str) -> (u8, Vec<u8>) {
+    diag!(cx, "{msg}");
     (exit::FINDINGS, Vec::new())
 }
 
 /// Reads a file the oracle would read. `NotFound` keeps the oracle's empty
 /// content; any other error refuses (exit 1) so nothing is truncated.
-fn read_or_fail(path: &Path, show: &str) -> Result<Vec<u8>, (u8, Vec<u8>)> {
+fn read_or_fail(
+    cx: &crate::api::Execution<'_>,
+    path: &Path,
+    show: &str,
+) -> Result<Vec<u8>, (u8, Vec<u8>)> {
     match std::fs::read(path) {
         Ok(b) => Ok(b),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(e) => Err(fail(&format!("promote: ERROR: cannot read {show}: {e}"))),
+        Err(e) => Err(fail(
+            cx,
+            &format!("promote: ERROR: cannot read {show}: {e}"),
+        )),
     }
 }
 
@@ -300,18 +307,23 @@ fn checklist_text(feature: &str, shown: &[String], items: &[(&str, String)]) -> 
 /// Shown artifact paths and the checklist items.
 type SpOut<'a> = (Vec<String>, Vec<(&'a str, String)>);
 
-fn refuse(msg: &str) -> (u8, Vec<u8>) {
-    eprintln!("promote: refused \u{2014} {msg}; nothing deleted");
+fn refuse(cx: &crate::api::Execution<'_>, msg: &str) -> (u8, Vec<u8>) {
+    diag!(cx, "promote: refused \u{2014} {msg}; nothing deleted");
     (exit::FINDINGS, Vec::new())
 }
 
 /// The bound artifacts of a valid feature name; `Err` is a finished
 /// refusal (an unreadable directory fails closed, P3c-R13).
-fn bound(root: &Root, feature: &str) -> Result<Vec<PathBuf>, (u8, Vec<u8>)> {
+fn bound(
+    cx: &crate::api::Execution<'_>,
+    root: &Root,
+    feature: &str,
+) -> Result<Vec<PathBuf>, (u8, Vec<u8>)> {
     superpowers::artifacts(&root.project, feature).map_err(|e| {
-        fail(&format!(
-            "promote: ERROR: cannot read superpowers artifacts: {e}"
-        ))
+        fail(
+            cx,
+            &format!("promote: ERROR: cannot read superpowers artifacts: {e}"),
+        )
     })
 }
 
@@ -319,56 +331,75 @@ fn bound(root: &Root, feature: &str) -> Result<Vec<PathBuf>, (u8, Vec<u8>)> {
 /// spec root changed since the branch base; fail closed otherwise. The
 /// command promotes nothing itself, so there are no spec writes to order
 /// against: everything is checked first, then the files are removed.
-fn done(found: &Result<Root, Miss>, a: &Args) -> (u8, Vec<u8>) {
+fn done(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    a: &Args,
+    planned: Option<&mut Vec<PathBuf>>,
+) -> (u8, Vec<u8>) {
     let root = match found {
         Ok(root) => root,
         Err(miss) => {
-            eprintln!("{}", miss.message());
+            diag!(cx, "{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };
     if !valid_name(&a.feature) {
-        return refuse(&format!(
-            "invalid feature name {:?} (lowercase-kebab)",
-            a.feature
-        ));
+        return refuse(
+            cx,
+            &format!("invalid feature name {:?} (lowercase-kebab)", a.feature),
+        );
     }
-    let artifacts = match bound(root, &a.feature) {
+    let artifacts = match bound(cx, root, &a.feature) {
         Ok(v) => v,
         Err(r) => return r,
     };
     if artifacts.is_empty() {
-        return fail(&format!(
-            "promote: ERROR: no superpowers artifacts for '{}'",
-            a.feature
-        ));
+        return fail(
+            cx,
+            &format!(
+                "promote: ERROR: no superpowers artifacts for '{}'",
+                a.feature
+            ),
+        );
     }
-    let Some(base) = git::branch_base(&root.project, a.base.as_deref()) else {
-        return refuse("no branch base found (pass --base <ref>)");
+    let Some(base) = git::branch_base(cx, &root.project, a.base.as_deref()) else {
+        return refuse(cx, "no branch base found (pass --base <ref>)");
     };
     let short = base.get(..7).unwrap_or(&base);
-    match git::changed_since(&root.dir, &base) {
+    match git::changed_since(cx, &root.dir, &base) {
         Some(true) => {}
         Some(false) => {
-            return refuse(&format!(
-                "{}/ is unchanged since {short}; promote the artifacts' durable facts first",
-                root.display()
-            ));
+            return refuse(
+                cx,
+                &format!(
+                    "{}/ is unchanged since {short}; promote the artifacts' durable facts first",
+                    root.display()
+                ),
+            );
         }
         None => {
-            return refuse(&format!("cannot compare {}/ with {short}", root.display()));
+            return refuse(
+                cx,
+                &format!("cannot compare {}/ with {short}", root.display()),
+            );
         }
     }
     let shown: Vec<String> = artifacts.iter().map(|p| rel(&root.project, p)).collect();
     let mut deleted: Vec<String> = Vec::new();
     let mut failed = false;
-    if !a.dry_run {
+    if !a.dry_run
+        && let Some(planned) = planned
+    {
+        planned.extend(artifacts.clone());
+        deleted = shown.clone();
+    } else if !a.dry_run {
         for (path, s) in artifacts.iter().zip(&shown) {
             match std::fs::remove_file(path) {
                 Ok(()) => deleted.push(s.clone()),
                 Err(e) => {
                     failed = true;
-                    eprintln!("promote: ERROR: not deleted {s}: {e}");
+                    diag!(cx, "promote: ERROR: not deleted {s}: {e}");
                 }
             }
         }
@@ -412,14 +443,28 @@ fn json_base(a: &Args, shown: &[String], items: &[(&str, String)]) -> Value {
 const HELP: &str = "Usage: vibe-spec promote <feature-name> [--dry-run] [--target <file>] [--done] [--base <ref>] [--json]\n\nMerge a feature's durable facts into the root spec.\n  --done only deletes the bound superpowers artifacts and ignores --target; --base applies to --done only\n";
 
 /// Runs the command.
-pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<u8>) {
+pub fn run(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    args: &[String],
+) -> (u8, Vec<u8>) {
+    run_inner(cx, found, cwd, args, None)
+}
+fn run_inner(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    args: &[String],
+    mut planned: Option<(&mut Vec<Write>, &mut Vec<PathBuf>)>,
+) -> (u8, Vec<u8>) {
     if crate::wants_help(args) {
         return (exit::OK, HELP.as_bytes().to_vec());
     }
     let a = match parse(args) {
         Ok(a) => a,
         Err(msg) => {
-            eprintln!("{msg}");
+            diag!(cx, "{msg}");
             return (exit::USAGE, Vec::new());
         }
     };
@@ -430,15 +475,15 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
         Ok(root) => (root.dir.clone(), root.display()),
         Err(Miss::NotFound) if !a.json => (cwd.join(".spec"), ".spec".to_string()), // literal
         Err(miss) => {
-            eprintln!("{}", miss.message());
+            diag!(cx, "{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };
     if a.done {
-        return done(found, &a);
+        return done(cx, found, &a, planned.map(|(_, deletes)| deletes));
     }
     let sp: Vec<PathBuf> = match found {
-        Ok(root) if valid_name(&a.feature) => match bound(root, &a.feature) {
+        Ok(root) if valid_name(&a.feature) => match bound(cx, root, &a.feature) {
             Ok(v) => v,
             Err(r) => return r,
         },
@@ -468,22 +513,22 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
         return (exit::OK, checklist_text(&a.feature, shown, items));
     }
     if !tech.is_file() {
-        return fail(&format!("ERROR: {tech_show} not found"));
+        return fail(cx, &format!("ERROR: {tech_show} not found"));
     }
     if !target.is_file() {
-        return fail(&format!("ERROR: {target_show} not found"));
+        return fail(cx, &format!("ERROR: {target_show} not found"));
     }
-    let tech_bytes = match read_or_fail(&tech, &tech_show) {
+    let tech_bytes = match read_or_fail(cx, &tech, &tech_show) {
         Ok(b) => b,
         Err(r) => return r,
     };
     let blocks = match merge_blocks(&tech_bytes, &tech_show) {
         Ok(b) => b,
-        Err(msg) => return fail(&msg),
+        Err(msg) => return fail(cx, &msg),
     };
     let product_path = tech.with_file_name("product.md");
     let product_show = format!("{display}/features/{}/product.md", a.feature);
-    let product = match read_or_fail(&product_path, &product_show) {
+    let product = match read_or_fail(cx, &product_path, &product_show) {
         Ok(b) => Some(b).filter(|t| delta::has_delta(t)),
         Err(r) => return r,
     };
@@ -491,7 +536,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
     let mut writes: Vec<Write> = Vec::new();
     let mut merged: Option<(usize, usize)> = None;
     if blocks.is_empty() {
-        eprintln!("WARN: no <!-- merge --> blocks found in {tech_show}");
+        diag!(cx, "WARN: no <!-- merge --> blocks found in {tech_show}");
         if product.is_none() && sp_out.is_none() {
             if a.json {
                 let v = json_base(&a, &[], &[]);
@@ -500,7 +545,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
             return (exit::OK, Vec::new());
         }
     } else {
-        let current = match read_or_fail(&target, &target_show) {
+        let current = match read_or_fail(cx, &target, &target_show) {
             Ok(b) => b,
             Err(r) => return r,
         };
@@ -552,7 +597,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
                 Ok(p) => Some(p),
                 Err(lines) => {
                     for l in lines {
-                        eprintln!("{l}");
+                        diag!(cx, "{l}");
                     }
                     return (exit::FINDINGS, Vec::new());
                 }
@@ -591,16 +636,21 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
     // predicts the real run.
     for w in &writes {
         if std::fs::symlink_metadata(&w.path).is_ok_and(|m| m.file_type().is_symlink()) {
-            return fail(&format!(
-                "promote: ERROR: {} is a symlink \u{2014} refusing to write through it",
-                w.show
-            ));
+            return fail(
+                cx,
+                &format!(
+                    "promote: ERROR: {} is a symlink \u{2014} refusing to write through it",
+                    w.show
+                ),
+            );
         }
     }
-    if !a.dry_run
-        && let Err(msg) = vibe_core::fs::commit(&writes)
-    {
-        return fail(&format!("promote: ERROR: {msg}"));
+    if !a.dry_run {
+        if let Some((planned, _)) = planned.as_mut() {
+            planned.append(&mut writes);
+        } else if let Err(msg) = vibe_core::fs::commit(&writes) {
+            return fail(cx, &format!("promote: ERROR: {msg}"));
+        }
     }
     if a.json {
         let mut v = match &sp_out {
@@ -626,4 +676,466 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, args: &[String]) -> (u8, Vec<
         return (exit::OK, format!("{v}\n").into_bytes());
     }
     (exit::OK, out)
+}
+
+#[derive(Clone, Debug)]
+pub struct PromoteRequest {
+    pub selector: crate::ContextSelector,
+    pub feature: String,
+    pub expected_revision: String,
+    pub dry_run: bool,
+    pub done: bool,
+    /// A logical spec/... target. Only the legacy repo adapter accepts host targets.
+    pub target: Option<String>,
+    /// Legacy repo-first code-history base; global history never consumes it.
+    pub base: Option<String>,
+}
+fn managed_plan(
+    api: &crate::SpecApi,
+    context: &crate::SpecContext,
+    request: &PromoteRequest,
+) -> Result<(Vec<crate::documents::Change>, Value), crate::SpecError> {
+    let err = |message: String| crate::SpecError::new("invalid_promotion", message);
+    if !valid_name(&request.feature) {
+        return Err(err("invalid feature name".into()));
+    }
+    let files = crate::documents::collect(context)?;
+    let artifacts = crate::query::bound_files(&files, &request.feature);
+    if request.done {
+        let code = context.require_code()?;
+        if artifacts.is_empty() {
+            return Err(err("no bound feature artifacts".into()));
+        }
+        let baseline = if context.mode == crate::StorageMode::GlobalFirst {
+            crate::transaction::feature_baseline(api, context, &request.feature)?
+        } else {
+            let cx = crate::api::Execution::new(&api.runtime);
+            let base = git::branch_base(&cx, code, request.base.as_deref()).ok_or_else(|| {
+                crate::SpecError::new(
+                    "missing_evidence",
+                    "no branch base found (pass --base <ref>)",
+                )
+            })?;
+            if git::changed_since(&cx, &context.spec_root, &base) != Some(true) {
+                return Err(crate::SpecError::new(
+                    "promotion_required",
+                    "durable spec is unchanged since branch base",
+                ));
+            }
+            base
+        };
+        let validation = crate::validate::context_result(
+            &api.runtime,
+            context,
+            crate::ValidationScope::WithCode,
+            false,
+        )?;
+        if validation.errors > 0 {
+            let mut e =
+                crate::SpecError::new("invalid_spec", "completion requires valid spec data");
+            e.details = validation.value();
+            return Err(e);
+        }
+        let changes = artifacts
+            .iter()
+            .map(|p| crate::documents::Change {
+                path: p.clone(),
+                content: None,
+            })
+            .collect();
+        return Ok((
+            changes,
+            json!({"v":1,"feature":request.feature,"dry_run":request.dry_run,"artifacts":artifacts,"deleted":if request.dry_run{vec![]}else{artifacts.clone()},"baseline":baseline}),
+        ));
+    }
+    let tech_path = format!("spec/features/{}/tech.md", request.feature);
+    let Some(tech) = files.get(&tech_path) else {
+        if artifacts.is_empty() {
+            return Err(err("no feature to promote".into()));
+        }
+        return Ok((
+            Vec::new(),
+            json!({"v":1,"feature":request.feature,"dry_run":request.dry_run,"artifacts":artifacts,"deleted":[],"checklist":[{"what":"chosen approach","target":"spec/decisions/"},{"what":"new nouns","target":"spec/concepts/"},{"what":"built places (+code:)","target":"spec/areas/"},{"what":"rules","target":"spec/tech/"},{"what":"failures","target":"spec/lessons.md"}]}),
+        ));
+    };
+    let target = request.target.as_deref().unwrap_or("spec/tech.md");
+    if !target.starts_with("spec/") {
+        return Err(err(
+            "promotion target must be a logical spec document".into()
+        ));
+    }
+    let target_path = crate::documents::path(context, target)?;
+    let current = files
+        .get(target)
+        .ok_or_else(|| err("promotion target is missing".into()))?;
+    let blocks = merge_blocks(tech, &tech_path).map_err(err)?;
+    let merge = merge_plan(current, &blocks);
+    let mut writes = Vec::new();
+    let mut pending = current.clone();
+    pending.extend(&merge.append);
+    if merge.appended > 0 {
+        writes.push(crate::documents::Change {
+            path: target.into(),
+            content: Some(pending.clone()),
+        });
+    }
+    let mut result = json!({"v":1,"feature":request.feature,"dry_run":request.dry_run,"artifacts":artifacts,"deleted":[],"merge":{"source":tech_path,"target":target,"appended":merge.appended,"skipped":merge.skipped}});
+    if let Some(product) = files
+        .get(&format!("spec/features/{}/product.md", request.feature))
+        .filter(|p| delta::has_delta(p))
+    {
+        let plan = plan_delta(
+            &context.spec_root,
+            "spec",
+            &request.feature,
+            product,
+            Some((&target_path, &pending)),
+        )
+        .map_err(|e| err(e.join("\n")))?;
+        let logical = format!(
+            "spec/{}",
+            plan.dest
+                .strip_prefix(&context.spec_root)
+                .map_err(|_| err("delta target escapes spec".into()))?
+                .to_string_lossy()
+                .replace('\\', "/")
+        );
+        crate::documents::path(context, &logical)?;
+        if plan.changes.iter().any(|c| c.applied) {
+            writes.retain(|w| w.path != logical);
+            writes.push(crate::documents::Change {
+                path: logical.clone(),
+                content: Some(plan.bytes),
+            });
+        }
+        result["delta"] = json!({"source":plan.product_show,"target":logical,"changes":plan.changes.iter().map(|c|json!({"op":c.kind.as_str(),"name":crate::text::lossy(&c.name),"applied":c.applied})).collect::<Vec<_>>()});
+    }
+    Ok((writes, result))
+}
+pub(crate) fn managed(
+    api: &crate::SpecApi,
+    request: PromoteRequest,
+) -> Result<crate::SpecResponse, crate::SpecError> {
+    if request.dry_run {
+        let (context, data) =
+            crate::transaction::read_preview(api, &request.selector, |context| {
+                Ok(managed_plan(api, context, &request)?.1)
+            })?;
+        return Ok(crate::SpecResponse {
+            context: Some(context),
+            data,
+        });
+    }
+    let completed = if request.done {
+        vec![request.feature.clone()]
+    } else {
+        Vec::new()
+    };
+    crate::transaction::apply_reported_planned(
+        api,
+        &request.selector,
+        &request.expected_revision,
+        &completed,
+        |context| {
+            let (changes, data) = managed_plan(api, context, &request)?;
+            Ok((changes, crate::transaction::PlannedResponse::Wrapped(data)))
+        },
+    )
+}
+
+pub(crate) fn managed_cli(
+    api: &crate::SpecApi,
+    selector: &crate::ContextSelector,
+    args: &[String],
+) -> Result<(u8, Vec<u8>), crate::SpecError> {
+    if crate::wants_help(args) {
+        return Ok((0, HELP.as_bytes().to_vec()));
+    }
+    let mut legacy = Vec::new();
+    let mut expected = None;
+    let mut i = 0;
+    while let Some(arg) = args.get(i) {
+        if arg == "--expect" {
+            i += 1;
+            expected = Some(
+                args.get(i)
+                    .ok_or_else(|| {
+                        crate::SpecError::new("invalid_request", "--expect requires a revision")
+                    })?
+                    .clone(),
+            );
+        } else {
+            legacy.push(arg.clone());
+        }
+        i += 1;
+    }
+    let a = parse(&legacy).map_err(|e| crate::SpecError::new("invalid_request", e))?;
+    let expected = match expected {
+        Some(v) => v,
+        None if a.dry_run => String::new(),
+        None => {
+            return Err(crate::SpecError::new(
+                "expected_revision_required",
+                "global promotion requires --expect REVISION",
+            ));
+        }
+    };
+    let response = managed(
+        api,
+        PromoteRequest {
+            selector: selector.clone(),
+            feature: a.feature,
+            expected_revision: expected,
+            dry_run: a.dry_run,
+            done: a.done,
+            target: a.target,
+            base: a.base,
+        },
+    )?;
+    let mut data = response.data;
+    if let Some(map) = data.as_object_mut() {
+        map.remove("receipt");
+        map.remove("baseline");
+    }
+    if a.json {
+        return Ok((0, format!("{data}\n").into_bytes()));
+    }
+    let mut out = String::new();
+    if a.done {
+        for path in data["artifacts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            out += &format!(
+                "{} {path}\n",
+                if a.dry_run { "WOULD DELETE" } else { "DELETED" }
+            );
+        }
+    } else {
+        if let Some(merge) = data.get("merge") {
+            out += &format!(
+                "{} {} block(s) from {} → {} ({} already present)\n",
+                if a.dry_run {
+                    "WOULD PROMOTE"
+                } else {
+                    "PROMOTED"
+                },
+                merge["appended"],
+                merge["source"].as_str().unwrap_or_default(),
+                merge["target"].as_str().unwrap_or_default(),
+                merge["skipped"]
+            );
+        }
+        for item in data["checklist"].as_array().into_iter().flatten() {
+            out += &format!(
+                "  [ ] {} → {}\n",
+                item["what"].as_str().unwrap_or_default(),
+                item["target"].as_str().unwrap_or_default()
+            );
+        }
+    }
+    Ok((0, out.into_bytes()))
+}
+
+pub(crate) fn repo_cli(
+    api: &crate::SpecApi,
+    selector: &crate::ContextSelector,
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    args: &[String],
+) -> Result<(u8, Vec<u8>), crate::SpecError> {
+    let parsed = match parse(args) {
+        Ok(a) => a,
+        Err(_) => return Ok(run(cx, found, cwd, args)),
+    };
+    let Ok(root) = found else {
+        return Ok(run(cx, found, cwd, args));
+    };
+    let roots = crate::context::LegacyRoots::from_root(root)?;
+    // Diagnostic-only admission preserves legacy refusals. The transaction discards
+    // these bytes and recomputes every successful write plan under its lock.
+    if !roots
+        .code_anchor
+        .ancestors()
+        .any(|p| p.join(".vibe/run/spec-transaction.json").exists())
+    {
+        let preflight = crate::api::Execution::new(cx.runtime);
+        let mut ignored = Vec::new();
+        let mut deleted = Vec::new();
+        let answer = run_inner(
+            &preflight,
+            found,
+            cwd,
+            args,
+            Some((&mut ignored, &mut deleted)),
+        );
+        if answer.0 != 0 {
+            cx.diagnostic_bytes(&preflight.take_diagnostics());
+            return Ok(answer);
+        }
+    }
+    if parsed.done && !parsed.dry_run {
+        return repo_done(api, selector, &roots, cx, found, cwd, args, &parsed);
+    }
+    if parsed.dry_run || crate::wants_help(args) {
+        return Ok(
+            crate::transaction::read_legacy_preview(api, selector, &roots, |_| {
+                Ok(run(cx, found, cwd, args))
+            })?
+            .1,
+        );
+    }
+    if let Some(target) = parsed.target.as_ref().filter(|_| !parsed.done) {
+        let context = crate::context::resolve_for_legacy(&api.runtime, selector, &roots)?;
+        if crate::documents::logical_legacy(&context, &crate::layered::lexical(&cwd.join(target)))
+            .is_err()
+        {
+            return Ok(run(cx, found, cwd, args));
+        }
+    }
+    let mut output = None;
+    let result = crate::transaction::apply_captured_planned(api, selector, &roots, |context| {
+        let mut writes = Vec::new();
+        let mut deletes = Vec::new();
+        let answer = run_inner(cx, found, cwd, args, Some((&mut writes, &mut deletes)));
+        let failed = answer.0 != 0;
+        output = Some(answer);
+        if failed {
+            return Err(crate::SpecError::new(
+                "legacy_refusal",
+                "legacy promotion refused",
+            ));
+        }
+        let mut changes: Vec<_> = writes
+            .into_iter()
+            .map(|w| {
+                Ok(crate::documents::Change {
+                    path: crate::documents::logical_legacy(context, &w.path)?,
+                    content: Some(w.bytes),
+                })
+            })
+            .collect::<Result<_, crate::SpecError>>()?;
+        for path in deletes {
+            changes.push(crate::documents::Change {
+                path: crate::documents::logical_legacy(context, &path)?,
+                content: None,
+            });
+        }
+        Ok(changes)
+    });
+    match result {
+        Ok(_) => Ok(output.unwrap_or((0, Vec::new()))),
+        Err(error) if error.code == "legacy_refusal" => Ok(output.unwrap_or((1, Vec::new()))),
+        Err(error) if error.code == "document_io" => {
+            let show = |logical: &str| -> String {
+                if let Some(relative) = logical.strip_prefix("spec/") {
+                    format!("{}/{relative}", root.display())
+                } else if let Some(relative) = logical.strip_prefix("superpowers/") {
+                    format!("docs/superpowers/{relative}")
+                } else {
+                    logical.into()
+                }
+            };
+            let target = error.details["path"]
+                .as_str()
+                .map(show)
+                .unwrap_or_else(|| "managed documents".into());
+            let restored: Vec<_> = error.details["restored"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(show)
+                .collect();
+            let suffix = if restored.is_empty() {
+                String::new()
+            } else {
+                format!(" — restored {}", restored.join(", "))
+            };
+            Ok(fail(
+                cx,
+                &format!("promote: ERROR: {target}: {}{suffix}", error.message),
+            ))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn repo_done(
+    api: &crate::SpecApi,
+    selector: &crate::ContextSelector,
+    roots: &crate::context::LegacyRoots,
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    args: &[String],
+    parsed: &Args,
+) -> Result<(u8, Vec<u8>), crate::SpecError> {
+    let root = found
+        .as_ref()
+        .map_err(|miss| crate::SpecError::new("spec_root_unavailable", miss.message()))?;
+    let (context, (answer, deletes)) =
+        crate::transaction::read_legacy(api, selector, roots, |_| {
+            let mut writes = Vec::new();
+            let mut deletes = Vec::new();
+            let answer = run_inner(cx, found, cwd, args, Some((&mut writes, &mut deletes)));
+            Ok((answer, deletes))
+        })?;
+    if answer.0 != 0 {
+        return Ok(answer);
+    }
+    let shown: Vec<_> = deletes.iter().map(|p| rel(&root.project, p)).collect();
+    let mut deleted = Vec::new();
+    let mut expected = context.revision_token;
+    let mut failed = false;
+    for (index, (path, show)) in deletes.iter().zip(&shown).enumerate() {
+        let result =
+            crate::transaction::apply_legacy_expected(api, selector, roots, &expected, |context| {
+                Ok(vec![crate::documents::Change {
+                    path: crate::documents::logical_legacy(context, path)?,
+                    content: None,
+                }])
+            });
+        match result {
+            Ok(receipt) => {
+                deleted.push(show.clone());
+                expected = receipt
+                    .context
+                    .ok_or_else(|| {
+                        crate::SpecError::new(
+                            "invalid_context",
+                            "legacy removal receipt has no context",
+                        )
+                    })?
+                    .revision_token;
+            }
+            Err(error) => {
+                failed = true;
+                diag!(cx, "promote: ERROR: not deleted {show}: {}", error.message);
+                if error.code != "document_io" {
+                    for remaining in shown.iter().skip(index + 1) {
+                        diag!(
+                            cx,
+                            "promote: ERROR: not deleted {remaining}: context changed; re-run with current context"
+                        );
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    let output = if parsed.json {
+        format!("{}\n",json!({"v":1,"feature":parsed.feature,"dry_run":false,"artifacts":shown,"deleted":deleted})).into_bytes()
+    } else {
+        deleted
+            .iter()
+            .map(|p| format!("DELETED {p}\n"))
+            .collect::<String>()
+            .into_bytes()
+    };
+    Ok((if failed { 1 } else { 0 }, output))
 }

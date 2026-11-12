@@ -32,7 +32,11 @@ impl Format {
 const USAGE: &str = "Usage: vibe-spec lessons-for <tag> [<tag>...] [--format markdown|inject|json] [--tag <tag>] [--json]\n\nPrint the lessons whose Tags line matches a tag. --json prints Spec JSON v1.\n";
 
 /// Runs the command.
-pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
+pub fn run(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    args: &[String],
+) -> (u8, Vec<u8>) {
     if crate::wants_help(args) {
         return (exit::OK, USAGE.as_bytes().to_vec());
     }
@@ -50,14 +54,17 @@ pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
                     continue;
                 }
                 None => {
-                    eprintln!("lessons-for: --format requires a value (markdown|inject|json)");
+                    diag!(
+                        cx,
+                        "lessons-for: --format requires a value (markdown|inject|json)"
+                    );
                     return (exit::USAGE, Vec::new());
                 }
             },
             "--json" => spec_json = true,
             "--tag" => match args.get(i + 1) {
                 Some(v) if v.is_empty() => {
-                    eprintln!("vibe-spec: a lessons-for tag must not be empty");
+                    diag!(cx, "vibe-spec: a lessons-for tag must not be empty");
                     return (exit::USAGE, Vec::new());
                 }
                 Some(v) => {
@@ -66,14 +73,14 @@ pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
                     continue;
                 }
                 None => {
-                    eprintln!("lessons-for: --tag requires a value");
+                    diag!(cx, "lessons-for: --tag requires a value");
                     return (exit::USAGE, Vec::new());
                 }
             },
             "markdown" | "inject" | "json" => format = Format::parse(a),
             _ if a.starts_with("--format=") => format = Format::parse(&a["--format=".len()..]),
             _ if a.starts_with('-') => {
-                eprintln!("Unknown option: {a}");
+                diag!(cx, "Unknown option: {a}");
                 return (exit::USAGE, Vec::new());
             }
             _ => tags.push(a.to_string()),
@@ -81,28 +88,32 @@ pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
         i += 1;
     }
     if spec_json {
-        return answer(found, &tags);
+        return answer(cx, found, &tags);
     }
     let file = match found {
         Ok(root) => root.dir.join("lessons.md"),
         Err(Miss::NotFound) => {
-            eprintln!(
+            diag!(
+                cx,
                 "vibe-spec lessons-for: no spec root (searched docs/spec/ and the legacy root up to .git)"
             );
             return (exit::OK, Vec::new());
         }
         Err(miss) => {
-            eprintln!("{}", miss.message());
+            diag!(cx, "{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };
     if !file.is_file() {
         let show = found.as_ref().map(Root::display).unwrap_or_default();
-        eprintln!("vibe-spec lessons-for: {show}/lessons.md not found");
+        diag!(cx, "vibe-spec lessons-for: {show}/lessons.md not found");
         return (exit::OK, Vec::new());
     }
     if tags.is_empty() {
-        eprintln!("usage: vibe-spec lessons-for <tag> [<tag>...] [--format markdown|inject|json]");
+        diag!(
+            cx,
+            "usage: vibe-spec lessons-for <tag> [<tag>...] [--format markdown|inject|json]"
+        );
         return (exit::USAGE, Vec::new());
     }
     let text = std::fs::read(&file).unwrap_or_default();
@@ -219,20 +230,24 @@ fn legacy_json(block: &[u8]) -> Vec<u8> {
 }
 
 /// `--json`: Spec JSON v1 `lessons-for`.
-fn answer(found: &Result<Root, Miss>, tags: &[String]) -> (u8, Vec<u8>) {
+fn answer(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    tags: &[String],
+) -> (u8, Vec<u8>) {
     let root = match found {
         Ok(root) => root,
         Err(miss) => {
-            eprintln!("{}", miss.message());
+            diag!(cx, "{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };
     if tags.is_empty() {
-        eprintln!("usage: vibe-spec lessons-for --json <tag> [<tag>...]");
+        diag!(cx, "usage: vibe-spec lessons-for --json <tag> [<tag>...]");
         return (exit::USAGE, Vec::new());
     }
     if tags.iter().any(String::is_empty) {
-        eprintln!("vibe-spec: a lessons-for tag must not be empty");
+        diag!(cx, "vibe-spec: a lessons-for tag must not be empty");
         return (exit::USAGE, Vec::new());
     }
     let text = std::fs::read(root.dir.join("lessons.md")).unwrap_or_default();
@@ -278,4 +293,125 @@ fn lesson(block: &[u8]) -> Option<Value> {
         v["pinned"] = json!(true);
     }
     Some(v)
+}
+
+#[derive(Clone, Debug)]
+pub struct LessonsRequest {
+    pub selector: crate::ContextSelector,
+    pub tags: Vec<String>,
+}
+pub(crate) fn data(text: &[u8], tags: &[String]) -> Result<Value, crate::SpecError> {
+    if tags.is_empty() || tags.iter().any(String::is_empty) {
+        return Err(crate::SpecError::new(
+            "invalid_tags",
+            "at least one nonempty tag is required",
+        ));
+    }
+    let lessons: Vec<_> = blocks(text)
+        .iter()
+        .filter(|b| matches(b, tags))
+        .filter_map(|b| lesson(b))
+        .collect();
+    Ok(json!({"v":1,"tags":tags,"lessons":lessons}))
+}
+
+pub(crate) fn managed_tags(args: &[String]) -> Result<Vec<String>, crate::SpecError> {
+    let mut tags = Vec::new();
+    let mut i = 0;
+    while let Some(arg) = args.get(i) {
+        match arg.as_str() {
+            "--json" | "markdown" | "inject" | "json" => {}
+            "--format" => {
+                i += 1;
+                if args.get(i).is_none() {
+                    return Err(crate::SpecError::new(
+                        "invalid_tags",
+                        "--format requires a value",
+                    ));
+                }
+            }
+            "--tag" => {
+                i += 1;
+                tags.push(
+                    args.get(i)
+                        .ok_or_else(|| {
+                            crate::SpecError::new("invalid_tags", "--tag requires a value")
+                        })?
+                        .clone(),
+                );
+            }
+            a if a.starts_with("--format=") => {}
+            a if a.starts_with('-') => {
+                return Err(crate::SpecError::new(
+                    "invalid_tags",
+                    format!("Unknown option: {a}"),
+                ));
+            }
+            _ => tags.push(arg.clone()),
+        }
+        i += 1;
+    }
+    Ok(tags)
+}
+
+pub(crate) fn render_managed(
+    text: &[u8],
+    args: &[String],
+) -> Result<(u8, Vec<u8>), crate::SpecError> {
+    if crate::wants_help(args) {
+        return Ok((0, USAGE.as_bytes().to_vec()));
+    }
+    let tags = managed_tags(args)?;
+    if args.iter().any(|a| a == "--json") {
+        return Ok((0, format!("{}\n", data(text, &tags)?).into_bytes()));
+    }
+    if tags.is_empty() {
+        return Err(crate::SpecError::new(
+            "invalid_tags",
+            "at least one nonempty tag is required",
+        ));
+    }
+    let mut format = Format::Markdown;
+    for (n, arg) in args.iter().enumerate() {
+        if arg == "--format" {
+            format = Format::parse(args.get(n + 1).map_or("", String::as_str));
+        } else if let Some(v) = arg.strip_prefix("--format=") {
+            format = Format::parse(v);
+        } else if matches!(arg.as_str(), "markdown" | "inject" | "json") {
+            format = Format::parse(arg);
+        }
+    }
+    let matched: Vec<_> = blocks(text)
+        .into_iter()
+        .filter(|b| matches(b, &tags))
+        .collect();
+    if matched.is_empty() {
+        return Ok((0, Vec::new()));
+    }
+    let mut out = Vec::new();
+    match format {
+        Format::Markdown => {
+            for block in matched {
+                out.extend(cat!(block, "\n---\n"));
+            }
+        }
+        Format::Inject => {
+            out.extend(format!("<!-- lessons: {} -->\n", tags.join(" ")).bytes());
+            for block in matched {
+                out.extend(cat!(block, "\n\n"));
+            }
+            out.extend_from_slice(b"<!-- /lessons -->\n");
+        }
+        Format::Json => {
+            out.push(b'[');
+            for (n, block) in matched.iter().enumerate() {
+                if n > 0 {
+                    out.push(b',');
+                }
+                out.extend(legacy_json(block));
+            }
+            out.extend_from_slice(b"]\n");
+        }
+    }
+    Ok((0, out))
 }

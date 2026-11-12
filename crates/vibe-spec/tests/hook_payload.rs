@@ -1,61 +1,9 @@
 //! Hook payload parsing and transcript skill detection (P4-R2).
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used)]
 
-#[path = "../src/hook.rs"]
-mod hook;
-/// `hook.rs` names `crate::root` for its guard, which this file never runs.
-mod root {
-    use std::path::{Path, PathBuf};
-
-    pub struct Root {
-        pub dir: PathBuf,
-        pub project: PathBuf,
-    }
-    pub enum Miss {
-        NotFound,
-        Other,
-    }
-    impl Miss {
-        pub fn message(&self) -> String {
-            unimplemented!()
-        }
-    }
-    pub enum Tooth {
-        Block,
-        Warn,
-    }
-    pub fn discover(_: &Path, _: Option<&Path>, _: Option<&std::ffi::OsStr>) -> Result<Root, Miss> {
-        unimplemented!()
-    }
-    pub fn tooth(_: &Path) -> Result<Tooth, String> {
-        unimplemented!()
-    }
-}
-/// `hook::session_start` names `crate::git`, which this file never runs.
-mod git {
-    pub fn top(_: &std::path::Path) -> Option<std::path::PathBuf> {
-        unimplemented!()
-    }
-}
-/// `hook::validate` names `crate::validate`, which this file never runs.
-mod validate {
-    pub enum Format {
-        Hook,
-    }
-    pub struct Options {
-        pub strict: bool,
-        pub format: Format,
-        pub changed: bool,
-        pub file: Option<String>,
-        pub event: Option<String>,
-    }
-    pub fn run_checked(
-        _: &Result<crate::root::Root, crate::root::Miss>,
-        _: &std::path::Path,
-        _: &Options,
-    ) -> Result<(u8, Vec<u8>), String> {
-        unimplemented!()
-    }
+// Exercise the production parser without substituting domain implementations.
+mod hook {
+    pub use vibe_spec::parse_hook_payload as parse;
 }
 #[path = "../src/text.rs"]
 mod text;

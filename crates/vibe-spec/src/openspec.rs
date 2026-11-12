@@ -26,6 +26,8 @@ const CARRIED: [&str; 5] = [
 ];
 
 /// Files to write: path components under the output dir, and bytes.
+macro_rules! note { ($cx:expr,$($args:tt)*) => {$cx.notice("openspec_diagnostic",format_args!($($args)*))}; }
+
 type Files = Vec<(Vec<String>, Vec<u8>)>;
 
 fn under(parts: &[&str], tail: &str) -> Vec<String> {
@@ -222,13 +224,18 @@ fn capability(root: &Path, path: &Path) -> Option<String> {
 type Refusal = Vec<String>;
 
 /// One fallback feature folder as an OpenSpec change (P3c-R14).
-fn change(root: &Root, fdir: &Path, f: &str) -> Result<Files, Refusal> {
+fn change(
+    cx: &crate::api::Execution<'_>,
+    root: &Source,
+    fdir: &Path,
+    f: &str,
+) -> Result<Files, Refusal> {
     let show = format!("{}/features/{f}", root.display());
     let one = |e: String| vec![e];
     let Some(product) =
         read_opt(&fdir.join("product.md"), &format!("{show}/product.md")).map_err(one)?
     else {
-        eprintln!("export: {show}/: no product.md, not exported");
+        note!(cx, "export: {show}/: no product.md, not exported");
         return Ok(Vec::new());
     };
     if !valid_name(f) {
@@ -331,14 +338,14 @@ fn change(root: &Root, fdir: &Path, f: &str) -> Result<Files, Refusal> {
     files.push((under(&base, "design.md"), design_text(&show, f, &carried)));
     for other in files_under(fdir).map_err(one)? {
         if !CARRIED.contains(&other.as_str()) {
-            eprintln!("export: {show}/{other}: not exported");
+            note!(cx, "export: {show}/{other}: not exported");
         }
     }
     Ok(files)
 }
 
 /// Every capability and change of the tree, in memory (P3c-R14).
-fn plan_export(root: &Root) -> Result<Files, Refusal> {
+fn plan_export(cx: &crate::api::Execution<'_>, root: &Source) -> Result<Files, Refusal> {
     let d = root.display();
     let mut files: Files = Vec::new();
     let mut errs: Vec<String> = Vec::new();
@@ -380,7 +387,7 @@ fn plan_export(root: &Root) -> Result<Files, Refusal> {
         ));
     }
     for fdir in sub_dirs(&root.dir.join("features")) {
-        match change(root, &fdir, &name_of(&fdir)) {
+        match change(cx, root, &fdir, &name_of(&fdir)) {
             Ok(mut f) => files.append(&mut f),
             Err(mut e) => errs.append(&mut e),
         }
@@ -483,35 +490,51 @@ fn at(shown: &str, rest: &str) -> String {
 }
 
 /// `vibe-spec export --openspec <dir> [--json]`.
-pub fn export(found: &Result<Root, Miss>, cwd: &Path, dir: &Path, json_out: bool) -> (u8, Vec<u8>) {
+pub fn export(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    dir: &Path,
+    json_out: bool,
+) -> (u8, Vec<u8>) {
     let root = match found {
-        Ok(root) => root,
+        Ok(root) => Source {
+            dir: root.dir.clone(),
+            display: root.display(),
+        },
         Err(miss) => {
-            eprintln!("{}", miss.message());
+            diag!(cx, "{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };
     let shown = shown_dir(dir);
     let out_dir: PathBuf = cwd.join(dir);
     if lexical(&out_dir).starts_with(lexical(&root.dir)) {
-        eprintln!("export: ERROR: {shown} is inside the spec root — refusing to export into it");
+        diag!(
+            cx,
+            "export: ERROR: {shown} is inside the spec root — refusing to export into it"
+        );
         return (exit::FINDINGS, Vec::new());
     }
     if std::fs::symlink_metadata(out_dir.join("openspec")).is_ok() {
-        eprintln!("export: ERROR: {} already exists", at(&shown, "openspec"));
+        diag!(
+            cx,
+            "export: ERROR: {} already exists",
+            at(&shown, "openspec")
+        );
         return (exit::FINDINGS, Vec::new());
     }
-    let files = match plan_export(root) {
+    let files = match plan_export(cx, &root) {
         Ok(f) => f,
         Err(errs) => {
             for e in errs {
-                eprintln!("export: ERROR: {e}");
+                diag!(cx, "export: ERROR: {e}");
             }
             return (exit::FINDINGS, Vec::new());
         }
     };
     if let Err(e) = write_files(&shown, &out_dir, &files) {
-        eprintln!("export: ERROR: {e}");
+        diag!(cx, "export: ERROR: {e}");
         return (exit::FINDINGS, Vec::new());
     }
     let written: Vec<String> = files.iter().map(|(p, _)| p.join("/")).collect();
@@ -751,7 +774,13 @@ type Folder = Vec<(String, Vec<u8>)>;
 /// One OpenSpec change as files under `<root>/features/<id>/` (P3c-R15).
 /// `id` is a directory name of the source tree: it is validated here before
 /// it joins any path.
-fn import_change(root: &Root, cdir: &Path, id: &str) -> Result<Folder, String> {
+fn import_change(
+    cx: &crate::api::Execution<'_>,
+    root: &Source,
+    input: &Input<'_>,
+    cdir: &Path,
+    id: &str,
+) -> Result<Folder, String> {
     if !valid_name(id) {
         return Err("not a valid feature name (lowercase-kebab)".to_string());
     }
@@ -766,9 +795,9 @@ fn import_change(root: &Root, cdir: &Path, id: &str) -> Result<Folder, String> {
         Err(e) => return Err(format!("{d}/features/{id}/: {e}")),
     }
     let sdir = cdir.join("specs");
-    let specs: Vec<String> = if real_dir(&sdir, "specs")? {
-        no_links(&sdir, "specs")?;
-        files_under(&sdir)?
+    let specs: Vec<String> = if input.exists_dir(&sdir)? {
+        input
+            .files(&sdir)?
             .into_iter()
             .filter(|r| r.ends_with("/spec.md"))
             .collect()
@@ -785,7 +814,9 @@ fn import_change(root: &Root, cdir: &Path, id: &str) -> Result<Folder, String> {
         .first()
         .map(|r| r.trim_end_matches("/spec.md").to_string());
     let delta_text = match specs.first() {
-        Some(r) => read_regular(&sdir.join(r), &format!("specs/{r}"))?.unwrap_or_default(),
+        Some(r) => input
+            .read(&sdir.join(r), &format!("specs/{r}"))?
+            .unwrap_or_default(),
         None => Vec::new(),
     };
     if delta::sections(&delta_text)
@@ -802,13 +833,14 @@ fn import_change(root: &Root, cdir: &Path, id: &str) -> Result<Folder, String> {
                 .next()
                 .and_then(delta::requirement_name)
                 .unwrap_or_default();
-            eprintln!(
+            note!(
+                cx,
                 "import: {id}: REMOVED '{}' needs a **Reason**: line before promote",
                 lossy(&name)
             );
         }
     }
-    let design = read_regular(&cdir.join("design.md"), "design.md")?;
+    let design = input.read(&cdir.join("design.md"), "design.md")?;
     match design.as_deref().and_then(uncarry) {
         Some(Err(e)) => Err(e),
         Some(Ok(carried)) => {
@@ -820,10 +852,10 @@ fn import_change(root: &Root, cdir: &Path, id: &str) -> Result<Folder, String> {
             if by_kind(product) != kinds {
                 return Err("requirements were edited in OpenSpec; delete design.md's vibe blocks to import it as a new change".to_string());
             }
-            check_side_edits(root, cdir, id, &carried, design.as_deref())?;
+            check_side_edits(cx, root, input, cdir, id, &carried, design.as_deref())?;
             Ok(carried)
         }
-        None => foreign(root, id, cap, &kinds, cdir, design),
+        None => foreign(cx, root, input, id, cap, &kinds, cdir, design),
     }
 }
 
@@ -832,7 +864,9 @@ fn import_change(root: &Root, cdir: &Path, id: &str) -> Result<Folder, String> {
 /// refuses. `proposal.md` and the prose of `design.md` are not carried: an
 /// edit there is noted.
 fn check_side_edits(
-    root: &Root,
+    cx: &crate::api::Execution<'_>,
+    root: &Source,
+    input: &Input<'_>,
     cdir: &Path,
     id: &str,
     carried: &Folder,
@@ -840,7 +874,7 @@ fn check_side_edits(
 ) -> Result<(), String> {
     let get = |name: &str| carried.iter().find(|(n, _)| n == name).map(|(_, b)| b);
     let want = get("plan.md").and_then(|p| tasks(p, id));
-    let have = read_regular(&cdir.join("tasks.md"), "tasks.md")?;
+    let have = input.read(&cdir.join("tasks.md"), "tasks.md")?;
     if want != have {
         return Err(
             "tasks.md was edited on the OpenSpec side \u{2014} edit plan.md in vibe instead"
@@ -849,20 +883,23 @@ fn check_side_edits(
     }
     let show = format!("{}/features/{id}", root.display());
     if let Some(product) = get("product.md") {
-        let proposal = read_regular(&cdir.join("proposal.md"), "proposal.md")?;
+        let proposal = input.read(&cdir.join("proposal.md"), "proposal.md")?;
         if proposal.as_deref() != Some(proposal_text(&show, id, product).as_slice()) {
-            eprintln!("import: {id}: proposal.md edits are not imported");
+            note!(cx, "import: {id}: proposal.md edits are not imported");
         }
     }
     if design != Some(design_text(&show, id, carried).as_slice()) {
-        eprintln!("import: {id}: design.md edits are not imported");
+        note!(cx, "import: {id}: design.md edits are not imported");
     }
     Ok(())
 }
 
 /// A change without vibe blocks: synthesized feature docs (P3c-R15).
+#[allow(clippy::too_many_arguments)]
 fn foreign(
-    root: &Root,
+    cx: &crate::api::Execution<'_>,
+    root: &Source,
+    input: &Input<'_>,
     id: &str,
     cap: Option<String>,
     kinds: &[Vec<Vec<u8>>; 3],
@@ -873,12 +910,17 @@ fn foreign(
     let parent = match cap {
         Some(c) if root.dir.join(format!("{c}.md")).is_file() => c,
         Some(c) => {
-            eprintln!("import: {id}: no {c}.md in the spec root \u{2014} targeting product.md");
+            note!(
+                cx,
+                "import: {id}: no {c}.md in the spec root \u{2014} targeting product.md"
+            );
             "product".to_string()
         }
         None => "product".to_string(),
     };
-    let proposal = read_regular(&cdir.join("proposal.md"), "proposal.md")?.unwrap_or_default();
+    let proposal = input
+        .read(&cdir.join("proposal.md"), "proposal.md")?
+        .unwrap_or_default();
     let why = section_text(&proposal, "why")
         .unwrap_or_else(|| format!("Imported from OpenSpec change {id}."));
     let mut product = format!(
@@ -905,7 +947,9 @@ fn foreign(
     if let Some(d) = design {
         files.push(("design.md".to_string(), d));
     }
-    let tasks = read_regular(&cdir.join("tasks.md"), "tasks.md")?.unwrap_or_default();
+    let tasks = input
+        .read(&cdir.join("tasks.md"), "tasks.md")?
+        .unwrap_or_default();
     if let Some(plan) = plan_from_tasks(&tasks, id, &today) {
         files.push(("plan.md".to_string(), plan));
     }
@@ -1009,21 +1053,37 @@ fn write_step(
 /// `vibe-spec import --openspec <dir> [--feature <name>] [--json]`.
 /// Never overwrites: an existing feature folder refuses (P3c-R15).
 pub fn import(
+    cx: &crate::api::Execution<'_>,
     found: &Result<Root, Miss>,
     cwd: &Path,
     dir: &Path,
     only: Option<&str>,
     json_out: bool,
 ) -> (u8, Vec<u8>) {
+    import_inner(cx, found, cwd, dir, only, json_out, None)
+}
+#[allow(clippy::too_many_arguments)]
+fn import_inner(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    dir: &Path,
+    only: Option<&str>,
+    json_out: bool,
+    planned: Option<&mut Vec<(PathBuf, Vec<u8>)>>,
+) -> (u8, Vec<u8>) {
     let root = match found {
-        Ok(root) => root,
+        Ok(root) => Source {
+            dir: root.dir.clone(),
+            display: root.display(),
+        },
         Err(miss) => {
-            eprintln!("{}", miss.message());
+            diag!(cx, "{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };
     let refuse = |e: String| {
-        eprintln!("import: ERROR: {e}");
+        diag!(cx, "import: ERROR: {e}");
         (exit::FINDINGS, Vec::new())
     };
     let shown = shown_dir(dir);
@@ -1049,7 +1109,7 @@ pub fn import(
     let mut plan: Vec<(String, Folder)> = Vec::new();
     let mut errs: Vec<String> = link_errs;
     for id in &ids {
-        match import_change(root, &os.join("changes").join(id), id) {
+        match import_change(cx, &root, &Input::Host, &os.join("changes").join(id), id) {
             Ok(f) => plan.push((id.clone(), f)),
             Err(e) => errs.push(format!("{id}: {e}")),
         }
@@ -1057,12 +1117,24 @@ pub fn import(
     if !errs.is_empty() {
         errs.sort();
         for e in errs {
-            eprintln!("import: ERROR: {e}");
+            diag!(cx, "import: ERROR: {e}");
         }
         return (exit::FINDINGS, Vec::new());
     }
     let d = root.display();
-    if let Err(e) = write_folders(&root.dir.join("features"), &d, &plan) {
+    if planned.is_some()
+        && std::fs::symlink_metadata(root.dir.join("features"))
+            .is_ok_and(|m| m.file_type().is_symlink())
+    {
+        return refuse(format!("{d}/features is a symlink"));
+    }
+    if let Some(planned) = planned {
+        for (id, files) in &plan {
+            for (name, bytes) in files {
+                planned.push((root.dir.join("features").join(id).join(name), bytes.clone()));
+            }
+        }
+    } else if let Err(e) = write_folders(&root.dir.join("features"), &d, &plan) {
         return refuse(e);
     }
     let written: Vec<String> = plan
@@ -1083,6 +1155,364 @@ pub fn import(
         out += &format!("  {w}\n");
     }
     (exit::OK, out.into_bytes())
+}
+
+struct Source {
+    dir: PathBuf,
+    display: String,
+}
+impl Source {
+    fn display(&self) -> String {
+        self.display.clone()
+    }
+}
+enum Input<'a> {
+    Host,
+    Bundle(&'a std::collections::BTreeMap<String, Vec<u8>>),
+}
+impl Input<'_> {
+    fn read(&self, path: &Path, show: &str) -> Result<Option<Vec<u8>>, String> {
+        match self {
+            Self::Host => read_regular(path, show),
+            Self::Bundle(files) => Ok(files
+                .get(&path.to_string_lossy().replace('\\', "/"))
+                .cloned()),
+        }
+    }
+    fn exists_dir(&self, path: &Path) -> Result<bool, String> {
+        match self {
+            Self::Host => real_dir(path, "specs"),
+            Self::Bundle(files) => Ok(files
+                .keys()
+                .any(|p| p.starts_with(&format!("{}/", path.display())))),
+        }
+    }
+    fn files(&self, path: &Path) -> Result<Vec<String>, String> {
+        match self {
+            Self::Host => {
+                no_links(path, "specs")?;
+                files_under(path)
+            }
+            Self::Bundle(files) => {
+                let prefix = format!("{}/", path.display());
+                Ok(files
+                    .keys()
+                    .filter_map(|p| p.strip_prefix(&prefix).map(str::to_string))
+                    .collect())
+            }
+        }
+    }
+}
+/// OpenSpec documents are transport data, never host destinations.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BundleFile {
+    pub path: String,
+    pub content: String,
+}
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OpenSpecBundle {
+    pub files: Vec<BundleFile>,
+}
+#[derive(Clone, Debug)]
+pub struct ExportRequest {
+    pub selector: crate::ContextSelector,
+}
+#[derive(Clone, Debug)]
+pub struct ImportRequest {
+    pub selector: crate::ContextSelector,
+    pub expected_revision: String,
+    pub bundle: OpenSpecBundle,
+    pub feature: Option<String>,
+}
+impl OpenSpecBundle {
+    pub(crate) fn value(&self) -> serde_json::Value {
+        json!({"files":self.files.iter().map(|f|json!({"path":f.path,"content":f.content})).collect::<Vec<_>>()})
+    }
+    fn checked(&self) -> Result<std::collections::BTreeMap<String, Vec<u8>>, crate::SpecError> {
+        let mut files = std::collections::BTreeMap::new();
+        for file in &self.files {
+            if !file.path.starts_with("openspec/")
+                || file.path.contains(['\\', ':', '\0'])
+                || file.path.split('/').any(|c| {
+                    c.is_empty() || c == "." || c == ".." || c.eq_ignore_ascii_case(".git")
+                })
+                || !(file.path.ends_with(".md") || file.path.ends_with("/.openspec.yaml"))
+                || files
+                    .insert(file.path.clone(), file.content.as_bytes().to_vec())
+                    .is_some()
+            {
+                return Err(crate::SpecError::new(
+                    "invalid_bundle",
+                    "bundle paths must be unique confined OpenSpec documents",
+                ));
+            }
+        }
+        for path in files.keys() {
+            let mut parent = Path::new(path).parent();
+            while let Some(path) = parent {
+                if files.contains_key(&path.to_string_lossy().replace('\\', "/")) {
+                    return Err(crate::SpecError::new(
+                        "invalid_bundle",
+                        "bundle file and directory paths collide",
+                    ));
+                }
+                parent = path.parent();
+            }
+        }
+        Ok(files)
+    }
+}
+pub(crate) fn export_bundle(
+    runtime: &crate::Runtime,
+    context: &crate::SpecContext,
+) -> Result<(OpenSpecBundle, Vec<crate::Diagnostic>), crate::SpecError> {
+    let source = Source {
+        dir: context.spec_root.clone(),
+        display: "spec".into(),
+    };
+    let cx = crate::api::Execution::new(runtime);
+    let files = plan_export(&cx, &source)
+        .map_err(|e| crate::SpecError::new("invalid_openspec", e.join("\n")))?;
+    Ok((
+        OpenSpecBundle {
+            files: files
+                .into_iter()
+                .map(|(path, bytes)| {
+                    Ok(BundleFile {
+                        path: path.join("/"),
+                        content: String::from_utf8(bytes).map_err(|_| {
+                            crate::SpecError::new(
+                                "invalid_document",
+                                "OpenSpec content is not UTF-8",
+                            )
+                        })?,
+                    })
+                })
+                .collect::<Result<_, crate::SpecError>>()?,
+        },
+        cx.notices(),
+    ))
+}
+pub(crate) fn import_plan(
+    runtime: &crate::Runtime,
+    context: &crate::SpecContext,
+    bundle: &OpenSpecBundle,
+    only: Option<&str>,
+) -> Result<(Vec<crate::documents::Change>, Vec<crate::Diagnostic>), crate::SpecError> {
+    let files = bundle.checked()?;
+    if only.is_some_and(|f| !valid_name(f)) {
+        return Err(crate::SpecError::new(
+            "invalid_feature",
+            "invalid import feature name",
+        ));
+    }
+    let ids: std::collections::BTreeSet<_> = files
+        .keys()
+        .filter_map(|p| {
+            p.strip_prefix("openspec/changes/")
+                .and_then(|p| p.split_once('/'))
+                .map(|(id, _)| id.to_string())
+        })
+        .filter(|id| only.is_none_or(|f| f == id))
+        .collect();
+    if ids.is_empty() {
+        return Err(crate::SpecError::new(
+            "invalid_bundle",
+            "no change to import",
+        ));
+    }
+    let cx = crate::api::Execution::new(runtime);
+    let source = Source {
+        dir: context.spec_root.clone(),
+        display: "spec".into(),
+    };
+    let mut changes = Vec::new();
+    for id in ids {
+        let folder = import_change(
+            &cx,
+            &source,
+            &Input::Bundle(&files),
+            &PathBuf::from("openspec/changes").join(&id),
+            &id,
+        )
+        .map_err(|e| crate::SpecError::new("invalid_openspec", e))?;
+        for (name, bytes) in folder {
+            let path = format!("spec/features/{id}/{name}");
+            crate::documents::path(context, &path)?;
+            changes.push(crate::documents::Change {
+                path,
+                content: Some(bytes),
+            });
+        }
+    }
+    Ok((changes, cx.notices()))
+}
+
+pub(crate) fn managed_export_cli(
+    api: &crate::SpecApi,
+    selector: &crate::ContextSelector,
+    dir: &Path,
+    json_out: bool,
+    cx: &crate::api::Execution<'_>,
+) -> Result<(u8, Vec<u8>), crate::SpecError> {
+    let (context, (bundle, diagnostics)) =
+        crate::cli::read_contextual(api, selector, cx, |context| {
+            export_bundle(&api.runtime, context)
+        })?;
+    for diagnostic in diagnostics {
+        diag!(cx, "{}", diagnostic.message);
+    }
+    let out = api.runtime.cwd.join(dir);
+    if lexical(&out).starts_with(lexical(&context.spec_root))
+        || lexical(&out).starts_with(lexical(&context.artifact_root))
+    {
+        return Err(crate::SpecError::new(
+            "invalid_destination",
+            "export destination is inside managed documents",
+        ));
+    }
+    let files: Files = bundle
+        .files
+        .iter()
+        .map(|f| {
+            (
+                f.path.split('/').map(str::to_string).collect(),
+                f.content.as_bytes().to_vec(),
+            )
+        })
+        .collect();
+    let shown = shown_dir(dir);
+    write_files(&shown, &out, &files)
+        .map_err(|e| crate::SpecError::new("invalid_destination", e))?;
+    let written: Vec<_> = bundle.files.iter().map(|f| at(&shown, &f.path)).collect();
+    Ok((
+        0,
+        if json_out {
+            format!(
+                "{}\n",
+                json!({"v":1,"direction":"export","dir":shown,"written":written})
+            )
+            .into_bytes()
+        } else {
+            format!(
+                "EXPORTED {} file(s) to {}/\n",
+                written.len(),
+                at(&shown, "openspec")
+            )
+            .into_bytes()
+        },
+    ))
+}
+pub(crate) fn managed_import_cli(
+    api: &crate::SpecApi,
+    selector: &crate::ContextSelector,
+    dir: &Path,
+    only: Option<&str>,
+    json_out: bool,
+    cx: &crate::api::Execution<'_>,
+) -> Result<(u8, Vec<u8>), crate::SpecError> {
+    let os = api.runtime.cwd.join(dir).join("openspec");
+    no_links(&os, "openspec").map_err(|e| crate::SpecError::new("invalid_bundle", e))?;
+    let mut bundle = OpenSpecBundle::default();
+    for rel in files_under(&os).map_err(|e| crate::SpecError::new("invalid_bundle", e))? {
+        let content = std::fs::read_to_string(os.join(&rel)).map_err(crate::documents::io)?;
+        bundle.files.push(BundleFile {
+            path: format!("openspec/{rel}"),
+            content,
+        });
+    }
+    let context = api.resolve_context(selector)?;
+    let response = api.execute(crate::SpecRequest::Import(ImportRequest {
+        selector: selector.clone(),
+        expected_revision: context.revision_token,
+        bundle,
+        feature: only.map(str::to_owned),
+    }))?;
+    for diagnostic in response.data["import_diagnostics"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        if let Some(message) = diagnostic["message"].as_str() {
+            diag!(cx, "{message}");
+        }
+    }
+    let shown = shown_dir(dir);
+    let data = json!({"v":1,"direction":"import","dir":shown,"written":response.data["written"]});
+    Ok((
+        0,
+        if json_out {
+            format!("{data}\n").into_bytes()
+        } else {
+            format!("IMPORTED from {}/\n", at(&shown, "openspec")).into_bytes()
+        },
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn repo_import_cli(
+    api: &crate::SpecApi,
+    selector: &crate::ContextSelector,
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    dir: &Path,
+    only: Option<&str>,
+    json_out: bool,
+) -> Result<(u8, Vec<u8>), crate::SpecError> {
+    let Ok(root) = found else {
+        return Ok(import(cx, found, cwd, dir, only, json_out));
+    };
+    let roots = crate::context::LegacyRoots::from_root(root)?;
+    // Diagnostic-only admission preserves legacy refusals. The transaction discards
+    // these bytes and recomputes every successful write plan under its lock.
+    if !roots
+        .code_anchor
+        .ancestors()
+        .any(|p| p.join(".vibe/run/spec-transaction.json").exists())
+    {
+        let preflight = crate::api::Execution::new(cx.runtime);
+        let mut ignored = Vec::new();
+        let answer = import_inner(
+            &preflight,
+            found,
+            cwd,
+            dir,
+            only,
+            json_out,
+            Some(&mut ignored),
+        );
+        if answer.0 != 0 {
+            cx.diagnostic_bytes(&preflight.take_diagnostics());
+            return Ok(answer);
+        }
+    }
+    let mut output = None;
+    let result = crate::transaction::apply_captured_planned(api, selector, &roots, |context| {
+        let mut plan = Vec::new();
+        let answer = import_inner(cx, found, cwd, dir, only, json_out, Some(&mut plan));
+        let failed = answer.0 != 0;
+        output = Some(answer);
+        if failed {
+            return Err(crate::SpecError::new(
+                "legacy_refusal",
+                "legacy import refused",
+            ));
+        }
+        plan.into_iter()
+            .map(|(path, bytes)| {
+                Ok(crate::documents::Change {
+                    path: crate::documents::logical_legacy(context, &path)?,
+                    content: Some(bytes),
+                })
+            })
+            .collect()
+    });
+    match result {
+        Ok(_) => Ok(output.unwrap_or((0, Vec::new()))),
+        Err(error) if error.code == "legacy_refusal" => Ok(output.unwrap_or((1, Vec::new()))),
+        Err(error) => Err(error),
+    }
 }
 
 #[cfg(test)]

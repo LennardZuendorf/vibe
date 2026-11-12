@@ -131,6 +131,7 @@ pub const STRICTNESS_ENV: &str = "VIBE_SPEC_STRICTNESS";
 /// Reads one `strictness` object into `set`. An unknown check id warns on
 /// stderr and is ignored; a bad level is an error.
 fn merge(
+    warnings: &mut Vec<String>,
     entries: &serde_json::Map<String, Value>,
     shown: &str,
     set: &mut BTreeMap<&'static str, Level>,
@@ -143,14 +144,14 @@ fn merge(
         match normalize(key) {
             Some(id) => {
                 if let Some(first) = named.insert(id, key) {
-                    eprintln!(
-                        "vibe-spec: {shown}: strictness keys '{first}' and '{key}' both name {id}; '{key}' wins (keys are read in sorted order)"
-                    );
+                    warnings.push(format!("vibe-spec: {shown}: strictness keys '{first}' and '{key}' both name {id}; '{key}' wins (keys are read in sorted order)"));
                 }
                 set.insert(id, level);
             }
             None => {
-                eprintln!("vibe-spec: {shown}: unknown check '{key}' in strictness (ignored)");
+                warnings.push(format!(
+                    "vibe-spec: {shown}: unknown check '{key}' in strictness (ignored)"
+                ));
             }
         }
     }
@@ -159,10 +160,35 @@ fn merge(
 
 /// `<project>/.vibe/spec.json` `strictness` (P3b-R6), then the env var
 /// `VIBE_SPEC_STRICTNESS` merged over it. No file or no key is an empty set.
-pub fn load(project: &Path, strict: bool) -> Result<Levels, String> {
+pub fn load(
+    cx: &crate::api::Execution<'_>,
+    project: &Path,
+    strict: bool,
+) -> Result<Levels, String> {
+    load_optional(cx, Some(project), strict)
+}
+pub(crate) fn load_optional(
+    cx: &crate::api::Execution<'_>,
+    project: Option<&Path>,
+    strict: bool,
+) -> Result<Levels, String> {
+    let (levels, warnings) = load_data(cx, project, strict)?;
+    for warning in warnings {
+        diag!(cx, "{}", warning.message);
+    }
+    Ok(levels)
+}
+pub(crate) fn load_data(
+    cx: &crate::api::Execution<'_>,
+    project: Option<&Path>,
+    strict: bool,
+) -> Result<(Levels, Vec<crate::Diagnostic>), String> {
+    let mut warnings = Vec::new();
     let mut set = BTreeMap::new();
-    let path = project.join(".vibe").join("spec.json");
-    if path.is_file() {
+    let path = project.map(|p| p.join(".vibe").join("spec.json"));
+    if let Some(path) = path
+        && path.is_file()
+    {
         let shown = path.display().to_string();
         let text = std::fs::read_to_string(&path).map_err(|e| format!("{shown}: {e}"))?;
         let value: Value =
@@ -172,11 +198,11 @@ pub fn load(project: &Path, strict: bool) -> Result<Levels, String> {
         };
         match map.get("strictness") {
             None => {}
-            Some(Value::Object(entries)) => merge(entries, &shown, &mut set)?,
+            Some(Value::Object(entries)) => merge(&mut warnings, entries, &shown, &mut set)?,
             Some(_) => return Err(format!("{shown}: `strictness` must be an object")),
         }
     }
-    if let Some(raw) = std::env::var_os(STRICTNESS_ENV).filter(|v| !v.is_empty()) {
+    if let Some(raw) = cx.var_os(STRICTNESS_ENV).filter(|v| !v.is_empty()) {
         let shown = STRICTNESS_ENV;
         let text = raw.to_string_lossy();
         let value: Value =
@@ -184,9 +210,18 @@ pub fn load(project: &Path, strict: bool) -> Result<Levels, String> {
         let Value::Object(entries) = value else {
             return Err(format!("{shown}: not a JSON object"));
         };
-        merge(&entries, shown, &mut set)?;
+        merge(&mut warnings, &entries, shown, &mut set)?;
     }
-    Ok(Levels::new(set, strict))
+    Ok((
+        Levels::new(set, strict),
+        warnings
+            .into_iter()
+            .map(|message| crate::Diagnostic {
+                code: "config_warning".into(),
+                message,
+            })
+            .collect(),
+    ))
 }
 
 /// Configured levels plus `--strict`.

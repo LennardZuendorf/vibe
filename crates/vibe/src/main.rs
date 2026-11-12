@@ -245,6 +245,11 @@ fn doctor_command() -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    // Preserve the complete spec tail, including help, `--` and OS strings.
+    let argv: Vec<OsString> = std::env::args_os().collect();
+    if argv.get(1).is_some_and(|arg| arg == "spec") {
+        return code(cmd::spec::spec(&argv[2..]));
+    }
     let cli = Cli::parse();
     match cli.command {
         Command::Store { action } => store_command(action),
@@ -269,7 +274,7 @@ fn main() -> ExitCode {
         Command::Doctor => doctor_command(),
         Command::Spec { args } => {
             let args: Vec<OsString> = args.into_iter().map(OsString::from).collect();
-            code(cmd::spec::spec(&args, &Env::from_process()))
+            code(cmd::spec::spec(&args))
         }
     }
 }

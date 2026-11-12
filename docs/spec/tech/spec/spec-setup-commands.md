@@ -4,7 +4,7 @@ applies:
   - "crates/vibe-spec/**"
   - ".opencode/**"
   - ".git/hooks/**"
-updated: 2026-11-03
+updated: 2026-11-12
 ---
 
 # Setup
@@ -27,18 +27,34 @@ validate`. `--agents-md` adds or refreshes the router block between
 under `--to`, else the discovered root, else `<project>/docs/spec`. It never
 overwrites: an existing file prints `SKIP: <rel>`. It is a redesign, not a port of `setup.sh`.
 
+Central `vibe spec` and compatibility `vibe-spec` share these commands. Project
+`init --mode repo-first|global-first` and `attach [--main]` register storage and
+checkout identity; they do not install a harness or migrate existing spec modes.
+Global `branch init NAME --from REF` copies an exact stored base without code checkout.
+Its result uses only a matching validated caller anchor; otherwise code context
+is unavailable. It never selects another clone/main. Normal Context rules remain.
+`context`, `document list|read|write|remove`, `snapshot`, `reconcile` and record
+`status|read|resolve` use explicit context and opaque expected revision tokens.
+Write accepts `--input FILE` or stdin when omitted. Exact reconcile plans use
+`--input FILE|- --expect TOKEN`; resolution adds `--expect-resolution TOKEN`.
+Init/attach CLI `--expect` binds registry metadata; branch init additionally
+accepts `--expect-project`. CLI omission captures once; MCP requires both relevant
+tokens. Context tokens, metadata tokens and Git OIDs are not interchangeable.
+Management context selectors must follow the command/subcommand; prefix forms
+refuse before effects. Existing operations/MCP use prefix context selectors.
+Prefix `--root` keeps legacy behavior; hooks reject the new context selectors.
+Local launch: `vibe spec --project ID mcp --stdio`. This does not install MCP
+harness config or make install.sh distribute a released central binary.
+
 Known limits:
 - Project and global installs leave spec creation to the user. Default installs ship no binary. Global `--build-spec-bin` can build and install it; without it, bundled scripts validate flat legacy roots only. See [Installer](../../areas/installer.md).
 - `install.sh` does not wire spec hooks into targets (P5). They reach targets through the plugin.
 - The OpenCode shim has not run against live OpenCode.
 - A hooks dir outside the project (a linked worktree or an external `core.hooksPath`) skips the symlink walk.
 
-## Commands (v1)
+## Commands
 
-`root`, `init`, `validate [--changed|--file|--strict|--format text|json|hook]`,
-`check-drift [--pre-merge] [--json]`,
-`promote <feature> [--dry-run] [--target <file>] [--done] [--base <ref>] [--json]`,
-`scan-merges`, `lessons-for <tags>`, `list-specs`, `trace`,
-`migrate --to docs/spec [--layout layered] [--dry-run]`,
-`export|import --openspec <dir>`, `hook {session-start,guard,validate}`,
-`setup [--git-hooks|--opencode|--agents-md]`, `doctor`.
+Legacy groups: `root`, `init`, `validate`, `check-drift`, `promote`, `scan-merges`,
+`lessons-for`, `list-specs`, `trace`, `migrate --to docs/spec`,
+`export|import --openspec DIR`, `hook {session-start,guard,validate}`, `setup`.
+Detailed flags and the storage walkthrough live in the spec README.

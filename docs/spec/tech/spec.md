@@ -5,18 +5,19 @@ applies:
   - "spec/**"
   - ".vibe/spec.json"
   - "docs/spec/**"
-updated: 2026-11-03
+updated: 2026-11-12
 ---
 
 # Spec Framework — Tech
 
 [tech.md](../tech.md)
 
-Branch doc for the spec tool: root discovery and migration, OpenSpec
-interchange, the strictness ratchet, adherence checks, and the spec
-subagents. **Shipped today:** the Rust `vibe-spec` binary implements the
-spec commands; bundled bash scripts remain legacy flat-root fallbacks.
-See [Shipped today](spec/spec-shipped.md) for delivered capabilities.
+Branch doc for spec discovery, storage, lifecycle, validation and adapters.
+The shared Rust library serves central `vibe spec`, compatibility `vibe-spec`
+and local stdio MCP. Projects/storage/MCP are implemented, locally verified and
+independently reviewed on this branch. Release distribution and installer delivery
+remain separate. Bundled bash scripts remain legacy flat-root fallbacks.
+See [Shipped today](spec/spec-shipped.md) for delivered F-row history.
 
 ## Notes
 
@@ -30,3 +31,4 @@ See [Shipped today](spec/spec-shipped.md) for delivered capabilities.
 - [Hooks](spec/spec-hooks.md) — shim, wiring, validate hooks, router, tooth
 - [Setup and commands](spec/spec-setup-commands.md) — setup flags, git hook, OpenCode files, command list
 - [Shipped today](spec/spec-shipped.md) — what each delivered row added
+- [Projects and MCP](spec/spec-projects-mcp.md) — context, repo-first/global-first storage, reconciliation and local stdio; release distribution remains separate

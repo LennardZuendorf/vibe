@@ -42,6 +42,18 @@ pub fn rel_of(dir: &Path, file: &Path) -> String {
         .unwrap_or_else(|_| file.to_string_lossy().into_owned())
 }
 
+/// Managed feature identity follows retained Markdown artifacts, not empty directories.
+pub(crate) fn feature_dirs(dir: &Path, managed: bool) -> Vec<PathBuf> {
+    sub_dirs(&dir.join("features"))
+        .into_iter()
+        .filter(|path| {
+            !managed
+                || crate::layered::walk(path)
+                    .iter()
+                    .any(|(path, _)| path.extension().is_some_and(|s| s == "md"))
+        })
+        .collect()
+}
 /// Each `features/<f>/{product,tech,design,plan,research}.md` that exists.
 pub fn feature_files(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
@@ -67,7 +79,13 @@ pub fn flat_files(dir: &Path) -> Vec<PathBuf> {
 }
 
 /// SF26 on `files`, SF27 (flat only), SF28.
-pub fn run(r: &mut Report, ctx: &Ctx, files: &[PathBuf], layered: bool) {
+pub fn run(
+    cx: &crate::api::Execution<'_>,
+    r: &mut Report,
+    ctx: &Ctx,
+    files: &[PathBuf],
+    layered: bool,
+) {
     for file in files {
         let rel = rel_of(ctx.dir, file);
         r.examine(&format!("{}/{rel}", ctx.display));
@@ -80,7 +98,7 @@ pub fn run(r: &mut Report, ctx: &Ctx, files: &[PathBuf], layered: bool) {
         children(r, ctx);
     }
     feature_rows(r, ctx);
-    freshness(r, ctx, files);
+    freshness(cx, r, ctx, files);
 }
 
 fn values(r: &mut Report, rel: &str, fm: &Frontmatter, layered: bool) {
@@ -231,7 +249,7 @@ fn row_cells(text: &[u8]) -> BTreeSet<String> {
 
 /// SF28: each feature folder is named by a cell of a root plan table row (P3b-R20).
 fn feature_rows(r: &mut Report, ctx: &Ctx) {
-    let features = sub_dirs(&ctx.dir.join("features"));
+    let features = feature_dirs(ctx.dir, ctx.managed);
     if features.is_empty() {
         return;
     }
@@ -266,9 +284,9 @@ fn slash(p: &Path) -> String {
 /// the root lies outside the work tree. Under `--changed`, a file in the
 /// changed set is compared with today's UTC date instead: its edit is not
 /// committed yet, so the last commit says nothing about it.
-fn freshness(r: &mut Report, ctx: &Ctx, files: &[PathBuf]) {
+fn freshness(cx: &crate::api::Execution<'_>, r: &mut Report, ctx: &Ctx, files: &[PathBuf]) {
     let today = crate::text::today_utc();
-    let dates = commit_dates(ctx);
+    let dates = commit_dates(cx, ctx);
     for file in files {
         let rel = rel_of(ctx.dir, file);
         let shown = format!("{}/{rel}", ctx.display);
@@ -302,10 +320,13 @@ fn freshness(r: &mut Report, ctx: &Ctx, files: &[PathBuf]) {
 }
 
 /// The git top and the last-commit dates under the spec root, when there are any.
-fn commit_dates(ctx: &Ctx) -> Option<(PathBuf, std::collections::BTreeMap<String, String>)> {
+fn commit_dates(
+    cx: &crate::api::Execution<'_>,
+    ctx: &Ctx,
+) -> Option<(PathBuf, std::collections::BTreeMap<String, String>)> {
     let dir = std::fs::canonicalize(ctx.dir).ok()?;
-    let top = std::fs::canonicalize(git::top(&dir)?).ok()?;
+    let top = std::fs::canonicalize(git::top(cx, &dir)?).ok()?;
     let under = slash(dir.strip_prefix(&top).ok()?);
-    let dates = git::last_dates(&top, if under.is_empty() { "." } else { &under });
+    let dates = git::last_dates(cx, &top, if under.is_empty() { "." } else { &under });
     (!dates.is_empty()).then_some((top, dates))
 }

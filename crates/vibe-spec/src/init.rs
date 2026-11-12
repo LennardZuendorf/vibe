@@ -31,10 +31,26 @@ struct Planned {
 }
 
 /// Runs the command.
-pub fn run(found: &Result<Root, Miss>, cwd: &Path, to: Option<&Path>, json: bool) -> (u8, Vec<u8>) {
+pub fn run(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    to: Option<&Path>,
+    json: bool,
+) -> (u8, Vec<u8>) {
+    run_inner(cx, found, cwd, to, json, None)
+}
+fn run_inner(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    to: Option<&Path>,
+    json: bool,
+    planned: Option<&mut Vec<Planned>>,
+) -> (u8, Vec<u8>) {
     let project = normalise(&match found {
         Ok(root) => root.project.clone(),
-        Err(_) => crate::git::top(cwd).unwrap_or_else(|| cwd.to_path_buf()),
+        Err(_) => crate::git::top(cx, cwd).unwrap_or_else(|| cwd.to_path_buf()),
     });
     let dir = match (to, found) {
         (Some(to), _) => normalise(&cwd.join(to)),
@@ -42,12 +58,13 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, to: Option<&Path>, json: bool
         (None, Err(Miss::NotFound)) => project.join("docs").join("spec"),
         (None, Err(Miss::Missing { path, .. })) => normalise(path),
         (None, Err(miss)) => {
-            eprintln!("{}", miss.message());
+            diag!(cx, "{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };
     let Ok(rel_dir) = dir.strip_prefix(&project) else {
-        eprintln!(
+        diag!(
+            cx,
             "vibe-spec init: {} is outside the project {}; not writing there",
             dir.display(),
             project.display()
@@ -55,7 +72,10 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, to: Option<&Path>, json: bool
         return (exit::FINDINGS, Vec::new());
     };
     if rel_dir.as_os_str().is_empty() {
-        eprintln!("vibe-spec init: the spec root cannot be the project directory itself");
+        diag!(
+            cx,
+            "vibe-spec init: the spec root cannot be the project directory itself"
+        );
         return (exit::FINDINGS, Vec::new());
     }
     let root_label = slash(rel_dir);
@@ -72,7 +92,8 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, to: Option<&Path>, json: bool
                 } else {
                     root_label.as_str()
                 };
-                eprintln!(
+                diag!(
+                    cx,
                     "init: ERROR: {root_label} is a flat spec root; run vibe-spec migrate --to {to} --layout layered"
                 );
                 return (exit::FINDINGS, Vec::new());
@@ -80,7 +101,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, to: Option<&Path>, json: bool
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => {
-            eprintln!("init: ERROR: {root_label}: {e}");
+            diag!(cx, "init: ERROR: {root_label}: {e}");
             return (exit::FINDINGS, Vec::new());
         }
     }
@@ -104,12 +125,22 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, to: Option<&Path>, json: bool
     }
     if !errors.is_empty() {
         for e in &errors {
-            eprintln!("vibe-spec init: {e}");
+            diag!(cx, "vibe-spec init: {e}");
         }
         return (exit::FINDINGS, Vec::new());
     }
 
-    let created = match commit(&plan) {
+    let recorded = if let Some(planned) = planned {
+        planned.extend(plan.iter().map(|p| Planned {
+            path: p.path.clone(),
+            label: p.label.clone(),
+            bytes: p.bytes.clone(),
+        }));
+        Ok(Vec::new())
+    } else {
+        commit(&plan)
+    };
+    let created = match recorded {
         Ok(skipped_late) => {
             let mut created = Vec::new();
             for p in &plan {
@@ -122,7 +153,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, to: Option<&Path>, json: bool
             created
         }
         Err(msg) => {
-            eprintln!("vibe-spec init: {msg}");
+            diag!(cx, "vibe-spec init: {msg}");
             return (exit::FINDINGS, Vec::new());
         }
     };
@@ -278,6 +309,32 @@ fn create(p: &Planned, made: &mut Vec<PathBuf>) -> Result<bool, String> {
     Ok(true)
 }
 
+/// Seed only beneath an explicitly authorized storage/code anchor. Ordinary CLI
+/// init retains its separate project-only admission above.
+pub(crate) fn seed(anchor: &Path, dir: &Path) -> Result<(), crate::SpecError> {
+    crate::registry::confined(anchor, dir)?;
+    if dir == anchor {
+        return Err(crate::SpecError::new(
+            "invalid_context",
+            "spec root must be below its authorized anchor",
+        ));
+    }
+    let today = crate::text::today_utc();
+    let mut plan = Vec::new();
+    for (name, template) in FILES {
+        let path = dir.join(name);
+        if !inspect(anchor, &path, name).map_err(|e| crate::SpecError::new("unsafe_path", e))? {
+            plan.push(Planned {
+                path,
+                label: name.into(),
+                bytes: template.replace("{{today}}", &today).into_bytes(),
+            });
+        }
+    }
+    commit(&plan).map_err(|e| crate::SpecError::new("storage_write_failed", e))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -299,5 +356,127 @@ mod tests {
         assert!(err.contains("blocker/c.md"), "{err}");
         assert!(!base.join("d").exists(), "created directories remain");
         assert_eq!(fs::read(base.join("blocker")).unwrap(), b"x");
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct InitRequest {
+    pub selector: crate::ContextSelector,
+    pub expected_revision: String,
+}
+pub(crate) fn plan(
+    context: &crate::SpecContext,
+) -> Result<Vec<crate::documents::Change>, crate::SpecError> {
+    let files = crate::documents::collect(context)?;
+    if files.keys().any(|p| p.starts_with("spec/"))
+        && crate::layered::detect(&context.spec_root) == crate::layered::Layout::Flat
+    {
+        return Err(crate::SpecError::new(
+            "invalid_layout",
+            "flat spec root requires explicit migration",
+        ));
+    }
+    let today = crate::text::today_utc();
+    FILES
+        .into_iter()
+        .filter(|(name, _)| !files.contains_key(&format!("spec/{name}")))
+        .map(|(name, template)| {
+            let path = format!("spec/{name}");
+            crate::documents::path(context, &path)?;
+            Ok(crate::documents::Change {
+                path,
+                content: Some(template.replace("{{today}}", &today).into_bytes()),
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn repo_cli(
+    api: &crate::SpecApi,
+    selector: &crate::ContextSelector,
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    to: Option<&Path>,
+    json: bool,
+) -> Result<(u8, Vec<u8>), crate::SpecError> {
+    let project = normalise(&match found {
+        Ok(root) => root.project.clone(),
+        Err(_) => crate::git::top(cx, cwd).unwrap_or_else(|| cwd.to_path_buf()),
+    });
+    let dir = match (to, found) {
+        (Some(to), _) => normalise(&cwd.join(to)),
+        (None, Ok(root)) => normalise(&root.dir),
+        (None, Err(Miss::NotFound)) => project.join("docs/spec"),
+        (None, Err(Miss::Missing { path, .. })) => normalise(path),
+        _ => return Ok(run(cx, found, cwd, to, json)),
+    };
+    if !dir.starts_with(&project)
+        || dir == project
+        || found
+            .as_ref()
+            .is_ok_and(|root| to.is_some() && dir != normalise(&root.dir))
+    {
+        return Ok(run(cx, found, cwd, to, json));
+    }
+    let env = crate::api::Execution::new(&api.runtime)
+        .var_os("VIBE_SPEC_ROOT")
+        .map(|p| api.runtime.cwd.join(p));
+    let authority =
+        crate::root::discover_initialization(cwd, env.as_deref().map(Path::as_os_str)).ok();
+    let artifact_project = if to.is_some() {
+        project.clone()
+    } else {
+        authority
+            .as_ref()
+            .map_or_else(|| project.clone(), |root| root.project.clone())
+    };
+    let roots = crate::context::LegacyRoots {
+        code_anchor: project.clone(),
+        spec_root: crate::storage::future_physical(&dir)?,
+        artifact_root: crate::storage::future_physical(&artifact_project.join("docs/superpowers"))?,
+        initialization: true,
+        explicit_target: to.map(|to| normalise(&cwd.join(to))),
+    };
+    // Diagnostic-only admission preserves legacy refusals. The transaction discards
+    // these bytes and recomputes every successful write plan under its lock.
+    if !roots
+        .code_anchor
+        .ancestors()
+        .any(|p| p.join(".vibe/run/spec-transaction.json").exists())
+    {
+        let preflight = crate::api::Execution::new(cx.runtime);
+        let mut ignored = Vec::new();
+        let answer = run_inner(&preflight, found, cwd, to, json, Some(&mut ignored));
+        if answer.0 != 0 {
+            cx.diagnostic_bytes(&preflight.take_diagnostics());
+            return Ok(answer);
+        }
+    }
+    let mut output = None;
+    let result = crate::transaction::apply_captured_planned(api, selector, &roots, |context| {
+        let mut plan = Vec::new();
+        let answer = run_inner(cx, found, cwd, to, json, Some(&mut plan));
+        let failed = answer.0 != 0;
+        output = Some(answer);
+        if failed {
+            return Err(crate::SpecError::new(
+                "legacy_refusal",
+                "legacy initialization refused",
+            ));
+        }
+        plan.into_iter()
+            .map(|p| {
+                Ok(crate::documents::Change {
+                    path: crate::documents::logical_legacy(context, &p.path)?,
+                    content: Some(p.bytes),
+                })
+            })
+            .collect()
+    });
+    match result {
+        Ok(_) => Ok(output.unwrap_or((0, Vec::new()))),
+        Err(error) if error.code == "legacy_refusal" => Ok(output.unwrap_or((1, Vec::new()))),
+        Err(error) => Err(error),
     }
 }

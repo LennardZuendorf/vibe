@@ -22,7 +22,7 @@ use crate::root::{Miss, Root};
 use crate::superpowers;
 use crate::text::{
     first_line, has_line_starting, is_space, join_raw, lines, lossy, md_files, name_of, read_lines,
-    strip_prefix_or, sub_dirs, trim_start_space,
+    strip_prefix_or, trim_start_space,
 };
 
 const ROOT_NAMES: [&str; 5] = [
@@ -96,9 +96,14 @@ fn under_root(project: &Path, display: &str, cwd: &Path, file: &str) -> Option<S
 /// The files `--changed` keeps, project-relative. Git first; without a work
 /// tree, files under the root newer than `.vibe/spec-session`; without that
 /// marker, None (every file).
-fn changed_set(project: &Path, dir: &Path, display: &str) -> Option<BTreeSet<String>> {
-    if let Some(top) = crate::git::top(project)
-        && let Some(files) = crate::git::changed_files(&top)
+fn changed_set(
+    cx: &crate::api::Execution<'_>,
+    project: &Path,
+    dir: &Path,
+    display: &str,
+) -> Option<BTreeSet<String>> {
+    if let Some(top) = crate::git::top(cx, project)
+        && let Some(files) = crate::git::changed_files(cx, &top)
     {
         let canon = |x: &Path| std::fs::canonicalize(x).unwrap_or_else(|_| x.to_path_buf());
         let prefix = canon(project).strip_prefix(canon(&top)).map_or_else(
@@ -172,9 +177,14 @@ fn hook_json(r: &Report, event: &str) -> Vec<u8> {
 }
 
 /// Runs the command.
-pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u8>) {
-    run_checked(found, cwd, opts).unwrap_or_else(|why| {
-        eprintln!("vibe-spec: {why}");
+pub fn run(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    opts: &Options,
+) -> (u8, Vec<u8>) {
+    run_checked(cx, found, cwd, opts).unwrap_or_else(|why| {
+        diag!(cx, "vibe-spec: {why}");
         (exit::USAGE, Vec::new())
     })
 }
@@ -182,23 +192,44 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
 /// Like [`run`], but a config error comes back as `Err` instead of being
 /// printed (the hook worker must print nothing after its cap fires).
 pub fn run_checked(
+    cx: &crate::api::Execution<'_>,
     found: &Result<Root, Miss>,
     cwd: &Path,
     opts: &Options,
 ) -> Result<(u8, Vec<u8>), String> {
+    run_checked_mode(cx, found, cwd, opts, false)
+}
+pub(crate) fn run_registered(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    opts: &Options,
+) -> (u8, Vec<u8>) {
+    run_checked_mode(cx, found, cwd, opts, true).unwrap_or_else(|why| {
+        diag!(cx, "vibe-spec: {why}");
+        (exit::USAGE, Vec::new())
+    })
+}
+fn run_checked_mode(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    opts: &Options,
+    managed: bool,
+) -> Result<(u8, Vec<u8>), String> {
     let (dir, project, display): (PathBuf, PathBuf, String) = match found {
         Ok(root) => (root.dir.clone(), root.project.clone(), root.display()),
         Err(Miss::NotFound) if opts.format != Format::Text => {
-            eprintln!("{}", Miss::NotFound.message());
+            diag!(cx, "{}", Miss::NotFound.message());
             return Ok((exit::NO_ROOT, Vec::new()));
         }
         Err(Miss::NotFound) => (cwd.join(".spec"), cwd.to_path_buf(), ".spec".to_string()), // literal
         Err(miss) => {
-            eprintln!("{}", miss.message());
+            diag!(cx, "{}", miss.message());
             return Ok((miss.code(), Vec::new()));
         }
     };
-    let levels = match check::load(&project, opts.strict) {
+    let levels = match check::load(cx, &project, opts.strict) {
         Ok(levels) => levels,
         Err(why) => return Err(why.to_string()),
     };
@@ -218,7 +249,7 @@ pub fn run_checked(
             },
         }
     } else if opts.changed {
-        match changed_set(&project, &dir, &display) {
+        match changed_set(cx, &project, &dir, &display) {
             Some(set) => {
                 if set.is_empty() && opts.format == Format::Text {
                     return Ok((exit::OK, b"validate: no spec changes\n".to_vec()));
@@ -230,44 +261,66 @@ pub fn run_checked(
     } else {
         Filter::All
     };
-    let mut r = Report::new(&project, levels);
+    let artifacts = project.join("docs/superpowers");
+    let (r, layout, summary) = produce(
+        cx,
+        &dir,
+        Some(&project),
+        &artifacts,
+        &display,
+        "docs/superpowers",
+        levels,
+        opts.strict,
+        match &filter {
+            Filter::Changed(set) => Some(set),
+            _ => None,
+        },
+        managed,
+        true,
+    );
+    Ok(finish(r, &display, opts, &filter, summary, layout))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn produce(
+    cx: &crate::api::Execution<'_>,
+    dir: &Path,
+    project: Option<&Path>,
+    artifacts: &Path,
+    display: &str,
+    artifact_display: &str,
+    levels: check::Levels,
+    strict: bool,
+    changed: Option<&BTreeSet<String>>,
+    managed: bool,
+    external_lint: bool,
+) -> (Report, layered::Layout, bool) {
+    let mut r = Report::new(project.unwrap_or(dir), levels);
+    r.bind(display, dir);
+    r.bind(artifact_display, artifacts);
     r.line(format!("Validating {display}/...").as_bytes());
     r.line(b"");
     if !dir.is_dir() {
         r.at("");
         r.refuse(b"No spec root found. Run setup first: vibe-spec init");
-        return Ok(finish(
-            r,
-            &display,
-            opts,
-            &filter,
-            false,
-            layered::Layout::Flat,
-        ));
+        return (r, layered::Layout::Flat, false);
     }
-    let specs = md_files(&dir);
+    let specs = md_files(dir);
     if specs.is_empty() {
         r.at("");
         r.refuse(format!("No spec files found in {display}/").as_bytes());
-        return Ok(finish(
-            r,
-            &display,
-            opts,
-            &filter,
-            false,
-            layered::Layout::Flat,
-        ));
+        return (r, layered::Layout::Flat, false);
     }
     let ctx = Ctx {
-        dir: &dir,
-        project: &project,
-        display: &display,
-        changed: match &filter {
-            Filter::Changed(set) => Some(set),
-            _ => None,
-        },
+        dir,
+        project,
+        artifacts,
+        external_lint,
+        managed,
+        display,
+        changed,
     };
-    let layout = layered::detect(&dir);
+    let layout = layered::detect(dir);
     let is_layered = layout == layered::Layout::Layered;
     for file in &specs {
         // Layered: only the four hubs get the legacy root checks; every
@@ -275,39 +328,45 @@ pub fn run_checked(
         if is_layered && !ENTRYPOINTS.contains(&name_of(file).as_str()) {
             continue;
         }
-        root_file(&mut r, &ctx, file, is_layered);
+        root_file(cx, &mut r, &ctx, file, is_layered);
     }
     for name in ENTRYPOINTS {
         children(&mut r, &ctx, name);
     }
     let features = dir.join("features");
     if features.is_dir() {
-        for fdir in sub_dirs(&features) {
-            feature(&mut r, &ctx, &fdir);
+        for fdir in adherence::feature_dirs(dir, managed) {
+            feature(cx, &mut r, &ctx, &fdir);
         }
     }
-    claude_md(&mut r, &project, &display);
-    sf13(&mut r, &dir, &display);
-    content::sf14(&mut r, &dir, &display);
-    if !is_layered {
-        sf15(&mut r, &dir, &display);
+    if let Some(project) = project {
+        if managed {
+            claude_anchored(&mut r, project, dir, display);
+        } else {
+            claude_md(&mut r, project, display);
+        }
     }
-    sf16(&mut r, &dir, &display);
+    sf13(&mut r, dir, display);
+    content::sf14(&mut r, dir, display);
+    if !is_layered {
+        sf15(cx, &mut r, dir, display);
+    }
+    sf16(&mut r, dir, display);
     let files = if is_layered {
-        layered::spec_files(&dir)
+        layered::spec_files(dir)
     } else {
-        adherence::flat_files(&dir)
+        adherence::flat_files(dir)
     };
-    adherence::run(&mut r, &ctx, &files, is_layered);
+    adherence::run(cx, &mut r, &ctx, &files, is_layered);
     if is_layered {
         layered::run(&mut r, &ctx);
     }
-    superpowers::run(&mut r, &project);
-    if opts.strict && (r.examined() == 0 || r.levels().all_off()) {
+    superpowers::run_anchored(&mut r, project, artifacts, artifact_display);
+    if strict && (r.examined() == 0 || r.levels().all_off()) {
         r.at("");
         r.refuse(b"validate --strict examined nothing (no spec file, or every check is off); refusing to report green");
     }
-    Ok(finish(r, &display, opts, &filter, true, layout))
+    (r, layout, true)
 }
 
 /// The run's answer: the exit code and stdout in the chosen format. Text
@@ -351,7 +410,10 @@ pub struct Ctx<'a> {
     /// The spec root (absolute).
     pub dir: &'a Path,
     /// The project directory: the oracle's cwd after it `cd`s to the root's parent.
-    pub project: &'a Path,
+    pub project: Option<&'a Path>,
+    pub artifacts: &'a Path,
+    pub external_lint: bool,
+    pub managed: bool,
     /// The root relative to the project, as the oracle spells `$SPEC_DIR` (`.spec`). // literal
     pub display: &'a str,
     /// Under `--changed`: the changed files, project-relative. SF29 holds
@@ -364,7 +426,13 @@ fn read(path: &Path) -> Vec<u8> {
 }
 
 /// The root-layer loop body for one `$SPEC_DIR/*.md` file.
-fn root_file(r: &mut Report, ctx: &Ctx, file: &Path, layered: bool) {
+fn root_file(
+    cx: &crate::api::Execution<'_>,
+    r: &mut Report,
+    ctx: &Ctx,
+    file: &Path,
+    layered: bool,
+) {
     let name = name_of(file);
     let n = name.as_bytes();
     let dsp = ctx.display;
@@ -440,7 +508,16 @@ fn root_file(r: &mut Report, ctx: &Ctx, file: &Path, layered: bool) {
     }
     if name == "design.md" {
         content::design_tokens(r, &text, n);
-        lint_design(r, ctx.project, &format!("{}/design.md", ctx.display), n);
+        if ctx.external_lint
+            && let Some(project) = ctx.project
+        {
+            let target = if ctx.managed {
+                file.to_string_lossy().into_owned()
+            } else {
+                format!("{}/design.md", ctx.display)
+            };
+            lint_design(cx, r, project, &target, n);
+        }
     }
     if name == "plan.md" {
         content::root_plan_milestones(r, &text, n);
@@ -462,7 +539,12 @@ fn root_file(r: &mut Report, ctx: &Ctx, file: &Path, layered: bool) {
                 continue;
             }
             let parent = file.parent().unwrap_or(ctx.dir);
-            if !join_raw(ctx.dir, &target).is_file() && !join_raw(parent, &target).is_file() {
+            let broken = if ctx.managed {
+                layered::link_exists(ctx, file, &target) == Some(false)
+            } else {
+                !join_raw(ctx.dir, &target).is_file() && !join_raw(parent, &target).is_file()
+            };
+            if broken {
                 r.error("SF22", &cat!(n, ": broken link to '", target, "'"));
             }
         }
@@ -507,7 +589,12 @@ fn children(r: &mut Report, ctx: &Ctx, name: &str) {
         }
         match list_item(line) {
             Some(child) => {
-                if !child.contains(&b'{') && !join_raw(dir, child).is_file() {
+                let broken = if ctx.managed {
+                    layered::link_exists(ctx, &path, child) == Some(false)
+                } else {
+                    !join_raw(dir, child).is_file()
+                };
+                if !child.contains(&b'{') && broken {
                     r.error(
                         "SF22",
                         &cat!(
@@ -532,7 +619,7 @@ fn list_item(line: &[u8]) -> Option<&[u8]> {
 }
 
 /// "Validate feature folders" for one feature directory.
-fn feature(r: &mut Report, ctx: &Ctx, fdir: &Path) {
+fn feature(cx: &crate::api::Execution<'_>, r: &mut Report, ctx: &Ctx, fdir: &Path) {
     let fname = name_of(fdir);
     let label = format!("features/{fname}");
     let dsp = ctx.display;
@@ -578,7 +665,12 @@ fn feature(r: &mut Report, ctx: &Ctx, fdir: &Path) {
                 {
                     continue;
                 }
-                if !resolve_in(fdir, &target).is_file() {
+                let broken = if ctx.managed {
+                    layered::link_exists(ctx, &file, &target) == Some(false)
+                } else {
+                    !resolve_in(fdir, &target).is_file()
+                };
+                if broken {
                     r.error("SF22", &cat!(doc, ": broken link to '", target, "'"));
                 }
             }
@@ -598,12 +690,21 @@ fn feature(r: &mut Report, ctx: &Ctx, fdir: &Path) {
         content::feature_frontmatter(r, &text, doc.as_bytes(), optional.trim_end_matches(".md"));
         if optional == "design.md" {
             content::design_tokens(r, &text, doc.as_bytes());
-            lint_design(
-                r,
-                ctx.project,
-                &format!("{}/{label}/design.md", ctx.display),
-                doc.as_bytes(),
-            );
+            if ctx.external_lint
+                && let Some(project) = ctx.project
+            {
+                lint_design(
+                    cx,
+                    r,
+                    project,
+                    &if ctx.managed {
+                        file.to_string_lossy().into_owned()
+                    } else {
+                        format!("{}/{label}/design.md", ctx.display)
+                    },
+                    doc.as_bytes(),
+                );
+            }
         }
         if optional == "plan.md" {
             content::plan_structure(r, &text, doc.as_bytes());
@@ -720,8 +821,9 @@ fn sf13(r: &mut Report, dir: &Path, display: &str) {
 }
 
 /// SF15: root spec length over `$SPEC_ROOT_MAX_LINES` (default 300) newlines.
-fn sf15(r: &mut Report, dir: &Path, display: &str) {
-    let raw = std::env::var("SPEC_ROOT_MAX_LINES")
+fn sf15(cx: &crate::api::Execution<'_>, r: &mut Report, dir: &Path, display: &str) {
+    let raw = cx
+        .var("SPEC_ROOT_MAX_LINES")
         .ok()
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| "300".to_string());
@@ -803,18 +905,25 @@ fn sf16(r: &mut Report, dir: &Path, display: &str) {
 
 /// SF4: the optional external design.md linter (`VIBE_DESIGN_LINT=1`),
 /// advisory and graceful-degrade, run from the project like the oracle.
-fn lint_design(r: &mut Report, project: &Path, rel: &str, label: &[u8]) {
-    if std::env::var_os("VIBE_DESIGN_LINT").as_deref() != Some(OsStr::new("1")) {
+fn lint_design(
+    cx: &crate::api::Execution<'_>,
+    r: &mut Report,
+    project: &Path,
+    rel: &str,
+    label: &[u8],
+) {
+    if cx.var_os("VIBE_DESIGN_LINT").as_deref() != Some(OsStr::new("1")) {
         return;
     }
-    if !on_path("node") || !on_path("npx") {
+    if !on_path(cx, "node") || !on_path(cx, "npx") {
         r.warn(
             "SF4",
             &cat!(label, ": design.md lint skipped (node/npx not found)"),
         );
         return;
     }
-    let reachable = Command::new("curl")
+    let reachable = cx
+        .command("curl")
         .args(["-fsS", "--max-time", "3", "https://registry.npmjs.org/"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -828,7 +937,7 @@ fn lint_design(r: &mut Report, project: &Path, rel: &str, label: &[u8]) {
         );
         return;
     }
-    let (ok, mut text) = match lint_command(rel)
+    let (ok, mut text) = match lint_command(cx, rel)
         .current_dir(project)
         .stdin(Stdio::null())
         .output()
@@ -856,8 +965,8 @@ fn lint_design(r: &mut Report, project: &Path, rel: &str, label: &[u8]) {
 
 /// `$(npx … 2>&1)`: on unix one shell pipe keeps stdout and stderr in write order.
 #[cfg(unix)]
-fn lint_command(rel: &str) -> Command {
-    let mut cmd = Command::new("sh");
+fn lint_command(cx: &crate::api::Execution<'_>, rel: &str) -> Command {
+    let mut cmd = cx.command("sh");
     cmd.args([
         "-c",
         "npx --yes @google/design.md lint \"$1\" 2>&1",
@@ -868,30 +977,332 @@ fn lint_command(rel: &str) -> Command {
 }
 
 #[cfg(not(unix))]
-fn lint_command(rel: &str) -> Command {
-    let mut cmd = Command::new("npx");
+fn lint_command(cx: &crate::api::Execution<'_>, rel: &str) -> Command {
+    let mut cmd = cx.command("npx");
     cmd.args(["--yes", "@google/design.md", "lint", rel]);
     cmd
 }
 
 /// `command -v <name>`: an executable file in a `PATH` directory.
-fn on_path(name: &str) -> bool {
-    let Some(path) = std::env::var_os("PATH") else {
-        return false;
+fn on_path(cx: &crate::api::Execution<'_>, name: &str) -> bool {
+    cx.var_os("PATH").is_some_and(|path| {
+        std::env::split_paths(&path)
+            .any(|dir| crate::api::executable(&cx.runtime.cwd.join(dir).join(name)))
+    })
+}
+
+/// Managed validation never grants external-process capabilities.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ValidationScope {
+    SpecOnly,
+    WithCode,
+}
+#[derive(Clone, Debug)]
+pub struct ValidateRequest {
+    pub selector: crate::ContextSelector,
+    pub scope: ValidationScope,
+    pub strict: bool,
+}
+#[derive(Clone, Debug)]
+pub struct Diagnostic {
+    pub code: String,
+    pub message: String,
+}
+#[derive(Clone, Debug)]
+pub struct ValidationResult {
+    pub strict: bool,
+    pub checks: Vec<(String, String)>,
+    pub errors: u32,
+    pub warnings: u32,
+    pub examined: usize,
+    pub layout: String,
+    pub findings: Vec<ValidationFinding>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+#[derive(Clone, Debug)]
+pub struct ValidationFinding {
+    pub check: String,
+    pub severity: String,
+    pub file: String,
+    pub message: String,
+}
+impl ValidationResult {
+    pub(crate) fn value(&self) -> serde_json::Value {
+        serde_json::json!({"strict":self.strict,"checks":self.checks.iter().map(|(id,level)|serde_json::json!({"id":id,"level":level})).collect::<Vec<_>>(),"errors":self.errors,"warnings":self.warnings,"examined":self.examined,"layout":self.layout,"findings":self.findings.iter().map(|f|serde_json::json!({"check":f.check,"severity":f.severity,"file":f.file,"message":f.message})).collect::<Vec<_>>(),"diagnostics":self.diagnostics.iter().map(|d|serde_json::json!({"code":d.code,"message":d.message})).collect::<Vec<_>>()})
+    }
+    pub(crate) fn from_report(
+        r: Report,
+        layout: layered::Layout,
+        diagnostics: Vec<Diagnostic>,
+    ) -> Self {
+        Self {
+            strict: r.levels().strict(),
+            checks: check::CHECKS
+                .iter()
+                .map(|c| (c.id.into(), r.levels().describe(c.id).into()))
+                .collect(),
+            errors: r.errors,
+            warnings: r.warnings,
+            examined: r.examined(),
+            layout: layout.as_str().into(),
+            findings: r
+                .findings
+                .into_iter()
+                .map(|f| ValidationFinding {
+                    check: f.check.into(),
+                    severity: f.severity.as_str().into(),
+                    file: f.file,
+                    message: lossy(&f.message),
+                })
+                .collect(),
+            diagnostics,
+        }
+    }
+}
+pub(crate) fn context_result(
+    runtime: &crate::Runtime,
+    context: &crate::SpecContext,
+    scope: ValidationScope,
+    strict: bool,
+) -> Result<ValidationResult, crate::SpecError> {
+    crate::documents::collect(context)?;
+    if scope == ValidationScope::WithCode {
+        context.require_code()?;
+    }
+    let cx = crate::api::Execution::new(runtime);
+    let code = if scope == ValidationScope::WithCode {
+        context.checkout.as_deref()
+    } else {
+        None
     };
-    std::env::split_paths(&path).any(|d| executable(&d.join(name)))
+    let (levels, mut diagnostics) = check::load_data(&cx, context.checkout.as_deref(), strict)
+        .map_err(|e| crate::SpecError::new("invalid_config", e))?;
+    let (report, layout, _) = produce(
+        &cx,
+        &context.spec_root,
+        code,
+        &context.artifact_root,
+        "spec",
+        "superpowers",
+        levels,
+        strict,
+        None,
+        true,
+        false,
+    );
+    if scope == ValidationScope::SpecOnly {
+        diagnostics.push(Diagnostic {
+            code: "code_checks_skipped".into(),
+            message: "Code references and checkout checks were not examined".into(),
+        });
+    }
+    if context.checkout.is_none() {
+        diagnostics.push(Diagnostic{code:"code_config_unavailable".into(),message:"Checkout-local configuration is unavailable; defaults and explicit runtime overrides apply".into()});
+    }
+    if cx.var_os("VIBE_DESIGN_LINT").as_deref() == Some(OsStr::new("1")) {
+        diagnostics.push(Diagnostic {
+            code: "external_lint_disabled".into(),
+            message: "External design lint is disabled for managed validation".into(),
+        });
+    }
+    Ok(ValidationResult::from_report(report, layout, diagnostics))
+}
+impl crate::SpecApi {
+    pub fn validate(
+        &self,
+        request: &ValidateRequest,
+    ) -> Result<(crate::SpecContext, ValidationResult), crate::SpecError> {
+        crate::transaction::read_typed(self, &request.selector, |context| {
+            context_result(&self.runtime, context, request.scope, request.strict)
+        })
+    }
+}
+/// Validate a completed managed tree without code, registry lookup, writes or external lint.
+/// Reconciliation publication requires zero errors; warnings remain diagnostics.
+pub(crate) fn completed_tree(
+    runtime: &crate::Runtime,
+    context: &crate::SpecContext,
+    spec: &Path,
+    artifacts: &Path,
+) -> Result<ValidationResult, crate::SpecError> {
+    let mut tree = context.clone();
+    tree.spec_root = spec.into();
+    tree.artifact_root = artifacts.into();
+    tree.checkout = None;
+    tree.code_available = false;
+    context_result(runtime, &tree, ValidationScope::SpecOnly, false)
 }
 
-#[cfg(unix)]
-fn executable(p: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    p.metadata()
-        .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+pub(crate) fn legacy_context_result(
+    runtime: &crate::Runtime,
+    context: &crate::SpecContext,
+    scope: ValidationScope,
+    strict: bool,
+    changed: bool,
+    file: Option<&str>,
+) -> Result<ValidationResult, crate::SpecError> {
+    crate::documents::collect(context)?;
+    if scope == ValidationScope::WithCode {
+        context.require_code()?;
+    }
+    let cx = crate::api::Execution::new(runtime);
+    let (levels, diagnostics) = check::load_data(&cx, context.checkout.as_deref(), strict)
+        .map_err(|e| crate::SpecError::new("invalid_config", e))?;
+    let changed = if changed {
+        Some(crate::transaction::changed_documents(
+            &crate::SpecApi::new(runtime.clone())?,
+            context,
+        )?)
+    } else {
+        None
+    };
+    let (report, layout, _) = produce(
+        &cx,
+        &context.spec_root,
+        if scope == ValidationScope::WithCode {
+            context.checkout.as_deref()
+        } else {
+            None
+        },
+        &context.artifact_root,
+        "spec",
+        "superpowers",
+        levels,
+        strict,
+        changed.as_ref(),
+        true,
+        true,
+    );
+    let mut result = ValidationResult::from_report(report, layout, diagnostics);
+    if let Some(changed) = changed {
+        result
+            .findings
+            .retain(|f| f.file.is_empty() || changed.contains(&f.file));
+        result.errors = result
+            .findings
+            .iter()
+            .filter(|f| f.severity == "error")
+            .count() as u32;
+        result.warnings = result
+            .findings
+            .iter()
+            .filter(|f| f.severity == "warning")
+            .count() as u32;
+    }
+    if let Some(file) = file {
+        let physical = runtime.cwd.join(file);
+        let label = physical
+            .strip_prefix(&context.spec_root)
+            .map(|p| format!("spec/{}", p.to_string_lossy()))
+            .or_else(|_| {
+                physical
+                    .strip_prefix(&context.artifact_root)
+                    .map(|p| format!("superpowers/{}", p.to_string_lossy()))
+            })
+            .unwrap_or_else(|_| file.into());
+        result.findings.retain(|f| f.file == label);
+        result.errors = result
+            .findings
+            .iter()
+            .filter(|f| f.severity == "error")
+            .count() as u32;
+        result.warnings = result
+            .findings
+            .iter()
+            .filter(|f| f.severity == "warning")
+            .count() as u32;
+    }
+    Ok(result)
+}
+pub(crate) fn render_managed(
+    result: ValidationResult,
+    format: Format,
+    event: Option<&str>,
+) -> (u8, Vec<u8>) {
+    let code = if result.errors > 0 {
+        exit::FINDINGS
+    } else {
+        exit::OK
+    };
+    let out = match format {
+        Format::Json => {
+            let mut v = result.value();
+            if let Some(map) = v.as_object_mut() {
+                map.remove("diagnostics");
+            }
+            for finding in v["findings"].as_array_mut().into_iter().flatten() {
+                if finding["file"] == ""
+                    && let Some(object) = finding.as_object_mut()
+                {
+                    object.remove("file");
+                }
+            }
+            v["v"] = serde_json::json!(1);
+            v["root"] = serde_json::json!("spec");
+            format!("{v}\n").into_bytes()
+        }
+        Format::Text => {
+            let mut out = "Validating spec/...\n\n".to_string();
+            for f in &result.findings {
+                out += &format!("{} {} {}: {}\n", f.check, f.severity, f.file, f.message);
+            }
+            out += &format!(
+                "========================\nErrors:   {}\nWarnings: {}\n",
+                result.errors, result.warnings
+            );
+            out.into_bytes()
+        }
+        Format::Hook => {
+            if result.findings.is_empty() {
+                Vec::new()
+            } else {
+                let text = result
+                    .findings
+                    .iter()
+                    .map(|f| format!("{} {} {}: {}", f.check, f.severity, f.file, f.message))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let v = if event == Some("PostToolUse") {
+                    serde_json::json!({"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":text}})
+                } else {
+                    serde_json::json!({"systemMessage":text})
+                };
+                format!("{v}\n").into_bytes()
+            }
+        }
+    };
+    (code, out)
 }
 
-#[cfg(not(unix))]
-fn executable(p: &Path) -> bool {
-    p.is_file()
+fn claude_anchored(r: &mut Report, project: &Path, spec: &Path, display: &str) {
+    let path = project.join("CLAUDE.md");
+    if !path.is_file() {
+        return;
+    }
+    r.examine("CLAUDE.md");
+    if !path.canonicalize().is_ok_and(|p| p.starts_with(project)) {
+        r.error("SF22", b"CLAUDE.md: link escapes the selected checkout");
+        return;
+    }
+    for line in lines(&read(&path)) {
+        for raw in md_links(line) {
+            let target = md_link_target(raw);
+            let text = lossy(&target);
+            if let Some(relative) = text
+                .strip_prefix(&format!("{display}/"))
+                .or_else(|| text.strip_prefix("spec/"))
+                .or_else(|| text.strip_prefix("docs/spec/"))
+            {
+                let physical = layered::lexical(&spec.join(relative));
+                if crate::registry::confined(spec, &physical).is_err() || !physical.is_file() {
+                    r.error(
+                        "SF22",
+                        format!("CLAUDE.md: broken link to '{text}'").as_bytes(),
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -911,5 +1322,63 @@ mod tests {
         assert_eq!(parse_arith("09"), None);
         assert_eq!(parse_arith("abc"), None);
         assert_eq!(parse_arith("99999999999999999999"), None);
+    }
+}
+
+#[cfg(test)]
+mod completed_tree_tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+    #[test]
+    fn spec_projects_mcp_5_completed_tree_requires_zero_errors_and_uses_physical_markers() {
+        let owner = vibe_core::testscratch::scratch("lifecycle", "completed-tree");
+        let spec = owner.join("supplied-spec");
+        let artifacts = owner.join("supplied-artifacts");
+        let context = crate::SpecContext {
+            refresh: Default::default(),
+            project_id: None,
+            mode: crate::StorageMode::RepoFirst,
+            checkout: None,
+            code_ref: None,
+            code_head: None,
+            code_available: false,
+            spec_root: spec.clone(),
+            artifact_root: artifacts.clone(),
+            spec_revision: None,
+            revision_token: String::new(),
+        };
+        let runtime = crate::Runtime {
+            cwd: owner.to_path_buf(),
+            env: std::collections::BTreeMap::from([("VIBE_DESIGN_LINT".into(), "1".into())]),
+        };
+        for change in crate::init::plan(&context).unwrap() {
+            let path = crate::documents::path(&context, &change.path).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, change.content.unwrap()).unwrap();
+        }
+        let result = completed_tree(&runtime, &context, &spec, &artifacts).unwrap();
+        assert_eq!(result.errors, 0);
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.code == "external_lint_disabled")
+        );
+        std::fs::write(spec.join("product.md"), "Missing frontmatter\n").unwrap();
+        let result = completed_tree(&runtime, &context, &spec, &artifacts).unwrap();
+        assert!(result.errors > 0);
+        assert!(
+            result
+                .findings
+                .iter()
+                .any(|f| f.check == "SF20" && f.file == "spec/product.md")
+        );
+        std::fs::write(
+            spec.join("product.md"),
+            "<!-- vibe-spec: allow SF20 -->\nMissing frontmatter\n",
+        )
+        .unwrap();
+        let result = completed_tree(&runtime, &context, &spec, &artifacts).unwrap();
+        assert_eq!(result.errors, 0, "{result:?}");
     }
 }
