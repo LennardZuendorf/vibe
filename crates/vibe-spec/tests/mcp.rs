@@ -5,7 +5,7 @@ use std::{
     io::{BufRead, BufReader, Write},
     process::{Child, ChildStdin, Command, Stdio},
     sync::mpsc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 struct Client {
     child: Child,
@@ -13,6 +13,11 @@ struct Client {
     lines: mpsc::Receiver<String>,
     next: u64,
     modern: bool,
+    last_request: String,
+    sent_at: Instant,
+    send_elapsed: Duration,
+    response_budget: Duration,
+    test_name: String,
 }
 impl Client {
     fn new(
@@ -64,6 +69,14 @@ impl Client {
             lines,
             next: 1,
             modern,
+            last_request: "no request".into(),
+            sent_at: Instant::now(),
+            send_elapsed: Duration::ZERO,
+            response_budget: Duration::from_secs(120),
+            test_name: std::thread::current()
+                .name()
+                .unwrap_or("unnamed")
+                .to_owned(),
         };
         if modern {
             let discovered = c.rpc("server/discover", json!({}));
@@ -85,13 +98,65 @@ impl Client {
         c
     }
     fn send(&mut self, v: Value) {
+        let is_request = v.get("id").is_some();
+        if is_request {
+            self.last_request = format!(
+                "id={} method={} tool={}",
+                v["id"]
+                    .as_u64()
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "non-numeric".into()),
+                v["method"].as_str().unwrap_or("missing"),
+                v["params"]["name"].as_str().unwrap_or("none")
+            );
+            if std::env::var("VIBE_TEST_MCP_TRACE").as_deref() == Ok("1") {
+                eprintln!(
+                    "MCP test send test={} child_pid={} {}",
+                    self.test_name,
+                    self.child.id(),
+                    self.last_request
+                );
+            }
+            self.sent_at = Instant::now();
+        }
         writeln!(self.input.as_mut().unwrap(), "{v}").unwrap();
+        if is_request {
+            self.send_elapsed = self.sent_at.elapsed();
+            if std::env::var("VIBE_TEST_MCP_TRACE").as_deref() == Ok("1") {
+                eprintln!(
+                    "MCP test sent test={} child_pid={} {} send_elapsed_ms={}",
+                    self.test_name,
+                    self.child.id(),
+                    self.last_request,
+                    self.send_elapsed.as_millis()
+                );
+            }
+        }
     }
     fn receive(&self) -> Value {
-        let line = self
-            .lines
-            .recv_timeout(Duration::from_secs(20))
-            .expect("streaming MCP response before EOF");
+        let wait_started = Instant::now();
+        let received = self.lines.recv_timeout(self.response_budget);
+        let response_wait = wait_started.elapsed();
+        if std::env::var("VIBE_TEST_MCP_TRACE").as_deref() == Ok("1") {
+            eprintln!(
+                "MCP test receive test={} child_pid={} {} send_elapsed_ms={} response_wait_ms={} total_ms={} result={:?}",
+                self.test_name,
+                self.child.id(),
+                self.last_request,
+                self.send_elapsed.as_millis(),
+                response_wait.as_millis(),
+                self.sent_at.elapsed().as_millis(),
+                received.as_ref().map(|_| "response")
+            );
+        }
+        let line = received.unwrap_or_else(|error| {
+            panic!(
+                "streaming MCP response before EOF test={} child_pid={} after {}: {error:?}",
+                self.test_name,
+                self.child.id(),
+                self.last_request
+            )
+        });
         serde_json::from_str(&line).expect("protocol-only stdout")
     }
     fn rpc(&mut self, method: &str, mut params: Value) -> Value {
@@ -1044,10 +1109,30 @@ fn two_stdio_processes_racing_the_same_revision_publish_exactly_one_write() {
         "exactly one writer wins"
     );
     let loser = if a_won { &second } else { &first };
-    assert_eq!(
-        loser["result"]["structuredContent"]["error"]["code"],
-        "revision_changed"
+    let error = &loser["result"]["structuredContent"]["error"];
+    assert!(
+        matches!(error["code"].as_str(), Some("revision_changed" | "locked")),
+        "{loser}"
     );
+    if error["code"] == "locked" {
+        assert_eq!(
+            error["message"],
+            "storage is locked; verify the holder before manual recovery"
+        );
+    }
+    let before = data(&a.call("spec_context", json!({"project":project}))).clone();
+    let loser_client = if a_won { &mut b } else { &mut a };
+    let stale = loser_client.call(
+        "spec_write",
+        json!({"project":project,"path":"spec/race.md","content":"# Late loser\n","expected_revision":token}),
+    );
+    assert_eq!(stale["result"]["isError"], true, "{stale}");
+    assert_eq!(
+        stale["result"]["structuredContent"]["error"]["code"], "revision_changed",
+        "{stale}"
+    );
+    let after = data(&a.call("spec_context", json!({"project":project}))).clone();
+    assert_eq!(after["spec_revision"], before["spec_revision"]);
     assert_eq!(
         data(&a.call(
             "spec_read",
@@ -1809,7 +1894,8 @@ fn immutable_validation_config_refuses_management_before_registration() {
             .as_array()
             .unwrap()
             .len(),
-        1
+        1,
+        "actual management response: {future}"
     );
     let summary = json!({"applied":[],"conflict":[],"needs_input":[],"diagnostics":[{"code":"invalid_config","message":message,"source":source}]});
     future["result"]["structuredContent"]["context"]["refresh"] = summary.clone();

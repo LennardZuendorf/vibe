@@ -810,7 +810,10 @@ fn spec_projects_mcp_8_explicit_project_outranks_other_ambient_checkout() {
     let old_env = a.env.clone();
     let selected = api_a.resolve_context(&selector).unwrap();
     assert_eq!(selected.project_id, Some(id.clone()));
-    assert_eq!(selected.checkout.as_deref(), Some(b.cwd.as_path()));
+    assert_eq!(
+        fs::canonicalize(selected.checkout.as_ref().unwrap()).unwrap(),
+        fs::canonicalize(&b.cwd).unwrap()
+    );
     let branch = api_a
         .resolve_context(&ContextSelector {
             branch: Some("main".into()),

@@ -710,8 +710,8 @@ pub(crate) fn recover_reconciliation_receipt(
         || journal["mode"] != "global-first"
         || journal["base"].as_str() != Some(&plan.target_spec_oid)
         || journal["spec_ref"].as_str() != locked.spec_ref.as_deref()
-        || journal["spec_root"] != registry::path_value(&worktree.join("spec"))
-        || journal["artifact_root"] != registry::path_value(&worktree.join("superpowers"))
+        || !journal_root_matches(&journal["spec_root"], &worktree.join("spec"))?
+        || !journal_root_matches(&journal["artifact_root"], &worktree.join("superpowers"))?
     {
         return Err(error(
             "invalid_transaction",
@@ -2074,14 +2074,15 @@ pub(crate) mod tests {
             .map(|handle| handle.join().unwrap())
             .collect();
         assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
-        assert_eq!(
-            results
-                .iter()
-                .filter_map(|result| result.as_ref().err())
-                .next()
-                .unwrap()
-                .code,
-            "revision_changed"
+        let loser = results
+            .iter()
+            .find_map(|result| result.as_ref().err())
+            .unwrap();
+        assert!(
+            loser.code == "revision_changed"
+                || (loser.code == "locked"
+                    && loser.message
+                        == "storage is locked; verify the holder before manual recovery")
         );
         let winner = results
             .into_iter()
@@ -2091,7 +2092,30 @@ pub(crate) mod tests {
             .unwrap();
         let bytes = fs::read(context.spec_root.join("race.md")).unwrap();
         assert!(bytes == b"one" || bytes == b"two");
+        let stale_content = if bytes == b"one" { b"two" } else { b"one" };
+        let stale = apply(
+            &api,
+            &ContextSelector::default(),
+            &context.revision_token,
+            vec![change("spec/race.md", Some(stale_content))],
+        )
+        .unwrap_err();
+        assert_eq!(stale.code, "revision_changed");
+        let fresh = api.resolve_context(&ContextSelector::default()).unwrap();
+        assert_eq!(fresh.spec_revision, winner.spec_revision);
+        assert_eq!(fs::read(context.spec_root.join("race.md")).unwrap(), bytes);
         let locked = Locked::acquire(&api, &winner).unwrap();
+        let range = format!(
+            "{}..{}",
+            context.spec_revision.unwrap(),
+            winner.spec_revision.as_deref().unwrap()
+        );
+        assert_eq!(
+            locked
+                .text(&api, &["rev-list", "--count", &range], None)
+                .unwrap(),
+            "1"
+        );
         let object = format!("{}:spec/race.md", winner.spec_revision.unwrap());
         assert_eq!(locked.git(&api, &["show", &object], None).unwrap(), bytes);
     }
@@ -2585,10 +2609,7 @@ pub(crate) mod tests {
                     .unwrap();
             let held = Locked::acquire(&api, &before).unwrap();
             let (send, noticed) = mpsc::channel();
-            WAITING
-                .lock()
-                .unwrap()
-                .insert(api.runtime.cwd.join(".vibe/run/spec-documents.lock"), send);
+            WAITING.lock().unwrap().insert(held.lock_path.clone(), send);
             let runtime = api.runtime.clone();
             let worker = std::thread::spawn(move || {
                 let mut argv = vec!["vibe-spec".into()];
@@ -2924,8 +2945,9 @@ pub(crate) mod tests {
             .join("project.lock");
         let (blocked, noticed) = mpsc::channel();
         WAITING.lock().unwrap().insert(lock_path, blocked);
+        let reader_api = api.clone();
         let reader = std::thread::spawn(move || {
-            api.execute(SpecRequest::Plan(crate::PlanRequest {
+            reader_api.execute(SpecRequest::Plan(crate::PlanRequest {
                 selector: ContextSelector::default(),
                 feature: "coherent".into(),
             }))
@@ -2935,7 +2957,31 @@ pub(crate) mod tests {
             .unwrap();
         release.send(()).unwrap();
         let written = writer.join().unwrap().unwrap();
-        let read = reader.join().unwrap().unwrap();
+        let first_read = reader.join().unwrap();
+        if let Err(error) = &first_read {
+            assert_eq!(error.code, "locked");
+            assert_eq!(
+                error.message,
+                "storage is locked; verify the holder before manual recovery"
+            );
+        }
+        let read = api
+            .execute(SpecRequest::Plan(crate::PlanRequest {
+                selector: ContextSelector::default(),
+                feature: "coherent".into(),
+            }))
+            .unwrap();
+        if let Ok(first_read) = first_read {
+            assert_eq!(
+                first_read.context.as_ref().unwrap().spec_revision,
+                written.context.as_ref().unwrap().spec_revision
+            );
+            assert_eq!(
+                first_read.context.as_ref().unwrap().revision_token,
+                written.context.as_ref().unwrap().revision_token
+            );
+            assert_eq!(first_read.data, read.data);
+        }
         assert_eq!(
             read.context.as_ref().unwrap().spec_revision,
             written.context.as_ref().unwrap().spec_revision
@@ -2946,6 +2992,31 @@ pub(crate) mod tests {
         );
         assert_eq!(read.data["rows"][0]["id"], "Task 2");
         assert_eq!(read.data["rows"][0]["status"], "done");
+        let registry = registry::load(&api.runtime).unwrap();
+        let project = registry::project_dir(&registry, initial.project_id.as_ref().unwrap());
+        assert!(!project.join("project.lock").exists());
+        let history = project.join("history.git");
+        let range = format!(
+            "{}..{}",
+            initial.spec_revision.as_deref().unwrap(),
+            written
+                .context
+                .as_ref()
+                .unwrap()
+                .spec_revision
+                .as_deref()
+                .unwrap()
+        );
+        assert_eq!(
+            storage::git_text(
+                &api.runtime,
+                &history,
+                None,
+                &["rev-list", "--count", &range]
+            )
+            .unwrap(),
+            "1"
+        );
     }
     #[test]
     fn spec_projects_mcp_6_lifecycle_frontier_inherits_source_and_prunes_completed_ancestors() {

@@ -938,6 +938,7 @@ fn same_directory(path: &Path, original: &fs::Metadata) -> bool {
         }
     })
 }
+
 impl AdmissionWorktree {
     pub(crate) fn new(api: &SpecApi, history: &Path, target: &str) -> Result<Self, SpecError> {
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1028,10 +1029,12 @@ impl AdmissionWorktree {
             return Err(changed());
         }
         if let Some((binding, metadata, workspace_metadata)) = &self.binding {
+            registry::confined(&self.history, &self.history).map_err(|_| changed())?;
+            let physical_history = fs::canonicalize(&self.history).map_err(|_| changed())?;
             if !same_directory(binding, metadata)
                 || !same_directory(&self.path(), workspace_metadata)
                 || worktree_gitdir(&self.history, &self.path()).as_ref() != Ok(binding)
-                || inspect_tree(&self.history, binding).is_err()
+                || inspect_tree(&physical_history, binding).is_err()
             {
                 return Err(changed());
             }
@@ -1383,4 +1386,58 @@ pub(crate) fn admit_management(
     let context = json!({"project_id":project.id.as_str(),"mode":project.mode.as_str(),"checkout":selected_checkout,"code_ref":code_ref,"code_head":"0".repeat(64),"code_available":false,"spec_root":registry::path_value(&spec),"artifact_root":registry::path_value(&artifacts),"spec_revision":"0".repeat(64),"revision_token":"v1:".to_owned()+&"0".repeat(64),"refresh":refresh.value()});
     let data = json!({"v":1,"revision":"0".repeat(64),"project_revision":"0".repeat(64),"project":registry::project_value(project),"branches":state.branches.iter().map(registry::branch_value).collect::<Vec<_>>(),"context":context});
     api.admit_result(&json!({"context":context,"data":data}))
+}
+
+#[cfg(test)]
+mod admission_tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    #[test]
+    fn followup_admission_cleanup_keeps_canonical_binding_and_foreign_ownership() {
+        let (_owner, api, context) = crate::transaction::tests::fixture();
+        let registry = registry::load(&api.runtime).unwrap();
+        let project = registry::project_dir(&registry, context.project_id.as_ref().unwrap());
+        let history =
+            crate::git::argument_path(&project.join("history.git").canonicalize().unwrap());
+        let target = context.spec_revision.as_deref().unwrap();
+        let scratch = AdmissionWorktree::new(&api, &history, target).unwrap();
+        let root = scratch.root.clone();
+        scratch.finish().unwrap();
+        assert!(!root.exists());
+
+        let scratch = AdmissionWorktree::new(&api, &history, target).unwrap();
+        let root = scratch.root.clone();
+        let binding = scratch.binding.as_ref().unwrap().0.clone();
+        drop(scratch);
+        assert!(!root.exists());
+        assert!(!binding.exists());
+
+        let scratch = AdmissionWorktree::new(&api, &history, target).unwrap();
+        let root = scratch.root.clone();
+        let binding = scratch.binding.as_ref().unwrap().0.clone();
+        fs::write(binding.join("gitdir"), b"foreign-binding\n").unwrap();
+        assert_eq!(scratch.finish().unwrap_err().code, "invalid_storage");
+        assert!(root.exists());
+        assert_eq!(
+            fs::read(binding.join("gitdir")).unwrap(),
+            b"foreign-binding\n"
+        );
+
+        let scratch = AdmissionWorktree::new(&api, &history, target).unwrap();
+        let root = scratch.root.clone();
+        fs::write(root.join("owner"), b"foreign-owner").unwrap();
+        drop(scratch);
+        assert_eq!(fs::read(root.join("owner")).unwrap(), b"foreign-owner");
+
+        let scratch = AdmissionWorktree::new(&api, &history, target).unwrap();
+        let root = scratch.root.clone();
+        let moved = root.with_extension("moved");
+        fs::rename(&root, &moved).unwrap();
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("foreign"), b"replacement").unwrap();
+        assert_eq!(scratch.finish().unwrap_err().code, "invalid_storage");
+        assert_eq!(fs::read(root.join("foreign")).unwrap(), b"replacement");
+        assert!(moved.join("owner").exists());
+    }
 }

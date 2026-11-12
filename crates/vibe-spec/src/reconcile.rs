@@ -1856,6 +1856,67 @@ mod tests {
             r.result_spec_oid
         );
     }
+    #[test]
+    fn followup_reconciliation_journal_uses_physical_root_identity() {
+        let (owner, mut api, _) = crate::transaction::tests::fixture();
+        let store = std::path::PathBuf::from(
+            api.runtime
+                .env
+                .get(std::ffi::OsStr::new("VIBE_STORE"))
+                .unwrap(),
+        );
+        api.runtime
+            .env
+            .insert("VIBE_STORE".into(), store.join(".").into_os_string());
+        let plan = setup(&api);
+        let interrupted = apply_checked(&api, &plan, &plan.target_revision, |point| {
+            if point == transaction::Checkpoint::AfterPublish {
+                Err(err("cancelled", "after CAS"))
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap_err();
+        assert_eq!(interrupted.code, "cancelled");
+        let root = project_dir(&api, &plan.project).unwrap();
+        let path = root.join(format!("transaction-{}.json", plan.target));
+        let bytes = fs::read(&path).unwrap();
+        for key in ["spec_root", "artifact_root"] {
+            let mut foreign: Value = serde_json::from_slice(&bytes).unwrap();
+            foreign[key] = registry::path_value(&owner.join("foreign"));
+            fs::write(&path, serde_json::to_vec(&foreign).unwrap()).unwrap();
+            assert_eq!(
+                status(&api, &plan.project, &plan.id().unwrap())
+                    .unwrap_err()
+                    .code,
+                "invalid_transaction"
+            );
+        }
+        #[cfg(unix)]
+        {
+            let mut alias: Value = serde_json::from_slice(&bytes).unwrap();
+            let root = registry::path(&alias["spec_root"]).unwrap();
+            let saved = owner.join("saved-root-alias");
+            std::os::unix::fs::symlink(root, &saved).unwrap();
+            alias["spec_root"] = registry::path_value(&saved);
+            fs::write(&path, serde_json::to_vec(&alias).unwrap()).unwrap();
+            assert_eq!(
+                status(&api, &plan.project, &plan.id().unwrap())
+                    .unwrap_err()
+                    .code,
+                "invalid_transaction"
+            );
+        }
+        let mut equivalent: Value = serde_json::from_slice(&bytes).unwrap();
+        for key in ["spec_root", "artifact_root"] {
+            let physical = registry::path(&equivalent[key]).unwrap();
+            equivalent[key] = registry::path_value(&physical.join("."));
+        }
+        fs::write(&path, serde_json::to_vec(&equivalent).unwrap()).unwrap();
+        let recovered = status(&api, &plan.project, &plan.id().unwrap()).unwrap();
+        assert_eq!(recovered.state, ReconcileState::Applied);
+        assert!(!path.exists());
+    }
     fn conflict_fixture(api: &SpecApi) -> (ReconcilePlan, ReconcileRecord, ConflictContent) {
         setup(api);
         let context = api.resolve_context(&ContextSelector::default()).unwrap();

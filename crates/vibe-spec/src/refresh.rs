@@ -997,6 +997,83 @@ mod tests {
         (owner, api, target)
     }
     #[test]
+    fn followup_automatic_refresh_reports_admission_cleanup_failure() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+        for tamper in [false, true] {
+            let (_owner, api, selector) = prepared();
+            let context = crate::context::resolve_for_transaction(&api.runtime, &selector).unwrap();
+            let registry = registry::load(&api.runtime).unwrap();
+            let root = registry::project_dir(&registry, context.project_id.as_ref().unwrap());
+            let records = || {
+                fs::read_dir(root.join("reconciliations"))
+                    .map(|entries| {
+                        entries
+                            .map(|entry| entry.unwrap().file_name())
+                            .collect::<BTreeSet<_>>()
+                    })
+                    .unwrap_or_default()
+            };
+            let before = records();
+            let watched = root.clone();
+            let changed = Arc::new(AtomicBool::new(false));
+            let observed = changed.clone();
+            let mut control = crate::InvocationControl::new(|| false);
+            control.limited = true;
+            control.result_admission = Some(Arc::new(move |value| {
+                if tamper
+                    && value["data"]["merge_index"].is_object()
+                    && !observed.swap(true, Ordering::SeqCst)
+                {
+                    let scratch = fs::read_dir(&watched)
+                        .unwrap()
+                        .map(|entry| entry.unwrap().path())
+                        .find(|path| {
+                            path.file_name()
+                                .unwrap()
+                                .to_string_lossy()
+                                .starts_with(".response-admission-")
+                        })
+                        .unwrap();
+                    fs::write(scratch.join("owner"), b"foreign-owner").unwrap();
+                }
+                Ok(())
+            }));
+            let report = api.with_control(control).refresh(&selector).unwrap();
+            if tamper {
+                assert!(changed.load(Ordering::SeqCst));
+                assert!(report.applied.is_empty());
+                assert!(report.diagnostics.iter().any(|d| d["code"] == "invalid_storage" && d["message"] == "admission scratch ownership changed; preserve it for inspection"), "{report:?}");
+                assert_eq!(
+                    records(),
+                    before,
+                    "failed admission must not publish a reconciliation receipt"
+                );
+                let scratch = fs::read_dir(&root)
+                    .unwrap()
+                    .map(|entry| entry.unwrap().path())
+                    .find(|path| {
+                        path.file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .starts_with(".response-admission-")
+                    })
+                    .unwrap();
+                assert_eq!(fs::read(scratch.join("owner")).unwrap(), b"foreign-owner");
+            } else {
+                assert_eq!(report.applied.len(), 1, "{report:?}");
+                assert!(report.diagnostics.is_empty(), "{report:?}");
+            }
+            eprintln!(
+                "followup automatic refresh tamper={tamper}: applied={} diagnostics={:?}",
+                report.applied.len(),
+                report.diagnostics
+            );
+        }
+    }
+    #[test]
     fn spec_projects_mcp_7_failure_keeps_observation_and_recovers_original_receipt() {
         for at in [
             transaction::Checkpoint::BeforePublish,
