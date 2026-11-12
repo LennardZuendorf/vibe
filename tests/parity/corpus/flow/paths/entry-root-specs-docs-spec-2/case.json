@@ -19,10 +19,6 @@
       ],
       [
         "docs/spec/design.md",
-        "feature.ship"
-      ],
-      [
-        "docs/spec/design.md",
         "feature.verify"
       ],
       [

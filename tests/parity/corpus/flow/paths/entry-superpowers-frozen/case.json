@@ -19,10 +19,6 @@
       ],
       [
         "docs/superpowers/specs/auth-design.md",
-        "feature.ship"
-      ],
-      [
-        "docs/superpowers/specs/auth-design.md",
         "feature.verify"
       ],
       [

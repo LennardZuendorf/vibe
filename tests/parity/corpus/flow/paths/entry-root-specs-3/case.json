@@ -19,10 +19,6 @@
       ],
       [
         ".spec/plan.md",
-        "feature.ship"
-      ],
-      [
-        ".spec/plan.md",
         "feature.verify"
       ],
       [

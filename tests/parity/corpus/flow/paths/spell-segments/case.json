@@ -19,10 +19,6 @@
       ],
       [
         "docs//spec/./lessons.md",
-        "feature.ship"
-      ],
-      [
-        "docs//spec/./lessons.md",
         "feature.verify"
       ],
       [

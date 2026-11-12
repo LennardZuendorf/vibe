@@ -18,6 +18,17 @@ command -v cargo >/dev/null 2>&1 || { echo "parity: cargo not found on PATH" >&2
 command -v jq >/dev/null 2>&1 || { echo "parity: jq not found on PATH" >&2; exit 1; }
 cargo build --locked -q -p vibe-spec -p vibe-parity -p vibe-flow
 BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug"
+flow_scratch="$(mktemp -d)"
+trap 'rm -rf "$flow_scratch"' EXIT
+"$BIN/vibe-parity" gen-flow-corpus "$ROOT/flow" "$flow_scratch/corpus"
+node - "$ROOT/tests/parity/flow.json" "$flow_scratch" "$ROOT/oracles" <<'NODE'
+const fs = require('fs');
+const [suitePath, scratch, oracles] = process.argv.slice(2);
+const suite = JSON.parse(fs.readFileSync(suitePath, 'utf8'));
+suite.corpus = `${scratch}/corpus`;
+suite.oracle_root = oracles;
+fs.writeFileSync(`${scratch}/flow.json`, JSON.stringify(suite));
+NODE
 
 echo "=== spec self-check (oracle vs oracle) ==="
 "$BIN/vibe-parity" run tests/parity/spec.json --self | grep -v '^PASS '
@@ -25,8 +36,8 @@ echo "=== spec candidate (oracle vs vibe-spec) ==="
 "$BIN/vibe-parity" run tests/parity/spec.json --candidate "$BIN/vibe-spec" | grep -v '^PASS '
 
 echo "=== flow self-check (oracle vs oracle) ==="
-"$BIN/vibe-parity" run tests/parity/flow.json --self | grep -v '^PASS '
+"$BIN/vibe-parity" run "$flow_scratch/flow.json" --self | grep -v '^PASS '
 echo "=== flow candidate (oracle vs vibe-flow) ==="
-"$BIN/vibe-parity" run tests/parity/flow.json --candidate "$BIN/vibe-flow" | grep -v '^PASS '
+"$BIN/vibe-parity" run "$flow_scratch/flow.json" --candidate "$BIN/vibe-flow" | grep -v '^PASS '
 
 echo "parity: self-check and candidate green"

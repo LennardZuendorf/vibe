@@ -27,7 +27,7 @@
 #                                    states where the conditional lesson step lives)
 #   2. root .spec/{product,tech,design,plan}.md # literal
 #                                  — only during strategy.spec, feature.compound, or setup.apply
-#   3. .agents/skills/flow/state.json — never by direct edit; only via set-state.sh
+#   3. .agents/skills/vibe/state.json — never by direct edit; only via set-state.sh
 #   4. .planning/*                 — GSD state store; readable context, writable only at idle
 
 set -euo pipefail
@@ -244,7 +244,7 @@ decide_bash() {
 
   # Block 3: state.json is writer-only.
   case "$path" in
-    .vibe/run/flow/state.json|*/.vibe/run/flow/state.json|.agents/flow/state.json|*/.agents/flow/state.json|.agents/skills/flow/state.json|*/.agents/skills/flow/state.json|.agents/skills/vibe/state.json|*/.agents/skills/vibe/state.json)
+    .vibe/run/flow/state.json|*/.vibe/run/flow/state.json|.agents/flow/state.json|*/.agents/flow/state.json|.agents/skills/vibe/state.json|*/.agents/skills/vibe/state.json)
       echo "block:state.json is written only via set-state.sh, never by direct edit"
       return 0
       ;;

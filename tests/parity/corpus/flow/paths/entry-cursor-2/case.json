@@ -2,59 +2,55 @@
   "runs": {
     "policy-decide": [
       [
-        ".agents/skills/vibe/state.json",
+        ".agents/flow/state.json",
         "feature.compound"
       ],
       [
-        ".agents/skills/vibe/state.json",
+        ".agents/flow/state.json",
         "feature.design"
       ],
       [
-        ".agents/skills/vibe/state.json",
+        ".agents/flow/state.json",
         "feature.impl"
       ],
       [
-        ".agents/skills/vibe/state.json",
+        ".agents/flow/state.json",
         "feature.plan"
       ],
       [
-        ".agents/skills/vibe/state.json",
-        "feature.ship"
-      ],
-      [
-        ".agents/skills/vibe/state.json",
+        ".agents/flow/state.json",
         "feature.verify"
       ],
       [
-        ".agents/skills/vibe/state.json",
+        ".agents/flow/state.json",
         "idle"
       ],
       [
-        ".agents/skills/vibe/state.json",
+        ".agents/flow/state.json",
         "quick.fix"
       ],
       [
-        ".agents/skills/vibe/state.json",
+        ".agents/flow/state.json",
         "quick.triage"
       ],
       [
-        ".agents/skills/vibe/state.json",
+        ".agents/flow/state.json",
         "quick.verify"
       ],
       [
-        ".agents/skills/vibe/state.json",
+        ".agents/flow/state.json",
         "setup.apply"
       ],
       [
-        ".agents/skills/vibe/state.json",
+        ".agents/flow/state.json",
         "setup.detect"
       ],
       [
-        ".agents/skills/vibe/state.json",
+        ".agents/flow/state.json",
         "strategy.brainstorm"
       ],
       [
-        ".agents/skills/vibe/state.json",
+        ".agents/flow/state.json",
         "strategy.spec"
       ]
     ]

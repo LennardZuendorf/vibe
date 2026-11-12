@@ -19,10 +19,6 @@
       ],
       [
         "src/a.rs",
-        "feature.ship"
-      ],
-      [
-        "src/a.rs",
         "feature.verify"
       ],
       [

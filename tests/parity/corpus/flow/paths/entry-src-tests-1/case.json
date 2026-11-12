@@ -19,10 +19,6 @@
       ],
       [
         "tests/b.rs",
-        "feature.ship"
-      ],
-      [
-        "tests/b.rs",
         "feature.verify"
       ],
       [

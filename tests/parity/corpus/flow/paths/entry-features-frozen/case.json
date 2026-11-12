@@ -19,10 +19,6 @@
       ],
       [
         ".spec/features/auth/tech.md",
-        "feature.ship"
-      ],
-      [
-        ".spec/features/auth/tech.md",
         "feature.verify"
       ],
       [

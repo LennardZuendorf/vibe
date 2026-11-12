@@ -344,7 +344,12 @@ discovery links. The root guide lives in `skills/vibe/`; owned `using-spec` regi
 
 ```bash
 bash tests/run.sh   # spec + flow + adapters + engine suites
+bash tests/parity/run.sh # generate and compare current compatibility cases
 ```
+
+Flow parity generates its current test projects in temporary storage from the
+machine and policy. `tests/parity/flow.json` supplies the run configuration; the
+checked-in Flow corpus remains a historical reference.
 
 CI runs `shellcheck` on every tracked `*.sh`, the combined suite on Linux and
 macOS `bash` 3.2, the engine suite jq-less and from a space-containing path, a

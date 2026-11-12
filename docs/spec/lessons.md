@@ -866,3 +866,9 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Preserve the canonical compact JSON style before regenerating copies. Compare ordered parsed values for valid JSON, exact bytes for intentionally invalid JSON and other files, and the complete case inventory. Run generator consistency and behavioral parity separately; use task-specific shell variables and report baseline failures without changing assertions to hide them.
 **Tags:** flow, parity, generation, verification, review
 **Date:** 2026-11-12
+
+### Keep test inputs proportional to the change
+**Pattern:** Unused frozen copies and regenerated project trees dominated a feature diff. Exploration also hit shell quoting and Git-index permission errors before using a read-only archive to restore the baseline.
+**Rule:** Keep focused executable regressions and remove added snapshots with no consumers. Generate repetitive compatibility projects in owned temporary storage; compare the full generated matrix before changing storage. Preserve existing historical fixtures and original oracles, use supported commands with safe quoting, and bind review to the reduced diff.
+**Tags:** tests, parity, generation, scope, review
+**Date:** 2026-11-12

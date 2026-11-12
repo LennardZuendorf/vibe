@@ -12,7 +12,6 @@
       "id": "cursor",
       "match": [
         ".vibe/run/flow/state.json",
-        ".agents/skills/flow/state.json",
         ".agents/skills/vibe/state.json",
         ".agents/flow/state.json"
       ]

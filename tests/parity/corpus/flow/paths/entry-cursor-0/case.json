@@ -19,10 +19,6 @@
       ],
       [
         ".vibe/run/flow/state.json",
-        "feature.ship"
-      ],
-      [
-        ".vibe/run/flow/state.json",
         "feature.verify"
       ],
       [
