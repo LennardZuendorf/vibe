@@ -82,7 +82,12 @@ mod tests {
         assert!(out.stderr.is_empty(), "{}", out.stderr);
         let parsed: Value = serde_json::from_str(&out.stdout).expect("json");
         assert_eq!(parsed["seq"], 0, "emit must not bump seq");
-        assert!(parsed["level"].as_str().unwrap_or("").contains("feature.impl"));
+        assert!(
+            parsed["level"]
+                .as_str()
+                .unwrap_or("")
+                .contains("feature.impl")
+        );
         assert!(root.join(".vibe/run/inject/flow.json").is_file());
 
         // A second emit reprints the same bytes and bumps nothing.
@@ -105,7 +110,12 @@ mod tests {
         let parsed: Value = serde_json::from_str(&out.stdout).expect("json");
         assert_eq!(parsed["seq"], 4);
         assert_eq!(parsed["events"].as_array().map(Vec::len), Some(1));
-        assert!(parsed["level"].as_str().unwrap_or("").contains("feature.impl"));
+        assert!(
+            parsed["level"]
+                .as_str()
+                .unwrap_or("")
+                .contains("feature.impl")
+        );
     }
 
     #[cfg(unix)]
@@ -119,7 +129,11 @@ mod tests {
         std::os::unix::fs::symlink(&keeper, root.join(".vibe/run/inject/flow.json")).expect("link");
         let out = run(&paths);
         assert_eq!(out.code, 0);
-        assert!(out.stderr.contains("refusing to append through the link"), "{}", out.stderr);
+        assert!(
+            out.stderr.contains("refusing to append through the link"),
+            "{}",
+            out.stderr
+        );
         assert_eq!(fs::read_to_string(&keeper).expect("keeper"), "keep\n");
         let parsed: Value = serde_json::from_str(&out.stdout).expect("json");
         assert_eq!(parsed["provider"], "flow");

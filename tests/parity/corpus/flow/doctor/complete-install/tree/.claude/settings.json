@@ -1,0 +1,3 @@
+{
+  "hooks": "session-start-doctrine.sh user-prompt-submit-inject.sh pre-tool-use-guard.sh stop-gate.sh"
+}

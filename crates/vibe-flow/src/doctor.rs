@@ -56,7 +56,8 @@ fn is_directory(path: &Path) -> bool {
 #[cfg(unix)]
 fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(path).is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+    std::fs::metadata(path)
+        .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
 }
 
 #[cfg(not(unix))]
@@ -164,7 +165,10 @@ fn check_machine(vibe_dir: &Path, jq_present: bool) -> String {
     }
     if jq_present {
         if Machine::load(vibe_dir).is_err() {
-            return warn("machine", "state-machine.json is present but not valid JSON");
+            return warn(
+                "machine",
+                "state-machine.json is present but not valid JSON",
+            );
         }
     }
     ok("machine", "state-machine.json present")
@@ -224,7 +228,10 @@ fn check_cursor(vibe_dir: &Path, jq_present: bool) -> String {
             } else {
                 format!("{flow}.{phase}")
             };
-            let feature = raw.get("feature").cloned().unwrap_or(serde_json::Value::Null);
+            let feature = raw
+                .get("feature")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
             format!("{key} feature={}", jq_feature_or_none(&feature))
         }
         _ => "present".to_string(),
@@ -538,8 +545,10 @@ mod tests {
 
     fn scratch(name: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir =
-            std::env::temp_dir().join(format!("vibe-flow-doctor-{name}-{}-{n}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "vibe-flow-doctor-{name}-{}-{n}",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("create scratch");
         dir
@@ -595,10 +604,7 @@ mod tests {
             fs::create_dir_all(root.join(".claude/hooks")).expect("hooks");
             fs::write(root.join(".claude/hooks").join(script), "#!/bin/sh\n").expect("hook");
         }
-        let settings = format!(
-            "{{\"hooks\":\"{}\"}}\n",
-            super::HOOK_SCRIPTS.join(" ")
-        );
+        let settings = format!("{{\"hooks\":\"{}\"}}\n", super::HOOK_SCRIPTS.join(" "));
         fs::write(root.join(".claude/settings.json"), settings).expect("settings");
         let paths = FlowPaths::resolve(Some(&root), None, &root, &NoEnv);
         let out = run(&paths, &options());
@@ -628,11 +634,11 @@ mod tests {
                 "deps.manifest",
             ]
         );
+        assert!(ids[13..].iter().all(|id| id.starts_with("dep.")), "{ids:?}");
         assert!(
-            ids[13..].iter().all(|id| id.starts_with("dep.")),
-            "{ids:?}"
+            out.stdout
+                .contains("ok   machine state-machine.json present")
         );
-        assert!(out.stdout.contains("ok   machine state-machine.json present"));
         assert!(
             out.stdout
                 .contains("ok   cursor flow cursor valid (idle feature=none)"),
@@ -682,17 +688,16 @@ mod tests {
     #[test]
     fn an_absent_jq_uses_the_oracles_lenient_branches() {
         let root = scratch("no-jq");
-        copy("flow/state-machine.json", &root.join(".agents/skills/vibe/state-machine.json"));
+        copy(
+            "flow/state-machine.json",
+            &root.join(".agents/skills/vibe/state-machine.json"),
+        );
         copy(
             "flow/reference/deps.json",
             &root.join(".agents/skills/vibe/reference/deps.json"),
         );
         fs::create_dir_all(root.join(".agents/skills/vibe")).expect("vibe");
-        fs::write(
-            root.join(".agents/skills/vibe/state.json"),
-            "{ not json",
-        )
-        .expect("cursor");
+        fs::write(root.join(".agents/skills/vibe/state.json"), "{ not json").expect("cursor");
         let paths = FlowPaths::resolve(Some(&root), None, &root, &NoEnv);
         let mut opts = options();
         opts.jq = Some((false, String::new()));
@@ -706,7 +711,10 @@ mod tests {
             "{}",
             out.stdout
         );
-        assert!(out.stdout.contains("warn deps.manifest deps.json present but jq unavailable"));
+        assert!(
+            out.stdout
+                .contains("warn deps.manifest deps.json present but jq unavailable")
+        );
     }
 
     #[test]
@@ -717,8 +725,7 @@ mod tests {
         let paths = FlowPaths::resolve(Some(&root), None, &root, &NoEnv);
         let out = run(&paths, &options());
         assert!(
-            out.stdout
-                .contains(".agents/skills/vibe is absent"),
+            out.stdout.contains(".agents/skills/vibe is absent"),
             "{}",
             out.stdout
         );

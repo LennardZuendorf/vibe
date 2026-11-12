@@ -497,6 +497,330 @@ fn cases(flow_dir: &Path) -> Result<Vec<CaseDef>, String> {
     Ok(defs)
 }
 
+// ---------------------------------------------------------------------------
+// Read-only command cases (F8): orders, doctrine, doctor.
+//
+// None of the three writes anything, so a case is a tree plus (for `orders`)
+// its argument sets. The tree is the installed layout both sides resolve to
+// identically: the JS oracle self-locates through its marker search and the
+// port's data-home fallback lands on the same `.agents/skills/vibe`. `orders`
+// and `doctrine` use a small synthetic machine so a case proves the D12 chain
+// itself; `doctor` uses the shipped machine because "present and valid" is one
+// of the checks it reports on.
+//
+// Two behaviours are NOT corpus cases on purpose:
+// - symlinks: a corpus tree refuses them (see `sandbox::refuse_symlink`), so
+//   the broken-link branches are pinned by the port's own unit tests;
+// - a non-string `feature` object: jq preserves document key order and
+//   serde_json sorts (this workspace has no `preserve_order`), so an object
+//   feature renders differently. It is reachable only via a hand-edited
+//   cursor; the unit test pins the port's own answer.
+// ---------------------------------------------------------------------------
+
+/// A minimal machine: one state owning its inject, one linked to the skill and
+/// one linked with no inline fallback.
+const ORDER_MACHINE: &str = concat!(
+    "{\n",
+    "  \"v\": 1,\n",
+    "  \"states\": {\n",
+    "    \"idle\": { \"inject\": \"state=idle · inline inject\" },\n",
+    "    \"feature.impl\": { \"skill\": \"vibe\", \"inject\": \"state=feature.impl · inline inject\" },\n",
+    "    \"quick.fix\": { \"skill\": \"vibe\" }\n",
+    "  }\n",
+    "}\n",
+);
+
+/// A skill whose orders blocks exercise the whole chain: an interpolating
+/// block, a legacy asymmetric closer, and one block with no closer (absent).
+const ORDER_SKILL: &str = concat!(
+    "# vibe skill\n\n",
+    "<!-- vibe:doctrine -->\n",
+    "doctrine line one\n",
+    "doctrine line two\n",
+    "<!-- /vibe:doctrine -->\n\n",
+    "<!-- vibe:orders:feature.impl -->\n",
+    "skill=vibe · impl orders for <feature>\n",
+    "second line\n",
+    "<!-- /vibe:orders -->\n\n",
+    "<!-- vibe:orders:quick.fix -->\n",
+    "skill=vibe · fix orders\n",
+    "<!-- /vibe:orders -->\n\n",
+    "<!-- vibe:orders:feature.verify -->\n",
+    "leaked tail?\n",
+);
+
+const DOCTRINE_SKILL: &str = concat!(
+    "# vibe skill\n\n",
+    "before\n",
+    "<!-- vibe:doctrine -->\n",
+    "the working model\n",
+    "two lines\n",
+    "<!-- /vibe:doctrine -->\n",
+    "after\n",
+);
+
+const DEPS_JSON: &str = concat!(
+    "{\n",
+    "  \"v\": 1,\n",
+    "  \"deps\": [\n",
+    "    { \"name\": \"jq\", \"kind\": \"tool\", \"degrade\": \"warn\" },\n",
+    "    { \"name\": \"vibe-spec\", \"kind\": \"sibling\", \"degrade\": \"path pointer only\" }\n",
+    "  ]\n",
+    "}\n",
+);
+
+/// The four adapter scripts wired into a settings file that names all of them.
+fn wired_settings() -> String {
+    format!(
+        "{{\n  \"hooks\": \"{}\"\n}}\n",
+        [
+            "session-start-doctrine.sh",
+            "user-prompt-submit-inject.sh",
+            "pre-tool-use-guard.sh",
+            "stop-gate.sh"
+        ]
+        .join(" ")
+    )
+}
+
+fn orders_case(
+    name: &str,
+    machine: Option<&str>,
+    skill: Option<&str>,
+    feature: Value,
+    sets: Vec<Vec<String>>,
+) -> CaseDef {
+    let mut files = Vec::new();
+    if let Some(machine) = machine {
+        files.push((MACHINE_TREE.to_string(), machine.to_string()));
+    }
+    if let Some(skill) = skill {
+        files.push((format!("{VIBE}/SKILL.md"), skill.to_string()));
+    }
+    files.push((CURSOR_TREE.to_string(), cursor("feature", "impl", feature)));
+    CaseDef {
+        class: "orders",
+        name: name.to_string(),
+        runs: vec![("orders".to_string(), sets)],
+        files,
+    }
+}
+
+fn read_only_cases(flow_dir: &Path) -> Result<Vec<CaseDef>, String> {
+    let machine_path = flow_dir.join("state-machine.json");
+    let shipped_machine = fs::read_to_string(&machine_path)
+        .map_err(|e| format!("{}: {e}", machine_path.display()))?;
+    let mut defs = Vec::new();
+
+    // orders: the D12 chain, one branch per case.
+    defs.push(orders_case(
+        "block-with-feature",
+        Some(ORDER_MACHINE),
+        Some(ORDER_SKILL),
+        json!("auth"),
+        vec![Vec::new()],
+    ));
+    defs.push(orders_case(
+        "block-without-feature",
+        Some(ORDER_MACHINE),
+        Some(ORDER_SKILL),
+        Value::Null,
+        vec![Vec::new()],
+    ));
+    defs.push(orders_case(
+        "numeric-feature",
+        Some(ORDER_MACHINE),
+        Some(ORDER_SKILL),
+        json!(123),
+        vec![Vec::new()],
+    ));
+    defs.push(orders_case(
+        "block-missing-closer-falls-to-inject",
+        Some(ORDER_MACHINE),
+        Some(ORDER_SKILL),
+        json!("auth"),
+        vec![vec!["feature.verify".to_string()]],
+    ));
+    defs.push(orders_case(
+        "explicit-state-wins-over-the-cursor",
+        Some(ORDER_MACHINE),
+        Some(ORDER_SKILL),
+        json!("auth"),
+        vec![vec!["quick.fix".to_string()]],
+    ));
+    defs.push(orders_case(
+        "unknown-state-is-the-generic-line",
+        Some(ORDER_MACHINE),
+        Some(ORDER_SKILL),
+        json!("auth"),
+        vec![vec!["nope".to_string()]],
+    ));
+    defs.push(orders_case(
+        "missing-skill-file-falls-to-inject",
+        Some(ORDER_MACHINE),
+        None,
+        json!("auth"),
+        vec![Vec::new()],
+    ));
+    // No machine at all: the generic line, whatever the cursor says.
+    defs.push(CaseDef {
+        class: "orders",
+        name: "missing-machine".to_string(),
+        runs: vec![("orders".to_string(), vec![Vec::new()])],
+        files: vec![(
+            CURSOR_TREE.to_string(),
+            cursor("feature", "impl", json!("auth")),
+        )],
+    });
+    defs.push(CaseDef {
+        class: "orders",
+        name: "corrupt-machine".to_string(),
+        runs: vec![("orders".to_string(), vec![Vec::new()])],
+        files: vec![
+            (MACHINE_TREE.to_string(), "{ nope\n".to_string()),
+            (format!("{VIBE}/SKILL.md"), ORDER_SKILL.to_string()),
+            (
+                CURSOR_TREE.to_string(),
+                cursor("feature", "impl", json!("auth")),
+            ),
+        ],
+    });
+    defs.push(CaseDef {
+        class: "orders",
+        name: "corrupt-cursor-degrades-to-idle".to_string(),
+        runs: vec![("orders".to_string(), vec![Vec::new()])],
+        files: vec![
+            (MACHINE_TREE.to_string(), ORDER_MACHINE.to_string()),
+            (format!("{VIBE}/SKILL.md"), ORDER_SKILL.to_string()),
+            (CURSOR_TREE.to_string(), "{ nope\n".to_string()),
+        ],
+    });
+
+    // doctrine: the block alone, and the four ways it is absent.
+    for (name, body) in [
+        ("block", DOCTRINE_SKILL),
+        (
+            "empty-block",
+            "<!-- vibe:doctrine -->\n<!-- /vibe:doctrine -->\n",
+        ),
+        ("no-block", "no block here\n"),
+        ("unclosed-block", "<!-- vibe:doctrine -->\nleak?\n"),
+    ] {
+        defs.push(CaseDef {
+            class: "doctrine",
+            name: name.to_string(),
+            runs: vec![("doctrine".to_string(), vec![Vec::new()])],
+            files: vec![(format!("{VIBE}/SKILL.md"), body.to_string())],
+        });
+    }
+    defs.push(CaseDef {
+        class: "doctrine",
+        name: "missing-skill".to_string(),
+        runs: vec![("doctrine".to_string(), vec![Vec::new()])],
+        files: Vec::new(),
+    });
+
+    // doctor: warn-only, so every case is also an exit-0 assertion. The trees
+    // vary the pieces the report names; HOME is the harness's empty fixture on
+    // both sides, so the per-dep probes are equal by construction.
+    let mut install = vec![
+        (format!("{VIBE}/SKILL.md"), DOCTRINE_SKILL.to_string()),
+        (MACHINE_TREE.to_string(), shipped_machine.clone()),
+        (format!("{VIBE}/reference/deps.json"), DEPS_JSON.to_string()),
+        (
+            format!("{VIBE}/content/policy.json"),
+            "{\"version\":1,\"rules\":[]}\n".to_string(),
+        ),
+        (
+            format!("{VIBE}/scripts/validate-state.sh"),
+            "#!/bin/sh\nexit 0\n".to_string(),
+        ),
+        (".claude/settings.json".to_string(), wired_settings()),
+    ];
+    for script in [
+        "session-start-doctrine.sh",
+        "user-prompt-submit-inject.sh",
+        "pre-tool-use-guard.sh",
+        "stop-gate.sh",
+    ] {
+        install.push((format!(".claude/hooks/{script}"), "#!/bin/sh\n".to_string()));
+    }
+    // A sibling spec skill makes `core.spec` a real directory; a file inside
+    // it is what materializes the directory in the corpus tree.
+    install.push((
+        ".agents/skills/spec/SKILL.md".to_string(),
+        "# spec skill\n".to_string(),
+    ));
+    defs.push(CaseDef {
+        class: "doctor",
+        name: "complete-install".to_string(),
+        runs: vec![("doctor".to_string(), vec![Vec::new()])],
+        files: install,
+    });
+    defs.push(CaseDef {
+        class: "doctor",
+        name: "empty-tree".to_string(),
+        runs: vec![("doctor".to_string(), vec![Vec::new()])],
+        files: Vec::new(),
+    });
+    defs.push(CaseDef {
+        class: "doctor",
+        name: "corrupt-machine".to_string(),
+        runs: vec![("doctor".to_string(), vec![Vec::new()])],
+        files: vec![
+            (MACHINE_TREE.to_string(), "{ nope\n".to_string()),
+            (format!("{VIBE}/SKILL.md"), DOCTRINE_SKILL.to_string()),
+        ],
+    });
+    defs.push(CaseDef {
+        class: "doctor",
+        name: "cursor-without-an-executable-validator".to_string(),
+        runs: vec![("doctor".to_string(), vec![Vec::new()])],
+        files: vec![
+            (MACHINE_TREE.to_string(), shipped_machine.clone()),
+            (
+                CURSOR_TREE.to_string(),
+                cursor("feature", "impl", json!("auth")),
+            ),
+        ],
+    });
+    defs.push(CaseDef {
+        class: "doctor",
+        name: "deps-not-json".to_string(),
+        runs: vec![("doctor".to_string(), vec![Vec::new()])],
+        files: vec![
+            (MACHINE_TREE.to_string(), shipped_machine.clone()),
+            (
+                format!("{VIBE}/reference/deps.json"),
+                "{ nope\n".to_string(),
+            ),
+        ],
+    });
+    defs.push(CaseDef {
+        class: "doctor",
+        name: "partial-adapter".to_string(),
+        runs: vec![("doctor".to_string(), vec![Vec::new()])],
+        files: vec![
+            (MACHINE_TREE.to_string(), shipped_machine),
+            (
+                ".claude/hooks/stop-gate.sh".to_string(),
+                "#!/bin/sh\n".to_string(),
+            ),
+        ],
+    });
+    defs.push(CaseDef {
+        class: "doctor",
+        name: "spec-is-a-file".to_string(),
+        runs: vec![("doctor".to_string(), vec![Vec::new()])],
+        files: vec![(
+            ".agents/skills/spec".to_string(),
+            "not a directory\n".to_string(),
+        )],
+    });
+
+    Ok(defs)
+}
+
 fn case_json(def: &CaseDef) -> Value {
     let mut runs = Map::new();
     for (command, sets) in &def.runs {
@@ -843,7 +1167,8 @@ fn hook_case_json(def: &HookDef) -> Value {
 /// existing `out` that lacks the [`MARKER`] file. Returns the number of cases
 /// written.
 pub fn generate(flow_dir: &Path, out: &Path) -> Result<usize, String> {
-    let defs = cases(flow_dir)?;
+    let mut defs = cases(flow_dir)?;
+    defs.extend(read_only_cases(flow_dir)?);
     let hooks = hook_cases(flow_dir)?;
     if out.exists() {
         if !out.join(MARKER).is_file() {

@@ -246,7 +246,9 @@ fn level_line(state: &str, feature: &Value, machine: Option<&Machine>) -> String
     if !feature.is_empty() {
         line.push_str(&format!(" · {feature}"));
     }
-    let next = machine.map(|machine| machine.next(state)).unwrap_or_default();
+    let next = machine
+        .map(|machine| machine.next(state))
+        .unwrap_or_default();
     if !next.is_empty() {
         let marked: Vec<String> = next
             .iter()
@@ -305,8 +307,10 @@ mod tests {
 
     fn scratch(name: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir =
-            std::env::temp_dir().join(format!("vibe-flow-payload-{name}-{}-{n}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "vibe-flow-payload-{name}-{}-{n}",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("create scratch");
         dir
@@ -364,7 +368,10 @@ mod tests {
             events: vec![serde_json::json!({"id":"e7-1","ts":"t","text":"x"})],
         };
         let text = encode(&payload);
-        assert!(text.starts_with("{\n  \"v\": 1,\n  \"provider\": \"flow\",\n  \"seq\": 7,\n"), "{text}");
+        assert!(
+            text.starts_with("{\n  \"v\": 1,\n  \"provider\": \"flow\",\n  \"seq\": 7,\n"),
+            "{text}"
+        );
         assert!(
             text.contains("\"level\": \"flow: idle\",\n  \"edge\": \"orders\",\n  \"session\": [\"one\"],\n  \"events\": [{\"id\":\"e7-1\",\"ts\":\"t\",\"text\":\"x\"}]"),
             "{text}"
@@ -390,11 +397,7 @@ mod tests {
         assert_eq!(second.seq, 2);
         assert!(second.level.contains("feature.impl"), "{}", second.level);
         assert!(second.level.contains("auth"), "{}", second.level);
-        assert!(
-            second.edge.starts_with("skill=vibe"),
-            "{}",
-            second.edge
-        );
+        assert!(second.edge.starts_with("skill=vibe"), "{}", second.edge);
         assert_eq!(read(&paths), second);
     }
 
@@ -452,7 +455,13 @@ mod tests {
         // No temp file survives a write.
         let names: Vec<String> = fs::read_dir(root.join(".vibe/run/inject"))
             .expect("dir")
-            .map(|entry| entry.expect("entry").file_name().to_string_lossy().into_owned())
+            .map(|entry| {
+                entry
+                    .expect("entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
             .collect();
         assert_eq!(names, ["flow.json"]);
     }
@@ -468,9 +477,15 @@ mod tests {
         std::os::unix::fs::symlink(&keeper, root.join(".vibe/run/inject/flow.json")).expect("link");
 
         let err = prepare(&paths).expect_err("linked payload");
-        assert!(err.starts_with("refusing to append through the link "), "{err}");
+        assert!(
+            err.starts_with("refusing to append through the link "),
+            "{err}"
+        );
         let err = write_transition(&paths).expect_err("linked payload");
-        assert!(err.starts_with("refusing to append through the link "), "{err}");
+        assert!(
+            err.starts_with("refusing to append through the link "),
+            "{err}"
+        );
         assert_eq!(fs::read_to_string(&keeper).expect("keeper"), "keep\n");
     }
 
@@ -484,7 +499,10 @@ mod tests {
         fs::create_dir_all(root.join(".vibe/run/inject")).expect("dir");
         std::os::unix::fs::symlink(&keeper, root.join(".vibe/run/inject/flow.json")).expect("link");
         let err = append_event(&paths, "guard: x").expect_err("linked payload");
-        assert!(err.starts_with("refusing to append through the link "), "{err}");
+        assert!(
+            err.starts_with("refusing to append through the link "),
+            "{err}"
+        );
         assert_eq!(fs::read_to_string(&keeper).expect("keeper"), "keep\n");
     }
 

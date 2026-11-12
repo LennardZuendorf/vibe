@@ -41,11 +41,7 @@ pub fn run(paths: &FlowPaths) -> Outcome {
         }
     }
     if let Err(err) = refuse_link(&path) {
-        return Outcome::new(
-            1,
-            String::new(),
-            format!("vibe-flow init: ERROR: {err}\n"),
-        );
+        return Outcome::new(1, String::new(), format!("vibe-flow init: ERROR: {err}\n"));
     }
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
     let mut stdout = String::new();
@@ -142,7 +138,8 @@ mod tests {
         assert_eq!(out.code, 0);
         assert!(out.stderr.is_empty(), "{}", out.stderr);
         assert!(out.stdout.contains("init: wrote "));
-        let manifest = fs::read_to_string(root.join(".vibe/providers/flow.json")).expect("manifest");
+        let manifest =
+            fs::read_to_string(root.join(".vibe/providers/flow.json")).expect("manifest");
         assert_eq!(manifest, MANIFEST);
         let parsed: serde_json::Value = serde_json::from_str(&manifest).expect("json");
         assert_eq!(parsed["command"], serde_json::json!(["vibe-flow", "emit"]));
@@ -175,7 +172,10 @@ mod tests {
         std::os::unix::fs::symlink(&keeper, root.join(".vibe/providers/flow.json")).expect("link");
         let out = run(&paths);
         assert_eq!(out.code, 1);
-        assert!(out.stderr.contains("refusing to write the manifest through the link"));
+        assert!(
+            out.stderr
+                .contains("refusing to write the manifest through the link")
+        );
         assert_eq!(fs::read_to_string(&keeper).expect("keeper"), "keep\n");
     }
 }

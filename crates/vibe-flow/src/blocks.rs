@@ -78,7 +78,10 @@ mod tests {
 
     #[test]
     fn an_absent_opener_is_none() {
-        assert_eq!(extract("<!-- vibe:doctrine -->\nx\n", "vibe:orders:idle"), None);
+        assert_eq!(
+            extract("<!-- vibe:doctrine -->\nx\n", "vibe:orders:idle"),
+            None
+        );
     }
 
     #[test]

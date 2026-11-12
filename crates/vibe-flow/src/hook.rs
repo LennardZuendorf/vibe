@@ -433,9 +433,7 @@ pub fn stop(paths: &FlowPaths, stdin: &[u8]) -> Outcome {
     match blocked {
         Some(blocked) => {
             let first = blocked.lines().next().unwrap_or("");
-            let detail = first
-                .strip_prefix("vibe-gate: BLOCKED — ")
-                .unwrap_or(first);
+            let detail = first.strip_prefix("vibe-gate: BLOCKED — ").unwrap_or(first);
             append_event(paths, &format!("gate: blocked — {detail}"));
             Outcome::new(2, String::new(), stderr + &blocked)
         }

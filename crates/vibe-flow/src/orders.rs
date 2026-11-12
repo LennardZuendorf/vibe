@@ -30,7 +30,7 @@ use crate::paths::FlowPaths;
 pub const GENERIC_FALLBACK: &str = "state=unknown · read .agents/skills/vibe/state-machine.json and pick the matching vibe phase · transition via set-state.sh";
 
 /// The degrade line when no spec peer answers: a path pointer and nothing else.
-pub const PATH_POINTER: &str = "spec: docs/spec/ (or .spec/) — read lessons.md and plan.md there; vibe-spec is unavailable, so no tagged lessons.";
+pub const PATH_POINTER: &str = "spec: docs/spec/ — read lessons.md and plan.md there; vibe-spec is unavailable, so no tagged lessons.";
 
 fn line(text: &str) -> String {
     format!("{text}\n")
@@ -223,8 +223,10 @@ mod tests {
 
     fn scratch(name: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir =
-            std::env::temp_dir().join(format!("vibe-flow-orders-{name}-{}-{n}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "vibe-flow-orders-{name}-{}-{n}",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("create scratch");
         dir
@@ -235,7 +237,9 @@ mod tests {
             fs::create_dir_all(dir).expect("dir");
         }
         fs::copy(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../").join(src),
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../")
+                .join(src),
             dest,
         )
         .expect("copy");
@@ -244,11 +248,18 @@ mod tests {
     /// A project whose data home is the legacy skill dir (the oracle layout).
     fn installed(name: &str) -> (PathBuf, FlowPaths) {
         let root = scratch(name);
-        copy("flow/state-machine.json", &root.join(".agents/skills/vibe/state-machine.json"));
+        copy(
+            "flow/state-machine.json",
+            &root.join(".agents/skills/vibe/state-machine.json"),
+        );
         copy("flow/SKILL.md", &root.join(".agents/skills/vibe/SKILL.md"));
         let content = root.join(".agents/skills/vibe/content");
         fs::create_dir_all(&content).expect("content dir");
-        fs::write(content.join("policy.json"), "{\"version\":1,\"rules\":[]}\n").expect("policy");
+        fs::write(
+            content.join("policy.json"),
+            "{\"version\":1,\"rules\":[]}\n",
+        )
+        .expect("policy");
         let paths = FlowPaths::resolve(Some(&root), None, &root, &NoEnv);
         (root, paths)
     }
@@ -370,7 +381,10 @@ mod tests {
             "{lines:?}"
         );
         if lines == vec![PATH_POINTER.to_string()] {
-            assert!(!lines.iter().any(|line| line.contains("lessons (")), "{lines:?}");
+            assert!(
+                !lines.iter().any(|line| line.contains("lessons (")),
+                "{lines:?}"
+            );
         }
     }
 

@@ -1,0 +1,2 @@
+<!-- vibe:doctrine -->
+<!-- /vibe:doctrine -->

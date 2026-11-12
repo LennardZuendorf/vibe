@@ -292,7 +292,11 @@ mod tests {
         let (root, paths) = install("missing");
         let out = run(&paths, Mode::Check);
         assert_eq!(out.code, 1);
-        assert!(out.stderr.contains("has no vibe:flow block"), "{}", out.stderr);
+        assert!(
+            out.stderr.contains("has no vibe:flow block"),
+            "{}",
+            out.stderr
+        );
         assert!(!root.join("AGENTS.md").exists());
     }
 
