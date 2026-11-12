@@ -812,3 +812,9 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Inventory every branch-native changed file and reconcile its producer and consumer behavior after a conflict. Share exact evidence-path exemptions between migration and the sweep; retain neighboring-file rejection tests. Discover paths before reading them, use the admitted shared build target for review probes, format restored source before checking it, and run each final CI gate against the integrated tree.
 **Tags:** integration, parity, migration, verification, discovery
 **Date:** 2026-11-04
+
+### Discover optional paths before reading CI helpers
+**Pattern:** CI investigation searched a nonexistent scoped spec directory and assumed a flow procedure path existed. Both probes failed. Receipt creation also required authorized directory creation in the isolated workspace.
+**Rule:** Inventory actual paths with `rg --files` before targeted searches or reads. Check optional tools and destination permissions separately, and distinguish diagnostic setup failures from product regressions.
+**Tags:** tooling, ci, discovery, verification
+**Date:** 2026-11-12
