@@ -202,7 +202,7 @@ if [[ -f "$STATE" ]] && { command -v node >/dev/null 2>&1 || command -v jq >/dev
     err "ERROR: versioned or invalid canonical cursor requires the Rust Flow runtime; legacy writer refused"
     exit 1
   fi
-elif [[ "$STATE" == "$LOCK_DIR/state.json" && -f "$STATE" ]] && grep -qF '\' "$STATE"; then
+elif [[ "$STATE" == "$LOCK_DIR/state.json" && -f "$STATE" ]] && grep -qF "\\" "$STATE"; then
   err "ERROR: escaped canonical metadata cannot be verified without a JSON parser"
   exit 1
 fi

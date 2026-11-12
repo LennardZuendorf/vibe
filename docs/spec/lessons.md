@@ -854,3 +854,9 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Discover the actual method mapping and installer catalog before documenting a workflow. Separate method skills, optional native agents, generic role briefs, installed hooks and verified capabilities. Label hypothetical paths and unavailable gates in diagrams, verify generated documentation copies, and refresh remote state before publishing.
 **Tags:** flow, documentation, plugins, verification
 **Date:** 2026-11-12
+
+### Run the exact CI lint over tracked package files
+**Pattern:** Final publication lint found SC1003 in a literal-backslash shell expression and both generated package copies after narrower checks had passed.
+**Rule:** Run CI's exact lint command against the final tracked file set, including generated scripts. For equivalent quoting fixes, compare old/new behavior on accepted and refused inputs, regenerate packages and update only the reviewed live-source hash; preserve frozen oracles.
+**Tags:** verification, shell, packaging, flow
+**Date:** 2026-11-12
