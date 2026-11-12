@@ -433,8 +433,8 @@ fn import_replaces_secrets() {
 fn import_cli_never_prints_secrets() {
     let home = Home::new("import-cli");
     home.write_json("in.json", agent_stack());
-    assert_eq!(home.vibe(&["store", "init"], &[]).code, 0);
-    let out = home.vibe(&["store", "import-mcp", "in.json"], &[]);
+    assert_eq!(home.vibe(&["config", "init"], &[]).code, 0);
+    let out = home.vibe(&["config", "import-mcp", "in.json"], &[]);
     assert_eq!(out.code, 0, "{}", out.stderr);
     let stdout = out.text();
     assert!(stdout.contains("added exa"), "{stdout}");
@@ -580,7 +580,7 @@ fn import_keeps_per_server_env_credentials_distinct() {
     );
     fs::create_dir_all(home.path(".codex")).unwrap();
     let out = home.vibe(
-        &["sync", "--harness", "codex"],
+        &["config", "sync", "--harness", "codex"],
         &[("VIBE_STORE", p.store.to_str().unwrap())],
     );
     assert_eq!(out.code, 0, "{}", out.stderr);
@@ -817,7 +817,7 @@ fn mcp_server_debug_redacts_env_and_header_values() {
 #[test]
 fn cli_init_twice_and_import_missing() {
     let home = Home::new("cli-init");
-    let first = home.vibe(&["store", "init"], &[]);
+    let first = home.vibe(&["config", "init"], &[]);
     assert_eq!(first.code, 0, "{}", first.stderr);
     assert_eq!(
         first
@@ -827,13 +827,13 @@ fn cli_init_twice_and_import_missing() {
             .count(),
         4
     );
-    let second = home.vibe(&["store", "init"], &[]);
+    let second = home.vibe(&["config", "init"], &[]);
     assert_eq!(second.code, 0, "{}", second.stderr);
     let text = second.text();
     assert_eq!(text.lines().count(), 4, "{text}");
     assert!(text.lines().all(|l| l.starts_with("exists ")), "{text}");
 
-    let out = home.vibe(&["store", "import-mcp", "missing.json"], &[]);
+    let out = home.vibe(&["config", "import-mcp", "missing.json"], &[]);
     assert_eq!(out.code, 1);
     assert_eq!(out.stderr.lines().count(), 1, "{}", out.stderr);
     assert!(out.stderr.contains("missing.json"));

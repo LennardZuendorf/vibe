@@ -35,7 +35,7 @@ pub struct Ctx<'a> {
 pub enum Mode {
     /// The session hook: files and links only.
     Hook,
-    /// `vibe sync`: everything.
+    /// `vibe config sync`: everything.
     Sync,
 }
 

@@ -1,4 +1,4 @@
-//! `vibe sync`: project the whole store, Claude MCP included.
+//! `vibe config sync`: project the whole store, Claude MCP included.
 use std::io::Write;
 
 use super::common::{self, Loaded};
@@ -28,7 +28,7 @@ fn run(
     Ok(outcome)
 }
 
-/// Runs `vibe sync`. `harnesses` limits the run; a limited run does not stamp the store hash,
+/// Runs `vibe config sync`. `harnesses` limits the run; a limited run does not stamp the store hash,
 /// so the session hook still refreshes the others. Exit 1 when something failed, a target
 /// was refused or another run holds the lock. A dry run reads only: it takes no lock and
 /// creates no directory.

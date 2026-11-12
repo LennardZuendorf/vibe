@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 #![cfg(unix)]
-//! `vibe store status` and `vibe doctor` end to end.
+//! `vibe config status` and `vibe config doctor` end to end.
 mod cmd_support;
 mod common;
 use cmd_support::*;
@@ -9,7 +9,7 @@ use vibe_core::json;
 #[test]
 fn status_reports_drift_and_exits_1_on_invalid_store() {
     let home = synced_home("status");
-    let out = home.vibe(&["store", "status"], &[]);
+    let out = home.vibe(&["config", "status"], &[]);
     assert_eq!(out.code, 0, "{}", out.stderr);
     let text = out.text();
     assert!(text.lines().next().unwrap() == "store ok", "{text}");
@@ -24,14 +24,14 @@ fn status_reports_drift_and_exits_1_on_invalid_store() {
         "Use the shared tools.",
         "Hand edit.",
     );
-    let out = home.vibe(&["store", "status"], &[]);
+    let out = home.vibe(&["config", "status"], &[]);
     assert_eq!(out.code, 0);
     let text = out.text();
     let codex = text.lines().find(|l| l.starts_with("codex: ")).unwrap();
     assert!(codex.contains("block=edited"), "{codex}");
     assert!(codex.contains("drift=drifted"), "{codex}");
 
-    let out = home.vibe(&["store", "status", "--json"], &[]);
+    let out = home.vibe(&["config", "status", "--json"], &[]);
     assert_eq!(out.code, 0, "{}", out.stderr);
     let doc = json::parse(&out.text()).unwrap();
     assert_eq!(doc.path(&["store", "valid"]).unwrap().as_bool(), Some(true));
@@ -53,10 +53,10 @@ fn status_reports_drift_and_exits_1_on_invalid_store() {
     );
 
     home.write(".config/vibe/mcp.json", "{ nope");
-    let out = home.vibe(&["store", "status"], &[]);
+    let out = home.vibe(&["config", "status"], &[]);
     assert_eq!(out.code, 1);
     assert!(out.text().contains("store invalid"), "{}", out.text());
-    let out = home.vibe(&["store", "status", "--json"], &[]);
+    let out = home.vibe(&["config", "status", "--json"], &[]);
     assert_eq!(out.code, 1);
     let doc = json::parse(&out.text()).unwrap();
     assert_eq!(
@@ -74,7 +74,7 @@ fn status_counts_skips_including_disabled_servers() {
         "\"codex-only\"",
         "\"bad name!\":{\"command\":\"x\"},\n\"codex-only\"",
     );
-    let out = home.vibe(&["store", "status", "--json"], &[]);
+    let out = home.vibe(&["config", "status", "--json"], &[]);
     let doc = json::parse(&out.text()).unwrap();
     let skips = doc.path(&["harnesses", "claude", "skips"]).unwrap();
     assert!(
@@ -90,11 +90,11 @@ fn doctor_flags_missing_hook_binary() {
         ".local/state/vibe/state.json",
         "{\"v\":1,\"store_hash\":\"\",\"mcp_hash\":\"\",\"targets\":{},\"owned\":{\"hooks\":{\"claude\":\"\\\"/nonexistent/dir/vibe\\\" hook session-start --harness claude\"}}}",
     );
-    let out = home.vibe(&["doctor"], &[]);
+    let out = home.vibe(&["config", "doctor"], &[]);
     assert_eq!(out.code, 1, "{}", out.text());
     assert!(
         out.text()
-            .contains("problem claude: hook binary missing \u{2014} run `vibe install`"),
+            .contains("problem claude: hook binary missing \u{2014} run `vibe config install`"),
         "{}",
         out.text()
     );
@@ -104,7 +104,7 @@ fn doctor_flags_missing_hook_binary() {
 #[test]
 fn doctor_lists_found_and_missing_clis() {
     let home = ready_home("doctor-clis");
-    let out = home.vibe(&["doctor"], &[]);
+    let out = home.vibe(&["config", "doctor"], &[]);
     assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
     let text = out.text();
     let claude = home.path("bin/claude");
@@ -129,7 +129,7 @@ fn doctor_reports_invalid_store_and_held_lock() {
     let home = ready_home("doctor-bad");
     home.write(".config/vibe/store.json", "{ nope");
     home.write(".local/state/vibe/lock", "4242");
-    let out = home.vibe(&["doctor"], &[]);
+    let out = home.vibe(&["config", "doctor"], &[]);
     assert_eq!(out.code, 1);
     let text = out.text();
     assert!(
@@ -143,7 +143,7 @@ fn doctor_reports_invalid_store_and_held_lock() {
 fn status_reports_missing_config_dir_as_not_enabled() {
     let home = synced_home("status-nodir");
     std::fs::remove_dir_all(home.path(".factory")).unwrap();
-    let out = home.vibe(&["store", "status"], &[]);
+    let out = home.vibe(&["config", "status"], &[]);
     assert_eq!(out.code, 0, "{}", out.stderr);
     let text = out.text();
     let droid = text.lines().find(|l| l.starts_with("droid: ")).unwrap();
@@ -160,7 +160,7 @@ fn doctor_ignores_non_executable_files_on_path() {
     let bin = home.bin_dir();
     home.write("bin/codex", "#!/bin/sh\n");
     std::fs::set_permissions(bin.join("codex"), std::fs::Permissions::from_mode(0o644)).unwrap();
-    let out = home.vibe(&["doctor"], &[]);
+    let out = home.vibe(&["config", "doctor"], &[]);
     let text = out.text();
     assert!(text.lines().any(|l| l == "missing codex"), "{text}");
     assert!(
@@ -172,7 +172,7 @@ fn doctor_ignores_non_executable_files_on_path() {
 #[test]
 fn status_reports_codex_and_droid_mcp_drift() {
     let home = synced_home("status-mcp-drift");
-    let out = home.vibe(&["store", "status"], &[]);
+    let out = home.vibe(&["config", "status"], &[]);
     for id in ["codex", "droid"] {
         let line = out
             .text()
@@ -187,7 +187,7 @@ fn status_reports_codex_and_droid_mcp_drift() {
     }
     replace_in(&home, ".factory/mcp.json", "some-server", "hacked-server");
     replace_in(&home, ".codex/config.toml", "codex-server", "hacked-server");
-    let out = home.vibe(&["store", "status", "--json"], &[]);
+    let out = home.vibe(&["config", "status", "--json"], &[]);
     let doc = json::parse(&out.text()).unwrap();
     for id in ["codex", "droid"] {
         assert_eq!(

@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 #![cfg(unix)]
 //! Real-CLI acceptance: the real `codex`, `droid`, `claude` (and optionally `opencode`)
-//! accept the files `vibe install` / `vibe sync` generate. Gated by `VIBE_E2E=1`;
+//! accept the files `vibe config install` / `vibe config sync` generate. Gated by `VIBE_E2E=1`;
 //! `VIBE_E2E_REQUIRE=1` turns a missing CLI into a failure. Every spawned process runs
 //! under `env_clear()` with every config location pointed into the scratch home.
 mod common;
@@ -165,9 +165,9 @@ fn installed(name: &str) -> Home {
         ".config/vibe/AGENTS.md",
         "# Global rules\n\nUse the shared tools.\n",
     );
-    let out = vibe(&home, &["install"]);
+    let out = vibe(&home, &["config", "install"]);
     assert_ok(&out);
-    eprintln!("[vibe install]\n{}", out.text());
+    eprintln!("[vibe config install]\n{}", out.text());
     home
 }
 
@@ -274,16 +274,16 @@ fn e2e_claude_user_scope_has_servers() {
           "http-srv":{"type":"http","url":"https://mcp.example.com/mcp","headers":{"Authorization":"Bearer ${VIBE_HTTP_TOKEN}"}}
         }}"#,
     );
-    let sync = vibe_in(&home, &["sync"], CFG);
-    eprintln!("[vibe sync]\n{}", show(&sync));
+    let sync = vibe_in(&home, &["config", "sync"], CFG);
+    eprintln!("[vibe config sync]\n{}", show(&sync));
     assert_ok(&sync);
 
     let get = real_cli_in(&home, "claude", &["mcp", "get", "echo-srv"], CFG);
     assert_ok(&get);
     assert!(get.text().contains("node"), "{}", show(&get));
 
-    let again = vibe_in(&home, &["sync"], CFG);
-    eprintln!("[vibe sync again]\n{}", show(&again));
+    let again = vibe_in(&home, &["config", "sync"], CFG);
+    eprintln!("[vibe config sync again]\n{}", show(&again));
     assert_ok(&again);
     assert!(
         again.text().lines().any(|l| l == "nothing to do"),
@@ -308,8 +308,8 @@ fn e2e_claude_user_scope_has_servers() {
     assert_ok(&after);
     assert_eq!(before.text(), after.text());
 
-    let un = vibe_in(&home, &["uninstall"], CFG);
-    eprintln!("[vibe uninstall]\n{}", show(&un));
+    let un = vibe_in(&home, &["config", "uninstall"], CFG);
+    eprintln!("[vibe config uninstall]\n{}", show(&un));
     assert_ok(&un);
     for name in ["echo-srv", "env-srv", "http-srv"] {
         let gone = real_cli_in(&home, "claude", &["mcp", "get", name], CFG);

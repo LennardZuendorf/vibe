@@ -15,7 +15,7 @@ use crate::store;
 /// The hook never runs `claude`; a path that cannot exist makes any slip fail loudly.
 const NO_CLI: &str = "/nonexistent/vibe-hook/claude";
 
-const STALE_MCP: &str = "vibe: Claude MCP changed; run `vibe sync`";
+const STALE_MCP: &str = "vibe: Claude MCP changed; run `vibe config sync`";
 
 /// The one notice line, when there is something to say.
 fn session(paths: &Paths) -> Result<Option<String>, String> {
@@ -79,7 +79,7 @@ fn refresh(paths: &Paths) -> Result<Option<String>, String> {
         names.join(", ")
     );
     if mcp_stale {
-        line.push_str("; run `vibe sync` for Claude MCP");
+        line.push_str("; run `vibe config sync` for Claude MCP");
     }
     Ok(Some(line))
 }

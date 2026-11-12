@@ -938,3 +938,16 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Accept bounded Busy only with a successful peer, unchanged foreign ownership, and fresh post-completion reads proving one project identity. Run the full tracked sweep and native Windows CI; cross-compilation proves a separate boundary. Retain exact failed receipts, discover paths before reads, quote optional globs, and use task-specific variables before retrying probes.
 **Tags:** concurrency, validation, ci, receipts, tooling
 **Date:** 2026-11-12
+
+
+### Rename commands across subprocesses and abbreviated references
+**Pattern:** The config namespace migration updated public fixtures but missed a nested subprocess invoking the removed sync command. Full-suite execution caught usage exit 2 where the lock control expected exit 1. Final review also found abbreviated store-command spellings in current spec notes.
+**Rule:** Inventory direct argv arrays, helper-generated calls and nested executable scripts before renaming a CLI. Search both full executable spellings and abbreviated command names in current contracts. Run the complete package suite and inspect remaining hits by meaning; keep intentional rejection cases and stored-data literals unchanged.
+**Tags:** cli, migration, subprocesses, fixtures, documentation
+**Date:** 2026-11-12
+
+### Run plugin tests through their generated fixture contract
+**Pattern:** A direct Node invocation omitted the plugin paths that its Rust wrapper generates, so it failed before testing plugin behavior. The fixture-backed command and wrapper passed all 16 tests.
+**Rule:** Inspect the test wrapper before invoking an internal runner. Generate both raw and substituted plugin fixtures, set every required environment variable, and retain the exact successful command. Keep fixture setup failures distinct from product failures; never use live user configuration as the fixture.
+**Tags:** tests, node, plugins, fixtures, verification
+**Date:** 2026-11-12

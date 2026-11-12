@@ -177,7 +177,7 @@ fn run_cli(paths: &Paths, claude_bin: &str, op: &CliOp) -> Result<CliResult, Str
 /// changes nothing.
 ///
 /// The cache stamps are recorded whenever no item failed. `Refused` and `Skipped` notes do not
-/// suppress them, so the session hook stays quiet; `vibe store status` and `sync` print those
+/// suppress them, so the session hook stays quiet; `vibe config status` and `sync` print those
 /// notes on every run. A missing `claude` CLI is the exception for the MCP stamp: it stays at its
 /// old value so `status` and the hook keep reporting Claude MCP out of date.
 pub fn apply(

@@ -19,7 +19,7 @@ Single-purpose repo: build the self-hosting vibe workflow harness. This plan is 
 - [Spec rows](parts/spec/concepts/spec-feature-sequence.md) — F1, F2, F16 to F20, F25
 - [Flow rows](parts/flow/concepts/flow-feature-sequence.md) — F5 to F10
 - [Instruct rows](parts/instruct/concepts/instruct-feature-sequence.md) — F11 to F15
-- [v0.5 CLI arc](parts/cli/concepts/cli-feature-sequence.md) — C1 to C6
+- [v0.5 CLI arc](parts/cli/concepts/cli-feature-sequence.md) — delivered C0 and queued C1 to C6
 - [Issue catalog](concepts/issue-catalog.md) — GitHub issues per row
 
 ## Boundaries and status
@@ -39,4 +39,5 @@ Single-purpose repo: build the self-hosting vibe workflow harness. This plan is 
 |---|---|---|
 | review-hardening | Port of the pre-v0.4 review-hardening fixes onto the live JS/bash harness; pins in [rust-parity-pins](tech/rust/rust-parity-pins.md) | DONE |
 | skill-revision | Spec and flow skills, toolset, instructions and cross-file consistency to the superpowers standard | IN PROGRESS |
+| config-namespace | [Seven shared-configuration operations under `vibe config`](tech/cli/cli-binary.md); old commands removed without aliases; locally verified and independently reviewed | DONE |
 | spec-projects-mcp | [Embedded spec, project storage and local Rust MCP](tech/spec/spec-projects-mcp.md); locally verified and independently reviewed | DONE |
