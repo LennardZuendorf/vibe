@@ -20,7 +20,7 @@ if (args.join(' ') === 'debug --help') {
 } else if (args.join(' ') === 'api --help') {
   console.log('--standalone Run with a private server');
 } else if (args.join(' ') === 'debug skill --pure') {
-  const skills = ['spec','using-spec','vibe'].map(name => ({name,location:path.join(home,'.config/opencode/skills',name,'SKILL.md')}));
+  const skills = ['spec','flow','vibe'].map(name => ({name,location:path.join(home,'.config/opencode/skills',name,'SKILL.md')}));
   if (mode === 'legacy-chunked') {
     skills[0].content = 'begin'+'x'.repeat(300000)+'end';
     const text = JSON.stringify(skills);
@@ -56,7 +56,7 @@ if (args.join(' ') === 'debug --help') {
     if (!fs.existsSync(path.join(home,'activated'))) console.log(JSON.stringify({data:[]}));
     else if (mode === 'malformed') console.log('{bad json');
     else if (mode === 'invalid-list') console.log(JSON.stringify({data:[{name:'spec',path:42}]}));
-    else console.log(JSON.stringify({location:{directory:process.cwd()},data:['spec','using-spec','vibe'].map(name=>({id:name,name,path:path.join(home,'.config/opencode/skills',name,'SKILL.md'),content:'skill'}))}));
+    else console.log(JSON.stringify({location:{directory:process.cwd()},data:['spec','flow','vibe'].map(name=>({id:name,name,path:path.join(home,'.config/opencode/skills',name,'SKILL.md'),content:'skill'}))}));
   } else process.exit(9);
 } else process.exit(10);
 `;
@@ -82,7 +82,7 @@ async function events(home) {
 }
 
 function expected(home) {
-  return ['spec', 'using-spec', 'vibe'].map(name => ({
+  return ['spec', 'flow', 'vibe'].map(name => ({
     name, location: path.join(home, '.config/opencode/skills', name, 'SKILL.md'),
   }));
 }

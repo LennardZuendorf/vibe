@@ -21,7 +21,7 @@ REPO="$(cd "$HERE/../../.." && pwd)"
 score() {
   local accept="$1" sp="$2" first="$3"
   if [[ "$accept" == none ]]; then
-    case "${first##*:}" in spec|vibe) echo FAIL; return 1 ;; esac
+    case "${first##*:}" in spec|vibe|flow) echo FAIL; return 1 ;; esac
     echo PASS; return 0
   fi
   [[ "$sp" == absent ]] && accept="spec"
@@ -35,9 +35,12 @@ if [[ "${1:-}" == "--score" ]]; then
   exit 1
 fi
 
-mode="both" root="default"
+mode="both" root="default" suite="spec" host="claude" requested_model=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --suite) suite="${2:-}"; shift 2 ;;
+    --host) host="${2:-}"; shift 2 ;;
+    --model) requested_model="${2:-}"; shift 2 ;;
     --sp) [[ $# -ge 2 ]] || { echo "pressure: --sp needs present|absent|both" >&2; exit 2; }; mode="$2"; shift 2 ;;
     --root) [[ $# -ge 2 ]] || { echo "pressure: --root needs default|legacy" >&2; exit 2; }; root="$2"; shift 2 ;;
     *) echo "pressure: unknown argument '$1'" >&2; exit 2 ;;
@@ -45,6 +48,15 @@ while [[ $# -gt 0 ]]; do
 done
 case "$mode" in present|absent|both) ;; *) echo "pressure: bad --sp value '$mode'" >&2; exit 2 ;; esac
 case "$root" in default|legacy) ;; *) echo "pressure: bad --root value '$root' (default|legacy)" >&2; exit 2 ;; esac
+case "$suite" in spec|flow) ;; *) echo "pressure: --suite needs spec|flow" >&2; exit 2 ;; esac
+if [[ "$host" != claude ]]; then
+  echo "pressure: host '$host' unavailable in this Claude runner; use explicit native host evaluation, not fallback" >&2
+  exit 2
+fi
+if [[ "$suite" == flow && -z "$requested_model" ]]; then
+  echo "pressure: Flow evaluation requires explicit --model; no silent model fallback" >&2
+  exit 2
+fi
 [[ -n "${ANTHROPIC_API_KEY:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ]] || { echo "pressure: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN (claude setup-token); not run" >&2; exit 2; }
 command -v claude >/dev/null 2>&1 || { echo "pressure: claude CLI not found on PATH; not run" >&2; exit 2; }
 
@@ -64,7 +76,7 @@ if [[ "$mode" != absent ]]; then
   echo "pressure: superpowers dir: $SP_DIR"
 fi
 
-MODEL="${PRESSURE_MODEL:-claude-sonnet-5-5}"
+MODEL="${requested_model:-${PRESSURE_MODEL:-claude-sonnet-5-5}}"
 LOG_DIR="${PRESSURE_LOG_DIR:-$REPO/.superpowers/p1/pressure}/$(date +%Y%m%dT%H%M%S)-$root-$mode"
 if ! mkdir -p "$LOG_DIR"; then
   echo "pressure: cannot create log dir '$LOG_DIR'; set PRESSURE_LOG_DIR; not run" >&2; exit 2
@@ -82,7 +94,12 @@ make_sandbox() { # populates dir $1: proj/ plugin/ config/
   printf '#!/usr/bin/env bash\necho "Helo"\n' >"$d/proj/src/cli.sh"
   printf '{"name":"spec-under-test","version":"0.0.0"}\n' >"$d/plugin/.claude-plugin/plugin.json"
   ln -s "$REPO/spec" "$d/plugin/skills/spec"
+  if [[ "$suite" == flow ]]; then
+    ln -s "$REPO/skills/vibe" "$d/plugin/skills/vibe"
+    [[ "${SCENARIO_ID:-}" == missing-component ]] || ln -s "$REPO/flow" "$d/plugin/skills/flow"
+  fi
   (cd "$d/proj" && git init -q .) || true
+  [[ "${SCENARIO_ID:-}" != no-root ]] || return 0
   case "$root" in
     default) (cd "$d/proj" && "$VSB" init >/dev/null 2>&1) || true ;;
     legacy) (cd "$d/proj" && bash "$REPO/spec/scripts/setup.sh" >/dev/null 2>&1) || true ;;
@@ -96,29 +113,57 @@ claude_iso() { # cfg plugin-args... prompt
 
 pass=0 total=0
 run_one() { # id accept prompt sp
-  local id="$1" accept="$2" prompt="$3" sp="$4" d first log verdict args=()
-  d="$(mktemp -d)"; SANDBOX="$d"; make_sandbox "$d"
+  local id="$1" accept="$2" prompt="$3" sp="$4" d first log verdict host_rc=0 parse_failed=0 args=()
+  d="$(mktemp -d)"; SANDBOX="$d"; SCENARIO_ID="$id" make_sandbox "$d"
   args=(--plugin-dir "$d/plugin")
   [[ "$sp" == present ]] && args+=(--plugin-dir "$SP_DIR")
   log="$LOG_DIR/$id-$sp"
-  (cd "$d/proj" && claude_iso "$d/config" ${args[@]+"${args[@]}"} "$prompt" >"$log.jsonl" 2>"$log.err") ||
-    echo "pressure: claude exited non-zero for scenario $id ($sp); see $log.err" >&2
-  if ! first="$(node "$HERE/parse.mjs" <"$log.jsonl")"; then
-    echo "pressure: parse failed for scenario $id ($sp); counting first-skill=none" >&2
-    first="none"
+  (cd "$d/proj" && claude_iso "$d/config" ${args[@]+"${args[@]}"} "$prompt" >"$log.jsonl" 2>"$log.err") || host_rc=$?
+  if [[ "$host_rc" -ne 0 ]]; then
+    echo "pressure: host/model unavailable or failed for $id ($sp), exit=$host_rc; unverified; see $log.err" >&2
+  fi
+  if ! first="$(node "$HERE/parse.mjs" --strict <"$log.jsonl")"; then
+    parse_failed=1
+    first="unverified"
   fi
   rm -rf "$d"; SANDBOX=""; total=$((total + 1))
-  if verdict="$(score "$accept" "$sp" "$first")"; then pass=$((pass + 1)); fi
+  if [[ "$host_rc" -ne 0 || "$parse_failed" -ne 0 ]]; then
+    verdict=UNVERIFIED
+  elif [[ "$suite" == flow ]]; then
+    if [[ "$first" == "$accept" ]]; then verdict=PASS; pass=$((pass + 1)); else verdict=FAIL; fi
+  elif verdict="$(score "$accept" "$sp" "$first")"; then pass=$((pass + 1)); fi
+  node - "$REPO" "$suite" "$host" "$MODEL" "$id" "$prompt" "$accept" "$first" "$verdict" "$log" <<'JS'
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+const [repo,suite,host,model,id,input,expected,actual,verdict,log]=process.argv.slice(2);
+const hash=crypto.createHash('sha256');
+function visit(rel) {
+ const p=path.join(repo,rel); if(!fs.existsSync(p))return;
+ const stat=fs.lstatSync(p);
+ if(stat.isSymbolicLink()){hash.update(rel).update(fs.readlinkSync(p));return;}
+ if(stat.isDirectory()){for(const child of fs.readdirSync(p).sort()){if(['tests','AGENTS.md','state.json','evidence','warnings.log'].includes(child))continue;visit(path.join(rel,child));}return;}
+ hash.update(rel).update(fs.readFileSync(p));
+}
+for(const p of ['skills/vibe','flow','spec'])visit(p);
+fs.writeFileSync(`${log}.report.json`,JSON.stringify({kind:'selection',suite,source_digest:`sha256:${hash.digest('hex')}`,host,model,id,input,expected,actual,verdict,transcript:`${log}.jsonl`,action_trace_status:'unverified'},null,2)+'\n');
+JS
   if [[ "$accept" == none ]]; then echo "$verdict $id $sp first-skill=$first (near-miss)"
   elif [[ "$verdict" == PASS ]]; then echo "PASS $id $sp first-skill=$first"
   else echo "FAIL $id $sp first-skill=$first (accept: $accept)"; fi
 }
 
+CASES="$HERE/scenarios.tsv"
+if [[ "$suite" == flow ]]; then
+  CASES="$LOG_DIR/selection.tsv"
+  node - "$REPO/flow/tests/evals/selection.json" > "$CASES" <<'JS'
+const fs=require('node:fs');const data=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+console.log('id\taccept\tprompt');for(const q of data.queries)console.log([q.id,q.expect,q.query].join('\t'));
+JS
+fi
 sps=(present absent); [[ "$mode" != both ]] && sps=("$mode")
 while IFS=$'\t' read -r id accept prompt; do
   [[ "$id" == id ]] && continue
   for sp in ${sps[@]+"${sps[@]}"}; do run_one "$id" "$accept" "$prompt" "$sp"; done
-done <"$HERE/scenarios.tsv"
+done <"$CASES"
 [[ $total -ge 6 ]] || { echo "pressure: only $total scenarios ran (floor 6)"; exit 1; }
 echo "pressure: $pass/$total passed"
 [[ $pass -eq $total ]]

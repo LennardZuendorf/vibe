@@ -18,5 +18,5 @@ disagree. Edit the rules, never this text.
 Check a path before writing it:
 
 ```bash
-bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
+bash .agents/skills/flow/scripts/detect-context.sh decide <path>
 ```

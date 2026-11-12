@@ -137,7 +137,7 @@ test('shipped: state.json always blocks — no state admits a direct edit', () =
   const { rules } = loadPolicy(REPO_VIBE_DIR);
   const policy = { rules };
   for (const state of ['idle', 'feature.impl', 'setup.apply', 'strategy.spec']) {
-    const result = decide(policy, '.agents/skills/vibe/state.json', state);
+    const result = decide(policy, '.agents/skills/flow/state.json', state);
     assertEqual(result.verdict, 'block');
     assertEqual(result.reason, 'state.json is written only via set-state.sh, never by direct edit');
   }
@@ -269,7 +269,7 @@ test('bash-fidelity: a "../"-prefixed path still hits a literal rule', () => {
 
 test('bash-fidelity: a path nested under an extra directory still hits a literal rule', () => {
   const { rules } = loadPolicy(REPO_VIBE_DIR);
-  const result = decide({ rules }, 'worktree/.agents/skills/vibe/state.json', 'idle');
+  const result = decide({ rules }, 'worktree/.agents/skills/flow/state.json', 'idle');
   assertEqual(result.verdict, 'block');
 });
 
@@ -668,7 +668,7 @@ test('cli end-to-end: `vibe policy decide` against the real repo always exits 0'
   assertEqual(allow.code, 0);
   assertEqual(allow.stdout, 'allow\n');
 
-  const blocked = runCli(['policy', 'decide', '.agents/skills/vibe/state.json', 'idle']);
+  const blocked = runCli(['policy', 'decide', '.agents/skills/flow/state.json', 'idle']);
   assertEqual(blocked.code, 0, 'decide must exit 0 even for a block verdict');
   assertMatch(blocked.stdout, /^block:/);
 });
@@ -749,7 +749,7 @@ test('cli end-to-end: `--vibe-dir` pins WHICH install answers, whatever the cwd'
 // that postcondition before running anything through it) — a leg that quietly
 // still had node would be comparing the engine against itself, which is the
 // vacuous green this repo has a recorded lesson about. The matrix also asserts
-// its own population: a floor on comparisons actually run, that all 13 states
+// its own population: a floor on comparisons actually run, that all 14 states
 // and every shipped rule are represented, and that the verdicts observed are
 // not all the same value.
 // ---------------------------------------------------------------------------
@@ -855,7 +855,7 @@ function guardedPathsFor(rules) {
 // branches agree" from "both branches block everything".
 const CONTROL_PATHS = ['README.md', 'docs/x.md', 'flow/engine/policy.mjs', 'srcx/a.js'];
 
-test('differential matrix: every guarded path x all 13 states is byte-identical through the engine and the bash branch', () => {
+test('differential matrix: every guarded path x all 14 states is byte-identical through the engine and the bash branch', () => {
   const { rules } = loadPolicy(REPO_VIBE_DIR);
   const paths = [...guardedPathsFor(rules), ...CONTROL_PATHS];
   const harness = makeMatrixHarness();
@@ -870,7 +870,7 @@ test('differential matrix: every guarded path x all 13 states is byte-identical 
     assertEqual(mismatches, [], `branches diverged on ${mismatches.length} cell(s):\n${mismatches.join('\n')}`);
 
     // --- the matrix asserts its own population -----------------------------
-    assertEqual(MACHINE_STATES.length, 13, 'the machine no longer has 13 states — update the matrix, do not shrink it');
+    assertEqual(MACHINE_STATES.length, 14, 'the machine no longer has 14 states — update the matrix, do not shrink it');
     assert(paths.length >= 40, `path axis collapsed to ${paths.length} paths`);
     assert(engineRows.length >= 500, `only ${engineRows.length} comparisons ran — the matrix is not covering the surface`);
 
@@ -955,7 +955,7 @@ test('review-hardening/6: differential: a path holding a newline is split whole,
   // normaliser must still see every segment.
   const harness = makeMatrixHarness();
   try {
-    const paths = ['evil\n/.spec/lessons.md', 'a\nb/.agents/skills/vibe/state.json', '.spec/x\n/../lessons.md'];
+    const paths = ['evil\n/.spec/lessons.md', 'a\nb/.agents/skills/flow/state.json', '.spec/x\n/../lessons.md'];
     for (const p of paths) {
       const opts = { unsetEnv: ['CLAUDE_PROJECT_DIR'] };
       const engine = runCommand('bash', [DETECT_SH, 'decide', p, 'idle'], opts);
@@ -976,7 +976,7 @@ test('review-hardening/6: differential: a path ending in a newline gets the same
   // different file the engine keeps whole. Both branches must agree byte-exact.
   const harness = makeMatrixHarness();
   try {
-    const paths = ['.spec/lessons.md\n', '.spec/lessons.md\n\n', '.agents/skills/vibe/state.json\n', '.spec/plan.md\n'];
+    const paths = ['.spec/lessons.md\n', '.spec/lessons.md\n\n', '.agents/skills/flow/state.json\n', '.spec/plan.md\n'];
     for (const p of paths) {
       const opts = { unsetEnv: ['CLAUDE_PROJECT_DIR'] };
       const engine = runCommand('bash', [DETECT_SH, 'decide', p, 'idle'], opts);
@@ -1131,7 +1131,7 @@ test('known divergence: on EVERY derived cross-rule path the engine is stricter 
   // Population floors: a collapsed derivation must fail loudly rather than
   // assert a property of nothing.
   assert(paths.length >= 8, `cross-rule population collapsed to ${paths.length} path(s)`);
-  assertEqual(MACHINE_STATES.length, 13);
+  assertEqual(MACHINE_STATES.length, 14);
 
   const harness = makeMatrixHarness();
   try {
@@ -1189,7 +1189,7 @@ test('known divergence: on EVERY derived cross-rule path the engine is stricter 
 
 function makeInstallSandbox() {
   const dir = mkTempRoot('vibe-policy-install-');
-  const vibeDir = path.join(dir, '.agents', 'skills', 'vibe');
+  const vibeDir = path.join(dir, '.agents', 'skills', 'flow');
   mkdirSync(vibeDir, { recursive: true });
   // Everything the delegation needs: the script, the engine, the data.
   cpSync(path.join(REPO_VIBE_DIR, 'scripts'), path.join(vibeDir, 'scripts'), { recursive: true });
@@ -1306,7 +1306,7 @@ test('delegation: EVERY unusable policy falls back to the bash branch, which sti
   const sb = makeInstallSandbox();
   const guarded = [
     ['.spec/lessons.md', 'block:.spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: idle)\n'],
-    ['.agents/skills/vibe/state.json', 'block:state.json is written only via set-state.sh, never by direct edit\n'],
+    ['.agents/skills/flow/state.json', 'block:state.json is written only via set-state.sh, never by direct edit\n'],
     ['.spec/product.md', 'block:root .spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: idle)\n'],
   ];
   // The two filesystem routes join the content ones: the file removed, and the

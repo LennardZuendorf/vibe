@@ -251,7 +251,7 @@ enum Layout {
 #[derive(Clone, Copy, clap::ValueEnum)]
 #[value(rename_all = "kebab-case")]
 enum HookEvent {
-    /// Prints the using-spec router.
+    /// Prints standalone Spec discovery context.
     SessionStart,
     /// The PreToolUse tooth.
     Guard,

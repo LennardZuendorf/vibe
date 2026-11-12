@@ -418,7 +418,7 @@ test('content: machine placeholders interpolate from the live cursor and state m
   try {
     const result = renderChannel('user-prompt', sb.ctx);
     assertEqual(result.errors, []);
-    assertEqual(result.text, 'state=feature.impl feature=js-core next=feature.verify, idle writes=src/**, tests/**\n');
+    assertEqual(result.text, 'state=feature.impl feature=js-core next=feature.compound, feature.plan, feature.design, idle writes=src/**, tests/**\n');
   } finally {
     sb.cleanup();
   }
@@ -622,7 +622,7 @@ function transitionIn(cursor) {
 
 test('content: {{transition}} on a state with ONE legal next renders exactly that one command', () => {
   assertEqual(
-    transitionIn({ flow: 'setup', phase: 'apply', feature: null, updated: '2026-01-01T00:00:00Z' }),
+    transitionIn({ flow: 'feature', phase: 'ship', feature: null, updated: '2026-01-01T00:00:00Z' }),
     'set-state.sh idle',
   );
 });
@@ -644,7 +644,7 @@ test('content: {{transition}} renders a GATED edge as its /flow … confirm form
 test('content: {{transition}} with several legal next values renders the list, in the machine’s order', () => {
   assertEqual(
     transitionIn({ flow: 'feature', phase: 'impl', feature: 'demo', updated: '2026-01-01T00:00:00Z' }),
-    'set-state.sh feature.verify | set-state.sh idle',
+    'set-state.sh feature.compound | set-state.sh feature.plan | set-state.sh feature.design | set-state.sh idle',
   );
 });
 

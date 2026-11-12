@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vibe toolkit"
+  short_description: "Choose the right Vibe component"
+  default_prompt: "Use $vibe to explain the toolkit and choose one installed component."

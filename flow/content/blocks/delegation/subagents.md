@@ -4,16 +4,14 @@ title: Delegating to sub-agents
 channels: [agents-md]
 ---
 <!-- vibe:summary -->
-delegation: set model on EVERY sub-agent call — haiku (mechanical bulk) · sonnet (default implementation, exploration, per-task review) · opus (architecture, adversarial or final review) · unsure → the cheaper tier, escalate on failure
+delegation: choose capability before model; set an available allowed model explicitly under controlling user/repository preferences; bounded briefs and independent review; no silent forbidden fallback
 <!-- /vibe:summary -->
 
-Model tiers for ANY delegated work — Agent-tool calls and Workflow-script `agent()`
-calls alike. Set the `model` parameter explicitly on every call; never omit it
-(omission silently inherits the session model):
+Choose the needed capability before its provider or model. Apply controlling user
+and repository model preferences. Set an allowed available model explicitly for
+all delegated work; do not infer one from the role name. Report unavailable
+required capabilities instead of silently substituting a forbidden model.
 
-- `haiku` — mechanical bulk work: renames, boilerplate, format conversion, log triage.
-- `sonnet` — default for well-specified implementation, exploration and per-task review.
-- `opus` — architecture, adversarial or final review, genuinely tricky work:
-  concurrency, subtle algorithms, gnarly debugging.
-
-When unsure between tiers, pick the cheaper and escalate on failure.
+Workers receive exact scope, dependencies and checks. The controller owns state,
+progress, gate decisions and independent review. A worker returns checked-result
+claims; it cannot widen scope, approve itself, commit, clean or finish a branch.

@@ -1,0 +1,16 @@
+{
+  "run_id": "run-1",
+  "plan_digest": "plan-a",
+  "requirements": [
+    "R5"
+  ],
+  "read_paths": [],
+  "write_scope": [
+    "source"
+  ],
+  "dependencies": [],
+  "checks": [
+    "tests"
+  ],
+  "role": "implementer"
+}

@@ -43,7 +43,7 @@ unset CLAUDE_PROJECT_DIR
 # self-locating script resolves its state.json, machine, and orders INTO the
 # sandbox — the live cursor is never touched. The layout preserves the
 # real-vs-symlink path-parity subject the parity tests exercise: flow/ is a real
-# copy, .agents/skills/vibe is the recreated ../../flow symlink (NOT a cp -RL
+# copy, .agents/skills/flow is the recreated ../../flow symlink (NOT a cp -RL
 # deref), and .spec is a root marker so marker-search halts here instead of
 # walking up into the real repo. mktemp -d is unique per run, so two concurrent
 # suites never share state. The live flow/state.json is excluded from the copy
@@ -54,11 +54,11 @@ trap cleanup EXIT
 mkdir -p "$SANDBOX/flow" "$SANDBOX/.agents/skills" "$SANDBOX/.spec"
 find "$SRC_ROOT/flow" -mindepth 1 -maxdepth 1 ! -name state.json \
   -exec cp -R {} "$SANDBOX/flow/" \;
-ln -s ../../flow "$SANDBOX/.agents/skills/vibe"
+ln -s ../../flow "$SANDBOX/.agents/skills/flow"
 
 # All repo-relative test paths now resolve inside the sandbox.
 REPO_ROOT="$SANDBOX"
-FLOW="$REPO_ROOT/.agents/skills/vibe"
+FLOW="$REPO_ROOT/.agents/skills/flow"
 SCRIPTS="$FLOW/scripts"
 MACHINE="$FLOW/state-machine.json"
 SKILLS="$REPO_ROOT/.agents/skills"
@@ -249,7 +249,7 @@ gone_states="$(jq -r --arg sc "$dead_sc" --arg qc "$dead_qc" '[.states | keys[] 
 assert_eq "simplify/dead-states" "the two per-phase compound states and amend are removed from the machine" "$gone_states" ""
 # flow-legibility/1 — loop edges + research artifact
 ss_next="$(jq -c '.states."strategy.spec".next' "$MACHINE")"
-assert_eq "flow-legibility/1" "strategy.spec loops back to brainstorm: next is [strategy.brainstorm, idle]" "$ss_next" '["strategy.brainstorm","idle"]'
+assert_eq "flow-legibility/1" "strategy.spec loops back to brainstorm: next is [strategy.brainstorm, feature.design, idle]" "$ss_next" '["strategy.brainstorm","feature.design","idle"]'
 ss_no_compound="$(jq -r --arg sc "$dead_sc" '[.states."strategy.spec".next[]] | index($sc) == null' "$MACHINE")"
 assert_eq "simplify/dead-states" "strategy.spec.next carries no dead compound state" "$ss_no_compound" "true"
 fp_design="$(jq -r '[.states."feature.plan".next[]] | index("feature.design") != null' "$MACHINE")"
@@ -322,7 +322,7 @@ assert_eq "flow-mvp/3" "setup.apply delegates is exactly [spec]" "$setup_deleg" 
 echo ""
 echo "=== skills-v2 — one skill file, procedures, gates, and budgets ==="
 
-skill_body="$(cat "$FLOW/SKILL.md")"
+skill_body="$(cat "$FLOW/SKILL.md" "$FLOW"/procedures/*.md "$FLOW"/reference/*.md "$FLOW"/agents/*.md)"
 assert_contains "skills-v2" "single skill carries feature design delegation" "$skill_body" "superpowers:brainstorming"
 assert_contains "skills-v2" "single skill carries planning delegation" "$skill_body" "superpowers:writing-plans"
 assert_contains "skills-v2" "single skill carries verification delegation" "$skill_body" "verification-before-completion"
@@ -330,22 +330,22 @@ for gone in setup.md strategy.md feature.md quick.md verify.md compound.md; do
   [[ ! -e "$SRC_ROOT/flow/$gone" ]] && pass "skills-v2" "phase file removed: $gone" || fail "skills-v2" "phase file still exists: $gone"
 done
 
-# The machine's 13 states map to a flow heading in the one skill file.
-assert_eq "skills-v2" "machine keeps all 13 states" "$(jq '.states | length' "$MACHINE")" "13"
+# The machine states map to progressive procedure files.
+assert_eq "skills-v2" "machine keeps all 14 states" "$(jq '.states | length' "$MACHINE")" "14"
 missing_flow=""
 while IFS= read -r flow; do
   [[ -z "$flow" ]] && continue
-  grep -qx "## $flow" "$FLOW/SKILL.md" || missing_flow="$missing_flow $flow"
+  [[ -f "$FLOW/procedures/$flow.md" ]] || missing_flow="$missing_flow $flow"
 done < <(jq -r '.states | keys[] | split(".")[0] | select(. != "idle")' "$MACHINE" | sort -u)
-assert_eq "skills-v2" "every active flow has a level-two section" "$missing_flow" ""
+assert_eq "skills-v2" "every active flow has its procedure" "$missing_flow" ""
 
-# All state delegates and every order resolve from SKILL.md only.
+# Delegate methods are discoverable in progressive resources; orders stay in SKILL.md.
 delegate_missing=0
 while IFS= read -r delegate; do
   [[ -z "$delegate" ]] && continue
   [[ "$skill_body" == *"$delegate"* ]] || delegate_missing=$((delegate_missing + 1))
 done < <(jq -r '.states[].delegates[]?' "$MACHINE" | sort -u)
-assert_eq "skills-v2" "all machine delegates appear in the single skill" "$delegate_missing" "0"
+assert_eq "skills-v2" "all machine delegates appear in skill resources" "$delegate_missing" "0"
 
 # Doctrine is compact and contains no per-state write enumeration.
 doctrine="$(awk '/^<!-- vibe:doctrine -->$/{f=1;next} /^<!-- \/vibe:doctrine -->$/{f=0} f' "$FLOW/SKILL.md")"
@@ -367,15 +367,15 @@ while IFS= read -r st; do
   total_bytes=$((total_bytes + n)); order_count=$((order_count + 1))
   [[ "$n" -le 400 ]] || over_budget="$over_budget $st($n)"
   if printf '%s\n' "$gate_sources" | grep -qxF "$st"; then
-    [[ "$blk" == *"confirm"* || "$blk" == *"--confirm"* ]] || bad_gate="$bad_gate $st(missing)"
+    [[ "$blk" == *"verified human approval"* ]] || bad_gate="$bad_gate $st(missing)"
   else
-    [[ "$blk" != *"confirm"* ]] || bad_gate="$bad_gate $st(unexpected)"
+    [[ "$blk" != *"verified human approval"* ]] || bad_gate="$bad_gate $st(unexpected)"
   fi
 done < <(jq -r '.states | keys[]' "$MACHINE")
 avg_bytes=$((total_bytes / order_count))
 assert_eq "skills-v2" "all orders blocks stay within 400 bytes" "$over_budget" ""
 assert_eq "skills-v2" "average orders block stays within 250 bytes" "$([[ "$avg_bytes" -le 250 ]] && echo ok)" "ok"
-assert_eq "skills-v2" "confirm appears only in gate orders" "$bad_gate" ""
+assert_eq "skills-v2" "verified human approval appears in gate orders" "$bad_gate" ""
 
 # Every imperative target is a legal successor in the state machine.
 bad_target=""
@@ -390,11 +390,11 @@ while IFS= read -r st; do
 done < <(jq -r '.states | keys[]' "$MACHINE")
 assert_eq "skills-v2" "every vibe-flow state set target is a legal next" "$bad_target" ""
 
-protocol="$(sed -n '/^## Delegation protocol$/,/^## Flows$/p' "$FLOW/SKILL.md")"
-assert_contains "skills-v2" "delegation protocol pins sonnet" "$protocol" "sonnet"
-assert_contains "skills-v2" "delegation protocol pins opus" "$protocol" "opus"
-assert_contains "skills-v2" "orders pin sonnet" "$skill_body" "sonnet"
-assert_contains "skills-v2" "orders pin opus" "$skill_body" "opus"
+protocol="$(cat "$FLOW/SKILL.md" "$FLOW/reference/task-contract.md")"
+assert_contains "skills-v2" "delegation selects capability before model" "$protocol" "capability before model"
+assert_contains "skills-v2" "delegation retains controlling model preferences" "$protocol" "model preferences"
+assert_not_contains "skills-v2" "orders do not pin a provider's sonnet tier" "$(cat "$FLOW/SKILL.md")" "sonnet"
+assert_not_contains "skills-v2" "orders do not pin a provider's opus tier" "$(cat "$FLOW/SKILL.md")" "opus"
 
 # Negative prose sweeps prevent the retired feature fallback from returning.
 assert_not_contains "spec-v04/F25" "skill prose contains no fallback arrow" "$skill_body" "fallback →"
@@ -408,7 +408,7 @@ assert_eq "skills-v2" "feature.plan reads only its design doc" "$(jq -c '.states
 assert_eq "skills-v2" "feature.verify writes its runtime receipt and review notes" "$(jq -c '.states["feature.verify"].writes' "$MACHINE")" '[".vibe/run/flow/evidence/feature-<feature>.md","evidence: review notes"]'
 assert_eq "skills-v2" "quick.verify writes its runtime receipt and lesson file" "$(jq -c '.states["quick.verify"].writes' "$MACHINE")" '[".vibe/run/flow/evidence/quick.md","docs/spec/lessons.md"]'
 assert_eq "skills-v2" "feature.compound no longer writes an archive" "$(jq -c '.states["feature.compound"].writes | any(test("archive"))' "$MACHINE")" "false"
-assert_not_contains "skills-v2" "feature.compound delegates no spec promotion" "$(jq -r '.states["feature.compound"].delegates[]' "$MACHINE")" "spec"
+assert_not_contains "skills-v2" "feature.compound has no automatic finishing delegate" "$(jq -r '.states["feature.compound"].delegates[]' "$MACHINE")" "finishing-a-development-branch"
 assert_contains "skills-v2" "idle inline inject uses the canonical writer" "$(jq -r '.states.idle.inject' "$MACHINE")" "vibe-flow state set"
 
 # The template keeps its one-line gates and the generated rules remain exact.
@@ -435,7 +435,7 @@ fi
 summary="$(awk '/^<!-- vibe:summary -->$/{f=1;next} /^<!-- \/vibe:summary -->$/{f=0} f' "$FLOW/content/blocks/style/ste100.md")"
 summary_bytes="$(printf '%s' "$summary" | wc -c | tr -d ' ')"
 assert_eq "skills-v2" "style summary stays within 220 bytes" "$([[ "$summary_bytes" -le 220 ]] && echo ok)" "ok"
-assert_eq "skills-v2" "orders are sourced from one SKILL.md" "$(grep -c '^<!-- vibe:orders:' "$FLOW/SKILL.md")" "12"
+assert_eq "skills-v2" "orders are sourced from one SKILL.md" "$(grep -c '^<!-- vibe:orders:' "$FLOW/SKILL.md")" "13"
 assert_eq "skills-v2" "no phase procedure files remain" "$(find "$FLOW" -maxdepth 1 -name 'setup.md' -o -name 'strategy.md' -o -name 'feature.md' -o -name 'quick.md' -o -name 'verify.md' -o -name 'compound.md' | wc -l | tr -d ' ')" "0"
 
 echo ""
@@ -451,9 +451,9 @@ assert_eq "flow-legibility/4" "suite is hermetic: no ambient CLAUDE_PROJECT_DIR 
   "${CLAUDE_PROJECT_DIR-<unset>}" "<unset>"
 rm -f "$STATE"
 doc="$(bash "$SCRIPTS/doctrine.sh")"
-assert_contains "flow-legibility/4" "doctrine names the plan gate" "$doc" "feature.plan>feature.impl"
-assert_contains "flow-legibility/4" "doctrine names the ship gate" "$doc" "feature.verify>feature.compound"
-assert_contains "flow-legibility/4" "doctrine names session-start lessons" "$doc" "lessons.md"
+assert_contains "flow-legibility/4" "doctrine names the plan gate" "$doc" "plan → approved impl"
+assert_contains "flow-legibility/4" "doctrine names the ship gate" "$doc" "approved ship"
+assert_contains "flow-legibility/4" "doctrine names session-start lessons" "$doc" "plan and lessons"
 assert_contains "flow-legibility/4" "doctrine names the runtime cursor" "$doc" ".vibe/run/flow/state.json"
 assert_contains "flow-legibility/4" "doctrine names the canonical writer" "$doc" "vibe-flow state set"
 assert_contains "flow-legibility/4" "doctrine names the policy command" "$doc" "vibe-flow policy decide"
@@ -462,13 +462,13 @@ assert_contains "flow-legibility/4" "doctrine names the policy command" "$doc" "
 # stale by construction, and the per-turn level channel names the state anyway.
 # The four assertions above are the population floor for this negative: there IS
 # a payload, and it does not name a state.
-assert_not_contains "inject-triggers/5" "doctrine prints no cursor summary (idle)" "$doc" "Cursor:"
+assert_not_contains "inject-triggers/5" "doctrine prints no cursor summary (idle)" "$doc" "Cursor: idle"
 # ... and still none when the live cursor is somewhere interesting. Discriminating:
 # before R4 this printed 'Cursor: feature.impl (feature=widget).'
 cp "$FLOW/state.example.json" "$STATE"; bash "$SCRIPTS/set-state.sh" feature.impl widget >/dev/null
 doc2="$(bash "$SCRIPTS/doctrine.sh")"
 assert_contains "inject-triggers/5" "doctrine still emits the block with a live cursor set" "$doc2" "vibe-flow state set"
-assert_not_contains "inject-triggers/5" "doctrine names no state, whatever the cursor says" "$doc2" "Cursor:"
+assert_not_contains "inject-triggers/5" "doctrine names no state, whatever the cursor says" "$doc2" "Cursor: feature.impl"
 assert_not_contains "inject-triggers/5" "doctrine leaks no feature name either" "$doc2" "widget"
 assert_eq "inject-triggers/5" "doctrine output is a function of SKILL.md alone (cursor-independent)" "$doc2" "$doc"
 rm -f "$STATE"
@@ -485,11 +485,11 @@ rm -rf "$pnojq4"
 # distinct project cursor anyway — discriminating in the other direction now: a
 # doctrine.sh that still consulted it would print quick.triage.
 projd="$(mktemp -d)"
-mkdir -p "$projd/.agents/skills/vibe"
-printf '{"flow":"quick","phase":"triage","feature":"","updated":"x"}\n' > "$projd/.agents/skills/vibe/state.json"
+mkdir -p "$projd/.agents/skills/flow"
+printf '{"flow":"quick","phase":"triage","feature":"","updated":"x"}\n' > "$projd/.agents/skills/flow/state.json"
 docp="$(CLAUDE_PROJECT_DIR="$projd" bash "$SCRIPTS/doctrine.sh" 2>/dev/null)"
 assert_contains "inject-triggers/5" "doctrine still emits the block under CLAUDE_PROJECT_DIR" "$docp" "vibe-flow state set"
-assert_not_contains "inject-triggers/5" "CLAUDE_PROJECT_DIR no longer selects a cursor to print" "$docp" "Cursor:"
+assert_not_contains "inject-triggers/5" "CLAUDE_PROJECT_DIR no longer selects a cursor to print" "$docp" "Cursor: quick.triage"
 assert_not_contains "inject-triggers/5" "the project cursor's state does not leak either" "$docp" "quick.triage"
 rm -rf "$projd"
 # Doctrine and template structural pins are asserted in the skills-v2 section above.
@@ -537,9 +537,9 @@ rm -rf "$pnojq6"
 echo ""
 echo "=== regen-active-rules.sh — digest from lessons ==="
 d="$(mktemp -d)"
-mkdir -p "$d/.spec" "$d/.agents/skills/vibe/scripts"
-cp "$SCRIPTS/regen-active-rules.sh" "$d/.agents/skills/vibe/scripts/"
-mkdir -p "$d/.agents/skills/vibe/scripts/lib"; cp "$SCRIPTS/lib/resolve-target.sh" "$d/.agents/skills/vibe/scripts/lib/"
+mkdir -p "$d/.spec" "$d/.agents/skills/flow/scripts"
+cp "$SCRIPTS/regen-active-rules.sh" "$d/.agents/skills/flow/scripts/"
+mkdir -p "$d/.agents/skills/flow/scripts/lib"; cp "$SCRIPTS/lib/resolve-target.sh" "$d/.agents/skills/flow/scripts/lib/"
 cat > "$d/.spec/lessons.md" <<'EOF'
 # Lessons
 
@@ -555,7 +555,7 @@ cat > "$d/.spec/lessons.md" <<'EOF'
 -->
 EOF
 printf '# T\n<!-- vibe:active-rules:start -->\nold\n<!-- vibe:active-rules:end -->\n' > "$d/AGENTS.md"
-bash "$d/.agents/skills/vibe/scripts/regen-active-rules.sh" >/dev/null 2>&1
+bash "$d/.agents/skills/flow/scripts/regen-active-rules.sh" >/dev/null 2>&1
 block="$(awk '/active-rules:start/,/active-rules:end/' "$d/AGENTS.md")"
 assert_contains "vibe-flow/core" "regen captures rule body even with an inline <!-- token" "$block" "keep the"
 assert_not_contains "vibe-flow/core" "regen excludes the format-template comment lesson" "$block" "must not become a digest entry"
@@ -568,11 +568,11 @@ rm -rf "$d"
 echo ""
 echo "=== path parity — symlinked vs real path ==="
 # Scripts self-locate via ${BASH_SOURCE}; invoking through the canonical flow/
-# path and through the .agents/skills/vibe symlink alias must be byte-identical
+# path and through the .agents/skills/flow symlink alias must be byte-identical
 # (same state file, same machine, same output). Seed a deterministic cursor so
 # both spellings read identical state.
 REAL_SCRIPTS="$REPO_ROOT/flow/scripts"
-ALIAS_SCRIPTS="$REPO_ROOT/.agents/skills/vibe/scripts"
+ALIAS_SCRIPTS="$REPO_ROOT/.agents/skills/flow/scripts"
 cp "$FLOW/state.example.json" "$STATE"
 bash "$SCRIPTS/set-state.sh" feature.impl widget >/dev/null
 for st in idle feature.impl strategy.spec feature.compound quick.fix; do
@@ -604,13 +604,13 @@ b="$(bash "$ALIAS_SCRIPTS/doctrine.sh" 2>&1)"
 assert_eq "path-parity" "doctrine identical via both paths" "$a" "$b"
 
 # regen-active-rules resolves the repo root by marker search, so a sandbox reached
-# via a real flow/ path and via a .agents/skills/vibe symlink yields the same
+# via a real flow/ path and via a .agents/skills/flow symlink yields the same
 # rewrite (a fixed `..` hop overshot the root on the flow/ path).
 pr="$(mktemp -d)"
 mkdir -p "$pr/flow/scripts" "$pr/.agents/skills" "$pr/.spec"
 cp "$SCRIPTS/regen-active-rules.sh" "$pr/flow/scripts/"
 mkdir -p "$pr/flow/scripts/lib"; cp "$SCRIPTS/lib/resolve-target.sh" "$pr/flow/scripts/lib/"
-( cd "$pr/.agents/skills" && ln -s ../../flow vibe )
+( cd "$pr/.agents/skills" && ln -s ../../flow flow )
 cat > "$pr/.spec/lessons.md" <<'EOF'
 # Lessons
 
@@ -620,7 +620,7 @@ cat > "$pr/.spec/lessons.md" <<'EOF'
 EOF
 seed_agents() { printf '# T\n<!-- vibe:active-rules:start -->\nold\n<!-- vibe:active-rules:end -->\n' > "$pr/AGENTS.md"; }
 seed_agents; bash "$pr/flow/scripts/regen-active-rules.sh" >/dev/null 2>&1; real_out="$(cat "$pr/AGENTS.md")"
-seed_agents; bash "$pr/.agents/skills/vibe/scripts/regen-active-rules.sh" >/dev/null 2>&1; alias_out="$(cat "$pr/AGENTS.md")"
+seed_agents; bash "$pr/.agents/skills/flow/scripts/regen-active-rules.sh" >/dev/null 2>&1; alias_out="$(cat "$pr/AGENTS.md")"
 assert_eq "path-parity" "regen-active-rules identical via both paths" "$real_out" "$alias_out"
 assert_contains "path-parity" "regen via real flow/ path resolves the repo root" "$real_out" "paths resolve the same"
 rm -rf "$pr"
@@ -656,26 +656,26 @@ assert_contains "install-tooling/4" "doctor lists dep feature-dev" "$out" "dep.f
 assert_not_contains "flow-mvp/10" "doctor no longer lists dep.caveman" "$out" "dep.caveman"
 # Broken install (dead vibe symlink, no machine/adapter): warns, still exits 0.
 d="$(mktemp -d)"; mkdir -p "$d/.spec" "$d/.agents/skills"
-ln -s /nonexistent-vibe "$d/.agents/skills/vibe"
+ln -s /nonexistent-vibe "$d/.agents/skills/flow"
 out="$(bash "$DOCTOR" "$d" 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/4" "doctor flags a broken vibe symlink" "$out" "warn core.vibe"
 assert_contains "install-tooling/4" "broken-symlink message names it" "$out" "BROKEN"
 assert_contains "install-tooling/4" "doctor still exits 0 on a broken install" "$out" "rc=0"
 rm -rf "$d"
 # Invalid cursor: doctor delegates to validate-state.sh, warns, still exits 0.
-d="$(mktemp -d)"; mkdir -p "$d/.spec" "$d/.agents/skills/vibe/scripts"
-cp "$SCRIPTS/validate-state.sh" "$d/.agents/skills/vibe/scripts/"; chmod +x "$d/.agents/skills/vibe/scripts/validate-state.sh"
-cp "$MACHINE" "$d/.agents/skills/vibe/"
-printf '{not valid json' > "$d/.agents/skills/vibe/state.json"
+d="$(mktemp -d)"; mkdir -p "$d/.spec" "$d/.agents/skills/flow/scripts"
+cp "$SCRIPTS/validate-state.sh" "$d/.agents/skills/flow/scripts/"; chmod +x "$d/.agents/skills/flow/scripts/validate-state.sh"
+cp "$MACHINE" "$d/.agents/skills/flow/"
+printf '{not valid json' > "$d/.agents/skills/flow/state.json"
 out="$(bash "$DOCTOR" "$d" 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/4" "doctor warns on an invalid cursor" "$out" "warn cursor"
 assert_contains "install-tooling/4" "doctor still exits 0 on an invalid cursor" "$out" "rc=0"
 rm -rf "$d"
 # Valid cursor: doctor delegates to validate-state.sh and reports ok (happy path + delegation).
-d="$(mktemp -d)"; mkdir -p "$d/.spec" "$d/.agents/skills/vibe/scripts"
-cp "$SCRIPTS/validate-state.sh" "$d/.agents/skills/vibe/scripts/"; chmod +x "$d/.agents/skills/vibe/scripts/validate-state.sh"
-cp "$MACHINE" "$d/.agents/skills/vibe/"
-cp "$FLOW/state.example.json" "$d/.agents/skills/vibe/state.json"
+d="$(mktemp -d)"; mkdir -p "$d/.spec" "$d/.agents/skills/flow/scripts"
+cp "$SCRIPTS/validate-state.sh" "$d/.agents/skills/flow/scripts/"; chmod +x "$d/.agents/skills/flow/scripts/validate-state.sh"
+cp "$MACHINE" "$d/.agents/skills/flow/"
+cp "$FLOW/state.example.json" "$d/.agents/skills/flow/state.json"
 out="$(bash "$DOCTOR" "$d" 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/4" "doctor reports a valid cursor as ok" "$out" "ok   cursor"
 # No-jq target with a VALID cursor: validate-state.sh needs jq, so it would exit 1
@@ -695,8 +695,8 @@ assert_contains "review-fix" "no-jq doctor still exits 0" "$out" "rc=0"
 rm -rf "$nojq_doc"
 rm -rf "$d"
 # Absent dep: reported as a warn with its degrade text, still exit 0.
-d="$(mktemp -d)"; mkdir -p "$d/.spec" "$d/.agents/skills/vibe/reference"
-printf '{"deps":[{"name":"vibe-nonexistent-dep-xyz","kind":"skill-collection","source":"x","required_by":["*"],"degrade":"inline fallback"}]}\n' > "$d/.agents/skills/vibe/reference/deps.json"
+d="$(mktemp -d)"; mkdir -p "$d/.spec" "$d/.agents/skills/flow/reference"
+printf '{"deps":[{"name":"vibe-nonexistent-dep-xyz","kind":"skill-collection","source":"x","required_by":["*"],"degrade":"inline fallback"}]}\n' > "$d/.agents/skills/flow/reference/deps.json"
 out="$(bash "$DOCTOR" "$d" 2>&1; echo "rc=$?")"
 assert_contains "install-tooling/4" "doctor warns an absent dep with degrade text" "$out" "degrade: inline fallback"
 assert_contains "install-tooling/4" "doctor exits 0 with a missing dep" "$out" "rc=0"
@@ -800,26 +800,26 @@ bash "$SCRIPTS/set-state.sh" idle >/dev/null
 
 echo ""
 echo "=== /flow command — feature arg, idle-always-legal, gate token ==="
-# The /flow command is LLM-executed prose (read from the real repo, not the sandbox).
-# It must (a) forward an optional feature to set-state.sh, (b) treat idle as always
-# legal, (c) enforce the two gated edges via an explicit `confirm` token. These doc
-# assertions fail if any of those contracts is dropped from the command file.
+# The command routes through the selected runtime; legacy tokens never authenticate.
 FLOWCMD="$SRC_ROOT/.claude/commands/flow.md"
 if [[ -f "$FLOWCMD" ]]; then
   cmd="$(cat "$FLOWCMD")"
-  assert_contains "flow-mvp/3" "/flow forwards an optional feature to set-state.sh" "$cmd" "set-state.sh <target> [feature]"
-  assert_contains "flow-mvp/3" "/flow treats idle as always legal (skips membership + gate)" "$cmd" "Abort is always legal"
-  assert_contains "flow-mvp/3" "/flow enforces gated edges against the machine gates object" "$cmd" "gates"
-  assert_contains "flow-mvp/3" "/flow documents the confirm approval token" "$cmd" "confirm"
-  assert_contains "flow-mvp/3" "/flow argument-hint advertises feature + confirm" "$cmd" "[feature] [confirm]"
+  # shellcheck disable=SC2016
+  assert_contains "flow-workflow/8" "/flow reads canonical cursor first" "$cmd" 'Read `.vibe/run/flow/state.json` first'
+  assert_contains "flow-workflow/8" "/flow blocks corrupt cursor" "$cmd" 'never treat it as idle'
+  assert_contains "flow-workflow/8" "/flow uses typed v2 transition" "$cmd" 'vibe-flow state transition'
+  # shellcheck disable=SC2016
+  assert_contains "flow-workflow/8" "/flow refuses legacy fallthrough" "$cmd" 'fall through to `state set`'
+  assert_contains "flow-workflow/8" "/flow tokens cannot prove human origin" "$cmd" 'not proof of human origin'
+  assert_contains "flow-workflow/8" "/flow reports unavailable trusted checks" "$cmd" 'unavailable/deny'
 else
-  fail "flow-mvp/3" "/flow command file present at .claude/commands/flow.md"
+  fail "flow-workflow/8" "/flow command file present at .claude/commands/flow.md"
 fi
 # The machine still declares exactly the two gated edges the command enforces.
 gate_edge_count="$(jq -r '(.gates // {}) | keys | length' "$MACHINE")"
 assert_eq "flow-mvp/3" "machine declares exactly the two gated edges the command enforces" "$gate_edge_count" "2"
-# SKILL.md precedence documents the same confirm token (fix 5c).
-assert_contains "flow-mvp/3" "SKILL.md precedence documents the /flow confirm token" "$(cat "$FLOW/SKILL.md")" "confirm"
+# The skill distinguishes trusted grants from legacy command tokens.
+assert_contains "flow-workflow/8" "skill states trusted gates unavailable" "$(cat "$FLOW/SKILL.md")" "unavailable/deny"
 
 echo ""
 echo "=== orders.sh on a fresh non-git install (stranger-eval regression) ==="
@@ -831,13 +831,13 @@ bash "$SRC_ROOT/install.sh" "$SBI" --platform none >/dev/null 2>&1
 [[ ! -e "$SBI/.git" && ! -e "$SBI/.spec" ]] \
   && pass "orders-fresh" "fresh install has no .git/.spec marker (precondition)" \
   || fail "orders-fresh" "precondition: fresh install unexpectedly has a marker"
-bash "$SBI/.agents/skills/vibe/scripts/set-state.sh" quick.triage >/dev/null 2>&1
-out="$(bash "$SBI/.agents/skills/vibe/scripts/orders.sh" quick.triage 2>&1)"
+bash "$SBI/.agents/skills/flow/scripts/set-state.sh" quick.triage >/dev/null 2>&1
+out="$(bash "$SBI/.agents/skills/flow/scripts/orders.sh" quick.triage 2>&1)"
 assert_not_contains "orders-fresh" "orders.sh does not degrade to state=unknown on a fresh non-git install" "$out" "state=unknown"
 [[ -n "$out" ]] && pass "orders-fresh" "orders.sh returns a non-empty block on a fresh install" || fail "orders-fresh" "orders.sh empty on fresh install"
 # and the block is byte-identical whether or not a marker is later added
 ( cd "$SBI" && git init -q >/dev/null 2>&1 )
-out2="$(bash "$SBI/.agents/skills/vibe/scripts/orders.sh" quick.triage 2>&1)"
+out2="$(bash "$SBI/.agents/skills/flow/scripts/orders.sh" quick.triage 2>&1)"
 assert_eq "orders-fresh" "orders.sh block identical with and without a repo-root marker" "$out" "$out2"
 rm -rf "$SBI"
 
@@ -856,18 +856,20 @@ GATE="$SRC_ROOT/.claude/hooks/stop-gate.sh"
 mk_gate_sbx() {
   local flow="$1" phase="$2" feature="$3" mode="$4"
   local s; s="$(mktemp -d)"
-  mkdir -p "$s/.agents/skills/vibe/scripts"
-  cp "$SRC_ROOT/flow/scripts/detect-context.sh" "$s/.agents/skills/vibe/scripts/"
-  cp "$SRC_ROOT/flow/state-machine.json" "$s/.agents/skills/vibe/"
+  mkdir -p "$s/.agents/skills/flow/scripts"
+  cp "$SRC_ROOT/flow/scripts/detect-context.sh" "$s/.agents/skills/flow/scripts/"
+  cp "$SRC_ROOT/flow/state-machine.json" "$s/.agents/skills/flow/"
   # js-core/7: the hook is node-first now, so it also reads the JS engine at
   # its standard nested path (the same one install.sh's `cp -RL` lands it at).
-  cp -R "$SRC_ROOT/flow/engine" "$s/.agents/skills/vibe/engine"
+  cp -R "$SRC_ROOT/flow/engine" "$s/.agents/skills/flow/engine"
   local feat_json="null"
   [[ "$feature" != "null" ]] && feat_json="\"$feature\""
   printf '{"flow":"%s","phase":"%s","feature":%s,"updated":"2026-07-08T00:00:00Z"}\n' \
-    "$flow" "$phase" "$feat_json" > "$s/.agents/skills/vibe/state.json"
+    "$flow" "$phase" "$feat_json" > "$s/.agents/skills/flow/state.json"
+  mkdir -p "$s/.vibe/run/flow"
+  cp "$s/.agents/skills/flow/state.json" "$s/.vibe/run/flow/state.json"
   if [[ "$mode" == "git" ]]; then
-    printf '.agents/skills/vibe/state.json\n.agents/skills/vibe/evidence/\n' > "$s/.gitignore"
+    printf '.agents/skills/flow/state.json\n.vibe/run/flow/evidence/\n' > "$s/.gitignore"
     printf 'seed\n' > "$s/tracked.txt"
     git -C "$s" init -q
     git -C "$s" config user.email t@t.test
@@ -890,8 +892,8 @@ rm -rf "$s"
 
 # 2) write the receipt, commit so the tree is clean -> pass (exit 0).
 s="$(mk_gate_sbx feature verify widget git)"
-mkdir -p "$s/.agents/skills/vibe/evidence"
-printf 'ran: bash tests; observed: 12 passed\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+mkdir -p "$s/.vibe/run/flow/evidence"
+printf 'ran: bash tests; observed: 12 passed\n' > "$s/.vibe/run/flow/evidence/feature-widget.md"
 out="$(run_gate "$s" '{}')"
 assert_contains "flow-mvp/9" "feature.verify with a fresh receipt + clean tree passes (exit 0)" "$out" "rc=0"
 rm -rf "$s"
@@ -900,10 +902,10 @@ rm -rf "$s"
 # receipt mtime is pinned into the past so the post-receipt edit is deterministically
 # newer (no sleep, no 1s mtime-granularity flake).
 s="$(mk_gate_sbx feature verify widget git)"
-mkdir -p "$s/.agents/skills/vibe/evidence"
-printf 'ran: bash tests\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+mkdir -p "$s/.vibe/run/flow/evidence"
+printf 'ran: bash tests\n' > "$s/.vibe/run/flow/evidence/feature-widget.md"
 printf 'edited after the receipt\n' >> "$s/tracked.txt"
-touch -t 200001010000 "$s/.agents/skills/vibe/evidence/feature-widget.md"
+touch -t 200001010000 "$s/.vibe/run/flow/evidence/feature-widget.md"
 out="$(run_gate "$s" '{}')"
 assert_contains "flow-mvp/9" "feature.verify with a stale receipt blocks (exit 2)" "$out" "rc=2"
 assert_contains "flow-mvp/9" "stale block names the abort hatch" "$out" "set-state.sh idle"
@@ -927,16 +929,16 @@ s="$(mk_gate_sbx quick verify null git)"
 out="$(run_gate "$s" '{}')"
 assert_contains "flow-mvp/9" "quick.verify with no receipt blocks (exit 2)" "$out" "rc=2"
 assert_contains "flow-mvp/9" "quick block names evidence/quick.md" "$out" "evidence/quick.md"
-mkdir -p "$s/.agents/skills/vibe/evidence"
-printf 'ran: repro; observed: fixed\n' > "$s/.agents/skills/vibe/evidence/quick.md"
+mkdir -p "$s/.vibe/run/flow/evidence"
+printf 'ran: repro; observed: fixed\n' > "$s/.vibe/run/flow/evidence/quick.md"
 out="$(run_gate "$s" '{}')"
 assert_contains "flow-mvp/9" "quick.verify with a receipt + clean tree passes (exit 0)" "$out" "rc=0"
 rm -rf "$s"
 
 # 7) non-git sandbox, receipt present -> existence-only pass (exit 0).
 s="$(mk_gate_sbx feature verify widget nogit)"
-mkdir -p "$s/.agents/skills/vibe/evidence"
-printf 'ran: bash tests\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+mkdir -p "$s/.vibe/run/flow/evidence"
+printf 'ran: bash tests\n' > "$s/.vibe/run/flow/evidence/feature-widget.md"
 out="$(run_gate "$s" '{}')"
 assert_contains "flow-mvp/9" "non-git sandbox is existence-only, passes with a receipt (exit 0)" "$out" "rc=0"
 rm -rf "$s"
@@ -960,10 +962,14 @@ gnojq="$(mktemp -d)"
 # `node` included (js-core/7): the hook is node-first now, so a farm that
 # omits it would test the unrelated "Node absent" degrade (R4, always exit 0)
 # instead of the jq-absent path this fixture means to exercise.
-for _t in dirname sed head cat grep git node; do
+for _t in dirname sed head cat grep git tr; do
   _p="$(command -v "$_t" 2>/dev/null)" && ln -sf "$_p" "$gnojq/$_t"
 done
-run_gate_nojq() { printf '%s' "$2" | PATH="$gnojq" CLAUDE_PROJECT_DIR="$1" "$BASH_BIN" "$GATE" 2>&1; echo "rc=$?"; }
+# Resolve through version-manager launchers before stripping their environment.
+_gate_node="$(node -p process.execPath)"
+ln -sf "$_gate_node" "$gnojq/node"
+assert_contains "flow-workflow/8" "jq-free fixture executes its selected Node runtime" "$(PATH="$gnojq" node --version 2>&1)" "v"
+run_gate_nojq() { printf '%s' "$2" | PATH="$gnojq" VIBE_ENGINE="$SRC_ROOT/flow/engine" CLAUDE_PROJECT_DIR="$1" "$BASH_BIN" "$GATE" 2>&1; echo "rc=$?"; }
 
 # block-missing-receipt (git repo)
 s="$(mk_gate_sbx feature verify widget git)"
@@ -974,26 +980,26 @@ rm -rf "$s"
 
 # pass-fresh (receipt + clean tree)
 s="$(mk_gate_sbx feature verify widget git)"
-mkdir -p "$s/.agents/skills/vibe/evidence"
-printf 'ran: bash tests; observed: pass\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+mkdir -p "$s/.vibe/run/flow/evidence"
+printf 'ran: bash tests; observed: pass\n' > "$s/.vibe/run/flow/evidence/feature-widget.md"
 out="$(run_gate_nojq "$s" '{}')"
 assert_contains "review-fix" "no-jq: fresh receipt + clean tree passes (exit 0)" "$out" "rc=0"
 rm -rf "$s"
 
 # block-stale (git repo) — receipt mtime pinned into the past, post-receipt edit newer
 s="$(mk_gate_sbx feature verify widget git)"
-mkdir -p "$s/.agents/skills/vibe/evidence"
-printf 'ran: bash tests\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+mkdir -p "$s/.vibe/run/flow/evidence"
+printf 'ran: bash tests\n' > "$s/.vibe/run/flow/evidence/feature-widget.md"
 printf 'edited after the receipt\n' >> "$s/tracked.txt"
-touch -t 200001010000 "$s/.agents/skills/vibe/evidence/feature-widget.md"
+touch -t 200001010000 "$s/.vibe/run/flow/evidence/feature-widget.md"
 out="$(run_gate_nojq "$s" '{}')"
 assert_contains "review-fix" "no-jq: stale receipt still blocks (exit 2)" "$out" "rc=2"
 rm -rf "$s"
 
 # existence-only (no git) -> pass on presence
 s="$(mk_gate_sbx feature verify widget nogit)"
-mkdir -p "$s/.agents/skills/vibe/evidence"
-printf 'ran: bash tests\n' > "$s/.agents/skills/vibe/evidence/feature-widget.md"
+mkdir -p "$s/.vibe/run/flow/evidence"
+printf 'ran: bash tests\n' > "$s/.vibe/run/flow/evidence/feature-widget.md"
 out="$(run_gate_nojq "$s" '{}')"
 assert_contains "review-fix" "no-jq: non-git existence-only passes with a receipt (exit 0)" "$out" "rc=0"
 rm -rf "$s"
@@ -1043,12 +1049,12 @@ echo "=== review-fix — PreToolUse Bash write sniffer (warn-only) ==="
 # with NO warn — the lessons-write assertion below flips.
 GUARD="$SRC_ROOT/.claude/hooks/pre-tool-use-guard.sh"
 gsbx="$(mktemp -d)"
-mkdir -p "$gsbx/.agents/skills/vibe/scripts"
-cp "$SRC_ROOT/flow/scripts/detect-context.sh" "$gsbx/.agents/skills/vibe/scripts/"
-cp "$SRC_ROOT/flow/state-machine.json" "$gsbx/.agents/skills/vibe/"
+mkdir -p "$gsbx/.agents/skills/flow/scripts"
+cp "$SRC_ROOT/flow/scripts/detect-context.sh" "$gsbx/.agents/skills/flow/scripts/"
+cp "$SRC_ROOT/flow/state-machine.json" "$gsbx/.agents/skills/flow/"
 # js-core/7: the hook is node-first now, so it also reads the JS engine at
 # its standard nested path (the same one install.sh's `cp -RL` lands it at).
-cp -R "$SRC_ROOT/flow/engine" "$gsbx/.agents/skills/vibe/engine"
+cp -R "$SRC_ROOT/flow/engine" "$gsbx/.agents/skills/flow/engine"
 run_guard() { printf '%s' "$2" | CLAUDE_PROJECT_DIR="$1" bash "$GUARD" 2>&1; echo "rc=$?"; }
 
 out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"echo x >> .spec/lessons.md"}}')"
@@ -1066,7 +1072,7 @@ assert_contains "review-fix" "bash set-state.sh exits 0" "$out" "rc=0"
 
 # state.json class + set-state carve-out: a raw redirect INTO state.json (no
 # set-state.sh) warns; the same target alongside set-state.sh does not.
-out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"echo x | tee .agents/skills/vibe/state.json"}}')"
+out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"echo x | tee .agents/skills/flow/state.json"}}')"
 assert_contains "review-fix" "bash 'tee state.json' (no set-state) warns" "$out" "warn"
 out="$(run_guard "$gsbx" '{"tool_name":"Bash","tool_input":{"command":"set-state.sh feature.impl > flow/state.json"}}')"
 assert_not_contains "review-fix" "bash redirect to state.json via set-state.sh does NOT warn" "$out" "warn"
@@ -1092,7 +1098,7 @@ assert_contains "spec-v04/p4" "bash 'sed -i docs/spec/product.md' warns (root sp
 out="$(run_guard "$gsbx" '{"tool_name":"Edit","tool_input":{"file_path":"docs/spec/lessons.md"}}')"
 assert_contains "spec-v04/p4" "Edit-tool docs/spec/lessons.md under idle hard-blocks (exit 2)" "$out" "rc=2"
 assert_contains "spec-v04/p4" "docs/spec/lessons.md block message names the path" "$out" "docs/spec/lessons.md is writable only"
-dc="$gsbx/.agents/skills/vibe/scripts/detect-context.sh"
+dc="$gsbx/.agents/skills/flow/scripts/detect-context.sh"
 assert_eq "spec-v04/p4" "detect-context blocks docs/spec/lessons.md in idle" \
   "$(bash "$dc" decide docs/spec/lessons.md idle 2>&1 | cut -c1-31)" "block:docs/spec/lessons.md is w"
 assert_eq "spec-v04/p4" "detect-context allows docs/spec/lessons.md in feature.compound" \
@@ -1106,7 +1112,7 @@ rm -rf "$gsbx"
 
 # spec-v04 P4-R16, flipped by review-hardening/7: the per-user plugin's
 # SessionStart detector fires only where the flow is installed
-# (.agents/skills/vibe/state-machine.json). A spec-only repo, whichever root, stays
+# (.agents/skills/flow/state-machine.json). A spec-only repo, whichever root, stays
 # silent: the doctrine is flow doctrine, so it never fires in every spec repo.
 PSS="$SRC_ROOT/plugin/hooks/session-start.sh"
 for root_rel in docs/spec .spec; do # literal
@@ -1115,7 +1121,7 @@ for root_rel in docs/spec .spec; do # literal
   assert_eq "spec-v04/p4" "plugin session-start is silent in a $root_rel repo without the flow" "$out" "rc=0"
   rm -rf "$psb"
 done
-psb="$(mktemp -d)"; mkdir -p "$psb/.agents/skills/vibe"; : > "$psb/.agents/skills/vibe/state-machine.json"
+psb="$(mktemp -d)"; mkdir -p "$psb/.agents/skills/flow"; : > "$psb/.agents/skills/flow/state-machine.json"
 out="$(printf '{}' | CLAUDE_PROJECT_DIR="$psb" CLAUDE_PLUGIN_ROOT="$SRC_ROOT/plugin" bash "$PSS" 2>&1; echo "rc=$?")"
 assert_contains "spec-v04/p4" "plugin session-start emits the doctrine where the flow is installed" "$out" "vibe flow"
 assert_contains "spec-v04/p4" "plugin session-start exits 0 where the flow is installed" "$out" "rc=0"
@@ -1294,10 +1300,17 @@ b32_scan() {
 #     files; --exclude-standard keeps the gitignore honesty that made this
 #     rewrite necessary in the first place.
 b32_list_scripts() {
-  local root="$1" glob="${2:-*.sh}" rel f
+  local root="$1" glob="${2:-*.sh}" rel f deleted missing
   if command -v git >/dev/null 2>&1 &&
      git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     while IFS= read -r -d '' rel; do
+      if [[ ! -e "$root/$rel" && ! -L "$root/$rel" ]]; then
+        deleted=0
+        while IFS= read -r -d '' missing; do
+          [[ "$missing" == "$rel" ]] && deleted=1
+        done < <(git -C "$root" ls-files -z --deleted -- "$rel" 2>/dev/null)
+        [[ "$deleted" -eq 1 ]] && continue
+      fi
       printf '%s\0' "$root/$rel"
     done < <(git -C "$root" ls-files -z --cached --others --exclude-standard -- "$glob" 2>/dev/null)
     return 0
@@ -1396,7 +1409,7 @@ assert_eq "js-core/8" "bash-3.2 lint enumeration is sound (non-empty, every path
 # supplied enough unrelated scripts to look like a successful scan.
 #
 # `pwd -P` resolves the physical path, so an invocation through the shipped
-# `.agents/skills/vibe -> flow` symlink converges on the same relative path
+# `.agents/skills/flow -> flow` symlink converges on the same relative path
 # SRC_ROOT is expressed in (.spec/lessons.md: self-locate by resolving, do not
 # count hops).
 b32_self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -1467,6 +1480,17 @@ assert_not_contains "js-core/8" "bash-3.2 lint ignores gitignored trees (worktre
   "$b32_probe_out" "ignored/bad.sh"
 assert_contains "js-core/8" "bash-3.2 lint still flags a tracked script (path with spaces)" \
   "$b32_probe_out" "$B32_LABEL tracked dir/bad.sh:4"
+# Removed tracked payloads are not candidate source; dangling files still diagnose.
+cp "$B32PROBE/tracked dir/bad.sh" "$B32PROBE/removed.sh"
+git -C "$B32PROBE" add removed.sh
+rm "$B32PROBE/removed.sh"
+ln -s absent-target "$B32PROBE/dangling.sh"
+git -C "$B32PROBE" add dangling.sh
+b32_deleted_out="$(b32_bad=0; b32_broken=0; b32_lint "$B32PROBE" 2>&1)"
+assert_not_contains "flow-workflow/8" "lint omits confirmed tracked deletions" "$b32_deleted_out" "removed.sh"
+assert_contains "flow-workflow/8" "lint retains dangling-file diagnostics" "$b32_deleted_out" "dangling.sh"
+assert_contains "flow-workflow/8" "lint still detects remaining source after deletion" "$b32_deleted_out" "$B32_LABEL tracked dir/bad.sh:4"
+rm "$B32PROBE/dangling.sh"
 # Install targets can have no .git at all (the stranger-eval lesson). The fallback
 # walk must still find offenders there — an enumeration that degrades to silence
 # would make the lint vacuous on every target that is not this repo.
@@ -1602,10 +1626,10 @@ rm -rf "$B32SUB"
 # assertions below drive that floor's own expression against the fixture
 # rather than restating it in prose.
 B32VENDOR="$(mktemp -d)"
-mkdir -p "$B32VENDOR/host/.agents/skills/vibe/flow/tests"
+mkdir -p "$B32VENDOR/host/.agents/skills/flow/flow/tests"
 printf '.agents/\n' > "$B32VENDOR/host/.gitignore"
 echo 'echo fine' > "$B32VENDOR/host/unrelated.sh"
-echo 'echo fine' > "$B32VENDOR/host/.agents/skills/vibe/flow/tests/run.sh"
+echo 'echo fine' > "$B32VENDOR/host/.agents/skills/flow/flow/tests/run.sh"
 git -C "$B32VENDOR/host" init -q >/dev/null 2>&1 || true
 git -C "$B32VENDOR/host" add -A >/dev/null 2>&1 || true
 b32_vendor_out="$(b32_bad=0; b32_broken=0; b32_lint "$B32VENDOR/host" >/dev/null 2>&1; echo "bad=$b32_bad broken=$b32_broken"; printf '%s' "$B32_SCANNED")"
@@ -1614,12 +1638,12 @@ assert_contains "js-core/8" "vendored-under-gitignore: the cardinality floors st
 assert_contains "js-core/8" "vendored-under-gitignore: the host's own scripts ARE scanned" \
   "$b32_vendor_out" "unrelated.sh"
 assert_not_contains "js-core/8" "vendored-under-gitignore: none of the vendored tree is scanned" \
-  "$b32_vendor_out" ".agents/skills/vibe/flow/tests/run.sh"
+  "$b32_vendor_out" ".agents/skills/flow/flow/tests/run.sh"
 # The self-coverage floor's own expression, run against that scanned set: the
 # file asserting the lint ran is missing from it, so the floor goes red.
 b32_vendor_scanned="$(b32_bad=0; b32_broken=0; b32_lint "$B32VENDOR/host" >/dev/null 2>&1; printf '%s' "$B32_SCANNED")"
 assert_eq "js-core/8" "self-coverage floor goes red when the lint's own tree is unscanned" \
-  "$(printf '%s\n' "$b32_vendor_scanned" | grep -qxF ".agents/skills/vibe/flow/tests/run.sh" && echo scanned || echo "NOT SCANNED")" \
+  "$(printf '%s\n' "$b32_vendor_scanned" | grep -qxF ".agents/skills/flow/flow/tests/run.sh" && echo scanned || echo "NOT SCANNED")" \
   "NOT SCANNED"
 rm -rf "$B32VENDOR"
 
@@ -1727,7 +1751,7 @@ echo "=== spec-v04/p4 — dual-root shell scripts (a project with only docs/spec
 # only thing that can find <sb> (the no-marker fallback lands on <sb>/pkg). The
 # project carries docs/spec and nothing else: no .git, no legacy root.
 dr="$(mktemp -d)"
-mkdir -p "$dr/docs/spec" "$dr/pkg/flow/scripts" "$dr/.agents/skills/vibe"
+mkdir -p "$dr/docs/spec" "$dr/pkg/flow/scripts" "$dr/.agents/skills/flow"
 for f in regen-active-rules.sh orders.sh doctor.sh doctrine.sh detect-context.sh; do
   cp "$SCRIPTS/$f" "$dr/pkg/flow/scripts/"
 done
@@ -1776,7 +1800,7 @@ assert_not_contains "spec-v04/p4" "regen ignores docs/spec when vibe-spec names 
 rm -rf "${dr:?}/.spec" "${dr:?}/custom" "${dr:?}/bin"
 
 # orders.sh and doctrine.sh: the skills dir comes from the project root.
-cat > "$dr/.agents/skills/vibe/SKILL.md" <<'EOF'
+cat > "$dr/.agents/skills/flow/SKILL.md" <<'EOF'
 <!-- vibe:orders:strategy.spec -->
 DOCS-ROOT-ORDERS
 <!-- /vibe:orders -->

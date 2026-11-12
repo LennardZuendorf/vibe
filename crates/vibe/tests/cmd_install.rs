@@ -87,7 +87,7 @@ fn install_fresh_home_wires_all_four() {
         ".claude/skills/spec",
         ".claude/skills/a",
         ".agents/skills/vibe",
-        ".agents/skills/using-spec",
+        ".agents/skills/flow",
         ".agents/skills/a",
     ] {
         assert!(is_link(&home, rel), "{rel}");

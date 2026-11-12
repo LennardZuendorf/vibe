@@ -38,6 +38,7 @@ function makeOracleSandbox({ cursor } = {}) {
   mkdirSync(scriptsDir, { recursive: true });
   const scriptPath = path.join(scriptsDir, 'set-state.sh');
   copyFileSync(ORACLE_SRC, scriptPath);
+  copyFileSync(path.join(REPO_ROOT, 'flow/scripts/runtime-state.sh'), path.join(scriptsDir, 'runtime-state.sh'));
   return { ...sandbox, scriptPath };
 }
 
@@ -774,7 +775,7 @@ test('runGet: stdout is byte-exact pretty JSON (2-space indent, trailing newline
 
 test('CLI: `vibe state set` end-to-end on an install-layout fixture', () => {
   const installRoot = mkdtempSync(path.join(tmpdir(), 'vibe-state-cli-install-'));
-  const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
+  const vibeDir = path.join(installRoot, '.agents', 'skills', 'flow');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
   cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {

@@ -812,3 +812,63 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Inventory every branch-native changed file and reconcile its producer and consumer behavior after a conflict. Share exact evidence-path exemptions between migration and the sweep; retain neighboring-file rejection tests. Discover paths before reading them, use the admitted shared build target for review probes, format restored source before checking it, and run each final CI gate against the integrated tree.
 **Tags:** integration, parity, migration, verification, discovery
 **Date:** 2026-11-04
+
+### Keep adopted runtime checks across every fallback
+**Pattern:** Rust refused damaged adopted state, but a legacy Stop fallback accepted a fresh empty receipt or an early re-entry flag. An absent or versionless cursor also risked selecting older state.
+**Rule:** Check all persisted adoption markers before every legacy reader, writer and hook fast path. Unsupported trusted evaluation must deny adopted runs. Test missing, corrupt and versionless state plus re-entry, not only a valid version field.
+**Tags:** flow, hooks, migration, authority, regression
+**Date:** 2026-11-11
+
+### Preserve runtime under the shared migration lock
+**Pattern:** Renaming workflow discovery could hide legacy state; migration copied it without taking the writer lock. Renamed skill payloads were also mistaken for nested source checkouts during uninstall.
+**Rule:** Acquire the shared runtime lock before preservation reads and hold it through discovery changes. Preserve cursor and receipt bytes, reject conflicts and busy or nonregular locks, require exactly one parsed JSON object, and test partial installs plus repeated uninstall. Distinguish source checkouts from exact admitted installed containers and retain neighboring-path rejection controls.
+**Tags:** flow, migration, locking, install, regression
+**Date:** 2026-11-11
+
+### Reject aliases into planning-only write surfaces
+**Pattern:** A planning file symlink pointed to the runtime cursor inside the same project, so physical root confinement still admitted an authority write.
+**Rule:** Planning-only writes must reject symlink components and hardlinked leaves. Test links targeting protected files inside the project as well as outside-root escapes. Root confinement alone does not protect internal authority boundaries.
+**Tags:** flow, paths, authority, symlinks, regression
+**Date:** 2026-11-11
+
+### Separate task identity from the integrated candidate
+**Pattern:** Requiring a dependency's whole-worktree snapshot to equal the current snapshot rejected legitimate edits by the next task. Interrupted task publication also could not retry after its immutable record was written.
+**Rule:** Validate dependency records against their accepted identity and required successful checks. Recheck affected work explicitly; bind final readiness to the new integrated candidate. Retry byte-identical immutable records safely and reject conflicting records before moving the cursor.
+**Tags:** flow, evidence, tasks, recovery, regression
+**Date:** 2026-11-11
+
+### Verify shipped examples against runtime constraints
+**Pattern:** The sole task example used export/2 although runtime IDs permit only bounded ASCII letters, digits, hyphen, underscore and dot. A policy source comment change also left its byte-pinned fixture stale.
+**Rule:** Validate shipped contract examples with the producing runtime/schema. Regenerate derived fixtures and packages after source changes, preserving frozen oracles. Test source and installed resource discovery separately; a rename can make a source directory match an installed-layout heuristic.
+**Tags:** flow, contracts, examples, generation, discovery
+**Date:** 2026-11-11
+
+### Apply existing verification lessons to the final candidate
+**Pattern:** Host help/version touched normal logging before isolation; early report reads guessed absent paths; a refreshed runtime note exceeded its line budget; a ShellCheck directive used unsupported annotation syntax and a test filter selected no tests; assumed JS global options were unsupported; a version-manager launcher failed under restricted PATH and selected the wrong fallback; process inventory was unavailable. Clean-clone acceptance still used old HEAD during uncommitted work.
+**Rule:** Isolate host probes from their first call, discover report paths after completion, validate note budgets and directive syntax after edits, confirm a test filter selects cases, inspect actual CLI options, resolve and verify interpreter binaries before restricting PATH, use owned tool sessions for process status and bind clean-clone tests to an explicit candidate snapshot. Report inherited failures separately from regressions; do not weaken checks to hide either.
+**Tags:** verification, hosts, isolation, spec, snapshots
+**Date:** 2026-11-11
+
+### Document capability separately from installed plugins
+**Pattern:** README examples mixed optional named agents with installed dependencies and described live runtime work as future work. A guessed method-reference path did not exist, and remote publication inspection needed network access before the PR could be prepared.
+**Rule:** Discover the actual method mapping and installer catalog before documenting a workflow. Separate method skills, optional native agents, generic role briefs, installed hooks and verified capabilities. Label hypothetical paths and unavailable gates in diagrams, verify generated documentation copies, and refresh remote state before publishing.
+**Tags:** flow, documentation, plugins, verification
+**Date:** 2026-11-12
+
+### Run the exact CI lint over tracked package files
+**Pattern:** Final publication lint found SC1003 in a literal-backslash shell expression and both generated package copies after narrower checks had passed.
+**Rule:** Run CI's exact lint command against the final tracked file set, including generated scripts. For equivalent quoting fixes, compare old/new behavior on accepted and refused inputs, regenerate packages and update only the reviewed live-source hash; preserve frozen oracles.
+**Tags:** verification, shell, packaging, flow
+**Date:** 2026-11-12
+
+### Preserve compact formatting before fixture generation
+**Pattern:** Expanded JSON formatting multiplied across parity fixtures and host packages, inflating a PR by tens of thousands of lines. The reduction check initially tried to parse invalid-JSON fixtures and compared tuple/list representations; a shell wrapper also used a reserved variable name.
+**Rule:** Preserve the canonical compact JSON style before regenerating copies. Compare ordered parsed values for valid JSON, exact bytes for intentionally invalid JSON and other files, and the complete case inventory. Run generator consistency and behavioral parity separately; use task-specific shell variables and report baseline failures without changing assertions to hide them.
+**Tags:** flow, parity, generation, verification, review
+**Date:** 2026-11-12
+
+### Keep test inputs proportional to the change
+**Pattern:** Unused frozen copies and regenerated project trees dominated a feature diff. Exploration also hit shell quoting and Git-index permission errors before using a read-only archive to restore the baseline.
+**Rule:** Keep focused executable regressions and remove added snapshots with no consumers. Generate repetitive compatibility projects in owned temporary storage; compare the full generated matrix before changing storage. Preserve existing historical fixtures and original oracles, use supported commands with safe quoting, and bind review to the reduced diff.
+**Tags:** tests, parity, generation, scope, review
+**Date:** 2026-11-12

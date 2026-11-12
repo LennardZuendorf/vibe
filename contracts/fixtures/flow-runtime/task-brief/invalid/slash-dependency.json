@@ -1,0 +1,19 @@
+{
+  "task_id": "task-6",
+  "run_id": "run-1",
+  "plan_digest": "plan-a",
+  "requirements": [
+    "R5"
+  ],
+  "read_paths": [],
+  "write_scope": [
+    "source"
+  ],
+  "dependencies": [
+    "export/1"
+  ],
+  "checks": [
+    "tests"
+  ],
+  "role": "implementer"
+}

@@ -28,12 +28,12 @@ function hasMarker(dir) {
   return MARKERS.some((marker) => fs.existsSync(path.join(dir, marker)));
 }
 
-// An installed engine lives at <ROOT>/.agents/skills/vibe/engine (see the
+// An installed engine lives at <ROOT>/.agents/skills/flow/engine (see the
 // hook shim in tech.md: VIBE_ENGINE defaults to that path) — engine/'s own
 // parent IS the vibe skill dir (where state.json/state-machine.json live).
 // Validate the full chain of directory names, not just "go up and hope" —
 // that is what lets the dogfood repo (engine/ sitting at the repo top
-// level, not nested under .agents/skills/vibe/) correctly fall through to
+// level, not nested under .agents/skills/flow/) correctly fall through to
 // the next strategy instead of resolving to some unrelated directory. This
 // is the ONLY layout with a meaningful "project root" three levels up (see
 // selfRelativeRoot below) — a per-user plugin (pluginVibeDir) has none.
@@ -42,17 +42,17 @@ function vendoredVibeDir() {
   const skillsDir = path.dirname(vibeDir);
   const agentsDir = path.dirname(skillsDir);
   const isVendoredLayout =
-    path.basename(vibeDir) === 'vibe' &&
+    path.basename(vibeDir) === 'flow' &&
     path.basename(skillsDir) === 'skills' &&
     path.basename(agentsDir) === '.agents';
   return isVendoredLayout ? vibeDir : undefined;
 }
 
-// A per-user PLUGIN engine lives at <PLUGIN_ROOT>/skills/vibe/engine — ONE
+// A per-user PLUGIN engine lives at <PLUGIN_ROOT>/skills/flow/engine — ONE
 // level shallower than the vendored layout (no `.agents/` wrapper), because
 // build-plugin.sh ships `skills/vibe` as a top-level symlink to flow/, not
 // nested under `.agents/skills/`; see the real bash plugin hook's own
-// self-location, `${CLAUDE_PLUGIN_ROOT}/skills/vibe/scripts/doctrine.sh`
+// self-location, `${CLAUDE_PLUGIN_ROOT}/skills/flow/scripts/doctrine.sh`
 // (plugin/hooks/session-start.sh). Recognized by a sibling-SKILL.md probe
 // like the one resolveSkillsDir() uses — but NOT the same probe, and the two
 // CAN disagree (js-core/5 re-review). resolveSkillsDir() (and orders.sh's own
@@ -62,7 +62,7 @@ function vendoredVibeDir() {
 // Demonstrated divergence: an engine at `<X>/mySkills/vibe/engine` fails this
 // probe, so resolveVibeDir() falls through to the CLAUDE_PROJECT_DIR-honouring
 // fallback and the engine prints the PROJECT's doctrine, while the oracle —
-// which only needs `$SKILL_PARENT/vibe/SKILL.md` — prints the plugin's own.
+// which only needs `$SKILL_PARENT/flow/SKILL.md` — prints the plugin's own.
 // Every layout actually shipped (`skills/`, `.agents/skills/`,
 // `.claude/skills/`) is named `skills`, so no shipped configuration reaches
 // that gap and the behaviour stays as-is; the narrowing is simply not the
@@ -75,7 +75,7 @@ function pluginVibeDir() {
   const vibeDir = path.dirname(__dirname);
   const skillsDir = path.dirname(vibeDir);
   const isPluginLayout =
-    path.basename(vibeDir) === 'vibe' &&
+    path.basename(vibeDir) === 'flow' &&
     path.basename(skillsDir) === 'skills' &&
     fs.existsSync(path.join(vibeDir, 'SKILL.md'));
   return isPluginLayout ? vibeDir : undefined;
@@ -125,28 +125,28 @@ export function resolveRoot(opts = {}) {
 // The vibe skill's own directory — where state.json and state-machine.json
 // actually live. In an installed target this is engine/'s immediate parent.
 // engine/ lives at flow/engine/ in THIS source repo (js-core/7 review round
-// 1, Finding 4) so install.sh's existing `.agents/skills/vibe` copy (a
+// 1, Finding 4) so install.sh's existing `.agents/skills/flow` copy (a
 // dereferenced copy of flow/) ships it automatically — but that placement
 // alone does NOT make the self-relative leg fire here: vendoredVibeDir()'s
 // chain requires the skill dir to be literally named "vibe", and this
 // repo's is named "flow". So resolveVibeDir() legitimately falls through to
-// root + the fixed `.agents/skills/vibe` suffix even in this repo — which
+// root + the fixed `.agents/skills/flow` suffix even in this repo — which
 // still resolves correctly via that symlink. The self-relative leg matches
 // only in a real installed target, where the copy actually IS named
-// `.agents/skills/vibe/engine`.
+// `.agents/skills/flow/engine`.
 export function resolveVibeDir(opts = {}) {
   if (opts.vibeDir) return opts.vibeDir;
 
   const selfRelative = selfRelativeVibeDir();
   if (selfRelative) return selfRelative;
 
-  return path.join(resolveRoot(opts), '.agents', 'skills', 'vibe');
+  return path.join(resolveRoot(opts), '.agents', 'skills', 'flow');
 }
 
 // The directory containing sibling skills (vibe, spec, ...). Mirrors
 // orders.sh's SKILLS_DIR resolution exactly: probe whether vibeDir's parent
 // itself looks like a skills directory (has a `vibe/SKILL.md` inside it —
-// true for an installed target, where vibeDir IS already `.agents/skills/vibe`
+// true for an installed target, where vibeDir IS already `.agents/skills/flow`
 // so its parent is `.agents/skills`); otherwise fall back to
 // root + `.agents/skills`.
 export function resolveSkillsDir(opts = {}) {
@@ -154,7 +154,7 @@ export function resolveSkillsDir(opts = {}) {
 
   const vibeDir = resolveVibeDir(opts);
   const skillParent = path.dirname(vibeDir);
-  if (fs.existsSync(path.join(skillParent, 'vibe', 'SKILL.md'))) {
+  if (fs.existsSync(path.join(skillParent, 'flow', 'SKILL.md'))) {
     return skillParent;
   }
 
@@ -165,11 +165,11 @@ export function resolveSkillsDir(opts = {}) {
 // one thing: flow/scripts/doctrine.sh's own narrow precedence rule (its
 // STATE variable, lines 48-52), which prefers a PROJECT's own cursor over
 // the skill-local one, but ONLY when CLAUDE_PROJECT_DIR is set AND that
-// project's `.agents/skills/vibe/state.json` actually exists. Deliberately
+// project's `.agents/skills/flow/state.json` actually exists. Deliberately
 // does not consult self-relative/marker resolution at all — the oracle
 // never does either for this one lookup, it is a literal env-gated path
 // check. Kept here, not duplicated as a literal in commands/doctrine.mjs,
-// so the `.agents/skills/vibe` layout constant is defined exactly once and
+// so the `.agents/skills/flow` layout constant is defined exactly once and
 // the duplicate-primitive scan (js-core/8) needs no exemption for it
 // (review round 1, Finding 3). Returns undefined — never a guess — when
 // there is nothing to redirect to; the caller (doctrine.mjs) decides the
@@ -178,7 +178,7 @@ export function resolveProjectCursorDir(opts = {}) {
   const projectDir = opts.projectDir ?? process.env.CLAUDE_PROJECT_DIR;
   if (!projectDir) return undefined;
 
-  const candidate = path.join(projectDir, '.agents', 'skills', 'vibe');
+  const candidate = path.join(projectDir, '.agents', 'skills', 'flow');
   // Deliberately NOT routed through cursorPath() (cursor.mjs): root.mjs is
   // the self-location primitive and must stay importable on its own — the
   // fixtures in root.test.mjs copy this single file into synthetic install
@@ -196,7 +196,7 @@ export function flowRuntimeDir(root) {
 export function resolveCursorRoot(vibeDir) {
   if (process.env.CLAUDE_PROJECT_DIR) return process.env.CLAUDE_PROJECT_DIR;
   const dir = path.resolve(vibeDir);
-  if (path.basename(dir) === 'vibe' && path.basename(path.dirname(dir)) === 'skills'
+  if (path.basename(dir) === 'flow' && path.basename(path.dirname(dir)) === 'skills'
       && path.basename(path.dirname(path.dirname(dir))) === '.agents') {
     return path.dirname(path.dirname(path.dirname(dir)));
   }

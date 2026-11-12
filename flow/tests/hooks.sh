@@ -46,10 +46,12 @@ SHIM="$SRC_ROOT/flow/bin/hook.sh"
 OS="$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m 2>/dev/null)"
 
-echo "=== f6/shim — shape: POSIX, ≤40 lines, shellcheck-clean, never a download ==="
+echo "=== f6/shim — shape: POSIX, ≤64 lines, shellcheck-clean, never a download ==="
 assert_eq "f6/shim" "the shim is present" "$([[ -f "$SHIM" ]] && echo yes)" "yes"
+# The 64-line budget admits explicit adopted-runtime refusal and data-home binding;
+# the shim must still dispatch rather than grow an evaluator or policy engine.
 lines="$(wc -l < "$SHIM" | tr -d ' ')"
-assert_eq "f6/shim" "the shim stays within 40 lines ($lines)" "$([[ "$lines" -le 40 ]] && echo ok)" "ok"
+assert_eq "f6/shim" "the shim stays within 64 lines ($lines)" "$([[ "$lines" -le 64 ]] && echo ok)" "ok"
 assert_contains "f6/shim" "the shim declares the POSIX shell" "$(head -1 "$SHIM")" "#!/bin/sh"
 assert_not_contains "f6/shim" "the shim never downloads (no curl/wget/git clone)" "$(grep -nE 'curl|wget|git +clone|npm|pip' "$SHIM")" "curl"
 assert_eq "f6/shim" "the shim is executable (hooks.json invokes it directly)" \
@@ -74,14 +76,14 @@ done
 
 echo ""
 echo "=== f6/shim — five-tier discovery, both legs, higher tiers deleted ==="
-# A sandbox whose .agents/skills/vibe is a real copy of flow/ (never a symlink to
+# A sandbox whose .agents/skills/flow is a real copy of flow/ (never a symlink to
 # the live tree: the stop fixture writes a cursor). Path parity with the install
 # layout is what the adapters see at a target.
 SBX="$WORK/sbx"
 mkdir -p "$SBX/flow" "$SBX/.agents/skills" "$SBX/docs/spec"
 find "$SRC_ROOT/flow" -mindepth 1 -maxdepth 1 ! -name state.json \
   -exec cp -R {} "$SBX/flow/" \;
-ln -s ../../flow "$SBX/.agents/skills/vibe"
+ln -s ../../flow "$SBX/.agents/skills/flow"
 
 # A relocatable plugin copy: bin/hook.sh (+ bin/fallback/*) exactly as a plugin
 # ships. Tier 5 uses a copy WITHOUT the fallback directory.
@@ -103,12 +105,21 @@ mk_fake() { # <path> <label>
   {
     echo '#!/bin/sh'
     echo "env > \"$WORK/env.$label\""
-    # "$2" must reach the fake literally — it is the fake's own second argument
-    # (the event name), not something to expand here.
+    # Record the complete request so wrong root/data-home binding cannot pass.
+    printf 'printf "%%s\\n" "$@" > "%s/args.%s"\n' "$WORK" "$label"
     # shellcheck disable=SC2016
-    printf 'printf "block:%s %%s\\n" "$2"\n' "$label"
+    printf 'printf "block:%s %%s\\n" "$6"\n' "$label"
   } > "$bin"
   chmod +x "$bin"
+}
+
+assert_fake_request() { # <tier> <event>
+  local label="$1" event="$2" expected
+  expected="$(printf '%s\n' --root "$SBX" --vibe-dir "$SBX/.agents/skills/flow" hook "$event")"
+  assert_eq "f6/$label" "the $event request binds the exact project and available Flow data home" \
+    "$(cat "$WORK/args.$label")" "$expected"
+  assert_eq "f6/$label" "the selected data home contains the machine" \
+    "$([[ -f "$SBX/.agents/skills/flow/state-machine.json" ]] && echo yes)" "yes"
 }
 
 # run_shim <plugin> <path> <event> <stdin-file> [env assignments...]
@@ -134,6 +145,7 @@ for ev in pre-tool-use-guard stop-gate; do
   out="$(run_shim "$P1" "$HOSTPATH" "$ev" "$([[ $ev == stop-gate ]] && echo "$WORK/stop.json" || echo "$WORK/guard.json")" VIBE_FLOW_BIN="$WORK/bin1/vibe-flow")"
   assert_contains "f6/tier1" "\$VIBE_FLOW_BIN answers the $ev leg" "$out" "block:tier1 $ev"
   assert_contains "f6/tier1" "the $ev leg exits 2 on a proved block" "$out" "rc=2"
+  assert_fake_request tier1 "$ev"
 done
 assert_contains "f6/tier1" "the child really saw the override (positive control)" "$(cat "$WORK/env.tier1")" "VIBE_FLOW_BIN=$WORK/bin1/vibe-flow"
 
@@ -144,6 +156,7 @@ for ev in pre-tool-use-guard stop-gate; do
   out="$(run_shim "$P2" "$HOSTPATH" "$ev" "$([[ $ev == stop-gate ]] && echo "$WORK/stop.json" || echo "$WORK/guard.json")" CLAUDE_PLUGIN_ROOT="$P2")"
   assert_contains "f6/tier2" "the bundled $OS-$ARCH binary answers the $ev leg" "$out" "block:tier2 $ev"
   assert_contains "f6/tier2" "the $ev leg exits 2 on a proved block" "$out" "rc=2"
+  assert_fake_request tier2 "$ev"
 done
 assert_not_contains "f6/tier2" "VIBE_FLOW_BIN is DELETED from the tier-2 child env" "$(cat "$WORK/env.tier2")" "VIBE_FLOW_BIN="
 
@@ -154,6 +167,7 @@ for ev in pre-tool-use-guard stop-gate; do
   out="$(run_shim "$P3" "$WORK/bin3:$HOSTPATH" "$ev" "$([[ $ev == stop-gate ]] && echo "$WORK/stop.json" || echo "$WORK/guard.json")")"
   assert_contains "f6/tier3" "a vibe-flow on PATH answers the $ev leg" "$out" "block:tier3 $ev"
   assert_contains "f6/tier3" "the $ev leg exits 2 on a proved block" "$out" "rc=2"
+  assert_fake_request tier3 "$ev"
 done
 env3="$(cat "$WORK/env.tier3")"
 assert_not_contains "f6/tier3" "VIBE_FLOW_BIN is DELETED from the tier-3 child env" "$env3" "VIBE_FLOW_BIN="
@@ -214,6 +228,26 @@ for ev in pre-tool-use-guard stop-gate; do
   assert_contains "f6/notier" "the $ev leg allows (exit 0) rather than blocking" "$out" "rc=0"
   assert_eq "f6/notier" "the $ev leg prints exactly one stderr line" \
     "$(printf '%s\n' "$out" | grep -c 'no vibe-flow binary')" "1"
+done
+
+echo ""
+echo "=== f6/adopted — unavailable runtime never degrades to legacy allow ==="
+for adoption in versioned missing corrupt versionless; do
+  adopted_root="$WORK/adopted-$adoption"
+  mkdir -p "$adopted_root/.vibe/run/flow"
+  case "$adoption" in
+    versioned) printf '%s' '{"v":2}' > "$adopted_root/.vibe/run/flow/state.json" ;;
+    missing) mkdir -p "$adopted_root/.vibe/run/flow/runs" ;;
+    corrupt) mkdir -p "$adopted_root/.vibe/run/flow/runs"; printf '%s' '{broken' > "$adopted_root/.vibe/run/flow/state.json" ;;
+    versionless) mkdir -p "$adopted_root/.vibe/run/flow/runs"; printf '%s' '{"flow":"idle","phase":"idle"}' > "$adopted_root/.vibe/run/flow/state.json" ;;
+  esac
+  for ev in pre-tool-use-guard stop-gate; do
+    out="$(env -u VIBE_FLOW_BIN -u CLAUDE_PLUGIN_ROOT CLAUDE_PROJECT_DIR="$adopted_root" PATH="$NOBIN" \
+      sh "$P5/bin/hook.sh" "$ev" < "$WORK/empty" 2>&1; echo "rc=$?")"
+    assert_contains "f6/adopted" "$adoption adopted state denies $ev without a runtime" "$out" "block:legacy Flow adapter cannot evaluate adopted runtime"
+    assert_contains "f6/adopted" "$adoption adopted state returns block status for $ev" "$out" "rc=2"
+    assert_not_contains "f6/adopted" "$adoption adopted state cannot use legacy missing-tier allow" "$out" "no vibe-flow binary, engine, or fallback"
+  done
 done
 
 echo ""
@@ -291,7 +325,7 @@ CORRUPT="$WORK/corrupt"
 mkdir -p "$CORRUPT/flow" "$CORRUPT/.agents/skills" "$CORRUPT/docs/spec"
 find "$SRC_ROOT/flow" -mindepth 1 -maxdepth 1 ! -name state.json \
   -exec cp -R {} "$CORRUPT/flow/" \;
-ln -s ../../flow "$CORRUPT/.agents/skills/vibe"
+ln -s ../../flow "$CORRUPT/.agents/skills/flow"
 printf '{' > "$CORRUPT/flow/content/policy.json"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"docs/spec/lessons.md"}}' > "$WORK/c-guarded.json"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"notes/todo.md"}}' > "$WORK/c-unGuarded.json"

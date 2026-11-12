@@ -20,6 +20,7 @@
 // an *absent* cursor may mean idle.
 
 import path from 'node:path';
+import fs from 'node:fs';
 import { resolveCursorRoot, flowRuntimeDir, assertCursorWithinRoot, cursorEntryAbsent } from './root.mjs';
 import { readJson, writeJsonAtomic } from './json.mjs';
 
@@ -49,8 +50,8 @@ export class CursorParseError extends Error {
 // root.mjs's resolveProjectCursorDir() deliberately does NOT call this (it
 // must stay importable without dragging json.mjs in); it carries its own
 // one-line waiver for the literal instead.
-export function cursorPath(vibeDir) {
-  const root = resolveCursorRoot(vibeDir);
+export function cursorPath(vibeDir, rootOverride) {
+  const root = rootOverride ?? resolveCursorRoot(vibeDir);
   const current = root && path.join(flowRuntimeDir(root), 'state.json');
   if (current) {
     try { if (!cursorEntryAbsent(current)) return current; }
@@ -63,8 +64,8 @@ function stateKey(flow, phase) {
   return flow === phase ? flow : `${flow}.${phase}`;
 }
 
-export function readCursor(vibeDir) {
-  const filePath = cursorPath(vibeDir);
+export function readCursor(vibeDir, rootOverride) {
+  const filePath = cursorPath(vibeDir, rootOverride);
 
   let raw;
   try {
@@ -99,11 +100,60 @@ export function validFeature(value) {
 
 // Atomic; preserves the cursor's shape (key order flow, phase, feature,
 // updated) so byte parity with the bash writer's hand-rolled printf holds.
-export function writeCursor(vibeDir, { flow, phase, feature = null }) {
-  const filePath = cursorPath(vibeDir);
-  assertCursorWithinRoot(resolveCursorRoot(vibeDir), filePath);
-  const updated = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
-  const body = { flow, phase, feature: feature ?? null, updated };
-  writeJsonAtomic(filePath, body);
-  return { ...body, state: stateKey(flow, phase) };
+function lockedCursor(vibeDir, operation) {
+  const root = resolveCursorRoot(vibeDir);
+  const lockDir = root ? flowRuntimeDir(root) : vibeDir;
+  assertCursorWithinRoot(root, lockDir);
+  fs.mkdirSync(lockDir, { recursive: true });
+  const lockPath = path.join(lockDir, 'runtime.lock');
+  const fd = fs.openSync(lockPath, 'wx', 0o600);
+  const owned = fs.fstatSync(fd);
+  try {
+    if (fs.existsSync(path.join(lockDir, 'runs'))) {
+      throw new Error('adopted runtime requires the Rust Flow runtime; legacy writer refused');
+    }
+    // Re-resolve only after acquiring the same exclusive file as Rust upgrade.
+    const filePath = cursorPath(vibeDir);
+    assertCursorWithinRoot(root, filePath);
+    let current;
+    try { current = readJson(filePath); } catch (err) {
+      if (err.code !== 'ENOENT' && !(err instanceof SyntaxError)) throw err;
+    }
+    if (current && Object.hasOwn(current, 'v')) {
+      throw new Error('versioned cursor requires the Rust Flow runtime; legacy writer refused');
+    }
+    return operation(filePath);
+  } finally {
+    fs.closeSync(fd);
+    const current = fs.lstatSync(lockPath, { throwIfNoEntry: false });
+    if (current && current.dev === owned.dev && current.ino === owned.ino) fs.unlinkSync(lockPath);
+  }
+}
+
+// The selector reads carried state under the same lock as the final write.
+export function mutateCursor(vibeDir, select) {
+  return lockedCursor(vibeDir, filePath => {
+    const { flow, phase, feature = null } = select();
+    const updated = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const body = { flow, phase, feature: feature ?? null, updated };
+    writeJsonAtomic(filePath, body);
+    return { ...body, state: stateKey(flow, phase) };
+  });
+}
+
+export function writeCursor(vibeDir, body) {
+  return mutateCursor(vibeDir, () => body);
+}
+
+// Legacy adapters cannot evaluate upgraded readiness or grant semantics.
+export function legacyAdapterUnavailable(vibeDir, rootOverride) {
+  const root = rootOverride ?? resolveCursorRoot(vibeDir);
+  if (root) {
+    try { fs.lstatSync(path.join(flowRuntimeDir(root), 'runs')); return true; }
+    catch (err) { if (err.code !== 'ENOENT') return true; }
+  }
+  try {
+    const raw = readJson(cursorPath(vibeDir, rootOverride));
+    return raw !== null && typeof raw === 'object' && Object.hasOwn(raw, 'v');
+  } catch { return false; }
 }

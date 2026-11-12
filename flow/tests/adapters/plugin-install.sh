@@ -65,17 +65,33 @@ fi
 # clone to the exact commit under test so the installed payload is that commit.
 git -C "$CLONE" -c advice.detachedHead=false checkout -q --detach "$(git -C "$REPO_ROOT" rev-parse HEAD)" 2>/dev/null || true
 
+# Native package managers fetch committed bytes. An uncommitted candidate is
+# verified separately by snapshot.test.mjs; never accept an older cache as proof.
+candidate_matches=1
+for payload in plugins/vibe factory-plugin plugin/hooks; do
+  diff -r "$REPO_ROOT/$payload" "$CLONE/$payload" >/dev/null 2>&1 || candidate_matches=0
+done
+if [[ "$candidate_matches" -eq 0 ]]; then
+  skip "$TAG" "UNVERIFIED: current package candidate differs from cloned HEAD; native cache acceptance requires an authorized committed candidate"
+  if [[ "$REQUIRE_HOST" -eq 1 ]]; then
+    fail "$TAG" "--require-host cannot verify uncommitted candidate bytes through marketplace fetch"
+  fi
+  echo "=== results: $PASS passed, $FAIL failed, $SKIP skipped ==="
+  [[ "$FAIL" -eq 0 ]]
+  exit $?
+fi
+
 # The payload property both drops depend on: real skill dirs, zero links.
 PI_LINKS="$(find "$CLONE/plugins" "$CLONE/factory-plugin" -type l 2>/dev/null || true)"
 assert_eq "$TAG" "the clone's shipped packages carry no symlink at all" "$PI_LINKS" ""
 for _pkg in plugins/vibe factory-plugin; do
   _ok=1
-  for _s in spec using-spec vibe; do
+  for _s in spec flow vibe; do
     [[ -f "$CLONE/$_pkg/skills/$_s/SKILL.md" && ! -L "$CLONE/$_pkg/skills/$_s" ]] || _ok=0
   done
   # using-spec is a SIBLING skill dir, never also nested inside skills/spec/.
   [[ -e "$CLONE/$_pkg/skills/spec/using-spec" ]] && _ok=0
-  assert_eq "$TAG" "$_pkg/skills/{spec,using-spec,vibe} are real sibling dirs carrying SKILL.md" "$_ok" "1"
+  assert_eq "$TAG" "$_pkg/skills/{spec,flow,vibe} are real sibling dirs carrying SKILL.md" "$_ok" "1"
 done
 
 # verify_cache HOST HOMEDIR — the host's cache must hold every shipped SKILL.md as
@@ -91,7 +107,7 @@ verify_cache() {
     pin="/$revision/"; identity="revision $revision"
   fi
   all="$(find "$home" -type f -path '*/plugins/cache/*' -name SKILL.md 2>/dev/null | sort)"
-  for pair in "spec:spec" "using-spec:spec/using-spec" "vibe:flow"; do
+  for pair in "spec:spec" "flow:flow" "vibe:skills/vibe"; do
     name="${pair%%:*}" canon="${pair#*:}"
     got="$(printf '%s\n' "$all" | grep -E "/skills/$name/SKILL\.md$" | grep -F "$pin" | head -n1)"
     found="$got"

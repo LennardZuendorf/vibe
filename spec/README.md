@@ -7,7 +7,7 @@ The **spec framework** is a durable planning layer for a codebase. It teaches an
 agent (or a human) to keep design docs that are *current*, not a backlog: what you
 are building (product), how it is built (tech), the visual / interaction language
 (design), and the order of work (plan). It ships as the `spec` skill, the
-`using-spec` session router, two agents, and hooks, all backed by the `vibe-spec`
+standalone session-start context, two agents, and hooks, all backed by the `vibe-spec`
 binary. The binary validates and queries the spec tree. It works with **any** agent,
 or none.
 
@@ -105,12 +105,12 @@ the docs, templates, and validator are identical.
 ## File map
 
 Everything below is the `spec` skill, addressed at runtime under
-`.agents/skills/spec/` (and `.agents/skills/using-spec/`).
+`.agents/skills/spec/`. Toolkit orientation and Flow lifecycle use sibling skills.
 
 | Path | What it is |
 |---|---|
 | [SKILL.md](SKILL.md) | Skill router: routing table, layers, wrap-up, roles |
-| [using-spec/](using-spec/SKILL.md) | Session-start router that sends work to `spec` |
+| [session-start context](reference/session-start.md) | Read-only standalone Spec discovery context |
 | [strategy.md](strategy.md) | Root-layer authoring guide |
 | [feature.md](feature.md) | Fallback feature-layer authoring flow |
 | [reference/](reference/) | Per-doc writing guides (`product`, `tech`, `design`, `plan`) and [templates/](reference/templates/) |

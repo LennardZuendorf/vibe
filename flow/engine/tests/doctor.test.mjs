@@ -50,7 +50,7 @@ import {
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, assert, assertEqual, assertIncludes, assertMatch, runCommand, runCli, makeHookSandbox, skip, mkTempRoot } from './run.mjs';
-import { runDoctor } from '../commands/doctor.mjs';
+import { runDoctor, capabilityReport } from '../commands/doctor.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const ORACLE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'doctor.sh');
@@ -65,6 +65,11 @@ const HOOK_SCRIPTS = [
   'pre-tool-use-guard.sh',
   'stop-gate.sh',
 ];
+
+// Legacy oracle parity excludes Task 8 additions, which have separate behavioral tests.
+function legacyReport(stdout) {
+  return stdout.split('# Flow capability report')[0].replace(/^warn resource\.report .*\n/gm, '');
+}
 
 const JQ_PRESENT = runCommand('bash', ['-c', 'command -v jq >/dev/null 2>&1']).code === 0;
 
@@ -196,9 +201,10 @@ function makeBaseSandbox() {
   mkdirSync(scriptsDir, { recursive: true });
   const scriptPath = path.join(scriptsDir, 'doctor.sh');
   copyFileSync(ORACLE_SRC, scriptPath);
+  symlinkSync(path.join(REPO_ROOT, 'flow', 'engine'), path.join(dir, 'flow', 'engine'));
 
   const skillsDir = path.join(dir, '.agents', 'skills');
-  const vibeDir = path.join(skillsDir, 'vibe');
+  const vibeDir = path.join(skillsDir, 'flow');
   mkdirSync(vibeDir, { recursive: true });
 
   let cleaned = false;
@@ -360,9 +366,9 @@ test('parity: fully healthy install — every check ok, exit 0', () => {
     const engineResult = runEngine(sandbox, { home });
     assertEqual(oracleResult.code, 0);
     assertEqual(engineResult.code, 0);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     if (JQ_PRESENT) {
-      assert(!engineResult.stdout.includes('warn '), `expected an all-ok run, got:\n${engineResult.stdout}`);
+      assert(!engineResult.stdout.split('# Flow capability report')[0].includes('warn '), `expected an all-ok run, got:\n${engineResult.stdout}`);
     }
     assertMatch(engineResult.stdout, /^# vibe doctor — /);
   } finally {
@@ -381,7 +387,7 @@ test('parity: tool.vibe-spec — a binary found through $VIBE_SPEC_BIN is report
   try {
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertIncludes(engineResult.stdout, `ok   tool.vibe-spec vibe-spec present (${sandbox.specBin})`);
   } finally {
     sandbox.cleanup();
@@ -405,7 +411,7 @@ test('divergence pin: tool.vibe-spec — genuinely no binary on PATH reports the
     });
     assertEqual(oracleResult.code, 0);
     assertEqual(engineResult.code, 0);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn tool\.vibe-spec vibe-spec not installed/);
     // The message must name the thing that DOES still work, byte-exactly.
     assertIncludes(engineResult.stdout, `bash ${sandbox.dir}/.agents/skills/spec/scripts/validate.sh`);
@@ -474,7 +480,7 @@ test('parity: tool.vibe-spec — a binary found on PATH is reported present (sea
     });
     assertEqual(result.oracleResult.code, 0);
     assertEqual(result.engineResult.code, 0);
-    assertEqual(result.engineResult.stdout, result.oracleResult.stdout);
+    assertEqual(legacyReport(result.engineResult.stdout), legacyReport(result.oracleResult.stdout));
     assertIncludes(result.engineResult.stdout, `ok   tool.vibe-spec vibe-spec present (${farm}/vibe-spec)`);
   } finally {
     sandbox.cleanup();
@@ -495,7 +501,7 @@ test('parity: tool.vibe-spec — a binary found through $VIBE_SPEC_BIN is report
         return { oracleResult, engineResult };
       },
     );
-    assertEqual(result.engineResult.stdout, result.oracleResult.stdout);
+    assertEqual(legacyReport(result.engineResult.stdout), legacyReport(result.oracleResult.stdout));
     assertIncludes(result.engineResult.stdout, `ok   tool.vibe-spec vibe-spec present (${sandbox.specBin})`);
   } finally {
     sandbox.cleanup();
@@ -523,7 +529,7 @@ test('parity: tool.vibe-spec — an empty PATH entry resolves to the cwd (./vibe
       return { oracleResult, engineResult };
     });
     assertEqual(result.oracleResult.code, 0);
-    assertEqual(result.engineResult.stdout, result.oracleResult.stdout);
+    assertEqual(legacyReport(result.engineResult.stdout), legacyReport(result.oracleResult.stdout));
     assertIncludes(result.engineResult.stdout, 'ok   tool.vibe-spec vibe-spec present (./vibe-spec)');
   } finally {
     sandbox.cleanup();
@@ -551,7 +557,7 @@ test('parity: tool.vibe-spec — a DIRECTORY at $VIBE_SPEC_BIN is not an install
       },
     );
     assertEqual(result.oracleResult.code, 0);
-    assertEqual(result.engineResult.stdout, result.oracleResult.stdout);
+    assertEqual(legacyReport(result.engineResult.stdout), legacyReport(result.oracleResult.stdout));
     assertMatch(result.engineResult.stdout, /warn tool\.vibe-spec vibe-spec not installed/);
   } finally {
     sandbox.cleanup();
@@ -581,7 +587,7 @@ for (const mode of ['realdir', 'symlink', 'broken-symlink', 'absent']) {
       addSpecSkill(sandbox, mode); // overwrite the healthy default
       const oracleResult = runOracle(sandbox);
       const engineResult = runEngine(sandbox);
-      assertEqual(engineResult.stdout, oracleResult.stdout);
+      assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
       const verdict = mode === 'realdir' || mode === 'symlink' ? 'ok  ' : 'warn';
       assertMatch(engineResult.stdout, new RegExp(`\\n${verdict.trimEnd()}\\s+core\\.spec `));
     } finally {
@@ -597,16 +603,17 @@ test('parity: core.vibe absent — cascades to machine/cursor/deps all reporting
   mkdirSync(scriptsDir, { recursive: true });
   const scriptPath = path.join(scriptsDir, 'doctor.sh');
   copyFileSync(ORACLE_SRC, scriptPath);
+  symlinkSync(path.join(REPO_ROOT, 'flow', 'engine'), path.join(dir, 'flow', 'engine'));
   const skillsDir = path.join(dir, '.agents', 'skills');
   mkdirSync(skillsDir, { recursive: true });
-  // Deliberately no .agents/skills/vibe at all.
-  const vibeDir = path.join(skillsDir, 'vibe');
+  // Deliberately no .agents/skills/flow at all.
+  const vibeDir = path.join(skillsDir, 'flow');
   try {
     const oracleResult = runCommand('bash', [scriptPath], { env: { HOME: '/nonexistent-home' } });
     const engineResult = runDoctor(dir, vibeDir, skillsDir, { home: '/nonexistent-home' });
     assertEqual(oracleResult.code, 0);
     assertEqual(engineResult.code, 0);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn core\.vibe /);
     assertMatch(engineResult.stdout, /warn machine state-machine\.json missing/);
   } finally {
@@ -624,7 +631,7 @@ test('parity: machine — missing state-machine.json', () => {
     rmSync(path.join(sandbox.vibeDir, 'state-machine.json'));
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn machine state-machine\.json missing at .* — flow harness incomplete/);
   } finally {
     sandbox.cleanup();
@@ -638,7 +645,7 @@ test('parity: machine — present but not valid JSON (jq present required for th
     addMachine(sandbox, '{ this is not json');
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn machine state-machine\.json is present but not valid JSON/);
   } finally {
     sandbox.cleanup();
@@ -665,7 +672,7 @@ test('divergence pin: machine — invalid JSON but jq absent still reports ok (d
     });
     assertEqual(oracleResult.code, 0);
     assertEqual(engineResult.code, 0);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /ok {3}machine state-machine\.json present/, 'no-jq path never validates, always ok');
   } finally {
     sandbox.cleanup();
@@ -691,7 +698,7 @@ test('regression pin: machine — a DIRECTORY at state-machine.json\'s path repo
     const engineResult = runEngine(sandbox);
     assertEqual(oracleResult.code, 0);
     assertEqual(engineResult.code, 0);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(oracleResult.stdout, /warn machine state-machine\.json missing at .* — flow harness incomplete/, 'oracle sanity');
     assertMatch(engineResult.stdout, /warn machine state-machine\.json missing at .* — flow harness incomplete/);
   } finally {
@@ -708,7 +715,7 @@ test('regression pin: machine — a top-level `false` document reports not valid
     const engineResult = runEngine(sandbox);
     assertEqual(oracleResult.code, 0);
     assertEqual(engineResult.code, 0);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(oracleResult.stdout, /warn machine state-machine\.json is present but not valid JSON/, 'oracle sanity');
     assertMatch(engineResult.stdout, /warn machine state-machine\.json is present but not valid JSON/);
   } finally {
@@ -727,7 +734,7 @@ test('parity: cursor — absent cursor is idle, ok', () => {
     rmSync(path.join(sandbox.vibeDir, 'state.json'));
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /ok {3}cursor no flow cursor \(idle\)/);
   } finally {
     sandbox.cleanup();
@@ -741,7 +748,7 @@ test('parity: cursor — invalid (unparseable) JSON, jq present', () => {
     addCursor(sandbox, '{ not json at all');
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn cursor flow cursor present but invalid/);
   } finally {
     sandbox.cleanup();
@@ -755,7 +762,7 @@ test('parity: cursor — missing validate-state.sh degrades to invalid, jq prese
     rmSync(path.join(sandbox.vibeDir, 'scripts', 'validate-state.sh'));
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn cursor flow cursor present but invalid/);
   } finally {
     sandbox.cleanup();
@@ -769,7 +776,7 @@ test('parity: cursor — non-executable validate-state.sh degrades to invalid, j
     addValidateState(sandbox, { executable: false });
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn cursor flow cursor present but invalid/);
   } finally {
     sandbox.cleanup();
@@ -783,7 +790,7 @@ test('parity: cursor — valid, with a feature set', () => {
     addCursor(sandbox, { flow: 'feature', phase: 'impl', feature: 'widget', updated: '2026-01-01T00:00:00Z' });
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /ok {3}cursor flow cursor valid \(feature\.impl feature=widget\)/);
   } finally {
     sandbox.cleanup();
@@ -810,7 +817,7 @@ test('divergence pin: cursor — present without jq is unverified-ok, never runs
     });
     assertEqual(oracleResult.code, 0);
     assertEqual(engineResult.code, 0);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /ok {3}cursor flow cursor present \(unverified/);
   } finally {
     sandbox.cleanup();
@@ -828,7 +835,7 @@ test('parity: adapter — a missing hook script warns for that script only', () 
     rmSync(path.join(sandbox.dir, '.claude', 'hooks', 'stop-gate.sh'));
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn adapter\.script\.stop-gate\.sh/);
     assertMatch(engineResult.stdout, /ok {3}adapter\.script\.session-start-doctrine\.sh/);
   } finally {
@@ -842,7 +849,7 @@ test('parity: adapter — settings.json present but missing one hook name (issue
     addSettings(sandbox, HOOK_SCRIPTS.filter((n) => n !== 'pre-tool-use-guard.sh'));
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn adapter\.activation hooks present but NOT wired.*pre-tool-use-guard\.sh/);
   } finally {
     sandbox.cleanup();
@@ -858,7 +865,7 @@ test('parity: adapter — settings.json present but missing TWO hook names joins
     addSettings(sandbox, HOOK_SCRIPTS.filter((n) => n !== 'pre-tool-use-guard.sh' && n !== 'stop-gate.sh'));
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(
       engineResult.stdout,
       /warn adapter\.activation hooks present but NOT wired in \.claude\/settings\.json \(issue #12 gap: pre-tool-use-guard\.sh stop-gate\.sh\) — re-run install\.sh/,
@@ -875,7 +882,7 @@ test('parity: adapter — settings.json absent, all scripts present', () => {
     rmSync(path.join(sandbox.dir, '.claude', 'settings.json'));
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn adapter\.activation \.claude\/settings\.json absent — hooks not activated/);
   } finally {
     sandbox.cleanup();
@@ -888,7 +895,7 @@ test('parity: adapter — settings.json absent AND scripts missing', () => {
     rmSync(path.join(sandbox.dir, '.claude'), { recursive: true, force: true });
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(
       engineResult.stdout,
       /warn adapter\.activation \.claude\/settings\.json absent and hook scripts missing/,
@@ -909,7 +916,7 @@ test('parity: instruction.coverage — no carriers at all warns', () => {
     rmSync(path.join(sandbox.dir, '.claude'), { recursive: true, force: true });
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn instruction\.coverage no doctrine coverage/);
   } finally {
     sandbox.cleanup();
@@ -923,7 +930,7 @@ test('parity: instruction.coverage — doctrine block only', () => {
     rmSync(path.join(sandbox.dir, '.claude'), { recursive: true, force: true });
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /ok {3}instruction\.coverage doctrine reaches the agent via: doctrine block$/m);
   } finally {
     sandbox.cleanup();
@@ -937,7 +944,7 @@ test('parity: instruction.coverage — SessionStart wired only (no doctrine bloc
     // addSettings already wired session-start-doctrine.sh via the healthy default.
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(
       engineResult.stdout,
       /ok {3}instruction\.coverage doctrine reaches the agent via: SessionStart hook$/m,
@@ -959,7 +966,7 @@ test('parity: instruction.coverage — per-user plugin only, discovered via a ca
 
     const oracleResult = runOracle(sandbox, { home });
     const engineResult = runEngine(sandbox, { home });
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /ok {3}instruction\.coverage doctrine reaches the agent via: per-user plugin$/m);
   } finally {
     sandbox.cleanup();
@@ -977,7 +984,7 @@ test('parity: instruction.coverage — all three carriers combine in the listed 
 
     const oracleResult = runOracle(sandbox, { home });
     const engineResult = runEngine(sandbox, { home });
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(
       engineResult.stdout,
       /doctrine reaches the agent via: doctrine block, SessionStart hook, per-user plugin$/m,
@@ -1006,7 +1013,7 @@ test('parity: instruction.coverage — plugin.json exactly at the maxdepth-6 bou
 
     const oracleResult = runOracle(sandbox, { home });
     const engineResult = runEngine(sandbox, { home });
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(oracleResult.stdout, /doctrine reaches the agent via: .*per-user plugin/, 'oracle sanity: found at the boundary');
     assertMatch(engineResult.stdout, /doctrine reaches the agent via: .*per-user plugin/);
   } finally {
@@ -1028,7 +1035,7 @@ test('parity: instruction.coverage — plugin.json one level past maxdepth 6 is 
 
     const oracleResult = runOracle(sandbox, { home });
     const engineResult = runEngine(sandbox, { home });
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn instruction\.coverage no doctrine coverage/);
   } finally {
     sandbox.cleanup();
@@ -1055,7 +1062,7 @@ test('parity: instruction.coverage — a symlinked $HOME/.claude/plugins is neve
 
     const oracleResult = runOracle(sandbox, { home });
     const engineResult = runEngine(sandbox, { home });
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn instruction\.coverage no doctrine coverage/, 'a symlinked plugins dir must not be traversed');
   } finally {
     sandbox.cleanup();
@@ -1076,7 +1083,7 @@ test('parity: deps — a dependency reachable only through a symlinked $HOME/.cl
 
     const oracleResult = runOracle(sandbox, { home });
     const engineResult = runEngine(sandbox, { home });
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn dep\.superpowers skill-collection 'superpowers' not found/);
   } finally {
     sandbox.cleanup();
@@ -1095,7 +1102,7 @@ test('parity: deps.manifest — missing deps.json', () => {
     rmSync(path.join(sandbox.vibeDir, 'reference'), { recursive: true, force: true });
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn deps\.manifest deps\.json missing at /);
   } finally {
     sandbox.cleanup();
@@ -1109,7 +1116,7 @@ test('parity: deps.manifest — invalid JSON, jq present', () => {
     addDeps(sandbox, '{ not json');
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn deps\.manifest deps\.json is not valid JSON/);
   } finally {
     sandbox.cleanup();
@@ -1135,7 +1142,7 @@ test('divergence pin: deps.manifest — jq absent warns "unavailable", never rea
     });
     assertEqual(oracleResult.code, 0);
     assertEqual(engineResult.code, 0);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn deps\.manifest deps\.json present but jq unavailable/);
     assert(!engineResult.stdout.includes('dep.superpowers'), 'no per-dep lines when jq is unavailable');
   } finally {
@@ -1150,7 +1157,7 @@ test('parity: deps — a dependency present via $HOME/.claude/skills/<name>', ()
   try {
     const oracleResult = runOracle(sandbox, { home });
     const engineResult = runEngine(sandbox, { home });
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /ok {3}dep\.superpowers skill-collection 'superpowers' present on disk/);
     assertMatch(engineResult.stdout, /warn dep\.feature-dev subagent-collection 'feature-dev' not found/);
   } finally {
@@ -1165,7 +1172,7 @@ test('parity: deps — a dependency present via a case-insensitive nested match 
   try {
     const oracleResult = runOracle(sandbox, { home });
     const engineResult = runEngine(sandbox, { home });
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /ok {3}dep\.superpowers skill-collection 'superpowers' present on disk/);
   } finally {
     cleanupAll(sandbox, home);
@@ -1179,10 +1186,10 @@ test('parity: deps — absent dependency reports the manifest degrade text verba
   try {
     const oracleResult = runOracle(sandbox, { home });
     const engineResult = runEngine(sandbox, { home });
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(
       engineResult.stdout,
-      /warn dep\.feature-dev subagent-collection 'feature-dev' not found — degrade: the orchestrator performs the explore \/ architect \/ review step inline/,
+      /warn dep\.feature-dev subagent-collection 'feature-dev' not found — degrade: use generic independent agents with packaged role briefs; required independent review unavailable means blocked/,
     );
   } finally {
     cleanupAll(sandbox, home);
@@ -1202,7 +1209,7 @@ test('parity: deps — a dependency exactly five levels deep IS found (maxdepth 
   try {
     const oracleResult = runOracle(sandbox, { home });
     const engineResult = runEngine(sandbox, { home });
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(oracleResult.stdout, /ok {3}dep\.superpowers skill-collection 'superpowers' present on disk/, 'oracle sanity: found at the boundary');
     assertMatch(engineResult.stdout, /ok {3}dep\.superpowers skill-collection 'superpowers' present on disk/);
   } finally {
@@ -1217,7 +1224,7 @@ test('parity: deps — a dependency six levels deep under $HOME\\/.claude\\/plug
   try {
     const oracleResult = runOracle(sandbox, { home });
     const engineResult = runEngine(sandbox, { home });
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(engineResult.stdout, /warn dep\.superpowers skill-collection 'superpowers' not found/);
   } finally {
     cleanupAll(sandbox, home);
@@ -1233,7 +1240,7 @@ test('parity: tool.jq reflects ambient jq presence', () => {
   try {
     const oracleResult = runOracle(sandbox);
     const engineResult = runEngine(sandbox);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     if (JQ_PRESENT) {
       assertMatch(engineResult.stdout, /ok {3}tool\.jq jq present \(/);
     } else {
@@ -1261,7 +1268,7 @@ test('divergence pin: tool.jq — genuinely no jq on PATH', () => {
       jqPresent: false,
       specBin: undefined,
     });
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
     assertMatch(
       engineResult.stdout,
       /warn tool\.jq jq not installed \(recommended, not required\) — set-state writes the cursor via printf, the guard extracts paths via sed, state reads degrade to idle; cursor \+ manifest checks unverified/,
@@ -1365,7 +1372,7 @@ test('runDoctor never throws: everything malformed at once (kitchen sink), still
 
 test('CLI: `vibe doctor` on a fresh non-git install-layout fixture exits 0 and reports the install', () => {
   const installRoot = mkTempRoot('vibe-doctor-cli-fresh-');
-  const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
+  const vibeDir = path.join(installRoot, '.agents', 'skills', 'flow');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
   cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {
@@ -1408,7 +1415,7 @@ test('CLI: `vibe doctor` with CLAUDE_PROJECT_DIR set to this repo matches the re
       env: { CLAUDE_PROJECT_DIR: REPO_ROOT },
     });
     assertEqual(engineResult.code, 0, `stderr: ${engineResult.stderr}`);
-    assertEqual(engineResult.stdout, oracleResult.stdout);
+    assertEqual(legacyReport(engineResult.stdout), legacyReport(oracleResult.stdout));
   } finally {
     if (prevEnv === undefined) delete process.env.CLAUDE_PROJECT_DIR;
     else process.env.CLAUDE_PROJECT_DIR = prevEnv;
@@ -1416,7 +1423,7 @@ test('CLI: `vibe doctor` with CLAUDE_PROJECT_DIR set to this repo matches the re
 });
 
 // Review round 1, Finding 3 — the actual bug: an ordinary vendored install
-// (<installRoot>/.agents/skills/vibe/engine) run under a MISMATCHED
+// (<installRoot>/.agents/skills/flow/engine) run under a MISMATCHED
 // CLAUDE_PROJECT_DIR (pointing at a different project). Before the
 // rootForReport() fix, resolveRoot(opts) would win and every root-based
 // line (the header, .claude/hooks/**, .claude/settings.json) would be
@@ -1426,7 +1433,7 @@ test('CLI: `vibe doctor` with CLAUDE_PROJECT_DIR set to this repo matches the re
 // resolveRoot(opts) fails loudly.
 test('CLI: a vendored install ignores a mismatched CLAUDE_PROJECT_DIR for the root-based report lines', () => {
   const installRoot = mkTempRoot('vibe-doctor-cli-vendored-');
-  const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
+  const vibeDir = path.join(installRoot, '.agents', 'skills', 'flow');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
   cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {
@@ -1466,14 +1473,14 @@ test('CLI: a vendored install ignores a mismatched CLAUDE_PROJECT_DIR for the ro
 // ruling on concern 1) silent ignoring of doctor.sh's `[<repo-root>]`
 // positional override: today's resolvers have no opts.root leg, so an
 // explicit CLI argument cannot be honoured without re-deriving the
-// `.agents/skills/vibe` join. Documented here as intended behaviour, not
+// `.agents/skills/flow` join. Documented here as intended behaviour, not
 // left silent.
 // CONTRACT CHANGED (review): a positional root used to be SILENTLY IGNORED, and
 // this test pinned that. doctor.sh takes `doctor.sh [<repo-root>]`, so
 // `vibe doctor /some/other/root` printed a clean report about the self-located
 // tree and exited 0 — an answer that looked like it was about the path given.
 // The port still does not SUPPORT the argument (that would mean re-deriving the
-// `.agents/skills/vibe` join, which root.mjs owns); it refuses it instead. The
+// `.agents/skills/flow` join, which root.mjs owns); it refuses it instead. The
 // no-report half of the old assertion is what carried the value, and it is kept.
 test('CLI: a positional root argument is REFUSED, never answered for a different tree', () => {
   const prevEnv = process.env.CLAUDE_PROJECT_DIR;
@@ -1491,3 +1498,85 @@ test('CLI: a positional root argument is REFUSED, never answered for a different
   }
 });
 
+
+// Task 8: resource diagnostics report observations, never host trust.
+test('Task 8: doctor identifies selected resources, versions and unavailable trust', () => {
+  const sandbox = makeHealthySandbox();
+  try {
+    const toolkit = path.join(sandbox.skillsDir, 'vibe');
+    mkdirSync(toolkit);
+    writeFileSync(path.join(toolkit, 'SKILL.md'), '---\nname: vibe\n---\nToolkit');
+    writeFileSync(path.join(sandbox.vibeDir, 'package.json'), '{"version":"9.8.7"}');
+    const result = runEngine(sandbox, { home: '/nonexistent-home' });
+    assertMatch(result.stdout, /resource\.vibe .*capability=toolkit-orientation/);
+    assertMatch(result.stdout, /resource\.flow .*version=9\.8\.7 .*capability=workflow/);
+    assertIncludes(result.stdout, `selected=${sandbox.vibeDir}`);
+    assertIncludes(result.stdout, 'runtime.mode legacy-v1');
+    assertIncludes(result.stdout, 'trusted.approval unavailable/deny');
+    assertIncludes(result.stdout, 'trusted.evidence unavailable/deny');
+    assertIncludes(result.stdout, 'native.coverage unverified');
+  } finally { sandbox.cleanup(); }
+});
+
+test('Task 8: doctor diagnoses shadow copies without treating symlink aliases as copies', () => {
+  const sandbox = makeHealthySandbox();
+  const home = mkTempRoot('vibe-doctor-shadow-home-');
+  try {
+    const alternative = path.join(home, '.claude', 'skills', 'flow');
+    mkdirSync(alternative, { recursive: true });
+    writeFileSync(path.join(alternative, 'SKILL.md'), '---\nname: vibe\n---\nOld workflow');
+    const alias = path.join(sandbox.dir, '.claude', 'skills');
+    mkdirSync(alias, { recursive: true });
+    symlinkSync(sandbox.vibeDir, path.join(alias, 'flow'));
+    const output = runEngine(sandbox, { home }).stdout;
+    assertIncludes(output, `shadow.flow ${alternative}`);
+    assertIncludes(output, 'declared-name=vibe');
+    assert(!output.includes(`shadow.flow ${path.join(alias, 'flow')}`));
+    assertIncludes(output, 'host selection precedence unverified');
+  } finally { sandbox.cleanup(); rmSync(home, { recursive: true, force: true }); }
+});
+
+test('Task 8: doctor reports adopted runtime without granting trust', () => {
+  const sandbox = makeHealthySandbox();
+  try {
+    mkdirSync(path.join(sandbox.dir, '.vibe', 'run', 'flow', 'runs'), { recursive: true });
+    const output = runEngine(sandbox, { home: '/nonexistent-home' }).stdout;
+    assertIncludes(output, 'runtime.mode versioned/adopted');
+    assertIncludes(output, 'explicit-v2 validation unverified');
+    assertIncludes(output, 'trusted.approval unavailable/deny');
+  } finally { sandbox.cleanup(); }
+});
+
+test('Task 8: shell doctor shares the installed resource report', () => {
+  const sandbox = makeHealthySandbox();
+  try {
+    symlinkSync(process.execPath, path.join(sandbox.dir, 'bin', 'node'));
+    const result = runCommand('bash', [sandbox.scriptPath], {
+      env: { HOME: '/nonexistent-home', PATH: `${sandbox.dir}/bin:/usr/bin:/bin` },
+    });
+    const engine = runEngine(sandbox, { home: '/nonexistent-home' });
+    assertEqual(result.code, 0);
+    assertEqual(result.stdout.split('# Flow capability report')[1], engine.stdout.split('# Flow capability report')[1]);
+    assertIncludes(result.stdout, 'trusted.evidence unavailable/deny');
+  } finally { sandbox.cleanup(); }
+});
+
+// Task 8 review: the selected install must own every runtime observation.
+for (const selectedV2 of [false, true]) {
+  test(`Task 8: doctor runtime ignores hostile ambient root (selected v2=${selectedV2})`, () => {
+    const selected = makeHealthySandbox();
+    const ambient = makeHealthySandbox();
+    try {
+      for (const [sandbox, v2] of [[selected, selectedV2], [ambient, !selectedV2]]) {
+        if (!v2) continue;
+        const runtime = path.join(sandbox.dir, '.vibe', 'run', 'flow');
+        mkdirSync(runtime, { recursive: true });
+        writeFileSync(path.join(runtime, 'state.json'), JSON.stringify({ v: 2, flow: 'feature', phase: 'plan' }));
+      }
+      const output = withEnv({ CLAUDE_PROJECT_DIR: ambient.dir }, () =>
+        capabilityReport(selected.dir, selected.vibeDir, selected.skillsDir, '/nonexistent-home'));
+      assertIncludes(output, `runtime.mode ${selectedV2 ? 'versioned/adopted' : 'legacy-v1'}`);
+      assert(!output.includes(ambient.dir), 'ambient project must not leak into the selected report');
+    } finally { selected.cleanup(); ambient.cleanup(); }
+  });
+}

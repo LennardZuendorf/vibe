@@ -52,7 +52,7 @@ test('zero discovered test files exits non-zero and says so', () => {
 // symlinks. Spawned through any path containing a symlink the two differed,
 // `main()` never ran, and the whole suite exited 0 with no output: the
 // anti-vacuous-green tooth, itself vacuously green. Real targets hit this —
-// `.agents/skills/vibe` is a symlink to `flow/`, and on macOS every
+// `.agents/skills/flow` is a symlink to `flow/`, and on macOS every
 // `mkdtempSync` path goes through /var -> private/var.
 test('the runner still runs when spawned through a symlinked path', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'vibe-runner-symlink-'));

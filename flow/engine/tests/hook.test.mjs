@@ -35,6 +35,7 @@ import {
   makeNestedSandbox,
   skip,
 } from './run.mjs';
+import { runDoctrine } from '../commands/doctrine.mjs';
 import { runSet } from '../commands/state.mjs';
 import {
   runDoctrineHook,
@@ -94,10 +95,11 @@ test('runDoctrineHook delegates to the ported doctrine command and always exits 
   try {
     const result = withProjectDir(sb.root, () => runDoctrineHook(sb.vibeDir, sb.skillsDir));
     assertEqual(result.code, 0);
-    assertIncludes(result.stdout, 'sessions are ephemeral');
+    assertIncludes(result.stdout, 'vibe flow — working model.');
+    assertIncludes(result.stdout, 'Cursor: `.vibe/run/flow/state.json`');
     // R4: SessionStart output replays verbatim on --resume, so no live state
     // may ride it. Population floor above, negative here.
-    assert(!result.stdout.includes('Cursor:'), 'the doctrine hook must not carry the cursor');
+    assertEqual(result, runDoctrine(sb.skillsDir), 'the hook emits only the static doctrine command result');
   } finally {
     sb.cleanup();
   }
@@ -605,7 +607,7 @@ test('runGuardHook: Bash sniffer never warns about state.json when the command r
   try {
     const stdin = JSON.stringify({
       tool_name: 'Bash',
-      tool_input: { command: 'bash .agents/skills/vibe/scripts/set-state.sh idle > .agents/skills/vibe/state.json' },
+      tool_input: { command: 'bash .agents/skills/flow/scripts/set-state.sh idle > .agents/skills/flow/state.json' },
     });
     const result = runGuardHook(sb.root, stdin, {});
     assertEqual(result.code, 0);
@@ -708,7 +710,7 @@ test('runGuardHook: NotebookEdit uses notebook_path', () => {
 test('runGuardHook: integration — real detect-context.sh blocks a direct state.json edit (exit 2)', () => {
   const sb = makeHookSandbox();
   try {
-    const stdin = JSON.stringify({ tool_name: 'Write', tool_input: { file_path: '.agents/skills/vibe/state.json' } });
+    const stdin = JSON.stringify({ tool_name: 'Write', tool_input: { file_path: '.agents/skills/flow/state.json' } });
     const result = runGuardHook(sb.root, stdin, {});
     assertEqual(result.code, 2);
     assertIncludes(result.stderr, 'BLOCKED');
@@ -783,7 +785,7 @@ test('guard: in-process verdicts translate exactly as before — block -> 2, war
   try {
     withPolicy(sb);
 
-    const blocked = guard(sb, '.agents/skills/vibe/state.json');
+    const blocked = guard(sb, '.agents/skills/flow/state.json');
     assertEqual(blocked.code, 2);
     assertIncludes(blocked.stderr, 'BLOCKED');
     assertIncludes(blocked.stderr, 'set-state.sh');
@@ -817,7 +819,7 @@ test('guard: in-process and bash-branch verdicts agree on every guarded path x e
     '.spec/tech.md',
     '.spec/design.md',
     '.spec/plan.md',
-    '.agents/skills/vibe/state.json',
+    '.agents/skills/flow/state.json',
     '.spec/features/demo/product.md',
     'AGENTS.md',
     'CLAUDE.md',
@@ -891,7 +893,7 @@ test('guard: unusable policy + the REAL detect-context.sh still hard-blocks (the
   const sb = makeHookSandbox();
   try {
     withPolicy(sb, '{"version":1,"rules":[]}');
-    const result = guard(sb, '.agents/skills/vibe/state.json');
+    const result = guard(sb, '.agents/skills/flow/state.json');
     assertEqual(result.code, 2, 'an empty rule set must not delete the cursor block');
     assertIncludes(result.stderr, 'BLOCKED');
   } finally {
@@ -1099,7 +1101,7 @@ test('runGateHook predicate 2: a DIFFERENT, NEWER file under the evidence dir ne
     const siblingTs = new Date('2020-06-01T00:00:00Z');
     utimesSync(sibling, siblingTs, siblingTs);
 
-    const spawnGit = fakeGit([[' M', path.posix.join('.agents/skills/vibe/evidence', 'quick.md')]]);
+    const spawnGit = fakeGit([[' M', path.posix.join('.agents/skills/flow/evidence', 'quick.md')]]);
 
     const result = runGateHook(sb.root, sb.vibeDir, '{}', { spawnGit });
     assertEqual(result.code, 0, 'a newer SIBLING receipt must never make the gate call its own receipt stale');
@@ -1386,7 +1388,7 @@ test('runGateHook predicate 2: the warnings relay log is the harness writing to 
   const sb = makeRealGitFixture();
   try {
     writeFileSync(sb.warnLogPath, 'guard: something\n');
-    assertEqual(realPorcelain(sb), '?? .agents/skills/vibe/warnings.log\0', 'floor: git does report it');
+    assertEqual(realPorcelain(sb), '?? .agents/skills/flow/warnings.log\0', 'floor: git does report it');
     assertEqual(
       gateOnRealGit(sb).code,
       0,
@@ -1547,7 +1549,7 @@ test('review-hardening/9: nested project — changes outside it and its own runt
       writeFileSync(path.join(sb.dir, '.vibe', 'last-inject'), 'quick.verify\n');
       writeFileSync(sb.warnLogPath, 'gate: something\n');
       const top = runCommand('git', ['-C', sb.outer, 'status', '--porcelain', '-uall'], { cwd: sb.outer }).stdout;
-      for (const row of ['?? other.txt', ' M sub/.vibe/last-inject', '?? sub/.agents/skills/vibe/warnings.log']) {
+      for (const row of ['?? other.txt', ' M sub/.vibe/last-inject', '?? sub/.agents/skills/flow/warnings.log']) {
         assert(top.includes(row), `floor: git reports ${JSON.stringify(row)}; got ${JSON.stringify(top)}`);
       }
       assertEqual(
@@ -1872,8 +1874,9 @@ test('CLI: `vibe hook session-start-doctrine` end to end', () => {
       { env: { CLAUDE_PROJECT_DIR: sb.root }, input: '' },
     );
     assertEqual(result.code, 0);
-    assertIncludes(result.stdout, 'sessions are ephemeral');
-    assert(!result.stdout.includes('Cursor:'), 'end to end, the SessionStart payload names no state (R4)');
+    assertIncludes(result.stdout, 'vibe flow — working model.');
+    assertIncludes(result.stdout, 'Cursor: `.vibe/run/flow/state.json`');
+    assertEqual(result.stdout, runDoctrine(sb.skillsDir).stdout, 'end to end, only the authored static doctrine reaches SessionStart');
   } finally {
     sb.cleanup();
   }
@@ -1887,7 +1890,7 @@ test('CLI: `vibe hook pre-tool-use-guard` end to end blocks a state.json edit (e
       [path.join(REPO_ROOT, 'flow', 'engine', 'cli.mjs'), 'hook', 'pre-tool-use-guard'],
       {
         env: { CLAUDE_PROJECT_DIR: sb.root },
-        input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: '.agents/skills/vibe/state.json' } }),
+        input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: '.agents/skills/flow/state.json' } }),
       },
     );
     assertEqual(result.code, 2);
@@ -2003,9 +2006,9 @@ for (const kind of ['changed-path', 'receipt-path', 'project-path', 'utf8-contro
         assert(found.code !== 0,`${excluded} must be unreachable`); assertEqual(found.stdout,'');
       }
       const wrapper=path.join(sb.dir,'producer'), invoked=path.join(sb.dir,'producer-invoked');
-      writeFileSync(wrapper,`#!/bin/sh\nprintf '%s\\n' "$@" > '${invoked}'\nexec '${process.execPath}' '${path.join(REPO_ROOT,'flow/engine/cli.mjs')}' "$@"\n`,{mode:0o700});
+      writeFileSync(wrapper,`#!/bin/sh\nprintf '%s\\n' "$@" > '${invoked}'\n[ \"$1\" != --root ] || shift 2\nexec '${process.execPath}' '${path.join(REPO_ROOT,'flow/engine/cli.mjs')}' "$@"\n`,{mode:0o700});
       const shim=runCommand('sh',[path.join(REPO_ROOT,'flow/bin/hook.sh'),'stop-gate'],{env:{...shimEnv,VIBE_FLOW_BIN:wrapper},input:'{}'});
-      assertEqual(readFileSync(invoked,'utf8'),'hook\nstop-gate\n');
+      assertEqual(readFileSync(invoked,'utf8'),`--root\n${root}\n--vibe-dir\n${root}/.agents/skills/flow\nhook\nstop-gate\n`);
       assertEqual(shim.code,2,shim.stderr);
       assertEqual(shim.stderr,direct.stderr);
       const bash=runCommand('bash',[path.join(REPO_ROOT,'flow/hooks-fallback/stop-gate.sh')],{env:shimEnv,input:'{}'});

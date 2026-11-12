@@ -713,7 +713,7 @@ export function buildResolver(ctx, content, problems) {
       }
     },
     doctrine: () => {
-      const text = readText(path.join(skillsDir ?? '', 'vibe', 'SKILL.md'));
+      const text = readText(path.join(skillsDir ?? '', 'flow', 'SKILL.md'));
       if (text === undefined) return '';
       return (extractBlock(text, 'vibe:doctrine') ?? '').trim();
     },

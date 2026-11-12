@@ -4,7 +4,7 @@
 #   ./install.sh                 # single command: default to THIS repo; on a TTY,
 #                                #   ask local vs global first.
 #   ./install.sh <repo>          # local: full vibe into <repo> (explicit target).
-#   ./install.sh --global        # per-user install: spec + using-spec + vibe into
+#   ./install.sh --global        # per-user install: spec + flow + vibe into
 #                                #   every detected host's user-level skills dir (Claude,
 #                                #   Codex, Droid, OpenCode) + one shared user-level
 #                                #   AGENTS.md block.
@@ -17,7 +17,7 @@
 #
 # LOCAL install (copy the platform-neutral core; merge the instruction file with
 # markers; never blind-overwrite user content):
-#   1. Copy the core   .agents/skills/{spec,using-spec,vibe} (skills + vibe flow engine).
+#   1. Copy the core   .agents/skills/{spec,flow,vibe} (skills + vibe flow engine).
 #   2. Copy the Claude adapter   .claude/commands + .claude/hooks/*.sh scripts.
 #   3. Wire the flow hooks into   .claude/settings.json (merge, never clobber).
 #   3b. Deploy the SELECTED native host surfaces (--platform, else the host CLIs
@@ -27,7 +27,7 @@
 #       no agent/droid registration is added for those hosts.
 #   3c. Record every created host artifact in .vibe/install-manifest.json — the
 #       ownership record re-install preserves and uninstall consults.
-#   4. Seed   .agents/skills/vibe/state.json from state.example.json if absent.
+#   4. Seed   .agents/skills/flow/state.json from state.example.json if absent.
 #   5. Ignore the mutable cursor in the target .gitignore.
 #   6. Merge   AGENTS.md via the target's merge-agents.sh (agent-instructions).
 #   7. Symlink requested adapters (CLAUDE.md, WARP.md) — opt-in, never clobber.
@@ -53,7 +53,7 @@
 #
 # Flags:
 #   --local            full per-repo install into the target (the default).
-#   --global           per-user install: spec + using-spec + vibe into each
+#   --global           per-user install: spec + flow + vibe into each
 #                      selected host's user-level skills dir, plus the shared
 #                      AGENTS.md block.
 #   --host LIST        hosts for --global, comma-separated or `all`:
@@ -205,7 +205,7 @@ adapter_rows() {
 # carrying the same top-level source markers the uninstall guard checks
 # (`flow/state-machine.json` and `spec/SKILL.md`) on any directory between
 # TARGET and the resolved parent. An install target never has both: it ships
-# them under `.agents/skills/vibe/` and `.agents/skills/spec/`.
+# them under `.agents/skills/flow/` and `.agents/skills/spec/`.
 inside_target() {
   local parent d
   parent="$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)" || return 1
@@ -213,7 +213,12 @@ inside_target() {
   [[ -z "$SRC" || ( "$parent" != "$SRC" && "$parent" != "$SRC"/* ) ]] || return 1
   d="$parent"
   while [[ "$d" == "$TARGET"/* ]]; do
-    [[ -f "$d/flow/state-machine.json" && -f "$d/spec/SKILL.md" ]] && return 1
+    # These exact owned discovery containers now have flow/ + spec/ children;
+    # their shape is not a nested source checkout. Neighboring paths stay guarded.
+    case "$d" in
+      "$TARGET/.agents/skills"|"$TARGET/plugins/vibe/skills"|"$TARGET/factory-plugin/skills") ;;
+      *) [[ -f "$d/flow/state-machine.json" && -f "$d/spec/SKILL.md" ]] && return 1 ;;
+    esac
     d="$(dirname "$d")"
   done
   return 0
@@ -297,7 +302,7 @@ remove_shipped() {
 # and restores it after, so scrubbing a source-side evidence/ here never loses
 # a target's own receipts.
 scrub_source_only() {
-  local src="$1" dst="$2" rel d
+  local src="$1" dst="$2" preserve_runtime="${3:-}" rel d
   local dirs=()
   [[ -d "$src" && -d "$dst" ]] || return 0
   # -prune: never descend into a tests dir (a nested one is removed with its
@@ -312,6 +317,7 @@ scrub_source_only() {
     rm -rf "${dst:?}/${rel:?}"
   done
   [[ -f "$src/AGENTS.md" ]] && rm -f "$dst/AGENTS.md"
+  [[ "$preserve_runtime" != preserve-runtime ]] || return 0
   [[ -d "$src/evidence" ]] && rm -rf "${dst:?}/evidence"
   # warnings.log is the SOURCE checkout's own runtime relay spool (this repo
   # dogfoods the flow, so a dirty tree has one). Shipping it makes a fresh target
@@ -370,7 +376,7 @@ unregister_skill() {
 # ── native host surfaces (--platform) ────────────────────────────────────────
 # The supported hosts and their project surfaces are DATA:
 # flow/reference/host-surfaces.json ships to every target as
-# .agents/skills/vibe/reference/host-surfaces.json and is the single source for
+# .agents/skills/flow/reference/host-surfaces.json and is the single source for
 # how each host discovers the shared skills and how the user invokes a workflow.
 # HOST_IDS is the selector vocabulary this installer accepts; a new host must
 # appear in both, and the adapters suite fails if they diverge.
@@ -649,8 +655,8 @@ skill_present() {
   [[ -e "$TARGET/.agents/skills/$1" ]] && return 0
   case "$1" in
     spec) [[ "$WANT_SPEC" -eq 1 ]] && return 0 ;;
-    using-spec) [[ "$WANT_SPEC" -eq 1 ]] && return 0 ;;
-    vibe) [[ "$WANT_FLOW" -eq 1 ]] && return 0 ;;
+    flow) [[ "$WANT_FLOW" -eq 1 ]] && return 0 ;;
+    vibe) return 0 ;;
   esac
   return 1
 }
@@ -855,7 +861,7 @@ remove_host_package() {
 # fallback against the matrix, so the two cannot diverge silently.
 HOST_KIND=""; HOST_INV=""; HOST_PATH=""
 host_entry() {
-  local h="$1" m="$TARGET/.agents/skills/vibe/reference/host-surfaces.json"
+  local h="$1" m="$TARGET/.agents/skills/flow/reference/host-surfaces.json"
   HOST_KIND=""; HOST_INV=""; HOST_PATH=""
   if command -v jq >/dev/null 2>&1 && [[ -f "$m" ]]; then
     # `|| true` per read: a corrupted matrix degrades to the fallback below, it
@@ -869,7 +875,7 @@ host_entry() {
       claude)   HOST_KIND="command"; HOST_INV="/flow"; HOST_PATH=".claude/commands/flow.md" ;;
       opencode) HOST_KIND="command"; HOST_INV="/flow"; HOST_PATH=".opencode/commands/flow.md" ;;
       # The literal skill token Codex's picker uses — no synthetic slash command.
-      codex)    HOST_KIND="skill";   HOST_INV="\$vibe"; HOST_PATH="" ;;
+      codex)    HOST_KIND="skill";   HOST_INV="\$flow"; HOST_PATH="" ;;
       droid)    HOST_KIND="command"; HOST_INV="/flow"; HOST_PATH="factory-plugin/commands/flow.md" ;;
     esac
   fi
@@ -973,7 +979,8 @@ detect_global_hosts() {
 # minus the source checkout's runtime cursor. Nothing is written to the target
 # here: the caller compares first, so an unchanged install touches no file.
 global_stage_skill() {
-  local name="$1" stage="$2" src="$SRC/.agents/skills/$1"
+  local name="$1" stage="$2" src
+  case "$name" in spec) src="$SRC/spec" ;; flow) src="$SRC/flow" ;; vibe) src="$SRC/skills/vibe" ;; *) return 1 ;; esac
   [[ -f "$src/SKILL.md" ]] || return 1
   cp -RpL "$src" "$stage/" || return 1
   scrub_source_only "$src" "$stage/$name"
@@ -1006,6 +1013,17 @@ install_global_skill() {
     err "WARN: could not stage the '$name' skill for $host; skipping."
     return 1
   fi
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    local hostroot
+    hostroot="$(global_host_root "$host")" || return 1
+    if ! bash "$SRC/flow/scripts/migrate-discovery.sh" "$hostroot" "$dir"; then rm -rf "$stage"; return 1; fi
+    if [[ -e "$dest" || -L "$dest" ]]; then
+      case "$name" in
+        vibe) grep -q '^# Vibe toolkit$' "$dest/SKILL.md" 2>/dev/null || { err "WARN: foreign vibe skill preserved: $dest"; rm -rf "$stage"; return 1; } ;;
+        flow) [[ -f "$dest/state-machine.json" ]] || { err "WARN: foreign flow skill preserved: $dest"; rm -rf "$stage"; return 1; } ;;
+      esac
+    fi
+  fi
   if global_tree_matches "$stage/$name" "$dest"; then
     note "already installed: $name -> $dest ($host, unchanged)"
     rm -rf "$stage"
@@ -1014,8 +1032,8 @@ install_global_skill() {
   say "install the $name skill -> $dest ($host)"
   if [[ "$DRY_RUN" -eq 0 ]]; then
     mkdir -p "$dir"
-    rm -rf "${dest:?}"
-    if ! cp -Rp "$stage/$name" "$dest"; then
+    mkdir -p "$dest"
+    if ! cp -Rp "$stage/$name/." "$dest/"; then
       rm -rf "$stage"
       err "WARN: could not install the '$name' skill for $host (under $dir)."
       return 1
@@ -1232,12 +1250,20 @@ install_global() {
     hosts="$(detect_global_hosts)"
     HOSTS_SOURCE="detected by CLI or an existing user config dir"
   fi
-  say "install the spec + using-spec + vibe skills at user scope for ${hosts:-no host} ($HOSTS_SOURCE)"
+  say "install the spec + flow + vibe skills at user scope for ${hosts:-no host} ($HOSTS_SOURCE)"
   # shellcheck disable=SC2086  # ${hosts//,/ } is the intended word split
   for h in ${hosts//,/ }; do
     install_global_skill "$h" spec || rc=1
-    install_global_skill "$h" using-spec || rc=1
+    install_global_skill "$h" flow || rc=1
     install_global_skill "$h" vibe || rc=1
+    if [[ "$DRY_RUN" -eq 0 ]]; then
+      local old
+      old="$(global_skills_dir "$h")/using-spec"
+      if [[ -f "$old/SKILL.md" ]] && cmp -s "$old/SKILL.md" "$SRC/flow/reference/legacy-using-spec.md"; then
+        rm -f "$old/SKILL.md"
+        rmdir "$old" 2>/dev/null || true
+      fi
+    fi
   done
   install_global_agents_block || rc=1
   # The `vibe-spec` binary (vibe#71 sub-gap 4). Always REPORTED, because the spec
@@ -1290,7 +1316,7 @@ install_global() {
   fi
   cat <<EOF
 install: done (global / per-user skills).
-install:   ${hosts:-no host} — spec + using-spec + vibe skill dirs placed in the user-level skills dir.
+install:   ${hosts:-no host} — spec + flow + vibe skill dirs placed in the user-level skills dir.
 install:   ${hosts:+Restart the host CLI (or reload its skills) to pick them up.}
 install:   Shared AGENTS.md block: $(global_agents_file)
 install:     each host reads its OWN instruction file, so include the block there if
@@ -1311,7 +1337,7 @@ prompt_mode() {
   {
     echo "vibe install — choose a mode:"
     echo "  [1] local   full vibe into THIS repo ($TARGET): spec + flow + Claude adapter (default)"
-    echo "  [2] global  per-user plugin (spec + using-spec + vibe skills + doctrine, every repo)"
+    echo "  [2] global  per-user plugin (spec + flow + vibe skills + doctrine, every repo)"
     printf 'Mode [1/2]? '
   } >&2
   read -r ans || ans=""
@@ -1502,15 +1528,86 @@ if [[ "$MODE" == "global" && "$UNINSTALL" -eq 0 ]]; then
   install_global
 fi
 
+# Cursor initialization and explicit runtime removal use the same exclusion as
+# Rust transitions. This lock grants no approval and never evicts another owner.
+install_runtime_lock() {
+  local parent
+  for parent in "$TARGET/.vibe" "$TARGET/.vibe/run" "$TARGET/.vibe/run/flow"; do
+    [[ ! -L "$parent" ]] || { err "ERROR: runtime parent is a symlink: $parent"; return 1; }
+  done
+  mkdir -p "$TARGET/.vibe/run/flow"
+  INSTALL_RUNTIME_LOCK="$TARGET/.vibe/run/flow/runtime.lock"
+  INSTALL_RUNTIME_TOKEN="installer-$$-$RANDOM-$(date -u +%s)"
+  if [[ -e "$INSTALL_RUNTIME_LOCK" || -L "$INSTALL_RUNTIME_LOCK" ]]; then
+    err "ERROR: runtime busy; preserve the existing lock and retry"
+    return 1
+  fi
+  if ! (set -o noclobber; printf '%s\n' "$INSTALL_RUNTIME_TOKEN" > "$INSTALL_RUNTIME_LOCK") 2>/dev/null; then
+    err "ERROR: runtime busy; preserve the existing lock and retry"
+    return 1
+  fi
+  trap install_runtime_unlock EXIT
+}
+install_runtime_unlock() {
+  if [[ -f "$INSTALL_RUNTIME_LOCK" && ! -L "$INSTALL_RUNTIME_LOCK" ]] && [[ "$(cat "$INSTALL_RUNTIME_LOCK")" == "$INSTALL_RUNTIME_TOKEN" ]]; then
+    rm -f "$INSTALL_RUNTIME_LOCK"
+    rmdir "$TARGET/.vibe/run/flow" "$TARGET/.vibe/run" "$TARGET/.vibe" 2>/dev/null || true
+  fi
+}
+install_runtime_adopted() {
+  local cursor kind
+  [[ ! -e "$TARGET/.vibe/run/flow/runs" && ! -L "$TARGET/.vibe/run/flow/runs" ]] || return 0
+  # shellcheck source=flow/scripts/runtime-state.sh
+  source "$SRC/flow/scripts/runtime-state.sh"
+  for cursor in "$TARGET/.vibe/run/flow/state.json" "$TARGET/.agents/skills/flow/state.json" "$TARGET/.agents/skills/vibe/state.json"; do
+    kind="$(runtime_cursor_kind "$cursor")"
+    case "$kind" in legacy|absent) ;; *) return 0 ;; esac
+  done
+  return 1
+}
+
+seed_runtime_cursor() (
+  install_runtime_lock || exit 1
+  local current="$TARGET/.vibe/run/flow/state.json" temp
+  # Inspect under the lock. Existing state is preserved, never restored from v1.
+  if [[ -e "$current" || -L "$current" ]]; then
+    [[ -f "$current" && ! -L "$current" ]] || { err "ERROR: invalid runtime cursor requires explicit recovery"; exit 1; }
+    exit 0
+  fi
+  if install_runtime_adopted; then
+    err "ERROR: adopted runtime has no current cursor; use explicit Rust recovery, never a v1 seed"
+    exit 1
+  fi
+  temp="$(mktemp "$TARGET/.vibe/run/flow/.state-seed.XXXXXX")"
+  if [[ -f "$TARGET/.agents/skills/flow/state.json" ]]; then
+    cp "$TARGET/.agents/skills/flow/state.json" "$temp"
+  else
+    cp "$TARGET/.agents/skills/flow/state.example.json" "$temp"
+  fi
+  mv -f "$temp" "$current"
+)
+
 # ── uninstall ────────────────────────────────────────────────────────────────
 # Remove managed artifacts while preserving user content: the spec root (docs/spec/ or the legacy tree) is never
 # touched, user AGENTS.md prose outside the markers is preserved (block removed
 # via merge-agents.sh's marker-pairing guard), and the flow cursor survives
 # unless --yes. Composes with --only (remove one half) and --dry-run (preview).
 if [[ "$UNINSTALL" -eq 1 ]]; then
+  if [[ "$WANT_FLOW" -eq 1 && "$ASSUME_YES" -eq 1 && "$DRY_RUN" -eq 0 ]]; then
+    install_runtime_lock || exit 1
+    if install_runtime_adopted; then
+      err "ERROR: adopted runtime removal requires coordinated Rust recovery; state and installed resources preserved"
+      exit 1
+    fi
+  fi
   note "uninstalling vibe from $TARGET"
-  SRC_MERGE="$SRC/.agents/skills/vibe/scripts/merge-agents.sh"
-  SRC_MERGE_SETTINGS="$SRC/.agents/skills/vibe/scripts/merge-settings.sh"
+  SRC_MERGE="$SRC/flow/scripts/merge-agents.sh"
+  SRC_MERGE_SETTINGS="$SRC/flow/scripts/merge-settings.sh"
+
+  if [[ "$WANT_FLOW" -eq 1 && -f "$TARGET/.agents/skills/vibe/SKILL.md" ]] && grep -q '^# Vibe toolkit$' "$TARGET/.agents/skills/vibe/SKILL.md"; then
+    [[ "$DRY_RUN" -eq 1 ]] || remove_shipped "$SRC/skills/vibe" "$TARGET/.agents/skills/vibe" tests AGENTS.md
+    [[ "$DRY_RUN" -eq 1 ]] || unregister_skill vibe
+  fi
 
   # Per-file inverse of the install copy (uninstall lesson): remove exactly the
   # relative paths the source bundle ships — minus the artifacts install scrubs
@@ -1527,12 +1624,12 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   if [[ "$WANT_SPEC" -eq 1 && -e "$TARGET/.agents/skills/spec" ]]; then
     say "remove the shipped files under .agents/skills/spec (user files preserved)"
     [[ "$DRY_RUN" -eq 1 ]] || remove_shipped \
-      "$SRC/.agents/skills/spec" "$TARGET/.agents/skills/spec" tests AGENTS.md
+      "$SRC/spec" "$TARGET/.agents/skills/spec" tests AGENTS.md
   fi
   if [[ "$WANT_SPEC" -eq 1 && -e "$TARGET/.agents/skills/using-spec" ]]; then
     say "remove the shipped files under .agents/skills/using-spec (user files preserved)"
     [[ "$DRY_RUN" -eq 1 ]] || remove_shipped \
-      "$SRC/.agents/skills/using-spec" "$TARGET/.agents/skills/using-spec" tests AGENTS.md
+      "$SRC/spec/using-spec" "$TARGET/.agents/skills/using-spec" tests AGENTS.md
   fi
   # Undo the spec skill registration — only our own .claude/skills/spec symlink.
   if [[ "$WANT_SPEC" -eq 1 ]]; then
@@ -1545,8 +1642,8 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   if [[ "$WANT_FLOW" -eq 1 ]]; then
     # Undo the vibe skill registration — only our own .claude/skills/vibe symlink.
     say "unregister .claude/skills/vibe (only the vibe symlink; a user entry is kept)"
-    [[ "$DRY_RUN" -eq 1 ]] || unregister_skill vibe
-    if [[ -e "$TARGET/.agents/skills/vibe" ]]; then
+    [[ "$DRY_RUN" -eq 1 ]] || unregister_skill flow
+    if [[ -e "$TARGET/.agents/skills/flow" ]]; then
       # Exclude the top-level artifacts install scrubs (tests/, AGENTS.md,
       # evidence/) plus the per-project runtime state install never ships
       # (state.json, warnings.log): remove_shipped therefore leaves the cursor +
@@ -1555,23 +1652,27 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
       # so a legacy target's shipped `engine/tests` is cleaned up — see the
       # header note above remove_shipped's first call site.
       if [[ "$ASSUME_YES" -eq 0 ]]; then
-        say "remove the shipped files under .agents/skills/vibe (preserving the flow cursor and evidence receipts; re-run with --yes to remove them)"
+        say "remove the shipped files under .agents/skills/flow (preserving the flow cursor and evidence receipts; re-run with --yes to remove them)"
       else
-        say "remove .agents/skills/vibe including the flow cursor and evidence receipts"
+        say "remove .agents/skills/flow including the flow cursor and evidence receipts"
       fi
       if [[ "$DRY_RUN" -eq 0 ]]; then
-        remove_shipped "$SRC/.agents/skills/vibe" "$TARGET/.agents/skills/vibe" \
+        remove_shipped "$SRC/flow" "$TARGET/.agents/skills/flow" \
           tests AGENTS.md evidence state.json warnings.log
         if [[ "$ASSUME_YES" -eq 1 ]]; then
           # A symlinked skill dir is one remove_shipped just left untouched (or
           # unlinked): deleting the runtime files through it would contradict
           # that warning, even when the link resolves inside TARGET.
-          if [[ ! -L "$TARGET/.agents/skills/vibe" ]] \
-            && inside_target "$TARGET/.agents/skills/vibe/state.json"; then
-            rm -f "$TARGET/.agents/skills/vibe/state.json" \
-                  "$TARGET/.agents/skills/vibe/warnings.log"
-            rm -rf "$TARGET/.agents/skills/vibe/evidence"
-            find "$TARGET/.agents/skills/vibe" -type d -empty -delete 2>/dev/null || true
+          if [[ ! -L "$TARGET/.agents/skills/flow" ]] \
+            && inside_target "$TARGET/.agents/skills/flow/state.json"; then
+            rm -f "$TARGET/.agents/skills/flow/state.json" \
+                  "$TARGET/.agents/skills/flow/warnings.log"
+            rm -rf "$TARGET/.agents/skills/flow/evidence"
+            find "$TARGET/.agents/skills/flow" -type d -empty -delete 2>/dev/null || true
+          fi
+          if [[ -d "$TARGET/.vibe/run/flow" && ! -L "$TARGET/.vibe/run/flow" ]] && inside_target "$TARGET/.vibe/run/flow/state.json"; then
+            rm -f "$TARGET/.vibe/run/flow/state.json"
+            [[ -L "$TARGET/.vibe/run/flow/evidence" ]] || rm -rf "$TARGET/.vibe/run/flow/evidence"
           fi
           # The inject marker is runtime state like the cursor. Remove the FILE
           # only, then the directory if that emptied it — `.vibe/blocks/**` is
@@ -1583,24 +1684,36 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
         fi
       fi
     fi
+    # Runtime cleanup is independent of skill payload presence: a first
+    # preserving uninstall may already have removed every shipped skill file.
+    if [[ "$ASSUME_YES" -eq 1 && "$DRY_RUN" -eq 0 ]]; then
+      if [[ -d "$TARGET/.vibe/run/flow" && ! -L "$TARGET/.vibe/run/flow" ]] && inside_target "$TARGET/.vibe/run/flow/state.json"; then
+        rm -f "$TARGET/.vibe/run/flow/state.json"
+        [[ -L "$TARGET/.vibe/run/flow/evidence" ]] || rm -rf "$TARGET/.vibe/run/flow/evidence"
+      fi
+      if inside_target "$TARGET/.vibe/last-inject"; then rm -f "$TARGET/.vibe/last-inject"; fi
+    fi
     # --yes removes the cursor + receipts, so fully invert install: strip every
     # stanza install appended to .gitignore, leaving other ignore rules intact.
     # A symlinked .gitignore is not rewritten: the rename would replace the link
     # with a regular file, and the file it points at may be shared. Name the
     # lines to remove by hand instead.
     if [[ "$ASSUME_YES" -eq 1 && -L "$TARGET/.gitignore" ]]; then
-      err "WARN: .gitignore is a symlink; left alone. Remove the vibe lines by hand: .agents/skills/vibe/state.json, .agents/skills/vibe/evidence/, .agents/skills/vibe/warnings.log, .vibe/last-inject (and the '# vibe' comment above each)."
+      err "WARN: .gitignore is a symlink; left alone. Remove the vibe lines by hand: .agents/skills/flow/state.json, .agents/skills/flow/evidence/, .agents/skills/flow/warnings.log, .vibe/last-inject (and the '# vibe' comment above each)."
     elif [[ "$ASSUME_YES" -eq 1 && -f "$TARGET/.gitignore" ]]; then
       say "strip the vibe cursor, evidence, and warnings stanzas from .gitignore"
       if [[ "$DRY_RUN" -eq 0 ]]; then
-        GI="$TARGET/.gitignore"; GI_TMP="$(mktemp)"
+        GI="$TARGET/.gitignore"
+  if ! { [[ -f "$GI" ]] && grep -qFx ".vibe/run/flow/" "$GI"; }; then
+    [[ "$DRY_RUN" -eq 1 ]] || gi_append "$GI" "# vibe canonical runtime" ".vibe/run/flow/"
+  fi; GI_TMP="$(mktemp)"
         grep -vxF \
           -e '# vibe mutable flow cursor (runtime; version state-machine.json, not this)' \
-          -e '.agents/skills/vibe/state.json' \
+          -e '.agents/skills/flow/state.json' \
           -e '# vibe evidence receipts (runtime verification output, not memory)' \
-          -e '.agents/skills/vibe/evidence/' \
+          -e '.agents/skills/flow/evidence/' \
           -e '# vibe warnings relay (runtime warn-first channel; surfaced then truncated)' \
-          -e '.agents/skills/vibe/warnings.log' \
+          -e '.agents/skills/flow/warnings.log' \
           -e '# vibe inject edge-detection marker (runtime; records the cursor the last inject saw)' \
           -e '.vibe/last-inject' "$GI" 2>/dev/null \
           | awk 'NF{last=NR} {line[NR]=$0} END{for(i=1;i<=last;i++) print line[i]}' >"$GI_TMP" || true
@@ -1745,6 +1858,41 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
   exit 0
 fi
 
+# Preserve the old workflow and runtime before its public name becomes toolkit.
+if [[ "$WANT_FLOW" -eq 1 && "$DRY_RUN" -eq 0 ]]; then
+  bash "$SRC/flow/scripts/migrate-discovery.sh" "$TARGET" || exit 1
+  for owned in vibe flow; do
+    entry="$TARGET/.agents/skills/$owned"
+    if [[ -e "$entry" || -L "$entry" ]]; then
+      case "$owned" in
+        vibe) grep -q '^# Vibe toolkit$' "$entry/SKILL.md" 2>/dev/null || { err "ERROR: foreign vibe skill preserved: $entry"; exit 1; } ;;
+        flow) [[ -f "$entry/state-machine.json" && -f "$entry/scripts/set-state.sh" ]] || { err "ERROR: foreign flow skill preserved: $entry"; exit 1; } ;;
+      esac
+    fi
+  done
+fi
+if [[ "$DRY_RUN" -eq 0 ]]; then
+  # Retire only an unchanged shipped bootstrap. Preserve modified/user content.
+  old="$TARGET/.agents/skills/using-spec"
+  if [[ -f "$old/SKILL.md" ]] && cmp -s "$old/SKILL.md" "$SRC/flow/reference/legacy-using-spec.md"; then
+    rm -f "$old/SKILL.md"
+    rmdir "$old" 2>/dev/null || true
+  elif [[ -e "$old" ]]; then
+    err "WARN: foreign or modified using-spec preserved; remove via its owner if obsolete"
+  fi
+  unregister_skill using-spec
+fi
+if [[ "$WANT_FLOW" -eq 1 ]]; then
+say "copy Vibe toolkit guide -> $TARGET/.agents/skills/vibe"
+if [[ "$DRY_RUN" -eq 0 ]]; then
+  mkdir -p "$TARGET/.agents/skills"
+  cp -RL "$SRC/skills/vibe" "$TARGET/.agents/skills/"
+fi
+if host_selected claude; then
+  [[ "$DRY_RUN" -eq 1 ]] || register_skill vibe
+fi
+fi
+
 # 1. Core (platform-neutral). Copy the spec, using-spec and vibe skill trees —
 # three SIBLING dirs, using-spec never left nested inside spec/ (vibe#71 sub-gap
 # 3: a host that scans `skills/*/SKILL.md` would miss it). The cursor is
@@ -1762,62 +1910,31 @@ fi
 if [[ "$WANT_SPEC" -eq 1 ]]; then
   say "copy spec skill -> $TARGET/.agents/skills/spec"
   if [[ "$DRY_RUN" -eq 0 ]]; then
-    cp -RL "$SRC/.agents/skills/spec" "$TARGET/.agents/skills/"
+    cp -RL "$SRC/spec" "$TARGET/.agents/skills/"
     # Source-only artifacts (co-located tests at ANY depth, contributor
     # AGENTS.md) never ship — enumerated from the source, not hardcoded.
-    scrub_source_only "$SRC/.agents/skills/spec" "$TARGET/.agents/skills/spec"
+    scrub_source_only "$SRC/spec" "$TARGET/.agents/skills/spec"
     # Flatten (vibe#71 sub-gap 3): `using-spec` is copied below as its OWN sibling
     # skill dir. Leaving a second copy nested inside `spec/` registers it twice on
     # a host that walks a skill tree recursively and hides it on a host that does
     # not (OpenCode documents `skills/*/SKILL.md`).
     rm -rf "$TARGET/.agents/skills/spec/using-spec"
   fi
-  say "copy using-spec skill -> $TARGET/.agents/skills/using-spec"
-  if [[ "$DRY_RUN" -eq 0 ]]; then
-    # Graceful degrade: a source tree without the router (an older bundle, a
-    # partial copy) must not abort the whole install — warn and continue.
-    if [[ -e "$SRC/.agents/skills/using-spec" ]]; then
-      cp -RL "$SRC/.agents/skills/using-spec" "$TARGET/.agents/skills/"
-      scrub_source_only "$SRC/.agents/skills/using-spec" "$TARGET/.agents/skills/using-spec"
-    else
-      err "WARN: the source has no using-spec skill; the session-start router is not installed."
-    fi
-  fi
+
 fi
 if [[ "$WANT_FLOW" -eq 1 ]]; then
-  say "copy vibe flow skill -> $TARGET/.agents/skills/vibe"
+  say "copy vibe flow skill -> $TARGET/.agents/skills/flow"
   if [[ "$DRY_RUN" -eq 0 ]]; then
-    SAVED_CURSOR=""
-    if [[ -f "$TARGET/.agents/skills/vibe/state.json" ]]; then
-      SAVED_CURSOR="$(mktemp)"
-      cp "$TARGET/.agents/skills/vibe/state.json" "$SAVED_CURSOR"
-    fi
-    # Evidence receipts are per-project runtime state: preserve the target's
-    # across a re-copy, but NEVER inherit the source's. A dirty source repo's
-    # receipts would land in the target and silently satisfy stop-gate.sh's
-    # receipt-existence check — a gate bypass.
-    SAVED_EVID=""
-    if [[ -d "$TARGET/.agents/skills/vibe/evidence" ]]; then
-      SAVED_EVID="$(mktemp -d)"
-      cp -R "$TARGET/.agents/skills/vibe/evidence/." "$SAVED_EVID/" 2>/dev/null || true
-    fi
-    cp -RL "$SRC/.agents/skills/vibe" "$TARGET/.agents/skills/"
-    # Source-only artifacts (co-located tests at ANY depth — flow/tests AND
-    # flow/engine/tests — contributor AGENTS.md) and any source-side evidence
-    # receipts never ship. Enumerated from the source, not hardcoded.
-    scrub_source_only "$SRC/.agents/skills/vibe" "$TARGET/.agents/skills/vibe"
-    if [[ -n "$SAVED_CURSOR" ]]; then
-      mv -f "$SAVED_CURSOR" "$TARGET/.agents/skills/vibe/state.json"
-      note "preserved existing flow cursor across re-install"
-    else
-      rm -f "$TARGET/.agents/skills/vibe/state.json"
-    fi
-    if [[ -n "$SAVED_EVID" ]]; then
-      mkdir -p "$TARGET/.agents/skills/vibe/evidence"
-      cp -R "$SAVED_EVID/." "$TARGET/.agents/skills/vibe/evidence/" 2>/dev/null || true
-      rm -rf "$SAVED_EVID"
-      note "preserved existing evidence receipts across re-install"
-    fi
+    # Stage and scrub before overlay: never copy source runtime files over a
+    # target cursor/receipt and then attempt to restore them outside its lock.
+    FLOW_STAGE="$(mktemp -d)"
+    cp -RL "$SRC/flow" "$FLOW_STAGE/flow"
+    scrub_source_only "$SRC/flow" "$FLOW_STAGE/flow"
+    rm -f "$FLOW_STAGE/flow/state.json"
+    cp -RL "$FLOW_STAGE/flow" "$TARGET/.agents/skills/"
+    scrub_source_only "$SRC/flow" "$TARGET/.agents/skills/flow" preserve-runtime
+    rm -rf "$FLOW_STAGE"
+
   fi
 fi
 
@@ -1835,15 +1952,12 @@ if [[ "$WANT_SPEC" -eq 1 ]]; then
   if host_selected claude; then
     say "register spec skill at .claude/skills/spec -> ../../.agents/skills/spec"
     [[ "$DRY_RUN" -eq 1 ]] || register_skill spec
-    # The session-start router is its own skill dir (not nested inside spec/),
-    # so it needs its own registration or Claude Code never discovers it.
-    say "register using-spec skill at .claude/skills/using-spec -> ../../.agents/skills/using-spec"
-    [[ "$DRY_RUN" -eq 1 ]] || register_skill using-spec
+
   fi
 fi
 if [[ "$WANT_FLOW" -eq 1 ]] && host_selected claude; then
-  say "register vibe skill at .claude/skills/vibe -> ../../.agents/skills/vibe"
-  [[ "$DRY_RUN" -eq 1 ]] || register_skill vibe
+  say "register flow skill at .claude/skills/flow -> ../../.agents/skills/flow"
+  [[ "$DRY_RUN" -eq 1 ]] || register_skill flow
 fi
 
 # 2. Claude Code adapter (native /flow command + hook scripts). Adapter belongs
@@ -1858,7 +1972,7 @@ if [[ "$WANT_FLOW" -eq 1 ]] && host_selected claude; then
     cp -R "$SRC/.claude/hooks" "$TARGET/.claude/"
     # vibe's own plugin manifest is retired in 2b, outside this host branch.
     chmod +x "$TARGET"/.claude/hooks/*.sh \
-             "$TARGET"/.agents/skills/vibe/scripts/*.sh 2>/dev/null || true
+             "$TARGET"/.agents/skills/flow/scripts/*.sh 2>/dev/null || true
   fi
 fi
 
@@ -1879,7 +1993,7 @@ fi
 # entries, idempotently, never clobbering user settings. Graceful-degrade if the
 # helper is missing or jq is absent (it prints the snippet to paste). Flow half,
 # Claude Code platform.
-MERGE_SETTINGS="$SRC/.agents/skills/vibe/scripts/merge-settings.sh"
+MERGE_SETTINGS="$SRC/flow/scripts/merge-settings.sh"
 # 0 = not wired, 1 = wired. Step 8 reads this instead of claiming success
 # unconditionally: a jq-less target gets a pasteable snippet and a banner saying
 # the hooks are NOT live, rather than "the flow hooks fire on every turn" over an
@@ -1953,8 +2067,8 @@ if host_selected claude; then
     fi
   fi
   [[ "$WANT_SPEC" -eq 1 ]] && record_action claude symlink ".claude/skills/spec" "../../.agents/skills/spec"
-  [[ "$WANT_SPEC" -eq 1 ]] && record_action claude symlink ".claude/skills/using-spec" "../../.agents/skills/using-spec"
   [[ "$WANT_FLOW" -eq 1 ]] && record_action claude symlink ".claude/skills/vibe" "../../.agents/skills/vibe"
+  [[ "$WANT_FLOW" -eq 1 ]] && record_action claude symlink ".claude/skills/flow" "../../.agents/skills/flow"
 fi
 
 # 3d. Write the install manifest (step 3c + the host deployments above). Not
@@ -1962,11 +2076,12 @@ fi
 say "record the created host artifacts in $TARGET/.vibe/install-manifest.json"
 [[ "$DRY_RUN" -eq 1 ]] || write_manifest
 
-# 4. Seed the cursor if absent (flow half only).
-if [[ "$WANT_FLOW" -eq 1 && ! -f "$TARGET/.agents/skills/vibe/state.json" ]]; then
-  say "seed .agents/skills/vibe/state.json from template"
-  if [[ "$DRY_RUN" -eq 0 ]]; then
-    cp "$TARGET/.agents/skills/vibe/state.example.json" "$TARGET/.agents/skills/vibe/state.json"
+# 4. Initialize only an unadopted runtime under the shared exclusive lock.
+if [[ "$WANT_FLOW" -eq 1 ]]; then
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    say "check canonical runtime; seed only absent unadopted state under its lock"
+  else
+    seed_runtime_cursor || exit 1
   fi
 fi
 
@@ -1976,23 +2091,26 @@ fi
 # line. gi_append keeps a freshly created .gitignore free of a leading blank line.
 if [[ "$WANT_FLOW" -eq 1 ]]; then
   GI="$TARGET/.gitignore"
-  if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/vibe/state.json" "$GI"; }; then
-    say "add .agents/skills/vibe/state.json to .gitignore"
+  if ! { [[ -f "$GI" ]] && grep -qFx ".vibe/run/flow/" "$GI"; }; then
+    [[ "$DRY_RUN" -eq 1 ]] || gi_append "$GI" "# vibe canonical runtime" ".vibe/run/flow/"
+  fi
+  if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/flow/state.json" "$GI"; }; then
+    say "add .agents/skills/flow/state.json to .gitignore"
     [[ "$DRY_RUN" -eq 1 ]] || gi_append "$GI" \
       "# vibe mutable flow cursor (runtime; version state-machine.json, not this)" \
-      ".agents/skills/vibe/state.json"
+      ".agents/skills/flow/state.json"
   fi
-  if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/vibe/evidence/" "$GI"; }; then
-    say "add .agents/skills/vibe/evidence/ to .gitignore"
+  if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/flow/evidence/" "$GI"; }; then
+    say "add .agents/skills/flow/evidence/ to .gitignore"
     [[ "$DRY_RUN" -eq 1 ]] || gi_append "$GI" \
       "# vibe evidence receipts (runtime verification output, not memory)" \
-      ".agents/skills/vibe/evidence/"
+      ".agents/skills/flow/evidence/"
   fi
-  if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/vibe/warnings.log" "$GI"; }; then
-    say "add .agents/skills/vibe/warnings.log to .gitignore"
+  if ! { [[ -f "$GI" ]] && grep -qF ".agents/skills/flow/warnings.log" "$GI"; }; then
+    say "add .agents/skills/flow/warnings.log to .gitignore"
     [[ "$DRY_RUN" -eq 1 ]] || gi_append "$GI" \
       "# vibe warnings relay (runtime warn-first channel; surfaced then truncated)" \
-      ".agents/skills/vibe/warnings.log"
+      ".agents/skills/flow/warnings.log"
   fi
   # The inject hook's edge-detection marker (content.mjs recordInject). NOT
   # optional tidiness: left untracked, git reports the collapsed `?? .vibe/`
@@ -2012,7 +2130,7 @@ fi
 # 6. Merge AGENTS.md via the copied merge script (agent-instructions). The merge
 # script and its instruction template live in the flow half, so the merge runs
 # only when the flow half is installed (--only spec stays a pure spec install).
-MERGE="$TARGET/.agents/skills/vibe/scripts/merge-agents.sh"
+MERGE="$TARGET/.agents/skills/flow/scripts/merge-agents.sh"
 if [[ "$WANT_FLOW" -eq 1 ]]; then
   if [[ "$DRY_RUN" -eq 1 ]]; then
     say "create or merge AGENTS.md via merge-agents.sh (managed markers only)"
@@ -2028,12 +2146,12 @@ if [[ "$WANT_FLOW" -eq 1 ]]; then
   # 6b. Content layer: render the `agents-md` channel into AGENTS.md's managed
   # vibe:rules block. Needs node (the engine); without it the instructions block
   # above is still complete, so this degrades to a note, never a failure.
-  ENGINE_CLI="$TARGET/.agents/skills/vibe/engine/cli.mjs"
+  ENGINE_CLI="$TARGET/.agents/skills/flow/engine/cli.mjs"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     say "render the agents-md content channel into AGENTS.md (vibe:rules block)"
   elif [[ -f "$ENGINE_CLI" ]] && command -v node >/dev/null 2>&1; then
     ( cd "$TARGET" && node "$ENGINE_CLI" render agents-md --write ) \
-      || err "WARN: agents-md channel not rendered (run 'node .agents/skills/vibe/engine/cli.mjs render agents-md --write')."
+      || err "WARN: agents-md channel not rendered (run 'node .agents/skills/flow/engine/cli.mjs render agents-md --write')."
   else
     err "WARN: node not found; skipping the agents-md content render (AGENTS.md instructions block is still installed)."
   fi
@@ -2126,8 +2244,8 @@ EOF
     # R5 again: name only the skills that ARE installed. --only flow installs no
     # spec half, and the completion banner directly above says so — a skills claim
     # of `{spec,vibe}` contradicted it.
-    _rskills=".agents/skills/{spec,using-spec,vibe}"
-    _rcl=".claude/skills/{spec,using-spec,vibe}"
+    _rskills=".agents/skills/{spec,flow,vibe}"
+    _rcl=".claude/skills/{spec,flow,vibe}"
     if [[ "$WANT_SPEC" -eq 0 ]]; then
       _rskills=".agents/skills/{vibe}"
       _rcl=".claude/skills/vibe"
@@ -2157,7 +2275,7 @@ EOF
     case "$_rh" in
       claude)   _rentry=".claude/commands/flow.md" ;;
       opencode) _rentry=".opencode/commands/flow.md" ;;
-      codex)    _rentry="plugins/vibe/skills/vibe" ;;
+      codex)    _rentry="plugins/vibe/skills/flow" ;;
       droid)    _rentry="factory-plugin/commands/flow.md" ;;
       *)        _rentry="" ;;
     esac
@@ -2190,7 +2308,7 @@ install:   .claude/settings.json — no plugin to register. Reload the project (
 install:   restart Claude Code) and the flow hooks fire on every turn; /flow works
 install:   as a native project command from .claude/commands.
 install:   Hook scripts self-resolve this project's flow state under
-install:   \${CLAUDE_PROJECT_DIR}/.agents/skills/vibe.
+install:   \${CLAUDE_PROJECT_DIR}/.agents/skills/flow.
 EOF
   elif host_selected claude; then
     cat <<EOF
@@ -2214,7 +2332,7 @@ EOF
     fi
   else
     cat <<EOF
-install: the vibe (flow) skill is installed under .agents/skills/vibe.
+install: the vibe (flow) skill is installed under .agents/skills/flow.
 install: no spec framework was installed (--only flow) — the spec authoring
 install:   commands and spec/scripts/validate.sh are absent in this target.
 EOF

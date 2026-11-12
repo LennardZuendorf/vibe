@@ -24,12 +24,12 @@
 # BLOCKS the stop (exit 2). Promote further predicates only after dogfooding
 # proves they are crossed by accident, not on purpose ("earn the teeth").
 #
-# Thin shell: state comes from .agents/skills/vibe/scripts/detect-context.sh snapshot;
+# Thin shell: state comes from .agents/skills/flow/scripts/detect-context.sh snapshot;
 # no flow policy is duplicated here.
 #
 # Warnings relay: warn-only smells print to stderr (exit 0), which Claude Code
 # never surfaces to the model. So each warn is also appended to
-# .agents/skills/vibe/warnings.log; the UserPromptSubmit inject hook drains that
+# .agents/skills/flow/warnings.log; the UserPromptSubmit inject hook drains that
 # log to stdout (injected into context) next turn, then truncates it. The one
 # blocking tooth (missing/stale receipt) still uses exit 2, which IS model-visible.
 #
@@ -78,12 +78,22 @@ runtime_cursor_status() {
 }
 
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-DETECT="$ROOT/.agents/skills/vibe/scripts/detect-context.sh"
+# Any persisted adoption marker or version key requires upgraded readiness.
+legacy_adopted=0
+[[ ! -e "$ROOT/.vibe/run/flow/runs" && ! -L "$ROOT/.vibe/run/flow/runs" ]] || legacy_adopted=1
+for cursor in "$ROOT/.vibe/run/flow/state.json" "$ROOT/.agents/skills/flow/state.json" "$ROOT/.agents/skills/vibe/state.json"; do
+  if [[ -f "$cursor" ]] && grep -qE '"v"[[:space:]]*:' "$cursor"; then legacy_adopted=1; fi
+done
+if [[ "$legacy_adopted" -eq 1 ]]; then
+  echo "block:legacy Flow adapter cannot evaluate adopted runtime; use the Rust Flow runtime" >&2
+  exit 2
+fi
+DETECT="$ROOT/.agents/skills/flow/scripts/detect-context.sh"
 STATE_FILE="$ROOT/.vibe/run/flow/state.json"
 cursor_status=0
 runtime_cursor_status "$STATE_FILE" || cursor_status=$?
 if [[ "$cursor_status" == 1 ]]; then
-  STATE_FILE="$ROOT/.agents/skills/vibe/state.json"
+  STATE_FILE="$ROOT/.agents/skills/flow/state.json"
   cursor_status=0
   runtime_cursor_status "$STATE_FILE" || cursor_status=$?
 fi
@@ -91,8 +101,8 @@ if [[ "$cursor_status" == 2 ]]; then
   printf 'vibe-gate: cursor present but invalid; skipping checks: %s\n' "$STATE_FILE" >&2
   exit 0
 fi
-EVID_REL=".agents/skills/vibe/evidence"
-WARN_LOG="$ROOT/.agents/skills/vibe/warnings.log"
+EVID_REL=".agents/skills/flow/evidence"
+WARN_LOG="$ROOT/.agents/skills/flow/warnings.log"
 
 have_jq() { command -v jq >/dev/null 2>&1; }
 
@@ -135,7 +145,7 @@ fi
 # missing vibe dir is a silent no-op (never fail the hook).
 warn() {
   echo "vibe-gate: $1" >&2
-  local dir="$ROOT/.agents/skills/vibe"
+  local dir="$ROOT/.agents/skills/flow"
   [[ -d "$dir" ]] || return 0
   printf 'gate: %s\n' "$1" >> "$WARN_LOG" 2>/dev/null || true
 }
@@ -186,7 +196,7 @@ fi
 
 # Predicate 2 (PROMOTED, flow-mvp/9) — a *.verify state requires a fresh evidence
 # receipt before "done". This is the one blocking tooth; every other predicate is
-# warn-only. Fixed receipt names under $ROOT/.agents/skills/vibe/evidence/:
+# warn-only. Fixed receipt names under $ROOT/.agents/skills/flow/evidence/:
 # feature-<feature>.md for feature.verify, quick.md for quick.verify.
 if [[ "$STATE" == "feature.verify" || "$STATE" == "quick.verify" ]]; then
   receipt=""; receipt_name=""
@@ -217,7 +227,7 @@ if [[ "$STATE" == "feature.verify" || "$STATE" == "quick.verify" ]]; then
         echo "vibe-gate: BLOCKED — $STATE needs an evidence receipt before 'done'."
         echo "  expected: $(diagnostic_value "$receipt")"
         echo "  it must record the commands you ran and their observed output (per unit ID for a feature)."
-        echo "  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle"
+        echo "  not verifying? abort with: bash .agents/skills/flow/scripts/set-state.sh idle"
       } >&2
       exit 2
     fi
@@ -266,7 +276,7 @@ if [[ "$STATE" == "feature.verify" || "$STATE" == "quick.verify" ]]; then
       fi
       case "$path" in
         .vibe/run/*) continue ;;
-        "$EVID_REL"/*|.vibe/last-inject|.agents/skills/vibe/warnings.log) continue ;;
+        "$EVID_REL"/*|.vibe/last-inject|.agents/skills/flow/warnings.log) continue ;;
       esac
       f="$ROOT/$path"
       if [[ -e "$f" && "$f" -nt "$receipt" ]]; then
@@ -280,7 +290,7 @@ if [[ "$STATE" == "feature.verify" || "$STATE" == "quick.verify" ]]; then
         echo "  receipt: $(diagnostic_value "$receipt")"
         echo "  changed after it was written: $(diagnostic_value "$stale")"
         echo "  re-run verification and rewrite the receipt with fresh commands + output."
-        echo "  not verifying? abort with: bash .agents/skills/vibe/scripts/set-state.sh idle"
+        echo "  not verifying? abort with: bash .agents/skills/flow/scripts/set-state.sh idle"
       } >&2
       exit 2
     fi

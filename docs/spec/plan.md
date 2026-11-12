@@ -3,7 +3,7 @@ type: hub
 scope: implementation
 covers: feature sequence, binary gates, validation criteria, open decisions
 children: [concepts/feature-sequence.md, concepts/shared-feature-sequence.md, parts/spec/concepts/spec-feature-sequence.md, parts/flow/concepts/flow-feature-sequence.md, parts/instruct/concepts/instruct-feature-sequence.md, parts/cli/concepts/cli-feature-sequence.md, concepts/issue-catalog.md, concepts/feature-boundaries.md, concepts/delivered-features.md, concepts/spec-vs-implementation.md, decisions/README.md, questions/resolved-open-items.md]
-updated: 2026-10-24
+updated: 2026-11-11
 ---
 
 # vibe — Implementation Plan
@@ -39,3 +39,11 @@ Single-purpose repo: build the self-hosting vibe workflow harness. This plan is 
 |---|---|---|
 | review-hardening | Port of the pre-v0.4 review-hardening fixes onto the live JS/bash harness; pins in [rust-parity-pins](tech/rust/rust-parity-pins.md) | DONE |
 | skill-revision | Spec and flow skills, toolset, instructions and cross-file consistency to the superpowers standard | IN PROGRESS |
+
+Flow workflow source now has distinct toolkit/Flow skills and explicit v2 progression.
+See the [Flow sequence](parts/flow/concepts/flow-feature-sequence.md) for its partial
+authority status. Instruct/API and general host/Spec work remain in
+[#83](https://github.com/LennardZuendorf/vibe/issues/83),
+[#84](https://github.com/LennardZuendorf/vibe/issues/84),
+[#85](https://github.com/LennardZuendorf/vibe/issues/85) and
+[#86](https://github.com/LennardZuendorf/vibe/issues/86).

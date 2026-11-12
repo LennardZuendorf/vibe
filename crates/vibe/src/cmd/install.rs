@@ -29,7 +29,7 @@ pub struct InstallOpts {
     pub dry_run: bool,
 }
 
-const TOOLKIT_SKILLS: [&str; 3] = ["spec", "vibe", "using-spec"];
+const TOOLKIT_SKILLS: [&str; 3] = ["spec", "flow", "vibe"];
 
 fn is_toolkit(dir: &Path) -> bool {
     TOOLKIT_SKILLS

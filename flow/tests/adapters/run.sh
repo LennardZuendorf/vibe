@@ -23,9 +23,9 @@ _find_repo_root() {
   return 1
 }
 REPO_ROOT="$(_find_repo_root)" || { echo "cannot locate repo root (.spec/.git)" >&2; exit 1; }
-MERGE="$REPO_ROOT/.agents/skills/vibe/scripts/merge-agents.sh"
-TEMPLATE="$REPO_ROOT/.agents/skills/vibe/reference/templates/AGENTS.md"
-ADAPTERS_JSON="$REPO_ROOT/.agents/skills/vibe/reference/adapters.json"
+MERGE="$REPO_ROOT/.agents/skills/flow/scripts/merge-agents.sh"
+TEMPLATE="$REPO_ROOT/.agents/skills/flow/reference/templates/AGENTS.md"
+ADAPTERS_JSON="$REPO_ROOT/.agents/skills/flow/reference/adapters.json"
 INSTALL="$REPO_ROOT/install.sh"
 # The vibe hook scripts are wired into a target's .claude/settings.json (issue
 # #12: settings.json is the single firing path; no plugin manifest is shipped).
@@ -384,10 +384,10 @@ assert_contains "flow-legibility/5" "install wires SessionStart -> session-start
 # and it names no state. Discriminating: before R4 this hook printed
 # "Cursor: idle." on the line after the block.
 ssout="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/session-start-doctrine.sh" </dev/null 2>/dev/null)"
-assert_contains "flow-legibility/5" "SessionStart hook emits the doctrine" "$ssout" "sessions are ephemeral"
-assert_not_contains "inject-triggers/5" "SessionStart hook emits no cursor summary" "$ssout" "Cursor:"
+assert_contains "flow-legibility/5" "SessionStart hook emits the doctrine" "$ssout" "Controller owns tasks and independent review"
+assert_not_contains "inject-triggers/5" "SessionStart hook emits no cursor summary" "$ssout" "Cursor: idle"
 # doctor reports instruction coverage ok on a fresh install (block + hook wired).
-docout="$(bash "$SB/.agents/skills/vibe/scripts/doctor.sh" "$SB" 2>&1)"
+docout="$(bash "$SB/.agents/skills/flow/scripts/doctor.sh" "$SB" 2>&1)"
 assert_contains "flow-legibility/5" "doctor reports instruction.coverage ok" "$docout" "ok   instruction.coverage"
 rm -rf "$SB"
 
@@ -400,7 +400,7 @@ rm -rf "$SB"
 # doctrine.mjs reads it directly, no bash script involved), not doctrine.sh —
 # remove both so the degrade fires regardless of which implementation runs.
 SBD="$(mktmp)"; bash "$INSTALL" "$SBD" --platform claude >/dev/null 2>&1
-rm -f "$SBD/.agents/skills/vibe/scripts/doctrine.sh" "$SBD/.agents/skills/vibe/SKILL.md"
+rm -f "$SBD/.agents/skills/flow/scripts/doctrine.sh" "$SBD/.agents/skills/flow/SKILL.md"
 ss_rc=0; ssdeg="$(CLAUDE_PROJECT_DIR="$SBD" bash "$SBD/.claude/hooks/session-start-doctrine.sh" </dev/null 2>/dev/null)" || ss_rc=$?
 assert_eq "flow-legibility/5" "SessionStart hook exits 0 when the resolver is absent" "$ss_rc" "0"
 assert_eq "flow-legibility/5" "SessionStart hook emits nothing when the resolver is absent" "$ssdeg" ""
@@ -410,7 +410,7 @@ echo ""
 echo "=== flow-legibility/6 — drift-first nudge in the inject hook ==="
 SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 git init -q "$SB" 2>/dev/null && git -C "$SB" config user.email t@t 2>/dev/null && git -C "$SB" config user.name t 2>/dev/null
-rm -f "$SB/.agents/skills/vibe/state.json"      # idle cursor
+rm -f "$SB/.vibe/run/flow/state.json"      # idle cursor
 mkdir -p "$SB/src"; printf 'x\n' > "$SB/src/app.sh"
 inj="$(CLAUDE_PROJECT_DIR="$SB" bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" </dev/null 2>/dev/null)"
 first="$(printf '%s\n' "$inj" | head -n1)"
@@ -438,8 +438,8 @@ echo ""
 echo "=== platform-adapters/1,2,3 — hooks against a real install ==="
 SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 export CLAUDE_PROJECT_DIR="$SB"
-SS="$SB/.agents/skills/vibe/scripts/set-state.sh"
-WLOG="$SB/.agents/skills/vibe/warnings.log"
+SS="$SB/.agents/skills/flow/scripts/set-state.sh"
+WLOG="$SB/.agents/skills/flow/warnings.log"
 # inject — behavioral: it emits the CURRENT cursor state's orders to stdout (the
 # model-visible stream), not a fixed string. Asserting rc=0 from a hook that
 # always exits 0 proves nothing, so pin the actual routed content instead.
@@ -447,7 +447,7 @@ WLOG="$SB/.agents/skills/vibe/warnings.log"
 # `state=<state>` prefix the level line also carries (inject-triggers/4 fix
 # round 1, Important).
 IDLE_ORDERS="no active flow"
-IMPL_ORDERS="skill=vibe · delegate executing-plans"
+IMPL_ORDERS="skill=flow · bounded implementer + TDD"
 bash "$SS" idle >/dev/null
 out="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>/dev/null)"
 assert_contains "platform-adapters/1" "inject emits idle orders for an idle cursor" "$out" "$IDLE_ORDERS"
@@ -469,7 +469,7 @@ out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".spec/lessons.md"
 assert_contains "platform-adapters/2" "guard blocks lessons.md (exit 2)" "$out" "rc=2"
 assert_contains "platform-adapters/2" "guard gives a reason" "$out" "BLOCKED"
 # guard: state.json direct edit always blocked
-out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vibe/state.json"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
+out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".vibe/run/flow/state.json"}}' | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
 assert_contains "platform-adapters/2" "guard blocks direct state.json edit" "$out" "rc=2"
 # guard: allow src in impl
 bash "$SS" feature.impl demo >/dev/null
@@ -508,11 +508,11 @@ assert_eq "platform-adapters/2" "guard exits 0 on empty stdin" "$rc" "0"
 # omits it would accidentally test the UNRELATED "Node absent" degrade (R4,
 # always exit 0) instead of the jq-absent path this fixture means to exercise.
 NOJQ_BIN="$(mktmp)"
-for _t in dirname date mktemp mv rm sed grep head cat bash env awk find node; do
+for _t in mkdir dirname date mktemp mv rm sed grep head cat bash env awk find node; do
   _p="$(command -v "$_t" 2>/dev/null)" && ln -s "$_p" "$NOJQ_BIN/$_t"
 done
 rc=0
-printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vibe/state.json"}}' \
+printf '{"tool_name":"Write","tool_input":{"file_path":".vibe/run/flow/state.json"}}' \
   | PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$SB/.claude/hooks/pre-tool-use-guard.sh" >/dev/null 2>&1 || rc=$?
 assert_eq "platform-adapters/2" "guard blocks state.json without jq (sed path, exit 2)" "$rc" "2"
 rc=0
@@ -548,8 +548,8 @@ bash "$SS" feature.verify demo >/dev/null
 out="$(printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
 assert_contains "flow-mvp/9" "gate blocks feature.verify with no receipt (exit 2)" "$out" "rc=2"
 assert_contains "flow-mvp/9" "block names the evidence receipt path" "$out" "evidence/feature-demo.md"
-mkdir -p "$SB/.agents/skills/vibe/evidence"
-printf 'commands + observed output per unit\n' > "$SB/.agents/skills/vibe/evidence/feature-demo.md"
+mkdir -p "$SB/.vibe/run/flow/evidence"
+printf 'commands + observed output per unit\n' > "$SB/.vibe/run/flow/evidence/feature-demo.md"
 out="$(printf '{}' | bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
 assert_contains "flow-mvp/9" "gate passes feature.verify with a fresh receipt (exit 0)" "$out" "rc=0"
 
@@ -572,9 +572,9 @@ if git -C "$SBG" init -q >/dev/null 2>&1 \
   git -C "$SBG" add -A >/dev/null 2>&1
   git -C "$SBG" commit -qm install >/dev/null 2>&1 \
     || fail "inject-triggers/6" "sandbox setup commit (install) failed"
-  CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.agents/skills/vibe/scripts/set-state.sh" quick.verify >/dev/null 2>&1
-  mkdir -p "$SBG/.agents/skills/vibe/evidence"
-  printf 'commands + observed output\n' > "$SBG/.agents/skills/vibe/evidence/quick.md"
+  CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.agents/skills/flow/scripts/set-state.sh" quick.verify >/dev/null 2>&1
+  mkdir -p "$SBG/.vibe/run/flow/evidence"
+  printf 'commands + observed output\n' > "$SBG/.vibe/run/flow/evidence/quick.md"
   sleep 1
   # One inject turn — this is what writes .vibe/last-inject.
   printf '{}' | CLAUDE_PROJECT_DIR="$SBG" bash "$SBG/.claude/hooks/user-prompt-submit-inject.sh" >/dev/null 2>&1
@@ -640,7 +640,7 @@ done
 # `command -v node || exit 0` used to drop both blocks silently while
 # detect-context.sh's header still promised "a target without node must still be
 # enforced"; these two assertions are what keep that promise true.
-out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vibe/state.json"}}' \
+out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".vibe/run/flow/state.json"}}' \
   | PATH="$NONODE_BIN" bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
 assert_contains "js-core/7" "node-absent: guard still BLOCKS via the bash fallback" "$out" "rc=2"
 assert_contains "js-core/7" "node-absent: the block names the guarded path" "$out" "state.json"
@@ -651,16 +651,16 @@ assert_contains "js-core/7" "node-absent: guard still ALLOWS an unguarded path" 
 # The Stop gate's evidence tooth, same story. Remove any receipt an earlier
 # section left behind first — the tooth fires on its ABSENCE, so a stale receipt
 # would make this assertion pass for the wrong reason.
-rm -f "$SB/.agents/skills/vibe/evidence/feature-demo.md"
+rm -f "$SB/.vibe/run/flow/evidence/feature-demo.md"
 out="$(printf '{}' | PATH="$NONODE_BIN" bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
 assert_contains "js-core/7" "node-absent: Stop gate still BLOCKS without a receipt" "$out" "rc=2"
 assert_contains "js-core/7" "node-absent: the Stop block names the expected receipt" "$out" "feature-demo.md"
 # …and with the receipt present it does NOT block — the fallback is a gate, not a wall.
-mkdir -p "$SB/.agents/skills/vibe/evidence"
-printf 'ran: bash tests/run.sh -> ALL SUITES PASSED\n' > "$SB/.agents/skills/vibe/evidence/feature-demo.md"
+mkdir -p "$SB/.vibe/run/flow/evidence"
+printf 'ran: bash tests/run.sh -> ALL SUITES PASSED\n' > "$SB/.vibe/run/flow/evidence/feature-demo.md"
 out="$(printf '{}' | PATH="$NONODE_BIN" bash "$SB/.claude/hooks/stop-gate.sh" 2>&1; echo "rc=$?")"
 assert_contains "js-core/7" "node-absent: Stop gate passes once the receipt exists" "$out" "rc=0"
-rm -f "$SB/.agents/skills/vibe/evidence/feature-demo.md"
+rm -f "$SB/.vibe/run/flow/evidence/feature-demo.md"
 
 # js-core/7 review round 1, Finding 2 (Important): node present but the
 # engine directory missing (a target installed before the engine shipped, or
@@ -678,30 +678,30 @@ rm -f "$SB/.agents/skills/vibe/evidence/feature-demo.md"
 # double-fires (harmless either way — the second mv would just no-op via
 # `|| true` once engine.bak is already gone) and never lingers to interact
 # with any EXIT trap a later section might legitimately want to install.
-trap 'mv -f "$SB/.agents/skills/vibe/engine.bak" "$SB/.agents/skills/vibe/engine" 2>/dev/null || true' EXIT
-mv "$SB/.agents/skills/vibe/engine" "$SB/.agents/skills/vibe/engine.bak"
+trap 'mv -f "$SB/.agents/skills/flow/engine.bak" "$SB/.agents/skills/flow/engine" 2>/dev/null || true' EXIT
+mv "$SB/.agents/skills/flow/engine" "$SB/.agents/skills/flow/engine.bak"
 for h in session-start-doctrine user-prompt-submit-inject; do
   out="$(printf '{}' | bash "$SB/.claude/hooks/$h.sh" 2>&1; echo "rc=$?")"
   assert_eq "js-core/7" "engine-absent: $h exits 0 silently (no MODULE_NOT_FOUND crash)" "$out" "rc=0"
 done
-out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vibe/state.json"}}' \
+out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".vibe/run/flow/state.json"}}' \
   | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
 assert_contains "js-core/7" "engine-absent: guard still BLOCKS via the bash fallback" "$out" "rc=2"
 assert_not_contains "js-core/7" "engine-absent: guard prints no Node stack trace" "$out" "MODULE_NOT_FOUND"
 # A PRESENT but BROKEN engine is the case the old `[[ -f cli.mjs ]]` guard missed:
 # `exec node` printed a raw stack trace on every prompt and tool call, and the
 # guard failed open. Now the shim keeps only exit 0 and 2 as verdicts.
-mkdir -p "$SB/.agents/skills/vibe/engine"
-printf 'this is not valid javascript (((\n' > "$SB/.agents/skills/vibe/engine/cli.mjs"
-out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".agents/skills/vibe/state.json"}}' \
+mkdir -p "$SB/.agents/skills/flow/engine"
+printf 'this is not valid javascript (((\n' > "$SB/.agents/skills/flow/engine/cli.mjs"
+out="$(printf '{"tool_name":"Write","tool_input":{"file_path":".vibe/run/flow/state.json"}}' \
   | bash "$SB/.claude/hooks/pre-tool-use-guard.sh" 2>&1; echo "rc=$?")"
 assert_contains "js-core/7" "engine-broken: guard still BLOCKS via the bash fallback" "$out" "rc=2"
 assert_not_contains "js-core/7" "engine-broken: no raw Node stack trace reaches the user" "$out" "at compileSourceTextModule"
 out="$(printf '{}' | bash "$SB/.claude/hooks/user-prompt-submit-inject.sh" 2>&1; echo "rc=$?")"
 assert_contains "js-core/7" "engine-broken: inject exits 0, no stack trace" "$out" "rc=0"
 assert_not_contains "js-core/7" "engine-broken: inject prints no raw stack trace" "$out" "at compileSourceTextModule"
-rm -rf "$SB/.agents/skills/vibe/engine"
-mv "$SB/.agents/skills/vibe/engine.bak" "$SB/.agents/skills/vibe/engine"
+rm -rf "$SB/.agents/skills/flow/engine"
+mv "$SB/.agents/skills/flow/engine.bak" "$SB/.agents/skills/flow/engine"
 trap - EXIT
 
 
@@ -725,7 +725,7 @@ grep -qF 'Delegating to sub-agents' "$SBNN/AGENTS.md" \
   && pass "inject-triggers/6" "node-absent install carries the rest of the agents-md channel too" \
   || fail "inject-triggers/6" "node-absent install carries the rest of the agents-md channel too"
 if command -v node >/dev/null 2>&1; then
-  out="$( cd "$SBNN" && node "$SBNN/.agents/skills/vibe/engine/cli.mjs" render agents-md --write 2>&1 )"
+  out="$( cd "$SBNN" && node "$SBNN/.agents/skills/flow/engine/cli.mjs" render agents-md --write 2>&1 )"
   assert_contains "inject-triggers/6" "re-rendering that target with node is a NO-OP (the shipped copy is the render)" \
     "$out" "no change"
 else
@@ -743,10 +743,10 @@ echo "=== flow-mvp — set-state.sh jq-optional parity ==="
 # transition. Run both against a fresh install with a jq-free PATH; normalize only
 # the turn-varying `updated` timestamp before comparing.
 SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
-SS="$SB/.agents/skills/vibe/scripts/set-state.sh"
-CUR="$SB/.agents/skills/vibe/state.json"
+SS="$SB/.agents/skills/flow/scripts/set-state.sh"
+CUR="$SB/.vibe/run/flow/state.json"
 NOJQ_BIN="$(mktmp)"
-for _t in dirname date mktemp mv rm sed grep head cat bash env awk find; do
+for _t in mkdir dirname date mktemp mv rm sed grep head cat bash env awk find; do
   _p="$(command -v "$_t" 2>/dev/null)" && ln -s "$_p" "$NOJQ_BIN/$_t"
 done
 norm_ts() { sed 's/"updated": "[^"]*"/"updated": "TS"/'; }
@@ -786,30 +786,39 @@ echo ""
 echo "=== platform-adapters/6 — installer ==="
 SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 ok=1
-for p in .agents/skills/vibe/scripts/orders.sh .agents/skills/vibe/SKILL.md .claude/hooks/stop-gate.sh .claude/settings.json AGENTS.md .agents/skills/vibe/state.json; do
+for p in .agents/skills/flow/scripts/orders.sh .agents/skills/flow/SKILL.md .claude/hooks/stop-gate.sh .claude/settings.json AGENTS.md .vibe/run/flow/state.json; do
   [[ -e "$SB/$p" ]] || { ok=0; echo "        missing $p"; }
 done
 assert_eq "platform-adapters/6" "install lays down core + adapter + cursor" "$ok" "1"
-grep -qF '.agents/skills/vibe/state.json' "$SB/.gitignore" && pass "platform-adapters/6" "install gitignores the cursor" || fail "platform-adapters/6" "gitignore"
+ignore_probe="$(mktmp)"
+cp "$SB/.gitignore" "$ignore_probe/.gitignore"
+git -C "$ignore_probe" init -q
+git -C "$ignore_probe" check-ignore -q .vibe/run/flow/state.json \
+  && pass "flow-workflow/8" "installed ignore rules cover canonical cursor" \
+  || fail "flow-workflow/8" "installed ignore rules cover canonical cursor"
+git -C "$ignore_probe" check-ignore -q src/product.rs \
+  && fail "flow-workflow/8" "installed ignore rules retain product source" \
+  || pass "flow-workflow/8" "installed ignore rules retain product source"
+rm -rf "$ignore_probe"
 before="$(cat "$SB/AGENTS.md")"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1; after="$(cat "$SB/AGENTS.md")"
 assert_eq "platform-adapters/6" "re-install is idempotent (AGENTS.md unchanged)" "$before" "$after"
 # a live cursor must survive a re-install — idempotency may not clobber flow state
-bash "$SB/.agents/skills/vibe/scripts/set-state.sh" feature.impl widget >/dev/null
-before_cur="$(cat "$SB/.agents/skills/vibe/state.json")"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1; after_cur="$(cat "$SB/.agents/skills/vibe/state.json")"
+bash "$SB/.agents/skills/flow/scripts/set-state.sh" feature.impl widget >/dev/null
+before_cur="$(cat "$SB/.vibe/run/flow/state.json")"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1; after_cur="$(cat "$SB/.vibe/run/flow/state.json")"
 assert_eq "platform-adapters/6" "re-install preserves a live cursor (feature.impl widget)" "$before_cur" "$after_cur"
 [[ ! -e "$SB/.agents/flow" ]] && pass "platform-adapters/6" ".agents/flow does not exist after install" || fail "platform-adapters/6" ".agents/flow must not exist after install"
-[[ -d "$SB/.agents/skills/vibe" && ! -L "$SB/.agents/skills/vibe" ]] && pass "platform-adapters/6" "skills/vibe is a real directory (not a symlink)" || fail "platform-adapters/6" "skills/vibe is a real directory (not a symlink)"
+[[ -d "$SB/.agents/skills/flow" && ! -L "$SB/.agents/skills/flow" ]] && pass "platform-adapters/6" "skills/vibe is a real directory (not a symlink)" || fail "platform-adapters/6" "skills/vibe is a real directory (not a symlink)"
 [[ -d "$SB/.agents/skills/spec" && ! -L "$SB/.agents/skills/spec" ]] && pass "platform-adapters/6" "skills/spec is a real directory (not a symlink)" || fail "platform-adapters/6" "skills/spec is a real directory (not a symlink)"
 # Source-only artifacts must not ship — and the prune must not over-delete the
 # skill payload. Both halves: co-located tests/ and the contributor AGENTS.md are
 # stripped; SKILL.md (the real payload) still lands.
-[[ ! -e "$SB/.agents/skills/spec/tests" && ! -e "$SB/.agents/skills/vibe/tests" ]] \
+[[ ! -e "$SB/.agents/skills/spec/tests" && ! -e "$SB/.agents/skills/flow/tests" ]] \
   && pass "platform-adapters/6" "install does not ship co-located tests/" \
   || fail "platform-adapters/6" "co-located tests/ must not ship into a target"
-[[ ! -e "$SB/.agents/skills/spec/AGENTS.md" && ! -e "$SB/.agents/skills/vibe/AGENTS.md" ]] \
+[[ ! -e "$SB/.agents/skills/spec/AGENTS.md" && ! -e "$SB/.agents/skills/flow/AGENTS.md" ]] \
   && pass "platform-adapters/6" "install does not ship the contributor AGENTS.md" \
   || fail "platform-adapters/6" "per-half contributor AGENTS.md must not ship"
-[[ -f "$SB/.agents/skills/spec/SKILL.md" && -f "$SB/.agents/skills/vibe/SKILL.md" ]] \
+[[ -f "$SB/.agents/skills/spec/SKILL.md" && -f "$SB/.agents/skills/flow/SKILL.md" ]] \
   && pass "platform-adapters/6" "prune keeps the skill payload (SKILL.md ships)" \
   || fail "platform-adapters/6" "prune over-deleted the skill payload"
 symlinks="$(find "$SB/.agents" -type l)"
@@ -823,23 +832,26 @@ rm -rf "$SB"
 # Build a fake source tree, seed a receipt in it, install, assert it is absent.
 FS="$(mktmp)"
 cp "$INSTALL" "$FS/install.sh"
-mkdir -p "$FS/.agents/skills" "$FS/.claude"
+mkdir -p "$FS/.agents/skills" "$FS/.claude" "$FS/skills"
+cp -RL "$REPO_ROOT/skills/vibe" "$FS/skills/vibe"
+cp -RL "$REPO_ROOT/flow" "$FS/flow"
+cp -RL "$REPO_ROOT/spec" "$FS/spec"
 cp -RL "$REPO_ROOT/.agents/skills/spec" "$FS/.agents/skills/spec"
-cp -RL "$REPO_ROOT/.agents/skills/vibe" "$FS/.agents/skills/vibe"
+cp -RL "$REPO_ROOT/.agents/skills/flow" "$FS/.agents/skills/flow"
 cp -RL "$REPO_ROOT/.claude/commands" "$FS/.claude/commands"
 cp -RL "$REPO_ROOT/.claude/hooks" "$FS/.claude/hooks"
-mkdir -p "$FS/.agents/skills/vibe/evidence"
-printf 'LEAKED source receipt\n' > "$FS/.agents/skills/vibe/evidence/feature-demo.md"
+mkdir -p "$FS/.vibe/run/flow/evidence"
+printf 'LEAKED source receipt\n' > "$FS/.vibe/run/flow/evidence/feature-demo.md"
 SB="$(mktmp)"; bash "$FS/install.sh" "$SB" --platform claude >/dev/null 2>&1
-[[ ! -e "$SB/.agents/skills/vibe/evidence/feature-demo.md" ]] \
+[[ ! -e "$SB/.vibe/run/flow/evidence/feature-demo.md" ]] \
   && pass "platform-adapters/6" "source-side evidence receipt does not ship to the target" \
   || fail "platform-adapters/6" "source-side evidence receipt leaked into the target (gate bypass)"
 # ...but the target's OWN receipts survive a re-install (runtime-state lesson).
-mkdir -p "$SB/.agents/skills/vibe/evidence"
-printf 'TARGET own receipt\n' > "$SB/.agents/skills/vibe/evidence/feature-widget.md"
+mkdir -p "$SB/.vibe/run/flow/evidence"
+printf 'TARGET own receipt\n' > "$SB/.vibe/run/flow/evidence/feature-widget.md"
 bash "$FS/install.sh" "$SB" --platform claude >/dev/null 2>&1
-{ [[ -f "$SB/.agents/skills/vibe/evidence/feature-widget.md" ]] \
-  && [[ ! -e "$SB/.agents/skills/vibe/evidence/feature-demo.md" ]]; } \
+{ [[ -f "$SB/.vibe/run/flow/evidence/feature-widget.md" ]] \
+  && [[ ! -e "$SB/.vibe/run/flow/evidence/feature-demo.md" ]]; } \
   && pass "platform-adapters/6" "target evidence survives re-install; source evidence still excluded" \
   || fail "platform-adapters/6" "re-install must preserve target evidence and exclude source evidence"
 rm -rf "$SB" "$FS"
@@ -852,22 +864,23 @@ rm -rf "$SB" "$FS"
 # sees a real local checkout and never fetches over the network.
 FS2="$(mktmp)"
 cp "$INSTALL" "$FS2/install.sh"
-mkdir -p "$FS2/.agents/skills" "$FS2/.claude"
+mkdir -p "$FS2/.agents/skills" "$FS2/.claude" "$FS2/skills"
+cp -RL "$REPO_ROOT/skills/vibe" "$FS2/skills/vibe"
 cp -RL "$REPO_ROOT/flow" "$FS2/flow"
 cp -RL "$REPO_ROOT/spec" "$FS2/spec"
-ln -s ../../flow "$FS2/.agents/skills/vibe"
+ln -s ../../flow "$FS2/.agents/skills/flow"
 ln -s ../../spec "$FS2/.agents/skills/spec"
 ln -s ../../spec/using-spec "$FS2/.agents/skills/using-spec"
 cp -RL "$REPO_ROOT/.claude/commands" "$FS2/.claude/commands"
 cp -RL "$REPO_ROOT/.claude/hooks" "$FS2/.claude/hooks"
 rm -f "$FS2/flow/AGENTS.md"
 SB="$(mktmp)"; bash "$FS2/install.sh" "$SB" --platform claude >/dev/null 2>&1
-printf 'mine, not the contributor guide\n' > "$SB/.agents/skills/vibe/AGENTS.md"
-[[ -f "$SB/.agents/skills/vibe/AGENTS.md" ]] \
+printf 'mine, not the contributor guide\n' > "$SB/.agents/skills/flow/AGENTS.md"
+[[ -f "$SB/.agents/skills/flow/AGENTS.md" ]] \
   && pass "platform-adapters/6" "fixture: target-owned AGENTS.md exists before re-install (population floor)" \
   || fail "platform-adapters/6" "fixture: target-owned AGENTS.md exists before re-install (population floor)"
 bash "$FS2/install.sh" "$SB" --platform claude >/dev/null 2>&1
-[[ -f "$SB/.agents/skills/vibe/AGENTS.md" ]] \
+[[ -f "$SB/.agents/skills/flow/AGENTS.md" ]] \
   && pass "platform-adapters/6" "target-owned AGENTS.md survives a re-install once source stops shipping one" \
   || fail "platform-adapters/6" "target-owned AGENTS.md must survive a re-install once source stops shipping one"
 rm -rf "$SB" "$FS2"
@@ -876,7 +889,7 @@ SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 [[ -n "$(head -n1 "$SB/.gitignore")" ]] \
   && pass "platform-adapters/6" "fresh .gitignore has no leading blank line" \
   || fail "platform-adapters/6" "fresh .gitignore starts with a blank line"
-grep -qF '.agents/skills/vibe/warnings.log' "$SB/.gitignore" \
+grep -qF '.agents/skills/flow/warnings.log' "$SB/.gitignore" \
   && pass "platform-adapters/6" "install gitignores the warnings relay log" \
   || fail "platform-adapters/6" "install gitignores the warnings relay log"
 rm -rf "$SB"
@@ -890,10 +903,10 @@ SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
   && [[ -f "$SB/.claude/skills/spec/SKILL.md" ]]; } \
   && pass "platform-adapters/6" "install registers /spec at .claude/skills/spec (resolves)" \
   || fail "platform-adapters/6" "install registers /spec at .claude/skills/spec (resolves)"
-{ [[ -L "$SB/.claude/skills/vibe" ]] && [[ "$(readlink "$SB/.claude/skills/vibe")" == "../../.agents/skills/vibe" ]] \
-  && [[ -f "$SB/.claude/skills/vibe/SKILL.md" ]]; } \
-  && pass "platform-adapters/6" "install registers the vibe skill at .claude/skills/vibe (resolves)" \
-  || fail "platform-adapters/6" "install registers the vibe skill at .claude/skills/vibe (resolves)"
+{ [[ -L "$SB/.claude/skills/flow" ]] && [[ "$(readlink "$SB/.claude/skills/flow")" == "../../.agents/skills/flow" ]] \
+  && [[ -f "$SB/.claude/skills/flow/SKILL.md" ]]; } \
+  && pass "platform-adapters/6" "install registers the vibe skill at .claude/skills/flow (resolves)" \
+  || fail "platform-adapters/6" "install registers the vibe skill at .claude/skills/flow (resolves)"
 # DISCRIMINATING: a user's own skill dir in the SHARED .claude/skills survives
 # uninstall, while EXACTLY the two vibe symlinks are removed (matched by target).
 # Fails if uninstall blanket-removes .claude/skills or leaves the vibe links behind.
@@ -901,7 +914,7 @@ mkdir -p "$SB/.claude/skills/myskill"; printf 'mine\n' > "$SB/.claude/skills/mys
 bash "$INSTALL" "$SB" --platform claude --uninstall --yes >/dev/null 2>&1
 { [[ -f "$SB/.claude/skills/myskill/SKILL.md" ]] \
   && [[ ! -L "$SB/.claude/skills/spec" && ! -e "$SB/.claude/skills/spec" ]] \
-  && [[ ! -L "$SB/.claude/skills/vibe" && ! -e "$SB/.claude/skills/vibe" ]]; } \
+  && [[ ! -L "$SB/.claude/skills/flow" && ! -e "$SB/.claude/skills/flow" ]]; } \
   && pass "platform-adapters/6" "uninstall removes the vibe skill symlinks, keeps a user skill dir" \
   || fail "platform-adapters/6" "uninstall removes the vibe skill symlinks, keeps a user skill dir"
 rm -rf "$SB"
@@ -909,7 +922,7 @@ rm -rf "$SB"
 SB="$(mktmp)"; mkdir -p "$SB/.claude/skills/spec"; printf 'USER real spec\n' > "$SB/.claude/skills/spec/SKILL.md"
 bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
 { [[ ! -L "$SB/.claude/skills/spec" ]] && grep -qF 'USER real spec' "$SB/.claude/skills/spec/SKILL.md" \
-  && [[ -L "$SB/.claude/skills/vibe" ]]; } \
+  && [[ -L "$SB/.claude/skills/flow" ]]; } \
   && pass "platform-adapters/6" "registration never clobbers a user's real .claude/skills/spec" \
   || fail "platform-adapters/6" "registration never clobbers a user's real .claude/skills/spec"
 rm -rf "$SB"
@@ -948,7 +961,7 @@ echo "=== install-tooling/2 — --only spec|flow ==="
 SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude --only spec >/dev/null 2>&1
 ok=1
 [[ -d "$SB/.agents/skills/spec" ]] || { ok=0; echo "        missing spec skill"; }
-[[ ! -e "$SB/.agents/skills/vibe" ]] || { ok=0; echo "        vibe present under --only spec"; }
+[[ ! -e "$SB/.agents/skills/flow" ]] || { ok=0; echo "        vibe present under --only spec"; }
 [[ ! -e "$SB/.claude/hooks" ]] || { ok=0; echo "        .claude/hooks present under --only spec"; }
 [[ ! -e "$SB/.claude/settings.json" ]] || { ok=0; echo "        settings.json present under --only spec"; }
 assert_eq "install-tooling/2" "--only spec installs the spec half alone" "$ok" "1"
@@ -956,7 +969,7 @@ rm -rf "$SB"
 # --only flow: flow + adapter present, no spec skill.
 SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude --only flow >/dev/null 2>&1
 ok=1
-[[ -d "$SB/.agents/skills/vibe" ]] || { ok=0; echo "        missing vibe skill"; }
+[[ -d "$SB/.agents/skills/flow" ]] || { ok=0; echo "        missing vibe skill"; }
 [[ -e "$SB/.claude/hooks/stop-gate.sh" ]] || { ok=0; echo "        missing adapter hook scripts"; }
 [[ -e "$SB/.claude/settings.json" ]] || { ok=0; echo "        missing settings.json wiring"; }
 grep -qF 'stop-gate.sh' "$SB/.claude/settings.json" 2>/dev/null || { ok=0; echo "        settings.json not wired to hooks"; }
@@ -989,7 +1002,7 @@ printf 'my hook\n' > "$SB/.claude/hooks/custom.sh"
 # per-file, never blanket rm -rf the skill dir (which would take these with it).
 printf 'user note\n' > "$SB/.agents/skills/spec/mynote.md"
 mkdir -p "$SB/.agents/skills/spec/sub"; printf 'nested\n' > "$SB/.agents/skills/spec/sub/deep.txt"
-printf 'user flow note\n' > "$SB/.agents/skills/vibe/mynote.md"
+printf 'user flow note\n' > "$SB/.agents/skills/flow/mynote.md"
 printf '## My Team\nkeep this prose\n\n%s\n' "$(cat "$SB/AGENTS.md")" > "$SB/AGENTS.md.new" && mv "$SB/AGENTS.md.new" "$SB/AGENTS.md"
 # content-layer: the install rendered the agents-md channel into AGENTS.md's
 # vibe:rules block (needs node; skipped honestly when the runner has none, so an
@@ -1009,7 +1022,7 @@ ok=1
 # Check the shipped payload is gone (the dirs themselves survive here because the
 # test seeds user files into them — that survival is asserted separately below).
 [[ ! -e "$SB/.agents/skills/spec/SKILL.md" ]] || { ok=0; echo "        spec skill survived uninstall"; }
-[[ ! -e "$SB/.agents/skills/vibe/SKILL.md" ]] || { ok=0; echo "        vibe SKILL.md survived uninstall"; }
+[[ ! -e "$SB/.agents/skills/flow/SKILL.md" ]] || { ok=0; echo "        vibe SKILL.md survived uninstall"; }
 [[ ! -e "$SB/.claude/hooks/stop-gate.sh" ]] || { ok=0; echo "        adapter hook script survived uninstall"; }
 assert_eq "install-tooling/3" "--uninstall removes managed artifacts" "$ok" "1"
 # regression: co-located user files in shared adapter dirs are NOT deleted.
@@ -1021,11 +1034,11 @@ assert_eq "install-tooling/3" "--uninstall removes managed artifacts" "$ok" "1"
 # Fails against the old blanket `rm -rf .agents/skills/{spec,vibe}` (which took the
 # user files with it).
 { [[ -f "$SB/.agents/skills/spec/mynote.md" ]] && [[ -f "$SB/.agents/skills/spec/sub/deep.txt" ]] \
-  && [[ -f "$SB/.agents/skills/vibe/mynote.md" ]]; } \
+  && [[ -f "$SB/.agents/skills/flow/mynote.md" ]]; } \
   && pass "install-tooling/3" "user files in shared skills dirs survive uninstall" \
   || fail "install-tooling/3" "user files in shared skills dirs survive uninstall"
-{ [[ ! -e "$SB/.agents/skills/spec/SKILL.md" ]] && [[ ! -e "$SB/.agents/skills/vibe/SKILL.md" ]] \
-  && [[ ! -e "$SB/.agents/skills/vibe/scripts" ]]; } \
+{ [[ ! -e "$SB/.agents/skills/spec/SKILL.md" ]] && [[ ! -e "$SB/.agents/skills/flow/SKILL.md" ]] \
+  && [[ ! -e "$SB/.agents/skills/flow/scripts" ]]; } \
   && pass "install-tooling/3" "shipped skill payload removed and emptied dirs pruned" \
   || fail "install-tooling/3" "shipped skill payload removed and emptied dirs pruned"
 grep -qF "keep this prose" "$SB/AGENTS.md" && pass "install-tooling/3" "user AGENTS.md prose preserved" || fail "install-tooling/3" "user prose preserved"
@@ -1065,9 +1078,9 @@ rm -rf "$SB"
 # Live cursor + evidence receipt + no --yes -> both survive (flow-mvp verify fixes:
 # discriminating test — fails if preservation is swapped for naive rm -rf).
 SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
-bash "$SB/.agents/skills/vibe/scripts/set-state.sh" feature.impl widget >/dev/null 2>&1
-mkdir -p "$SB/.agents/skills/vibe/evidence"
-printf 'receipt: tests run\n' > "$SB/.agents/skills/vibe/evidence/feature-widget.md"
+bash "$SB/.agents/skills/flow/scripts/set-state.sh" feature.impl widget >/dev/null 2>&1
+mkdir -p "$SB/.vibe/run/flow/evidence"
+printf 'receipt: tests run\n' > "$SB/.vibe/run/flow/evidence/feature-widget.md"
 # The inject marker is runtime state like the cursor — seeded here so the
 # --yes assertions below have a population to examine, and so the no---yes
 # leg proves preservation rather than absence.
@@ -1076,19 +1089,19 @@ bash "$INSTALL" "$SB" --platform claude --uninstall >/dev/null 2>&1
 [[ -f "$SB/.vibe/last-inject" ]] \
   && pass "inject-triggers/6" "inject marker survives uninstall without --yes" \
   || fail "inject-triggers/6" "inject marker survives uninstall without --yes"
-if [[ -f "$SB/.agents/skills/vibe/state.json" ]] && grep -qF widget "$SB/.agents/skills/vibe/state.json"; then
+if [[ -f "$SB/.vibe/run/flow/state.json" ]] && grep -qF widget "$SB/.vibe/run/flow/state.json"; then
   pass "install-tooling/3" "live cursor survives uninstall without --yes"
 else
   fail "install-tooling/3" "live cursor survives uninstall without --yes"
 fi
-if [[ -f "$SB/.agents/skills/vibe/evidence/feature-widget.md" ]]; then
+if [[ -f "$SB/.vibe/run/flow/evidence/feature-widget.md" ]]; then
   pass "flow-mvp/9" "evidence receipt survives uninstall without --yes"
 else
   fail "flow-mvp/9" "evidence receipt survives uninstall without --yes"
 fi
 # ... and --yes removes both and fully inverts the gitignore stanzas.
 bash "$INSTALL" "$SB" --platform claude --uninstall --yes >/dev/null 2>&1
-[[ ! -e "$SB/.agents/skills/vibe/state.json" ]] && pass "install-tooling/3" "--yes removes the cursor too" || fail "install-tooling/3" "--yes removes the cursor"
+[[ ! -e "$SB/.vibe/run/flow/state.json" ]] && pass "install-tooling/3" "--yes removes the cursor too" || fail "install-tooling/3" "--yes removes the cursor"
 if [[ -f "$SB/.gitignore" ]] && grep -qF "evidence" "$SB/.gitignore"; then
   fail "flow-mvp/9" "--yes strips the evidence gitignore stanza"
 else
@@ -1118,14 +1131,14 @@ bash "$INSTALL" "$SB" --platform claude --uninstall --dry-run >/dev/null 2>&1
 after="$(tree_fp "$SB")"
 assert_eq "install-tooling/3" "--uninstall --dry-run writes nothing" "$before" "$after"
 bash "$INSTALL" "$SB" --platform claude --uninstall --only spec --yes >/dev/null 2>&1
-[[ ! -e "$SB/.agents/skills/spec" && -e "$SB/.agents/skills/vibe/SKILL.md" ]] \
+[[ ! -e "$SB/.agents/skills/spec" && -e "$SB/.agents/skills/flow/SKILL.md" ]] \
   && pass "install-tooling/3" "--uninstall --only spec removes just the spec half" \
   || fail "install-tooling/3" "--uninstall --only spec removes just the spec half"
 rm -rf "$SB"
 
 echo ""
 echo "=== js-core/8 — source-only artifacts never reach an install target ==="
-# Final review, I1: the scrub named `$TARGET/.agents/skills/vibe/tests` LITERALLY,
+# Final review, I1: the scrub named `$TARGET/.agents/skills/flow/tests` LITERALLY,
 # so js-core's `flow/engine/tests` — one level deeper — shipped 17 files / 396K of
 # oracle-spawning test code into every user repo. That contradicted the comment
 # directly above it AND falsified the premise the R1 primitive scan's one `tests/`
@@ -1138,7 +1151,7 @@ echo "=== js-core/8 — source-only artifacts never reach an install target ==="
 SBt="$(mktmp)"; bash "$INSTALL" "$SBt" --platform claude >/dev/null 2>&1
 # Precondition, so an empty `find` below can never read as a vacuous pass: the
 # engine really is in the target, i.e. there was something to leak FROM.
-[[ -f "$SBt/.agents/skills/vibe/engine/cli.mjs" ]] \
+[[ -f "$SBt/.agents/skills/flow/engine/cli.mjs" ]] \
   && pass "js-core/8" "precondition: the install target really carries the engine" \
   || fail "js-core/8" "precondition: the install target really carries the engine"
 leak_dirs="$(cd "$SBt" && find . -type d -name tests | sed 's#^\./##' | sort | tr '\n' ' ')"
@@ -1149,9 +1162,9 @@ leak_named="$(cd "$SBt" && find . -type f \( -name '*.test.*' -o -name 'test_*' 
 assert_eq "js-core/8" "no test-NAMED file reaches an install target (wherever it sits)" "$leak_named" ""
 # The scrub is source-enumerated, so a user's own file inside the skill tree at a
 # path the SOURCE does not have must survive a re-install untouched.
-echo 'mine' > "$SBt/.agents/skills/vibe/engine/user-note.txt"
+echo 'mine' > "$SBt/.agents/skills/flow/engine/user-note.txt"
 bash "$INSTALL" "$SBt" --platform claude >/dev/null 2>&1
-[[ -f "$SBt/.agents/skills/vibe/engine/user-note.txt" ]] \
+[[ -f "$SBt/.agents/skills/flow/engine/user-note.txt" ]] \
   && pass "js-core/8" "re-install's scrub never touches a user file the source does not have" \
   || fail "js-core/8" "re-install's scrub never touches a user file the source does not have"
 rm -rf "$SBt"
@@ -1160,9 +1173,9 @@ rm -rf "$SBt"
 # remove_shipped's exclude list is top-level-only precisely so those files are
 # cleaned up rather than stranded.
 SBl="$(mktmp)"; bash "$INSTALL" "$SBl" --platform claude >/dev/null 2>&1
-mkdir -p "$SBl/.agents/skills/vibe/engine/tests"
-cp "$REPO_ROOT/flow/engine/tests/json.test.mjs" "$SBl/.agents/skills/vibe/engine/tests/json.test.mjs"
-[[ -f "$SBl/.agents/skills/vibe/engine/tests/json.test.mjs" ]] \
+mkdir -p "$SBl/.agents/skills/flow/engine/tests"
+cp "$REPO_ROOT/flow/engine/tests/json.test.mjs" "$SBl/.agents/skills/flow/engine/tests/json.test.mjs"
+[[ -f "$SBl/.agents/skills/flow/engine/tests/json.test.mjs" ]] \
   && pass "js-core/8" "precondition: legacy-shaped target carries engine/tests" \
   || fail "js-core/8" "precondition: legacy-shaped target carries engine/tests"
 bash "$INSTALL" "$SBl" --platform claude --uninstall --yes >/dev/null 2>&1
@@ -1191,7 +1204,7 @@ rm -rf "$SBsub"
 # a Claude-only plugin, so the plan names the hosts it would write for).
 SBg="$(mktmp)"
 gout="$( cd "$SBg" && HOME="$(mktmp)" bash "$INSTALL" --global --dry-run 2>&1 )"
-assert_contains "install-modes" "--global plans a per-user skills install" "$gout" "install the spec + using-spec + vibe skills at user scope"
+assert_contains "install-modes" "--global plans a per-user skills install" "$gout" "install the spec + flow + vibe skills at user scope"
 assert_contains "install-modes" "--global plans the shared AGENTS.md block" "$gout" "would maintain the shared AGENTS.md block"
 { [[ ! -e "$SBg/.agents" && ! -e "$SBg/.claude" ]] && pass "install-modes" "--global --dry-run writes nothing"; } || fail "install-modes" "--global dry-run wrote files"
 rm -rf "$SBg"
@@ -1201,7 +1214,7 @@ noclaude="$(mkshim claude)"
 SBn="$(mktmp)"; Gn="$(mktmp)"
 nout="$( cd "$SBn" && HOME="$Gn" PATH="$noclaude" bash "$INSTALL" --global --host claude 2>&1 )"
 assert_contains "install-modes" "real --global needs no host CLI" "$nout" "done (global / per-user skills)"
-[[ -f "$Gn/.claude/skills/vibe/SKILL.md" ]] \
+[[ -f "$Gn/.claude/skills/flow/SKILL.md" ]] \
   && pass "install-modes" "real --global without the claude CLI installs into that HOME" \
   || fail "install-modes" "real --global without the claude CLI installs into that HOME"
 rm -rf "$noclaude" "$SBn" "$Gn"
@@ -1236,11 +1249,11 @@ fi
 # using-spec, vibe). A commands/ dir is what mis-scans as a phantom skill, so the
 # plugin ships none. `using-spec` is a SIBLING, never nested inside spec/ (vibe#71
 # sub-gap 3).
-{ [[ -L "$REPO_ROOT/plugin/skills/spec" && -L "$REPO_ROOT/plugin/skills/vibe" \
-     && -L "$REPO_ROOT/plugin/skills/using-spec" \
-     && -f "$REPO_ROOT/plugin/skills/spec/SKILL.md" && -f "$REPO_ROOT/plugin/skills/vibe/SKILL.md" \
-     && -f "$REPO_ROOT/plugin/skills/using-spec/SKILL.md" ]] \
-  && pass "vibe-plugin" "spec, using-spec + vibe skills are symlinks resolving to SKILL.md"; } || fail "vibe-plugin" "skills not symlinked/resolvable"
+{ [[ -L "$REPO_ROOT/plugin/skills/spec" && -L "$REPO_ROOT/plugin/skills/flow" \
+     && -L "$REPO_ROOT/plugin/skills/vibe" \
+     && -f "$REPO_ROOT/plugin/skills/spec/SKILL.md" && -f "$REPO_ROOT/plugin/skills/flow/SKILL.md" \
+     && -f "$REPO_ROOT/plugin/skills/vibe/SKILL.md" ]] \
+  && pass "vibe-plugin" "vibe, flow + spec skills are symlinks resolving to SKILL.md"; } || fail "vibe-plugin" "skills not symlinked/resolvable"
 # No per-project runtime state may ship in the plugin. TWO checks, because the
 # plugin's skills are symlinks and the two halves of "the payload" differ:
 #
@@ -1300,14 +1313,14 @@ done
 assert_eq "host-support/1" "every host package file this unit ships exists" "$hp_missing" ""
 
 # One thin wrapper per host that has a distinct command surface, byte-identical
-# bodies: the procedure itself stays single-copy in the `vibe` skill, and the
+# bodies: the procedure itself stays single-copy in the `flow` skill, and the
 # wrapper only DELEGATES. A copy-paste fork of Claude's step list fails below.
 if [[ -f "$OC_CMD" && -f "$DROID_CMD" ]]; then
   cmp -s "$OC_CMD" "$DROID_CMD" \
     && pass "host-support/1" "OpenCode + Factory /flow wrappers are byte-identical (single delegated body)" \
     || fail "host-support/1" "OpenCode + Factory /flow wrappers are byte-identical (single delegated body)"
   hp_wrap="$(cat "$OC_CMD")"
-  for tok in ".agents/skills/vibe/SKILL.md" ".agents/skills/vibe/state-machine.json" ".agents/skills/vibe/scripts/set-state.sh"; do
+  for tok in "vibe:flow" "installed Flow machine" "vibe-flow state transition" "unavailable/deny" ".agents/skills/flow/scripts/set-state.sh"; do
     assert_contains "host-support/1" "host /flow wrapper delegates to the shared $tok" "$hp_wrap" "$tok"
   done
   # Discriminating against a restated procedure: these step labels exist ONLY in
@@ -1318,15 +1331,12 @@ else
   fail "host-support/1" "host /flow command files exist for OpenCode and Factory"
 fi
 
-# Claude keeps the surfaces it already shipped: the full procedure in its command
-# file (asserted by content below, not by byte-compare) and the four hook scripts
-# still on disk — this unit adds no hook integration anywhere and changes none.
-assert_contains "host-support/1" "Claude /flow command still carries the transition procedure" \
-  "$(cat "$CLAUDE_CMD" 2>/dev/null)" "set-state.sh <target> [feature]"
-# …and points at the SAME shared artifacts as the host wrappers, so every entry
-# point provably reaches one writer/machine pair.
-for tok in "state-machine.json" "set-state.sh"; do
-  assert_contains "host-support/1" "Claude /flow still uses the shared $tok path" "$(cat "$CLAUDE_CMD" 2>/dev/null)" "$tok"
+# All command surfaces route to the same capability and runtime contract.
+cmp -s "$CLAUDE_CMD" "$OC_CMD" \
+  && pass "flow-workflow/8" "Claude shares the same adoption-aware Flow wrapper" \
+  || fail "flow-workflow/8" "Claude shares the same adoption-aware Flow wrapper"
+for tok in "vibe:flow" "installed Flow machine" "vibe-flow state transition" "not proof of human origin"; do
+  assert_contains "flow-workflow/8" "Claude wrapper preserves $tok" "$(cat "$CLAUDE_CMD" 2>/dev/null)" "$tok"
 done
 hp_hooks=1
 for h in session-start-doctrine user-prompt-submit-inject pre-tool-use-guard stop-gate; do
@@ -1346,8 +1356,8 @@ assert_eq "host-support/1" "existing Claude Code hook scripts are intact" "$hp_h
 # canonical half, so "a divergent workflow body is impossible" still holds — it is
 # now enforced by a parity gate instead of by the filesystem.
 hp_links=1
-for name in spec using-spec vibe; do
-  case "$name" in spec) canon=spec ;; using-spec) canon=spec/using-spec ;; vibe) canon=flow ;; esac
+for name in spec flow vibe; do
+  case "$name" in spec) canon=spec ;; flow) canon=flow ;; vibe) canon=skills/vibe ;; esac
   if [[ -d "$CODEX_PKG/skills/$name" && ! -L "$CODEX_PKG/skills/$name" \
         && -f "$CODEX_PKG/skills/$name/SKILL.md" ]] \
      && cmp -s "$CODEX_PKG/skills/$name/SKILL.md" "$REPO_ROOT/$canon/SKILL.md"; then
@@ -1359,8 +1369,8 @@ done
 assert_eq "host-support/1" "Codex package materializes every shipped skill from the canonical halves (real dirs, byte-identical)" "$hp_links" "1"
 # Factory package: same materialized shape for its native plugin skills.
 hp_dlinks=1
-for name in spec using-spec vibe; do
-  case "$name" in spec) canon=spec ;; using-spec) canon=spec/using-spec ;; vibe) canon=flow ;; esac
+for name in spec flow vibe; do
+  case "$name" in spec) canon=spec ;; flow) canon=flow ;; vibe) canon=skills/vibe ;; esac
   if [[ -d "$DROID_PKG/skills/$name" && ! -L "$DROID_PKG/skills/$name" \
         && -f "$DROID_PKG/skills/$name/SKILL.md" ]] \
      && cmp -s "$DROID_PKG/skills/$name/SKILL.md" "$REPO_ROOT/$canon/SKILL.md"; then
@@ -1433,7 +1443,7 @@ if command -v jq >/dev/null 2>&1; then
   assert_eq "host-support/1" "matrix host ids are exactly claude/opencode/codex/droid" \
     "$(jq -r '.hosts[].id' "$SURFACES" 2>/dev/null | sort | tr '\n' ',')" "claude,codex,droid,opencode,"
   assert_eq "host-support/1" "matrix declares exactly the three shipped skills" \
-    "$(jq -r '.workflow.skills | sort | join(",")' "$SURFACES" 2>/dev/null)" "spec,using-spec,vibe"
+    "$(jq -r '.workflow.skills | sort | join(",")' "$SURFACES" 2>/dev/null)" "flow,spec,vibe"
   # Every declared skill path resolves to a real SKILL.md, for EVERY declared
   # workflow — the "each host discovers every shared workflow" scenario, per
   # host, from data. The population floor is data-derived, not a hand-written
@@ -1576,7 +1586,7 @@ FARM_ALL="$(mkhosts claude opencode codex droid)"
 SBno="$(mktmp)"
 outno="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBno" 2>&1)"
 nn=1
-for p in .agents/skills/spec/SKILL.md .agents/skills/vibe/SKILL.md AGENTS.md .gitignore .agents/skills/vibe/state.json; do
+for p in .agents/skills/spec/SKILL.md .agents/skills/flow/SKILL.md AGENTS.md .gitignore .vibe/run/flow/state.json; do
   [[ -e "$SBno/$p" ]] || { nn=0; echo "        missing host-neutral $p"; }
 done
 assert_eq "host-support/2" "no host CLI detected: the host-neutral core still installs" "$nn" "1"
@@ -1636,7 +1646,7 @@ for p in $HOST_DIRS; do
   [[ -e "$SBnon/$p" ]] && { non=0; echo "        --platform none configured $p"; }
 done
 assert_eq "host-support/2" "--platform none configures no host surface with all CLIs present" "$non" "1"
-[[ -e "$SBnon/.agents/skills/vibe/SKILL.md" ]] \
+[[ -e "$SBnon/.agents/skills/flow/SKILL.md" ]] \
   && pass "host-support/2" "--platform none still installs the host-neutral core" \
   || fail "host-support/2" "--platform none still installs the host-neutral core"
 assert_not_contains "host-support/2" "--platform none claims no hooks" "$outnon" "hook"
@@ -1809,7 +1819,7 @@ for h in codex droid; do
   case "$h" in codex) hpkg=plugins/vibe ;; droid) hpkg=factory-plugin ;; esac
   SBfo1="$(mktmp)"
   fo1out="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBfo1" --only flow --platform "$h" 2>&1)"
-  [[ ! -e "$SBfo1/.agents/skills/spec" && -f "$SBfo1/.agents/skills/vibe/SKILL.md" ]] \
+  [[ ! -e "$SBfo1/.agents/skills/spec" && -f "$SBfo1/.agents/skills/flow/SKILL.md" ]] \
     && pass "host-support/2" "only-flow fixture ($h): the spec half is absent and vibe is present (population floor)" \
     || fail "host-support/2" "only-flow fixture ($h): the spec half is absent and vibe is present (population floor)"
   [[ ! -e "$SBfo1/$hpkg/skills/spec" && ! -L "$SBfo1/$hpkg/skills/spec" ]] \
@@ -1824,7 +1834,7 @@ for h in codex droid; do
   done < <(find "$SBfo1/$hpkg" -type l 2>/dev/null)
   [[ "$fo1n" -ge 1 ]] || fo1dangle="$fo1dangle (floor: $fo1n links examined under $hpkg, want >=1)"
   assert_eq "host-support/2" "no dangling link anywhere under the --only flow $h package (examined $fo1n)" "$fo1dangle" ""
-  { [[ -L "$SBfo1/$hpkg/skills/vibe" && -f "$SBfo1/$hpkg/skills/vibe/SKILL.md" ]]; } \
+  { [[ -L "$SBfo1/$hpkg/skills/flow" && -f "$SBfo1/$hpkg/skills/flow/SKILL.md" ]]; } \
     && pass "host-support/2" "--only flow --platform $h still deploys the vibe link, and it resolves" \
     || fail "host-support/2" "--only flow --platform $h did not deploy a resolving vibe link"
   assert_contains "host-support/2" "--only flow --platform $h warns which skill link it skipped" "$fo1out" "$hpkg/skills/spec"
@@ -1845,7 +1855,7 @@ for h in codex droid; do
   case "$h" in codex) hpkg=plugins/vibe ;; droid) hpkg=factory-plugin ;; esac
   SBfo2="$(mktmp)"
   PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBfo2" --platform "$h" >/dev/null 2>&1
-  { [[ -f "$SBfo2/$hpkg/skills/spec/SKILL.md" && -f "$SBfo2/$hpkg/skills/vibe/SKILL.md" ]]; } \
+  { [[ -f "$SBfo2/$hpkg/skills/spec/SKILL.md" && -f "$SBfo2/$hpkg/skills/flow/SKILL.md" ]]; } \
     && pass "host-support/2" "control: both halves deploy both $h skill links, both resolving" \
     || fail "host-support/2" "control: both halves did not deploy both resolving $h skill links"
   rm -rf "$SBfo2"
@@ -1855,7 +1865,7 @@ done
 # that promises a deploy the real run refuses.
 SBfo3="$(mktmp)"
 fo3out="$(PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBfo3" --only flow --platform codex --dry-run 2>&1)"
-assert_contains "host-support/2" "the --only flow dry-run plans the vibe link" "$fo3out" "link plugins/vibe/skills/vibe"
+assert_contains "host-support/2" "the --only flow dry-run plans the vibe link" "$fo3out" "link plugins/vibe/skills/flow"
 assert_not_contains "host-support/2" "the --only flow dry-run does not plan the dangling spec link" "$fo3out" "link plugins/vibe/skills/spec"
 assert_contains "host-support/2" "the --only flow dry-run names the skipped spec link" "$fo3out" "skip plugins/vibe/skills/spec"
 rm -rf "$SBfo3"
@@ -1870,7 +1880,7 @@ PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBfo4" --only spec --platform n
   && pass "host-support/2" "pre-existing-half fixture: the spec skill really is there first (population floor)" \
   || fail "host-support/2" "pre-existing-half fixture: the spec skill really is there first (population floor)"
 PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBfo4" --only flow --platform codex >/dev/null 2>&1
-{ [[ -f "$SBfo4/plugins/vibe/skills/spec/SKILL.md" && -f "$SBfo4/plugins/vibe/skills/vibe/SKILL.md" ]]; } \
+{ [[ -f "$SBfo4/plugins/vibe/skills/spec/SKILL.md" && -f "$SBfo4/plugins/vibe/skills/flow/SKILL.md" ]]; } \
   && pass "host-support/2" "a target already carrying the spec half gets a resolving codex spec link under --only flow" \
   || fail "host-support/2" "a target already carrying the spec half gets a resolving codex spec link under --only flow"
 rm -rf "$SBfo4"
@@ -1892,11 +1902,11 @@ assert_eq "host-support/2" "re-install is byte-stable across every managed host 
 # verbatim copy would dangle.
 links=1
 for pair in "plugins/vibe/skills/spec:../../../.agents/skills/spec" \
-            "plugins/vibe/skills/using-spec:../../../.agents/skills/using-spec" \
             "plugins/vibe/skills/vibe:../../../.agents/skills/vibe" \
+            "plugins/vibe/skills/flow:../../../.agents/skills/flow" \
             "factory-plugin/skills/spec:../../.agents/skills/spec" \
-            "factory-plugin/skills/using-spec:../../.agents/skills/using-spec" \
-            "factory-plugin/skills/vibe:../../.agents/skills/vibe"; do
+            "factory-plugin/skills/vibe:../../.agents/skills/vibe" \
+            "factory-plugin/skills/flow:../../.agents/skills/flow"; do
   lp="${pair%%:*}"; want="${pair#*:}"
   if [[ -L "$SBd/$lp" && "$(readlink "$SBd/$lp")" == "$want" && -f "$SBd/$lp/SKILL.md" ]]; then
     : # rewritten AND resolves
@@ -1926,7 +1936,7 @@ gone=1
 for p in .opencode/commands/flow.md plugins/vibe/plugin.json .agents/plugins/marketplace.json \
          factory-plugin/commands/flow.md factory-plugin/.factory-plugin/plugin.json \
          .factory-plugin/marketplace.json .claude/commands/flow.md .claude/hooks/stop-gate.sh \
-         .claude/skills/spec .claude/skills/vibe .vibe/install-manifest.json; do
+         .claude/skills/spec .claude/skills/flow .vibe/install-manifest.json; do
   if [[ -e "$SBd/$p" || -L "$SBd/$p" ]]; then gone=0; echo "        survived uninstall: $p"; fi
 done
 assert_eq "host-support/2" "uninstall removes the recorded vibe artifacts of every host" "$gone" "1"
@@ -1985,7 +1995,7 @@ assert_eq "host-support/2" "…and keeps the surviving flow-half records (still 
 PATH="$FARM_ALL" "$FARM_ALL/bash" "$INSTALL" "$SBp7" --uninstall --yes >/dev/null 2>&1
 left7=""
 for p in .opencode/commands/flow.md plugins/vibe/plugin.json .factory-plugin/marketplace.json \
-         .claude/commands/flow.md .claude/skills/vibe .claude/skills/spec; do
+         .claude/commands/flow.md .claude/skills/flow .claude/skills/spec; do
   [[ -e "$SBp7/$p" || -L "$SBp7/$p" ]] && left7="$left7 $p"
 done
 assert_eq "host-support/2" "a later full uninstall after an --only spec pass leaves nothing behind" "$left7" ""
@@ -2046,7 +2056,7 @@ assert_eq "host-support/2" "…and keeps the unselected host's records (opencode
   "$([[ "$(man_n opencode)" -ge 1 ]] && echo yes || echo no)" "yes"
 PATH="$FARM_NONE" "$FARM_NONE/bash" "$INSTALL" "$SBf1" --uninstall --yes >/dev/null 2>&1
 stranded1=""
-for p in plugins/vibe/plugin.json plugins/vibe/skills/spec plugins/vibe/skills/vibe \
+for p in plugins/vibe/plugin.json plugins/vibe/skills/spec plugins/vibe/skills/flow \
          .agents/plugins/marketplace.json .opencode/commands/flow.md; do
   [[ -e "$SBf1/$p" || -L "$SBf1/$p" ]] && stranded1="$stranded1 $p"
 done
@@ -2069,6 +2079,13 @@ rm -rf "$SBf1d"
 # every merge/removal leg above runs with jq present, so the pure-bash reader was
 # never exercised on a real manifest (jq is recommended, not required).
 NOJQ8="$(mkshim jq)"
+# Destructive runtime inspection still requires a JSON parser; this fixture
+# isolates the jq-less manifest fallback, not parser-free removal.
+ln -s "$(node -p process.execPath)" "$NOJQ8/node"
+assert_eq "flow-workflow/8" "manifest fallback fixture has no jq" "$(PATH="$NOJQ8" command -v jq || true)" ""
+PATH="$NOJQ8" "$NOJQ8/node" -e 'JSON.parse("{}")' \
+  && pass "flow-workflow/8" "manifest fallback fixture has a working runtime parser" \
+  || fail "flow-workflow/8" "manifest fallback fixture has a working runtime parser"
 # (a) MERGE: install two hosts with jq, then re-install ONE host without jq — the
 # other host's records must survive the fallback parser's read of the manifest.
 SBj8="$(mktmp)"
@@ -2316,10 +2333,10 @@ rm -rf "$SRCA" "$SRCB"
 # --yes never deletes the cursor or receipts through them.
 T="$(mktmp)"; OUT="$(mktmp)"; OUT2="$(mktmp)"; mkdir -p "$T/.agents/skills"
 cp -R "$REPO_ROOT/.agents/skills/spec/." "$OUT/" 2>/dev/null; : >"$OUT/KEEP.md"
-cp -R "$REPO_ROOT/.agents/skills/vibe/scripts" "$OUT2/" 2>/dev/null
+cp -R "$REPO_ROOT/.agents/skills/flow/scripts" "$OUT2/" 2>/dev/null
 mkdir -p "$OUT2/evidence"; printf '{}\n' >"$OUT2/state.json"; : >"$OUT2/evidence/x.md"
 nout="$(rh_files "$OUT")"; nout2="$(rh_files "$OUT2")"
-ln -s "$OUT" "$T/.agents/skills/spec"; ln -s "$OUT2" "$T/.agents/skills/vibe"
+ln -s "$OUT" "$T/.agents/skills/spec"; ln -s "$OUT2" "$T/.agents/skills/flow"
 out="$(bash "$INSTALL" "$T" --uninstall --yes --only spec 2>&1)"
 assert_eq "review-hardening/1" "--only spec: a symlinked spec dir's outside files survive uninstall" "$(rh_files "$OUT")" "$nout"
 assert_contains "review-hardening/1" "--only spec: the symlinked skill dir is reported" "$out" "WARN"
@@ -2336,7 +2353,7 @@ T2="$(mktmp)"; bash "$INSTALL" "$T2" --platform claude >/dev/null 2>&1
 bash "$INSTALL" "$T2" --uninstall --yes >/dev/null 2>&1; rc=$?
 assert_eq "review-hardening/1" "control: a normal uninstall exits 0" "$rc" "0"
 assert_eq "review-hardening/1" "control: a normal uninstall removes the spec skill" "$([[ -e "$T2/.agents/skills/spec/SKILL.md" ]] && echo present || echo gone)" "gone"
-assert_eq "review-hardening/1" "control: a normal --yes uninstall removes the cursor" "$([[ -e "$T2/.agents/skills/vibe/state.json" ]] && echo present || echo gone)" "gone"
+assert_eq "review-hardening/1" "control: a normal --yes uninstall removes the cursor" "$([[ -e "$T2/.vibe/run/flow/state.json" ]] && echo present || echo gone)" "gone"
 rm -rf "$T2"
 # A symlinked ANCESTOR (.agents/skills, .claude) shared by two repos: uninstall
 # from repo B never deletes through it, so repo A's install survives.
@@ -2345,7 +2362,7 @@ mkdir -p "$SHARED/skills" "$RA/.agents" "$RB/.agents"
 ln -s "$SHARED/skills" "$RA/.agents/skills"; ln -s "$SHARED/skills" "$RB/.agents/skills"
 ln -s "$SHAREDC" "$RA/.claude"; ln -s "$SHAREDC" "$RB/.claude"
 bash "$INSTALL" "$RA" --platform claude >/dev/null 2>&1
-[[ -f "$SHARED/skills/spec/SKILL.md" && -f "$SHARED/skills/vibe/state.json" && -n "$(ls "$SHAREDC/hooks" 2>/dev/null)" ]] \
+[[ -f "$SHARED/skills/spec/SKILL.md" && -f "$RA/.vibe/run/flow/state.json" && -n "$(ls "$SHAREDC/hooks" 2>/dev/null)" ]] \
   && pass "review-hardening/1" "precondition: install through the shared links shipped spec, vibe and hooks" \
   || fail "review-hardening/1" "precondition: install through the shared links shipped spec, vibe and hooks"
 nshared="$(rh_files "$SHARED" "$SHAREDC")"
@@ -2354,7 +2371,7 @@ assert_eq "review-hardening/1" "--only spec uninstall through a shared skills li
 assert_contains "review-hardening/1" "the shared skills link is reported" "$out" "WARN"
 bash "$INSTALL" "$RB" --uninstall --yes >/dev/null 2>&1
 assert_eq "review-hardening/1" "full --yes uninstall through shared links deletes nothing there" "$(rh_files "$SHARED" "$SHAREDC")" "$nshared"
-[[ -f "$SHARED/skills/vibe/state.json" ]] && pass "review-hardening/1" "repo A's cursor survives repo B's --yes uninstall" \
+[[ -f "$RA/.vibe/run/flow/state.json" ]] && pass "review-hardening/1" "repo A's cursor survives repo B's --yes uninstall" \
   || fail "review-hardening/1" "repo A's cursor survives repo B's --yes uninstall"
 rm -rf "$SHARED" "$SHAREDC" "$RA" "$RB"
 # A .vibe symlinked out of an otherwise normal target: --yes keeps its marker.
@@ -2401,17 +2418,25 @@ rm -rf "$RV"
 # so the marker walk can never refuse a normal install's own files.
 RT="$(mktmp)"; bash "$INSTALL" "$RT" --platform "claude,opencode,codex,droid" >/dev/null 2>&1; rc=$?
 assert_eq "review-hardening/1" "control: the marker-walk install exits 0" "$rc" "0"
-[[ -f "$RT/.agents/skills/vibe/state-machine.json" && -f "$RT/.agents/skills/spec/SKILL.md" ]] \
+[[ -f "$RT/.agents/skills/flow/state-machine.json" && -f "$RT/.agents/skills/spec/SKILL.md" ]] \
   && pass "review-hardening/1" "control: the install shipped both markers under .agents/skills" \
   || fail "review-hardening/1" "control: the install shipped both markers under .agents/skills"
-assert_eq "review-hardening/1" "control: no directory of an installed target carries flow/state-machine.json" \
-  "$(find "$RT" -path '*/flow/state-machine.json' | wc -l | tr -d ' ')" "0"
+unexpected_source_marker=""
+while IFS= read -r marker; do
+  case "${marker#"$RT/"}" in
+    .agents/skills/flow/state-machine.json|plugins/vibe/skills/flow/state-machine.json|factory-plugin/skills/flow/state-machine.json) ;;
+    *) unexpected_source_marker="$unexpected_source_marker $marker" ;;
+  esac
+done < <(find "$RT" -path '*/flow/state-machine.json')
+assert_eq "flow-workflow/8" "only admitted installed skill containers carry source-like markers" "$unexpected_source_marker" ""
 rm -rf "$RT"
 # A skill dir linked to an in-repo directory (not a vibe checkout): remove_shipped
 # leaves the link alone, so --yes must not delete the runtime files through it.
-RL="$(mktmp)"; bash "$INSTALL" "$RL" --platform claude >/dev/null 2>&1; rm -rf "$RL/.agents/skills/vibe"
-mkdir -p "$RL/mydir/evidence"; : >"$RL/mydir/state.json"; : >"$RL/mydir/warnings.log"; : >"$RL/mydir/evidence/r.txt"
-ln -s ../../mydir "$RL/.agents/skills/vibe"
+RL="$(mktmp)"; bash "$INSTALL" "$RL" --platform claude >/dev/null 2>&1; rm -rf "$RL/.agents/skills/flow"
+mkdir -p "$RL/mydir/evidence"
+cp "$REPO_ROOT/flow/state.example.json" "$RL/mydir/state.json"
+: >"$RL/mydir/warnings.log"; : >"$RL/mydir/evidence/r.txt"
+ln -s ../../mydir "$RL/.agents/skills/flow"
 out="$(bash "$INSTALL" "$RL" --uninstall --yes 2>&1)"; rc=$?
 assert_eq "review-hardening/1" "--yes through an in-repo skill-dir link exits 0" "$rc" "0"
 assert_contains "review-hardening/1" "the in-repo skill-dir link is reported" "$out" "left untouched"
@@ -2506,7 +2531,11 @@ mv "$T/.vibe" "$OE/vibe"; ln -s "$OE/vibe" "$T/.vibe"
 mv "$T/.gitignore" "$OF/gi"; ln -s "$OF/gi" "$T/.gitignore"
 sa="$(rh_snap "$OA")"; sb="$(rh_snap "$OB")"; se="$(rh_snap "$OE")"; sf="$(rh_snap "$OF")"
 out="$(bash "$INSTALL" "$T" --uninstall --yes 2>&1)"; rc=$?
-assert_eq "review-hardening/15" "uninstall with symlinked host surfaces exits 0" "$rc" "0"
+assert_eq "flow-workflow/8" "destructive uninstall refuses a symlinked runtime before removal" "$rc" "1"
+assert_contains "flow-workflow/8" "runtime preflight explains the refusal" "$out" "runtime parent is a symlink"
+[[ -e "$T/plugins/vibe/plugin.json" && -e "$T/.agents/plugins/marketplace.json" ]] \
+  && pass "flow-workflow/8" "failed runtime preflight preserves in-target host surfaces" \
+  || fail "flow-workflow/8" "failed runtime preflight preserves in-target host surfaces"
 assert_eq "review-hardening/15" "(a) a manifest-recorded host file behind a symlinked dir survives" "$(rh_snap "$OA")" "$sa"
 assert_eq "review-hardening/15" "(b) a manifest-recorded host package behind a symlink survives, links included" "$(rh_snap "$OB")" "$sb"
 assert_eq "review-hardening/15" "(e) the install manifest behind a symlinked .vibe survives" "$(rh_snap "$OE")" "$se"
@@ -2514,9 +2543,15 @@ assert_eq "review-hardening/15" "(f) the .gitignore a symlink points at is uncha
 [[ -L "$T/.gitignore" && "$(readlink "$T/.gitignore")" == "$OF/gi" ]] \
   && pass "review-hardening/15" "(f) .gitignore is still the same symlink" \
   || fail "review-hardening/15" "(f) .gitignore is still the same symlink"
+# Restore only this fixture's runtime to exercise independent host-path confinement.
+rm "$T/.vibe"; mv "$OE/vibe" "$T/.vibe"
+out="$(bash "$INSTALL" "$T" --uninstall --yes 2>&1)"; rc=$?
+assert_eq "review-hardening/15" "uninstall with regular runtime and symlinked host surfaces exits 0" "$rc" "0"
+assert_eq "review-hardening/15" "foreign host file survives admitted uninstall" "$(rh_snap "$OA")" "$sa"
+assert_eq "review-hardening/15" "foreign host package survives admitted uninstall" "$(rh_snap "$OB")" "$sb"
+assert_eq "review-hardening/15" "foreign gitignore survives admitted uninstall" "$(rh_snap "$OF")" "$sf"
 assert_contains "review-hardening/15" "(a) the skipped host file is reported" "$out" "WARN: .opencode/commands/flow.md is outside the target"
 assert_contains "review-hardening/15" "(b) the skipped host package is reported" "$out" "WARN: factory-plugin/commands/flow.md is outside the target"
-assert_contains "review-hardening/15" "(e) the skipped manifest is reported" "$out" "WARN: .vibe/install-manifest.json is outside the target"
 assert_contains "review-hardening/15" "(f) the symlinked .gitignore is reported" "$out" "WARN: .gitignore is a symlink"
 [[ ! -e "$T/plugins/vibe/plugin.json" && ! -e "$T/.agents/plugins/marketplace.json" ]] \
   && pass "review-hardening/15" "the in-target recorded files are still removed" \
@@ -2579,9 +2614,9 @@ T="$(mktmp)"; bash "$INSTALL" "$T" --platform "$RH15_HOSTS" >/dev/null 2>&1
 out="$(bash "$INSTALL" "$T" --uninstall --yes 2>&1)"; rc=$?
 assert_eq "review-hardening/15" "control: a plain host uninstall exits 0" "$rc" "0"
 left=""
-for p in .agents/plugins/marketplace.json plugins/vibe/plugin.json plugins/vibe/skills/spec plugins/vibe/skills/vibe \
+for p in .agents/plugins/marketplace.json plugins/vibe/plugin.json plugins/vibe/skills/spec plugins/vibe/skills/flow \
          .factory-plugin/marketplace.json factory-plugin/.factory-plugin/plugin.json factory-plugin/commands/flow.md \
-         factory-plugin/skills/spec factory-plugin/skills/vibe .opencode/commands/flow.md .vibe/install-manifest.json; do
+         factory-plugin/skills/spec factory-plugin/skills/flow .opencode/commands/flow.md .vibe/install-manifest.json; do
   [[ -e "$T/$p" || -L "$T/$p" ]] && left="$left $p"
 done
 assert_eq "review-hardening/15" "control: every recorded file and the manifest are removed" "$left" ""
@@ -2596,13 +2631,13 @@ echo "=== review-hardening/4 — write-through for bash writers ==="
 RH4_SCRIPTS="$REPO_ROOT/flow/scripts"
 rh4_regen_sandbox() {  # prints a sandbox root with regen + lib + one lesson
   local r; r="$(mktmp)"
-  mkdir -p "$r/docs/spec" "$r/.agents/skills/vibe/scripts/lib"
-  cp "$RH4_SCRIPTS/regen-active-rules.sh" "$r/.agents/skills/vibe/scripts/"
-  cp "$RH4_SCRIPTS/lib/resolve-target.sh" "$r/.agents/skills/vibe/scripts/lib/"
+  mkdir -p "$r/docs/spec" "$r/.agents/skills/flow/scripts/lib"
+  cp "$RH4_SCRIPTS/regen-active-rules.sh" "$r/.agents/skills/flow/scripts/"
+  cp "$RH4_SCRIPTS/lib/resolve-target.sh" "$r/.agents/skills/flow/scripts/lib/"
   printf '# Lessons\n\n### One\n**Rule:** keep it.\n**Date:** 2026-06-18\n' > "$r/docs/spec/lessons.md"
   printf '%s\n' "$r"
 }
-RH4_REGEN="/.agents/skills/vibe/scripts/regen-active-rules.sh"
+RH4_REGEN="/.agents/skills/flow/scripts/regen-active-rules.sh"
 # (a) merge writes through a symlinked AGENTS.md
 d="$(mktmp)"; mkdir "$d/docs"
 { printf 'user prose\n\n<!-- vibe:instructions:start -->\nstale\n<!-- vibe:instructions:end -->\n'; } > "$d/docs/AGENTS.real.md"
@@ -2717,13 +2752,13 @@ d="$(mktmp)"
 bash "$MERGE" link CLAUDE.md "$d" >/dev/null 2>&1; rc=$?
 [[ $rc -eq 0 && "$(readlink "$d/CLAUDE.md")" == "AGENTS.md" ]] \
   && pass "review-hardening/3" "control: absent adapter is linked" || fail "review-hardening/3" "control: absent adapter not linked"
-assert_not_contains "review-hardening/3" "setup.md no longer says it relinks" "$(cat "$REPO_ROOT/flow/setup.md")" "relinks a wrong target"
+assert_not_contains "review-hardening/3" "setup.md no longer says it relinks" "$(cat "$REPO_ROOT/flow/procedures/setup.md")" "relinks a wrong target"
 # review-hardening/5
 echo ""
 echo "=== review-hardening/5 — set-state.sh validates its arguments ==="
 SB="$(mktmp)"; bash "$INSTALL" "$SB" >/dev/null 2>&1
-SS="$SB/.agents/skills/vibe/scripts/set-state.sh"
-CUR="$SB/.agents/skills/vibe/state.json"
+SS="$SB/.agents/skills/flow/scripts/set-state.sh"
+CUR="$SB/.vibe/run/flow/state.json"
 RH5_NOJQ="$(mkshim jq)"
 # The jq leg runs `bash "$SS"` on the ambient PATH: without jq it would test the
 # no-jq writer twice under a "(jq)" label. Run it only where jq exists, and fail
@@ -2770,7 +2805,7 @@ done
 # controls: legal names still work, hostile-looking-but-legal names land literally
 # shellcheck disable=SC2016  # '$(touch x)' is a literal feature name on purpose
 for leg in ${RH5_LEGS[@]+"${RH5_LEGS[@]}"}; do
-  rm -f "$SB/x" "$CUR"; ( cd "$SB" || exit 1
+  rm -f "$SB/x"; cp "$SB/.agents/skills/flow/state.example.json" "$CUR"; ( cd "$SB" || exit 1
     if [[ "$leg" == jq ]]; then bash "$SS" feature.impl demo >/dev/null 2>&1; bash "$SS" feature.impl '$(touch x)' >/dev/null 2>&1
     else PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" feature.impl demo >/dev/null 2>&1; PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" feature.impl '$(touch x)' >/dev/null 2>&1; fi )
   assert_contains "review-hardening/5" "control ($leg): shell-hostile feature written literally" "$(cat "$CUR")" '"feature": "$(touch x)"'
@@ -2780,10 +2815,12 @@ for leg in ${RH5_LEGS[@]+"${RH5_LEGS[@]}"}; do
   else PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" quick.fix >/dev/null 2>&1 || rc=$?; fi
   assert_eq "review-hardening/5" "control ($leg): quick.fix accepted" "$rc" "0"
 done
-# a corrupt cursor feature must not be re-emitted without jq
+# Without a JSON parser, an escaped canonical cursor is refused unchanged.
 printf '{\n  "flow": "feature",\n  "phase": "impl",\n  "feature": "a\\"b",\n  "updated": "t"\n}\n' > "$CUR"
-PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" feature.verify >/dev/null 2>&1 || true
-assert_contains "review-hardening/5" "no-jq: corrupt carried feature falls back to null" "$(cat "$CUR")" '"feature": null'
+before="$(cat "$CUR")"; rc=0
+PATH="$RH5_NOJQ" "$RH5_NOJQ/bash" "$SS" feature.verify >/dev/null 2>&1 || rc=$?
+assert_eq "flow-workflow/8" "parser-free escaped canonical cursor is refused" "$rc" "1"
+assert_eq "flow-workflow/8" "parser-free refusal preserves canonical cursor bytes" "$(cat "$CUR")" "$before"
 rm -rf "$RH5_NOJQ" "$SB"
 
 # review-hardening/19
@@ -2808,7 +2845,7 @@ rm -rf "$SB"
 # The guard roots itself at ${CLAUDE_PROJECT_DIR:-$PWD}, so every call names $SB: without it the
 # legs read whatever cursor the caller's cwd holds, not this sandbox's.
 SB="$(mktmp)"; bash "$INSTALL" "$SB" --platform claude >/dev/null 2>&1
-RH19_SS="$SB/.agents/skills/vibe/scripts/set-state.sh"; bash "$RH19_SS" idle >/dev/null 2>&1
+RH19_SS="$SB/.agents/skills/flow/scripts/set-state.sh"; bash "$RH19_SS" idle >/dev/null 2>&1
 RH19_NONODE="$(mkshim)"
 rh19_guard() { # leg tool file_path -> guard exit code
   local rc=0 payload
@@ -2828,7 +2865,7 @@ for leg in engine fallback; do
 done
 # control: the sandbox's own cursor decides. feature.compound may write the lessons file, so the
 # same MultiEdit now allows; a leg that read another cursor would not follow this change.
-printf '{\n  "flow": "feature",\n  "phase": "compound",\n  "feature": "demo",\n  "updated": "t"\n}\n' > "$SB/.agents/skills/vibe/state.json"
+printf '{\n  "flow": "feature",\n  "phase": "compound",\n  "feature": "demo",\n  "updated": "t"\n}\n' > "$SB/.vibe/run/flow/state.json"
 for leg in engine fallback; do
   assert_eq "review-hardening/19" "control: MultiEdit on docs/spec/lessons.md allows in the sandbox's feature.compound ($leg guard)" "$(rh19_guard "$leg" MultiEdit docs/spec/lessons.md)" "0"
 done
@@ -2854,14 +2891,14 @@ rm -rf "$RH7"
 # (c) script present, no settings wiring: the repo-local hook never fires, so the
 # plugin must still emit the doctrine (once, not zero times).
 RH7="$(mktmp)"; mkdir -p "$RH7/.claude/hooks"; : > "$RH7/.claude/hooks/session-start-doctrine.sh"
-mkdir -p "$RH7/.agents/skills/vibe"; : > "$RH7/.agents/skills/vibe/state-machine.json"
-assert_contains "review-hardening/7" "script present, no settings: plugin hook emits the doctrine" "$(rh7_run "$RH7")" "sessions are ephemeral"
+mkdir -p "$RH7/.agents/skills/flow"; : > "$RH7/.agents/skills/flow/state-machine.json"
+assert_contains "review-hardening/7" "script present, no settings: plugin hook emits the doctrine" "$(rh7_run "$RH7")" "Controller owns tasks and independent review"
 rm -rf "$RH7"
 # (c2) a jq-less install copies the hooks but cannot wire settings.json
 RH7="$(mktmp)"; RH7_NOJQ="$(mkshim jq)"
 PATH="$RH7_NOJQ" "$RH7_NOJQ/bash" "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1
 [[ -f "$RH7/.claude/hooks/session-start-doctrine.sh" ]] || fail "review-hardening/7" "precondition: jq-less install copied the hook script"
-assert_contains "review-hardening/7" "jq-less install (hooks unwired): plugin hook emits the doctrine" "$(rh7_run "$RH7")" "sessions are ephemeral"
+assert_contains "review-hardening/7" "jq-less install (hooks unwired): plugin hook emits the doctrine" "$(rh7_run "$RH7")" "Controller owns tasks and independent review"
 rm -rf "$RH7" "$RH7_NOJQ"
 # (d) settings.json wired, script absent: a real install (a working engine) with
 # the script removed, so the wiring is the only signal under test. The plugin
@@ -2874,21 +2911,21 @@ RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1
 mv "$RH7/.claude/settings.json" "$RH7/.claude/settings.local.json"
 assert_eq "review-hardening/7" "settings.local.json wired: plugin hook is silent" "$(rh7_run "$RH7")" ""
 # (e2) the same wiring with no engine: the repo hook cannot answer, so emit
-rm -rf "$RH7/.agents/skills/vibe/engine"
-assert_contains "review-hardening/7" "wired, engine absent: plugin hook emits the doctrine" "$(rh7_run "$RH7")" "sessions are ephemeral"
+rm -rf "$RH7/.agents/skills/flow/engine"
+assert_contains "review-hardening/7" "wired, engine absent: plugin hook emits the doctrine" "$(rh7_run "$RH7")" "Controller owns tasks and independent review"
 rm -rf "$RH7"
 # (e3) wired install, broken engine: the repo hook exits 0 with no output on a
 # crash, so the plugin must emit the doctrine (once, not zero times).
 RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1
-printf '%s\n' "throw new Error('broken engine');" > "$RH7/.agents/skills/vibe/engine/cli.mjs"
-assert_contains "review-hardening/7" "wired, broken engine: plugin hook emits the doctrine" "$(rh7_run "$RH7")" "sessions are ephemeral"
+printf '%s\n' "throw new Error('broken engine');" > "$RH7/.agents/skills/flow/engine/cli.mjs"
+assert_contains "review-hardening/7" "wired, broken engine: plugin hook emits the doctrine" "$(rh7_run "$RH7")" "Controller owns tasks and independent review"
 rm -rf "$RH7"
 # (e4) wired install, a node that cannot run the engine (older than engines.node
 # >=18): stand-in node that fails like a too-old one.
 RH7="$(mktmp)"; bash "$INSTALL" "$RH7" --platform claude >/dev/null 2>&1; RH7_OLDNODE="$(mkshim)"
 printf '%s\n' '#!/bin/sh' 'echo "SyntaxError: Unexpected token (node v16)" >&2' 'exit 1' > "$RH7_OLDNODE/node"; chmod +x "$RH7_OLDNODE/node"
 assert_contains "review-hardening/7" "wired, node cannot run the engine: plugin hook emits the doctrine" \
-  "$(env -u VIBE_ENGINE CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" CLAUDE_PROJECT_DIR="$RH7" PATH="$RH7_OLDNODE" "$RH7_OLDNODE/bash" "$RH7_HOOK" </dev/null 2>/dev/null || true)" "sessions are ephemeral"
+  "$(env -u VIBE_ENGINE CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" CLAUDE_PROJECT_DIR="$RH7" PATH="$RH7_OLDNODE" "$RH7_OLDNODE/bash" "$RH7_HOOK" </dev/null 2>/dev/null || true)" "Controller owns tasks and independent review"
 rm -rf "$RH7" "$RH7_OLDNODE"
 # (f) wired install on a node-less host: the repo-local hook (engine-only, no
 # fallback) prints nothing, so the plugin must emit the doctrine (once, not zero).
@@ -2898,7 +2935,7 @@ grep -qF 'session-start-doctrine.sh' "$RH7/.claude/settings.json" 2>/dev/null \
 assert_eq "review-hardening/7" "no node: the repo-local doctrine hook prints nothing" \
   "$(cd "$RH7" && CLAUDE_PROJECT_DIR="$RH7" PATH="$RH7_NONODE" "$RH7_NONODE/bash" .claude/hooks/session-start-doctrine.sh </dev/null 2>/dev/null || true)" ""
 assert_contains "review-hardening/7" "no node, wired install: plugin hook emits the doctrine" \
-  "$(env -u VIBE_ENGINE CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" CLAUDE_PROJECT_DIR="$RH7" PATH="$RH7_NONODE" "$RH7_NONODE/bash" "$RH7_HOOK" </dev/null 2>/dev/null || true)" "sessions are ephemeral"
+  "$(env -u VIBE_ENGINE CLAUDE_PLUGIN_ROOT="$REPO_ROOT/plugin" CLAUDE_PROJECT_DIR="$RH7" PATH="$RH7_NONODE" "$RH7_NONODE/bash" "$RH7_HOOK" </dev/null 2>/dev/null || true)" "Controller owns tasks and independent review"
 rm -rf "$RH7" "$RH7_NONODE"
 assert_eq "review-hardening/7" "generated hook carries no stale cursor comment" \
   "$(grep -c "this project's cursor" "$RH7_HOOK" || true)" "0"
@@ -2922,7 +2959,7 @@ else
 fi
 
 # vibe#71 sub-gap 2 + 3: `install.sh --global` writes the three shipped skills
-# (`spec`, `using-spec`, `vibe` — siblings, never nested) into each host's own
+# (`vibe`, `flow`, `spec` — siblings, never nested) into each host's own
 # user-level skills dir and maintains one shared AGENTS.md block, idempotently.
 # Needs no host CLI, so it runs as a normal (never skipped) leg.
 GI_OUT="$(bash "$REPO_ROOT/flow/tests/adapters/global-install.sh" 2>&1)"; GI_RC=$?

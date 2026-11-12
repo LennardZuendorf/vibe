@@ -640,7 +640,7 @@ mod tests {
         assert_eq!(lines.len(), 11);
         assert_eq!(
             lines[0],
-            "- `.vibe/run/flow/state.json`, `.agents/skills/vibe/state.json`, `.agents/flow/state.json` — otherwise: block — state.json is written only via set-state.sh, never by direct edit"
+            "- `.vibe/run/flow/state.json`, `.agents/skills/flow/state.json`, `.agents/skills/vibe/state.json`, `.agents/flow/state.json` — otherwise: block — state.json is written only via set-state.sh, never by direct edit"
         );
         assert!(
             lines[1].contains("otherwise: block")

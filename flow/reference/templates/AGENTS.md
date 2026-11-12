@@ -3,46 +3,45 @@
 <!-- vibe:instructions:start -->
 <!-- Managed by vibe (merge-agents.sh); replaced on setup.apply / install.
      Content outside these markers, including vibe:active-rules, is user-owned. -->
-This project runs the **vibe flow**, a spec-first workflow harness. The spec root (`docs/spec/`, or legacy `.spec/`) is durable memory; sessions are ephemeral.
-Read the specs before writing code. A flow-only install has no spec tree.
+This project uses **Vibe Flow**. `vibe` explains the toolkit, `flow` owns the lifecycle,
+and `spec` handles project knowledge. Direct Flow and Spec entry need no bootstrap.
 ## Session start
-1. Read the spec root's `lessons.md` and `plan.md` when present.
-2. Load `docs/superpowers/specs/*-<name>-design.md` and `docs/superpowers/plans/*-<name>.md`; fallback: `docs/spec/features/<name>/{product,tech,plan}.md`.
-3. Read `{flow, phase, feature}` from `.vibe/run/flow/state.json` when present, otherwise `.agents/skills/vibe/state.json`. Only absence means `idle`; report a present invalid cursor. Resume the linked `vibe` skill.
+1. Read the spec root's `lessons.md` and `plan.md` when present. A flow-only install has no spec tree.
+2. Read the active design and plan in `docs/superpowers/`; fallback: `docs/spec/features/<name>/`.
+3. Read `.vibe/run/flow/state.json` first; otherwise use the supported legacy cursor. Only absence means idle. Adopted v2 state never falls back to legacy after corruption or removal. Load `flow` and its current orders; report corrupt state for explicit recovery.
 ## Working model
-`design → plan →[gate] impl → verify →[gate] compound`
-Most transitions auto-advance. Two edges are **human gates**: get explicit
-approval before crossing: plan → impl, and verify → ship. Other edges need no pause.
-`/flow <flow.phase> [feature] [confirm]` carries the feature; literal `confirm`
-crosses a gated edge. Never hand-edit `state.json`. The underlying command is
-`bash .agents/skills/vibe/scripts/set-state.sh <flow.phase> [feature]`.
-Gates are a convention today: `/flow` asks for a `confirm` token, and no hook or script checks it.
-`set-state.sh` writes the cursor; it does not gate. No hook enforces the two approvals; honor them yourself.
-## Precedence and policy
-The cursor owns sequencing and artifact destinations; delegated skills own method. Follow current-state orders from the linked `vibe` skill, resolved by `orders.sh`,
-over delegated prose or artifact paths. Scope edits stay in the current state's
-write surface. Transition only via `set-state.sh`; `set-state.sh idle` always aborts.
-Restricted paths and states are data in `content/policy.json`, enforced by
-`detect-context.sh decide` and rendered rule-by-rule below. Absent cursor means idle.
-Standing blocks compose the per-turn prompt, session start and `vibe:rules` channels. Configure them in root `vibe.json`; edit blocks/config, never generated regions.
+`design → plan →[gate] impl → compound → verify →[gate] ship`
+Get explicit approval before crossing: plan → impl, and verify → ship.
+Freeze approved design/plan; keep progress in runtime records. Workers receive
+bounded scopes/checks and return results; the controller owns state and independent review.
+Compound prepares additive docs and lessons before final checks. Preserve feature artifacts.
+Never infer permission to commit, push, merge, release, delete artifacts or clean up.
+## Runtime and policy
+Gates are a convention today for legacy v1: `set-state.sh` writes the cursor; it does not gate.
+Explicit v2 adoption enables legal-edge/revision checks and immutable records.
+Use `vibe-flow state transition` for adopted runs; legacy writers refuse them.
+Production trusted approval/evidence checks remain unavailable/deny. A `confirm`
+token, hook registration or model-written receipt proves neither human origin nor readiness.
+Follow current-state orders from `flow`; delegates supply bounded methods.
+Never hand-edit state. Explicit abort is not completion or ship authorization.
+Restricted paths are data in `content/policy.json`; inspect `detect-context.sh decide` before writes.
+Edit blocks/config, not generated regions. Standing prompt/rules channels use root `vibe.json`.
 ## Commands
 ```bash
 vibe-spec validate # before claiming done; absent on --only flow
-bash .agents/skills/vibe/scripts/detect-context.sh decide <path> # before writes
-bash .agents/skills/vibe/scripts/doctor.sh
-node .agents/skills/vibe/engine/cli.mjs render --list
-node .agents/skills/vibe/engine/cli.mjs render --check
-node .agents/skills/vibe/engine/cli.mjs render agents-md --write
+bash .agents/skills/flow/scripts/detect-context.sh decide <path>
+bash .agents/skills/flow/scripts/doctor.sh
+node .agents/skills/flow/engine/cli.mjs render --check
+node .agents/skills/flow/engine/cli.mjs render agents-md --write
 ```
-## Enforcement is partial — do not trust it blindly
-The guard intercepts only `Edit`, `Write`, `MultiEdit`, and `NotebookEdit`.
-Shell redirection (`>`, `tee`, `sed -i`) bypasses it; a warn-only Bash sniffer backs the convention. No hook enforces either human approval. The Stop receipt
-tooth requires fresh evidence in verify only when platform hooks are wired
-(e.g. `.claude/settings.json`). No wiring, no tooth.
-Scripts graceful-degrade; `jq` is optional (pure bash keeps cursor bytes identical).
-Other agents may edit concurrently: touch only your own files; prefer warn over hard-fail.
-**Output: brief technical English** — answer first, one idea per sentence, active voice, no filler. Compress receipts/summaries; keep security warnings, irreversible-action
-confirmations, code, paths and commands full and byte-exact.
+## Enforcement limits
+Legacy edit guards and receipt freshness do not cover every shell, interactive
+input or subagent action. Native complete blocking is unverified for Claude Code,
+OpenCode and Codex. Strong checks stay unavailable/deny; configured hooks are not proof.
+Task results and command-output metadata remain claims until independently checked.
+Candidate changes require fresh final verification/review and approval of the named action.
+**Output: brief technical English** — answer first, one idea per sentence. Keep security warnings,
+irreversible-action confirmations, code, paths and commands byte-exact.
 <!-- vibe:instructions:end -->
 
 <!-- vibe:active-rules:start -->
@@ -54,7 +53,7 @@ _No lessons recorded yet._
 <!-- vibe:active-rules:end -->
 
 <!-- vibe:rules -->
-_Managed by vibe — rendered from the `agents-md` channel by `node .agents/skills/vibe/engine/cli.mjs render agents-md --write`. Edit the blocks or `vibe.json`, not this region._
+_Managed by vibe — rendered from the `agents-md` channel by `node .agents/skills/flow/engine/cli.mjs render agents-md --write`. Edit the blocks or `vibe.json`, not this region._
 
 ## Write invariants
 
@@ -63,7 +62,7 @@ list below is RENDERED from that file — the same data
 `detect-context.sh decide` enforces — so the prose and the enforcer cannot
 disagree. Edit the rules, never this text.
 
-- `.vibe/run/flow/state.json`, `.agents/skills/vibe/state.json`, `.agents/flow/state.json` — otherwise: block — state.json is written only via set-state.sh, never by direct edit
+- `.vibe/run/flow/state.json`, `.agents/skills/flow/state.json`, `.agents/skills/vibe/state.json`, `.agents/flow/state.json` — otherwise: block — state.json is written only via set-state.sh, never by direct edit
 - `.spec/lessons.md` — `feature.compound`, `setup.apply`, `strategy.spec`, `quick.verify`: allow; otherwise: block — .spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: the current state)
 - `docs/spec/lessons.md` — `feature.compound`, `setup.apply`, `strategy.spec`, `quick.verify`: allow; otherwise: block — docs/spec/lessons.md is writable only during feature.compound, setup.apply, strategy.spec, or quick.verify (current: the current state)
 - `.spec/product.md`, `.spec/tech.md`, `.spec/design.md`, `.spec/plan.md` — `strategy.spec`, `feature.compound`, `setup.apply`: allow; otherwise: block — root .spec specs are writable only during strategy.spec, feature.compound, or setup.apply (current: the current state)
@@ -78,33 +77,29 @@ disagree. Edit the rules, never this text.
 Check a path before writing it:
 
 ```bash
-bash .agents/skills/vibe/scripts/detect-context.sh decide <path>
+bash .agents/skills/flow/scripts/detect-context.sh decide <path>
 ```
 
 ## Delegating to sub-agents
 
-Model tiers for ANY delegated work — Agent-tool calls and Workflow-script `agent()`
-calls alike. Set the `model` parameter explicitly on every call; never omit it
-(omission silently inherits the session model):
+Choose the needed capability before its provider or model. Apply controlling user
+and repository model preferences. Set an allowed available model explicitly for
+all delegated work; do not infer one from the role name. Report unavailable
+required capabilities instead of silently substituting a forbidden model.
 
-- `haiku` — mechanical bulk work: renames, boilerplate, format conversion, log triage.
-- `sonnet` — default for well-specified implementation, exploration and per-task review.
-- `opus` — architecture, adversarial or final review, genuinely tricky work:
-  concurrency, subtle algorithms, gnarly debugging.
+Workers receive exact scope, dependencies and checks. The controller owns state,
+progress, gate decisions and independent review. A worker returns checked-result
+claims; it cannot widen scope, approve itself, commit, clean or finish a branch.
 
-When unsure between tiers, pick the cheaper and escalate on failure.
+## Coordinating independent work
 
-## Dynamic workflows (Workflow tool)
+Use the host's available orchestration only when authorized by the controlling
+instructions. If orchestration requires opt-in, propose its scope and cost and
+wait for the user's reply. A workflow tool is optional; it does not replace the
+controller, authorization gates or independent review.
 
-Applies to ALL sessions, any model. Dynamic workflows do not need to be avoided —
-reach for the Workflow tool when a task has 3+ independent parallelizable subtasks or
-would benefit from a pipeline/judge panel.
-
-Opt-in: unless your human partner already asked for orchestration in their own words,
-plan first — propose the workflow in one or two sentences with the rough shape and
-cost, and wait for their reply; their "yes" is the opt-in.
-
-**Agent models inside workflow scripts:** every `agent()` call MUST set the `model`
-parameter explicitly, chosen per "Delegating to sub-agents" above. Only `haiku`,
-`sonnet`, or `opus`.
+Parallelize independent work on disjoint files when permitted. Serialize shared
+files and dependent tasks. Supply the same bounded TaskBrief and TaskResult
+contract to native named agents or generic agents. Preserve controlling model
+preferences on every dispatch. Missing required independent review blocks readiness.
 <!-- /vibe:rules -->

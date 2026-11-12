@@ -5,7 +5,7 @@
 // every parity assertion spawns a COPY of the real script (byte-identical,
 // via copyFileSync) inside a throwaway sandbox laid out as
 // <sandbox>/flow/{scripts/orders.sh, state.json, state-machine.json} plus
-// <sandbox>/.agents/skills/vibe/SKILL.md and a <sandbox>/.spec marker — the
+// <sandbox>/.agents/skills/flow/SKILL.md and a <sandbox>/.spec marker — the
 // exact SCRIPT_DIR/SKILL_DIR-relative + marker-search layout the script
 // resolves against (see orders.sh's own SKILLS_DIR comment) — so its
 // self-resolution runs for real, against sandbox files, and never touches
@@ -38,7 +38,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const ORACLE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'orders.sh');
 const REAL_SKILL_MD = readFileSync(path.join(REPO_ROOT, 'flow', 'SKILL.md'), 'utf8');
 const GENERIC_FALLBACK =
-  'state=unknown · read .agents/skills/vibe/state-machine.json and pick the matching vibe phase · transition via set-state.sh';
+  'state=unknown · read .agents/skills/flow/state-machine.json and pick the matching vibe phase · transition via set-state.sh';
 
 // Whether this runner has jq. orders.sh's no-jq degrade path is DESIGNED to
 // be byte-identical to the jq path (see flow/tests/run.sh's own no-jq parity
@@ -53,7 +53,7 @@ const JQ_PRESENT = runCommand('bash', ['-c', 'command -v jq >/dev/null 2>&1']).c
 
 // ---------------------------------------------------------------------------
 // Oracle sandbox — a copy of orders.sh plus its own flow/ cursor+machine and
-// .agents/skills/vibe/SKILL.md, never the real ones.
+// .agents/skills/flow/SKILL.md, never the real ones.
 // ---------------------------------------------------------------------------
 
 function makeOrdersSandbox({ cursor, skillMd = REAL_SKILL_MD, includeSkillFile = true } = {}) {
@@ -64,7 +64,7 @@ function makeOrdersSandbox({ cursor, skillMd = REAL_SKILL_MD, includeSkillFile =
   copyFileSync(ORACLE_SRC, scriptPath);
 
   const skillsDir = path.join(sandbox.dir, '.agents', 'skills');
-  const vibeSkillDir = path.join(skillsDir, 'vibe');
+  const vibeSkillDir = path.join(skillsDir, 'flow');
   mkdirSync(vibeSkillDir, { recursive: true });
   symlinkSync('../flow', path.join(sandbox.dir, '.agents', 'flow'));
   if (includeSkillFile) {
@@ -87,14 +87,14 @@ function runEngine(sandbox, args = []) {
 // so every skill-owning block's <feature> interpolation is exercised too.
 // ---------------------------------------------------------------------------
 
-test('parity: all 13 machine states resolve byte-identical orders (explicit arg)', () => {
+test('parity: all 14 machine states resolve byte-identical orders (explicit arg)', () => {
   const sandbox = makeOrdersSandbox({
     cursor: { flow: 'idle', phase: 'idle', feature: 'widget', updated: '2026-01-01T00:00:00Z' },
   });
   try {
     const machine = loadMachine(sandbox.flowDir);
     const states = Object.keys(machine.states);
-    assertEqual(states.length, 13, `expected 13 machine states, got ${states.length}: ${states.join(', ')}`);
+    assertEqual(states.length, 14, `expected 14 machine states, got ${states.length}: ${states.join(', ')}`);
 
     for (const state of states) {
       const oracleResult = runOracle(sandbox.scriptPath, [state]);
@@ -134,7 +134,7 @@ test('parity: current-state resolution from the cursor (no explicit arg) matches
     const engineResult = runEngine(sandbox, []);
     assertEqual(engineResult.stdout, oracleResult.stdout);
     assertIncludes(engineResult.stdout, 'feature-widget.md', 'feature interpolated into the receipt path');
-    assertMatch(engineResult.stdout, /^skill=vibe/, 'feature.verify resolves through the vibe skill block');
+    assertMatch(engineResult.stdout, /^skill=flow/, 'feature.verify resolves through the vibe skill block');
   } finally {
     sandbox.cleanup();
   }
@@ -156,13 +156,16 @@ test('parity: explicit arg overrides the cursor state, feature still comes from 
 
 test('parity: <feature> interpolation replaces every occurrence, no leftover placeholder', () => {
   const sandbox = makeOrdersSandbox({
+    // Task 8: compressed plan orders need no feature path. Supply two actual
+    // placeholders so this interpolation test cannot pass without exercising it.
+    skillMd: '<!-- vibe:orders:feature.plan -->\nplan <feature>.md; review <feature>.md\n<!-- /vibe:orders -->\n',
     cursor: { flow: 'feature', phase: 'plan', feature: 'demo', updated: '2026-01-01T00:00:00Z' },
   });
   try {
     const oracleResult = runOracle(sandbox.scriptPath, ['feature.plan']);
     const engineResult = runEngine(sandbox, ['feature.plan']);
     assertEqual(engineResult.stdout, oracleResult.stdout);
-    assertIncludes(engineResult.stdout, 'demo.md');
+    assertEqual(engineResult.stdout, 'plan demo.md; review demo.md\n');
     assert(!engineResult.stdout.includes('<feature>'), 'no literal placeholder should survive interpolation');
   } finally {
     sandbox.cleanup();
@@ -320,7 +323,7 @@ test('parity: corrupt cursor with an explicit state arg still resolves that stat
     const oracleResult = runOracle(sandbox.scriptPath, ['quick.triage']);
     const engineResult = runEngine(sandbox, ['quick.triage']);
     assertEqual(engineResult.stdout, oracleResult.stdout);
-    assertMatch(engineResult.stdout, /^skill=vibe/);
+    assertMatch(engineResult.stdout, /^skill=flow/);
   } finally {
     sandbox.cleanup();
   }
@@ -341,7 +344,7 @@ test('feature interpolation survives quotes, backslashes, and non-ASCII characte
   try {
     const engineResult = runEngine(sandbox, ['feature.verify']);
     assertEqual(engineResult.code, 0);
-    assertMatch(engineResult.stdout, /^skill=vibe/);
+    assertMatch(engineResult.stdout, /^skill=flow/);
     assert(
       engineResult.stdout.includes(`feature-${tricky}.md`),
       `expected interpolated feature receipt in: ${JSON.stringify(engineResult.stdout)}`,
@@ -376,7 +379,7 @@ test('parity: a state linking a non-"vibe" skill resolves through THAT skill, no
   });
   try {
     const machine = JSON.parse(readFileSync(sandbox.machinePath, 'utf8'));
-    assertEqual(machine.states['quick.fix'].skill, 'vibe', 'sanity: this state really does start out linked to vibe');
+    assertEqual(machine.states['quick.fix'].skill, 'flow', 'sanity: this state really does start out linked to vibe');
     machine.states['quick.fix'].skill = 'spec';
     writeFileSync(sandbox.machinePath, `${JSON.stringify(machine, null, 2)}\n`);
 
@@ -395,7 +398,7 @@ test('parity: a state linking a non-"vibe" skill resolves through THAT skill, no
       `expected the engine to follow the mutated skill link to spec/SKILL.md, got: ${JSON.stringify(engineResult.stdout)}`,
     );
     assert(
-      !engineResult.stdout.startsWith('skill=vibe'),
+      !engineResult.stdout.startsWith('skill=flow'),
       'a hardcoded "vibe" lookup (the forbidden oracle no-jq shortcut) would wrongly resolve the vibe skill\'s own quick.fix block instead',
     );
 
@@ -472,7 +475,7 @@ test('runOrders never throws: args is null (Finding 3)', () => {
     }
     assert(!threw, 'runOrders must not throw when args is null');
     assertEqual(result.code, 0);
-    assertMatch(result.stdout, /^skill=vibe/, 'falls back to the cursor state (quick.triage) when args carries no override');
+    assertMatch(result.stdout, /^skill=flow/, 'falls back to the cursor state (quick.triage) when args carries no override');
   } finally {
     sandbox.cleanup();
   }
@@ -540,7 +543,7 @@ test('runOrders never throws: vibeDir is undefined (Finding 4)', () => {
 
 test('CLI: `vibe orders` on a fresh non-git install-layout fixture returns idle orders, not state=unknown', () => {
   const installRoot = mkdtempSync(path.join(tmpdir(), 'vibe-orders-cli-install-'));
-  const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
+  const vibeDir = path.join(installRoot, '.agents', 'skills', 'flow');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
   symlinkSync('skills/vibe', path.join(installRoot, '.agents', 'flow'));
@@ -581,7 +584,7 @@ test('CLI: `vibe orders` on a fresh non-git install-layout fixture returns idle 
 
 test('CLI: `vibe orders` with an explicit state arg on the install-layout fixture resolves that skill block', () => {
   const installRoot = mkdtempSync(path.join(tmpdir(), 'vibe-orders-cli-arg-'));
-  const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
+  const vibeDir = path.join(installRoot, '.agents', 'skills', 'flow');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
   symlinkSync('skills/vibe', path.join(installRoot, '.agents', 'flow'));
@@ -606,7 +609,9 @@ test('CLI: `vibe orders` with an explicit state arg on the install-layout fixtur
       { cwd: unrelatedCwd },
     );
     assertEqual(result.code, 0, `stderr: ${result.stderr}`);
-    assertMatch(result.stdout, /^skill=vibe · read lessons\.md/);
+    assertMatch(result.stdout, /^skill=flow · read procedures\/quick\.md/);
+    assertIncludes(result.stdout, 'done → quick.fix');
+    assertIncludes(result.stdout, '≤2 files/20 changed lines/no contract change');
   } finally {
     rmSync(installRoot, { recursive: true, force: true });
     rmSync(unrelatedCwd, { recursive: true, force: true });

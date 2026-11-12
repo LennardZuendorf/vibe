@@ -54,6 +54,9 @@ fn idle() -> Cursor {
 
 /// Reads the cursor. `Err` names the malformed file and the reason.
 pub fn read_cursor(paths: &FlowPaths) -> Result<Cursor, String> {
+    if crate::runtime::adoption_records_present(paths)? {
+        crate::runtime::read(paths)?;
+    }
     let new_path = paths.cursor_path();
     for path in [&new_path, &paths.legacy_cursor_path()] {
         if regular_file_absent(path).map_err(|reason| malformed(path, &reason))? {
@@ -98,6 +101,9 @@ fn malformed(path: &Path, reason: &str) -> String {
 fn parse(path: &Path, bytes: &[u8]) -> Result<Cursor, String> {
     let raw: Value =
         serde_json::from_slice(bytes).map_err(|err| malformed(path, &err.to_string()))?;
+    if raw.get("v").is_some() {
+        crate::runtime::validate(&raw).map_err(|e| malformed(path, &e))?;
+    }
     let Some(object) = raw.as_object() else {
         return Err(malformed(path, "top-level JSON value is not an object"));
     };
@@ -129,6 +135,7 @@ pub fn write_cursor(
     phase: &str,
     feature: &Value,
 ) -> Result<(), String> {
+    let (_held, lock_path) = crate::runtime::legacy_lock(paths)?;
     let path = paths.cursor_path();
     constrain_cursor_path(paths.root(), &path)?;
     if let Some(dir) = path.parent() {
@@ -144,11 +151,12 @@ pub fn write_cursor(
         feature_json,
         now_utc_seconds()
     );
+    vibe_core::lock::verify_path(&lock_path)?;
     write_atomic(&path, body.as_bytes()).map_err(|err| err.to_string())
 }
 
 // Resolve existing ancestors before creating anything; a dangling link fails closed.
-fn constrain_cursor_path(root: &Path, path: &Path) -> Result<(), String> {
+pub(crate) fn constrain_cursor_path(root: &Path, path: &Path) -> Result<(), String> {
     let root = std::fs::canonicalize(root).map_err(|err| err.to_string())?;
     let mut existing = path;
     loop {

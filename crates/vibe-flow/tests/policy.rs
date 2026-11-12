@@ -1,7 +1,7 @@
 // vibe-spec: literal-file
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Policy parity: the shipped policy as a pinned fixture, a matrix over every
-//! rule, all 13 machine states and the path spellings, and one mutation per
+//! rule, all 14 machine states and the path spellings, and one mutation per
 //! rule class (each mutation must move a verdict, or the test fails).
 //!
 //! The fixture (`fixtures/policy.json`) is the shipped policy with every
@@ -120,7 +120,7 @@ fn the_fixture_reconstructs_the_shipped_policy_byte_for_byte() {
 fn the_matrix_covers_every_rule_every_state_and_every_spelling() {
     let machine = shipped_machine();
     let states = machine.state_keys();
-    assert_eq!(states.len(), 13);
+    assert_eq!(states.len(), 14);
 
     let text = fixture_text();
     let loaded = load(&text, "matrix");
@@ -137,7 +137,7 @@ fn the_matrix_covers_every_rule_every_state_and_every_spelling() {
     for (index, raw_rule) in raw_rules.iter().enumerate() {
         let rule = &loaded.policy.rules[index];
         let expected = expected_verdicts(raw_rule, &states);
-        assert_eq!(expected.len(), 13);
+        assert_eq!(expected.len(), 14);
         for pattern in &rule.patterns {
             patterns += 1;
             let path = canonical(pattern);
@@ -167,9 +167,9 @@ fn the_matrix_covers_every_rule_every_state_and_every_spelling() {
             }
         }
     }
-    assert_eq!(patterns, 21);
-    assert_eq!(cases, 21 * 13);
-    assert_eq!(spelled, 21 * 13 * 7);
+    assert_eq!(patterns, 22);
+    assert_eq!(cases, 22 * 14);
+    assert_eq!(spelled, 22 * 14 * 7);
 }
 
 #[test]

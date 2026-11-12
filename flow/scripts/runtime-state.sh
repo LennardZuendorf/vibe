@@ -69,3 +69,19 @@ runtime_check_write() {
     [[ -e "$target" || -L "$target" ]] || return 1
   done
 }
+
+# Exactly one JSON object is required to classify persisted cursor metadata.
+# Unknown integrity/parser availability never proves an unadopted cursor.
+runtime_cursor_kind() {
+  local file="$1" kind=""
+  if [[ ! -e "$file" && ! -L "$file" ]]; then printf 'absent\n'; return; fi
+  if [[ ! -f "$file" || -L "$file" ]]; then printf 'invalid\n'; return; fi
+  if command -v node >/dev/null 2>&1; then
+    kind="$(node -e 'const fs=require("node:fs");let v;try{v=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));}catch{console.log("invalid");process.exit(0);}console.log(v===null||typeof v!=="object"||Array.isArray(v)?"invalid":Object.hasOwn(v,"v")?"versioned":"legacy");' "$file" 2>/dev/null)" || kind=invalid
+  elif command -v jq >/dev/null 2>&1; then
+    kind="$(jq -sr 'if length != 1 or (.[0] | type) != "object" then "invalid" elif (.[0] | has("v")) then "versioned" else "legacy" end' "$file" 2>/dev/null)" || kind=invalid
+  else
+    kind=unavailable
+  fi
+  case "$kind" in absent|invalid|versioned|legacy|unavailable) printf '%s\n' "$kind" ;; *) printf 'invalid\n' ;; esac
+}

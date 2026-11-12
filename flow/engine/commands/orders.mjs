@@ -29,7 +29,7 @@ import { loadMachine, stateOf } from '../machine.mjs';
 import { extractBlock } from '../blocks.mjs';
 
 const GENERIC_FALLBACK =
-  'state=unknown · read .agents/skills/vibe/state-machine.json and pick the matching vibe phase · transition via set-state.sh';
+  'state=unknown · read .agents/skills/flow/state-machine.json and pick the matching vibe phase · transition via set-state.sh';
 
 function line(s) {
   return `${s}\n`;

@@ -212,7 +212,7 @@ for _f in "$_rd" "$_ag"; do
   sd_absent "skill-revision/11" "$_f" 'needs only' 'zero runtime' 'no build step' 'offered not required' 'validate.sh'
   if grep -qE 'becomes.*v0\.4|v0\.4.*becomes' "$_f"; then fail "skill-revision/11" "$_f still says it becomes something in v0.4"; else pass "skill-revision/11" "$_f has no future-v0.4 roadmap"; fi
 done
-sd_present "skill-revision/11" "$_rd" 'vibe-spec' 'using-spec' 'hooks/' 'agents/' 'docs/superpowers' 'layered' \
+sd_present "skill-revision/11" "$_rd" 'vibe-spec' 'session-start' 'hooks/' 'agents/' 'docs/superpowers' 'layered' \
   'legacy (flat root only)'
 if grep -E '^\|.*scripts/' "$_rd" | grep -qF 'legacy (flat root only)'; then
   pass "skill-revision/11" "README marks scripts/ legacy (flat root only)"

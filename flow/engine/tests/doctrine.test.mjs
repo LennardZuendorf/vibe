@@ -5,14 +5,14 @@
 // output: every parity assertion spawns a COPY of the real script
 // (byte-identical, via copyFileSync) inside a throwaway sandbox laid out as
 // <sandbox>/flow/{scripts/doctrine.sh, state.json, state-machine.json} plus
-// <sandbox>/.agents/skills/vibe/SKILL.md and a <sandbox>/.spec marker — the
+// <sandbox>/.agents/skills/flow/SKILL.md and a <sandbox>/.spec marker — the
 // same SCRIPT_DIR/SKILL_DIR-relative + marker-search layout
 // orders.test.mjs's sandbox uses (doctrine.sh's self-location logic is
 // byte-identical to orders.sh's) — so its self-resolution runs for real,
 // against sandbox files, and never touches this repo's live flow/state.json.
 //
 // CLAUDE_PROJECT_DIR is ambient in every Claude Code session, and this
-// repo's own .agents/skills/vibe is a real symlink to flow/ — so an
+// repo's own .agents/skills/flow is a real symlink to flow/ — so an
 // unneutralised CLAUDE_PROJECT_DIR=<this repo> would make doctrine's own
 // precedence rule (see doctrine.mjs) silently redirect the cursor read to
 // this repo's LIVE flow/state.json instead of the sandbox fixture (review
@@ -44,6 +44,7 @@ import { runDoctrine } from '../commands/doctrine.mjs';
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const ORACLE_SRC = path.join(REPO_ROOT, 'flow', 'scripts', 'doctrine.sh');
 const REAL_SKILL_MD = readFileSync(path.join(REPO_ROOT, 'flow', 'SKILL.md'), 'utf8');
+const REAL_DOCTRINE = REAL_SKILL_MD.match(/<!-- vibe:doctrine -->\n([\s\S]*?)<!-- \/vibe:doctrine -->/)[1];
 
 // The oracle's no-jq degrade path sed-extracts `.feature` only when it is a
 // QUOTED string on its own line — a bare number or a multi-line object
@@ -55,7 +56,7 @@ const JQ_PRESENT = runCommand('bash', ['-c', 'command -v jq >/dev/null 2>&1']).c
 
 // ---------------------------------------------------------------------------
 // Oracle sandbox — a copy of doctrine.sh plus its own flow/ cursor+machine
-// and .agents/skills/vibe/SKILL.md, never the real ones.
+// and .agents/skills/flow/SKILL.md, never the real ones.
 // ---------------------------------------------------------------------------
 
 function makeDoctrineSandbox({ cursor, skillMd = REAL_SKILL_MD, includeSkillFile = true } = {}) {
@@ -66,7 +67,7 @@ function makeDoctrineSandbox({ cursor, skillMd = REAL_SKILL_MD, includeSkillFile
   copyFileSync(ORACLE_SRC, scriptPath);
 
   const skillsDir = path.join(sandbox.dir, '.agents', 'skills');
-  const vibeSkillDir = path.join(skillsDir, 'vibe');
+  const vibeSkillDir = path.join(skillsDir, 'flow');
   mkdirSync(vibeSkillDir, { recursive: true });
   if (includeSkillFile) {
     writeFileSync(path.join(vibeSkillDir, 'SKILL.md'), skillMd);
@@ -125,8 +126,8 @@ test('parity: doctrine block emitted verbatim, and NO cursor line follows it', (
       assertIncludes(engineResult.stdout, '.vibe/run/flow/state.json', 'doctrine names the runtime cursor');
       assertIncludes(engineResult.stdout, 'vibe-flow state set', 'doctrine names the canonical writer');
       assertIncludes(engineResult.stdout, 'vibe-flow policy decide', 'doctrine names the policy command');
-      assert(!engineResult.stdout.includes('Cursor:'), 'SessionStart output must not carry the cursor — it replays stale on --resume');
-      assert(!oracleResult.stdout.includes('Cursor:'), 'oracle sanity: the bash side dropped the same line');
+      assertEqual(engineResult.stdout, REAL_DOCTRINE, 'static cursor-path guidance is allowed; no live cursor summary follows the authored block');
+      assertEqual(oracleResult.stdout, REAL_DOCTRINE, 'oracle emits only the same static doctrine');
     });
   } finally {
     sandbox.cleanup();
@@ -140,8 +141,8 @@ test('parity: doctrine block emitted verbatim, and NO cursor line follows it', (
 test('parity: the payload is identical for every cursor, present, absent or corrupt', () => {
   const cursors = [
     { flow: 'idle', phase: 'idle', feature: null, updated: '2026-01-01T00:00:00Z' },
-    { flow: 'feature', phase: 'impl', feature: 'widget', updated: '2026-01-01T00:00:00Z' },
-    { flow: 'quick', phase: 'verify', feature: 'other', updated: '2026-01-01T00:00:00Z' },
+    { flow: 'feature', phase: 'impl', feature: 'doctrine-feature-widget', updated: '2026-01-01T00:00:00Z' },
+    { flow: 'quick', phase: 'verify', feature: 'doctrine-feature-other', updated: '2026-01-01T00:00:00Z' },
   ];
   const outputs = [];
   for (const cursor of cursors) {
@@ -175,9 +176,11 @@ test('parity: the payload is identical for every cursor, present, absent or corr
       sandbox.cleanup();
     }
   }
+  assertEqual(outputs.length, 5, 'exercise three live states plus absent and corrupt cursors');
   assert(outputs[0].length > 200, 'sanity: there is a payload to compare');
   for (const out of outputs) {
     assertEqual(out, outputs[0], 'the cursor must not reach SessionStart output by any route');
+    assert(!out.includes('doctrine-feature-widget') && !out.includes('doctrine-feature-other'), 'live feature names must not leak into static doctrine');
   }
 });
 
@@ -335,7 +338,7 @@ test('parity: a CLAUDE_PROJECT_DIR cursor changes nothing — the env var no lon
   });
   const projectDir = mkdtempSync(path.join(tmpdir(), 'vibe-doctrine-project-'));
   try {
-    const projectVibeDir = path.join(projectDir, '.agents', 'skills', 'vibe');
+    const projectVibeDir = path.join(projectDir, '.agents', 'skills', 'flow');
     mkdirSync(projectVibeDir, { recursive: true });
     writeFileSync(
       path.join(projectVibeDir, 'state.json'),
@@ -366,7 +369,7 @@ test('parity: a CLAUDE_PROJECT_DIR cursor changes nothing — the env var no lon
 
 test('CLI: the doctrine block follows the installed skill (self-relative), and no cursor rides along', () => {
   const installRoot = mkdtempSync(path.join(tmpdir(), 'vibe-doctrine-cli-install-'));
-  const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
+  const vibeDir = path.join(installRoot, '.agents', 'skills', 'flow');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
   cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {
@@ -386,7 +389,7 @@ test('CLI: the doctrine block follows the installed skill (self-relative), and n
   );
 
   const projectDir = mkdtempSync(path.join(tmpdir(), 'vibe-doctrine-cli-project-'));
-  const projectVibeDir = path.join(projectDir, '.agents', 'skills', 'vibe');
+  const projectVibeDir = path.join(projectDir, '.agents', 'skills', 'flow');
   mkdirSync(projectVibeDir, { recursive: true });
   writeFileSync(
     path.join(projectVibeDir, 'state.json'),
@@ -420,10 +423,10 @@ test('CLI: the doctrine block follows the installed skill (self-relative), and n
 
 // ---------------------------------------------------------------------------
 // The PLUGIN layout specifically (review round 1, Finding 2): engine at
-// <PLUGIN_ROOT>/skills/vibe/engine — NOT nested under .agents/skills/vibe —
+// <PLUGIN_ROOT>/skills/flow/engine — NOT nested under .agents/skills/flow —
 // which is the real shape build-plugin.sh ships (see
 // plugin/hooks/session-start.sh's own
-// `${CLAUDE_PLUGIN_ROOT}/skills/vibe/scripts/doctrine.sh`). Before the
+// `${CLAUDE_PLUGIN_ROOT}/skills/flow/scripts/doctrine.sh`). Before the
 // root.mjs fix, resolveVibeDir()'s self-relative check only recognized the
 // vendored 3-level chain, so this layout fell through to the
 // CLAUDE_PROJECT_DIR-honouring fallback and printed the WRONG (project's)
@@ -434,7 +437,7 @@ test('CLI: the doctrine block follows the installed skill (self-relative), and n
 
 function buildPluginDoctrineFixture() {
   const pluginRoot = mkdtempSync(path.join(tmpdir(), 'vibe-doctrine-plugin-'));
-  const vibeDir = path.join(pluginRoot, 'skills', 'vibe');
+  const vibeDir = path.join(pluginRoot, 'skills', 'flow');
   const scriptsDir = path.join(vibeDir, 'scripts');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(scriptsDir, { recursive: true });
@@ -453,7 +456,7 @@ function buildPluginDoctrineFixture() {
 test('parity: plugin layout (skills/vibe/engine) — project has its own SKILL.md, plugin doctrine still wins on both sides', () => {
   const { pluginRoot, vibeDir, scriptsDir, engineDir } = buildPluginDoctrineFixture();
   const projectDir = mkdtempSync(path.join(tmpdir(), 'vibe-doctrine-plugin-project-'));
-  const projectVibeDir = path.join(projectDir, '.agents', 'skills', 'vibe');
+  const projectVibeDir = path.join(projectDir, '.agents', 'skills', 'flow');
   mkdirSync(projectVibeDir, { recursive: true });
   writeFileSync(
     path.join(projectVibeDir, 'SKILL.md'),
@@ -492,7 +495,7 @@ test('parity: plugin layout (skills/vibe/engine) — project has its own SKILL.m
 test('parity: plugin layout — project has NO SKILL.md at all, plugin doctrine still prints (not silence) on both sides', () => {
   const { pluginRoot, vibeDir, scriptsDir, engineDir } = buildPluginDoctrineFixture();
   const projectDir = mkdtempSync(path.join(tmpdir(), 'vibe-doctrine-plugin-project-nomd-'));
-  const projectVibeDir = path.join(projectDir, '.agents', 'skills', 'vibe');
+  const projectVibeDir = path.join(projectDir, '.agents', 'skills', 'flow');
   mkdirSync(projectVibeDir, { recursive: true });
   // Deliberately NO SKILL.md under the project's vibe dir — this is the
   // exact case the reviewer flagged as going silently empty pre-fix.
@@ -555,7 +558,7 @@ for (const [label, arg] of [['undefined', undefined], ['null', null], ['a number
 
 test('CLI: `vibe doctrine` on a fresh non-git install-layout fixture emits the block, and only the block', () => {
   const installRoot = mkdtempSync(path.join(tmpdir(), 'vibe-doctrine-cli-fresh-'));
-  const vibeDir = path.join(installRoot, '.agents', 'skills', 'vibe');
+  const vibeDir = path.join(installRoot, '.agents', 'skills', 'flow');
   const engineDir = path.join(vibeDir, 'engine');
   mkdirSync(vibeDir, { recursive: true });
   cpSync(path.join(REPO_ROOT, 'flow', 'engine'), engineDir, {
@@ -576,7 +579,7 @@ test('CLI: `vibe doctrine` on a fresh non-git install-layout fixture emits the b
     });
     assertEqual(result.code, 0, `stderr: ${result.stderr}`);
     assertMatch(result.stdout, /^vibe flow — working model\./);
-    assert(!result.stdout.includes('Cursor:'), 'no cursor line, even on an install with no cursor to name');
+    assertEqual(result.stdout, REAL_DOCTRINE, 'fresh installs emit only the authored static block, including its cursor-path guidance');
   } finally {
     rmSync(installRoot, { recursive: true, force: true });
     rmSync(unrelatedCwd, { recursive: true, force: true });

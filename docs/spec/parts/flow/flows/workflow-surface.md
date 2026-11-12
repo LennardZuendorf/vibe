@@ -1,42 +1,45 @@
 ---
 type: flow
-updated: 2026-10-24
+updated: 2026-11-11
 ---
 
 # Workflow Surface
 
-The primary user-facing workflow is the `flow` skill in one `SKILL.md`, whose
-state procedures and order blocks drive each flow:
+The toolkit guide is `vibe`; the workflow skill is `flow` (`vibe:flow` in a
+plugin); `spec` remains independently callable. Owned `using-spec` discovery is
+retired. Direct Flow and Spec entry do not require the toolkit guide first.
 
-| Flow | When | Main Output |
+Flow's `SKILL.md` contains discovery, routing and D12 orders. Load only the
+current procedure, relevant reference and bounded agent brief. Generic agents
+can consume those briefs when native role registration is unavailable.
+
+| Flow | Purpose | Output |
 |---|---|---|
-| `setup` | Installing or repairing the workflow harness in a project | flow's skill files, adapter files, baseline specs |
-| `strategy` | Bootstrapping or refocusing project direction | Root `product.md`/`tech.md`/`design.md`/`plan.md` |
-| `feature` | Designing and building a named feature | `docs/superpowers/specs/` design and `docs/superpowers/plans/` plan; `features/<name>/` is legacy and readable only |
-| `quick` | Small fixes and bounded maintenance | Workspace edits, optional `quick/<slug>.md` |
-| `verify` | Evidence before completion | Test/build/review findings |
-| `compound` | End-of-work consolidation | Lessons, root spec updates, branch finishing |
+| `setup` | Read-only inventory; route requested repairs through planning | Inventory or explicitly requested scaffolding |
+| `strategy` | Agree project direction; request a bounded Spec operation | Durable project knowledge |
+| `feature` | Design, plan and implement a named change | Frozen design/plan, task results, reviewed candidate |
+| `quick` | At most two files, twenty changed lines, no contract change | Bounded fix and verification |
+| `compound` | Prepare additive docs before final checks | Current docs, lessons and generated rules |
+| `verify` | Check the integrated candidate independently | Actual checks and review findings |
+| `ship` | Perform only an expressly approved named action | Action result; no implicit publication or cleanup |
 
-Adapters may expose shortcuts, but the canonical workflow lives in the `flow`
-skill's single `SKILL.md`.
-
-## Flow at a glance
-
-Everything starts at `idle`; the agent self-locates, then drives one flow
-through the `flow` skill. A scope edit is not a state: the agent edits within
-the current state's write surface and stays put.
+The controller owns sequencing and progress. Workers receive exact scope and
+checks, return TaskResult records and never approve, transition or finish work.
+External skills supply bounded methods; whole-lifecycle executors do not own
+Flow. Missing independent review blocks readiness.
 
 ```mermaid
 flowchart LR
-    I((idle)) --> SD[setup.detect] --> SA[setup.apply] --> I
-    I --> SB[strategy.brainstorm] --> SS[strategy.spec]
-    SS --> I
-    I --> FD[feature.design] --> FP[feature.plan]
-    FP -. human gate .-> FI[feature.impl] --> FV[feature.verify]
-    FV -. human gate .-> FC[feature.compound] --> I
-    FV -->|fix| FI
-    FV -->|drift| FP
+    I((idle)) --> FD[feature.design] --> FP[feature.plan]
+    FP -. approval .-> FI[feature.impl] --> FC[feature.compound]
+    FC --> FV[feature.verify] -. candidate approval .-> FS[feature.ship]
+    FS --> I
+    FV -->|findings| FI
+    FV -->|scope drift| FP
     I --> QT[quick.triage] --> QF[quick.fix] --> QV[quick.verify] --> I
-    QV -->|findings| QF
-    QT -->|scope balloons| FD
 ```
+
+The machine owns exact legal edges. v1 follows these gates by convention.
+Opt-in v2 checks legal progression; production trusted approval/evidence remain
+unavailable/deny. Native full blocking is deferred, not implied by this diagram.
+See [phase map](phase-map.md) and [contract](../concepts/flow-contract.md).

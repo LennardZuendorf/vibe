@@ -26,9 +26,29 @@ check() {
 # A hermetic PATH cannot accidentally select a real host, even on failure legs.
 for scenario in success marketplace-failure install-failure missing bad-cache; do
   probe="$WORK/$scenario"; mkdir -p "$probe/bin" "$probe/outside"
-  for tool in bash sh env git mkdir rm sed grep head tail find sort cmp tr dirname basename mktemp cat cp touch; do
+  for tool in bash sh env mkdir rm sed grep head tail find sort cmp diff tr dirname basename mktemp cat cp touch chmod ln; do
     ln -s "$(command -v "$tool")" "$probe/bin/$tool"
   done
+  # This Git double overlays the current candidate only inside a disposable
+  # clone. Host doubles read that working snapshot; no native cache/commit proof.
+  command -v git > "$probe/real-git"
+  printf '%s\n' "$ROOT" > "$probe/fixture-root"
+  cat > "$probe/bin/git" <<'GIT_FIXTURE'
+#!/usr/bin/env bash
+set -euo pipefail
+probe="$(cd "$(dirname "$0")/.." && pwd -P)"
+real_git="$(cat "$probe/real-git")"
+if [[ "${1:-}" != clone ]]; then exec "$real_git" "$@"; fi
+"$real_git" "$@" --no-hardlinks
+for target in "$@"; do :; done
+source="$(cat "$probe/fixture-root")"
+rm -rf "$target/flow" "$target/spec" "$target/skills" "$target/factory-plugin" "$target/plugins"
+cp -R "$source/flow" "$source/spec" "$source/skills" "$source/factory-plugin" "$source/plugins" "$target/"
+cp "$source/build-plugin.sh" "$target/build-plugin.sh"
+bash "$target/build-plugin.sh" >/dev/null
+printf 'fixture: current source overlay; native marketplace acceptance remains unverified\n'
+GIT_FIXTURE
+  chmod +x "$probe/bin/git"
   printf '%s\n' "$scenario" > "$probe/scenario"
   printf 'untouched\n' > "$probe/outside/sentinel"
   if [[ "$scenario" != missing ]]; then
@@ -76,7 +96,7 @@ else
   [[ "$scenario" != install-failure ]] || { echo 'Error: test install refusal' >&2; exit 1; }
   source="$(cat "$probe/source-$host")"
   version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^" ]*\)".*/\1/p' "$source/package.json" | head -n1)"
-  for pair in spec:spec using-spec:spec/using-spec vibe:flow; do
+  for pair in spec:spec flow:flow vibe:skills/vibe; do
     skill="${pair%%:*}"; canon="${pair#*:}"
     if [[ "$host" == droid ]]; then
       revision="$(git -C "$source" rev-parse --short=12 HEAD)"

@@ -347,8 +347,8 @@ fn allow_validate(cause: &str) -> (u8, Vec<u8>) {
     (0, Vec::new())
 }
 
-/// The router skill: frontmatter plus body (P4-R6).
-const USING_SPEC: &str = include_str!("../../../spec/using-spec/SKILL.md");
+/// Read-only standalone Spec context; no redundant bootstrap skill registration.
+const SPEC_CONTEXT: &str = include_str!("../../../spec/reference/session-start.md");
 
 /// Which JSON shape the host harness reads from a `SessionStart` hook.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -381,10 +381,10 @@ fn env_root() -> Option<std::ffi::OsString> {
 
 /// The skill text after its frontmatter.
 fn router_body() -> &'static str {
-    USING_SPEC
+    SPEC_CONTEXT
         .strip_prefix("---\n")
         .and_then(|rest| rest.split_once("\n---\n"))
-        .map_or(USING_SPEC, |(_, body)| body)
+        .map_or(SPEC_CONTEXT, |(_, body)| body)
         .trim()
 }
 
@@ -409,7 +409,7 @@ fn touch_marker(project: &Path) -> Result<(), String> {
         .map_err(|e| format!(".vibe/spec-session cannot be written ({e})"))
 }
 
-/// `hook session-start`: injects the `using-spec` router and, inside a
+/// `hook session-start`: injects read-only standalone Spec context and, inside a
 /// project with a spec root, touches `.vibe/spec-session`. Silent (`{}`)
 /// where no spec root exists: the router is for a repo that keeps a spec.
 /// A bad config or a missing named root still routes. Always exits 0.

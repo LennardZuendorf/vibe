@@ -20,7 +20,7 @@
 // (unit 2) are the only primitives for that.
 
 import { resolveVibeDir } from '../root.mjs';
-import { readCursor, validFeature, writeCursor } from '../cursor.mjs';
+import { readCursor, validFeature, mutateCursor } from '../cursor.mjs';
 import { loadMachine, stateOf } from '../machine.mjs';
 
 // Splits "<flow>.<phase>" on the FIRST dot only, matching the oracle's
@@ -122,6 +122,9 @@ export function runSet(vibeDir, args) {
   // silently, and goes on to write a fresh, valid cursor; degrading to
   // null here and proceeding matches that, instead of bricking the one
   // recovery path bash has.
+  let stderr = '';
+  try {
+    mutateCursor(vibeDir, () => {
   let curFeature = null;
   try {
     curFeature = readCursor(vibeDir).feature;
@@ -131,7 +134,6 @@ export function runSet(vibeDir, args) {
   // A corrupt carried feature is dropped, never re-emitted — as set-state.sh.
   // Null, absent and '' carry nothing silently; any other value that is not a
   // valid feature string (a number, a boolean, an object) warns and drops.
-  let stderr = '';
   if (curFeature !== null && curFeature !== undefined && curFeature !== '' && !validFeature(curFeature)) {
     stderr += line('vibe state: WARN: ignoring an invalid feature in the existing cursor.');
     curFeature = null;
@@ -154,8 +156,8 @@ export function runSet(vibeDir, args) {
     );
   }
 
-  try {
-    writeCursor(vibeDir, { flow, phase, feature });
+      return { flow, phase, feature };
+    });
   } catch (err) {
     return {
       code: 1,

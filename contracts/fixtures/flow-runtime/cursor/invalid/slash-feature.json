@@ -1,0 +1,13 @@
+{
+  "v": 2,
+  "flow": "feature",
+  "phase": "plan",
+  "feature": "export/2",
+  "updated": "2026-11-11T10:00:00Z",
+  "run_id": "run-1",
+  "revision": 0,
+  "plan_digest": "plan-a",
+  "scope_digest": "scope-a",
+  "task_state": {},
+  "evidence_refs": []
+}

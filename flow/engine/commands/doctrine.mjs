@@ -51,7 +51,7 @@ const SILENT = { code: 0, stdout: '', stderr: '' };
 export function runDoctrine(skillsDir) {
   if (typeof skillsDir !== 'string') return SILENT;
 
-  const skillMdPath = path.join(skillsDir, 'vibe', 'SKILL.md');
+  const skillMdPath = path.join(skillsDir, 'flow', 'SKILL.md');
   let text;
   try {
     text = fs.readFileSync(skillMdPath, 'utf8');
