@@ -176,8 +176,8 @@ fn block_line(target: Target, rel: &str) -> String {
 }
 
 /// Prints one fail-open line and allows.
-fn allow(cause: &str) -> (u8, Vec<u8>) {
-    eprintln!("vibe-spec hook guard: allowing — {cause}");
+fn allow(cx: &crate::api::Execution<'_>, cause: &str) -> (u8, Vec<u8>) {
+    diag!(cx, "vibe-spec hook guard: allowing — {cause}");
     (0, Vec::new())
 }
 
@@ -202,21 +202,26 @@ fn words(command: &str) -> Vec<&str> {
 }
 
 /// The PreToolUse tooth (P4-R3, P4-R4): `(0|2, stdout)`; stderr is printed here.
-pub fn guard(stdin: &[u8]) -> (u8, Vec<u8>) {
+pub fn guard(cx: &crate::api::Execution<'_>, stdin: &[u8]) -> (u8, Vec<u8>) {
     let payload = match parse(stdin) {
         Ok(p) => p,
-        Err(e) => return allow(&e),
+        Err(e) => return allow(cx, &e),
     };
+    match managed_context(cx, &payload.cwd) {
+        Ok(Some(context)) => return managed_guard(cx, &payload, &context),
+        Ok(None) => {}
+        Err(error) => return allow(cx, &error.to_string()),
+    }
     let tool = payload.tool.as_deref().unwrap_or("");
     let is_bash = tool == "Bash";
     if !is_bash && payload.file.is_none() {
         return (0, Vec::new());
     }
-    let found = crate::root::discover(&payload.cwd, None, env_root().as_deref());
+    let found = crate::root::discover(&payload.cwd, None, env_root(cx).as_deref());
     let root = match found {
         Ok(root) => root,
-        Err(crate::root::Miss::NotFound) => return allow("no spec root"),
-        Err(miss) => return allow(&miss.message()),
+        Err(crate::root::Miss::NotFound) => return allow(cx, "no spec root"),
+        Err(miss) => return allow(cx, &miss.message()),
     };
     if is_bash {
         let command = payload.command.as_deref().unwrap_or("");
@@ -231,7 +236,10 @@ pub fn guard(stdin: &[u8]) -> (u8, Vec<u8>) {
                 classify(&root.project, &root.dir, &file)
             });
             if let Some((_, rel)) = hit {
-                eprintln!("vibe-spec: warning: a shell write to {rel} bypasses the spec tooth");
+                diag!(
+                    cx,
+                    "vibe-spec: warning: a shell write to {rel} bypasses the spec tooth"
+                );
             }
         }
         return (0, Vec::new());
@@ -246,40 +254,40 @@ pub fn guard(stdin: &[u8]) -> (u8, Vec<u8>) {
     let Some((target, rel)) = classify(&root.project, &root.dir, &absolute) else {
         let project = identity(&root.project.to_string_lossy());
         if under(&project, &resolve(&project, &absolute)).is_none() {
-            return allow("the target is outside the project");
+            return allow(cx, "the target is outside the project");
         }
         return (0, Vec::new());
     };
     let Some(transcript) = payload.transcript.as_deref() else {
-        return allow("the payload has no transcript_path");
+        return allow(cx, "the payload has no transcript_path");
     };
     match crate::transcript::loaded(transcript, payload.agent_id.as_deref(), target.names()) {
         Ok(true) => return (0, Vec::new()),
         Ok(false) => {}
         Err(e) => {
-            return allow(&format!(
-                "unreadable transcript {}: {e}",
-                transcript.display()
-            ));
+            return allow(
+                cx,
+                &format!("unreadable transcript {}: {e}", transcript.display()),
+            );
         }
     }
     let line = block_line(target, &rel);
     match crate::root::tooth(&root.project) {
         Ok(crate::root::Tooth::Block) => {
-            eprintln!("{line}");
+            diag!(cx, "{line}");
             (2, Vec::new())
         }
         Ok(crate::root::Tooth::Warn) => {
-            eprintln!("vibe-spec hook guard: warn — {line}");
+            diag!(cx, "vibe-spec hook guard: warn — {line}");
             (0, Vec::new())
         }
-        Err(e) => allow(&e),
+        Err(e) => allow(cx, &e),
     }
 }
 
 /// The cap in ms for a validate hook; `VIBE_SPEC_HOOK_CAP_MS` overrides it (tests).
-fn cap_ms(default: u64) -> u64 {
-    std::env::var("VIBE_SPEC_HOOK_CAP_MS")
+fn cap_ms(cx: &crate::api::Execution<'_>, default: u64) -> u64 {
+    cx.var("VIBE_SPEC_HOOK_CAP_MS")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(default)
@@ -288,10 +296,50 @@ fn cap_ms(default: u64) -> u64 {
 /// The post-edit and stop validate hooks (P4-R5): never blocks, so the
 /// exit code is always 0. `PostToolUse` validates the edited file within
 /// 500 ms; `Stop` validates the changed files within 2 000 ms.
-pub fn validate(stdin: &[u8], _cwd: &Path) -> (u8, Vec<u8>) {
+pub fn validate(cx: &crate::api::Execution<'_>, stdin: &[u8], _cwd: &Path) -> (u8, Vec<u8>) {
+    validate_with_wait(cx, stdin, |rx, cap| {
+        rx.recv_timeout(std::time::Duration::from_millis(cap))
+    })
+}
+type ValidationReply = (Option<Result<(u8, Vec<u8>), String>>, Vec<u8>);
+const PENDING: u8 = 0;
+const MANAGED: u8 = 1;
+const LEGACY: u8 = 2;
+const CANCELLED: u8 = 3;
+fn admit_validation(state: &std::sync::atomic::AtomicU8, kind: u8) -> bool {
+    use std::sync::atomic::Ordering::SeqCst;
+    state
+        .compare_exchange(PENDING, kind, SeqCst, SeqCst)
+        .is_ok()
+}
+fn finish_validation_worker(
+    state: &std::sync::atomic::AtomicU8,
+    worker: std::thread::JoinHandle<()>,
+    timed_out: bool,
+) {
+    use std::sync::atomic::Ordering::SeqCst;
+    let admitted = if timed_out {
+        state.swap(CANCELLED, SeqCst)
+    } else {
+        state.load(SeqCst)
+    };
+    // Managed guards and publication bookkeeping must retire before process exit.
+    // An in-flight command can make this cleanup exceed the validation-work budget.
+    if admitted == MANAGED {
+        let _ = worker.join();
+    }
+}
+fn validate_with_wait(
+    cx: &crate::api::Execution<'_>,
+    stdin: &[u8],
+    wait: impl FnOnce(
+        std::sync::mpsc::Receiver<ValidationReply>,
+        u64,
+    ) -> Result<ValidationReply, std::sync::mpsc::RecvTimeoutError>,
+) -> (u8, Vec<u8>) {
     let payload = match parse(stdin) {
         Ok(p) => p,
-        Err(e) => return allow_validate(&e),
+        Err(e) => return allow_validate(cx, &e),
     };
     let (file, changed, default_cap) = match payload.event.as_str() {
         "PostToolUse" => {
@@ -306,17 +354,76 @@ pub fn validate(stdin: &[u8], _cwd: &Path) -> (u8, Vec<u8>) {
             (Some(abs), false, 500)
         }
         "Stop" => (None, true, 2000),
-        other => return allow_validate(&format!("unknown event {other}")),
+        other => return allow_validate(cx, &format!("unknown event {other}")),
     };
-    let cap = cap_ms(default_cap);
+    let cap = cap_ms(cx, default_cap);
     let event = payload.event.clone();
     let cwd = payload.cwd.clone();
-    let env = env_root();
+    let env = env_root(cx);
     let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
+    let runtime = cx.runtime.clone();
+    let admission = std::sync::Arc::new(std::sync::atomic::AtomicU8::new(PENDING));
+    let worker_admission = admission.clone();
+    let worker = std::thread::spawn(move || {
+        let cx = &crate::api::Execution::new(&runtime);
+        let mut selected_runtime = runtime.clone();
+        selected_runtime.cwd = cwd.clone();
+        let selected_cx = crate::api::Execution::new(&selected_runtime);
+        match managed_routing(&selected_cx, &cwd) {
+            Ok(Some(_)) => {
+                if !admit_validation(&worker_admission, MANAGED) {
+                    return;
+                }
+                let cancelled = worker_admission.clone();
+                let control = crate::InvocationControl::new(move || {
+                    cancelled.load(std::sync::atomic::Ordering::SeqCst) == CANCELLED
+                });
+                let result = crate::SpecApi::new(selected_runtime.clone())
+                    .and_then(|api| {
+                        let api = api.with_control(control);
+                        api.resolve_context(&crate::ContextSelector::default())?;
+                        crate::transaction::read_typed(
+                            &api,
+                            &crate::ContextSelector::default(),
+                            |context| {
+                                let scope = if context.code_available {
+                                    crate::ValidationScope::WithCode
+                                } else {
+                                    crate::ValidationScope::SpecOnly
+                                };
+                                crate::validate::context_result(
+                                    &selected_runtime,
+                                    context,
+                                    scope,
+                                    false,
+                                )
+                            },
+                        )
+                    })
+                    .map(|(_, result)| {
+                        crate::validate::render_managed(
+                            result,
+                            crate::validate::Format::Hook,
+                            Some(&event),
+                        )
+                    })
+                    .map_err(|error| error.to_string());
+                let _ = tx.send((Some(result), Vec::new()));
+                return;
+            }
+            Err(error) => {
+                let _ = tx.send((Some(Err(error.to_string())), Vec::new()));
+                return;
+            }
+            Ok(None) => {}
+        }
+        if !admit_validation(&worker_admission, LEGACY) {
+            return;
+        }
         let found = crate::root::discover(&cwd, None, env.as_deref());
         let out = match found {
             Ok(_) => Some(crate::validate::run_checked(
+                cx,
                 &found,
                 &cwd,
                 &crate::validate::Options {
@@ -329,21 +436,27 @@ pub fn validate(stdin: &[u8], _cwd: &Path) -> (u8, Vec<u8>) {
             )),
             Err(_) => None,
         };
-        let _ = tx.send(out);
+        let diagnostics = cx.take_diagnostics();
+        let _ = tx.send((out, diagnostics));
     });
-    match rx.recv_timeout(std::time::Duration::from_millis(cap)) {
+    let received = wait(rx, cap).map(|(out, diagnostics)| {
+        cx.diagnostic_bytes(&diagnostics);
+        out
+    });
+    finish_validation_worker(&admission, worker, received.is_err());
+    match received {
         Ok(Some(Ok((_, out)))) => (0, out),
-        Ok(Some(Err(why))) => allow_validate(&why),
+        Ok(Some(Err(why))) => allow_validate(cx, &why),
         Ok(None) => (0, Vec::new()),
         Err(_) => {
-            eprintln!("vibe-spec hook validate: skipped — over {cap} ms");
+            diag!(cx, "vibe-spec hook validate: skipped — over {cap} ms");
             (0, Vec::new())
         }
     }
 }
 
-fn allow_validate(cause: &str) -> (u8, Vec<u8>) {
-    eprintln!("vibe-spec hook validate: skipped — {cause}");
+fn allow_validate(cx: &crate::api::Execution<'_>, cause: &str) -> (u8, Vec<u8>) {
+    diag!(cx, "vibe-spec hook validate: skipped — {cause}");
     (0, Vec::new())
 }
 
@@ -375,8 +488,8 @@ impl Harness {
 }
 
 /// `$VIBE_SPEC_ROOT`, as the CLI reads it.
-fn env_root() -> Option<std::ffi::OsString> {
-    std::env::var_os("VIBE_SPEC_ROOT")
+fn env_root(cx: &crate::api::Execution<'_>) -> Option<std::ffi::OsString> {
+    cx.var_os("VIBE_SPEC_ROOT")
 }
 
 /// The skill text after its frontmatter.
@@ -413,19 +526,34 @@ fn touch_marker(project: &Path) -> Result<(), String> {
 /// project with a spec root, touches `.vibe/spec-session`. Silent (`{}`)
 /// where no spec root exists: the router is for a repo that keeps a spec.
 /// A bad config or a missing named root still routes. Always exits 0.
-pub fn session_start(stdin: &[u8], cwd: &Path, harness: Harness) -> (u8, Vec<u8>) {
+pub fn session_start(
+    cx: &crate::api::Execution<'_>,
+    stdin: &[u8],
+    cwd: &Path,
+    harness: Harness,
+) -> (u8, Vec<u8>) {
     let dir = parse(stdin).map_or_else(|_| cwd.to_path_buf(), |p| p.cwd);
-    match crate::root::discover(&dir, None, env_root().as_deref()) {
-        Err(crate::root::Miss::NotFound) => return (0, b"{}\n".to_vec()),
-        // The marker only matters where git cannot say what changed.
-        Ok(root) => {
-            if crate::git::top(&root.project).is_none()
-                && let Err(why) = touch_marker(&root.project)
-            {
-                eprintln!("vibe-spec hook session-start: marker skipped — {why}");
-            }
+    let managed = match managed_context(cx, &dir) {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        Err(error) => {
+            diag!(cx, "vibe-spec hook session-start: skipped — {error}");
+            return (0, b"{}\n".to_vec());
         }
-        Err(_) => {}
+    };
+    if !managed {
+        match crate::root::discover(&dir, None, env_root(cx).as_deref()) {
+            Err(crate::root::Miss::NotFound) => return (0, b"{}\n".to_vec()),
+            // The marker only matters where git cannot say what changed.
+            Ok(root) => {
+                if crate::git::top(cx, &root.project).is_none()
+                    && let Err(why) = touch_marker(&root.project)
+                {
+                    diag!(cx, "vibe-spec hook session-start: marker skipped — {why}");
+                }
+            }
+            Err(_) => {}
+        }
     }
     let text = format!(
         "<EXTREMELY_IMPORTANT>\n{}\n</EXTREMELY_IMPORTANT>",
@@ -442,9 +570,294 @@ pub fn session_start(stdin: &[u8], cwd: &Path, harness: Harness) -> (u8, Vec<u8>
     (0, out)
 }
 
+fn managed_context(
+    cx: &crate::api::Execution<'_>,
+    cwd: &Path,
+) -> Result<Option<crate::SpecContext>, crate::SpecError> {
+    managed_routing(cx, cwd)?
+        .map(|_| {
+            let mut runtime = cx.runtime.clone();
+            runtime.cwd = cwd.to_owned();
+            crate::SpecApi::new(runtime)?.resolve_context(&crate::ContextSelector::default())
+        })
+        .transpose()
+}
+/// Routing performs no lock-owning API work before managed-worker admission.
+fn managed_routing(
+    cx: &crate::api::Execution<'_>,
+    cwd: &Path,
+) -> Result<Option<crate::SpecContext>, crate::SpecError> {
+    let mut runtime = cx.runtime.clone();
+    runtime.cwd = cwd.to_owned();
+    let registry = crate::registry::store_root(&runtime)?.join("spec/registry.json");
+    if std::fs::symlink_metadata(registry).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+    {
+        return Ok(None);
+    }
+
+    match crate::context::resolve_for_routing(&runtime, &crate::ContextSelector::default()) {
+        Ok(context) if context.mode == crate::StorageMode::GlobalFirst => Ok(Some(context)),
+        Ok(_) => Ok(None),
+        Err(error)
+            if !matches!(
+                error.code.as_str(),
+                "invalid_registry" | "invalid_project" | "ambiguous_project" | "context_mismatch"
+            ) =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
+}
+fn managed_classify(context: &crate::SpecContext, absolute: &str) -> Option<(Target, String)> {
+    let path = identity(absolute);
+    if let Some(checkout) = context.checkout.as_ref()
+        && path == identity(&checkout.join(".vibe/spec.json").to_string_lossy())
+    {
+        return Some((Target::Spec, ".vibe/spec.json".into()));
+    }
+    for (root, target, label) in [
+        (&context.spec_root, Target::Spec, "spec"),
+        (
+            &context.artifact_root.join("specs"),
+            Target::Brainstorm,
+            "superpowers/specs",
+        ),
+        (
+            &context.artifact_root.join("plans"),
+            Target::Plans,
+            "superpowers/plans",
+        ),
+    ] {
+        let base = identity(&root.to_string_lossy());
+        if let Some(rel) = under(&base, &path) {
+            return Some((target, format!("{label}/{rel}")));
+        }
+    }
+    None
+}
+fn managed_guard(
+    cx: &crate::api::Execution<'_>,
+    payload: &Payload,
+    context: &crate::SpecContext,
+) -> (u8, Vec<u8>) {
+    let absolute = |file: &str| {
+        if is_absolute(file) {
+            file.to_string()
+        } else {
+            format!("{}/{file}", payload.cwd.display())
+        }
+    };
+    if payload.tool.as_deref() == Some("Bash") {
+        let command = payload.command.as_deref().unwrap_or_default();
+        if writes(command)
+            && let Some((_, rel)) = words(command)
+                .into_iter()
+                .find_map(|w| managed_classify(context, &absolute(w)))
+        {
+            diag!(
+                cx,
+                "vibe-spec: warning: a shell write to {rel} bypasses the spec tooth"
+            );
+        }
+        return (0, Vec::new());
+    }
+    let Some((target, rel)) = payload
+        .file
+        .as_deref()
+        .and_then(|file| managed_classify(context, &absolute(file)))
+    else {
+        return (0, Vec::new());
+    };
+    let Some(transcript) = payload.transcript.as_deref() else {
+        return allow(cx, "the payload has no transcript_path");
+    };
+    match crate::transcript::loaded(transcript, payload.agent_id.as_deref(), target.names()) {
+        Ok(true) => return (0, Vec::new()),
+        Err(error) => return allow(cx, &error.to_string()),
+        Ok(false) => {}
+    }
+    let line = block_line(target, &rel);
+    let tooth = context
+        .checkout
+        .as_deref()
+        .map(crate::root::tooth)
+        .unwrap_or(Ok(crate::root::Tooth::Block));
+    match tooth {
+        Ok(crate::root::Tooth::Block) => {
+            diag!(cx, "{line}");
+            (2, Vec::new())
+        }
+        Ok(crate::root::Tooth::Warn) => {
+            diag!(cx, "vibe-spec hook guard: warn — {line}");
+            (0, Vec::new())
+        }
+        Err(error) => allow(cx, &error),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
+
+    #[test]
+    fn spec_ci_portability_timeout_before_admission_prevents_late_lock() {
+        use std::sync::{Arc, atomic::AtomicU8, mpsc};
+        let owner = vibe_core::testscratch::scratch("hook-admission", "pending");
+        let lock = owner.join("late.lock");
+        let state = Arc::new(AtomicU8::new(PENDING));
+        let shared = state.clone();
+        let target = lock.clone();
+        let (release, wait) = mpsc::channel();
+        let (done, result) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            wait.recv().unwrap();
+            let admitted = admit_validation(&shared, MANAGED);
+            if admitted {
+                let held = vibe_core::lock::Lock::acquire(&target, vibe_core::lock::STALE).unwrap();
+                done.send(true).unwrap();
+                drop(held);
+            } else {
+                done.send(false).unwrap();
+            }
+        });
+        finish_validation_worker(&state, worker, true);
+        release.send(()).unwrap();
+        assert!(
+            !result
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap()
+        );
+        assert!(!lock.exists());
+    }
+
+    #[test]
+    fn spec_ci_portability_managed_admission_finishes_owned_cleanup() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicU8, Ordering},
+            mpsc,
+        };
+        let owner = vibe_core::testscratch::scratch("hook-admission", "managed");
+        let lock = owner.join("owned.lock");
+        let completed = owner.join("completed");
+        let state = Arc::new(AtomicU8::new(PENDING));
+        let shared = state.clone();
+        let target = lock.clone();
+        let output = completed.clone();
+        let (ready, acquired) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            assert!(admit_validation(&shared, MANAGED));
+            let held = vibe_core::lock::Lock::acquire(&target, vibe_core::lock::STALE).unwrap();
+            let watched = shared.clone();
+            let control =
+                crate::InvocationControl::new(move || watched.load(Ordering::SeqCst) == CANCELLED);
+            let completion = control.completing();
+            ready.send(()).unwrap();
+            while shared.load(Ordering::SeqCst) != CANCELLED {
+                std::thread::yield_now();
+            }
+            // A publication fence must finish its bookkeeping despite cancellation.
+            control.check().unwrap();
+            std::fs::write(output, b"completed").unwrap();
+            drop(completion);
+            drop(held);
+        });
+        acquired
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        finish_validation_worker(&state, worker, true);
+        assert_eq!(std::fs::read(completed).unwrap(), b"completed");
+        assert!(!lock.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn spec_ci_portability_managed_deadline_releases_real_child_lock() {
+        // spec-projects-mcp/8: a timed-out hook must retire its own acquired guard.
+        use std::{
+            fs,
+            os::unix::fs::PermissionsExt,
+            process::Command,
+            time::{Duration, Instant},
+        };
+        const CHILD_MARKER: &str = "VIBE_TEST_HOOK_ACQUIRED";
+        if let Some(marker) = std::env::var_os(CHILD_MARKER) {
+            let runtime = crate::Runtime::from_process().unwrap();
+            let cx = crate::api::Execution::new(&runtime);
+            let payload = serde_json::to_vec(
+                &serde_json::json!({"hook_event_name":"Stop","cwd":runtime.cwd}),
+            )
+            .unwrap();
+            let result = validate_with_wait(&cx, &payload, |_, _| {
+                let deadline = Instant::now() + Duration::from_secs(30);
+                while !Path::new(&marker).exists() {
+                    assert!(
+                        Instant::now() < deadline,
+                        "managed worker never acquired its lock"
+                    );
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            });
+            assert_eq!(result, (0, Vec::new()));
+            assert!(
+                String::from_utf8(cx.take_diagnostics())
+                    .unwrap()
+                    .contains("skipped — over")
+            );
+            return;
+        }
+        let (owner, api, context) = crate::transaction::tests::fixture();
+        let registry = crate::registry::load(&api.runtime).unwrap();
+        let project = crate::registry::project_dir(&registry, context.project_id.as_ref().unwrap());
+        let lock = project.join("project.lock");
+        let marker = owner.join("acquired");
+        let once = owner.join("pause-once");
+        let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+            .map(|p| p.join("git"))
+            .find(|p| p.is_file())
+            .unwrap()
+            .canonicalize()
+            .unwrap();
+        let quote = |p: &Path| format!("'{}'", p.to_str().unwrap().replace('\'', "'\\''"));
+        let bin = owner.join("bin");
+        fs::create_dir(&bin).unwrap();
+        let shim = bin.join("git");
+        fs::write(&shim, format!("#!/bin/sh\nset -eu\nif [ -f {lock} ] && /bin/mkdir {once} 2>/dev/null; then\n/bin/cat {lock} > {marker}\n/bin/sleep 3\nfi\nexec {git} \"$@\"\n", lock=quote(&lock),once=quote(&once),marker=quote(&marker),git=quote(&git))).unwrap();
+        fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).unwrap();
+        let path = std::env::join_paths(
+            std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+        )
+        .unwrap();
+        let child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "hook::tests::spec_ci_portability_managed_deadline_releases_real_child_lock",
+                "--nocapture",
+            ])
+            .current_dir(&api.runtime.cwd)
+            .env_clear()
+            .envs(&api.runtime.env)
+            .env("PATH", path)
+            .env(CHILD_MARKER, &marker)
+            .output()
+            .unwrap();
+        assert!(
+            child.status.success(),
+            "{}",
+            String::from_utf8_lossy(&child.stderr)
+        );
+        assert!(!fs::read(&marker).unwrap().is_empty());
+        assert!(
+            !lock.exists(),
+            "child retained acquired lock: {:?}",
+            fs::read(&lock)
+        );
+        api.resolve_context(&crate::ContextSelector::default())
+            .unwrap();
+    }
 
     #[test]
     fn backslash_paths_classify() {

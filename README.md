@@ -27,7 +27,7 @@ never through code. One repo, one installer, three release trains.
 |---|---|---|---|
 | **What it is** | Durable `docs/spec/` planning layer — product / tech / design / plan / lessons — with templates and a validator. | State-machine workflow: routes each phase to the right skills, injects per-turn orders, guards its own write invariants with hooks. | ⏳ Planned — layered, budgeted instruction injection (global → repo → local → session tiers). |
 | **Works with** | Any coding agent, or none. | Claude Code, OpenCode, and Factory Droid via `/flow`; Codex via skill invocation. Hooks are Claude Code-only. Other agents read the same rules as prose. | Claude Code + OpenCode, both ⏳ planned. |
-| **Needs** | `bash`; the `vibe-spec` binary (dev build) for validation | `bash`, plus Node ≥18 for today's engine — a static Rust binary in v0.4. | Nothing today (unbuilt) — a static Rust binary in v0.4. |
+| **Needs** | `bash` for installed skills/hooks; `vibe-spec` (dev build) for their validation. Source-built `vibe spec`/MCP needs no Node or peer binary; Git is required for global-first history and Git-aware code operations. | `bash`, plus Node ≥18 for today's engine — a static Rust binary in v0.4. | Nothing today (unbuilt) — a static Rust binary in v0.4. |
 | **Install** | `./install.sh <repo> --only spec` | `./install.sh <repo> --only flow` | ⏳ planned: `./install.sh <repo> --only instruct` |
 | **Deep dive** | [`spec/README.md`](spec/README.md) | [`flow/README.md`](flow/README.md) | [`docs/spec/tech/instruct.md`](docs/spec/tech/instruct.md) |
 
@@ -142,27 +142,61 @@ bundled bash scripts, which validate a **flat legacy** root only. A layered
 line rather than claiming a pass. `doctor.sh` reports the same status as
 `tool.vibe-spec`, and `install.sh` never fails because the binary is missing.
 
-### spec — the planning layer
-
-Every vibe project gets a `docs/spec/` tree, the single source of truth for what
-you are building, why, and how:
-
-```text
-docs/spec/
-├── product.md, tech.md, design.md, plan.md, lessons.md   ← ROOT: persistent role, current content
-└── features/<name>/
-    ├── product.md    required     what this feature does
-    ├── tech.md       required     how it is built
-    ├── plan.md       recommended  stable <name>/n unit IDs; verification per unit
-    ├── design.md     optional     UI/UX or design-system fragment
-    └── research.md   optional     findings from spikes / investigations
-```
-
-Root files carry no backlog. Feature folders are branch-scoped: written at
-design, consumed at impl, merged at compound, then deleted. **Code is truth.**
+The current branch also builds the central `vibe` executable with spec operations
+embedded. From a source checkout:
 
 ```bash
-/spec setup            # initialise docs/spec/ with templates
+cargo install --locked --path crates/vibe
+vibe spec --help
+```
+
+`vibe spec` runs without a peer `vibe-spec` or Node. This source build does not
+change `install.sh` into a released-binary installer. Installed skills and spec
+hooks still invoke the compatibility `vibe-spec`; keep it available for them.
+Project storage and local MCP are implemented on this branch; shipping remains
+gated. See the [spec guide](spec/README.md) for context, revisions and reconciliation.
+
+### spec — the planning layer
+
+The spec holds current project decisions: what you are building, why, and how.
+Choose its storage mode when registering the project:
+
+- **Repo-first:** durable specs and feature designs/plans live in the code
+  repository. Operations follow the selected or matching ambient checkout. Outside
+  the selected project, project-only access uses the registered main checkout's
+  actual branch, whatever that branch is named.
+- **Global-first:** the complete durable spec and feature designs/plans live
+  outside code repositories. Clones/worktrees of the same project and stored
+  branch share that spec; different branches evolve separately.
+
+This repository keeps its canonical tree at `docs/spec/`. Its durable layer has
+the four hubs (`product.md`, `tech.md`, `design.md`, `plan.md`), `lessons.md` and
+linked typed notes. Default feature designs/plans use `docs/superpowers/`; the
+`<root>/features/<name>/` layout is the fallback described in the spec guide.
+Root docs carry no backlog. Feature wrap-up promotes durable decisions and
+removes temporary feature artifacts through the approved lifecycle.
+
+```bash
+# Run in the intended code checkout; choose one mode for that project.
+vibe spec project init --mode repo-first
+# Or, for a project without existing repository specs:
+vibe spec project init --mode global-first
+vibe spec context
+```
+
+Project registration selects storage; `vibe spec setup` installs optional hooks
+and router files, and `vibe spec init` seeds documents. These are separate steps.
+Use an explicit registered ID to launch the local server:
+
+```bash
+vibe spec --project "$PROJECT" mcp --stdio
+```
+
+Set `PROJECT` to the ID returned by project init or `vibe spec project list`. The server
+uses local stdio. It does not install harness configuration or provide remote sync.
+
+```bash
+/spec setup            # choose and seed the spec root
 /spec strategy         # write root product/tech/design/plan
 /spec feature <name>   # scope and design a named feature
 /spec validate         # check structural consistency
@@ -223,6 +257,7 @@ never hard-fails.
 your-repo/                     # after install
 ├── .agents/skills/
 │   ├── spec/                  # the spec framework
+│   ├── using-spec/            # session router; sibling of spec
 │   └── vibe/                  # the flow: router, phase files, state machine, engine
 ├── .claude/                   # Claude adapter: /flow + hooks + settings.json
 ├── .opencode/                 # OpenCode: /flow project command
@@ -252,23 +287,23 @@ macOS `bash` 3.2, the engine suite jq-less and from a space-containing path, a
 
 ## v0.4 target
 
-The re-architecture in progress. Nothing in this section is runnable from an
-install today — every command and path below is ⏳ **planned**. The exceptions
-are the `vibe-spec` commands that already exist in a dev build (`cargo run -p
-vibe-spec -- <command>`), among them `check-drift`, `promote`, `export|import
---openspec`, `hook {session-start,guard,validate}`, `setup`, `init` and `migrate`; skills, CI and the flow scripts still call the bash scripts and do
-not use them yet. Detail lives in
+The re-architecture is in progress. The spec commands and central embedded spec
+entry described above are implemented in source; release/install work remains
+gated. Flow, Instruct and general Spaces commands below retain their stated
+planned status. Skills and spec hooks still call the compatibility `vibe-spec`.
+Detail lives in
 [`docs/spec/tech.md`](docs/spec/tech.md) and its branch docs, including
 [`docs/spec/tech/instruct.md`](docs/spec/tech/instruct.md) for the instruct tool.
 
 ### Three binaries, one contract layer
 
-`vibe-spec`, `vibe-flow`, `vibe-instruct` — a Cargo workspace, static, zero
-runtime deps. No tool crate depends on another, and a tool never imports a
-peer: cross-tool traffic is files under `.vibe/` plus one soft exec
-(`vibe-spec … --json`, probed, absence = degrade). `contracts/` holds
-versioned schemas + golden fixtures, additive-only within a major; readers
-ignore unknown fields.
+`vibe-spec`, `vibe-flow`, `vibe-instruct` are independent tool entry points.
+Cross-tool traffic uses file contracts and optional peer execution. The sole
+approved tool-crate import is central `vibe -> vibe-spec`, which embeds the shared
+spec application layer. The spec-only MCP adapter admits its reviewed rmcp/Tokio
+dependency closure; this does not enable async/network dependencies in other
+tools or core. `contracts/` holds versioned schemas and golden fixtures;
+changes remain additive within a major and readers ignore unknown fields.
 
 ### `.vibe/` — the per-repo vibe directory (⏳ planned)
 
@@ -423,7 +458,7 @@ A heartbeat keeps the exclusive projection lock fresh during CLI work. Age alone
 | `VIBE_STORE` | the whole global root (default `~/.config/vibe`): the store files and what later CLI slices keep beside them |
 | `VIBE_STATE` | state dir (default `~/.local/state/vibe`) |
 | `VIBE_TOOLKIT` | directory holding vibe's own skills, added as a skill source by `install` |
-| `VIBE_SPEC_BIN` | `vibe-spec` binary used by `vibe spec …` |
+| `VIBE_SPEC_BIN` | deprecated and ignored; `vibe spec` runs inside `vibe` |
 
 Known limits: Windows skills links are skipped; a Codex `config.toml` with a root inline `mcp_servers = {…}` gets no vibe MCP block.
 

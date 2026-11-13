@@ -10,7 +10,7 @@ use vibe_core::exit;
 
 use crate::frontmatter;
 use crate::root::{Miss, Root};
-use crate::text::{find, join_raw, lines, lossy, name_of, sub_dirs, walk_all};
+use crate::text::{find, join_raw, lines, lossy, name_of, walk_all};
 
 /// Command options.
 pub struct Options {
@@ -194,9 +194,8 @@ fn md_link_targets(text: &[u8]) -> Vec<String> {
 /// link), one level, each kept only when it resolves to a file inside the
 /// root. Display path and bytes; the hub comes first. A missing or
 /// unreadable note is skipped.
-fn plan_texts(root: &Root) -> Vec<(String, Vec<u8>)> {
-    let d = root.display();
-    let Ok(plan) = std::fs::read(root.dir.join("plan.md")) else {
+fn plan_texts(dir: &Path, d: &str) -> Vec<(String, Vec<u8>)> {
+    let Ok(plan) = std::fs::read(dir.join("plan.md")) else {
         return Vec::new();
     };
     let mut candidates: Vec<String> = Vec::new();
@@ -205,16 +204,16 @@ fn plan_texts(root: &Root) -> Vec<(String, Vec<u8>)> {
     }
     candidates.extend(md_link_targets(&plan));
     let mut out = vec![(format!("{d}/plan.md"), plan)];
-    let Ok(canon_root) = std::fs::canonicalize(&root.dir) else {
+    let Ok(canon_root) = std::fs::canonicalize(dir) else {
         return out;
     };
-    let mut seen = vec![root.dir.join("plan.md")];
+    let mut seen = vec![dir.join("plan.md")];
     for rel in candidates {
         let rel = rel.trim().trim_start_matches("./").to_string();
         if rel.is_empty() || rel.contains('{') {
             continue;
         }
-        let path = join_raw(&root.dir, rel.as_bytes());
+        let path = join_raw(dir, rel.as_bytes());
         let Ok(canon) = std::fs::canonicalize(&path) else {
             continue;
         };
@@ -231,30 +230,149 @@ fn plan_texts(root: &Root) -> Vec<(String, Vec<u8>)> {
 }
 
 /// Runs the command.
-pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u8>) {
+pub fn run(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    opts: &Options,
+) -> (u8, Vec<u8>) {
+    run_mode(cx, found, cwd, opts, false)
+}
+pub(crate) fn run_registered(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    opts: &Options,
+) -> (u8, Vec<u8>) {
+    run_mode(cx, found, cwd, opts, true)
+}
+fn run_mode(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    cwd: &Path,
+    opts: &Options,
+    managed: bool,
+) -> (u8, Vec<u8>) {
     let root = match found {
         Ok(root) => root,
         Err(Miss::NotFound) if !opts.json => {
-            eprintln!(
+            diag!(
+                cx,
                 "check-drift: no .spec/ under {}; nothing to check.", // literal
                 marker_root(cwd).to_string_lossy()
             );
             return (exit::OK, Vec::new());
         }
         Err(miss) => {
-            eprintln!("{}", miss.message());
+            diag!(cx, "{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };
     let d = root.display();
-    let plan_path = root.dir.join("plan.md");
+    let (ev, statuses) = produce(
+        &root.dir,
+        Some(&root.project),
+        &root.project.join("docs/superpowers"),
+        &d,
+        "docs/superpowers",
+        opts.pre_merge,
+        managed,
+    );
+    finish(cx, &d, opts, ev, statuses)
+}
+fn finish(
+    cx: &crate::api::Execution<'_>,
+    d: &str,
+    opts: &Options,
+    ev: Vec<Event>,
+    statuses: Vec<(String, &'static str)>,
+) -> (u8, Vec<u8>) {
+    let errors = ev.iter().filter(|e| e.sev == Sev::Error).count();
+    let warnings = ev.iter().filter(|e| e.sev == Sev::Warning).count();
+    if opts.json {
+        let findings: Vec<Value> = ev
+            .iter()
+            .filter(|e| e.sev != Sev::Note)
+            .map(|e| {
+                let mut f = json!({
+                    "severity": if e.sev == Sev::Error { "error" } else { "warning" },
+                    "message": lossy(&e.msg),
+                });
+                if let Some(file) = &e.file {
+                    f["file"] = json!(file);
+                }
+                f
+            })
+            .collect();
+        let v = json!({
+            "v": 1,
+            "root": d,
+            "pre_merge": opts.pre_merge,
+            "errors": errors,
+            "warnings": warnings,
+            "features": statuses.iter().map(|(n, s)| json!({ "name": n, "status": s })).collect::<Vec<_>>(),
+            "findings": findings,
+        });
+        let code = if errors > 0 { exit::FINDINGS } else { exit::OK };
+        return (code, format!("{v}\n").into_bytes());
+    }
+    let mut err = Vec::new();
+    for e in &ev {
+        let line = match e.sev {
+            Sev::Error => cat!("check-drift: ERROR: ", e.msg, "\n"),
+            Sev::Warning => cat!("check-drift: WARN: ", e.msg, "\n"),
+            Sev::Note => cat!(e.msg, "\n"),
+        };
+        let _ = err.write_all(&line);
+    }
+    if errors > 0 {
+        let _ = writeln!(
+            err,
+            "check-drift: FAIL — {errors} error(s), {warnings} warning(s)."
+        );
+        cx.diagnostic_bytes(&err);
+        return (exit::FINDINGS, Vec::new());
+    }
+    cx.diagnostic_bytes(&err);
+    (
+        exit::OK,
+        format!("check-drift: OK — 0 errors, {warnings} warning(s).\n").into_bytes(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::marker_root;
+
+    #[test]
+    #[expect(clippy::unwrap_used, reason = "test scratch tree")]
+    fn marker_root_accepts_a_docs_spec_only_project() {
+        let base = vibe_core::testscratch::scratch("vibe-drift-marker", "docs-spec");
+        let nested = base.join("a/b");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::create_dir_all(base.join("docs/spec")).unwrap();
+        let got = marker_root(&nested);
+        assert_eq!(got, &*base);
+    }
+}
+
+fn produce(
+    dir: &Path,
+    project: Option<&Path>,
+    artifacts: &Path,
+    d: &str,
+    artifact_display: &str,
+    pre_merge: bool,
+    managed: bool,
+) -> (Vec<Event>, Vec<(String, &'static str)>) {
+    let plan_path = dir.join("plan.md");
     let mut ev: Vec<Event> = Vec::new();
     let plan_present = plan_path.is_file();
     let plan = if plan_present {
         read_closed(&plan_path, &format!("{d}/plan.md"), &mut ev).map(|hub| {
             // (a) and (d) read the hub and the notes it lists (skill-revision/16).
             let mut text = hub;
-            for (_, bytes) in plan_texts(root).into_iter().skip(1) {
+            for (_, bytes) in plan_texts(dir, d).into_iter().skip(1) {
                 text.push(b'\n');
                 text.extend(bytes);
             }
@@ -263,7 +381,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
     } else {
         None
     };
-    let features: Vec<PathBuf> = sub_dirs(&root.dir.join("features"));
+    let features = crate::adherence::feature_dirs(dir, managed);
     let mut statuses: Vec<(String, &'static str)> = Vec::new();
 
     // (a) every live feature folder must be named in the root plan.
@@ -383,15 +501,17 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
 
     // (c) hand-written test counts in README.md or the tree (archive excluded).
     let mut targets: Vec<(String, PathBuf)> = Vec::new();
-    if root.project.join("README.md").is_file() {
-        targets.push(("README.md".to_string(), root.project.join("README.md")));
+    if let Some(project) = project
+        && project.join("README.md").is_file()
+    {
+        targets.push(("README.md".into(), project.join("README.md")));
     }
-    let (rels, walk_errs) = count_targets(&root.dir, &d);
+    let (rels, walk_errs) = count_targets(dir, d);
     for (shown, e) in &walk_errs {
         ev.push(unreadable(shown, e));
     }
     for rel in rels {
-        let path = root.dir.join(&rel);
+        let path = dir.join(&rel);
         targets.push((format!("{d}/{rel}"), path));
     }
     for (shown, path) in &targets {
@@ -418,15 +538,11 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
 
     // D46 (P3c-R4): superpowers artifacts left in the tree. An unreadable
     // tree is a finding of the same severity (fail closed).
-    let sev = if opts.pre_merge {
-        Sev::Error
-    } else {
-        Sev::Warning
-    };
-    match walk_all(&root.project.join("docs").join("superpowers")) {
+    let sev = if pre_merge { Sev::Error } else { Sev::Warning };
+    match walk_all(artifacts) {
         Ok((files, links)) => {
             for rel in files {
-                let shown = format!("docs/superpowers/{rel}");
+                let shown = format!("{artifact_display}/{rel}");
                 ev.push(event(
                     sev,
                     cat!(
@@ -439,7 +555,7 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
             }
             // Never followed or deleted: still an artifact left behind.
             for rel in links {
-                let shown = format!("docs/superpowers/{rel}");
+                let shown = format!("{artifact_display}/{rel}");
                 ev.push(event(
                     sev,
                     cat!("superpowers artifact is a symlink: ", shown),
@@ -454,69 +570,70 @@ pub fn run(found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u
         )),
     }
 
-    let errors = ev.iter().filter(|e| e.sev == Sev::Error).count();
-    let warnings = ev.iter().filter(|e| e.sev == Sev::Warning).count();
-    if opts.json {
-        let findings: Vec<Value> = ev
-            .iter()
-            .filter(|e| e.sev != Sev::Note)
-            .map(|e| {
-                let mut f = json!({
-                    "severity": if e.sev == Sev::Error { "error" } else { "warning" },
-                    "message": lossy(&e.msg),
-                });
-                if let Some(file) = &e.file {
-                    f["file"] = json!(file);
-                }
-                f
-            })
-            .collect();
-        let v = json!({
-            "v": 1,
-            "root": d,
-            "pre_merge": opts.pre_merge,
-            "errors": errors,
-            "warnings": warnings,
-            "features": statuses.iter().map(|(n, s)| json!({ "name": n, "status": s })).collect::<Vec<_>>(),
-            "findings": findings,
-        });
-        let code = if errors > 0 { exit::FINDINGS } else { exit::OK };
-        return (code, format!("{v}\n").into_bytes());
-    }
-    let mut err = std::io::stderr().lock();
-    for e in &ev {
-        let line = match e.sev {
-            Sev::Error => cat!("check-drift: ERROR: ", e.msg, "\n"),
-            Sev::Warning => cat!("check-drift: WARN: ", e.msg, "\n"),
-            Sev::Note => cat!(e.msg, "\n"),
-        };
-        let _ = err.write_all(&line);
-    }
-    if errors > 0 {
-        let _ = writeln!(
-            err,
-            "check-drift: FAIL — {errors} error(s), {warnings} warning(s)."
-        );
-        return (exit::FINDINGS, Vec::new());
-    }
-    (
-        exit::OK,
-        format!("check-drift: OK — 0 errors, {warnings} warning(s).\n").into_bytes(),
+    (ev, statuses)
+}
+#[derive(Clone, Debug)]
+pub struct DriftRequest {
+    pub selector: crate::ContextSelector,
+    pub scope: crate::ValidationScope,
+    pub pre_merge: bool,
+}
+pub(crate) fn data(
+    context: &crate::SpecContext,
+    request: &DriftRequest,
+) -> Result<Value, crate::SpecError> {
+    let code = if request.scope == crate::ValidationScope::WithCode {
+        Some(context.require_code()?)
+    } else {
+        None
+    };
+    let (events, statuses) = produce(
+        &context.spec_root,
+        code,
+        &context.artifact_root,
+        "spec",
+        "superpowers",
+        request.pre_merge,
+        true,
+    );
+    Ok(
+        json!({"v":1,"root":"spec","pre_merge":request.pre_merge,"errors":events.iter().filter(|e|e.sev==Sev::Error).count(),"warnings":events.iter().filter(|e|e.sev==Sev::Warning).count(),"features":statuses.iter().map(|(n,s)|json!({"name":n,"status":s})).collect::<Vec<_>>(),"findings":events.iter().filter(|e|e.sev!=Sev::Note).map(|e|json!({"severity":if e.sev==Sev::Error{"error"}else{"warning"},"message":lossy(&e.msg),"file":e.file})).collect::<Vec<_>>(),"diagnostics":if code.is_none(){json!([{"code":"code_checks_skipped","message":"Code drift checks were not examined"}])}else{json!([])}}),
     )
 }
 
-#[cfg(test)]
-mod tests {
-    use super::marker_root;
-
-    #[test]
-    #[expect(clippy::unwrap_used, reason = "test scratch tree")]
-    fn marker_root_accepts_a_docs_spec_only_project() {
-        let base = vibe_core::testscratch::scratch("vibe-drift-marker", "docs-spec");
-        let nested = base.join("a/b");
-        std::fs::create_dir_all(&nested).unwrap();
-        std::fs::create_dir_all(base.join("docs/spec")).unwrap();
-        let got = marker_root(&nested);
-        assert_eq!(got, &*base);
-    }
+pub(crate) fn managed_cli(
+    api: &crate::SpecApi,
+    selector: &crate::ContextSelector,
+    scope: crate::ValidationScope,
+    pre_merge: bool,
+    json_out: bool,
+    cx: &crate::api::Execution<'_>,
+) -> Result<(u8, Vec<u8>), crate::SpecError> {
+    let (_, (events, statuses)) = crate::cli::read_contextual(api, selector, cx, |context| {
+        crate::documents::collect(context)?;
+        let project = if scope == crate::ValidationScope::WithCode {
+            Some(context.require_code()?)
+        } else {
+            None
+        };
+        Ok(produce(
+            &context.spec_root,
+            project,
+            &context.artifact_root,
+            "spec",
+            "superpowers",
+            pre_merge,
+            true,
+        ))
+    })?;
+    Ok(finish(
+        cx,
+        "spec",
+        &Options {
+            pre_merge,
+            json: json_out,
+        },
+        events,
+        statuses,
+    ))
 }

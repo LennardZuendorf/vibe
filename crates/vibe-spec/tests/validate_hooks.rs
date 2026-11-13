@@ -182,6 +182,118 @@ fn hook_validate_is_capped() {
     );
 }
 
+struct ManagedHook {
+    _owner: vibe_core::testscratch::Scratch,
+    code: std::path::PathBuf,
+    store: std::path::PathBuf,
+    lock: std::path::PathBuf,
+}
+
+impl ManagedHook {
+    fn new(name: &str) -> Self {
+        let owner = project(name);
+        let code = owner.join("code");
+        let store = owner.join("store");
+        fs::create_dir(&code).unwrap();
+        git(&code, "2026-01-01T00:00:00Z", &["init", "-b", "main"]);
+        git(
+            &code,
+            "2026-01-01T00:00:00Z",
+            &["commit", "--allow-empty", "-m", "initial"],
+        );
+        let initialized = spec(
+            &code,
+            &["project", "init", "--mode", "global-first"],
+            &[("VIBE_STORE", store.to_str().unwrap())],
+        );
+        assert_eq!(initialized.code, 0, "{}", initialized.stderr);
+        let value: serde_json::Value = serde_json::from_slice(&initialized.stdout).unwrap();
+        let id = value["project"]["id"].as_str().unwrap();
+        let lock = store.join("spec/projects").join(id).join("project.lock");
+        Self {
+            _owner: owner,
+            code,
+            store,
+            lock,
+        }
+    }
+
+    fn hook(&self, extra: &[(&str, &str)]) -> common::Out {
+        let mut env = vec![("VIBE_STORE", self.store.to_str().unwrap())];
+        env.extend_from_slice(extra);
+        spec_stdin(
+            &self.code,
+            &["hook", "validate"],
+            &env,
+            &serde_json::to_vec(&serde_json::json!({"hook_event_name":"Stop","cwd":self.code}))
+                .unwrap(),
+        )
+    }
+
+    fn assert_unlocked(&self) {
+        for lock in [&self.lock, &self.store.join("spec/registry.lock")] {
+            assert!(
+                !lock.exists(),
+                "retained lock {}: {:?}",
+                lock.display(),
+                fs::read(lock)
+            );
+        }
+        let context = spec(
+            &self.code,
+            &["context"],
+            &[("VIBE_STORE", self.store.to_str().unwrap())],
+        );
+        assert_eq!(context.code, 0, "{}", context.stderr);
+    }
+}
+
+// spec-ci-portability/2: expired admission cannot publish a late lock.
+#[test]
+fn managed_hook_zero_and_tiny_caps_leave_no_late_lock() {
+    let f = ManagedHook::new("vh-managed-before-lock");
+    for cap in ["0", "1"] {
+        let out = f.hook(&[("VIBE_SPEC_HOOK_CAP_MS", cap)]);
+        assert_eq!(out.code, 0, "{}", out.stderr);
+        assert!(out.stdout.is_empty(), "{}", out.text());
+        assert!(out.stderr.contains("skipped — over"), "{}", out.stderr);
+        f.assert_unlocked();
+    }
+}
+
+// spec-ci-portability/2: ordinary completion must release the same locks.
+#[test]
+fn managed_hook_success_releases_locks() {
+    let f = ManagedHook::new("vh-managed-success");
+    let out = f.hook(&[("VIBE_SPEC_HOOK_CAP_MS", "30000")]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(out.stdout.is_empty(), "{}", out.text());
+    assert!(out.stderr.is_empty(), "{}", out.stderr);
+    f.assert_unlocked();
+}
+
+// spec-ci-portability/2: cancellation cannot remove another process's lock.
+#[test]
+fn managed_hook_timeout_preserves_foreign_lock_bytes() {
+    let f = ManagedHook::new("vh-managed-foreign-lock");
+    let held = match vibe_core::lock::Lock::acquire(&f.lock, vibe_core::lock::STALE).unwrap() {
+        vibe_core::lock::Acquired::Got(lock) => lock,
+        vibe_core::lock::Acquired::Busy => panic!("fresh fixture must be unlocked"),
+    };
+    let before = fs::read(&f.lock).unwrap();
+    let out = f.hook(&[("VIBE_SPEC_HOOK_CAP_MS", "1")]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(
+        out.stderr
+            .starts_with("vibe-spec hook validate: skipped — over 1 ms"),
+        "{}",
+        out.stderr
+    );
+    assert_eq!(fs::read(&f.lock).unwrap(), before);
+    drop(held);
+    f.assert_unlocked();
+}
+
 #[test]
 fn hook_validate_never_fails() {
     let p = tree("vh-never");

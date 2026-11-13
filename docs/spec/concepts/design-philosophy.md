@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-10-19
+updated: 2026-11-12
 ---
 
 # Design Philosophy
@@ -14,11 +14,12 @@ updated: 2026-10-19
    Anti-bundling is a design value, not a phase: no tool ever requires
    another. (v0.5's `vibe` CLI is a front door over independent tools, not a
    bundle of them.)
-4. **One core crate, three binaries.** `vibe-core` holds every primitive a
-   tool needs — root resolution, atomic writes, marker grammar, hook-input
-   parsing. No tool crate depends on another.
-5. **Contracts are the only coupling.** Cross-tool traffic is versioned files
-   under `.vibe/` plus one soft exec, never an import.
+4. **Shared primitives, owned behavior.** `vibe-core` holds tool-neutral root
+   resolution, atomic writes, marker grammar and hook-input parsing. The sole
+   tool-crate edge is central `vibe -> vibe-spec`; core stays spec-free.
+5. **Contracts couple independent tools.** Cross-tool traffic uses versioned
+   files under `.vibe/` and optional peer execution. Central spec embedding is
+   the narrow approved import exception, not a general peer-import policy.
 6. **Injection is budgeted and trigger-classed.** Per-turn payload splits
    level / edge / event so live state never balloons the transcript.
 7. **Enforce in code, explain in prose, never both.** An invariant the guard

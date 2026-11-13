@@ -5,7 +5,7 @@ applies:
   - ".claude/settings.json"
   - "plugin/hooks/**"
   - "crates/vibe-spec/**"
-updated: 2026-11-03
+updated: 2026-11-12
 ---
 
 # Hooks
@@ -26,14 +26,18 @@ the spec tooth are independent: both must allow.
 |---|---|---|
 | SessionStart | `startup\|clear\|compact` | `hook session-start` |
 | PreToolUse | `Edit\|Write\|MultiEdit\|NotebookEdit\|Bash` | `hook guard` |
-| PostToolUse | `Edit\|Write\|MultiEdit` | `hook validate`: `validate --file`, 500 ms cap |
-| Stop | none | `hook validate`: `validate --changed`, 2 s cap |
+| PostToolUse | `Edit\|Write\|MultiEdit` | `hook validate`: `validate --file`, 500 ms work budget |
+| Stop | none | `hook validate`: `validate --changed`, 2 s work budget |
 
 `validate --changed` keeps the findings of changed spec files from `git status
 --porcelain=v1 -z --untracked-files=all`, falls back to mtime against
 `.vibe/spec-session`, and keeps tree-level findings. `validate --file <path>`
 keeps one file's findings. `--format hook` prints hook JSON. Validate hooks
 always exit 0.
+These limits bound validation work, not managed cleanup.
+A timeout cancels and joins an admitted managed worker.
+In-flight Git commands and publication bookkeeping can exceed the budget.
+Unmanaged external lint keeps its fast timeout.
 
 Router: `hook session-start` prints the `using-spec` skill inside
 `<EXTREMELY_IMPORTANT>`, shaped for Claude, Cursor or generic hosts. It

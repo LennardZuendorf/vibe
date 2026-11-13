@@ -343,13 +343,35 @@ fn resolve(ctx: &Ctx, rels: &BTreeSet<String>, dir_rel: &[&str], raw: &[u8]) -> 
         return None;
     }
     let root = lexical(ctx.dir);
-    let project = lexical(ctx.project);
-    let (mut path, rest) = match target.strip_prefix(b"/") {
-        Some(abs) => (project.clone(), abs),
-        None => (
-            dir_rel.iter().fold(root.clone(), |p, d| p.join(d)),
-            &target[..],
-        ),
+    let project = ctx.project.map(lexical);
+    let document_dir = dir_rel.iter().fold(root.clone(), |p, d| p.join(d));
+    let first = target.split(|b| *b == b'/').next().unwrap_or_default();
+    let prefer_relative = !target.starts_with(b"/")
+        && (join_raw(&document_dir, &target).exists() || join_raw(&document_dir, first).is_dir());
+    let aliases = ctx.managed && !prefer_relative;
+    let logical = if aliases {
+        target
+            .strip_prefix(b"superpowers/")
+            .or_else(|| target.strip_prefix(b"docs/superpowers/"))
+            .or_else(|| target.strip_prefix(b"/docs/superpowers/"))
+    } else {
+        None
+    };
+    let (mut path, rest) = if let Some(relative) = logical {
+        (ctx.artifacts.to_owned(), relative)
+    } else if let Some(relative) = target.strip_prefix(b"spec/").filter(|_| aliases) {
+        (root.clone(), relative)
+    } else {
+        match target.strip_prefix(b"/") {
+            Some(abs) => {
+                let project = project.clone()?;
+                (project, abs)
+            }
+            None => (
+                dir_rel.iter().fold(root.clone(), |p, d| p.join(d)),
+                &target[..],
+            ),
+        }
     };
     for seg in rest.split(|&c| c == b'/') {
         match seg {
@@ -379,7 +401,19 @@ fn resolve(ctx: &Ctx, rels: &BTreeSet<String>, dir_rel: &[&str], raw: &[u8]) -> 
             (key, exists)
         }
         // Outside the spec root a target must still stay in the project.
-        Err(_) => (None, path.starts_with(&project) && path.exists()),
+        Err(_) => {
+            let anchor = if path.starts_with(ctx.artifacts) {
+                Some(ctx.artifacts)
+            } else {
+                ctx.project.filter(|p| path.starts_with(p))
+            };
+            (
+                None,
+                anchor.is_some_and(|anchor| {
+                    crate::registry::confined(anchor, &path).is_ok() && path.exists()
+                }),
+            )
+        }
     };
     Some(Link {
         target,
@@ -456,8 +490,17 @@ fn typed(r: &mut Report, ctx: &Ctx, rel: &str, place: Place, text: &[u8]) {
                         );
                     }
                     for c in code {
-                        let p = join_raw(ctx.project, c.trim_start_matches('/').as_bytes());
-                        if !p.exists() {
+                        if ctx.project.is_none()
+                            && (c.contains(['\\', ':', '\0']) || c.split('/').any(|p| p == ".."))
+                        {
+                            r.warn("SF33", format!("{rel}: invalid code path '{c}'").as_bytes());
+                            continue;
+                        }
+                        let Some(project) = ctx.project else {
+                            continue;
+                        };
+                        let p = lexical(&join_raw(project, c.trim_start_matches('/').as_bytes()));
+                        if crate::registry::confined(project, &p).is_err() || !p.exists() {
                             r.warn(
                                 "SF33",
                                 format!("{rel}: code path '{c}' does not exist").as_bytes(),
@@ -601,4 +644,18 @@ pub fn run(r: &mut Report, ctx: &Ctx) {
         }
     }
     reach(r, ctx, &files, &rels, &texts);
+}
+
+/// The same confined document/code resolver serves flat feature links in managed validation.
+pub(crate) fn link_exists(ctx: &Ctx, from: &Path, target: &[u8]) -> Option<bool> {
+    let relative = from
+        .strip_prefix(ctx.dir)
+        .ok()?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let rels = walk(ctx.dir)
+        .into_iter()
+        .map(|(_, parts)| parts.join("/"))
+        .collect();
+    resolve(ctx, &rels, &dir_of(&relative), target).map(|link| link.exists)
 }

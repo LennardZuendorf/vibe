@@ -4,7 +4,7 @@ applies:
   - "crates/vibe-spec/**"
   - "spec/**"
   - "tests/parity/**"
-updated: 2026-11-03
+updated: 2026-11-12
 ---
 
 # Shipped today
@@ -32,3 +32,9 @@ F17 adds `validate --strict`, `--format text|json` (`--json`), the check registr
 F18 adds `check-drift` (`--pre-merge`, `--json`), `promote` (deltas, the superpowers checklist, `--done`, `--json`), `export --openspec` and `import --openspec` to `vibe-spec`, with byte parity for the two ports over the corpus. Skills, CI and flow called `spec/scripts/*.sh` until F20 (P3c-R2); they now call `vibe-spec`. The OpenSpec gate runs in its own CI job (`tests/openspec/run.sh`, network).
 F20 adds `init` and `migrate`, and this repo now keeps its spec as a layered tree at `docs/spec/`.
 F19 adds `hook {guard,validate,session-start}`, `validate --changed|--file|--format hook`, `setup`, the shim and wiring, and the `spec-promoter` and `spec-health` agents. See Subagents and Hooks.
+
+The current branch also implements embedded spec execution, registered two-mode
+storage, complete branch documents, reconciliation and local stdio MCP through
+one API. See [Projects and MCP](spec-projects-mcp.md). This local source delivery
+does not establish release, installed-host acceptance or CI.
+Release distribution and installer delivery remain separate.

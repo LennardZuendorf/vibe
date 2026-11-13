@@ -10,13 +10,13 @@ use vibe_core::exit;
 use crate::git;
 use crate::pattern::unit_citations;
 use crate::root::{Miss, Root};
-use crate::text::{Fences, lines, lossy, name_of, sub_dirs};
+use crate::text::{Fences, lines, lossy, name_of};
 
 /// Feature names and their units.
-fn units(dir: &Path) -> (BTreeSet<String>, BTreeSet<String>) {
+fn units(dir: &Path, managed: bool) -> (BTreeSet<String>, BTreeSet<String>) {
     let mut features = BTreeSet::new();
     let mut units = BTreeSet::new();
-    for fdir in sub_dirs(&dir.join("features")) {
+    for fdir in crate::adherence::feature_dirs(dir, managed) {
         let f = name_of(&fdir);
         let text = std::fs::read(fdir.join("plan.md")).unwrap_or_default();
         let own = format!("{f}/");
@@ -82,36 +82,148 @@ fn each_test_file(project: &Path, f: &mut dyn FnMut(&str, &[u8])) {
 }
 
 /// Runs the command.
-pub fn run(found: &Result<Root, Miss>, since: Option<&str>, json_out: bool) -> (u8, Vec<u8>) {
+pub fn run(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    since: Option<&str>,
+    json_out: bool,
+) -> (u8, Vec<u8>) {
+    run_mode(cx, found, since, json_out, false)
+}
+pub(crate) fn run_registered(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    since: Option<&str>,
+    json_out: bool,
+) -> (u8, Vec<u8>) {
+    run_mode(cx, found, since, json_out, true)
+}
+fn run_mode(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    since: Option<&str>,
+    json_out: bool,
+    managed: bool,
+) -> (u8, Vec<u8>) {
     let root = match found {
         Ok(root) => root,
         Err(miss) => {
-            eprintln!("{}", miss.message());
+            diag!(cx, "{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };
-    let history = match git::commits(&root.project, since) {
-        Ok(h) => h,
-        Err(why) => {
-            eprintln!("vibe-spec trace: {why}");
-            return (exit::USAGE, Vec::new());
+    let result = match produce(
+        cx,
+        &root.dir,
+        &root.project,
+        &root.display(),
+        since,
+        managed,
+    ) {
+        Ok(r) => r,
+        Err(e) => {
+            diag!(cx, "vibe-spec trace: {}", e.message);
+            return (
+                if e.code == "no_units" {
+                    exit::FINDINGS
+                } else {
+                    exit::USAGE
+                },
+                Vec::new(),
+            );
         }
     };
-    let (features, units) = units(&root.dir);
-    if units.is_empty() {
-        eprintln!(
-            "vibe-spec trace: no units under {}/features/*/plan.md; nothing to trace (superpowers plans carry no unit ids)",
-            root.display()
-        );
-        return (exit::FINDINGS, Vec::new());
+    finish(cx, result, since, json_out)
+}
+fn finish(
+    cx: &crate::api::Execution<'_>,
+    result: TraceData,
+    since: Option<&str>,
+    json_out: bool,
+) -> (u8, Vec<u8>) {
+    for message in &result.diagnostics {
+        diag!(cx, "vibe-spec trace: {message}");
     }
+    let TraceData {
+        units,
+        cited: n_cited,
+        history: label,
+        uncited,
+        orphans,
+        ..
+    } = result;
+    let code = if uncited.is_empty() && orphans.is_empty() {
+        exit::OK
+    } else {
+        exit::FINDINGS
+    };
+    if json_out {
+        let mut v = json!({
+            "v": 1,
+            "units": units,
+            "cited": n_cited,
+            "history": label,
+            "uncited": uncited,
+            "orphans": orphans.iter().map(|(u, s)| json!({ "unit": u, "source": s })).collect::<Vec<_>>(),
+        });
+        if let (Some(s), "since") = (since, label.as_str()) {
+            v["since"] = json!(s);
+        }
+        return (code, format!("{v}\n").into_bytes());
+    }
+    let commits = match (label.as_str(), since) {
+        ("since", Some(s)) => format!("{s}..HEAD"),
+        ("all", _) => "all".to_string(),
+        _ => "unavailable".to_string(),
+    };
+    let mut out = format!("trace: {units} units, {n_cited} cited; commits: {commits}\n");
+    for u in &uncited {
+        out.push_str(&format!("UNCITED  {u}\n"));
+    }
+    for (u, s) in &orphans {
+        out.push_str(&format!("ORPHAN   {u}  {s}\n"));
+    }
+    (code, out.into_bytes())
+}
+
+struct TraceData {
+    units: usize,
+    cited: usize,
+    history: String,
+    uncited: Vec<String>,
+    orphans: Vec<(String, String)>,
+    diagnostics: Vec<String>,
+}
+fn produce(
+    cx: &crate::api::Execution<'_>,
+    dir: &Path,
+    project: &Path,
+    display: &str,
+    since: Option<&str>,
+    managed: bool,
+) -> Result<TraceData, crate::SpecError> {
+    let history = match git::commits(cx, project, since) {
+        Ok(h) => h,
+        Err(why) => {
+            return Err(crate::SpecError::new("invalid_history", why));
+        }
+    };
+    let (features, units) = units(dir, managed);
+    if units.is_empty() {
+        return Err(crate::SpecError::new(
+            "no_units",
+            format!(
+                "no units under {display}/features/*/plan.md; nothing to trace (superpowers plans carry no unit ids)"
+            ),
+        ));
+    }
+    let mut diagnostics = Vec::new();
     if history.is_none() {
-        if git::shallow(&root.project) {
-            eprintln!(
-                "vibe-spec trace: shallow clone: commit citations skipped; fetch full history"
-            );
+        if git::shallow(cx, project) {
+            diagnostics
+                .push("shallow clone: commit citations skipped; fetch full history".to_string());
         } else {
-            eprintln!("vibe-spec trace: no git history; citations from tests/ only");
+            diagnostics.push("no git history; citations from tests/ only".to_string());
         }
     }
     let mut cited: BTreeMap<String, usize> = units.iter().map(|u| (u.clone(), 0)).collect();
@@ -137,7 +249,7 @@ pub fn run(found: &Result<Root, Miss>, since: Option<&str>, json_out: bool) -> (
             see(tok, &source);
         }
     }
-    each_test_file(&root.project, &mut |rel, text| {
+    each_test_file(project, &mut |rel, text| {
         if rel.ends_with(".md") {
             let mut fences = Fences::new();
             for line in lines(text) {
@@ -154,10 +266,10 @@ pub fn run(found: &Result<Root, Miss>, since: Option<&str>, json_out: bool) -> (
             }
         }
     });
-    let uncited: Vec<&String> = cited
+    let uncited: Vec<String> = cited
         .iter()
         .filter(|(_, n)| **n == 0)
-        .map(|(u, _)| u)
+        .map(|(u, _)| u.clone())
         .collect();
     let n_cited = cited.len() - uncited.len();
     let label = match (&history, since) {
@@ -165,39 +277,57 @@ pub fn run(found: &Result<Root, Miss>, since: Option<&str>, json_out: bool) -> (
         (Some(_), Some(_)) => "since",
         (Some(_), None) => "all",
     };
-    let code = if uncited.is_empty() && orphans.is_empty() {
-        exit::OK
-    } else {
-        exit::FINDINGS
-    };
-    if json_out {
-        let mut v = json!({
-            "v": 1,
-            "units": units.len(),
-            "cited": n_cited,
-            "history": label,
-            "uncited": uncited,
-            "orphans": orphans.iter().map(|(u, s)| json!({ "unit": u, "source": s })).collect::<Vec<_>>(),
-        });
-        if let (Some(s), "since") = (since, label) {
-            v["since"] = json!(s);
-        }
-        return (code, format!("{v}\n").into_bytes());
-    }
-    let commits = match (label, since) {
-        ("since", Some(s)) => format!("{s}..HEAD"),
-        ("all", _) => "all".to_string(),
-        _ => "unavailable".to_string(),
-    };
-    let mut out = format!(
-        "trace: {} units, {n_cited} cited; commits: {commits}\n",
-        units.len()
-    );
-    for u in &uncited {
-        out.push_str(&format!("UNCITED  {u}\n"));
-    }
-    for (u, s) in &orphans {
-        out.push_str(&format!("ORPHAN   {u}  {s}\n"));
-    }
-    (code, out.into_bytes())
+    Ok(TraceData {
+        units: units.len(),
+        cited: n_cited,
+        history: label.into(),
+        uncited,
+        orphans: orphans.into_iter().collect(),
+        diagnostics,
+    })
+}
+
+#[derive(Clone, Debug)]
+pub struct TraceRequest {
+    pub selector: crate::ContextSelector,
+    pub since: Option<String>,
+}
+pub(crate) fn data(
+    runtime: &crate::Runtime,
+    context: &crate::SpecContext,
+    since: Option<&str>,
+) -> Result<serde_json::Value, crate::SpecError> {
+    let project = context.require_code()?;
+    let result = produce(
+        &crate::api::Execution::new(runtime),
+        &context.spec_root,
+        project,
+        "spec",
+        since,
+        true,
+    )?;
+    Ok(
+        json!({"v":1,"units":result.units,"cited":result.cited,"history":result.history,"uncited":result.uncited,"orphans":result.orphans.iter().map(|(u,s)|json!({"unit":u,"source":s})).collect::<Vec<_>>(),"diagnostics":result.diagnostics.iter().map(|message|json!({"code":"history_unavailable","message":message})).collect::<Vec<_>>()}),
+    )
+}
+
+pub(crate) fn managed_cli(
+    api: &crate::SpecApi,
+    selector: &crate::ContextSelector,
+    since: Option<&str>,
+    json_out: bool,
+    cx: &crate::api::Execution<'_>,
+) -> Result<(u8, Vec<u8>), crate::SpecError> {
+    let (_, result) = crate::cli::read_contextual(api, selector, cx, |context| {
+        crate::documents::collect(context)?;
+        produce(
+            cx,
+            &context.spec_root,
+            context.require_code()?,
+            "spec",
+            since,
+            true,
+        )
+    })?;
+    Ok(finish(cx, result, since, json_out))
 }

@@ -113,16 +113,28 @@ impl Miss {
 
 /// Runs the discovery order from `cwd`.
 pub fn discover(cwd: &Path, flag: Option<&Path>, env: Option<&OsStr>) -> Result<Root, Miss> {
+    discover_mode(cwd, flag, env, false)
+}
+/// Initialization retains the actual discovery authority even before its directory exists.
+pub(crate) fn discover_initialization(cwd: &Path, env: Option<&OsStr>) -> Result<Root, Miss> {
+    discover_mode(cwd, None, env, true)
+}
+fn discover_mode(
+    cwd: &Path,
+    flag: Option<&Path>,
+    env: Option<&OsStr>,
+    allow_missing: bool,
+) -> Result<Root, Miss> {
     if let Some(path) = flag {
-        return explicit(cwd, path, Source::Flag);
+        return explicit(cwd, path, Source::Flag, allow_missing);
     }
     if let Some(path) = env.filter(|p| !p.is_empty()) {
-        return explicit(cwd, Path::new(path), Source::Env);
+        return explicit(cwd, Path::new(path), Source::Env, allow_missing);
     }
     let mut dir = cwd.to_path_buf();
     let mut depth = 0;
     loop {
-        if let Some(found) = at(&dir, depth)? {
+        if let Some(found) = at(&dir, depth, allow_missing)? {
             return Ok(found);
         }
         if dir.join(".git").exists() {
@@ -138,9 +150,23 @@ pub fn discover(cwd: &Path, flag: Option<&Path>, env: Option<&OsStr>) -> Result<
     }
 }
 
-fn explicit(cwd: &Path, path: &Path, source: Source) -> Result<Root, Miss> {
+/// Domain discovery retains the legacy precedence without printing diagnostics.
+pub(crate) fn discover_context(cwd: &Path, env: Option<&OsStr>) -> Result<Root, crate::SpecError> {
+    discover(cwd, None, env).map_err(|miss| {
+        crate::SpecError::new(
+            if matches!(miss, Miss::BadConfig { .. }) {
+                "invalid_config"
+            } else {
+                "spec_root_unavailable"
+            },
+            miss.message(),
+        )
+    })
+}
+
+fn explicit(cwd: &Path, path: &Path, source: Source, allow_missing: bool) -> Result<Root, Miss> {
     let dir = cwd.join(path);
-    if !dir.is_dir() {
+    if !dir.is_dir() && !allow_missing {
         return Err(Miss::Missing { source, path: dir });
     }
     Ok(Root {
@@ -168,13 +194,13 @@ pub fn both_roots_warning(root: &Root) -> Option<String> {
 }
 
 /// Steps 3–5 at one directory.
-fn at(dir: &Path, depth: usize) -> Result<Option<Root>, Miss> {
+fn at(dir: &Path, depth: usize, allow_missing: bool) -> Result<Option<Root>, Miss> {
     let config = dir.join(".vibe").join("spec.json");
     if config.is_file()
         && let Some(rel) = config_root(&config)?
     {
         let spec = dir.join(rel);
-        if !spec.is_dir() {
+        if !spec.is_dir() && !allow_missing {
             return Err(Miss::Missing {
                 source: Source::Config,
                 path: spec,
@@ -205,7 +231,7 @@ fn at(dir: &Path, depth: usize) -> Result<Option<Root>, Miss> {
 }
 
 /// The `root` key of a config file; `None` when it has none.
-fn config_root(path: &Path) -> Result<Option<PathBuf>, Miss> {
+pub(crate) fn config_root(path: &Path) -> Result<Option<PathBuf>, Miss> {
     let bad = |why: String| Miss::BadConfig {
         path: path.to_path_buf(),
         why,
@@ -348,11 +374,15 @@ fn project_of(cwd: &Path) -> PathBuf {
 }
 
 /// `vibe-spec root [--json]`.
-pub fn command(found: &Result<Root, Miss>, json: bool) -> (u8, Vec<u8>) {
+pub fn command(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    json: bool,
+) -> (u8, Vec<u8>) {
     let root = match found {
         Ok(root) => root,
         Err(miss) => {
-            eprintln!("{}", miss.message());
+            diag!(cx, "{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };

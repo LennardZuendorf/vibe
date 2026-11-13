@@ -6,7 +6,6 @@
 //! `setup` needs no spec root: with or without one it exits 0 on success.
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use vibe_core::exit;
 
@@ -61,12 +60,20 @@ struct Target {
 }
 
 /// Runs the command.
-pub fn run(_found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<u8>) {
+pub fn run(
+    cx: &crate::api::Execution<'_>,
+    _found: &Result<Root, Miss>,
+    cwd: &Path,
+    opts: &Options,
+) -> (u8, Vec<u8>) {
     if !(opts.git_hooks || opts.opencode || opts.agents_md) {
-        eprintln!("vibe-spec setup: pass at least one of --git-hooks, --opencode, --agents-md");
+        diag!(
+            cx,
+            "vibe-spec setup: pass at least one of --git-hooks, --opencode, --agents-md"
+        );
         return (exit::USAGE, Vec::new());
     }
-    let project = crate::git::top(cwd).unwrap_or_else(|| cwd.to_path_buf());
+    let project = crate::git::top(cx, cwd).unwrap_or_else(|| cwd.to_path_buf());
     let mut errors: Vec<String> = Vec::new();
     let mut targets: Vec<Target> = Vec::new();
     let mut add = |r: Result<Target, String>| match r {
@@ -75,7 +82,7 @@ pub fn run(_found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<
     };
 
     if opts.git_hooks {
-        add(hooks_dir(cwd).and_then(|dir| {
+        add(hooks_dir(cx, cwd).and_then(|dir| {
             marked(
                 &project,
                 dir.join("pre-commit"),
@@ -109,13 +116,13 @@ pub fn run(_found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<
 
     if !errors.is_empty() {
         for e in &errors {
-            eprintln!("vibe-spec setup: {e}");
+            diag!(cx, "vibe-spec setup: {e}");
         }
         return (exit::FINDINGS, Vec::new());
     }
 
     if let Err(msg) = commit(&targets) {
-        eprintln!("vibe-spec setup: {msg}");
+        diag!(cx, "vibe-spec setup: {msg}");
         return (exit::FINDINGS, Vec::new());
     }
     let written: Vec<String> = targets
@@ -143,8 +150,9 @@ pub fn run(_found: &Result<Root, Miss>, cwd: &Path, opts: &Options) -> (u8, Vec<
 }
 
 /// `git rev-parse --git-path hooks`, absolute; honours worktrees and `core.hooksPath`.
-fn hooks_dir(cwd: &Path) -> Result<PathBuf, String> {
-    let out = Command::new("git")
+fn hooks_dir(cx: &crate::api::Execution<'_>, cwd: &Path) -> Result<PathBuf, String> {
+    let out = cx
+        .command("git")
         .args(["rev-parse", "--git-path", "hooks"])
         .current_dir(cwd)
         .output()

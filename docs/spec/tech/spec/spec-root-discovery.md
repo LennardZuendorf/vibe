@@ -5,7 +5,7 @@ applies:
   - "spec/**"
   - ".vibe/spec.json"
   - "docs/spec/**"
-updated: 2026-10-19
+updated: 2026-11-12
 ---
 
 # Root and discovery
@@ -21,13 +21,24 @@ Discovery, first hit wins:
 6. repeat 4–5 per parent directory, up to the one holding `.git`
 7. nothing found → exit 3 (no spec tree; see [tech-contracts.md](../contracts.md))
 
-One function implements this order; every subcommand, hook, and peer call
-goes through it. `vibe-spec root [--json]` is the one answer peers call —
-if the binary is absent, a peer runs the same order via a vendored
-resolution routine, so the order exists in one place in code, never
-duplicated in prose.
+Legacy unregistered discovery keeps this order in one implementation. Registered
+operations first resolve explicit project/native checkout/stored-branch selection
+against project identity. Matching clones/worktrees select the same project;
+ambiguity refuses. Repo-first uses selected or matching ambient checkout files.
+Otherwise project-only access follows its registered main checkout's actual branch.
+Global-first can select a stored branch outside code; code-sensitive operations
+require matching files. `code_available` does not guarantee Git/history.
 
-`docs/superpowers/` is a recognised artifact root (D33): `vibe-spec` reads
+Code, spec and artifact anchors stay separate. `Root.project` is the matching
+code project, never the global storage tree. Legacy `--root`/environment discovery
+still applies where supported; a conflicting managed global override refuses.
+Branch init separately selects exact stored base/target refs. It retains only a
+validated matching caller code anchor, otherwise reports stored-only context; it
+does not scan other clones or fall back to main. Normal Context rules stay intact.
+See [Projects and MCP](spec-projects-mcp.md) for ownership and storage.
+
+`docs/superpowers/` is the recognised repo-first artifact root (D33); global-first
+uses its selected external artifact root. Both read
 `specs/YYYY-MM-DD-<topic>-design.md` and `plans/YYYY-MM-DD-<topic>.md`,
 binds them to a feature by topic slug, and deletes them only through
 `promote <feature> --done`.

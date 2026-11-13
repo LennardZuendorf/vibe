@@ -33,16 +33,20 @@ pub(crate) fn valid_name(name: &str) -> bool {
 }
 
 fn checked<'a>(
+    cx: &crate::api::Execution<'_>,
     found: &'a Result<Root, Miss>,
     cmd: &str,
     name: &str,
 ) -> Result<&'a Root, (u8, Vec<u8>)> {
     if !valid_name(name) {
-        eprintln!("vibe-spec {cmd}: invalid feature name {name:?} (lowercase-kebab)");
+        diag!(
+            cx,
+            "vibe-spec {cmd}: invalid feature name {name:?} (lowercase-kebab)"
+        );
         return Err((exit::USAGE, Vec::new()));
     }
     found.as_ref().map_err(|miss| {
-        eprintln!("{}", miss.message());
+        diag!(cx, "{}", miss.message());
         (miss.code(), Vec::new())
     })
 }
@@ -78,22 +82,27 @@ pub(crate) fn rel(project: &Path, path: &Path) -> String {
 }
 
 /// Read `path`, or report `vibe-spec: <path>: <error>` and exit 1.
-fn read_plan(path: &Path) -> Result<Vec<u8>, (u8, Vec<u8>)> {
+fn read_plan(cx: &crate::api::Execution<'_>, path: &Path) -> Result<Vec<u8>, (u8, Vec<u8>)> {
     std::fs::read(path).map_err(|e| {
-        eprintln!("vibe-spec: {}: {e}", path.display());
+        diag!(cx, "vibe-spec: {}: {e}", path.display());
         (exit::FINDINGS, Vec::new())
     })
 }
 
 /// `vibe-spec plan --feature <f> [--json]`.
-pub fn plan(found: &Result<Root, Miss>, feature: &str, json_out: bool) -> (u8, Vec<u8>) {
-    let root = match checked(found, "plan", feature) {
+pub fn plan(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    feature: &str,
+    json_out: bool,
+) -> (u8, Vec<u8>) {
+    let root = match checked(cx, found, "plan", feature) {
         Ok(root) => root,
         Err(e) => return e,
     };
     let (path, rows) = match newest(&root.project.join(PLANS), feature, ".md") {
         Some(p) => {
-            let rows = match read_plan(&p) {
+            let rows = match read_plan(cx, &p) {
                 Ok(text) => task_rows(&text),
                 Err(e) => return e,
             };
@@ -102,10 +111,10 @@ pub fn plan(found: &Result<Root, Miss>, feature: &str, json_out: bool) -> (u8, V
         None => {
             let p = root.dir.join("features").join(feature).join("plan.md");
             if !p.is_file() {
-                eprintln!("vibe-spec plan: no plan for feature {feature}");
+                diag!(cx, "vibe-spec plan: no plan for feature {feature}");
                 return (exit::FINDINGS, Vec::new());
             }
-            let rows = match read_plan(&p) {
+            let rows = match read_plan(cx, &p) {
                 Ok(text) => table_rows(&text),
                 Err(e) => return e,
             };
@@ -242,8 +251,13 @@ fn table_rows(text: &[u8]) -> Vec<Row> {
 }
 
 /// `vibe-spec feature <f> [--json]`.
-pub fn feature(found: &Result<Root, Miss>, name: &str, json_out: bool) -> (u8, Vec<u8>) {
-    let root = match checked(found, "feature", name) {
+pub fn feature(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    name: &str,
+    json_out: bool,
+) -> (u8, Vec<u8>) {
+    let root = match checked(cx, found, "feature", name) {
         Ok(root) => root,
         Err(e) => return e,
     };
@@ -257,7 +271,7 @@ pub fn feature(found: &Result<Root, Miss>, name: &str, json_out: bool) -> (u8, V
     let layer = if docs.is_empty() {
         let dir = root.dir.join("features").join(name);
         if !dir.is_dir() {
-            eprintln!("vibe-spec feature: no feature {name}");
+            diag!(cx, "vibe-spec feature: no feature {name}");
             return (exit::FINDINGS, Vec::new());
         }
         for kind in FALLBACK_DOCS {
@@ -283,4 +297,105 @@ pub fn feature(found: &Result<Root, Miss>, name: &str, json_out: bool) -> (u8, V
         .collect();
     let v = json!({ "v": 1, "feature": name, "layer": layer, "docs": docs });
     (exit::OK, format!("{v}\n").into_bytes())
+}
+
+#[derive(Clone, Debug)]
+pub struct FeatureRequest {
+    pub selector: crate::ContextSelector,
+    pub feature: String,
+}
+#[derive(Clone, Debug)]
+pub struct PlanRequest {
+    pub selector: crate::ContextSelector,
+    pub feature: String,
+}
+pub(crate) fn bound_files(files: &crate::documents::Files, feature: &str) -> Vec<String> {
+    files
+        .keys()
+        .filter(|p| {
+            if p.starts_with(&format!("spec/features/{feature}/")) {
+                return true;
+            }
+            let (dir, suffix) = if p.starts_with("superpowers/specs/") {
+                ("superpowers/specs/", "-design.md")
+            } else if p.starts_with("superpowers/plans/") {
+                ("superpowers/plans/", ".md")
+            } else {
+                return false;
+            };
+            let name = &p[dir.len()..];
+            let want = format!("-{feature}{suffix}");
+            name.len() == 10 + want.len() && is_date(&name.as_bytes()[..10]) && name[10..] == want
+        })
+        .cloned()
+        .collect()
+}
+pub(crate) fn feature_data(
+    files: &crate::documents::Files,
+    name: &str,
+) -> Result<Value, crate::SpecError> {
+    if !valid_name(name) {
+        return Err(crate::SpecError::new(
+            "invalid_feature",
+            "expected lowercase-kebab feature name",
+        ));
+    }
+    let mut docs = Vec::new();
+    for (prefix, suffix, kind) in [
+        ("superpowers/specs/", "-design.md", "design"),
+        ("superpowers/plans/", ".md", "plan"),
+    ] {
+        if let Some(path) = bound_files(files, name)
+            .into_iter()
+            .filter(|p| p.starts_with(prefix) && p.ends_with(suffix))
+            .max()
+        {
+            docs.push(json!({"kind":kind,"path":path}));
+        }
+    }
+    let layer = if docs.is_empty() {
+        for kind in FALLBACK_DOCS {
+            let p = format!("spec/features/{name}/{kind}.md");
+            if files.contains_key(&p) {
+                docs.push(json!({"kind":kind,"path":p}));
+            }
+        }
+        "fallback"
+    } else {
+        "superpowers"
+    };
+    if docs.is_empty() {
+        return Err(crate::SpecError::new(
+            "feature_not_found",
+            format!("no feature {name}"),
+        ));
+    }
+    Ok(json!({"v":1,"feature":name,"layer":layer,"docs":docs}))
+}
+pub(crate) fn plan_data(
+    files: &crate::documents::Files,
+    name: &str,
+) -> Result<Value, crate::SpecError> {
+    if !valid_name(name) {
+        return Err(crate::SpecError::new(
+            "invalid_feature",
+            "expected lowercase-kebab feature name",
+        ));
+    }
+    let path = bound_files(files, name)
+        .into_iter()
+        .filter(|p| p.starts_with("superpowers/plans/"))
+        .max()
+        .unwrap_or_else(|| format!("spec/features/{name}/plan.md"));
+    let text = files.get(&path).ok_or_else(|| {
+        crate::SpecError::new("plan_not_found", format!("no plan for feature {name}"))
+    })?;
+    let rows = if path.starts_with("superpowers/") {
+        task_rows(text)
+    } else {
+        table_rows(text)
+    };
+    Ok(
+        json!({"v":1,"feature":name,"rows":rows.iter().map(|r|{let mut v=json!({"id":r.id,"status":r.status});if let Some(title)=&r.title{v["title"]=json!(title);}v}).collect::<Vec<_>>(),"source":{"kind":"plan","path":path}}),
+    )
 }

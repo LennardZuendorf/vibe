@@ -813,8 +813,146 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** integration, parity, migration, verification, discovery
 **Date:** 2026-11-04
 
+### Rediscover paths after refreshing a checkout
+**Pattern:** Planning inspected a stale checkout, then reused old skill paths after a fast-forward. Reads also assumed a scoped AGENTS.md, Cargo config and a core path module existed. Later scaffold and implementation-preparation passes repeated unchecked optional-path reads despite having discovery output. The resulting missing-file errors obscured which source revision the plan described.
+**Rule:** Fetch through authorized access, establish the intended checkout revision, and inventory paths again before reading. Use the canonical source when a compatibility skill path disappeared. Test optional paths before reading them, and keep independent command failures visible instead of hiding them behind a final successful command.
+**Tags:** planning, git, discovery, tooling, paths
+**Date:** 2026-11-11
+
+### Check plan tasks through the live query
+**Pattern:** A readable implementation plan used second-level Task headings, while the spec query recognizes third-level Task headings. Strict root validation passed, but the plan query returned zero tasks.
+**Rule:** After authoring a plan, run its feature and plan queries. Verify the intended artifacts, task count and initial statuses. Follow the consuming parser's format instead of treating prose validation as proof of machine-readable structure.
+**Tags:** planning, spec, validation, contracts
+**Date:** 2026-11-11
+
+### Give remote clients the complete conflict lifecycle
+**Pattern:** The spec MCP design could report conflicts and finalize a resolution, but only a filesystem editor could inspect and modify the isolated conflict material. A client restricted to MCP could not finish the workflow.
+**Rule:** For every reported conflict, define scoped reads, structured resolution submission and finalization through each supported interface. Bind the resolution workspace and canonical target to separate expected revisions, and test the complete client journey without an external editor.
+**Tags:** planning, mcp, conflicts, api, review
+**Date:** 2026-11-11
+
+### Recovery owns its writes, not later edits
+**Pattern:** Preflight found that the planned crash recovery reused unconditional restore operations, which could overwrite an editor's changes made after interruption. It also found Unicode-only environment capture and inherited external-linter execution in the new API path.
+**Rule:** Journal original and transaction-written hashes; restore only transaction-owned bytes and preserve divergent edits as recoverable conflicts. Preserve OS-string path inputs when embedding a CLI. Make external-process capabilities explicit per entry point instead of inheriting legacy opt-ins in a server or transaction validator.
+**Tags:** transactions, recovery, cli, mcp, review
+**Date:** 2026-11-11
+
+### Verify the compiler selected by the actual command
+**Pattern:** An isolated Cargo proxy still selected the system compiler because its toolchain directory was absent from PATH. A later cross-target failure exposed that the successful native run did not prove Rust1.88 compatibility. Dependencies also contained exact packages without declared minimum versions.
+**Rule:** Record Cargo and rustc versions in the same environment as verification. Keep native execution, cross-target compilation and declared dependency support separate. Use exact package/version/source exceptions for missing declarations. Preserve earlier receipts with their true identity; a later successful check does not retroactively change them.
+**Tags:** rust, toolchains, dependencies, verification
+**Date:** 2026-11-12
+
+### Revalidate selected authority after waiting or preflight
+**Pattern:** Discovery before locking could outlive a checkout, root or branch change. Repo-first setup then created documents on a switched branch before refusing the operation. A failed managed selection could fall back to legacy code paths, and explicit project selection could retain an unrelated ambient checkout. Branch management also required an ambiguous code checkout for an exact stored branch and could fail while composing its response after publication. Long merge preflight created another interval before publication.
+**Rule:** Resolve original caller inputs under the authority lock and recheck them after preflight before writes. Preserve an explicitly captured checkout, reject changed authority and never turn a managed lookup failure into legacy fallback. Reject unsupported selector placement before dispatch or input reads instead of silently using ambient context. Explicit project selection replaces unrelated ambient context. Separate storage-only management from operations requiring code selection, retain root-override checks when code context drops, and validate both source and result authority before publication. Never fabricate a code checkout or head to make a stored spec operation succeed.
+**Tags:** context, locking, transactions, identity, review
+**Date:** 2026-11-12
+
+### Prove metadata publication and retire only consumed work
+**Pattern:** Equal base/planned OIDs could falsely prove a metadata-only snapshot committed. Parsed JSON equality hid byte ownership, resumable setup omitted observations, and a consumed refresh envelope could survive into a later merge. Historical needs-input records also remained reported after another merge included their source.
+**Rule:** Journal exact before/after bytes and hashes, validate declared planned hashes, and use explicit commit proof when refs do not move. Complete linked metadata and receipts before journal retirement. Compare all persisted setup fields. Retire an envelope only from exact linked observation/record evidence; recompute outstanding work against the final target while preserving historical records, Pending state and conflict material.
+**Tags:** recovery, metadata, history, reconciliation, transactions
+**Date:** 2026-11-12
+
+### Keep feature artifacts out of durable completion proof
+**Pattern:** Fallback feature documents could count as durable changes, and merge history could lose or invent feature lifecycle evidence. A recorded draft could then be mistaken for a validated completed specification.
+**Rule:** Exclude the entire reserved feature-artifact layer, including fallback features and Superpowers documents, from durable promotion proof. Track explicit introduction and completion through all parents. Missing or ambiguous evidence must remain unresolved. Validate a completed tree separately from admitting an ordinary draft write.
+**Tags:** spec, promotion, lifecycle, history, validation
+**Date:** 2026-11-12
+
+### Bind fixtures and commands to their real environment
+**Pattern:** Guessed optional paths, a shell variable named path, inherited Git signing, background maintenance and invalid fixture shapes caused misleading failures. One schema negative used an already-invalid context; an optional document did not trigger the intended validator. A squash fixture also had diverged clone tips, so it exercised ambiguity before squash classification. Earlier successful receipts were easy to confuse with later source.
+**Rule:** Discover exact paths before reading, use task-specific variable names and safe literal quoting, and inspect each prerequisite result. Isolate fixture HOME/configuration, disable unrelated Git maintenance and start from valid producer-shaped data. Assert the intended failing field or effect. Preserve failed receipts, source hashes and permissions separately; rerun the affected checks after corrections without modifying frozen oracles or unrelated baselines.
+**Tags:** tests, fixtures, tooling, isolation, verification
+**Date:** 2026-11-12
+
+### Admit the complete response before publishing effects
+**Pattern:** Separate management and refresh reservations each fit while their combined reply did not. Reconciliation saved Pending before accounting for conflicts and validation diagnostics. An immutable invalid configuration could also create a larger error after registration. Permissive MCP schemas initially missed real result fields and variants.
+**Rule:** Validate actual producer responses with an independent schema engine and valid-baseline field mutations. Reserve the entire outer response, original ID, escaping, receipts and diagnostics before new effects. Obtain actual merge results in exclusively owned confined scratch when needed, validate predictable configuration first, and revalidate authority afterward. Cleanup must prove filesystem and Git-registration ownership. Keep fresh publication checks and preserve completed proof if actual results diverge.
+**Tags:** mcp, schemas, admission, transactions, review
+**Date:** 2026-11-12
+
+### Cancellation follows blocking work and publication boundaries
+**Pattern:** Synchronous identity discovery occupied async workers, cancelled work could release admission too early, a completion mask covered later refresh work, and resumed setup lacked a cancellation check immediately before its unpublished CAS.
+**Rule:** Move blocking discovery off async workers and retain admission through actual execution and cleanup. Check cancellation after waits and immediately before new publication, including retries. After publication, finish its linked bookkeeping with a local completion scope, then restore cancellation for later independent work. Preserve SDK response suppression and expose durable state through scoped reads rather than inventing historical request replay.
+**Tags:** async, cancellation, concurrency, recovery, mcp
+**Date:** 2026-11-12
+
+### Query status with the command's actual grammar
+**Pattern:** A status check copied the feature command's positional argument into the plan command, which requires --feature. Strict validation passed independently; the incorrect query failed before reading any plan.
+**Rule:** Check each command's parser or help instead of borrowing a sibling command's argument form. After changing execution status, verify the live task query's rows and status values as well as strict document validation.
+**Tags:** cli, planning, contracts, verification
+**Date:** 2026-11-12
+
+### Audit prerequisites and paths on each delivered surface
+**Pattern:** Final review found an overview claiming no runtime dependency while global spec history invokes Git. A source-relative router link also broke in materialized plugin copies. Verification inspection guessed a nonexistent stop.rs instead of discovering the current hook.rs module.
+**Rule:** Inventory actual modules and external executables before naming them. Update overview prerequisites when an implementation adds a runtime tool. Check links in each materialized layout as well as the canonical source; byte-identical copies do not prove their relative paths resolve.
+**Tags:** documentation, packaging, discovery, verification
+**Date:** 2026-11-12
+
+### Separate preserved CLI bytes from approved additions
+**Pattern:** A frozen compatibility test compared aggregate help byte-for-byte after approved commands and selectors were added. It failed on that expected addition before reaching later legacy cases.
+**Rule:** Keep exact byte comparisons for unchanged operations. Check approved aggregate additions through an explicit allowlist that preserves legacy entries, descriptions, order and surrounding text. Normalize only the documented formatting difference. Test missing, duplicate and unexpected entries, then run every historical case without rewriting the oracle.
+**Tags:** cli, parity, compatibility, tests
+**Date:** 2026-11-12
+
+### Build verification copies from the candidate source
+**Pattern:** An adapter fixture copied ignored build and review caches and stalled. A clean candidate copy exposed two environment failures: its isolated Node farm contained a mise shim that could not run, and OpenCode could not open its private test server. Native Node and the required local-server permission made the unchanged affected checks pass.
+**Rule:** Copy the current tracked and nonignored candidate files with their modes and link targets, excluding unrelated caches. Verify that identity before and after checks. Use native executables inside isolated homes, provide required local test capabilities, preserve failed receipts and rerun affected checks. Distinguish a host test of committed HEAD from a test of the uncommitted candidate.
+**Tags:** packaging, fixtures, isolation, verification
+**Date:** 2026-11-12
+
+### Recover verification from receipts and observed identities
+**Pattern:** A worker credit interruption left a completed test process behind. Restricted process listing, guessed paths and interpreter names, and report parsers that confused qualified test names or omitted a fixture binary caused follow-up probe failures. A restricted advisory refresh also needed explicit network access.
+**Rule:** Record child process identities and exit receipts when starting verification. After an interrupted worker, inspect those receipts before rerunning work. Discover actual paths, process arguments and producer schemas; stop and clean only proven owned resources. Keep infrastructure failures and diagnostic mistakes separate from product failures, and preserve the successful retry's exact environment.
+**Tags:** tooling, orchestration, recovery, verification
+**Date:** 2026-11-12
+
+### Verify publication through authorized network access
+**Pattern:** A restricted remote-branch lookup failed with `ssh: Could not resolve hostname github.com: -65563`; the same read-only lookup succeeded with authorized network access and confirmed the branch was absent.
+**Rule:** Distinguish a network access boundary from credential failure or remote corruption. Retry the exact read-only lookup with authorized access, preserve its result, and verify the remote branch SHA against the local commit after an authorized push.
+**Tags:** git, publication, network, verification
+**Date:** 2026-11-12
+
+### Preserve note budgets during promotion
+**Pattern:** Replacing temporary artifact links with durable scope and publication status expanded a technology note beyond its 60-line budget; strict validation rejected the 63-line edit and its 61-line revision.
+**Rule:** Keep promotion edits within the existing note budget. Consolidate repeated status and links, then rerun strict validation before completing promotion.
+**Tags:** spec, promotion, documentation, validation
+**Date:** 2026-11-12
+
+### Separate physical authority from Git path operands
+**Pattern:** Windows CI exposed verbatim paths rejected by Git, missing directory variables, a relocated Git launcher without its runtime, and embedded templates converted to CRLF.
+**Rule:** Keep canonical native paths for confinement and identity; translate only Git path operands without losing native units. Isolate platform directory variables and preserve Git's installed runtime. Pin embedded templates to LF and normalize logical document identifiers separately from physical paths.
+**Tags:** windows, paths, confinement, fixtures, portability
+**Date:** 2026-11-12
+
+### Retire admitted lock owners before a timed hook exits
+**Pattern:** A hook returned success at its work deadline while its detached worker held a project lock. A fixed wall-clock test sometimes expired before acquisition and missed the defect.
+**Rule:** Admit managed work atomically against timeout, cancel it through the same control, and join its worker through guard cleanup and publication bookkeeping. Reproduce timeout only after observing the real acquired lock. Test successful rendering with an independent generous work budget; test deadline behavior separately.
+**Tags:** hooks, cancellation, locks, deadlines, tests
+**Date:** 2026-11-12
+
+### Prove convergence and the complete validation surface
+**Pattern:** Live setup exceeded the bounded lock wait, targeted literal checks missed tracked files, and interrupted or guessed diagnostic probes obscured which result was proven.
+**Rule:** Accept bounded Busy only with a successful peer, unchanged foreign ownership, and fresh post-completion reads proving one project identity. Run the full tracked sweep and native Windows CI; cross-compilation proves a separate boundary. Retain exact failed receipts, discover paths before reads, quote optional globs, and use task-specific variables before retrying probes.
+**Tags:** concurrency, validation, ci, receipts, tooling
+**Date:** 2026-11-12
+
 ### Discover optional paths before reading CI helpers
 **Pattern:** CI investigation searched a nonexistent scoped spec directory and assumed a flow procedure path existed. Both probes failed. Receipt creation also required authorized directory creation in the isolated workspace.
 **Rule:** Inventory actual paths with `rg --files` before targeted searches or reads. Check optional tools and destination permissions separately, and distinguish diagnostic setup failures from product regressions.
 **Tags:** tooling, ci, discovery, verification
+**Date:** 2026-11-12
+
+### Audit every consumer of a persisted path representation
+**Pattern:** A path fix updated the journal writer and ordinary recovery but missed reconciliation receipts, scratch cleanup and bundle directory discovery. A Git fixture also assumed one architecture directory instead of querying its installation.
+**Rule:** Inventory every producer and consumer, including receipt recovery, finish, Drop, logical reads and directory walks. Test equivalent old spellings and foreign-identity refusals together. Discover tool installation roots through the tool's own metadata and preserve the complete runtime.
+**Tags:** paths, recovery, ownership, portability, fixtures
+**Date:** 2026-11-12
+
+### Separate scheduling allowances from semantic proof
+**Pattern:** Windows contention exceeded a bounded wait, bulk-data response tests hit a harness guard, and host Clippy found a test module before production items after the tests passed.
+**Rule:** After both writers finish, retry the original stale token; require revision_changed, one publication and unchanged winner content/history. Require a fresh coherent reader snapshot after the writer finishes. Label timing by test name and child PID; keep send time, actual response wait and queue-drain totals distinct. Use one bounded integration receive guard separate from direct responsiveness, acquisition and publication/cancellation deadlines. Increasing that guard establishes no production latency improvement. Run host Clippy after adding tests and place test modules after production items.
+**Tags:** concurrency, timing, tests, verification, clippy
 **Date:** 2026-11-12

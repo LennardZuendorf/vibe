@@ -82,7 +82,7 @@ pub fn retry_bounded<T, F: FnMut() -> io::Result<T>>(
 }
 
 /// Starts `cmd` under [`fork_lock`].
-fn spawn_guarded(cmd: &mut Command) -> io::Result<Child> {
+pub fn spawn_guarded(cmd: &mut Command) -> io::Result<Child> {
     let _guard = fork_lock();
     cmd.spawn()
 }

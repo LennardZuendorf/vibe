@@ -10,20 +10,25 @@ const USAGE: &str =
     "Usage: vibe-spec list-specs\n\nList spec files with type and scope. Takes no arguments.\n";
 
 /// Runs the command.
-pub fn run(found: &Result<Root, Miss>, args: &[String]) -> (u8, Vec<u8>) {
+pub fn run(
+    cx: &crate::api::Execution<'_>,
+    found: &Result<Root, Miss>,
+    args: &[String],
+) -> (u8, Vec<u8>) {
     if crate::wants_help(args) {
         return (0, USAGE.as_bytes().to_vec());
     }
     let root = match found {
         Ok(root) => root,
         Err(Miss::NotFound) => {
-            eprintln!(
+            diag!(
+                cx,
                 "vibe-spec list-specs: WARN: no spec root (searched docs/spec/ and the legacy root up to .git). Run: vibe-spec init"
             );
             return (0, Vec::new());
         }
         Err(miss) => {
-            eprintln!("{}", miss.message());
+            diag!(cx, "{}", miss.message());
             return (miss.code(), Vec::new());
         }
     };
@@ -95,4 +100,49 @@ fn area(name: &str) -> &'static str {
         n if n == "plan.md" || n.starts_with("plan-") => "plan",
         _ => "unknown",
     }
+}
+
+pub(crate) fn data(files: &crate::documents::Files) -> serde_json::Value {
+    serde_json::json!({"documents":files.iter().filter(|(p,_)|p.starts_with("spec/")).map(|(p,text)|serde_json::json!({"path":p,"area":area(p.rsplit('/').next().unwrap_or_default()),"type":String::from_utf8_lossy(&field(text,b"type:",b"type: ")),"scope":String::from_utf8_lossy(&field(text,b"scope:",b"scope: "))})).collect::<Vec<_>>()})
+}
+
+pub(crate) fn render_files(files: &crate::documents::Files) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut previous = None;
+    let mut entries: Vec<_> = files
+        .iter()
+        .filter(|(p, _)| p.starts_with("spec/"))
+        .collect();
+    entries.sort_by_key(|(p, _)| (p.starts_with("spec/features/"), p.as_str()));
+    for (path, text) in entries {
+        let rel = &path[5..];
+        if rel.contains('/') && !rel.starts_with("features/") {
+            continue;
+        }
+        if let Some(feature) = rel
+            .strip_prefix("features/")
+            .and_then(|p| p.split_once('/'))
+            .map(|(f, _)| f)
+            && previous.as_deref() != Some(feature)
+        {
+            if previous.is_none() {
+                out.extend_from_slice(b"\n## Features\n");
+            }
+            out.extend(format!("\n### {feature}\n").bytes());
+            previous = Some(feature.to_owned());
+        }
+        let name = rel.rsplit('/').next().unwrap_or_default();
+        out.extend(cat!(
+            "- ",
+            rel,
+            " [",
+            area(name),
+            "] (",
+            field(text, b"type:", b"type: "),
+            ": ",
+            field(text, b"scope:", b"scope: "),
+            ")\n"
+        ));
+    }
+    out
 }

@@ -2,15 +2,19 @@
 type: hub
 scope: technical
 children: [tech/contracts.md, tech/rust.md, tech/instruct.md, tech/spec.md, tech/cli.md]
-updated: 2026-11-02
+updated: 2026-11-12
 ---
 
 # vibe — Technical Architecture
 
-vibe is three independent tools — spec, flow, instruct — each a single static
-Rust binary with no runtime dependency, each a Claude Code plugin and an
-OpenCode plugin, each installable and useful alone. They compose through
-file-based contracts, never through imports. One repo, one installer, three
+The target is three independently installable Rust tools — spec, flow and
+instruct — with separate plugins and release trains. Current source embeds the
+shared spec library in `vibe`; its CLI and local MCP need no Node or peer binary.
+Global-first history and Git-aware code operations require Git. Flow and Instruct
+retain their stated delivery status and runtime requirements. Tools compose through
+file-based contracts. The sole approved tool-crate import is central
+`vibe -> vibe-spec` for the shared spec application layer; other tools remain
+independent and core stays spec-free. One repo, one installer, three
 release trains. **Current F5/F6 source:** the Rust `vibe-flow` CLI writes state
 and implements guard/Stop behind the POSIX shim. The JS engine still provides
 injection while it ships. Rust writes `.vibe/run/flow/state.json`; active JS and

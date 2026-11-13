@@ -4,7 +4,7 @@ use serde_json::Value;
 
 /// The only crates the workspace may hold (sorted).
 pub const MEMBERS: [&str; 5] = ["vibe", "vibe-core", "vibe-flow", "vibe-parity", "vibe-spec"];
-/// The shared library; the one member other members may depend on.
+/// The shared library; all members may depend on it.
 pub const CORE: &str = "vibe-core";
 /// External crates a member may depend on directly (normal, dev or build).
 pub const ALLOWED_EXTERNAL: [&str; 3] = ["clap", "serde", "serde_json"];
@@ -22,9 +22,10 @@ fn str_field<'a>(v: &'a Value, key: &str) -> &'a str {
 }
 
 /// Checks `cargo metadata --no-deps --format-version 1` output: the member
-/// set is exactly [`MEMBERS`], only [`CORE`] may be depended on by another
-/// member, core depends on no member, and every external dependency is in
-/// [`ALLOWED_EXTERNAL`]. Returns how many members were examined.
+/// set is exactly [`MEMBERS`], member edges target [`CORE`] except the
+/// embedded `vibe -> vibe-spec` edge, core depends on no member, and every
+/// external dependency is in [`ALLOWED_EXTERNAL`] or the exact spec-only
+/// MCP SDK/runtime selection. Returns how many members were examined.
 pub fn check_graph(meta: &Value) -> Result<usize, Vec<String>> {
     let mut errors = Vec::new();
     let pkgs = packages(meta);
@@ -45,13 +46,35 @@ pub fn check_graph(meta: &Value) -> Result<usize, Vec<String>> {
             let dep_name = str_field(dep, "name");
             let is_path = dep.get("path").is_some_and(Value::is_string);
             if MEMBERS.contains(&dep_name) {
-                if dep_name != CORE || name == CORE {
+                if (dep_name != CORE || name == CORE)
+                    && !(name == "vibe" && dep_name == "vibe-spec")
+                {
                     errors.push(format!("{name} depends on tool crate {dep_name}"));
                 }
             } else if is_path {
                 errors.push(format!(
                     "{name} has a path dependency outside the workspace: {dep_name}"
                 ));
+            } else if name == "vibe-spec" && matches!(dep_name, "rmcp" | "tokio") {
+                let wanted: &[&str] = if dep_name == "rmcp" {
+                    &["macros", "server", "transport-io"]
+                } else {
+                    &["io-std", "io-util", "macros", "rt-multi-thread", "sync"]
+                };
+                let mut features: Vec<_> = dep["features"]
+                    .as_array()
+                    .map_or(Vec::new(), |a| a.iter().filter_map(Value::as_str).collect());
+                features.sort_unstable();
+                let expected_req = if dep_name == "rmcp" { "=3.9.0" } else { "^1" };
+                if features != wanted
+                    || dep["req"] != expected_req
+                    || dep["rename"].is_string()
+                    || (dep_name == "rmcp" && dep["uses_default_features"] != false)
+                {
+                    errors.push(format!(
+                        "{name}: {dep_name} differs from the reviewed MCP selection"
+                    ));
+                }
             } else if !ALLOWED_EXTERNAL.contains(&dep_name) {
                 errors.push(format!(
                     "{name} depends on {dep_name}, outside the allowlist {ALLOWED_EXTERNAL:?}"
@@ -74,16 +97,17 @@ fn parse_version(v: &str) -> Option<(u64, u64, u64)> {
     Some((major, minor, patch))
 }
 
-/// Checks full `cargo metadata --format-version 1` output: every resolved
-/// package declares a `rust_version` no newer than [`MSRV`]. A package
-/// without one fails, because it cannot be proven to build at MSRV.
-/// Returns how many packages were examined.
+/// Check declared MSRVs against [`MSRV`]. Five exact reviewed registry versions
+/// have no declaration; they are exceptions, not proof of all-target builds.
+/// Every other missing, unreadable or raised declaration fails. Executed build
+/// evidence remains separate. Return how many packages were examined.
 pub fn check_msrv(meta: &Value) -> Result<usize, Vec<String>> {
     let mut errors = Vec::new();
     let pkgs = packages(meta);
     for pkg in pkgs {
         let name = str_field(pkg, "name");
         match pkg.get("rust_version").and_then(Value::as_str) {
+            None if missing_declaration_exception(pkg) => {}
             None => errors.push(format!("{name} declares no rust_version")),
             Some(v) => match parse_version(v) {
                 Some(rv) if rv <= MSRV => {}
@@ -99,6 +123,58 @@ pub fn check_msrv(meta: &Value) -> Result<usize, Vec<String>> {
         Ok(pkgs.len())
     } else {
         Err(errors)
+    }
+}
+
+fn missing_declaration_exception(pkg: &Value) -> bool {
+    pkg["source"] == "registry+https://github.com/rust-lang/crates.io-index"
+        && matches!(
+            (pkg["name"].as_str(), pkg["version"].as_str()),
+            (Some("ident_case"), Some("1.0.1"))
+                | (Some("wasi"), Some("0.11.1+wasi-snapshot-preview1"))
+                | (Some("android_system_properties"), Some("0.1.6"))
+                | (Some("core-foundation-sys"), Some("0.8.7"))
+                | (Some("iana-time-zone-haiku"), Some("0.1.2"))
+        )
+}
+/// Normalize Cargo's machine-local IDs while preserving exact reviewed edges,
+/// sources, versions and capabilities. A package-name pin alone misses features.
+pub fn resolved_graph(meta: &Value) -> Value {
+    let pkgs = packages(meta);
+    let nodes = meta["resolve"]["nodes"]
+        .as_array()
+        .map_or(&[][..], Vec::as_slice);
+    let mut out = Vec::new();
+    for node in nodes {
+        let Some(pkg) = pkgs.iter().find(|p| p["id"] == node["id"]) else {
+            return Value::Null;
+        };
+        let mut dependencies = Vec::new();
+        for dep in node["deps"].as_array().map_or(&[][..], Vec::as_slice) {
+            let Some(target) = pkgs.iter().find(|p| p["id"] == dep["pkg"]) else {
+                return Value::Null;
+            };
+            let mut kinds = dep["dep_kinds"].as_array().cloned().unwrap_or_default();
+            kinds.sort_by_key(Value::to_string);
+            dependencies.push(serde_json::json!({"package":format!("{}@{}",str_field(target,"name"),str_field(target,"version")),"name":dep["name"],"kinds":kinds}));
+        }
+        dependencies.sort_by_key(|d| (d["package"].to_string(), d["name"].to_string()));
+        let mut features = node["features"].as_array().cloned().unwrap_or_default();
+        features.sort_by_key(Value::to_string);
+        out.push(serde_json::json!({"name":pkg["name"],"version":pkg["version"],"source":pkg["source"],"features":features,"dependencies":dependencies}));
+    }
+    out.sort_by_key(|p| (p["name"].to_string(), p["version"].to_string()));
+    Value::Array(out)
+}
+pub fn check_resolved_graph(meta: &Value) -> Result<(), String> {
+    let pinned: Value = serde_json::from_str(include_str!(
+        "../../../contracts/spec-mcp-dependencies.json"
+    ))
+    .map_err(|e| e.to_string())?;
+    if resolved_graph(meta) == pinned {
+        Ok(())
+    } else {
+        Err("resolved package/version/source/feature/edge graph differs from the reviewed MCP closure".into())
     }
 }
 
@@ -130,6 +206,30 @@ mod tests {
     fn the_intended_graph_passes() {
         let m = meta(vec![path("vibe-core"), reg("clap")], vec![]);
         assert_eq!(check_graph(&m).unwrap(), 5);
+    }
+
+    #[test]
+    fn embedded_spec_edge_is_the_only_tool_exception() {
+        // spec-projects-mcp/1: permit the embedding edge, reject flow/core tool edges.
+        let mut m = meta(vec![path("vibe-core")], vec![]);
+        m["packages"][4]["dependencies"]
+            .as_array_mut()
+            .unwrap()
+            .push(path("vibe-spec"));
+        assert_eq!(check_graph(&m).unwrap(), 5);
+        m["packages"][3]["dependencies"]
+            .as_array_mut()
+            .unwrap()
+            .push(path("vibe-spec"));
+        assert!(
+            check_graph(&m)
+                .unwrap_err()
+                .iter()
+                .any(|e| e.contains("vibe-flow depends on tool crate vibe-spec"))
+        );
+        for tool in ["vibe", "vibe-flow", "vibe-parity", "vibe-spec"] {
+            assert!(check_graph(&meta(vec![], vec![path(tool)])).is_err());
+        }
     }
 
     #[test]

@@ -1,47 +1,50 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-//! `vibe spec` dispatch.
+//! Embedded spec dispatch (spec-projects-mcp/1).
 mod common;
 use common::Home;
 
 #[cfg(unix)]
-fn script(home: &Home, rel: &str, body: &str) -> std::path::PathBuf {
-    home.write_exec(rel, &format!("#!/bin/sh\n{body}\n"))
-}
-
-#[cfg(unix)]
 #[test]
-fn spec_dispatch_runs_vibe_spec_bin_and_passes_exit_code() {
-    let home = Home::new("spec-bin");
-    let fake = script(
-        &home,
+fn spec_projects_mcp_1_embedded_without_peer() {
+    let home = Home::new("spec-embedded");
+    let fake = home.write_exec(
         "fake-spec",
-        "printf '%s|' \"$@\" > \"$HOME/args\"\nexit 7",
+        "#!/bin/sh\nprintf called > \"$HOME/peer-called\"\nexit 7\n",
     );
     let out = home.vibe(
-        &["spec", "validate", "--strict"],
+        &["spec", "--help"],
         &[("VIBE_SPEC_BIN", fake.to_str().unwrap())],
     );
-    assert_eq!(out.code, 7, "{}", out.stderr);
-    assert_eq!(home.read("args"), "validate|--strict|");
-}
-
-#[cfg(unix)]
-#[test]
-fn spec_dispatch_finds_vibe_spec_on_path() {
-    let home = Home::new("spec-path");
-    script(&home, "bin/vibe-spec", "echo from-path\nexit 3");
-    let out = home.vibe(&["spec", "x"], &[]);
-    assert_eq!(out.code, 3, "{}", out.stderr);
-    assert_eq!(out.text(), "from-path\n");
-}
-
-#[test]
-fn spec_missing_prints_one_advice_line_exit_0() {
-    let home = Home::new("spec-missing");
-    let out = home.vibe(&["spec", "validate"], &[]);
     assert_eq!(out.code, 0, "{}", out.stderr);
-    assert_eq!(
-        out.text(),
-        "vibe: vibe-spec is not installed \u{2014} build it with `cargo build -p vibe-spec` or install the vibe-spec binary\n"
+    assert!(out.text().contains("Usage: vibe-spec"), "{}", out.text());
+    assert!(
+        out.stderr.contains("VIBE_SPEC_BIN is deprecated"),
+        "{}",
+        out.stderr
     );
+    assert!(!home.dir.join("peer-called").exists());
+}
+
+#[test]
+fn spec_embedded_ignores_path_peer() {
+    let home = Home::new("spec-no-peer");
+    #[cfg(unix)]
+    home.write_exec(
+        "bin/vibe-spec",
+        "#!/bin/sh\nprintf called > \"$HOME/peer-called\"\nexit 7\n",
+    );
+    let out = home.vibe(&["spec", "root"], &[]);
+    assert_eq!(out.code, 3, "{}", out.stderr);
+    assert!(out.stderr.contains("no spec root"), "{}", out.stderr);
+    assert!(!home.path("peer-called").exists());
+}
+
+#[test]
+fn embedded_spec_retains_the_raw_double_dash_tail() {
+    // spec-projects-mcp/1: outer clap must not consume legacy spec arguments.
+    let home = Home::new("spec-raw-tail");
+    home.write("docs/spec/lessons.md", "# Lessons\n");
+    let out = home.vibe(&["spec", "lessons-for", "--"], &[]);
+    assert_eq!(out.code, 2, "{}", out.stderr);
+    assert_eq!(out.stderr, "Unknown option: --\n");
 }
