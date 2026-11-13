@@ -30,6 +30,18 @@ pub struct Suite {
     /// cursor) compare under one key.
     #[serde(default)]
     pub file_aliases: BTreeMap<String, String>,
+    /// Snapshot keys dropped from both sides before file comparison. Two uses,
+    /// both of a file that is not a comparable answer: an output only one side
+    /// can produce (the candidate's `ledger.jsonl` has no frozen-oracle
+    /// counterpart), and a seeded input one side rewrites while the other
+    /// leaves alone (an edge case seeds the legacy cursor; the oracle's alias
+    /// moves it to the compared `.vibe/run` key, the candidate writes that key
+    /// itself and leaves the seed untouched). The compared key is unaffected:
+    /// aliasing happens first, so a case still compares what the engine wrote.
+    /// A key listed here is never compared on any side, so the exclusion is
+    /// declared in the suite and visible in the diff, not hidden in a command.
+    #[serde(default)]
+    pub ignore_files: Vec<String>,
     /// Named byte normalizers, applied to every compared file's bytes on both
     /// sides before comparison. See [`NORMALIZERS`].
     #[serde(default)]
@@ -570,6 +582,9 @@ impl Suite {
                 *bytes = normalize_bytes(name, bytes)?;
             }
         }
+        if !self.ignore_files.is_empty() {
+            files.retain(|key, _| !self.ignore_files.iter().any(|ignored| ignored == key));
+        }
         Ok(files)
     }
 
@@ -595,6 +610,12 @@ impl Suite {
                     path.display()
                 ));
             }
+        }
+        if let Some(empty) = suite.ignore_files.iter().find(|key| key.is_empty()) {
+            return Err(format!(
+                "{}: ignore_files entry {empty:?} is empty",
+                path.display()
+            ));
         }
         for divergence in &suite.divergences {
             validate_expect(divergence).map_err(|e| format!("{}: {e}", path.display()))?;
