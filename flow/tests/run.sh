@@ -39,6 +39,25 @@ SRC_ROOT="$(_find_repo_root)" || { echo "cannot locate repo root (.spec/.git)" >
 # (`CLAUDE_PROJECT_DIR="$projd" bash …`), so nothing here needs it inherited.
 unset CLAUDE_PROJECT_DIR
 
+# F7: set-state.sh hands the write to `vibe-flow` whenever that binary is on
+# PATH — the binary is the one gate (D27). These fixtures test the FALLBACK
+# writer, and several of them walk edges the gate refuses on purpose, so an
+# ambient `vibe-flow` (a developer's `cargo install`) would silently switch the
+# suite onto the gate and fail it locally while CI, which never installs the
+# binary, stayed green. Hide it; the delegation fixtures below put their own
+# stub on PATH instead, so both paths are exercised deliberately.
+if _vf_bin="$(command -v vibe-flow 2>/dev/null)"; then
+  _vf_masked=""
+  IFS=':' read -r -a _vf_dirs <<< "$PATH"
+  for _vf_dir in ${_vf_dirs[@]+"${_vf_dirs[@]}"}; do
+    [[ "$_vf_dir" == "$(dirname "$_vf_bin")" ]] && continue
+    _vf_masked="${_vf_masked:+$_vf_masked:}$_vf_dir"
+  done
+  PATH="$_vf_masked"
+  export PATH
+  unset _vf_bin _vf_masked _vf_dirs _vf_dir
+fi
+
 # One hermetic sandbox for the whole suite. It mirrors the real flow/ so every
 # self-locating script resolves its state.json, machine, and orders INTO the
 # sandbox — the live cursor is never touched. The layout preserves the
@@ -799,27 +818,159 @@ rm -rf "$nojq"
 bash "$SCRIPTS/set-state.sh" idle >/dev/null
 
 echo ""
-echo "=== /flow command — feature arg, idle-always-legal, gate token ==="
-# The /flow command is LLM-executed prose (read from the real repo, not the sandbox).
-# It must (a) forward an optional feature to set-state.sh, (b) treat idle as always
-# legal, (c) enforce the two gated edges via an explicit `confirm` token. These doc
-# assertions fail if any of those contracts is dropped from the command file.
+echo "=== /flow command — a thin wrapper over the binary ==="
+# The /flow command is LLM-executed prose (read from the real repo, not the
+# sandbox). After F7 it must NOT carry a second copy of the gate: it parses the
+# three tokens, maps the `confirm` token to `--confirm`, and shells out to
+# `vibe-flow state set`, which owns legality, the gate and the ledger. The argv
+# it drives is proven by execution in the delegation fixtures below; these
+# assertions keep the prose from drifting back into a prose gate.
 FLOWCMD="$SRC_ROOT/.claude/commands/flow.md"
 if [[ -f "$FLOWCMD" ]]; then
   cmd="$(cat "$FLOWCMD")"
-  assert_contains "flow-mvp/3" "/flow forwards an optional feature to set-state.sh" "$cmd" "set-state.sh <target> [feature]"
-  assert_contains "flow-mvp/3" "/flow treats idle as always legal (skips membership + gate)" "$cmd" "Abort is always legal"
-  assert_contains "flow-mvp/3" "/flow enforces gated edges against the machine gates object" "$cmd" "gates"
+  assert_contains "flow-mvp/3" "/flow runs the binary" "$cmd" "vibe-flow state set"
+  assert_contains "flow-mvp/3" "/flow maps the confirm token to the flag" "$cmd" "--confirm"
   assert_contains "flow-mvp/3" "/flow documents the confirm approval token" "$cmd" "confirm"
   assert_contains "flow-mvp/3" "/flow argument-hint advertises feature + confirm" "$cmd" "[feature] [confirm]"
+  assert_not_contains "flow-mvp/3" "/flow no longer calls set-state.sh" "$cmd" "set-state.sh"
+  assert_not_contains "flow-mvp/3" "/flow no longer re-implements membership" "$cmd" "Membership"
+  assert_not_contains "flow-mvp/3" "/flow no longer re-implements the gate" "$cmd" "Gate teeth"
+  assert_not_contains "flow-mvp/3" "/flow no longer reads the machine" "$cmd" "state-machine.json"
 else
   fail "flow-mvp/3" "/flow command file present at .claude/commands/flow.md"
 fi
-# The machine still declares exactly the two gated edges the command enforces.
+# The machine still declares exactly the two gated edges the binary enforces.
 gate_edge_count="$(jq -r '(.gates // {}) | keys | length' "$MACHINE")"
-assert_eq "flow-mvp/3" "machine declares exactly the two gated edges the command enforces" "$gate_edge_count" "2"
+assert_eq "flow-mvp/3" "machine declares exactly the two gated edges the writer enforces" "$gate_edge_count" "2"
 # SKILL.md precedence documents the same confirm token (fix 5c).
 assert_contains "flow-mvp/3" "SKILL.md precedence documents the /flow confirm token" "$(cat "$FLOW/SKILL.md")" "confirm"
+
+echo ""
+echo "=== f7/wrappers — set-state.sh delegates the gate to vibe-flow ==="
+# D27: one enforcement point. With the binary on PATH, set-state.sh must hand it
+# the caller's argv unchanged — `--confirm` included — and relay its verdict; it
+# must not write the cursor itself. `/flow` is prose, so the argv mapping it
+# promises is proven here by an executed call to a stub that records what it got.
+STUB="$(mktemp -d)"
+cat > "$STUB/vibe-flow" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$VIBE_FLOW_STUB_LOG"
+if [[ "${VIBE_FLOW_STUB_RC:-0}" -ne 0 ]]; then
+  echo "vibe state: ERROR: 'feature.impl' is not in next of 'feature.plan'." >&2
+  echo "vibe state: Legal next: feature.impl, feature.design, idle" >&2
+  exit "${VIBE_FLOW_STUB_RC}"
+fi
+echo "-> delegated"
+EOF
+chmod +x "$STUB/vibe-flow"
+STUB_LOG="$STUB/argv.log"
+STUB_ARGV="--root $SANDBOX --vibe-dir $SANDBOX/.agents/skills/vibe state set"
+rm -f "$STATE"
+
+: > "$STUB_LOG"
+out="$(VIBE_FLOW_STUB_LOG="$STUB_LOG" PATH="$STUB:$PATH" bash "$SCRIPTS/set-state.sh" feature.impl auth --confirm 2>&1; echo "rc=$?")"
+assert_contains "f7/wrappers" "delegated transition reports the binary's success" "$out" "rc=0"
+assert_contains "f7/wrappers" "delegated success relays the binary's own line" "$out" "-> delegated"
+assert_eq "f7/wrappers" "delegated argv is the caller's argv, --confirm included" \
+  "$(cat "$STUB_LOG")" "$STUB_ARGV feature.impl auth --confirm"
+[[ ! -e "$STATE" ]] && pass "f7/wrappers" "the script writes no cursor when it delegates" \
+  || fail "f7/wrappers" "the script writes no cursor when it delegates"
+
+: > "$STUB_LOG"
+VIBE_FLOW_STUB_LOG="$STUB_LOG" PATH="$STUB:$PATH" bash "$SCRIPTS/set-state.sh" feature.design auth >/dev/null 2>&1
+assert_eq "f7/wrappers" "an ungated call adds no --confirm" \
+  "$(cat "$STUB_LOG")" "$STUB_ARGV feature.design auth"
+
+: > "$STUB_LOG"
+VIBE_FLOW_STUB_LOG="$STUB_LOG" PATH="$STUB:$PATH" bash "$SCRIPTS/set-state.sh" feature.impl --confirm auth >/dev/null 2>&1
+assert_eq "f7/wrappers" "confirm may sit before the feature and is never read as one" \
+  "$(cat "$STUB_LOG")" "$STUB_ARGV feature.impl --confirm auth"
+
+: > "$STUB_LOG"
+out="$(VIBE_FLOW_STUB_LOG="$STUB_LOG" VIBE_FLOW_STUB_RC=1 PATH="$STUB:$PATH" bash "$SCRIPTS/set-state.sh" feature.impl auth --confirm 2>&1; echo "rc=$?")"
+assert_contains "f7/wrappers" "the binary's refusal is relayed, not re-worded" "$out" "'feature.impl' is not in next of 'feature.plan'"
+assert_contains "f7/wrappers" "the refusal keeps its legal-next hint" "$out" "Legal next: feature.impl, feature.design, idle"
+assert_contains "f7/wrappers" "a refused delegation exits 1" "$out" "rc=1"
+[[ ! -e "$STATE" ]] && pass "f7/wrappers" "a refused delegation writes no cursor" \
+  || fail "f7/wrappers" "a refused delegation writes no cursor"
+
+# The fallback still exists for install targets with no Rust build, and it says
+# what it cannot do rather than pretending to enforce the gate.
+out="$(bash "$SCRIPTS/set-state.sh" feature.design alpha 2>&1; echo "rc=$?")"
+assert_contains "f7/wrappers" "without the binary the writer still runs" "$out" "rc=0"
+assert_contains "f7/wrappers" "without the binary it says the gate was not enforced" "$out" "the transition gate was not enforced"
+assert_eq "f7/wrappers" "the not-enforced notice is exactly one line" \
+  "$(printf '%s\n' "$out" | grep -c 'the transition gate was not enforced')" "1"
+assert_contains "f7/wrappers" "the fallback writer still moves the cursor" "$(cat "$STATE")" '"phase": "design"'
+rm -rf "$STUB"
+
+echo ""
+echo "=== f7/hermetic — an ambient vibe-flow cannot change what the engine suite measures ==="
+# The engine suite drives the FALLBACK writer too, so it masks an ambient
+# `vibe-flow` in run.mjs: once, at module load, on process.env.PATH. That single
+# mask is what makes its spawned fixtures and its in-process probes (the doctor
+# parity matrix runs `command -v vibe-spec` inside the engine and through bash)
+# agree. It was NOT always single: masking only the children left the in-process
+# legs reading the real PATH, so on any machine holding both binaries in one
+# directory (`cargo install` -> ~/.cargo/bin, or ./target/debug) six doctor cases
+# split `warn tool.vibe-spec … not installed` against `ok tool.vibe-spec …
+# present` and one cursor fixture delegated for real — 7 red locally, green in
+# CI, which never has the binary. Prove it on the REAL suite rather than on a
+# filtered slice: a stub that records every call and fails must never be reached.
+#
+# The stub set must MIRROR THE LAYOUT THE DEFECT NEEDS — one directory holding
+# BOTH binaries. Round 2 caught this fixture shipping `vibe-flow` alone: no
+# engine case can split when it is by itself, so the fixture stayed green (350
+# passed, 0 failed) with the module-load mask deleted, i.e. it did not guard the
+# line it was added for. Measured at this head, run.mjs:76 commented out:
+#   stub dir {vibe-flow}            -> 350 passed, 0 failed   (blind)
+#   stub dir {vibe-flow, vibe-spec} -> 348 passed, 2 failed   (the six doctor
+#                                      cases fail by name inside the leg)
+# and 350 passed, 0 failed with the mask intact either way. Keep both stubs.
+if command -v node >/dev/null 2>&1; then
+  HSTUB="$(mktemp -d)"
+  cat > "$HSTUB/vibe-flow" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${VIBE_FLOW_STUB_LOG:-/dev/null}"
+echo "vibe state: ERROR: the engine suite must never delegate to an ambient vibe-flow" >&2
+exit 1
+EOF
+  chmod +x "$HSTUB/vibe-flow"
+  # Beside it, the second half of the pair: `command -v vibe-spec` is what the
+  # doctor parity matrix compares in-process against through-bash. It must be
+  # executable and answer like a real binary on the happy path, but it is only
+  # ever probed here — the mask is expected to hide it from every leg.
+  cat > "$HSTUB/vibe-spec" <<'EOF'
+#!/usr/bin/env bash
+echo "0.0.0-stub"
+EOF
+  chmod +x "$HSTUB/vibe-spec"
+  : > "$HSTUB/argv.log"
+  engine_log="$HSTUB/engine.log"
+  # rc captured directly (not through command substitution) so a crash keeps its
+  # status; the log is inspected for the summary and for WHAT failed, so a red
+  # leg names the cases instead of dumping 900 lines.
+  VIBE_FLOW_STUB_LOG="$HSTUB/argv.log" PATH="$HSTUB:$PATH" \
+    node "$SRC_ROOT/flow/engine/tests/run.mjs" >"$engine_log" 2>&1
+  engine_rc=$?
+  engine_summary="$(grep -E '^[0-9]+ passed, [0-9]+ failed' "$engine_log" | tail -n 1)"
+  assert_eq "f7/hermetic" "the engine suite is green with an ambient vibe-flow on PATH" "$engine_rc" "0"
+  [[ -n "$engine_summary" ]] || engine_summary="(no summary line — the runner did not finish)"
+  assert_contains "f7/hermetic" "the engine suite reports no failures under that ambient binary" "$engine_summary" ", 0 failed"
+  if [[ "$engine_rc" -ne 0 ]]; then
+    echo "        failing cases:"
+    grep -E '^  FAIL' "$engine_log" | head -n 10 | sed 's/^/        /'
+  fi
+  if [[ -s "$HSTUB/argv.log" ]]; then
+    fail "f7/hermetic" "no engine fixture delegated to the ambient vibe-flow"
+    echo "        the stub was invoked with: $(head -n 5 "$HSTUB/argv.log")"
+  else
+    pass "f7/hermetic" "no engine fixture delegated to the ambient vibe-flow"
+  fi
+  rm -rf "$HSTUB"
+else
+  echo "  note: node not on PATH — the engine-suite hermeticity leg did not run" >&2
+fi
 
 echo ""
 echo "=== orders.sh on a fresh non-git install (stranger-eval regression) ==="
