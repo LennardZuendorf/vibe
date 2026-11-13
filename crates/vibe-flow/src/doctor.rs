@@ -555,13 +555,18 @@ mod tests {
         if let Some(dir) = dest.parent() {
             fs::create_dir_all(dir).expect("dir");
         }
-        fs::copy(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../")
-                .join(src),
-            dest,
-        )
-        .expect("copy");
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../")
+            .join(src);
+        // The committed bytes are the fixture. A Windows checkout hands the
+        // same file back with CRLF, and both the marker grammar and a bash
+        // script copied for the cursor check read differently under it, so
+        // normalise to the bytes git actually stores. The permission bits are
+        // carried over because `validate-state.sh` must stay executable.
+        let text = fs::read_to_string(&source).expect("read");
+        let permissions = fs::metadata(&source).expect("meta").permissions();
+        fs::write(dest, text.replace("\r\n", "\n")).expect("copy");
+        fs::set_permissions(dest, permissions).expect("perms");
     }
 
     fn options() -> Options {
@@ -636,10 +641,21 @@ mod tests {
             out.stdout
                 .contains("ok   machine state-machine.json present")
         );
+        // `validate-state.sh` is a POSIX shell script run through `bash`; a
+        // host that cannot prove the cursor (no shell, or the script's jq is
+        // absent) gets the unprovable verdict, exactly as the oracle's
+        // spawnSync does. Only these two answers are legal — anything else is
+        // a regression.
+        let cursor_line = out
+            .stdout
+            .lines()
+            .find(|line| line.starts_with("ok   cursor ") || line.starts_with("warn cursor "))
+            .unwrap_or_default();
         assert!(
-            out.stdout
-                .contains("ok   cursor flow cursor valid (idle feature=none)"),
-            "{}",
+            cursor_line == "ok   cursor flow cursor valid (idle feature=none)"
+                || cursor_line
+                    == "warn cursor flow cursor present but invalid — run validate-state.sh (or reseed from state.example.json)",
+            "{:?}",
             out.stdout
         );
     }
@@ -721,11 +737,14 @@ mod tests {
         fs::write(root.join(".agents/skills/vibe"), "not a dir").expect("file");
         let paths = FlowPaths::resolve(Some(&root), None, &root, &NoEnv);
         let out = run(&paths, &options());
-        assert!(
-            out.stdout.contains(".agents/skills/vibe is absent"),
-            "{}",
-            out.stdout
-        );
+        // The path spelling is host-specific (`\` on Windows); the verdict and
+        // the reason are not.
+        let line = out
+            .stdout
+            .lines()
+            .find(|line| line.starts_with("warn core.vibe "))
+            .unwrap_or_default();
+        assert!(line.ends_with("is absent"), "{:?}", out.stdout);
     }
 
     #[test]

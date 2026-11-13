@@ -236,13 +236,18 @@ mod tests {
         if let Some(dir) = dest.parent() {
             fs::create_dir_all(dir).expect("dir");
         }
-        fs::copy(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../")
-                .join(src),
-            dest,
-        )
-        .expect("copy");
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../")
+            .join(src);
+        // The committed bytes are the fixture. A Windows checkout hands the
+        // same file back with CRLF, and the marker grammar — like the JS
+        // oracle's — matches whole lines, so a CRLF copy would read as "no
+        // block at all" and fail the test for a reason the product does not
+        // have on a LF tree.
+        let text = fs::read_to_string(&source).expect("read");
+        let permissions = fs::metadata(&source).expect("meta").permissions();
+        fs::write(dest, text.replace("\r\n", "\n")).expect("copy");
+        fs::set_permissions(dest, permissions).expect("perms");
     }
 
     /// A project whose data home is the legacy skill dir (the oracle layout).
