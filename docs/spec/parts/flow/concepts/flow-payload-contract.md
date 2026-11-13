@@ -23,6 +23,7 @@ D22's provider payload, written by F8: flow hands per-turn guidance to instruct 
 - `session` — timeless doctrine lines, capped, for the session-start channel.
 - `events` — one-shot `{id, ts, text}` records from guard and Stop, appended by
   the hooks without changing their verdict.
+- Accepted difference: a non-string `feature` sorts its keys (no `preserve_order` in `serde_json`); the JS oracle keeps insertion order, and a crate test pins it.
 
 `state set` rewrites `level`/`edge`/`session` and bumps `seq`. `vibe-flow emit`
 reprints the payload for the live cursor and never bumps `seq`; a per-turn bump
@@ -39,9 +40,8 @@ cannot be written is advisory, so the caller warns and continues (FV-R7).
 ## Provider manifest
 
 `vibe-flow init` writes `.vibe/providers/flow.json` naming
-`["vibe-flow", "emit"]` with `.vibe/run/inject/flow.json` as the fallback, and
-seeds the payload so the file is readable before the first transition. A second
-`init` writes the same bytes and reports no change.
+`["vibe-flow", "emit"]` with `.vibe/run/inject/flow.json` as the fallback and seeds the
+payload, so the file is readable before the first transition; a second `init` reports no change.
 
 ## Standalone AGENTS.md block
 
