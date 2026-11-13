@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 #![cfg(unix)]
-//! `vibe uninstall` end to end.
+//! `vibe config uninstall` end to end.
 mod cmd_support;
 mod common;
 use std::fs;
@@ -23,7 +23,7 @@ fn uninstall_restores_pre_install_bytes() {
     let kit = toolkit(&home);
     let before = snapshot(&home);
     assert_ok(&install(&home, &kit, &[]));
-    let out = home.vibe(&["uninstall"], &[]);
+    let out = home.vibe(&["config", "uninstall"], &[]);
     assert_ok(&out);
     let after = snapshot(&home);
     for (rel, entry) in &before {
@@ -55,7 +55,7 @@ fn uninstall_removes_created_directories_and_links() {
     let before = snapshot(&home);
     assert_ok(&install(&home, &kit, &[]));
     mirror_claude_json(&home);
-    let out = home.vibe(&["uninstall"], &[]);
+    let out = home.vibe(&["config", "uninstall"], &[]);
     assert_ok(&out);
     let text = out.text();
     assert!(text.lines().any(|l| l.starts_with("unlinked ")), "{text}");
@@ -89,7 +89,7 @@ fn uninstall_keeps_edited_claude_mcp() {
     mirror_claude_json(&home);
     replace_in(&home, ".claude.json", "some-server", "hand-edited");
     clear_claude_log(&home);
-    let out = home.vibe(&["uninstall"], &[]);
+    let out = home.vibe(&["config", "uninstall"], &[]);
     assert_ok(&out);
     let text = out.text();
     assert!(
@@ -116,7 +116,7 @@ fn uninstall_keeps_replaced_links() {
     fs::remove_file(home.path(".claude/skills/spec")).unwrap();
     fs::create_dir_all(home.path(".claude/skills/spec")).unwrap();
     home.write(".claude/skills/spec/SKILL.md", "mine\n");
-    let out = home.vibe(&["uninstall"], &[]);
+    let out = home.vibe(&["config", "uninstall"], &[]);
     assert_ok(&out);
     let text = out.text();
     let dir = home.path(".claude/skills/spec");
@@ -135,7 +135,7 @@ fn uninstall_without_state_is_noop() {
     let home = Home::with_store("uninstall-nostate");
     common::fake_claude(&home);
     let before = snapshot(&home);
-    let out = home.vibe(&["uninstall"], &[]);
+    let out = home.vibe(&["config", "uninstall"], &[]);
     assert_ok(&out);
     assert_eq!(out.text(), "note nothing installed\n");
     assert_eq!(snapshot(&home), before);
@@ -150,7 +150,7 @@ fn uninstall_dry_run_changes_nothing() {
     mirror_claude_json(&home);
     clear_claude_log(&home);
     let before = snapshot(&home);
-    let out = home.vibe(&["uninstall", "--dry-run"], &[]);
+    let out = home.vibe(&["config", "uninstall", "--dry-run"], &[]);
     assert_ok(&out);
     let text = out.text();
     assert!(text.lines().any(|l| l.starts_with("would ")), "{text}");
@@ -176,7 +176,7 @@ fn uninstall_refused_target_keeps_state_and_rerun_finishes() {
     mirror_claude_json(&home);
     let good = home.read(".factory/mcp.json");
     home.write(".factory/mcp.json", "{ nope");
-    let out = home.vibe(&["uninstall"], &[]);
+    let out = home.vibe(&["config", "uninstall"], &[]);
     assert_eq!(out.code, 1, "{}\n{}", out.text(), out.stderr);
     assert!(
         out.text()
@@ -189,7 +189,7 @@ fn uninstall_refused_target_keeps_state_and_rerun_finishes() {
     assert!(home.path(".factory").is_dir());
 
     home.write(".factory/mcp.json", &good);
-    let out = home.vibe(&["uninstall"], &[]);
+    let out = home.vibe(&["config", "uninstall"], &[]);
     assert_ok(&out);
     assert!(!state_path(&home).exists());
     assert!(!home.path(".factory").exists());
@@ -204,7 +204,7 @@ fn uninstall_keeps_preexisting_empty_config_dir() {
     let kit = toolkit(&home);
     assert_ok(&install(&home, &kit, &[]));
     mirror_claude_json(&home);
-    assert_ok(&home.vibe(&["uninstall"], &[]));
+    assert_ok(&home.vibe(&["config", "uninstall"], &[]));
     assert!(home.path(".factory").is_dir());
     assert_eq!(fs::read_dir(home.path(".factory")).unwrap().count(), 0);
     assert!(!home.path(".codex").exists());
@@ -220,7 +220,7 @@ fn uninstall_refuses_plugin_parent_escape() {
     fs::rename(home.path(".config/opencode/plugins"), home.path("outside")).unwrap();
     symlink(home.path("outside"), home.path(".config/opencode/plugins")).unwrap();
     let before = home.read("outside/vibe-store.js");
-    let out = home.vibe(&["uninstall"], &[]);
+    let out = home.vibe(&["config", "uninstall"], &[]);
     assert_eq!(out.code, 1, "{} {}", out.text(), out.stderr);
     assert_eq!(home.read("outside/vibe-store.js"), before);
     assert!(state_path(&home).exists());

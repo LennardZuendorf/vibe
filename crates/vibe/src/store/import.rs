@@ -1,4 +1,4 @@
-//! `vibe store import-mcp`: copy servers into the store with secrets turned into placeholders.
+//! `vibe config import-mcp`: copy servers into the store with secrets turned into placeholders.
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;

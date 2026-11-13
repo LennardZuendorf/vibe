@@ -3,22 +3,91 @@
 mod common;
 use common::Home;
 
+fn command_rows(text: &str) -> Vec<&str> {
+    text.split("Commands:\n")
+        .nth(1)
+        .unwrap()
+        .lines()
+        .take_while(|line| !line.trim().is_empty())
+        .map(|line| line.split_whitespace().next().unwrap())
+        .collect()
+}
+
 #[test]
-fn help_lists_every_command() {
+fn help_lists_exact_command_tree() {
     let home = Home::new("help");
-    let out = home.vibe(&["--help"], &[]);
-    assert_eq!(out.code, 0, "{}", out.stderr);
-    let text = out.text();
-    for cmd in [
-        "store",
-        "sync",
-        "hook",
-        "install",
-        "uninstall",
-        "doctor",
-        "spec",
+    let top = home.vibe(&["--help"], &[]);
+    assert_eq!(top.code, 0);
+    assert_eq!(
+        command_rows(&top.text()),
+        ["config", "hook", "spec", "help"]
+    );
+    let config = home.vibe(&["config", "--help"], &[]);
+    assert_eq!(config.code, 0, "{}", config.stderr);
+    assert_eq!(
+        command_rows(&config.text()),
+        [
+            "init",
+            "import-mcp",
+            "status",
+            "sync",
+            "install",
+            "uninstall",
+            "doctor",
+            "help"
+        ]
+    );
+}
+
+#[test]
+fn config_operation_help_preserves_options() {
+    let home = Home::new("config-help");
+    for (op, options) in [
+        ("init", vec!["--instructions"]),
+        ("import-mcp", vec!["<FILE>", "--keep-literals"]),
+        ("status", vec!["--json"]),
+        ("sync", vec!["--harness", "--dry-run", "--json"]),
+        ("install", vec!["--harness", "--toolkit", "--dry-run"]),
+        ("uninstall", vec!["--dry-run"]),
+        ("doctor", vec![]),
     ] {
-        assert!(text.contains(cmd), "`{cmd}` missing from help:\n{text}");
+        let out = home.vibe(&["config", op, "--help"], &[]);
+        assert_eq!(out.code, 0, "{op}: {}", out.stderr);
+        for option in options {
+            assert!(out.text().contains(option), "{op}: {option}");
+        }
+    }
+}
+
+#[test]
+fn rejected_commands_have_no_effects() {
+    let cases: &[&[&str]] = &[
+        &["config"],
+        &["sync"],
+        &["store", "init"],
+        &["store", "status"],
+        &["store", "import-mcp", "input.json"],
+        &["install"],
+        &["uninstall"],
+        &["doctor"],
+        &["config", "store"],
+        &["config", "hook"],
+        &["config", "unknown"],
+        &["config", "sync", "--harness", "unknown"],
+        &["config", "sync", "--unknown"],
+    ];
+    for args in cases {
+        let home = Home::new("reject");
+        #[cfg(unix)]
+        common::fake_claude(&home);
+        let out = home.vibe(args, &[]);
+        assert_eq!(out.code, 2, "{args:?}: {}", out.stderr);
+        if *args == ["config"] {
+            assert!(out.stderr.contains("Usage:"));
+        }
+        assert!(!home.path(home.store_rel()).exists(), "{args:?}");
+        assert!(!home.path(".local/state/vibe").exists(), "{args:?}");
+        assert!(home.claude_calls().is_empty(), "{args:?}");
     }
 }
 
@@ -141,4 +210,32 @@ fn default_path_reaches_the_fake_and_not_the_real_path() {
         .output()
         .unwrap();
     assert!(!none.status.success(), "a real claude is on /usr/bin:/bin");
+}
+
+#[test]
+fn config_init_and_import_forward_options() {
+    let home = Home::new("config-options");
+    home.write("instructions.md", "Custom rules\n");
+    let init = home.vibe(
+        &["config", "init", "--instructions", "instructions.md"],
+        &[],
+    );
+    assert_eq!(init.code, 0, "{}", init.stderr);
+    assert_eq!(
+        home.read(&format!("{}/AGENTS.md", home.store_rel())),
+        "Custom rules\n"
+    );
+    home.write(
+        "input.json",
+        r#"{"mcpServers":{"example":{"command":"example","env":{"API_TOKEN":"sk-test-secret"}}}}"#,
+    );
+    let import = home.vibe(
+        &["config", "import-mcp", "input.json", "--keep-literals"],
+        &[],
+    );
+    assert_eq!(import.code, 0, "{}", import.stderr);
+    assert!(
+        home.read(&format!("{}/mcp.json", home.store_rel()))
+            .contains("sk-test-secret")
+    );
 }

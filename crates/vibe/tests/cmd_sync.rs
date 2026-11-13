@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 #![cfg(unix)]
-//! `vibe sync` end to end.
+//! `vibe config sync` end to end.
 mod cmd_support;
 mod common;
 use cmd_support::*;
@@ -10,7 +10,7 @@ use vibe_core::lock::{Acquired, Lock, STALE};
 #[test]
 fn sync_writes_blocks_links_and_claude_servers() {
     let home = ready_home("sync-fresh");
-    let out = home.vibe(&["sync"], &[]);
+    let out = home.vibe(&["config", "sync"], &[]);
     assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
     let text = out.text();
     assert!(text.contains("wrote "), "{text}");
@@ -32,7 +32,7 @@ fn sync_writes_blocks_links_and_claude_servers() {
 #[test]
 fn sync_second_run_has_nothing_to_do() {
     let home = synced_home("sync-twice");
-    let out = home.vibe(&["sync"], &[]);
+    let out = home.vibe(&["config", "sync"], &[]);
     assert_eq!(out.code, 0, "{}", out.stderr);
     assert!(out.text().contains("nothing to do"), "{}", out.text());
     assert!(home.claude_calls().is_empty());
@@ -41,7 +41,7 @@ fn sync_second_run_has_nothing_to_do() {
 #[test]
 fn sync_dry_run_writes_nothing() {
     let home = ready_home("sync-dry");
-    let out = home.vibe(&["sync", "--dry-run"], &[]);
+    let out = home.vibe(&["config", "sync", "--dry-run"], &[]);
     assert_eq!(out.code, 0, "{}", out.stderr);
     let text = out.text();
     assert!(
@@ -62,6 +62,16 @@ fn sync_dry_run_writes_nothing() {
 }
 
 #[test]
+fn sync_noop_dry_run_preserves_files_and_skips_subprocess() {
+    let home = synced_home("sync-noop-dry");
+    let before = snapshot(&home);
+    let out = home.vibe(&["config", "sync", "--dry-run"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(snapshot(&home), before);
+    assert!(home.claude_calls().is_empty());
+}
+
+#[test]
 fn sync_after_store_edit_updates_files_and_claude_cli() {
     let home = synced_home("sync-edit");
     mirror_claude_json(&home);
@@ -71,7 +81,7 @@ fn sync_after_store_edit_updates_files_and_claude_cli() {
         "some-server",
         "other-server",
     );
-    let out = home.vibe(&["sync"], &[]);
+    let out = home.vibe(&["config", "sync"], &[]);
     assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
     let calls = home.claude_calls();
     assert_eq!(calls.len(), 2, "{calls:?}");
@@ -92,7 +102,7 @@ fn sync_after_store_edit_updates_files_and_claude_cli() {
 #[test]
 fn sync_json_shape() {
     let home = ready_home("sync-json");
-    let out = home.vibe(&["sync", "--json"], &[]);
+    let out = home.vibe(&["config", "sync", "--json"], &[]);
     assert_eq!(out.code, 0, "{}", out.stderr);
     let doc = json::parse(&out.text()).unwrap();
     assert_eq!(doc.path(&["v"]).unwrap().as_str(), None);
@@ -106,7 +116,7 @@ fn sync_json_shape() {
     );
     assert!(doc.path(&["notes"]).unwrap().as_array().is_some());
     assert_eq!(doc.path(&["failed"]).unwrap().as_array().unwrap().len(), 0);
-    let dry = home.vibe(&["sync", "--json", "--dry-run"], &[]);
+    let dry = home.vibe(&["config", "sync", "--json", "--dry-run"], &[]);
     let doc = json::parse(&dry.text()).unwrap();
     assert_eq!(doc.path(&["dry_run"]).unwrap().as_bool(), Some(true));
 }
@@ -121,7 +131,7 @@ fn sync_reports_edit_inside_block() {
         "Use the shared tools.",
         "Edited by hand.",
     );
-    let out = home.vibe(&["sync"], &[]);
+    let out = home.vibe(&["config", "sync"], &[]);
     assert_eq!(out.code, 0, "{}", out.stderr);
     let text = out.text();
     assert!(
@@ -139,20 +149,21 @@ fn sync_lock_busy_exits_1() {
         Acquired::Got(l) => l,
         Acquired::Busy => panic!("lock busy"),
     };
-    let out = home.vibe(&["sync"], &[]);
+    let out = home.vibe(&["config", "sync"], &[]);
     assert_eq!(out.code, 1, "{}", out.stderr);
     assert!(
         out.text().contains("note another vibe run holds the lock"),
         "{}",
         out.text()
     );
+    assert!(out.text().contains("run vibe config doctor; remove its lock file only after independently verifying the holder stopped"), "{}", out.text());
     assert!(!home.path(".claude/CLAUDE.md").exists());
 }
 
 #[test]
 fn sync_filter_harness_only_touches_it() {
     let home = ready_home("sync-filter");
-    let out = home.vibe(&["sync", "--harness", "codex"], &[]);
+    let out = home.vibe(&["config", "sync", "--harness", "codex"], &[]);
     assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
     assert!(home.path(".codex/AGENTS.md").exists());
     assert!(!home.path(".claude/CLAUDE.md").exists());
@@ -160,7 +171,7 @@ fn sync_filter_harness_only_touches_it() {
     assert!(home.claude_calls().is_empty());
     let st = state(&home);
     assert_eq!(st.path(&["store_hash"]).unwrap().as_str().unwrap(), "");
-    let bad = home.vibe(&["sync", "--harness", "nope"], &[]);
+    let bad = home.vibe(&["config", "sync", "--harness", "nope"], &[]);
     assert_eq!(bad.code, 2, "{}", bad.stderr);
 }
 
@@ -168,7 +179,7 @@ fn sync_filter_harness_only_touches_it() {
 fn sync_invalid_store_is_refused() {
     let home = ready_home("sync-invalid");
     home.write(".config/vibe/mcp.json", "{ not json");
-    let out = home.vibe(&["sync"], &[]);
+    let out = home.vibe(&["config", "sync"], &[]);
     assert_eq!(out.code, 1);
     assert!(
         out.text().lines().any(|l| l.starts_with("refused ")),
@@ -180,7 +191,7 @@ fn sync_invalid_store_is_refused() {
 #[test]
 fn sync_failed_claude_call_exits_1_without_stamp() {
     let home = ready_home("sync-claude-fail");
-    let out = home.vibe(&["sync"], &[("FAKE_FAIL_NAME", "remote")]);
+    let out = home.vibe(&["config", "sync"], &[("FAKE_FAIL_NAME", "remote")]);
     assert_eq!(out.code, 1, "{}", out.text());
     assert!(
         out.stderr.contains("claude mcp add remote"),
@@ -197,7 +208,7 @@ fn sync_without_claude_cli_skips_mcp_and_exits_zero() {
     for dir in [".claude", ".codex", ".factory", ".config/opencode"] {
         std::fs::create_dir_all(home.path(dir)).unwrap();
     }
-    let out = home.vibe(&["sync"], &[]);
+    let out = home.vibe(&["config", "sync"], &[]);
     assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
     let text = out.text();
     assert!(
@@ -226,14 +237,14 @@ fn sync_without_claude_cli_leaves_claude_mcp_out_of_date() {
     for dir in [".claude", ".codex", ".factory", ".config/opencode"] {
         std::fs::create_dir_all(home.path(dir)).unwrap();
     }
-    let stale = "claude mcp: out of date \u{2014} run vibe sync";
+    let stale = "claude mcp: out of date \u{2014} run vibe config sync";
     let hook = |h: &common::Home| h.vibe(&["hook", "session-start", "--harness", "claude"], &[]);
 
-    let out = home.vibe(&["sync"], &[]);
+    let out = home.vibe(&["config", "sync"], &[]);
     assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
     let st = state(&home);
     assert_ne!(st.path(&["store_hash"]).unwrap().as_str().unwrap(), "");
-    let status = home.vibe(&["store", "status"], &[]);
+    let status = home.vibe(&["config", "status"], &[]);
     assert!(
         status.text().lines().any(|l| l == stale),
         "{}",
@@ -243,13 +254,13 @@ fn sync_without_claude_cli_leaves_claude_mcp_out_of_date() {
     assert_eq!(out.code, 0, "{}", out.stderr);
     assert!(
         out.text()
-            .contains("vibe: Claude MCP changed; run `vibe sync`"),
+            .contains("vibe: Claude MCP changed; run `vibe config sync`"),
         "{}",
         out.text()
     );
 
     common::fake_claude(&home);
-    let out = home.vibe(&["sync"], &[]);
+    let out = home.vibe(&["config", "sync"], &[]);
     assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
     assert!(
         home.claude_calls()
@@ -258,7 +269,7 @@ fn sync_without_claude_cli_leaves_claude_mcp_out_of_date() {
         "{:?}",
         home.claude_calls()
     );
-    let status = home.vibe(&["store", "status"], &[]);
+    let status = home.vibe(&["config", "status"], &[]);
     assert!(!status.text().contains("claude mcp:"), "{}", status.text());
     assert!(hook(&home).stdout.is_empty());
 }
@@ -267,7 +278,7 @@ fn sync_without_claude_cli_leaves_claude_mcp_out_of_date() {
 fn sync_reports_factory_mcp_entries_edited_outside_vibe() {
     let home = synced_home("sync-droid-drift");
     replace_in(&home, ".factory/mcp.json", "some-server", "hacked-server");
-    let out = home.vibe(&["sync"], &[]);
+    let out = home.vibe(&["config", "sync"], &[]);
     assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
     assert!(
         out.text()
@@ -277,7 +288,7 @@ fn sync_reports_factory_mcp_entries_edited_outside_vibe() {
         out.text()
     );
     assert!(home.read(".factory/mcp.json").contains("some-server"));
-    let again = home.vibe(&["sync"], &[]);
+    let again = home.vibe(&["config", "sync"], &[]);
     assert!(again.text().contains("nothing to do"), "{}", again.text());
     assert!(!again.text().contains("edited outside"), "{}", again.text());
 }
@@ -286,14 +297,14 @@ fn sync_reports_factory_mcp_entries_edited_outside_vibe() {
 fn imported_env_secret_projects_to_codex_env_vars() {
     let home = common::Home::new("sync-import-codex");
     std::fs::create_dir_all(home.path(".codex")).unwrap();
-    assert_eq!(home.vibe(&["store", "init"], &[]).code, 0);
+    assert_eq!(home.vibe(&["config", "init"], &[]).code, 0);
     home.write_json(
         "in.json",
         r#"{"mcpServers":{"exa":{"command":"exa-mcp","env":{"API_TOKEN":"sk-test-FAKE"}}}}"#,
     );
-    let out = home.vibe(&["store", "import-mcp", "in.json"], &[]);
+    let out = home.vibe(&["config", "import-mcp", "in.json"], &[]);
     assert_eq!(out.code, 0, "{}", out.stderr);
-    let out = home.vibe(&["sync", "--harness", "codex"], &[]);
+    let out = home.vibe(&["config", "sync", "--harness", "codex"], &[]);
     assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
     let toml = home.read(".codex/config.toml");
     assert!(toml.contains("[mcp_servers.exa]"), "{toml}");

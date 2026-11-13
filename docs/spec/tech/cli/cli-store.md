@@ -2,7 +2,7 @@
 type: tech
 applies:
   - "crates/vibe/**"
-updated: 2026-11-03
+updated: 2026-11-12
 ---
 
 # Global store and projection
@@ -22,7 +22,9 @@ Decision: [D48](../../decisions/d48-global-store-and-projection.md). Local proje
 | OpenCode | plugin `vibe-store.js` (live) | plugin, set-if-absent | `~/.agents/skills` (native) |
 | Factory | copied block in `~/.factory/AGENTS.md` | owned keys in `mcp.json` | `~/.agents/skills` (native) |
 
-**Commands:** `store init|import-mcp|status`, `sync [--harness] [--dry-run] [--json]`, `hook session-start [--harness]`, `install [--harness] [--toolkit] [--dry-run]` (default: the detected harnesses, i.e. config dir present or CLI on `PATH`; an undetected one gets `note <h>: not detected — pass --harness <h> to wire it`; `--harness` forces), `uninstall [--dry-run]`, `doctor`, `spec …` (exec `vibe-spec`). Exit 0 ok, 1 findings or refused, 2 usage. The hook always exits 0.
+**Command namespace:** all seven configuration operations live under `vibe config`; old command spellings have no aliases. Store paths, schemas, ownership markers, environment variables and hook registrations stay unchanged; no data migration is required. `vibe config doctor` checks configuration wiring and can exit 1; Flow has its own `bash .agents/skills/vibe/scripts/doctor.sh`.
+
+**Commands:** `config init|import-mcp|status`, `config sync [--harness] [--dry-run] [--json]`, `hook session-start [--harness]`, `config install [--harness] [--toolkit] [--dry-run]` (default: the detected harnesses, i.e. config dir present or CLI on `PATH`; an undetected one gets `note <h>: not detected — pass --harness <h> to wire it`; `--harness` forces), `config uninstall [--dry-run]`, `config doctor`, `spec …` (embedded `vibe-spec`). Exit 0 ok, 1 findings or refused, 2 usage. The hook always exits 0.
 
 **State** (`$VIBE_STATE`, else XDG state, else `~/.local/state/vibe`; schemas in `contracts/`): `v`, `store_hash` (may be empty), `mcp_hash`, `targets` keyed `claude:instructions`, `codex:instructions`, `codex:mcp`, `droid:instructions`, `droid:mcp` with `{hash}`, `owned.{mcp,hooks,plugins,links,created}`. `store_hash` covers `store.json`, `AGENTS.md`, `mcp.json`, the sorted skill list and the binary version; the hook stops when it matches.
 
@@ -32,7 +34,7 @@ Decision: [D48](../../decisions/d48-global-store-and-projection.md). Local proje
 
 **Secrets:** `import-mcp` swaps likely secrets for placeholders (`${K}` for a valid env key `K` only when unreserved in both documents and prior allocations; else a collision-free `${VIBE_<SERVER>_<FIELD>}`). Equal credentials remain independently named. Codex stdio cannot rename env variables: import warns and projection skips applicable servers whose placeholder name differs from the env key; vibe never writes a secret it detects on import (`--keep-literals` opts out). URL userinfo always warns. Literals the user writes are projected as written; `sync`/`install` print `note <server>: literal secret-looking value projected — prefer ${VAR}` once per server.
 
-**Hook output:** one stdout line. For Claude, Codex and Factory it is `{"systemMessage":"vibe: …"}`; for OpenCode and `--harness` absent it is plain text. When Claude MCP is stale (`mcp.json` changed since the last `sync`), the reminder `vibe: Claude MCP changed; run \`vibe sync\`` repeats every session until `vibe sync`; `store status` prints `claude mcp: out of date — run vibe sync` and per-harness `mcp=` (`ok|out-of-date|drifted|absent|n/a`). The hook plans files and links only: `PlanItem::ClaudeCli` items are filtered out and the claude path is `/nonexistent/vibe-hook/claude`.
+**Hook output:** one stdout line. For Claude, Codex and Factory it is `{"systemMessage":"vibe: …"}`; for OpenCode and `--harness` absent it is plain text. When Claude MCP is stale (`mcp.json` changed since the last `sync`), the reminder `vibe: Claude MCP changed; run \`vibe config sync\`` repeats every session until `vibe config sync`; `config status` prints `claude mcp: out of date — run vibe config sync` and per-harness `mcp=` (`ok|out-of-date|drifted|absent|n/a`). The hook plans files and links only: `PlanItem::ClaudeCli` items are filtered out and the claude path is `/nonexistent/vibe-hook/claude`.
 
 **Missing CLI:** when `claude` is not installed, the Claude MCP step is skipped with `skip claude: CLI not found — MCP not projected` (exit 0, no ownership recorded). The store stamp is written but the MCP stamp is not advanced, so `status` and the session hook keep reporting Claude MCP out of date until a sync with the CLI succeeds.
 
@@ -40,8 +42,8 @@ Decision: [D48](../../decisions/d48-global-store-and-projection.md). Local proje
 
 **Read-only symlinks:** an existing symlinked `store.json`, `AGENTS.md` or `mcp.json` is read as is; `install` then cannot edit a symlinked `store.json` and prints a note instead of adding the toolkit source. A dangling symlink is refused. Relative `skills.sources` entries resolve against the store directory. `store.json` `v`, when present, must be 1 (missing reads as 1).
 
-**Env:** `VIBE_STORE`, `VIBE_STATE`, `VIBE_TOOLKIT` (toolkit skills dir), `VIBE_SPEC_BIN` (peer binary for `vibe spec`).
+**Env:** `VIBE_STORE`, `VIBE_STATE`, `VIBE_TOOLKIT` (toolkit skills dir), `VIBE_SPEC_BIN` (deprecated and ignored; `vibe spec` is embedded).
 
-**Known limits:** a harness switched off in `store.json` keeps its old projection until `vibe uninstall`; `markers::remove` adds a trailing newline to text that lacked one; instructions `None` leaves blocks untouched; Windows skills links skipped; Codex root inline `mcp_servers` gets no vibe MCP block; Claude MCP only via `sync` (hook prints a notice).
+**Known limits:** a harness switched off in `store.json` keeps its old projection until `vibe config uninstall`; `markers::remove` adds a trailing newline to text that lacked one; instructions `None` leaves blocks untouched; Windows skills links skipped; Codex root inline `mcp_servers` gets no vibe MCP block; Claude MCP only via `sync` (hook prints a notice).
 
 **Executor:** File and link failures roll back both stages. Claude CLI calls run last; a failed call leaves file/link changes in place and records no ownership for that call.

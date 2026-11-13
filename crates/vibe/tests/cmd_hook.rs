@@ -90,7 +90,7 @@ fn hook_after_store_edit_reprojects_files_and_prints_one_notice() {
         "{text}"
     );
     assert!(text.contains("codex"), "{text}");
-    assert!(!text.contains("vibe sync"), "{text}");
+    assert!(!text.contains("vibe config sync"), "{text}");
     assert!(home.read(".codex/AGENTS.md").contains("New rule."));
     assert!(home.claude_calls().is_empty());
     let again = hook(&home);
@@ -105,11 +105,14 @@ fn hook_after_store_edit_reprojects_files_and_prints_one_notice() {
     );
     let out = hook(&home);
     let text = message(&out);
-    assert!(text.contains("; run `vibe sync` for Claude MCP"), "{text}");
+    assert!(
+        text.contains("; run `vibe config sync` for Claude MCP"),
+        "{text}"
+    );
     assert!(home.claude_calls().is_empty());
     assert_eq!(
         message(&hook(&home)),
-        "vibe: Claude MCP changed; run `vibe sync`"
+        "vibe: Claude MCP changed; run `vibe config sync`"
     );
 }
 
@@ -124,7 +127,10 @@ fn hook_claude_only_mcp_change_prints_sync_hint() {
     );
     let out = hook(&home);
     assert_eq!(out.code, 0, "{}", out.stderr);
-    assert_eq!(message(&out), "vibe: Claude MCP changed; run `vibe sync`");
+    assert_eq!(
+        message(&out),
+        "vibe: Claude MCP changed; run `vibe config sync`"
+    );
     assert!(home.claude_calls().is_empty());
 }
 
@@ -140,21 +146,24 @@ fn hook_mcp_reminder_repeats_every_session_until_sync() {
     for _ in 0..3 {
         let out = hook(&home);
         assert_eq!(out.code, 0, "{}", out.stderr);
-        assert_eq!(message(&out), "vibe: Claude MCP changed; run `vibe sync`");
+        assert_eq!(
+            message(&out),
+            "vibe: Claude MCP changed; run `vibe config sync`"
+        );
     }
-    let status = home.vibe(&["store", "status"], &[]);
+    let status = home.vibe(&["config", "status"], &[]);
     assert!(
         status
             .text()
             .lines()
-            .any(|l| l == "claude mcp: out of date \u{2014} run vibe sync"),
+            .any(|l| l == "claude mcp: out of date \u{2014} run vibe config sync"),
         "{}",
         status.text()
     );
-    let sync = home.vibe(&["sync"], &[]);
+    let sync = home.vibe(&["config", "sync"], &[]);
     assert_eq!(sync.code, 0, "{}", sync.stderr);
     assert!(hook(&home).stdout.is_empty());
-    let status = home.vibe(&["store", "status"], &[]);
+    let status = home.vibe(&["config", "status"], &[]);
     assert!(!status.text().contains("claude mcp:"), "{}", status.text());
 }
 

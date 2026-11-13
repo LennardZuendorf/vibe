@@ -1,4 +1,4 @@
-//! `vibe store status`: store validity and per-harness drift.
+//! `vibe config status`: store validity and per-harness drift.
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -272,7 +272,7 @@ pub fn status(paths: &Paths, json: bool, out: &mut dyn Write, _err: &mut dyn Wri
         .iter()
         .any(|(h, r)| *h == Harness::Claude && r.enabled && r.mcp == "out-of-date")
     {
-        let _ = writeln!(out, "claude mcp: out of date \u{2014} run vibe sync");
+        let _ = writeln!(out, "claude mcp: out of date \u{2014} run vibe config sync");
     }
     for (h, r) in rows {
         let _ = writeln!(

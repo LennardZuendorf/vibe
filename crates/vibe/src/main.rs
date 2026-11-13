@@ -13,7 +13,12 @@ use vibe_core::exit;
 
 /// One global store, projected into every agent harness.
 #[derive(Parser)]
-#[command(name = "vibe", version, about, arg_required_else_help = true)]
+#[command(
+    name = "vibe",
+    version,
+    about = "Manage agent configuration and project specifications.",
+    arg_required_else_help = true
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -21,10 +26,46 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Manage the global store.
-    Store {
+    /// Manage shared agent configuration.
+    #[command(arg_required_else_help = true)]
+    Config {
         #[command(subcommand)]
-        action: StoreAction,
+        action: ConfigAction,
+    },
+    /// Run a harness hook.
+    Hook {
+        #[command(subcommand)]
+        event: HookEvent,
+    },
+    /// The spec tool.
+    Spec {
+        /// Arguments passed to the spec tool.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigAction {
+    /// Create the store.
+    Init {
+        /// Seed the root instructions from this file.
+        #[arg(long, value_name = "FILE")]
+        instructions: Option<PathBuf>,
+    },
+    /// Import an MCP list into the store.
+    ImportMcp {
+        /// The file to import.
+        file: PathBuf,
+        /// Keep literal secrets instead of placeholders.
+        #[arg(long)]
+        keep_literals: bool,
+    },
+    /// Show the store's state.
+    Status {
+        /// Print JSON.
+        #[arg(long)]
+        json: bool,
     },
     /// Project the store into every harness.
     Sync {
@@ -37,11 +78,6 @@ enum Command {
         /// Print JSON.
         #[arg(long)]
         json: bool,
-    },
-    /// Run a harness hook.
-    Hook {
-        #[command(subcommand)]
-        event: HookEvent,
     },
     /// Wire vibe into the harnesses.
     Install {
@@ -63,36 +99,12 @@ enum Command {
     },
     /// Check the wiring.
     Doctor,
-    /// The spec tool.
-    Spec {
-        /// Arguments passed to the spec tool.
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
 }
 
-#[derive(Subcommand)]
 enum StoreAction {
-    /// Create the store.
-    Init {
-        /// Seed the root instructions from this file.
-        #[arg(long, value_name = "FILE")]
-        instructions: Option<PathBuf>,
-    },
-    /// Import an MCP list into the store.
-    ImportMcp {
-        /// The file to import.
-        file: PathBuf,
-        /// Keep literal secrets instead of placeholders.
-        #[arg(long)]
-        keep_literals: bool,
-    },
-    /// Show the store's state.
-    Status {
-        /// Print JSON.
-        #[arg(long)]
-        json: bool,
-    },
+    Init { instructions: Option<PathBuf> },
+    ImportMcp { file: PathBuf, keep_literals: bool },
+    Status { json: bool },
 }
 
 #[derive(Subcommand)]
@@ -244,6 +256,32 @@ fn doctor_command() -> ExitCode {
     ))
 }
 
+fn config_command(action: ConfigAction) -> ExitCode {
+    match action {
+        ConfigAction::Init { instructions } => store_command(StoreAction::Init { instructions }),
+        ConfigAction::ImportMcp {
+            file,
+            keep_literals,
+        } => store_command(StoreAction::ImportMcp {
+            file,
+            keep_literals,
+        }),
+        ConfigAction::Status { json } => store_command(StoreAction::Status { json }),
+        ConfigAction::Sync {
+            harness,
+            dry_run,
+            json,
+        } => sync_command(&harness, dry_run, json),
+        ConfigAction::Install {
+            harness,
+            toolkit,
+            dry_run,
+        } => install_command(&harness, toolkit, dry_run),
+        ConfigAction::Uninstall { dry_run } => uninstall_command(dry_run),
+        ConfigAction::Doctor => doctor_command(),
+    }
+}
+
 fn main() -> ExitCode {
     // Preserve the complete spec tail, including help, `--` and OS strings.
     let argv: Vec<OsString> = std::env::args_os().collect();
@@ -252,12 +290,7 @@ fn main() -> ExitCode {
     }
     let cli = Cli::parse();
     match cli.command {
-        Command::Store { action } => store_command(action),
-        Command::Sync {
-            harness,
-            dry_run,
-            json,
-        } => sync_command(&harness, dry_run, json),
+        Command::Config { action } => config_command(action),
         Command::Hook {
             event: HookEvent::SessionStart { harness },
         } => code(cmd::hook::run_from_env(
@@ -265,13 +298,6 @@ fn main() -> ExitCode {
             &mut io::stdout(),
             &mut io::stderr(),
         )),
-        Command::Install {
-            harness,
-            toolkit,
-            dry_run,
-        } => install_command(&harness, toolkit, dry_run),
-        Command::Uninstall { dry_run } => uninstall_command(dry_run),
-        Command::Doctor => doctor_command(),
         Command::Spec { args } => {
             let args: Vec<OsString> = args.into_iter().map(OsString::from).collect();
             code(cmd::spec::spec(&args))

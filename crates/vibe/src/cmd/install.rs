@@ -1,4 +1,4 @@
-//! `vibe install`: store skeleton, hook registration, OpenCode plugin and the full projection.
+//! `vibe config install`: store skeleton, hook registration, OpenCode plugin and the full projection.
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
@@ -16,7 +16,7 @@ use crate::plan::{Note, OwnedEdit, PlanItem, Projection, json_file_item};
 use crate::state::State;
 use crate::store::{self, Store, init, skills};
 
-/// What `vibe install` was asked to do.
+/// What `vibe config install` was asked to do.
 #[derive(Clone, Debug, Default)]
 pub struct InstallOpts {
     /// The harnesses to wire, detected or not; `None` means the detected ones (configuration
@@ -305,7 +305,7 @@ fn run(paths: &Paths, opts: &InstallOpts, claude_bin: &str) -> Result<Outcome, S
     let mut notes = notes;
     if common::in_build_dir(&bin) {
         notes.push(Note::Info(format!(
-            "hook binary {} is inside a build directory \u{2014} re-run vibe install after installing vibe on PATH",
+            "hook binary {} is inside a build directory \u{2014} re-run vibe config install after installing vibe on PATH",
             bin.display()
         )));
     }
@@ -340,7 +340,7 @@ fn run(paths: &Paths, opts: &InstallOpts, claude_bin: &str) -> Result<Outcome, S
     Ok(outcome)
 }
 
-/// Runs `vibe install`. Exit 1 when something failed, a target was refused or another run
+/// Runs `vibe config install`. Exit 1 when something failed, a target was refused or another run
 /// holds the lock. A dry run reads only: it takes no lock and creates no directory.
 pub fn install(
     paths: &Paths,

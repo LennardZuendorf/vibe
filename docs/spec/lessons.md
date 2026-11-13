@@ -955,4 +955,15 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Pattern:** Windows contention exceeded a bounded wait, bulk-data response tests hit a harness guard, and host Clippy found a test module before production items after the tests passed.
 **Rule:** After both writers finish, retry the original stale token; require revision_changed, one publication and unchanged winner content/history. Require a fresh coherent reader snapshot after the writer finishes. Label timing by test name and child PID; keep send time, actual response wait and queue-drain totals distinct. Use one bounded integration receive guard separate from direct responsiveness, acquisition and publication/cancellation deadlines. Increasing that guard establishes no production latency improvement. Run host Clippy after adding tests and place test modules after production items.
 **Tags:** concurrency, timing, tests, verification, clippy
+
+### Rename commands across subprocesses and abbreviated references
+**Pattern:** The config namespace migration updated public fixtures but missed a nested subprocess invoking the removed sync command. Full-suite execution caught usage exit 2 where the lock control expected exit 1. Final review also found abbreviated store-command spellings in current spec notes.
+**Rule:** Inventory direct argv arrays, helper-generated calls and nested executable scripts before renaming a CLI. Search both full executable spellings and abbreviated command names in current contracts. Run the complete package suite and inspect remaining hits by meaning; keep intentional rejection cases and stored-data literals unchanged.
+**Tags:** cli, migration, subprocesses, fixtures, documentation
+**Date:** 2026-11-12
+
+### Run plugin tests through their generated fixture contract
+**Pattern:** A direct Node invocation omitted the plugin paths that its Rust wrapper generates, so it failed before testing plugin behavior. The fixture-backed command and wrapper passed all 16 tests.
+**Rule:** Inspect the test wrapper before invoking an internal runner. Generate both raw and substituted plugin fixtures, set every required environment variable, and retain the exact successful command. Keep fixture setup failures distinct from product failures; never use live user configuration as the fixture.
+**Tags:** tests, node, plugins, fixtures, verification
 **Date:** 2026-11-12
