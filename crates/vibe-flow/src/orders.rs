@@ -53,12 +53,12 @@ pub fn orders_text(paths: &FlowPaths, state: &str, feature: &Value) -> String {
             .filter(|text| !text.is_empty());
         if let Some(skill) = skill {
             let skill_file = skills_dir(paths).join(skill).join("SKILL.md");
-            if let Ok(text) = std::fs::read_to_string(&skill_file) {
-                if let Some(block) = extract(&text, &format!("vibe:orders:{state}")) {
-                    let block = strip_trailing_newlines(&block);
-                    if !block.is_empty() {
-                        return interpolate(block, feature);
-                    }
+            if let Ok(text) = std::fs::read_to_string(&skill_file)
+                && let Some(block) = extract(&text, &format!("vibe:orders:{state}"))
+            {
+                let block = strip_trailing_newlines(&block);
+                if !block.is_empty() {
+                    return interpolate(block, feature);
                 }
             }
         }
@@ -88,10 +88,10 @@ pub fn current_state_and_feature(paths: &FlowPaths) -> (String, Value) {
 /// `vibe/SKILL.md` (the installed layout), else `<root>/.agents/skills`.
 pub fn skills_dir(paths: &FlowPaths) -> PathBuf {
     let data = paths.data_dir();
-    if let Some(parent) = data.parent() {
-        if parent.join("vibe").join("SKILL.md").is_file() {
-            return parent.to_path_buf();
-        }
+    if let Some(parent) = data.parent()
+        && parent.join("vibe").join("SKILL.md").is_file()
+    {
+        return parent.to_path_buf();
     }
     paths.root().join(".agents").join("skills")
 }

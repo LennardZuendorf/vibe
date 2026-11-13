@@ -133,16 +133,16 @@ fn node_major(version: &str) -> Option<u32> {
 
 fn check_tool_node(node: &(bool, String)) -> String {
     if node.0 {
-        if let Some(major) = node_major(&node.1) {
-            if major < 18 {
-                return warn(
-                    "tool.node",
-                    &format!(
-                        "node {} is older than the engine's minimum (18) — the hooks may fail and fall back to flow/hooks-fallback (guard + Stop gate) or no-op (inject + doctrine)",
-                        node.1
-                    ),
-                );
-            }
+        if let Some(major) = node_major(&node.1)
+            && major < 18
+        {
+            return warn(
+                "tool.node",
+                &format!(
+                    "node {} is older than the engine's minimum (18) — the hooks may fail and fall back to flow/hooks-fallback (guard + Stop gate) or no-op (inject + doctrine)",
+                    node.1
+                ),
+            );
         }
         return ok("tool.node", &format!("node present ({})", node.1));
     }
@@ -163,13 +163,11 @@ fn check_machine(vibe_dir: &Path, jq_present: bool) -> String {
             ),
         );
     }
-    if jq_present {
-        if Machine::load(vibe_dir).is_err() {
-            return warn(
-                "machine",
-                "state-machine.json is present but not valid JSON",
-            );
-        }
+    if jq_present && Machine::load(vibe_dir).is_err() {
+        return warn(
+            "machine",
+            "state-machine.json is present but not valid JSON",
+        );
     }
     ok("machine", "state-machine.json present")
 }
@@ -486,12 +484,11 @@ fn check_deps(vibe_dir: &Path, jq_present: bool, home: &str) -> String {
 /// `<root>/.agents/skills`, else the project root.
 fn root_for_report(paths: &crate::paths::FlowPaths) -> PathBuf {
     let skills = crate::orders::skills_dir(paths);
-    if let Some(agents) = skills.parent() {
-        if agents.file_name().is_some_and(|name| name == ".agents") {
-            if let Some(root) = agents.parent() {
-                return root.to_path_buf();
-            }
-        }
+    if let Some(agents) = skills.parent()
+        && agents.file_name().is_some_and(|name| name == ".agents")
+        && let Some(root) = agents.parent()
+    {
+        return root.to_path_buf();
     }
     paths.root().to_path_buf()
 }

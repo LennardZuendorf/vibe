@@ -28,17 +28,17 @@ pub const MANIFEST: &str = concat!(
 /// `init`: write the manifest, seed the payload, exit 0.
 pub fn run(paths: &FlowPaths) -> Outcome {
     let path = paths.providers_path();
-    if let Some(dir) = path.parent() {
-        if let Err(err) = std::fs::create_dir_all(dir) {
-            return Outcome::new(
-                1,
-                String::new(),
-                format!(
-                    "vibe-flow init: ERROR: cannot create {}: {err}\n",
-                    dir.display()
-                ),
-            );
-        }
+    if let Some(dir) = path.parent()
+        && let Err(err) = std::fs::create_dir_all(dir)
+    {
+        return Outcome::new(
+            1,
+            String::new(),
+            format!(
+                "vibe-flow init: ERROR: cannot create {}: {err}\n",
+                dir.display()
+            ),
+        );
     }
     if let Err(err) = refuse_link(&path) {
         return Outcome::new(1, String::new(), format!("vibe-flow init: ERROR: {err}\n"));

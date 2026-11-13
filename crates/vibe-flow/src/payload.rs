@@ -31,7 +31,7 @@ pub const SESSION_LINES: usize = 10;
 
 /// The decoded payload. Missing or unusable fields degrade to their empty
 /// shape: a corrupt payload is advisory data, never a hard failure.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Payload {
     /// Transition counter; instruct injects the edge when it advances.
     pub seq: u64,
@@ -43,18 +43,6 @@ pub struct Payload {
     pub session: Vec<String>,
     /// One-shot events, each `{id, ts, text}`.
     pub events: Vec<Value>,
-}
-
-impl Default for Payload {
-    fn default() -> Payload {
-        Payload {
-            seq: 0,
-            level: String::new(),
-            edge: String::new(),
-            session: Vec::new(),
-            events: Vec::new(),
-        }
-    }
 }
 
 /// The payload body as the contract spells it: pretty JSON, fixed key order,

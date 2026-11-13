@@ -180,10 +180,10 @@ fn write(paths: &FlowPaths, target: &PathBuf, body: &str) -> Outcome {
 
 fn write_fragment(paths: &FlowPaths, body: &str) -> String {
     let path = paths.root().join(FRAGMENT);
-    if let Some(dir) = path.parent() {
-        if std::fs::create_dir_all(dir).is_err() {
-            return String::new();
-        }
+    if let Some(dir) = path.parent()
+        && std::fs::create_dir_all(dir).is_err()
+    {
+        return String::new();
     }
     match vibe_core::fs::write_atomic(&path, format!("{body}\n").as_bytes()) {
         Ok(()) => String::new(),
