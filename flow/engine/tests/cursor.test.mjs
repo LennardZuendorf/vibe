@@ -15,7 +15,7 @@
 import { mkdirSync, writeFileSync, copyFileSync, rmSync, readFileSync, symlinkSync, chmodSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { test, assert, assertEqual, makeSandbox, mkTempRoot } from './run.mjs';
+import { test, assert, assertEqual, makeSandbox, mkTempRoot, maskedEnv } from './run.mjs';
 import { spawnSync } from 'node:child_process';
 import { readCursor, writeCursor, CursorParseError } from '../cursor.mjs';
 
@@ -236,13 +236,13 @@ test('runtime migration: legacy setter and every shell reader prefer the new cur
     const old = readFileSync(sb.cursorPath,'utf8');
     const runtime = path.join(sb.dir,'.vibe/run/flow'); mkdirSync(runtime,{recursive:true});
     writeFileSync(path.join(runtime,'state.json'),JSON.stringify({flow:'quick',phase:'fix',feature:'new',updated:null},null,2)+'\n');
-    const result = spawnSync('bash',[path.join(scripts,'set-state.sh'),'quick.verify'],{encoding:'utf8',env:{...process.env,CLAUDE_PROJECT_DIR:sb.dir}});
+    const result = spawnSync('bash',[path.join(scripts,'set-state.sh'),'quick.verify'],{encoding:'utf8',env:maskedEnv({CLAUDE_PROJECT_DIR:sb.dir})});
     assertEqual(result.status,0,result.stderr);
     assertEqual(readCursor(sb.flowDir).state,'quick.verify');
     assertEqual(readCursor(sb.flowDir).feature,'new');
     assertEqual(readFileSync(sb.cursorPath,'utf8'),old);
     for (const reader of ['detect-context','orders','validate-state','check-skills','doctor']) {
-      const out = spawnSync('bash',[path.join(scripts,`${reader}.sh`),...(reader === 'doctor' ? [sb.dir] : [])],{encoding:'utf8',env:{...process.env,CLAUDE_PROJECT_DIR:sb.dir}});
+      const out = spawnSync('bash',[path.join(scripts,`${reader}.sh`),...(reader === 'doctor' ? [sb.dir] : [])],{encoding:'utf8',env:maskedEnv({CLAUDE_PROJECT_DIR:sb.dir})});
       if (reader === 'validate-state' && !JQ_PRESENT) {
         assertEqual(out.status,1); assertEqual(out.stdout,''); assertEqual(out.stderr,JQ_REQUIRED);
       } else if (reader === 'check-skills' && !JQ_PRESENT) {
@@ -276,7 +276,7 @@ test('runtime migration: JS and shell refuse escaping parent and leaf links', ()
       assert(refused,`JS accepted ${part}`);
       const source=path.resolve(path.dirname(ROOT_MJS),'../scripts'); const scripts=path.join(sb.flowDir,'scripts');mkdirSync(scripts);
       for(const name of ['runtime-state','set-state'])copyFileSync(path.join(source,`${name}.sh`),path.join(scripts,`${name}.sh`));
-      const out=spawnSync('bash',[path.join(scripts,'set-state.sh'),'idle'],{encoding:'utf8',env:{...process.env,CLAUDE_PROJECT_DIR:sb.dir}});
+      const out=spawnSync('bash',[path.join(scripts,'set-state.sh'),'idle'],{encoding:'utf8',env:maskedEnv({CLAUDE_PROJECT_DIR:sb.dir})});
       assertEqual(out.status,1,`shell accepted ${part}: ${out.stderr}`);
       assertEqual(readFileSync(protectedPath,'utf8'),before,`outside bytes changed: ${part}`);
     } finally {sb.cleanup();rmSync(outside,{recursive:true,force:true});}
@@ -284,6 +284,20 @@ test('runtime migration: JS and shell refuse escaping parent and leaf links', ()
 });
 
 // flow-v2/1.1: mv must not interpret a cursor directory as its destination home.
+//
+// KNOWN DIVERGENCE (recorded, not fixed): the two writers disagree on ONE shape
+// of this case — a cursor leaf that is an in-project symlink to a DIRECTORY.
+// The fallback writer refuses it (runtime-state.sh's runtime_check_write wants a
+// writable regular file, so `set-state.sh` exits 1 with "unsafe cursor path").
+// `vibe-flow` permits it: constrain_cursor_path canonicalizes the existing leaf,
+// finds it under the project root, and write_atomic REPLACES the link with a
+// regular file — the target directory and everything inside it is untouched
+// (cursor.rs::writing_replaces_a_symlink_instead_of_following_it pins the
+// sibling case, a symlink to a file). Two policies, both fail-safe: neither
+// follows the link out of the project nor writes through it. The subject HERE is
+// the fallback writer, so the ambient `vibe-flow` is masked (maskedEnv) and the
+// refusal it asserts stays the fallback's — this is why the fix for the red
+// local run is the mask, never a change to set-state.sh or the binary.
 test('runtime migration: shell refuses a directory cursor or internal directory link', () => {
   for (const linked of [false,true]) {
     const sb=makeSandbox();
@@ -295,7 +309,7 @@ test('runtime migration: shell refuses a directory cursor or internal directory 
       const scripts=path.join(sb.flowDir,'scripts');mkdirSync(scripts);
       const source=path.resolve(path.dirname(ROOT_MJS),'../scripts');
       for(const name of ['runtime-state','set-state'])copyFileSync(path.join(source,`${name}.sh`),path.join(scripts,`${name}.sh`));
-      const out=spawnSync('bash',[path.join(scripts,'set-state.sh'),'idle'],{encoding:'utf8',env:{...process.env,CLAUDE_PROJECT_DIR:sb.dir}});
+      const out=spawnSync('bash',[path.join(scripts,'set-state.sh'),'idle'],{encoding:'utf8',env:maskedEnv({CLAUDE_PROJECT_DIR:sb.dir})});
       assertEqual(out.status,1,`directory cursor accepted: ${out.stderr}`);
     } finally { sb.cleanup();}
   }
@@ -317,7 +331,7 @@ test('runtime migration: JS and shell allow internal parent and regular leaf lin
     const scripts=path.join(sb.flowDir,'scripts');mkdirSync(scripts);
     const source=path.resolve(path.dirname(ROOT_MJS),'../scripts');
     for(const name of ['runtime-state','set-state'])copyFileSync(path.join(source,`${name}.sh`),path.join(scripts,`${name}.sh`));
-    const out=spawnSync('bash',[path.join(scripts,'set-state.sh'),'idle'],{encoding:'utf8',env:{...process.env,CLAUDE_PROJECT_DIR:sb.dir}});
+    const out=spawnSync('bash',[path.join(scripts,'set-state.sh'),'idle'],{encoding:'utf8',env:maskedEnv({CLAUDE_PROJECT_DIR:sb.dir})});
     assertEqual(out.status,0,out.stderr);
     assertEqual(readCursor(sb.flowDir).state,'idle');
     assertEqual(readFileSync(keeper,'utf8'),before);
@@ -347,12 +361,12 @@ test('runtime migration: dangling, directory and unreadable new cursors report i
       assert(error instanceof CursorParseError, `${kind}: JS must report malformed`);
       for (const reader of ['detect-context','orders','validate-state','check-skills','doctor']) {
         const args = reader === 'doctor' ? [sb.dir] : [];
-        const out=spawnSync('bash',[path.join(scripts,`${reader}.sh`),...args],{encoding:'utf8',env:{...process.env,CLAUDE_PROJECT_DIR:sb.dir}});
+        const out=spawnSync('bash',[path.join(scripts,`${reader}.sh`),...args],{encoding:'utf8',env:maskedEnv({CLAUDE_PROJECT_DIR:sb.dir})});
         assertEqual(out.status,reader === 'validate-state' ? 1 : 0, `${kind}/${reader}: ${out.stderr}`);
         assert((out.stderr+out.stdout).includes('invalid'),`${kind}/${reader}: must report invalid: ${out.stdout} ${out.stderr}`);
         assert(!out.stdout.includes('quick.fix'),`${kind}/${reader}: no old state`);
       }
-      const fallback=spawnSync('bash',[path.resolve(path.dirname(ROOT_MJS),'../hooks-fallback/stop-gate.sh')],{encoding:'utf8',input:'{}',env:{...process.env,CLAUDE_PROJECT_DIR:sb.dir}});
+      const fallback=spawnSync('bash',[path.resolve(path.dirname(ROOT_MJS),'../hooks-fallback/stop-gate.sh')],{encoding:'utf8',input:'{}',env:maskedEnv({CLAUDE_PROJECT_DIR:sb.dir})});
       assertEqual(fallback.status,0,fallback.stderr);
       assert(fallback.stderr.includes('invalid'),`${kind}/Stop: ${fallback.stderr}`);
       assertEqual(readFileSync(sb.cursorPath,'utf8'),before);
@@ -391,7 +405,7 @@ for (const ancestor of ['.vibe','.vibe/run','.vibe/run/flow']) {
         else { let err;try {readCursor(sb.flowDir);}catch(e){err=e;}assert(err instanceof CursorParseError,`${kind}: JS must report malformed`); }
         for (const reader of ['detect-context','orders','validate-state','check-skills','doctor']) {
           const args=reader === 'doctor' ? [sb.dir] : [];
-          const out=spawnSync('bash',[path.join(scripts,`${reader}.sh`),...args],{encoding:'utf8',env:{...process.env,CLAUDE_PROJECT_DIR:sb.dir}});
+          const out=spawnSync('bash',[path.join(scripts,`${reader}.sh`),...args],{encoding:'utf8',env:maskedEnv({CLAUDE_PROJECT_DIR:sb.dir})});
           assertEqual(out.status, reader === 'validate-state' && (!valid || !JQ_PRESENT) ? 1 : 0,`${ancestor}/${kind}/${reader}: ${out.stderr}`);
           const text=out.stdout+out.stderr;
           if (valid) {
@@ -410,7 +424,7 @@ for (const ancestor of ['.vibe','.vibe/run','.vibe/run/flow']) {
             if(reader === 'doctor') assert(!out.stdout.includes('no flow cursor (idle)'),`${ancestor}/${kind}: healthy absence reported`);
           }
         }
-        const out=spawnSync('bash',[path.resolve(path.dirname(ROOT_MJS),'../hooks-fallback/stop-gate.sh')],{encoding:'utf8',input:'{}',env:{...process.env,CLAUDE_PROJECT_DIR:sb.dir}});
+        const out=spawnSync('bash',[path.resolve(path.dirname(ROOT_MJS),'../hooks-fallback/stop-gate.sh')],{encoding:'utf8',input:'{}',env:maskedEnv({CLAUDE_PROJECT_DIR:sb.dir})});
         assertEqual(out.status,kind === 'search-only' ? 2 : 0,out.stderr);
         if(valid) assert(!out.stderr.includes('invalid'),out.stderr);
         else assert(out.stderr.includes('invalid') && !out.stderr.includes('still in quick.fix'),out.stderr);
@@ -447,12 +461,12 @@ for (const kind of ['inaccessible','search-only']) {
         let err;try {readCursor(sb.flowDir);}catch(e){err=e;}assert(err instanceof CursorParseError);
         for(const reader of ['detect-context','orders','validate-state','check-skills','doctor']) {
           const script=path.resolve(path.dirname(ROOT_MJS),`../scripts/${reader}.sh`);
-          const out=spawnSync('bash',[script,...(reader === 'doctor' ? [sb.dir] : [])],{encoding:'utf8',env:{...process.env,CLAUDE_PROJECT_DIR:sb.dir}});
+          const out=spawnSync('bash',[script,...(reader === 'doctor' ? [sb.dir] : [])],{encoding:'utf8',env:maskedEnv({CLAUDE_PROJECT_DIR:sb.dir})});
           assertEqual(out.status,reader === 'validate-state' ? 1 : 0, out.stderr);
           assert((out.stdout+out.stderr).includes('invalid'),`${reader}: ${out.stdout} ${out.stderr}`);
           assert(!out.stdout.includes('no flow cursor (idle)'),out.stdout);
         }
-        const stop=spawnSync('bash',[path.resolve(path.dirname(ROOT_MJS),'../hooks-fallback/stop-gate.sh')],{encoding:'utf8',input:'{}',env:{...process.env,CLAUDE_PROJECT_DIR:sb.dir}});
+        const stop=spawnSync('bash',[path.resolve(path.dirname(ROOT_MJS),'../hooks-fallback/stop-gate.sh')],{encoding:'utf8',input:'{}',env:maskedEnv({CLAUDE_PROJECT_DIR:sb.dir})});
         assertEqual(stop.status,0);assert(stop.stderr.includes('invalid'),stop.stderr);
       } else assertEqual(readCursor(sb.flowDir).state,'quick.verify');
       const selected=spawnSync('/bin/bash',['-c','source "$1"; runtime_state_path "$2"','root-selector',path.resolve(path.dirname(ROOT_MJS),'../scripts/runtime-state.sh'),sb.flowDir],{encoding:'utf8',env:{PATH:'/nonexistent',CLAUDE_PROJECT_DIR:sb.dir}});

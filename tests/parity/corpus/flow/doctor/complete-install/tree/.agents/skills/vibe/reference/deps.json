@@ -1,0 +1,7 @@
+{
+  "v": 1,
+  "deps": [
+    { "name": "jq", "kind": "tool", "degrade": "warn" },
+    { "name": "vibe-spec", "kind": "sibling", "degrade": "path pointer only" }
+  ]
+}

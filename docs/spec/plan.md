@@ -10,6 +10,8 @@ updated: 2026-11-12
 
 Single-purpose repo: build the self-hosting vibe workflow harness. This plan is current-only — delivered work collapses to notes, no long-horizon backlog. The active arc is v0.4: three tools, one language, no bundle — `spec`, `flow`, and `instruct` rewritten as independent static Rust binaries, sequenced as binary-gated features F1–F25 below. The queued arc is v0.5: the `vibe` CLI front door — worktree lifecycle, global spec management, global blocks (C1–C6, own section below).
 
+**Active plan: Flow rows only.** On 2026-11-11 the owner narrowed the active implementation plan to the Flow rows (F5–F10) and deferred the instruct work and its integration contracts ([#83](https://github.com/LennardZuendorf/vibe/issues/83), [#84](https://github.com/LennardZuendorf/vibe/issues/84), [#85](https://github.com/LennardZuendorf/vibe/issues/85), [#86](https://github.com/LennardZuendorf/vibe/issues/86)) — deferred, not cancelled, and none of the four authorizes implementation. [Feature Sequence](concepts/feature-sequence.md) → Active focus holds the detail.
+
 **Parent specs:** [product.md](product.md), [tech.md](tech.md), [design.md](design.md). Architecture detail, including the v0.4 branch docs and the v0.5 CLI doc, lives in tech.md → `tech-contracts.md`, `tech-rust.md`, `tech-instruct.md`, `tech-spec.md`, `tech-cli.md`.
 
 ## Sequence

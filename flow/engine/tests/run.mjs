@@ -38,6 +38,55 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const TESTS_DIR = __dirname;
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
+
+// The ambient `vibe-flow`, resolved once from the PATH this process inherited.
+// `set-state.sh` delegates to it when it is on PATH (F7), so a spawned shell
+// oracle would take the binary's path instead of the fallback writer these
+// suites pin. Nothing here installs it, so hiding it keeps a developer's
+// machine and bare CI running the same code.
+const VIBE_FLOW_BIN_DIR = (() => {
+  const probe = spawnSync('bash', ['-c', 'command -v vibe-flow 2>/dev/null'], {
+    encoding: 'utf8',
+  });
+  const found = (probe.stdout || '').trim();
+  return found ? path.dirname(found) : null;
+})();
+
+function maskedPath(pathValue) {
+  if (!VIBE_FLOW_BIN_DIR) return pathValue;
+  return pathValue
+    .split(':')
+    .filter((entry) => entry !== VIBE_FLOW_BIN_DIR)
+    .join(':');
+}
+
+// F7: strip that directory from THIS process's PATH — once, at module load, so
+// every consumer agrees on one PATH.
+//
+// Masking only the children was the first cut and it was WRONG on exactly the
+// machine the repo's own verification runs on: a directory holding both
+// binaries (`cargo install` -> ~/.cargo/bin, or ./target/debug) lost `vibe-spec`
+// for the spawned legs but kept it for the in-process legs, so the doctor parity
+// matrix compared `warn tool.vibe-spec vibe-spec not installed` against
+// `ok tool.vibe-spec vibe-spec present` and split six cases; one cursor case
+// spawned `bash` with the raw `{...process.env}` and delegated for real. Both
+// classes disappear when the mask is applied here instead: the engine's own
+// `spawnSync` probes inherit this process's environment, every test file's raw
+// spawn does too, and `runCommand`/`maskedEnv` build children from it.
+if (process.env.PATH) process.env.PATH = maskedPath(process.env.PATH);
+
+// maskedEnv — the environment a fixture child must get: this process's (already
+// masked) environment plus `extra`. Raw `spawnSync` sites in *.test.mjs use it
+// instead of `{...process.env, …}` so the mask has one spelling even if the
+// module-load assignment above is ever revisited. Idempotent, so calling it from
+// a child of a child changes nothing. An explicit `PATH` in `extra` still wins.
+export function maskedEnv(extra = {}) {
+  const env = { ...process.env };
+  if (process.env.PATH) env.PATH = maskedPath(process.env.PATH);
+  Object.assign(env, extra);
+  return env;
+}
+
 const CLI_PATH = path.join(REPO_ROOT, 'flow', 'engine', 'cli.mjs');
 
 // ---------------------------------------------------------------------------
@@ -255,7 +304,9 @@ export async function assertThrows(fn, msg) {
 // only reading under which passing both is not simply a contradiction. Pinned
 // in both directions in runner.test.mjs.
 export function runCommand(cmd, args = [], opts = {}) {
-  const env = { ...process.env };
+  // maskedEnv() carries the module-load PATH mask (F7, see above) and keeps
+  // `opts.env` authoritative — an explicit PATH (the jq-less shims) still wins.
+  const env = maskedEnv();
   for (const key of opts.unsetEnv ?? []) delete env[key];
   Object.assign(env, opts.env ?? {});
   const result = spawnSync(cmd, args, {

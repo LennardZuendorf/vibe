@@ -939,6 +939,22 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Tags:** concurrency, validation, ci, receipts, tooling
 **Date:** 2026-11-12
 
+### Discover optional paths before reading CI helpers
+**Pattern:** CI investigation searched a nonexistent scoped spec directory and assumed a flow procedure path existed. Both probes failed. Receipt creation also required authorized directory creation in the isolated workspace.
+**Rule:** Inventory actual paths with `rg --files` before targeted searches or reads. Check optional tools and destination permissions separately, and distinguish diagnostic setup failures from product regressions.
+**Tags:** tooling, ci, discovery, verification
+**Date:** 2026-11-12
+
+### Audit every consumer of a persisted path representation
+**Pattern:** A path fix updated the journal writer and ordinary recovery but missed reconciliation receipts, scratch cleanup and bundle directory discovery. A Git fixture also assumed one architecture directory instead of querying its installation.
+**Rule:** Inventory every producer and consumer, including receipt recovery, finish, Drop, logical reads and directory walks. Test equivalent old spellings and foreign-identity refusals together. Discover tool installation roots through the tool's own metadata and preserve the complete runtime.
+**Tags:** paths, recovery, ownership, portability, fixtures
+**Date:** 2026-11-12
+
+### Separate scheduling allowances from semantic proof
+**Pattern:** Windows contention exceeded a bounded wait, bulk-data response tests hit a harness guard, and host Clippy found a test module before production items after the tests passed.
+**Rule:** After both writers finish, retry the original stale token; require revision_changed, one publication and unchanged winner content/history. Require a fresh coherent reader snapshot after the writer finishes. Label timing by test name and child PID; keep send time, actual response wait and queue-drain totals distinct. Use one bounded integration receive guard separate from direct responsiveness, acquisition and publication/cancellation deadlines. Increasing that guard establishes no production latency improvement. Run host Clippy after adding tests and place test modules after production items.
+**Tags:** concurrency, timing, tests, verification, clippy
 
 ### Rename commands across subprocesses and abbreviated references
 **Pattern:** The config namespace migration updated public fixtures but missed a nested subprocess invoking the removed sync command. Full-suite execution caught usage exit 2 where the lock control expected exit 1. Final review also found abbreviated store-command spellings in current spec notes.

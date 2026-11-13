@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 use crate::cmd::{self, Outcome};
 use crate::hook;
 use crate::paths::{Env, FlowPaths};
+use crate::{agents_md, doctor, doctrine, emit, init, orders};
 
 const VIBE_DIR_FLAG: &str = "--vibe-dir";
 
@@ -47,18 +48,53 @@ enum Command {
         /// The event name, e.g. `pre-tool-use-guard` or `stop-gate`.
         event: Option<String>,
     },
+    /// Print the per-turn orders for the cursor's state (or the given state).
+    Orders {
+        /// The state to resolve; defaults to the cursor.
+        state: Option<String>,
+    },
+    /// Print the working-model doctrine.
+    Doctrine,
+    /// Report on the install (warn-only; always exits 0).
+    Doctor,
+    /// Print the inject payload for the live cursor.
+    Emit,
+    /// Write the provider manifest and seed the payload.
+    Init,
+    /// Render the flow's own managed content.
+    Render {
+        #[command(subcommand)]
+        command: RenderCommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum RenderCommand {
+    /// The standalone AGENTS.md block (owner `flow`).
+    AgentsMd {
+        /// Write the block into AGENTS.md and the ordered fragment.
+        #[arg(long)]
+        write: bool,
+        /// Exit 1 when the block is missing or drifted (CI).
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
 enum StateCommand {
     /// Print the resolved cursor as pretty JSON.
     Get,
-    /// Write the cursor: `set <flow.phase> [feature]`.
+    /// Write the cursor: `set <flow.phase> [feature] [--confirm]`.
     Set {
         /// The target state, e.g. `feature.impl` or `idle`.
         target: Option<String>,
         /// The feature to attach; carried forward when omitted.
         feature: Option<String>,
+        /// Approve a gated edge (`gates` in the machine). Without it the write
+        /// is refused; there is no override.
+        #[arg(long)]
+        confirm: bool,
     },
 }
 
@@ -123,9 +159,11 @@ fn dispatch(paths: &FlowPaths, command: Command) -> Outcome {
     match command {
         Command::State { command } => match command {
             StateCommand::Get => cmd::state::run_get(paths),
-            StateCommand::Set { target, feature } => {
-                cmd::state::run_set(paths, target.as_deref(), feature.as_deref())
-            }
+            StateCommand::Set {
+                target,
+                feature,
+                confirm,
+            } => cmd::state::run_set(paths, target.as_deref(), feature.as_deref(), confirm),
         },
         Command::Policy { command } => match command {
             PolicyCommand::Decide { path, state } => {
@@ -148,6 +186,30 @@ fn dispatch(paths: &FlowPaths, command: Command) -> Outcome {
                 _ => Outcome::new(0, String::new(), String::new()),
             }
         }
+        Command::Orders { state } => orders::run(paths, state.as_deref()),
+        Command::Doctrine => doctrine::run(paths),
+        Command::Doctor => doctor::run(paths, &doctor::Options::default()),
+        Command::Emit => emit::run(paths),
+        Command::Init => init::run(paths),
+        Command::Render { command } => match command {
+            RenderCommand::AgentsMd { write, check } => {
+                if write && check {
+                    return Outcome::new(
+                        1,
+                        String::new(),
+                        "render: ERROR — pass either --write or --check, not both\n".to_string(),
+                    );
+                }
+                let mode = if write {
+                    agents_md::Mode::Write
+                } else if check {
+                    agents_md::Mode::Check
+                } else {
+                    agents_md::Mode::Print
+                };
+                agents_md::run(paths, mode)
+            }
+        },
     }
 }
 

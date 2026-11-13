@@ -23,7 +23,7 @@ metadata:
 
 ## Contract
 
-The cursor owns sequencing and artifact paths; state orders override delegated skill instructions. Scope edits do not change state. At non-gated edges, run `vibe-flow state set <next>` yourself. The only human gates are `feature.plan>feature.impl` and `feature.verify>feature.compound`; cross them only after explicit approval with the `confirm` token or `--confirm` flag. Never hand-edit `.vibe/run/flow/state.json`; `idle` is always legal and aborts a flow. `/flow` and GSD aliases are thin wrappers over `vibe-flow state set`.
+The cursor owns sequencing and artifact paths; state orders override delegated skill instructions. Scope edits do not change state. At non-gated edges, run `vibe-flow state set <next>` yourself. The only human gates are `feature.plan>feature.impl` and `feature.verify>feature.compound`; cross them only after explicit approval with the `confirm` token or `--confirm` flag. Never hand-edit `.vibe/run/flow/state.json`; `idle` is always legal and aborts a flow. `/flow` is a thin wrapper over `vibe-flow state set`; the GSD aliases are data, not executable commands yet.
 
 ## Delegation protocol
 

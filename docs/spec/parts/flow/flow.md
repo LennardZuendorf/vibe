@@ -1,6 +1,6 @@
 ---
 type: hub
-updated: 2026-10-19
+updated: 2026-11-12
 ---
 
 # Part: flow
@@ -19,6 +19,7 @@ The state-machine workflow with real teeth: cursor, guard and stop hooks, ledger
 ## Concepts
 
 - [Vibe Flow Contract](concepts/flow-contract.md) — cursor, state machine, ledger
+- [Flow payload contract](concepts/flow-payload-contract.md) — the inject payload, provider manifest, AGENTS.md block
 - [Style](concepts/style-note.md) — output density
 - [TUI Conventions](concepts/tui-conventions.md) — keys, prompts, the live pane
 - [Flow feature sequence](concepts/flow-feature-sequence.md) — the F-rows the flow tool owns

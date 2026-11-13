@@ -53,7 +53,7 @@ fn isolated_smoke_command(
     let mut command = Command::new(program);
     let path = home.path("bin");
     #[cfg(windows)]
-    let path = std::env::join_paths([path, home.path("git-runtime/cmd")]).unwrap();
+    let path = std::env::join_paths([path, home.path("git-runtime").join("cmd")]).unwrap();
     command
         .current_dir(cwd)
         .env_clear()
@@ -80,6 +80,64 @@ fn isolated_smoke_command(
     command
 }
 
+fn git_installation_layout(
+    real_git: &std::path::Path,
+    exec_path: &std::path::Path,
+) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    let prefix = exec_path.parent()?.parent()?;
+    let installation = real_git.ancestors().find(|root| {
+        root.join("cmd").join("git.exe").is_file()
+            && exec_path.starts_with(root)
+            && prefix.starts_with(root)
+            && prefix.join("bin").join("git.exe").is_file()
+            && prefix
+                .join("share")
+                .join("git-core")
+                .join("templates")
+                .is_dir()
+    })?;
+    Some((
+        installation.to_owned(),
+        prefix.strip_prefix(installation).ok()?.to_owned(),
+    ))
+}
+
+// spec-ci-windows-followup/2: installed Git selects its native runtime prefix.
+#[test]
+fn git_installation_layout_follows_actual_runtime_prefix() {
+    let home = common::Home::new("git-runtime-layout");
+    for prefix in ["ucrt64", "mingw64"] {
+        let installation = home.path(prefix);
+        let native = installation.join(prefix);
+        let git = installation.join("cmd").join("git.exe");
+        let native_git = native.join("bin").join("git.exe");
+        let helpers = native.join("libexec").join("git-core");
+        let templates = native.join("share").join("git-core").join("templates");
+        for dir in [
+            git.parent().unwrap(),
+            native_git.parent().unwrap(),
+            &helpers,
+            &templates,
+        ] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(&git, b"fixture launcher").unwrap();
+        std::fs::write(&native_git, b"fixture native Git").unwrap();
+        let git = std::fs::canonicalize(git).unwrap();
+        let helpers = std::fs::canonicalize(helpers).unwrap();
+        let expected = (std::fs::canonicalize(&installation).unwrap(), prefix.into());
+        assert_eq!(git_installation_layout(&git, &helpers), Some(expected));
+        assert!(
+            git_installation_layout(&git, &std::fs::canonicalize(&home.dir).unwrap()).is_none()
+        );
+        std::fs::remove_file(&native_git).unwrap();
+        assert!(git_installation_layout(&git, &helpers).is_none());
+        std::fs::write(&native_git, b"fixture native Git").unwrap();
+        std::fs::remove_dir(&templates).unwrap();
+        assert!(git_installation_layout(&git, &helpers).is_none());
+    }
+}
+
 #[cfg(windows)]
 fn copy_git_installation(real_git: &std::path::Path, home: &common::Home) -> std::path::PathBuf {
     fn copy_tree(source: &std::path::Path, target: &std::path::Path) {
@@ -100,16 +158,24 @@ fn copy_git_installation(real_git: &std::path::Path, home: &common::Home) -> std
             }
         }
     }
-    let installation = real_git
-        .ancestors()
-        .find(|root| {
-            root.join("cmd/git.exe").is_file() && root.join("mingw64/bin/git.exe").is_file()
-        })
+    let mut command = isolated_smoke_command(real_git, &home.path("code"), home);
+    command.arg("--exec-path");
+    let output = smoke_output(command);
+    let exec_path =
+        std::fs::canonicalize(String::from_utf8(output.stdout).unwrap().trim()).unwrap();
+    let (installation, prefix) = git_installation_layout(real_git, &exec_path)
         .expect("complete Git for Windows installation required for copied smoke");
     let runtime = home.path("git-runtime");
-    copy_tree(installation, &runtime);
-    assert!(runtime.join("mingw64/share/git-core/templates").is_dir());
-    runtime.join("cmd/git.exe")
+    copy_tree(&installation, &runtime);
+    assert!(
+        runtime
+            .join(prefix)
+            .join("share")
+            .join("git-core")
+            .join("templates")
+            .is_dir()
+    );
+    runtime.join("cmd").join("git.exe")
 }
 
 fn smoke_output(mut command: Command) -> std::process::Output {
@@ -255,7 +321,7 @@ fn copied_central_vibe_project_mcp_with_git_only() {
         let helpers =
             std::fs::canonicalize(String::from_utf8(output.stdout).unwrap().trim()).unwrap();
         assert!(helpers.starts_with(std::fs::canonicalize(home.path("git-runtime")).unwrap()));
-        for directory in [home.path("bin"), home.path("git-runtime/cmd")] {
+        for directory in [home.path("bin"), home.path("git-runtime").join("cmd")] {
             for forbidden in ["node.exe", "vibe-spec.exe"] {
                 assert!(
                     !directory.join(forbidden).exists(),

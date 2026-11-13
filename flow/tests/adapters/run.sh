@@ -31,6 +31,25 @@ INSTALL="$REPO_ROOT/install.sh"
 # #12: settings.json is the single firing path; no plugin manifest is shipped).
 VIBE_HOOK_RE='\.claude/hooks/(session-start-doctrine|user-prompt-submit-inject|pre-tool-use-guard|stop-gate)\.sh'
 
+# F7: set-state.sh hands the write to `vibe-flow` whenever that binary is on
+# PATH — the binary is the one gate (D27). These fixtures drive the FALLBACK
+# writer and deliberately walk edges the gate refuses (idle -> feature.impl,
+# an unconfirmed feature.plan -> feature.impl), so an ambient `vibe-flow` from a
+# developer's `cargo install` would switch the suite onto the gate and fail it
+# locally while CI, which never installs the binary, stayed green. Hide it. The
+# flow suite owns the delegation fixtures, with its own stub on PATH.
+if _vf_bin="$(command -v vibe-flow 2>/dev/null)"; then
+  _vf_masked=""
+  IFS=':' read -r -a _vf_dirs <<< "$PATH"
+  for _vf_dir in ${_vf_dirs[@]+"${_vf_dirs[@]}"}; do
+    [[ "$_vf_dir" == "$(dirname "$_vf_bin")" ]] && continue
+    _vf_masked="${_vf_masked:+$_vf_masked:}$_vf_dir"
+  done
+  PATH="$_vf_masked"
+  export PATH
+  unset _vf_bin _vf_masked _vf_dirs _vf_dir
+fi
+
 PASS=0
 FAIL=0
 pass() { echo "  PASS [$1] $2"; PASS=$((PASS + 1)); }
@@ -1318,16 +1337,17 @@ else
   fail "host-support/1" "host /flow command files exist for OpenCode and Factory"
 fi
 
-# Claude keeps the surfaces it already shipped: the full procedure in its command
-# file (asserted by content below, not by byte-compare) and the four hook scripts
-# still on disk — this unit adds no hook integration anywhere and changes none.
-assert_contains "host-support/1" "Claude /flow command still carries the transition procedure" \
-  "$(cat "$CLAUDE_CMD" 2>/dev/null)" "set-state.sh <target> [feature]"
-# …and points at the SAME shared artifacts as the host wrappers, so every entry
-# point provably reaches one writer/machine pair.
-for tok in "state-machine.json" "set-state.sh"; do
-  assert_contains "host-support/1" "Claude /flow still uses the shared $tok path" "$(cat "$CLAUDE_CMD" 2>/dev/null)" "$tok"
-done
+# Claude keeps the surfaces it already shipped: its /flow command file and the
+# four hook scripts still on disk. After F7 the command is a thin wrapper over
+# the binary — asserted by content below, not by byte-compare.
+assert_contains "host-support/1" "Claude /flow runs the binary" \
+  "$(cat "$CLAUDE_CMD" 2>/dev/null)" "vibe-flow state set"
+# …and reaches ONE writer: the binary. A second shell writer in the command file
+# is exactly the disagreement D27 forbids.
+assert_not_contains "host-support/1" "Claude /flow no longer calls set-state.sh" \
+  "$(cat "$CLAUDE_CMD" 2>/dev/null)" "set-state.sh"
+assert_contains "host-support/1" "Claude /flow maps the confirm token to the flag" \
+  "$(cat "$CLAUDE_CMD" 2>/dev/null)" "--confirm"
 hp_hooks=1
 for h in session-start-doctrine user-prompt-submit-inject pre-tool-use-guard stop-gate; do
   [[ -f "$REPO_ROOT/.claude/hooks/$h.sh" ]] || { hp_hooks=0; echo "        missing Claude hook: $h.sh"; }

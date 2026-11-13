@@ -5,15 +5,15 @@ applies:
   - "crates/vibe-signals/**"
   - "flow/state-machine.json"
   - ".vibe/run/flow/**"
-updated: 2026-11-03
+updated: 2026-11-08
 ---
 
 # Flow runtime: current source and pending targets
 
 F5/F6 implement `state get|set`, `policy check|decide|list|render`, and
 `hook pre-tool-use-guard|stop-gate` in `crates/vibe-flow/`.
-`state set` validates the target name and writes atomically; it does not
-check legal edges, approvals, receipt verdicts or append ledger events.
+The F7 transition check, its ledger events and the pending ledger and signal
+contracts are in [machine teeth](rust-flow-gates.md).
 `policy check` refuses with exit 1; `decide` preserves exit 2.
 
 ## Repo-local layout
@@ -34,12 +34,6 @@ is ≤110 lines. Executable checks live in `flow/tests/run.sh`.
 
 ## Pending targets
 
-F7 adds `state set --confirm`, legal-`next` enforcement, the shared
-transition checker, ledger append/rotation, status and executable GSD aliases.
-The current alias table is data, not executable command support.
-`.planning/` is read-only context and never authoritative state.
-Receipt-verdict enforcement is pending; current receipts use freshness only.
-
 F8 adds Rust orders/doctrine/doctor, payload emission, provider manifest
 and standalone managed AGENTS output. F11/F12 add instruct composition
 and the hook ownership handoff. JS remains active until its retirement row.
@@ -47,13 +41,8 @@ F9 signals and F10 TUI/playback remain pending; advisory signals cannot
 become blocking evidence. The writer-gate and ledger target decisions remain
 [D27](../../decisions/d27-the-writer-is-the-gate.md) and
 [D28](../../decisions/d28-ledger-advisory-signals.md).
-
-Pending ledger contract: `.vibe/run/flow/ledger.jsonl`, `O_APPEND`, rotate
-at 5 MB retaining one generation; kinds `transition | hook | signal`.
-Pending `Signal`: `{ts, source, kind: progress|blocked|done|drift,
-confidence, evidence, state}`; no verdict. `SignalProvider::observe(&Observation)
--> Vec<Signal>`; `RulesProvider` reads Stop/SubagentStop transcript tails.
-`ModelProvider` is later opt-in behind feature `model`; core never depends on signals.
+`.planning/` is read-only context and never authoritative state.
+Receipt-verdict enforcement is pending; current receipts use freshness only.
 Pending recorded flows save to `~/.config/vibe/flows/<name>.json` (`%APPDATA%`
 on Windows); global storage remains a deferred target. A project selects a
 linear machine subset through `.vibe/flow.json` `{"machine":"<path>"}`,

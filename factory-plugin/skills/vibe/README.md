@@ -127,7 +127,7 @@ flowchart LR
 ```
 
 A scope edit is **not** a state: edit within the current state's write surface
-and stay put. `set-state.sh idle` is always legal — abort ends any flow.
+and stay put. `vibe-flow state set idle` is always legal — abort ends any flow.
 
 **Transition only** via the one sanctioned writer — never edit `state.json` by
 hand:
@@ -136,8 +136,11 @@ hand:
 bash .agents/skills/vibe/scripts/set-state.sh feature.design my-feature
 ```
 
-The `/flow` command wraps this: it reads the current state, refuses if the target
-is not in `next`, and otherwise calls `set-state.sh` for you.
+The `/flow` command is a thin wrapper over the binary: it maps the `confirm`
+token to `--confirm` and runs `vibe-flow state set`, which refuses a target that
+is not in `next` and a gated edge without approval. `set-state.sh` delegates to
+the same binary when it is on `PATH`; without it the script keeps the plain
+writer and says on stderr that the gate was not enforced.
 
 ## Per-turn orders
 
@@ -323,7 +326,7 @@ all.
 The shipped rules, in one sentence each:
 
 1. **`.agents/skills/vibe/state.json`** — blocked in every state; the cursor is
-   written only by `set-state.sh`.
+   written only through the writer (`vibe-flow state set`, or `set-state.sh`).
 2. **Lessons under `docs/spec/` and the legacy dot-spec root** — blocked outside the
    flow-end states that carry the conditional lesson step.
 3. **Root specs under `docs/spec/` and the legacy dot-spec root** — blocked outside the
@@ -349,10 +352,11 @@ bash .agents/skills/vibe/scripts/detect-context.sh decide docs/spec/product.md
    op aimed at a guarded path and nudges. It never blocks (false positives are
    certain), a pure read like `grep docs/spec/lessons.md` never warns, and a command
    driving `set-state.sh` is never warned about `state.json`.
-2. **`set-state.sh` is a writer, not a gate.** It validates the target state
-   *name* and writes the cursor; it does not enforce which edges are legal. Edge
-   legality (and which edges need a confirm token) is `/flow` convention — prose,
-   not a hook.
+2. **The writer is the gate.** `state set` refuses an unknown target, a target
+   outside `next`, and a gated edge without `--confirm`, and appends one ledger
+   line per accepted write. `set-state.sh` delegates to that binary when it is on
+   `PATH`; only an install without the Rust build keeps the plain writer, and it
+   says on stderr that the gate was not enforced.
 3. **The receipt tooth is `jq`-optional.** In a `*.verify` state the `Stop` gate
    blocks on a missing / stale evidence receipt **with or without `jq`** — jq-less,
    it reads the flat cursor via sed and the block is byte-identical. Absent `jq`
@@ -365,7 +369,7 @@ All under `.agents/skills/vibe/scripts/` at runtime.
 | Script | Role |
 |---|---|
 | [runtime-state.sh](scripts/runtime-state.sh) | shared migrated-cursor selection and physical write checks |
-| [set-state.sh](scripts/set-state.sh) | the only sanctioned cursor writer (validates the target state name; `/flow` enforces the graph edge) |
+| [set-state.sh](scripts/set-state.sh) | the only sanctioned cursor entry point (delegates to `vibe-flow state set`, which enforces the graph edge and the gates; plain writer only where the binary is absent) |
 | [validate-state.sh](scripts/validate-state.sh) | check the cursor is a legal state in the machine |
 | [detect-context.sh](scripts/detect-context.sh) | write policy (allow/warn/block) + state snapshot |
 | [orders.sh](scripts/orders.sh) | resolve the D12 per-turn orders from the linked skill |

@@ -1,0 +1,8 @@
+{
+  "v": 1,
+  "states": {
+    "idle": { "inject": "state=idle · inline inject" },
+    "feature.impl": { "skill": "vibe", "inject": "state=feature.impl · inline inject" },
+    "quick.fix": { "skill": "vibe" }
+  }
+}

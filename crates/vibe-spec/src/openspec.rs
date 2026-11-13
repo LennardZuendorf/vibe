@@ -1170,13 +1170,14 @@ enum Input<'a> {
     Host,
     Bundle(&'a std::collections::BTreeMap<String, Vec<u8>>),
 }
+fn bundle_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
 impl Input<'_> {
     fn read(&self, path: &Path, show: &str) -> Result<Option<Vec<u8>>, String> {
         match self {
             Self::Host => read_regular(path, show),
-            Self::Bundle(files) => Ok(files
-                .get(&path.to_string_lossy().replace('\\', "/"))
-                .cloned()),
+            Self::Bundle(files) => Ok(files.get(&bundle_path(path)).cloned()),
         }
     }
     fn exists_dir(&self, path: &Path) -> Result<bool, String> {
@@ -1184,7 +1185,7 @@ impl Input<'_> {
             Self::Host => real_dir(path, "specs"),
             Self::Bundle(files) => Ok(files
                 .keys()
-                .any(|p| p.starts_with(&format!("{}/", path.display())))),
+                .any(|p| p.starts_with(&format!("{}/", bundle_path(path))))),
         }
     }
     fn files(&self, path: &Path) -> Result<Vec<String>, String> {
@@ -1194,7 +1195,7 @@ impl Input<'_> {
                 files_under(path)
             }
             Self::Bundle(files) => {
-                let prefix = format!("{}/", path.display());
+                let prefix = format!("{}/", bundle_path(path));
                 Ok(files
                     .keys()
                     .filter_map(|p| p.strip_prefix(&prefix).map(str::to_string))
@@ -1518,6 +1519,26 @@ pub(crate) fn repo_import_cli(
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+    #[test]
+    fn followup_bundle_lookup_uses_one_logical_path_namespace() {
+        let files = std::collections::BTreeMap::from([(
+            "openspec/changes/auth/specs/auth/spec.md".into(),
+            b"requirements".to_vec(),
+        )]);
+        let input = super::Input::Bundle(&files);
+        let root = std::path::Path::new(r"openspec\changes\auth\specs");
+        assert!(input.exists_dir(root).unwrap());
+        assert_eq!(input.files(root).unwrap(), ["auth/spec.md"]);
+        assert_eq!(
+            input.read(&root.join("auth/spec.md"), "spec.md").unwrap(),
+            Some(b"requirements".to_vec())
+        );
+        assert!(
+            !input
+                .exists_dir(std::path::Path::new(r"openspec\changes\other\specs"))
+                .unwrap()
+        );
+    }
     use super::*;
 
     #[test]
