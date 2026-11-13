@@ -89,6 +89,22 @@ pub fn run_set(
             "vibe state: WARN: entering '{target}' with no feature set. Pass one: vibe state set {target} <feature>"
         )));
     }
+    // D28's append side: exactly one event per accepted write, and none for a
+    // refusal. A gated edge records the approval it crossed on.
+    let gated = machine.gate(&current, target).then_some(confirm);
+    // Pre-flight the ledger before the cursor moves. The cursor write is the
+    // commit; an append refused afterwards would leave it advanced with no
+    // event saying how it got there. Rotation is the refusal most likely to
+    // happen, so it happens here, before anything is committed.
+    if let Err(err) = ledger::prepare(paths) {
+        return Outcome::new(
+            1,
+            String::new(),
+            line(&format!(
+                "vibe state: ERROR: the ledger cannot record this write, so the cursor did not move: {err}"
+            )),
+        );
+    }
     if let Err(err) = write_cursor(paths, &flow, &phase, &feature) {
         return Outcome::new(
             1,
@@ -96,9 +112,6 @@ pub fn run_set(
             line(&format!("vibe state: ERROR: failed to write cursor: {err}")),
         );
     }
-    // D28's append side: exactly one event per accepted write, and none for a
-    // refusal. A gated edge records the approval it crossed on.
-    let gated = machine.gate(&current, target).then_some(confirm);
     if let Err(err) = ledger::append_transition(paths, &current, target, &feature, gated) {
         return Outcome::new(
             1,
@@ -340,6 +353,40 @@ mod tests {
             "wrote a cursor"
         );
         assert!(!paths.ledger_path().exists(), "wrote a ledger line");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_refused_ledger_leaves_the_cursor_where_it_was() {
+        let (_, paths) = root_with_machine("set-ledger-refused");
+        assert_eq!(
+            run_set(&paths, Some("feature.design"), Some("auth"), false).code,
+            0
+        );
+        let before = fs::read_to_string(paths.cursor_path()).expect("cursor");
+        let outside = scratch("set-ledger-refused-outside");
+        let keeper = outside.join("keeper.jsonl");
+        fs::write(&keeper, "keep\n").expect("keeper");
+        fs::remove_file(paths.ledger_path()).expect("live ledger");
+        std::os::unix::fs::symlink(&keeper, paths.ledger_path()).expect("symlink");
+
+        let out = run_set(&paths, Some("feature.plan"), None, false);
+        assert_eq!(out.code, 1);
+        assert!(out.stdout.is_empty());
+        assert!(
+            out.stderr.starts_with(
+                "vibe state: ERROR: the ledger cannot record this write, so the cursor did \
+                 not move: refusing to append through the link "
+            ),
+            "{}",
+            out.stderr
+        );
+        assert_eq!(
+            fs::read_to_string(paths.cursor_path()).expect("cursor"),
+            before,
+            "the cursor moved although the event could not be recorded"
+        );
+        assert_eq!(fs::read_to_string(&keeper).expect("keeper"), "keep\n");
     }
 
     #[test]
