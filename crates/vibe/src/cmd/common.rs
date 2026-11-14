@@ -230,7 +230,7 @@ pub fn finish(
         }
         Ok(None) => {
             let busy = Outcome {
-                notes: vec![Note::Info("another vibe run holds the lock; run vibe doctor; remove its lock file only after independently verifying the holder stopped".to_string())],
+                notes: vec![Note::Info("another vibe run holds the lock; run vibe config doctor; remove its lock file only after independently verifying the holder stopped".to_string())],
                 ..Outcome::default()
             };
             render_with(&busy, dry_run, json_out, false, out, err);

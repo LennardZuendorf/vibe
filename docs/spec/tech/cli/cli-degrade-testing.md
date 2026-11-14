@@ -3,10 +3,13 @@ type: tech
 applies:
   - "crates/vibe/**"
   - "vibe/**"
-updated: 2026-10-19
+updated: 2026-11-12
 ---
 
 # Degrade rules, contracts, testing
+
+The following dispatch, registry and lifecycle rules govern queued C1–C6.
+Current C0 configuration and embedded spec behavior is in [the binary contract](cli-binary.md).
 
 - No peers installed → dispatch subcommands print one advice line, exit 0.
 - Not a git repo → `worktree` subcommands exit 1 with one line.

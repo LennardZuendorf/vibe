@@ -94,7 +94,7 @@ fn contract_state_fixture_loads() {
 #[test]
 fn sync_json_has_exactly_the_contract_keys() {
     let home = cmd_support::ready_home("contract-sync");
-    let out = home.vibe(&["sync", "--json"], &[]);
+    let out = home.vibe(&["config", "sync", "--json"], &[]);
     assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
     let doc = json::parse(&out.text()).unwrap();
     let mut got = keys(&doc);

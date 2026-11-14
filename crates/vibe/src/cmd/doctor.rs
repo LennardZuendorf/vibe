@@ -1,4 +1,4 @@
-//! `vibe doctor`: harness CLIs, store, state, lock and recorded hook binaries.
+//! `vibe config doctor`: harness CLIs, store, state, lock and recorded hook binaries.
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -63,7 +63,7 @@ fn lock_line(path: &Path) -> String {
     )
 }
 
-/// Runs `vibe doctor` against the process environment. Exit 1 when a `problem` line is printed.
+/// Runs `vibe config doctor` against the process environment. Exit 1 when a `problem` line is printed.
 pub fn doctor(paths: &Paths, out: &mut dyn Write, _err: &mut dyn Write) -> u8 {
     let env = Env::from_process();
     let path_var = env.var("PATH");
@@ -95,7 +95,7 @@ pub fn doctor(paths: &Paths, out: &mut dyn Write, _err: &mut dyn Write) -> u8 {
                     problems += 1;
                     let _ = writeln!(
                         out,
-                        "problem {id}: hook binary missing \u{2014} run `vibe install`"
+                        "problem {id}: hook binary missing \u{2014} run `vibe config install`"
                     );
                 }
             }

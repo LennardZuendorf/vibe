@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 #![cfg(unix)]
-//! `vibe install` end to end.
+//! `vibe config install` end to end.
 mod cmd_support;
 mod common;
 use std::fs;
@@ -305,7 +305,7 @@ fn install_finds_toolkit_via_flag_and_env() {
     };
     assert_eq!(sources(&home), [kit.display().to_string()]);
     let again = home.vibe(
-        &["install", ALL[0], ALL[1]],
+        &["config", "install", ALL[0], ALL[1]],
         &[("VIBE_TOOLKIT", kit.to_str().unwrap())],
     );
     assert_ok(&again);
@@ -319,7 +319,7 @@ fn install_finds_toolkit_via_flag_and_env() {
     );
     let kit = toolkit(&other);
     let out = other.vibe(
-        &["install", ALL[0], ALL[1]],
+        &["config", "install", ALL[0], ALL[1]],
         &[("VIBE_TOOLKIT", kit.to_str().unwrap())],
     );
     assert_ok(&out);
@@ -335,7 +335,10 @@ fn install_toolkit_not_found_is_a_note_and_never_walks_ancestors() {
     let home = Home::with_store("install-no-toolkit");
     common::fake_claude(&home);
     let bad = non_toolkit(&home);
-    let out = home.vibe(&["install"], &[("VIBE_TOOLKIT", bad.to_str().unwrap())]);
+    let out = home.vibe(
+        &["config", "install"],
+        &[("VIBE_TOOLKIT", bad.to_str().unwrap())],
+    );
     assert_ok(&out);
     assert!(
         out.text()
@@ -354,7 +357,10 @@ fn install_toolkit_not_found_is_a_note_and_never_walks_ancestors() {
         0
     );
     assert!(!is_link(&home, ".agents/skills/spec"));
-    let flag = home.vibe(&["install", "--toolkit", bad.to_str().unwrap()], &[]);
+    let flag = home.vibe(
+        &["config", "install", "--toolkit", bad.to_str().unwrap()],
+        &[],
+    );
     assert_ok(&flag);
     assert!(
         flag.text().contains("note toolkit not found at"),
@@ -369,6 +375,7 @@ fn install_no_literal_secrets_written() {
     common::fake_claude(&home);
     let kit = toolkit(&home);
     let args = [
+        "config",
         "install",
         "--toolkit",
         kit.to_str().unwrap(),
@@ -424,6 +431,7 @@ fn hook_binary_moved_install_replaces_entry() {
     common::copy_exec(Path::new(env!("CARGO_BIN_EXE_vibe")), &moved);
     let mut cmd = Command::new(&moved);
     cmd.args([
+        "config",
         "install",
         "--toolkit",
         kit.to_str().unwrap(),
@@ -511,8 +519,8 @@ fn install_without_claude_cli_leaves_claude_mcp_out_of_date() {
         "{}",
         out.text()
     );
-    let stale = "claude mcp: out of date \u{2014} run vibe sync";
-    let status = home.vibe(&["store", "status"], &[]);
+    let stale = "claude mcp: out of date \u{2014} run vibe config sync";
+    let status = home.vibe(&["config", "status"], &[]);
     assert!(
         status.text().lines().any(|l| l == stale),
         "{}",
@@ -520,7 +528,7 @@ fn install_without_claude_cli_leaves_claude_mcp_out_of_date() {
     );
 
     common::fake_claude(&home);
-    assert_ok(&home.vibe(&["sync"], &[]));
+    assert_ok(&home.vibe(&["config", "sync"], &[]));
     assert!(
         home.claude_calls()
             .iter()
@@ -528,7 +536,7 @@ fn install_without_claude_cli_leaves_claude_mcp_out_of_date() {
         "{:?}",
         home.claude_calls()
     );
-    let status = home.vibe(&["store", "status"], &[]);
+    let status = home.vibe(&["config", "status"], &[]);
     assert!(!status.text().contains("claude mcp:"), "{}", status.text());
 }
 
@@ -579,6 +587,7 @@ fn install_notes_a_hook_binary_inside_a_build_directory() {
     std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_vibe"), &bin).unwrap();
     let output = Command::new(&bin)
         .args([
+            "config",
             "install",
             "--toolkit",
             kit.to_str().unwrap(),
@@ -609,7 +618,7 @@ fn install_notes_a_hook_binary_inside_a_build_directory() {
     assert!(
         out.text().lines().any(|l| l.starts_with("note hook binary ")
             && l.ends_with(
-                " is inside a build directory \u{2014} re-run vibe install after installing vibe on PATH"
+                " is inside a build directory \u{2014} re-run vibe config install after installing vibe on PATH"
             )),
         "{}",
         out.text()
@@ -632,6 +641,7 @@ fn hook_binary_prefers_the_path_spelling_of_the_running_binary() {
     let run = |bin: &std::path::Path, path: String| {
         let mut cmd = Command::new(bin);
         cmd.args([
+            "config",
             "install",
             "--toolkit",
             kit.to_str().unwrap(),
@@ -721,7 +731,7 @@ fn install_preserves_linked_harness_root_and_internal_parent_links() {
         home.path("dotfiles/opencode/real-plugins/vibe-store.js")
             .is_file()
     );
-    assert_ok(&home.vibe(&["uninstall"], &[]));
+    assert_ok(&home.vibe(&["config", "uninstall"], &[]));
     assert!(
         !home
             .path("dotfiles/opencode/real-plugins/vibe-store.js")

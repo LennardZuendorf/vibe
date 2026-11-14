@@ -14,15 +14,21 @@ vocabulary in `vibe-core`.
 
 ## Implemented source surface
 
-Store, projection, sync, hook registration, install, uninstall, `store status`
-and doctor
-are described in [Global store and projection](cli-store.md). Embedded `vibe spec`
-needs no peer or Node; `VIBE_SPEC_BIN` is deprecated and ignored. Compatibility
+`vibe config` exposes exactly seven operations: `init`, `import-mcp`, `status`,
+`sync`, `install`, `uninstall`, `doctor`. Their flags and handlers are preserved;
+see [Global store and projection](cli-store.md). Top-level commands are
+`config`, `hook`, `spec` and generated `help`. Bare `vibe config` shows usage
+and exits 2 without effects. Old `store`, `sync`, `install`, `uninstall` and
+`doctor` commands are removed without aliases; they exit 2 before effects.
+`config store` and `config hook` do not exist.
+
+Embedded `vibe spec`
+needs no peer or Node; `VIBE_SPEC_BIN` is deprecated and ignored. Raw spec arguments preserve OS strings and `--`. Compatibility
 `vibe-spec` remains available for installed skills/hooks. Central source delivery
 does not change release/installer distribution.
 
 The front door owns SessionStart projection only, one entry per harness merged
-by `vibe install` (D48). It registers no plugin hook. Spec, flow and instruct
+by `vibe config install` (D48). It registers no plugin hook. Spec, flow and instruct
 retain their own hook ownership (D25).
 
 ## Planned C1–C6 surface

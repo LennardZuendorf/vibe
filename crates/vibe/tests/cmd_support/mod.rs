@@ -17,10 +17,10 @@ pub fn ready_home(name: &str) -> Home {
     home
 }
 
-/// A ready home after one successful `vibe sync`, with the `claude` log cleared.
+/// A ready home after one successful `vibe config sync`, with the `claude` log cleared.
 pub fn synced_home(name: &str) -> Home {
     let home = ready_home(name);
-    let out = home.vibe(&["sync"], &[]);
+    let out = home.vibe(&["config", "sync"], &[]);
     assert_eq!(out.code, 0, "{}\n{}", out.text(), out.stderr);
     mirror_claude_json(&home);
     clear_claude_log(&home);
@@ -124,10 +124,10 @@ pub fn non_toolkit(home: &Home) -> PathBuf {
     dir
 }
 
-/// Runs `vibe install --toolkit <kit>` plus `extra` arguments.
+/// Runs `vibe config install --toolkit <kit>` plus `extra` arguments.
 pub fn install(home: &Home, kit: &std::path::Path, extra: &[&str]) -> super::common::Out {
     let kit = kit.to_str().unwrap();
-    let mut args = vec!["install", "--toolkit", kit];
+    let mut args = vec!["config", "install", "--toolkit", kit];
     args.extend_from_slice(extra);
     home.vibe(&args, &[])
 }

@@ -14,7 +14,7 @@ additional spec-only C1/F22 carve-out. It does not complete C1–C6 or F21/F22.
 
 | Order | Feature | Deliverable | Test | Status | Starts when |
 |---:|---|---|---|---|---|
-| C0 | global-store | `crates/vibe` store, projection and install: `store`, `sync`, `hook session-start`, `install`, `uninstall`, `store status`, `doctor` over Claude, Codex, OpenCode, Factory ([D48](../../../decisions/d48-global-store-and-projection.md)) | Idempotent install; real-shaped preserve; fail-open hook; E2E gated (`VIBE_E2E=1`) | DONE | — |
+| C0 | global-store | `crates/vibe`: `config init/import-mcp/status/sync/install/uninstall/doctor` and stable `hook session-start` over Claude, Codex, OpenCode, Factory ([D48](../../../decisions/d48-global-store-and-projection.md)) | Idempotent install; real-shaped preserve; fail-open hook; E2E gated (`VIBE_E2E=1`) | DONE | — |
 | C1 | cli-core | `crates/vibe`: `spec\|flow\|instruct` dispatch via the shim's discovery tiers; `~/.config/vibe/repos.json` registry; `space list`; `doctor` peer + registry checks | Dispatch matrix with each tier's env deleted (both legs); missing-peer advice lines; registry floor test | NOT STARTED | F22 |
 | C2 | worktree-lifecycle | `worktree create/list/remove`: git worktree + isolated `.vibe/run/`; mid-flow remove refusal; deregistration | Refusal discriminates vs naive removal; cursor isolation per worktree; fresh non-git target exits 1 with one line | NOT STARTED | C1 |
 | C3 | worktree-bootstrap | Bootstrap on create: `.vibe/spec.json` root pointer, each tool's `init`, AGENTS.md blocks; staleness in `list` | Byte-parity of bootstrapped files vs `install.sh --local` on the same tree; bootstrap idempotent on re-run | NOT STARTED | C2 |

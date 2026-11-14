@@ -1,4 +1,4 @@
-//! `vibe store init`: the store skeleton.
+//! `vibe config init`: the store skeleton.
 use std::fs;
 use std::path::{Path, PathBuf};
 

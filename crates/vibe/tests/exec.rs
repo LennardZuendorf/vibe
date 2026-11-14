@@ -1145,7 +1145,7 @@ fn nested_sync_cannot_steal_aged_holder_during_claude_call() {
         panic!("busy")
     };
     let script = home.path("nested-sync");
-    fs::write(&script, format!("#!/bin/sh\ntouch -t 200001010000 '{}'\nenv -i HOME='{}' PATH=/usr/bin:/bin '{}' sync --harness codex > '{}/nested-output' 2>&1\nprintf '%s' \"$?\" > '{}/nested-code'\nexit 0\n", p.lock_file().display(), home.dir.display(), env!("CARGO_BIN_EXE_vibe"), home.dir.display(), home.dir.display())).unwrap();
+    fs::write(&script, format!("#!/bin/sh\ntouch -t 200001010000 '{}'\nenv -i HOME='{}' PATH=/usr/bin:/bin '{}' config sync --harness codex > '{}/nested-output' 2>&1\nprintf '%s' \"$?\" > '{}/nested-code'\nexit 0\n", p.lock_file().display(), home.dir.display(), env!("CARGO_BIN_EXE_vibe"), home.dir.display(), home.dir.display())).unwrap();
     fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
     let mut plan = proj(vec![add("a")], vec![]);
     plan.stamp = Some(Stamp {

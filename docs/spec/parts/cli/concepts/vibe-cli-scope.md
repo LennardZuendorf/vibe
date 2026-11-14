@@ -1,9 +1,14 @@
 ---
 type: concept
-updated: 2026-10-19
+updated: 2026-11-12
 ---
 
 # The vibe CLI (v0.5)
+
+Current source delivers shared configuration through `vibe config`, the stable
+`vibe hook session-start` runtime entry and embedded `vibe spec`.
+See [configuration tool](../areas/config-tool.md) and [binary contract](../../../tech/cli/cli-binary.md).
+The C1–C6 front-door capabilities below remain targets.
 
 ## Product piece
 

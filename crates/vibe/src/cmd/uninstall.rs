@@ -1,4 +1,4 @@
-//! `vibe uninstall`: remove what the recorded state says vibe created.
+//! `vibe config uninstall`: remove what the recorded state says vibe created.
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
@@ -121,7 +121,7 @@ fn run(paths: &Paths, dry_run: bool, claude_bin: &str) -> Result<Outcome, String
     Ok(outcome)
 }
 
-/// Runs `vibe uninstall`. The plan comes from `state.json` alone; the store directory is
+/// Runs `vibe config uninstall`. The plan comes from `state.json` alone; the store directory is
 /// never touched, and neither is the state directory: it keeps its (released) lock file.
 /// A failed or refused target keeps `state.json` and the created directories, so a re-run
 /// finishes the job once the target is repaired. Exit 1 when something failed, a target was refused or another run holds

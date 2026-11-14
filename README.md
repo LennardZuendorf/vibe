@@ -34,6 +34,8 @@ never through code. One repo, one installer, three release trains.
 This repo builds itself with its own harness, so what you install is what is
 dogfooded here.
 
+For shared root instructions, MCP servers and skills across coding tools, see [Global store](#global-store).
+
 ## Shipped today (v0.3.x, plus the vibe-spec dev build)
 
 Everything in this section is real, installable, and tested right now.
@@ -239,7 +241,7 @@ recovers them.
 ```bash
 vibe state get | vibe state set <target>   # read / move the cursor
 vibe orders                                # the current state's orders
-vibe doctor                                # install health report (warn-only, always exits 0)
+node .agents/skills/vibe/engine/cli.mjs doctor # Flow install health report (warn-only, always exits 0)
 vibe render --list                         # what each injection channel composes, and from where
 vibe policy decide <path>                  # the write-invariant verdict for a path
 ```
@@ -248,7 +250,7 @@ A root `vibe.json` (never rewritten by install) turns injected content
 blocks on or off and adds your own — see [`flow/README.md` § Injection
 config](flow/README.md#injection-config-vibejson). Flow also *delegates* to
 external skills declared in [`flow/reference/deps.json`](flow/reference/deps.json)
-(superpowers, feature-dev, reported by `vibe doctor`); a missing one degrades,
+(superpowers, feature-dev, reported by the Flow doctor); a missing one degrades,
 never hard-fails.
 
 ### Today's layout
@@ -426,13 +428,41 @@ installed. Budgeted instruction injection (`instruct`) remains ⏳ planned.
 
 `vibe` (crate `crates/vibe`) keeps one user-level store and projects it into Claude Code, Codex, OpenCode and Factory droid. Decision: [D48](docs/spec/decisions/d48-global-store-and-projection.md); tech note: [`cli-store.md`](docs/spec/tech/cli/cli-store.md).
 
+**Shared configuration:** edit one source, then run `vibe config sync` to update the configured tools.
+
+| Shared item | Source | How tools receive it |
+|---|---|---|
+| Root instructions | `AGENTS.md` in the store | Claude imports it; Codex and Droid receive managed copies; OpenCode reads it through the Vibe plugin. |
+| MCP servers | `mcp.json` in the store | Vibe translates each definition into the tool's native configuration or OpenCode plugin. |
+| Skills | Store `skills/` plus `store.json` → `skills.sources` | Links in `~/.claude/skills` and the shared `~/.agents/skills`; existing user-owned skills are preserved. |
+
+Servers are shared across all enabled tools by default. Add `"harnesses": ["claude", "codex"]` inside a server definition to limit it; valid IDs also include `opencode` and `droid`.
+Extra native MCP servers can coexist with Vibe. A same-named native server that Vibe does not own takes precedence; Vibe preserves it instead of taking it over.
+
+After [building the central executable](#the-vibe-spec-binary), run `vibe config install --toolkit "$PWD/.agents/skills"` from this checkout to register Vibe's `spec`, `using-spec` and `vibe` skills and wire detected tools.
+Custom skill sources are directories containing child folders with `SKILL.md`. The store's `skills/` wins over extra sources; extra sources are searched in order.
+
+This is local, one-way configuration sharing, not cloud/device sync or reverse-import of tool edits. It links skills and installs Vibe's OpenCode adapter; it does not install arbitrary marketplace plugins, synchronize every native setting, or replace project-level framework setup through `install.sh`.
+
 ```bash
-vibe install [--harness claude,codex] [--dry-run]   # store init, one SessionStart hook per detected harness, OpenCode plugin, then sync
-vibe store import-mcp ~/old/mcp.json                # merge servers; secrets become ${VIBE_<SERVER>_<FIELD>}
-vibe sync [--dry-run] [--json]                      # full projection, including Claude MCP via `claude mcp add-json`
-vibe store status                                   # per-harness drift, skips, conflicts
-vibe uninstall [--dry-run]                          # reverse exactly what vibe created; the store stays
+vibe config install [--harness claude,codex] [--dry-run]   # store init, one SessionStart hook per detected harness, OpenCode plugin, then sync
+vibe config import-mcp ~/old/mcp.json                # merge servers; secrets become ${VIBE_<SERVER>_<FIELD>}
+vibe config sync [--dry-run] [--json]                      # full projection, including Claude MCP via `claude mcp add-json`
+vibe config status                                   # per-harness drift, skips, conflicts
+vibe config uninstall [--dry-run]                          # reverse exactly what vibe created; the store stays
 ```
+
+**Breaking change:** Old invocations fail. Update external scripts to use these commands:
+
+| Old command | Replacement |
+|---|---|
+| `vibe store init` | `vibe config init` |
+| `vibe store import-mcp` | `vibe config import-mcp` |
+| `vibe store status` | `vibe config status` |
+| `vibe sync` | `vibe config sync` |
+| `vibe install` | `vibe config install` |
+| `vibe uninstall` | `vibe config uninstall` |
+| `vibe doctor` | `vibe config doctor` |
 
 Store layout (`~/.config/vibe/`):
 
@@ -443,15 +473,15 @@ mcp.json     # {"mcpServers":{...}}
 skills/      # one dir per skill, each with SKILL.md
 ```
 
-`install` wires the harnesses it detects (configuration directory present, or its CLI `claude`, `codex`, `opencode`, `droid` on `PATH`); an undetected one gets a note, and `--harness <id>` forces it. Without the `claude` CLI, `install` and `sync` skip the Claude MCP step with one note and exit 0; after you install the CLI, run `vibe sync` once to project MCP.
+`install` wires the harnesses it detects (configuration directory present, or its CLI `claude`, `codex`, `opencode`, `droid` on `PATH`); an undetected one gets a note, and `--harness <id>` forces it. Without the `claude` CLI, `install` and `sync` skip the Claude MCP step with one note and exit 0; after you install the CLI, run `vibe config sync` once to project MCP.
 
-After install, every harness session start re-projects the store. When something changed, the hook prints one notice line: a `{"systemMessage":"vibe: …"}` JSON line for Claude, Codex and Factory (shown to you), plain text for OpenCode. The hook never injects instruction content and always exits 0. Claude MCP changes need `vibe sync`; until you run it, every session start repeats the notice, and `vibe store status` shows `claude mcp: out of date`. vibe changes only its own marker blocks and the entries it recorded in `state.json`; everything else survives install, sync and uninstall.
+After install, each harness session-start hook checks for store changes and re-projects when needed; an unchanged store can skip this work, so use `vibe config sync` to check target-only drift. When something changed, the hook prints one notice line: a `{"systemMessage":"vibe: …"}` JSON line for Claude, Codex and Factory (shown to you), plain text for OpenCode. The hook never injects instruction content and always exits 0. Claude MCP changes need `vibe config sync`; until you run it, every session start repeats the notice, and `vibe config status` shows `claude mcp: out of date`. vibe changes only its own marker blocks and the entries it recorded in `state.json`; everything else survives install, sync and uninstall.
 
-**Secrets.** vibe never writes a secret it detects on import. Keep API keys in your environment and reference them as `${NAME}` placeholders in `mcp.json`; `store import-mcp` does the replacement and prints variable names only (`--keep-literals` opts out). An env secret of a valid key `K` becomes `${K}` only when the name is unreserved in the store/input and earlier allocations; otherwise it gets a collision-free `${VIBE_<SERVER>_<FIELD>}` name. Credentials remain independently named across servers, even when their literal values match. Codex stdio cannot rename env variables: import warns and Codex skips an applicable server whose placeholder name differs from its env key. Headers and URLs get server-qualified names. Literals you write into `mcp.json` yourself are projected as written, with a `literal secret-looking value projected` note. URL userinfo is never rewritten and always warns.
+**Secrets.** vibe never writes a secret it detects on import. Keep API keys in your environment and reference them as `${NAME}` placeholders in `mcp.json`; `vibe config import-mcp` does the replacement and prints variable names only (`--keep-literals` opts out). An env secret of a valid key `K` becomes `${K}` only when the name is unreserved in the store/input and earlier allocations; otherwise it gets a collision-free `${VIBE_<SERVER>_<FIELD>}` name. Credentials remain independently named across servers, even when their literal values match. Codex stdio cannot rename env variables: import warns and Codex skips an applicable server whose placeholder name differs from its env key. Headers and URLs get server-qualified names. Literals you write into `mcp.json` yourself are projected as written, with a `literal secret-looking value projected` note. URL userinfo is never rewritten and always warns.
 
 Projection allows intentionally linked configuration roots and internal directory links. It refuses symlinked target files and descendant paths that escape the resolved root or cross dangling links. Linked read-only store inputs remain supported.
 
-A heartbeat keeps the exclusive projection lock fresh during CLI work. Age alone does not prove its holder stopped. If a crash leaves a lock, `vibe doctor` identifies it; independently verify the holder stopped, then remove that exact lock file and retry.
+A heartbeat keeps the exclusive projection lock fresh during CLI work. Age alone does not prove its holder stopped. If a crash leaves a lock, `vibe config doctor` identifies it; independently verify the holder stopped, then remove that exact lock file and retry.
 
 | Variable | Effect |
 |---|---|
