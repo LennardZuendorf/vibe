@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
+use serde_json::{Value, json};
 
 use crate::cmd::{self, Outcome};
 use crate::hook;
@@ -83,6 +84,29 @@ enum RenderCommand {
 
 #[derive(Subcommand, Debug)]
 enum StateCommand {
+    /// Print the full worktree candidate identity without a commit.
+    Candidate,
+    /// Record an untrusted TaskBrief/TaskResult pair at the expected revision.
+    TaskResult {
+        expected_revision: u64,
+        brief: String,
+        result: String,
+    },
+    /// Recover damaged current bytes into a new unapproved idle run.
+    Recover {
+        expected_digest: String,
+        run_id: String,
+        plan_digest: String,
+        scope_digest: String,
+    },
+    /// Explicitly adopt revision-checked v2 state.
+    Upgrade {
+        run_id: String,
+        plan_digest: String,
+        scope_digest: String,
+    },
+    /// Apply a v1 TransitionRequest JSON document.
+    Transition { request: String },
     /// Print the resolved cursor as pretty JSON.
     Get,
     /// Write the cursor: `set <flow.phase> [feature] [--confirm]`.
@@ -158,6 +182,46 @@ pub fn run(cwd: &Path, argv: &[OsString], env: &dyn Env) -> (u8, Vec<u8>, Vec<u8
 fn dispatch(paths: &FlowPaths, command: Command) -> Outcome {
     match command {
         Command::State { command } => match command {
+            StateCommand::Candidate => {
+                let exclusions = json!([".vibe/run/flow", "target"]);
+                crate::runtime::outcome(crate::candidate::snapshot(paths.root()).map(|digest| {
+                    json!({"candidate_digest": digest, "source": "agent", "exclusions": exclusions})
+                }))
+            }
+            StateCommand::TaskResult {
+                expected_revision,
+                brief,
+                result,
+            } => crate::runtime::outcome(parse(&brief).and_then(|brief| {
+                parse(&result).and_then(|result| {
+                    crate::runtime::record_task(paths, expected_revision, &brief, &result)
+                })
+            })),
+            StateCommand::Recover {
+                expected_digest,
+                run_id,
+                plan_digest,
+                scope_digest,
+            } => crate::runtime::outcome(crate::runtime::recover(
+                paths,
+                &expected_digest,
+                &run_id,
+                &plan_digest,
+                &scope_digest,
+            )),
+            StateCommand::Upgrade {
+                run_id,
+                plan_digest,
+                scope_digest,
+            } => crate::runtime::outcome(crate::runtime::upgrade(
+                paths,
+                &run_id,
+                &plan_digest,
+                &scope_digest,
+            )),
+            StateCommand::Transition { request } => crate::runtime::outcome(
+                parse(&request).and_then(|request| crate::runtime::transition(paths, &request)),
+            ),
             StateCommand::Get => cmd::state::run_get(paths),
             StateCommand::Set {
                 target,
@@ -222,6 +286,12 @@ fn operands(path: Option<String>, state: Option<String>) -> Vec<String> {
         args.push(state);
     }
     args
+}
+
+/// One JSON document from an argv operand. Malformed input is a named error,
+/// never a panic and never a silent empty default.
+fn parse(document: &str) -> Result<Value, String> {
+    serde_json::from_str(document).map_err(|err| format!("invalid JSON document: {err}"))
 }
 
 /// Pulls a leading `--vibe-dir <dir>` / `--vibe-dir=<dir>` off the arguments
