@@ -232,24 +232,99 @@ fn committed(name: &str, date: &str) -> vibe_core::testscratch::Scratch {
     p
 }
 
+/// `tree` with every stamp set to `date` and committed on that day.
+fn stamped(name: &str, date: &str) -> vibe_core::testscratch::Scratch {
+    let p = tree(name, &["auth"]);
+    for rel in [
+        ".spec/product.md",
+        ".spec/plan.md",
+        ".spec/features/auth/product.md",
+        ".spec/features/auth/tech.md",
+    ] {
+        let text = std::fs::read_to_string(p.join(rel)).unwrap();
+        write(&p, rel, &text.replace("2026-01-15", date));
+    }
+    git(&p, date, &["init", "-q"]);
+    commit(&p, &format!("{date}T12:00:00Z"), "init");
+    p
+}
+
+fn commit(p: &Path, date: &str, message: &str) {
+    git(p, date, &["add", "-A"]);
+    git(p, date, &["commit", "-q", "-m", message]);
+}
+
+/// `product.md` with `date` as its `updated:` stamp.
+fn product(date: &str) -> String {
+    PRODUCT.replace("2026-01-15", date)
+}
+
 #[test]
-fn stale_updated_is_reported() {
-    let p = committed("ad-stale", "2026-03-01T12:00:00Z");
-    let got = found(&p, "SF29");
-    assert!(
-        got.contains(
-            &"product.md: updated 2026-01-15 is older than its last commit (2026-03-01)"
-                .to_string()
-        ),
-        "{got:?}"
+fn a_commit_that_leaves_the_stamp_alone_is_reported() {
+    let p = stamped("ad-stale", "2026-11-01");
+    write(
+        &p,
+        ".spec/product.md",
+        &format!("{}\nAn edit.\n", product("2026-11-01")),
     );
-    assert!(
-        got.contains(
-            &"features/auth/product.md: updated 2026-01-15 is older than its last commit (2026-03-01)"
-                .to_string()
-        ),
-        "{got:?}"
+    commit(&p, "2026-11-04T12:00:00Z", "edit the note, not the stamp");
+    assert_eq!(
+        found(&p, "SF29"),
+        ["product.md: updated 2026-11-01 was not bumped by its last commit (2026-11-04)"]
+            .map(str::to_string)
     );
+}
+
+#[test]
+fn a_one_day_squash_slip_is_silent() {
+    // The shards #64 shape: the note is stamped and edited on 2026-11-02, the
+    // squash carries the merge day 2026-11-03, so the stamp did not move either.
+    let p = stamped("ad-slip", "2026-11-02");
+    write(
+        &p,
+        ".spec/product.md",
+        &format!("{}\nAn edit.\n", product("2026-11-02")),
+    );
+    commit(&p, "2026-11-03T12:00:00Z", "stamp 11-02, merge 11-03");
+    assert_eq!(found(&p, "SF29"), Vec::<String>::new());
+}
+
+#[test]
+fn a_two_day_gap_with_an_unchanged_stamp_is_reported() {
+    // One day is the squash window; two is a stamp nobody moved.
+    let p = stamped("ad-two-day", "2026-11-01");
+    write(
+        &p,
+        ".spec/product.md",
+        &format!("{}\nAn edit.\n", product("2026-11-01")),
+    );
+    commit(&p, "2026-11-03T12:00:00Z", "edit");
+    assert_eq!(
+        found(&p, "SF29"),
+        ["product.md: updated 2026-11-01 was not bumped by its last commit (2026-11-03)"]
+            .map(str::to_string)
+    );
+}
+
+#[test]
+fn a_stamp_set_during_a_long_branch_survives_the_merge() {
+    // The shards shape beyond one day: the stamp names the day the note was
+    // written, the squash carries the merge day a week later.
+    let p = stamped("ad-branch", "2026-11-01");
+    write(
+        &p,
+        ".spec/product.md",
+        &format!("{}\nAn edit.\n", product("2026-11-06")),
+    );
+    commit(&p, "2026-11-13T12:00:00Z", "stamp 11-06, merge 11-13");
+    assert_eq!(found(&p, "SF29"), Vec::<String>::new());
+}
+
+#[test]
+fn a_note_its_commit_adds_keeps_its_own_stamp() {
+    // No previous version to be stale against: the author's stamp is the only record.
+    let p = committed("ad-added", "2026-03-01T12:00:00Z");
+    assert_eq!(found(&p, "SF29"), Vec::<String>::new());
 }
 
 #[test]
@@ -392,10 +467,17 @@ fn a_pathspec_looking_directory_is_literal() {
     let odd = p.join(":(top)odd");
     std::fs::create_dir_all(&odd).unwrap();
     std::fs::rename(p.join(".spec"), odd.join(".spec")).unwrap();
-    let d = "2026-03-01T12:00:00Z";
+    let d = "2026-01-15T12:00:00Z";
     git(&p, d, &["init", "-q"]);
     git(&p, d, &["add", "-A"]);
     git(&p, d, &["commit", "-q", "-m", "init"]);
+    // A second commit that leaves the stamp alone: the finding proves the path matched.
+    write(
+        &p,
+        ":(top)odd/.spec/product.md",
+        &format!("{PRODUCT}\nAn edit.\n"),
+    );
+    commit(&p, "2026-03-01T12:00:00Z", "edit");
     let got = root_findings(&p, &odd.join(".spec"));
     assert!(got.iter().any(|m| m.starts_with("product.md:")), "{got:?}");
 }
@@ -408,10 +490,20 @@ fn quoted_file_names_still_match() {
         ".spec/tech-a\"b.md",
         &PRODUCT.replace("scope: product", "scope: technical"),
     );
-    let d = "2026-03-01T12:00:00Z";
+    let d = "2026-01-15T12:00:00Z";
     git(&p, d, &["init", "-q"]);
     git(&p, d, &["add", "-A"]);
     git(&p, d, &["commit", "-q", "-m", "init"]);
+    // A second commit that leaves the stamp alone: the finding proves the name matched.
+    write(
+        &p,
+        ".spec/tech-a\"b.md",
+        &format!(
+            "{}\nAn edit.\n",
+            PRODUCT.replace("scope: product", "scope: technical")
+        ),
+    );
+    commit(&p, "2026-03-01T12:00:00Z", "edit");
     let got = found(&p, "SF29");
     assert!(
         got.iter().any(|m| m.starts_with("tech-a\"b.md:")),
@@ -448,7 +540,7 @@ fn a_changed_doc_edited_without_a_bump_fails_under_strict() {
         hits[0]["message"]
             .as_str()
             .unwrap()
-            .starts_with("product.md: updated 2026-01-15 is older than today ("),
+            .starts_with("product.md: updated 2026-01-15 was not bumped by this edit"),
         "{v}"
     );
     // An unchanged stale doc keeps the commit-date wording (no --changed).
@@ -460,6 +552,50 @@ fn a_changed_doc_edited_without_a_bump_fails_under_strict() {
             .unwrap()
             .iter()
             .all(|f| f["check"] != "SF29"),
-        "a plain run still compares with the last commit: {v}"
+        "the uncommitted edit is not judged by the last commit: {v}"
     );
+}
+
+#[test]
+fn a_changed_doc_that_bumps_the_stamp_is_silent() {
+    let p = committed("ad-edit-bump", "2026-01-15T12:00:00Z");
+    write(
+        &p,
+        ".spec/product.md",
+        &format!("{}\nAn edit.\n", product("2026-05-05")),
+    );
+    let out = common::spec(
+        &p,
+        &["validate", "--changed", "--strict", "--format", "json"],
+        &[],
+    );
+    assert_eq!(out.code, 0, "{}{}", out.text(), out.stderr);
+}
+
+#[test]
+fn a_changed_doc_whose_stamp_names_today_is_silent() {
+    // The edit is today's, and the stamp already says today: nothing is stale.
+    let today = today();
+    let p = stamped("ad-edit-today", &today);
+    write(
+        &p,
+        ".spec/product.md",
+        &format!("{}\nAn edit.\n", product(&today)),
+    );
+    let out = common::spec(
+        &p,
+        &["validate", "--changed", "--strict", "--format", "json"],
+        &[],
+    );
+    assert_eq!(out.code, 0, "{}{}", out.text(), out.stderr);
+}
+
+/// Today's UTC date, as the checker reads the clock.
+fn today() -> String {
+    let out = std::process::Command::new("date")
+        .arg("-u")
+        .arg("+%F")
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
 }

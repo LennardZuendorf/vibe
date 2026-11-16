@@ -4,7 +4,7 @@ applies:
   - "crates/vibe-spec/**"
   - "docs/spec/**"
   - "docs/superpowers/**"
-updated: 2026-10-19
+updated: 2026-11-16
 ---
 
 # Adherence checks
@@ -20,8 +20,11 @@ reachable from a hub; required feature files present; frontmatter
 `type/scope/children/updated` complete and enum-valid; every `children:`
 path exists and every branch doc backlinks its parent; feature folder
 name matches its plan row, a row with no folder is drift; `updated:`
-older than the file's last commit; grammar (≥1 scenario per requirement,
-WHEN and THEN present, SHALL/MUST word-bounded).
+bumped by the commit that changes the note — the previous version's stamp
+must move, a stamp already naming the commit day needs none, and a note a
+commit adds keeps its author's stamp; a squash merge dates its commit with
+the merge day, so a date gap proves nothing; grammar (≥1 scenario per
+requirement, WHEN and THEN present, SHALL/MUST word-bounded).
 
 Shipped (F17): SF24 requirement population, SF25 scenario WHEN/THEN,
 SF26 frontmatter values, SF27 children and backlinks, SF28 feature

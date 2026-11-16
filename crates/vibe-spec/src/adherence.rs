@@ -279,29 +279,45 @@ fn slash(p: &Path) -> String {
         .join("/")
 }
 
-/// SF29: `updated:` older than the committer date of the file's last commit
-/// (P3b-R21). Silent without git, history, a commit for the file, or when
-/// the root lies outside the work tree. Under `--changed`, a file in the
-/// changed set is compared with today's UTC date instead: its edit is not
-/// committed yet, so the last commit says nothing about it.
+/// SF29: a commit that changes a note must change its `updated:` line (P3b-R21).
+///
+/// The stamp cannot be compared with the last commit's date. A squash merge
+/// dates the squashed commit with the *merge* day, not the day the note was
+/// written, so an author who stamped honestly and merged later is reported stale
+/// while nothing is wrong. Measured on shards: 31 notes stood behind their last
+/// commit — 25 by one day (one commit, `#64`), 6 by 7–9 days. So the check wants
+/// two signals together before it speaks. The gap must exceed the squash window
+/// ([`lags`], one day), and the version before the commit must already carry the
+/// same stamp: a stamp the commit moved is not stale, and neither is a stamp one
+/// day old, because a next-day merge is indistinguishable from it. A note the
+/// commit adds has no previous version to be stale against, so it keeps its
+/// author's stamp.
+///
+/// Under `--changed` the same test runs against `HEAD`: the edit is not
+/// committed yet, so it must move the stamp or the stamp must already name a day
+/// the edit can claim — today or yesterday, the same one-day window.
+///
+/// Silent without git, history, a commit for the file, a `updated:` SF26 already
+/// judges, or when the root lies outside the work tree.
 fn freshness(cx: &crate::api::Execution<'_>, r: &mut Report, ctx: &Ctx, files: &[PathBuf]) {
     let today = crate::text::today_utc();
-    let dates = commit_dates(cx, ctx);
+    let Some((top, under)) = git_top(cx, ctx) else {
+        return;
+    };
+    let dates = git::last_touches(cx, &top, if under.is_empty() { "." } else { &under });
+    // A shallow clone yields no dates: nothing to compare a committed note with.
+    if dates.is_empty() && ctx.changed.is_none() {
+        return;
+    }
     for file in files {
         let rel = rel_of(ctx.dir, file);
         let shown = format!("{}/{rel}", ctx.display);
-        let edited = ctx.changed.is_some_and(|set| set.contains(&shown));
-        let (limit, what) = if edited {
-            (Some(today.clone()), "today")
-        } else {
-            let date = std::fs::canonicalize(file).ok().and_then(|abs| {
-                let (top, map) = dates.as_ref()?;
-                let in_top = abs.strip_prefix(top).ok()?;
-                map.get(&slash(in_top)).cloned()
-            });
-            (date, "its last commit")
+        let Some(path) = std::fs::canonicalize(file)
+            .ok()
+            .and_then(|abs| abs.strip_prefix(&top).ok().map(slash))
+        else {
+            continue;
         };
-        let Some(limit) = limit else { continue };
         let text = std::fs::read(file).unwrap_or_default();
         let Some(fm) = frontmatter::parse(&text) else {
             continue;
@@ -309,24 +325,82 @@ fn freshness(cx: &crate::api::Execution<'_>, r: &mut Report, ctx: &Ctx, files: &
         let Some(updated) = fm.scalar("updated") else {
             continue;
         };
-        if is_date(updated.as_bytes()) && updated < limit.as_str() {
+        if !is_date(updated.as_bytes()) {
+            continue;
+        }
+        let finding = if ctx.changed.is_some_and(|set| set.contains(&shown)) {
+            unbumped_edit(cx, &top, &path, updated, &today)
+        } else {
+            match dates.get(&path) {
+                Some(touch) => unbumped_commit(cx, &top, touch, &path, updated),
+                None => None,
+            }
+        };
+        if let Some(finding) = finding {
             r.at(&shown);
-            r.warn(
-                "SF29",
-                format!("{rel}: updated {updated} is older than {what} ({limit})").as_bytes(),
-            );
+            r.warn("SF29", format!("{rel}: {finding}").as_bytes());
         }
     }
 }
 
-/// The git top and the last-commit dates under the spec root, when there are any.
-fn commit_dates(
+/// `updated:` behind the commit day by more than the squash window and left
+/// where it was: reported unless that commit moved the stamp.
+fn unbumped_commit(
     cx: &crate::api::Execution<'_>,
-    ctx: &Ctx,
-) -> Option<(PathBuf, std::collections::BTreeMap<String, String>)> {
+    top: &Path,
+    touch: &git::Touch,
+    path: &str,
+    updated: &str,
+) -> Option<String> {
+    if !lags(updated, &touch.date) {
+        return None;
+    }
+    let previous = stamp_at(cx, top, &format!("{}^", touch.sha), path);
+    (previous.as_deref() == Some(updated)).then(|| {
+        format!(
+            "updated {updated} was not bumped by its last commit ({})",
+            touch.date
+        )
+    })
+}
+
+/// The working tree changed this file with the stamp left where it was: reported
+/// unless the stamp already names a day the edit can claim.
+fn unbumped_edit(
+    cx: &crate::api::Execution<'_>,
+    top: &Path,
+    path: &str,
+    updated: &str,
+    today: &str,
+) -> Option<String> {
+    let unchanged = stamp_at(cx, top, "HEAD", path).as_deref() == Some(updated);
+    (unchanged && lags(updated, today))
+        .then(|| format!("updated {updated} was not bumped by this edit"))
+}
+
+/// `date` more than one day before `limit`: the window both a next-day squash
+/// merge and a local stamp against a UTC "today" can put between them.
+fn lags(date: &str, limit: &str) -> bool {
+    match (crate::text::days(date), crate::text::days(limit)) {
+        (Some(date), Some(limit)) => date < limit - 1,
+        _ => false,
+    }
+}
+
+/// The `updated:` value of `path` (top-relative) at `rev`, when that revision has
+/// the file and a date there.
+fn stamp_at(cx: &crate::api::Execution<'_>, top: &Path, rev: &str, path: &str) -> Option<String> {
+    let text = git::file_at(cx, top, rev, path)?;
+    let fm = frontmatter::parse(&text)?;
+    fm.scalar("updated")
+        .filter(|u| is_date(u.as_bytes()))
+        .map(str::to_string)
+}
+
+/// The git top and the top-relative path of the spec root, when there is one.
+fn git_top(cx: &crate::api::Execution<'_>, ctx: &Ctx) -> Option<(PathBuf, String)> {
     let dir = std::fs::canonicalize(ctx.dir).ok()?;
     let top = std::fs::canonicalize(git::top(cx, &dir)?).ok()?;
     let under = slash(dir.strip_prefix(&top).ok()?);
-    let dates = git::last_dates(cx, &top, if under.is_empty() { "." } else { &under });
-    (!dates.is_empty()).then_some((top, dates))
+    Some((top, under))
 }

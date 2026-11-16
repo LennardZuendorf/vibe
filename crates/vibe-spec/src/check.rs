@@ -73,7 +73,7 @@ pub const CHECKS: &[Check] = &[
     new("SF26", "frontmatter values"),
     new("SF27", "children and backlinks"),
     new("SF28", "feature folder has a plan row"),
-    new("SF29", "updated: not older than the last commit"),
+    new("SF29", "updated: bumped by the last commit"),
     new("SF30", "layout allowlist"),
     new("SF31", "line budget"),
     new("SF32", "kebab and unique names"),
