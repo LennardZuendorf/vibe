@@ -967,3 +967,9 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Inspect the test wrapper before invoking an internal runner. Generate both raw and substituted plugin fixtures, set every required environment variable, and retain the exact successful command. Keep fixture setup failures distinct from product failures; never use live user configuration as the fixture.
 **Tags:** tests, node, plugins, fixtures, verification
 **Date:** 2026-11-12
+
+### Keep early-exit consumers out of pipefail pipelines
+**Pattern:** On macOS, a successful `grep -q` closed the path-list pipe early. The producer received SIGPIPE, which made the coverage check report a scanned path as missing. A test revision passed vacuously when its oversized fixture was exported and prevented the filesystem walk from starting.
+**Rule:** Feed early-exit consumers by redirection. Keep large fixtures out of child environments and prove the regression fails against the original implementation. Use the command's help or the checked-in suite before assuming a subcommand or prerequisite. Resolve scratch roots before using them for managed storage fixtures.
+**Tags:** bash, ci, tests, portability
+**Date:** 2026-11-20

@@ -1481,9 +1481,10 @@ b32_list_scripts() {
 # developer machine, and a per-file fork there is seconds, not milliseconds.
 b32_coverage_check() {
   local root="$1" f rel walk="" ignored=""
+  # Feed grep directly so an early match cannot SIGPIPE printf under pipefail.
   while IFS= read -r -d '' f; do
     rel="${f#"$root"/}"
-    printf '%s\n' "$B32_SCANNED" | grep -qxF "$rel" && continue
+    grep -qxF -e "$rel" <<< "$B32_SCANNED" && continue
     walk="$walk$rel"$'\n'
   done < <(find "$root" -name '*.sh' -not -path '*/.git/*' -print0 2>/dev/null)
   [[ -n "$walk" ]] || return 0
@@ -1493,7 +1494,7 @@ b32_coverage_check() {
   fi
   while IFS= read -r rel; do
     [[ -n "$rel" ]] || continue
-    printf '%s\n' "$ignored" | grep -qxF "$rel" && continue
+    grep -qxF -e "$rel" <<< "$ignored" && continue
     b32_broken=$((b32_broken + 1))
     echo "        enumeration omits a shell script the walk found, and git does not call it ignored: $rel"
   done <<< "$walk"
@@ -1554,7 +1555,7 @@ b32_self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 b32_self_abs="$b32_self_dir/$(basename "${BASH_SOURCE[0]}")"
 b32_self_rel="${b32_self_abs#"$SRC_ROOT"/}"
 assert_eq "js-core/8" "bash-3.2 lint scanned the very file asserting it (self-coverage floor)" \
-  "$(printf '%s\n' "$B32_SCANNED" | grep -qxF "$b32_self_rel" && echo scanned || echo "NOT SCANNED: $b32_self_rel")" \
+  "$(grep -qxF -e "$b32_self_rel" <<< "$B32_SCANNED" && echo scanned || echo "NOT SCANNED: $b32_self_rel")" \
   "scanned"
 
 # Structural floor rather than a pinned count: whatever bash suites tests/run.sh
@@ -1569,7 +1570,7 @@ b32_floor_list="$(sed -n '/^SUITE_SCRIPTS=(/,/^)/p' "$SRC_ROOT/tests/run.sh" 2>/
 while IFS= read -r b32_rel; do
   [[ -n "$b32_rel" ]] || continue
   b32_floor_n=$((b32_floor_n + 1))
-  printf '%s\n' "$B32_SCANNED" | grep -qxF "$b32_rel" || b32_floor_missing="$b32_floor_missing $b32_rel"
+  grep -qxF -e "$b32_rel" <<< "$B32_SCANNED" || b32_floor_missing="$b32_floor_missing $b32_rel"
 done <<< "$b32_floor_list"
 assert_eq "js-core/8" "bash-3.2 lint scanned every bash suite the aggregator dispatches" "$b32_floor_missing" ""
 # ...and the scrape it is derived FROM must not be empty, which is how this
@@ -1625,6 +1626,14 @@ rm -rf "$B32PROBE/.git"
 b32_nogit_out="$(b32_bad=0; b32_lint "$B32PROBE" 2>&1)"
 assert_contains "js-core/8" "bash-3.2 lint degrades to a find walk with no .git" \
   "$b32_nogit_out" "$B32_LABEL tracked dir/bad.sh:4"
+b32_probe_large_coverage() {
+  local b32_broken=0 B32_SCANNED
+  B32_SCANNED="$(printf '%s\n' 'tracked dir/bad.sh' 'ignored/bad.sh'
+    awk 'BEGIN { for (i = 0; i < 100000; i++) print "other/path/" i ".sh" }')"
+  b32_coverage_check "$B32PROBE"
+  printf '%s' "$b32_broken"
+}
+assert_eq "js-core/8" "bash-3.2 lint coverage finds early matches in long listings" "$(b32_probe_large_coverage)" "0"
 rm -rf "$B32PROBE"
 
 # Enumeration soundness, the OTHER direction: a guard that scans NOTHING must
@@ -1843,7 +1852,7 @@ assert_eq "js-core/8" "no .mjs re-derives its path from new URL(import.meta.url)
 # asserts what it always read as: the engine's entry point was actually READ.
 [[ "$url_scanned" -gt 0 ]] || echo "        .mjs lint enumerated no files under $SRC_ROOT/flow"
 assert_eq "js-core/8" ".mjs path-derivation lint actually read the engine entry point" \
-  "$(printf '%s\n' "$url_scanned_list" | grep -qxF "flow/engine/cli.mjs" && echo ok || echo "flow/engine/cli.mjs was not in the scanned set")" \
+  "$(grep -qxF "flow/engine/cli.mjs" <<< "$url_scanned_list" && echo ok || echo "flow/engine/cli.mjs was not in the scanned set")" \
   "ok"
 # Enumeration teeth in BOTH directions, same shape the bash lint's own probe uses
 # (js-core/8 final review, M6). Without this the switch off `find` is an
