@@ -406,10 +406,18 @@ fn trigger(id: &str) -> Option<Trigger> {
             plain(p, "child 'tech-api.md' listed in frontmatter")
         }
         "SF29" => {
-            common::git(&p, "2026-03-01T12:00:00Z", &["init", "-q"]);
+            common::git(&p, "2026-01-15T12:00:00Z", &["init", "-q"]);
+            common::git(&p, "2026-01-15T12:00:00Z", &["add", "-A"]);
+            common::git(&p, "2026-01-15T12:00:00Z", &["commit", "-q", "-m", "init"]);
+            // A later commit changes the note and leaves its stamp where it was.
+            write(
+                &p,
+                ".spec/product.md",
+                "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n# P\n\nAn edit.\n",
+            );
             common::git(&p, "2026-03-01T12:00:00Z", &["add", "-A"]);
-            common::git(&p, "2026-03-01T12:00:00Z", &["commit", "-q", "-m", "init"]);
-            plain(p, "older than its last commit")
+            common::git(&p, "2026-03-01T12:00:00Z", &["commit", "-q", "-m", "edit"]);
+            plain(p, "was not bumped by its last commit")
         }
         "SF28" => {
             write(
@@ -769,13 +777,21 @@ fn env_strictness_overlays_the_config() {
         "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n# P\n",
     );
     write(&p, ".vibe/spec.json", r#"{"strictness":{"SF29":"off"}}"#);
-    common::git(&p, "2026-03-01T12:00:00Z", &["init", "-q"]);
+    common::git(&p, "2026-01-15T12:00:00Z", &["init", "-q"]);
+    common::git(&p, "2026-01-15T12:00:00Z", &["add", "-A"]);
+    common::git(&p, "2026-01-15T12:00:00Z", &["commit", "-q", "-m", "init"]);
+    // A later commit changes the note and leaves its stamp where it was.
+    write(
+        &p,
+        ".spec/product.md",
+        "---\ntype: entrypoint\nscope: product\nchildren:\nupdated: 2026-01-15\n---\n\n# P\n\nAn edit.\n",
+    );
     common::git(&p, "2026-03-01T12:00:00Z", &["add", "-A"]);
-    common::git(&p, "2026-03-01T12:00:00Z", &["commit", "-q", "-m", "init"]);
+    common::git(&p, "2026-03-01T12:00:00Z", &["commit", "-q", "-m", "edit"]);
 
     let plain = spec(&p, &["validate", "--strict"], &[]);
     assert!(
-        !plain.text().contains("older than its last commit"),
+        !plain.text().contains("was not bumped by its last commit"),
         "{}",
         plain.text()
     );
@@ -784,7 +800,7 @@ fn env_strictness_overlays_the_config() {
     let on = spec(&p, &["validate", "--strict"], &env);
     assert_eq!(on.code, 1, "{}", on.text());
     assert!(
-        on.text().contains("older than its last commit"),
+        on.text().contains("was not bumped by its last commit"),
         "{}",
         on.text()
     );

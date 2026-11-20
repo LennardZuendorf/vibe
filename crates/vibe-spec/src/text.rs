@@ -311,6 +311,27 @@ pub fn civil(days: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// Days since 1970-01-01 for a real `YYYY-MM-DD` date (Howard Hinnant's
+/// days_from_civil), the inverse of [`civil`]; `None` for anything that is
+/// not one — including a well-shaped but non-existent day such as
+/// `2026-02-30`, which the round trip rejects.
+pub fn days(date: &str) -> Option<i64> {
+    if !is_date(date.as_bytes()) {
+        return None;
+    }
+    let y: i64 = date.get(..4)?.parse().ok()?;
+    let m: i64 = date.get(5..7)?.parse().ok()?;
+    let d: i64 = date.get(8..10)?.parse().ok()?;
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = if m > 2 { m - 3 } else { m + 9 };
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    (civil(days) == date).then_some(days)
+}
+
 /// Regular files under `dir`, recursive, as `/`-joined paths relative to
 /// `dir`, sorted by bytes. The top-level `dir` is followed if it is a
 /// symlink; entries below it are neither followed nor listed. Dot names are
@@ -376,6 +397,22 @@ mod tests {
         assert_eq!(civil(19_723), "2024-01-01");
         assert_eq!(civil(19_782), "2024-02-29");
         assert!(is_date(today_utc().as_bytes()));
+    }
+
+    #[test]
+    fn days_inverts_civil_and_rejects_impossible_dates() {
+        assert_eq!(days("1970-01-01"), Some(0));
+        assert_eq!(days("1970-01-02"), Some(1));
+        assert_eq!(days("1969-12-31"), Some(-1));
+        assert_eq!(days("2024-02-29"), Some(19_782));
+        for round in [0, 1, 10_957, 19_723, 19_782, 20_700, -400] {
+            let date = civil(round);
+            assert_eq!(days(&date), Some(round), "{date}");
+        }
+        assert_eq!(days("2026-02-30"), None, "no such day");
+        assert_eq!(days("2026-13-01"), None, "no such month");
+        assert_eq!(days("2026-1-01"), None, "not a date shape");
+        assert_eq!(days("updated"), None);
     }
 
     #[test]

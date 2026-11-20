@@ -416,8 +416,8 @@ pub struct Ctx<'a> {
     pub managed: bool,
     /// The root relative to the project, as the oracle spells `$SPEC_DIR` (`.spec`). // literal
     pub display: &'a str,
-    /// Under `--changed`: the changed files, project-relative. SF29 holds
-    /// those to today's date instead of the last commit's.
+    /// Under `--changed`: the changed files, project-relative. SF29 reads this
+    /// edit as a bump against the file at `HEAD` rather than as one commit.
     pub changed: Option<&'a BTreeSet<String>>,
 }
 

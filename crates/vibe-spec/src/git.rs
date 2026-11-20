@@ -110,13 +110,21 @@ pub fn shallow(cx: &crate::api::Execution<'_>, dir: &Path) -> bool {
     git(cx, dir, &["rev-parse", "--is-shallow-repository"]).is_some_and(|b| b.starts_with(b"true"))
 }
 
+/// A file's last commit: its committer date `YYYY-MM-DD` and its hash.
+pub struct Touch {
+    /// Committer date of the commit, `YYYY-MM-DD`.
+    pub date: String,
+    /// Hash of the commit.
+    pub sha: String,
+}
+
 /// For each file under `under` (top-relative, `/`-joined, `.` for the
-/// top), the committer date `YYYY-MM-DD` of the last commit touching it.
-pub fn last_dates(
+/// top), the last commit touching it.
+pub fn last_touches(
     cx: &crate::api::Execution<'_>,
     top: &Path,
     under: &str,
-) -> BTreeMap<String, String> {
+) -> BTreeMap<String, Touch> {
     let mut out = BTreeMap::new();
     if shallow(cx, top) {
         return out;
@@ -125,22 +133,51 @@ pub fn last_dates(
     let Some(log) = git(
         cx,
         top,
-        &["log", "-z", "--format=%x01%cs", "--name-only", "--", under],
+        &[
+            "log",
+            "-z",
+            "--format=%x01%H %cs",
+            "--name-only",
+            "--",
+            under,
+        ],
     ) else {
         return out;
     };
-    let mut date = String::new();
+    let mut touch: Option<Touch> = None;
     for token in log.split(|&b| b == 0) {
-        if let Some(d) = token.strip_prefix(b"\x01") {
-            date = lossy(d);
+        if let Some(header) = token.strip_prefix(b"\x01") {
+            let header = lossy(header);
+            let (sha, date) = header.split_once(' ').unwrap_or((header.as_str(), ""));
+            touch = Some(Touch {
+                date: date.to_string(),
+                sha: sha.to_string(),
+            });
             continue;
         }
         let name = token.strip_prefix(b"\n").unwrap_or(token);
-        if !name.is_empty() && !date.is_empty() {
-            out.entry(lossy(name)).or_insert_with(|| date.clone());
+        if !name.is_empty()
+            && let Some(t) = &touch
+            && !t.date.is_empty()
+        {
+            out.entry(lossy(name)).or_insert_with(|| Touch {
+                date: t.date.clone(),
+                sha: t.sha.clone(),
+            });
         }
     }
     out
+}
+
+/// The content of `path` (top-relative, `/`-joined) at `rev`, or `None` when
+/// that revision has no such file — an added, renamed, or unknown path.
+pub fn file_at(
+    cx: &crate::api::Execution<'_>,
+    top: &Path,
+    rev: &str,
+    path: &str,
+) -> Option<Vec<u8>> {
+    git(cx, top, &["show", &format!("{rev}:{path}")])
 }
 
 /// A commit hash and its message.
