@@ -10,26 +10,27 @@ implements, Notes.
 
 ## Status
 
-The epic and 19 of the 25 features are posted to GitHub. Three features
-(F9, F10, F11) are **held** — their architecture is still being designed in
-the originating conversation, so no issue exists for them yet. Three more
-(F2, F4, F25) are to file.
+The [product milestones](../spec/concepts/product-milestones.md) are the current delivery plan. The F-row briefs below retain the Rust port scope.
+
+The [spec feature sequence](../spec/concepts/feature-sequence.md) owns current status and gates.
+The table below maps the original feature briefs to their live issues. F2, F4 and F25 are delivered without standalone issues.
+F9 remains advisory. F10 follows F9 and the working runner. Rust Instruct is active planning.
 
 **Epic:** [#22 — v0.4 — three tools, one language, no bundle (tracking)](https://github.com/LennardZuendorf/vibe/issues/22)
 
 | F | Title | Issue |
 |---|---|---|
 | F1  | spec-path-hotfix    | [#23](https://github.com/LennardZuendorf/vibe/issues/23) |
-| F2  | contracts           | to file |
+| F2  | contracts           | delivered; no standalone issue |
 | F3  | oracles-parity      | [#24](https://github.com/LennardZuendorf/vibe/issues/24) |
-| F4  | workspace-core      | to file |
+| F4  | workspace-core      | delivered; no standalone issue |
 | F5  | flow-core           | [#25](https://github.com/LennardZuendorf/vibe/issues/25) |
 | F6  | flow-teeth-hooks    | [#26](https://github.com/LennardZuendorf/vibe/issues/26) |
 | F7  | machine-teeth       | [#27](https://github.com/LennardZuendorf/vibe/issues/27) |
 | F8  | flow-orders-payload | [#28](https://github.com/LennardZuendorf/vibe/issues/28) |
-| F9  | flow-signals-hooks  | held |
-| F10 | flow-tui            | held |
-| F11 | instruct-core       | held |
+| F9  | flow-signals-hooks  | [#100](https://github.com/LennardZuendorf/vibe/issues/100) |
+| F10 | flow-tui            | [#102](https://github.com/LennardZuendorf/vibe/issues/102) |
+| F11 | instruct-core       | active planning; related contract [#83](https://github.com/LennardZuendorf/vibe/issues/83) |
 | F12 | instruct-providers  | [#29](https://github.com/LennardZuendorf/vibe/issues/29) |
 | F13 | instruct-sources    | [#30](https://github.com/LennardZuendorf/vibe/issues/30) |
 | F14 | instruct-adapters   | [#31](https://github.com/LennardZuendorf/vibe/issues/31) |
@@ -43,11 +44,10 @@ the originating conversation, so no issue exists for them yet. Three more
 | F22 | release-install     | [#39](https://github.com/LennardZuendorf/vibe/issues/39) |
 | F23 | retire-legacy       | [#40](https://github.com/LennardZuendorf/vibe/issues/40) |
 | F24 | doc-truth           | [#41](https://github.com/LennardZuendorf/vibe/issues/41) |
-| F25 | spec-superpowers-default | to file |
+| F25 | spec-superpowers-default | delivered; no standalone issue |
 
-F9, F10, and F11 are held for architecture design in-thread — each
-file carries `hold: architecture` in its frontmatter and a `> **Held.**`
-notice under the title until an issue is opened for it.
+The Flow v2 continuation is [#101](https://github.com/LennardZuendorf/vibe/issues/101).
+The active skill-revision closeout is [#103](https://github.com/LennardZuendorf/vibe/issues/103).
 
 ## Milestones
 
@@ -58,46 +58,19 @@ milestone — each spans every phase in its arc.
 
 | Milestone | Phase | Issues |
 |---|---|---|
-| [v0.4 Phase 0 — foundations](https://github.com/LennardZuendorf/vibe/milestone/1) | F1–F4 | #23, #24 (F2, F4 to file) |
-| [v0.4 Phase 1 — flow](https://github.com/LennardZuendorf/vibe/milestone/2) | F5–F10 | #25–#28 (F9, F10 held) |
-| [v0.4 Phase 2 — instruct](https://github.com/LennardZuendorf/vibe/milestone/3) | F11–F15 | #29–#32 (F11 held) |
+| [v0.4 Phase 0 — foundations](https://github.com/LennardZuendorf/vibe/milestone/1) | F1–F4 | #23, #24 (F2 and F4 delivered) |
+| [v0.4 Phase 1 — flow](https://github.com/LennardZuendorf/vibe/milestone/2) | F5–F10 | #25–#28, #100–#102 |
+| [v0.4 Phase 2 — instruct](https://github.com/LennardZuendorf/vibe/milestone/3) | F11–F15 | #29–#32 (earlier Instruct phase) |
 | [v0.4 Phase 3 — spec](https://github.com/LennardZuendorf/vibe/milestone/4) | F16–F20, F25 | #33–#37 |
 | [v0.4 Phase 4 — distribution + retirement](https://github.com/LennardZuendorf/vibe/milestone/5) | F21–F24 | #38–#41 |
 | [v0.5 — CLI front door](https://github.com/LennardZuendorf/vibe/milestone/6) | C1–C6 | #43–#48 |
 
-## Why files instead of issues
+## Issue briefs
 
-These Markdown files remain the source of truth even after posting: they are
-what gets regenerated from `docs/spec/plan.md` if the plan changes, and what a
-disabled-Issues repo would fall back to. Each posted file's frontmatter now
-carries `issue: <number>` linking it to the GitHub issue it became.
+These files preserve the original deliverables and acceptance criteria. The
+linked issues carry current status and discussion. Reconcile both with the
+[canonical plan](../spec/plan.md) when a gate or scope changes.
 
-## Posting them
-
-**Prerequisite:** GitHub Issues enabled — repo Settings → General → Features
-→ "Issues" checked.
-
-**Agent:** ask Claude to post them via the GitHub MCP `issue_write` tool (or
-`gh issue create`), same content, same order. After each successful post,
-write the returned issue number into that file's `issue:` frontmatter before
-continuing to the next file.
-
-**Idempotent:** an agent following this doc skips any file whose frontmatter
-already has `issue:` set (already posted) or `hold:` set (held for
-architecture design). Today: 19 already posted, 3 held, 3 to create (F2, F4, F25) — safe
-to re-run any time, including once the held features gain their own issue
-files.
-
-## Bringing a held feature online
-
-When a held feature's architecture is settled: remove its `hold:` line and
-the `> **Held.**` notice from the file, fill in its real `## Depends on`
-section (the held features' real dependents already reference them —
-update those bodies too once the new issue number exists), and ask the agent
-to post it. It will pick up only that one file; the rest stay untouched.
-
-## Source of truth
-
-`docs/spec/plan.md` is canonical. If the plan changes, regenerate these files —
-never hand-edit a posted GitHub issue without updating `docs/spec/plan.md` first,
-and never hand-edit these files to drift from the plan.
+When posting a new brief, write the returned issue number into its `issue:`
+frontmatter. Skip briefs that already have an issue, are on hold, or carry
+`status: delivered`. Remove a hold only after the owner approves the scope.

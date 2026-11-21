@@ -1,15 +1,17 @@
 ---
 type: concept
-updated: 2026-11-16
+updated: 2026-11-21
 ---
 
 # Spec vs Implementation
 
-F1–F4, F16–F20, and F25 form the completed Rust spec baseline. Track 0, F5 and F6 are implemented in source. F7 and F8 are DONE: F7 merged on 2026-11-13 as the linear stack [#80](https://github.com/LennardZuendorf/vibe/pull/80) (`fd70635`) → [#81](https://github.com/LennardZuendorf/vibe/pull/81) (`0ad85ad`) → [#82](https://github.com/LennardZuendorf/vibe/pull/82) (`7d25b9e`), and F8 shipped as [#93](https://github.com/LennardZuendorf/vibe/pull/93) (`7c868f1`), which closed [#28](https://github.com/LennardZuendorf/vibe/issues/28). F9/F10 have no dependency left — the merge their rows named has landed — so they are held on an owner timing decision, not a gate. The instruct arc ([#83](https://github.com/LennardZuendorf/vibe/issues/83)–[#86](https://github.com/LennardZuendorf/vibe/issues/86), filed 2026-11-11) is deferred by an owner decision, and [#83](https://github.com/LennardZuendorf/vibe/issues/83) states that the arc does not authorize implementation; the packaging, release and retirement rows remain pending behind it. F1 delivered the spec-path fix: the scripts `validate.sh`, `list-specs.sh`, `lessons-for.sh`, and `scan-merges.sh` walk up from the cwd to the directory holding `.git`, and a relative `SPEC_DIR` now resolves against the root found. `promote.sh`, `setup.sh`, and `check-drift.sh` are unchanged.
+F1–F4, F16–F20 and F25 are the completed Spec and foundations scope. Flow F5–F8 are merged and the [Flow sequence](../parts/flow/concepts/flow-feature-sequence.md) records their evidence. [#96](https://github.com/LennardZuendorf/vibe/pull/96) also merged an opt-in v2 runtime core. Trusted verification and scoped action authority remain open in [#101](https://github.com/LennardZuendorf/vibe/issues/101). F9 can enter design on owner approval. F10 still waits on F9.
+
+Instruct F11–F15 and its [integration contracts](https://github.com/LennardZuendorf/vibe/issues/83) are back in active planning. The Rust runtime is pending. The existing distribution and retirement gates remain in the [shared sequence](shared-feature-sequence.md). No versioned release artifacts are available.
 
 C0 shared configuration is implemented under `vibe config`, with stable
 `vibe hook session-start` and embedded `vibe spec`. The configuration namespace
 change is DONE; old configuration commands have no aliases.
 See [the binary contract](../tech/cli/cli-binary.md).
 
-The remaining v0.5 arc (C1–C6) is likewise spec-ahead — planned, not started. It gates on F22 (installer/release surface), with C4 after F16 and C5 after F14.
+The merged [Spec project and MCP commands](../tech/spec/spec-projects-mcp.md) add registered repo-first/global-first storage, managed documents and local stdio MCP. They are a limited source carve-out. The general v0.5 arc (C1–C6) remains pending. The [product milestones](product-milestones.md) allow the reference installer and worktree APIs to be planned early.

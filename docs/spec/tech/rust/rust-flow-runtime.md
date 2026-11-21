@@ -5,16 +5,28 @@ applies:
   - "crates/vibe-signals/**"
   - "flow/state-machine.json"
   - ".vibe/run/flow/**"
-updated: 2026-11-08
+updated: 2026-11-21
 ---
 
 # Flow runtime: current source and pending targets
 
-F5/F6 implement `state get|set`, `policy check|decide|list|render`, and
-`hook pre-tool-use-guard|stop-gate` in `crates/vibe-flow/`.
-The F7 transition check, its ledger events and the pending ledger and signal
-contracts are in [machine teeth](rust-flow-gates.md).
+Rust Flow implements cursor and policy operations, Guard and Stop hooks, legal
+transitions with explicit confirmation, and the local ledger. F8 adds
+`orders`, `doctrine`, `doctor`, `emit`, `init` and `render agents-md` for the
+payload, provider manifest and managed block. See the
+[Flow sequence](../../parts/flow/concepts/flow-feature-sequence.md).
 `policy check` refuses with exit 1; `decide` preserves exit 2.
+
+## Adopted v2 runs
+
+[#96](https://github.com/LennardZuendorf/vibe/pull/96) adds explicit
+`state upgrade`, `candidate`, `task-result`, `recover` and `transition`.
+Adopted state is revision-checked and authoritative. Legacy writers cannot
+downgrade it. Damaged adopted state blocks instead of falling back. Candidate
+digests and task records identify inputs, and task records are untrusted.
+Verify and ship fail closed without a trusted evidence collector. Scoped
+product-write authority remains unavailable. [#101](https://github.com/LennardZuendorf/vibe/issues/101)
+tracks the remaining design.
 
 ## Repo-local layout
 
@@ -34,15 +46,14 @@ is ≤110 lines. Executable checks live in `flow/tests/run.sh`.
 
 ## Pending targets
 
-F8 adds Rust orders/doctrine/doctor, payload emission, provider manifest
-and standalone managed AGENTS output. F11/F12 add instruct composition
-and the hook ownership handoff. JS remains active until its retirement row.
+F11/F12 are in active planning and require feature approval.
+JS remains available until retirement.
 F9 signals and F10 TUI/playback remain pending; advisory signals cannot
 become blocking evidence. The writer-gate and ledger target decisions remain
 [D27](../../decisions/d27-the-writer-is-the-gate.md) and
 [D28](../../decisions/d28-ledger-advisory-signals.md).
 `.planning/` is read-only context and never authoritative state.
-Receipt-verdict enforcement is pending; current receipts use freshness only.
+Legacy receipts use freshness. Adopted v2 runs use the fail-closed path above.
 Pending recorded flows save to `~/.config/vibe/flows/<name>.json` (`%APPDATA%`
 on Windows); global storage remains a deferred target. A project selects a
 linear machine subset through `.vibe/flow.json` `{"machine":"<path>"}`,

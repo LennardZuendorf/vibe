@@ -1,23 +1,20 @@
 ---
 type: hub
 scope: product
-children: [concepts/story.md, concepts/carrier-model.md, concepts/requirements.md, concepts/product-principles.md, concepts/target-user.md, concepts/non-goals.md, parts/spec/spec.md, parts/flow/flow.md, parts/instruct/instruct.md, parts/cli/cli.md, areas/contracts-schemas.md, areas/installer.md, questions/resolved-questions.md]
-updated: 2026-10-19
+children: [concepts/milestone-spec-workflow.md, concepts/milestone-autonomous-flow.md, concepts/milestone-rust-instruct.md, concepts/milestone-feature-workspaces.md, concepts/milestone-cli-installation.md, concepts/story.md, concepts/carrier-model.md, concepts/requirements.md, concepts/product-principles.md, concepts/target-user.md, concepts/non-goals.md, parts/spec/spec.md, parts/flow/flow.md, parts/instruct/instruct.md, parts/cli/cli.md, areas/contracts-schemas.md, areas/installer.md, questions/resolved-questions.md]
+updated: 2026-11-21
 ---
 
 # vibe — Product
 
-vibe is three small, independent tools for coding with agents — **spec**
-(durable planning memory), **flow** (a state-machine workflow with real teeth),
-and **instruct** (layered, budgeted instruction injection) — each a single
-static Rust binary with no runtime dependency, each a Claude Code plugin and an
-OpenCode plugin, each installable and useful alone, composing through
-file-based contracts when co-installed. One repo, one installer, three release
-trains. The repo's own memory stays committed Markdown, readable by any agent
-or none.
+Vibe is a CLI for spec-driven agent work. One install sets up supported agent
+hosts. A feature workspace can contain worktrees from several repositories.
+Agents work from an approved plan and stop at human gates.
 
-**One-liner:** durable specs, a flow with teeth, and budgeted instructions —
-three binaries, no bundle.
+Spec keeps durable project knowledge and supports selectable feature
+workflows. Flow runs and verifies approved work. Rust Instruct supplies
+context, steering and relevant lessons to each host. The
+[product milestones](concepts/product-milestones.md) define delivery proof.
 
 ## Concepts
 
@@ -45,4 +42,6 @@ three binaries, no bundle.
 
 - [Resolved Questions](questions/resolved-questions.md) — nine settled product questions
 
-Build order and status: see the F1–F25 feature sequence and the queued v0.5 C1–C6 arc in [plan.md](plan.md).
+Build order, delivery status and earlier implementation rows live in [plan.md](plan.md).
+
+Milestone [product requirements](concepts/product-milestones.md#milestone-specifications) define observable outcomes.

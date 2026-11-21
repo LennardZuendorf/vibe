@@ -5,7 +5,7 @@ applies:
   - "spec/**"
   - ".vibe/spec.json"
   - "docs/spec/**"
-updated: 2026-11-12
+updated: 2026-11-21
 ---
 
 # Spec Framework — Tech
@@ -23,6 +23,7 @@ See [Shipped today](spec/spec-shipped.md) for delivered F-row history.
 
 - [Root and discovery](spec/spec-root-discovery.md) — discovery order and superpowers artifact root
 - [Migrate](spec/spec-migrate.md) — migrate to docs/spec, population assertion, layered layout
+- [OpenSpec durable-spec fit](spec/spec-openspec-durable-fit.md) — tested overlap, Vibe gaps and the open authority decision
 - [OpenSpec interchange](spec/spec-openspec.md) — grammar, mapping table, export and import, lossy list
 - [Safety of promote, export, import, check-drift](spec/spec-openspec-safety.md) — fail-closed rules and divergences from the oracles
 - [Strictness](spec/spec-strictness.md) — levels, registry, allow markers

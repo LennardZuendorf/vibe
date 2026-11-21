@@ -1,6 +1,7 @@
 ---
 title: "F2 [spec] contracts: Spec JSON v1 schema + goldens, exit-code contract"
 id: F2
+status: delivered
 tool: spec
 phase: 0
 milestone: "v0.4 Phase 0 — foundations"

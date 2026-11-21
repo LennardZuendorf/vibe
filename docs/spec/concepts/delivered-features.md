@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-10-23
+updated: 2026-11-20
 ---
 
 # Delivered features
@@ -24,6 +24,11 @@ updated: 2026-10-23
 | content-layer | `content/blocks/**`, typed placeholders, `vibe.json` override layer, `vibe render` | `engine/tests/` |
 | inject-triggers | Level/edge/event trigger classes, `content/policy.json`, `Stop` predicate cut | `engine/tests/` + `flow/tests/adapters/run.sh` |
 | host-support | Four-host native skill/command packages (`flow/reference/host-surfaces.json` matrix) + `install.sh` `--platform` selection, CLI detection, ownership manifest, surgical uninstall | `flow/tests/adapters/run.sh` |
+| Rust Spec | F16–F20 and F25 baseline; embedded project storage, managed documents and local MCP in [#88](https://github.com/LennardZuendorf/vibe/pull/88) | [Spec sequence](../parts/spec/concepts/spec-feature-sequence.md) |
+| Rust Flow | F5–F8; opt-in v2 runtime core from [#96](https://github.com/LennardZuendorf/vibe/pull/96) | [Flow sequence](../parts/flow/concepts/flow-feature-sequence.md) |
+| Shared CLI configuration | C0 store/projection and `vibe config` namespace | [CLI contract](../tech/cli/cli-binary.md) |
+
+These Rust entries record source delivery. Distribution remains a separate gate.
 
 ## Delivered (history)
 
