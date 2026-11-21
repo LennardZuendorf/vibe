@@ -3,7 +3,7 @@ type: tech
 applies:
   - "crates/vibe/**"
   - "vibe/**"
-updated: 2026-10-19
+updated: 2026-11-21
 ---
 
 # Worktree lifecycle
@@ -22,8 +22,11 @@ gitignored `.vibe/run/`:
   count, days since last ledger event. Staleness is advisory, never a gate.
 - `remove <name>` — refuses while the cursor is mid-flow (suggest compound or
   `state set idle`), then removes the worktree and its run dir; deregisters.
-  This is the only hard refusal in the lifecycle.
+  Preserve uncommitted or unowned work as required by the workspace contract.
 - `archive <name>` — compound-time: moves uncommitted `features/<name>/`
   spec residue to the main checkout, then removes. Committed spec edits
   travel by branch merge; `archive` exists for the residue git does not
   carry.
+
+Grouped workspaces extend this single-member lifecycle. See the
+[multi-repo workspace contract](../milestone-workspace-contract.md).

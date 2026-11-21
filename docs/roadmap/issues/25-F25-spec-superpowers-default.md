@@ -1,6 +1,7 @@
 ---
 title: "F25 [spec] spec-superpowers-default: assertive skill, router text, superpowers-first flow"
 id: F25
+status: delivered
 tool: spec
 phase: 3
 milestone: "v0.4 Phase 3 — spec"

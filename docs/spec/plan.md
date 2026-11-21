@@ -2,19 +2,21 @@
 type: hub
 scope: implementation
 covers: feature sequence, binary gates, validation criteria, open decisions
-children: [concepts/feature-sequence.md, concepts/shared-feature-sequence.md, parts/spec/concepts/spec-feature-sequence.md, parts/flow/concepts/flow-feature-sequence.md, parts/instruct/concepts/instruct-feature-sequence.md, parts/cli/concepts/cli-feature-sequence.md, concepts/issue-catalog.md, concepts/feature-boundaries.md, concepts/delivered-features.md, concepts/spec-vs-implementation.md, decisions/README.md, questions/resolved-open-items.md]
-updated: 2026-11-12
+children: [concepts/product-milestones.md, concepts/feature-sequence.md, concepts/shared-feature-sequence.md, parts/spec/concepts/spec-feature-sequence.md, parts/flow/concepts/flow-feature-sequence.md, parts/instruct/concepts/instruct-feature-sequence.md, parts/cli/concepts/cli-feature-sequence.md, concepts/issue-catalog.md, concepts/feature-boundaries.md, concepts/delivered-features.md, concepts/spec-vs-implementation.md, decisions/README.md, questions/resolved-open-items.md]
+updated: 2026-11-21
 ---
 
 # vibe — Implementation Plan
 
-Single-purpose repo: build the self-hosting vibe workflow harness. This plan is current-only — delivered work collapses to notes, no long-horizon backlog. The active arc is v0.4: three tools, one language, no bundle — `spec`, `flow`, and `instruct` rewritten as independent static Rust binaries, sequenced as binary-gated features F1–F25 below. The queued arc is v0.5: the `vibe` CLI front door — worktree lifecycle, global spec management, global blocks (C1–C6, own section below).
+Vibe delivers one installed workflow for approved agent work across repositories. The [product milestones](concepts/product-milestones.md) own current delivery order and acceptance. F1–F25 and C1–C6 retain implementation history and row-level scope.
 
-**Active plan: Flow rows only.** On 2026-11-11 the owner narrowed the active implementation plan to the Flow rows (F5–F10) and deferred the instruct work and its integration contracts ([#83](https://github.com/LennardZuendorf/vibe/issues/83), [#84](https://github.com/LennardZuendorf/vibe/issues/84), [#85](https://github.com/LennardZuendorf/vibe/issues/85), [#86](https://github.com/LennardZuendorf/vibe/issues/86)) — deferred, not cancelled, and none of the four authorizes implementation. [Feature Sequence](concepts/feature-sequence.md) → Active focus holds the detail.
+Rust Instruct is active planning again. The trusted Flow runner precedes TUI work. A reference-host install can be proven early. Each feature still needs design and implementation approval. The OpenSpec durable-root decision remains open.
 
 **Parent specs:** [product.md](product.md), [tech.md](tech.md), [design.md](design.md). Architecture detail, including the v0.4 branch docs and the v0.5 CLI doc, lives in tech.md → `tech-contracts.md`, `tech-rust.md`, `tech-instruct.md`, `tech-spec.md`, `tech-cli.md`.
 
 ## Sequence
+
+- [Product milestones](concepts/product-milestones.md) — current outcomes, gates and GitHub tracking
 
 - [Feature Sequence](concepts/feature-sequence.md) — order, binary gates, tracks, active focus
 - [Shared rows](concepts/shared-feature-sequence.md) — F3, F4, F21 to F24
@@ -40,6 +42,6 @@ Single-purpose repo: build the self-hosting vibe workflow harness. This plan is 
 | Feature | Scope | Status |
 |---|---|---|
 | review-hardening | Port of the pre-v0.4 review-hardening fixes onto the live JS/bash harness; pins in [rust-parity-pins](tech/rust/rust-parity-pins.md) | DONE |
-| skill-revision | Spec and flow skills, toolset, instructions and cross-file consistency to the superpowers standard | IN PROGRESS |
-| config-namespace | [Seven shared-configuration operations under `vibe config`](tech/cli/cli-binary.md); old commands removed without aliases; locally verified and independently reviewed | DONE |
-| spec-projects-mcp | [Embedded spec, project storage and local Rust MCP](tech/spec/spec-projects-mcp.md); locally verified and independently reviewed | DONE |
+| skill-revision | Tracks A/B/C/E delivered; reconcile Flow track D, the conditional tail and closeout in [#103](https://github.com/LennardZuendorf/vibe/issues/103) | IN PROGRESS |
+| config-namespace | [Seven shared-configuration operations under `vibe config`](tech/cli/cli-binary.md); old commands removed without aliases; merged and independently reviewed | DONE |
+| spec-projects-mcp | [Embedded spec, project storage and local Rust MCP](tech/spec/spec-projects-mcp.md); merged and independently reviewed | DONE |

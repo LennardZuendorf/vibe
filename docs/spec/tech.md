@@ -1,30 +1,28 @@
 ---
 type: hub
 scope: technical
-children: [tech/contracts.md, tech/rust.md, tech/instruct.md, tech/spec.md, tech/cli.md]
-updated: 2026-11-12
+children: [tech/milestone-spec-feature-contract.md, tech/milestone-flow-runner-contract.md, tech/milestone-instruct-provider-contract.md, tech/milestone-workspace-contract.md, tech/milestone-install-contract.md, tech/contracts.md, tech/rust.md, tech/instruct.md, tech/spec.md, tech/cli.md]
+updated: 2026-11-21
 ---
 
 # vibe — Technical Architecture
 
-The target is three independently installable Rust tools — spec, flow and
-instruct — with separate plugins and release trains. Current source embeds the
-shared spec library in `vibe`; its CLI and local MCP need no Node or peer binary.
-Global-first history and Git-aware code operations require Git. Flow and Instruct
-retain their stated delivery status and runtime requirements. Tools compose through
-file-based contracts. The sole approved tool-crate import is central
-`vibe -> vibe-spec` for the shared spec application layer; other tools remain
-independent and core stays spec-free. One repo, one installer, three
-release trains. **Current F5/F6 source:** the Rust `vibe-flow` CLI writes state
-and implements guard/Stop behind the POSIX shim. The JS engine still provides
-injection while it ships. Rust writes `.vibe/run/flow/state.json`; active JS and
-shell readers/writers prefer that file once present and retain the legacy
-cursor as an absence-only fallback. Legacy-only targets keep their existing
-cursor until Rust migrates them. This source status does not establish a
-published release or an installed runtime. F7 transition gates/ledger and F8
-Rust injection remain target work. The queued v0.5 arc adds one front door —
-the `vibe` CLI — plus worktree lifecycle and a global spec space over the same
-three tools ([tech-cli.md](tech/cli.md)).
+Spec owns documents, feature artifact backends, and validation. Flow owns
+execution state, scoped authority, checkpoints and human approval edges.
+Instruct owns layered, budgeted instruction composition and managed lesson
+projection. The planned provider boundary is versioned and supports the
+reference host before other host adapters.
+
+The central `vibe` binary already embeds Spec. Its approved direct
+`vibe -> vibe-spec` dependency stays in place. Global-first Spec history
+requires Git. Rust Flow F5–F8 and the opt-in v2 core are merged. Trusted v2
+verification remains pending. Shell and JS fallback surfaces remain
+available until their replacement and migration are proven.
+
+The product target is one installation entry point. The current independent
+tool and release-train decisions remain documented. The reference installer
+and worktree APIs can be designed in their own slices. See
+[product milestones](concepts/product-milestones.md).
 
 ## Concepts
 
@@ -62,3 +60,5 @@ three tools ([tech-cli.md](tech/cli.md)).
 Feature inventory and delivery status live in [plan.md](plan.md)'s Feature
 Sequence — the single place cross-feature order is stated. This document
 describes the architecture those features build, not their status.
+
+Milestone [technical contracts](concepts/product-milestones.md#milestone-specifications) define ownership and verification boundaries.

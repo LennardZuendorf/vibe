@@ -1,6 +1,7 @@
 ---
 title: "F4 [all] workspace-core: Cargo workspace with vibe-core, vibe-spec, vibe-parity only"
 id: F4
+status: delivered
 tool: all
 phase: 0
 milestone: "v0.4 Phase 0 — foundations"

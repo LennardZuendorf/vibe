@@ -1,11 +1,11 @@
 ---
 type: concept
-updated: 2026-11-12
+updated: 2026-11-21
 ---
 
 # v0.5 — the vibe CLI arc (queued; C0 pulled ahead)
 
-The follow-on arc: one `vibe` CLI front door over the three tools, plus the cross-tool capabilities no single tool can own — worktree lifecycle, global spec management, global blocks. Architecture: [tech-cli.md](../../../tech/cli.md). Decisions: D40–D43 and D48 in [decisions](../../../decisions/README.md). Nothing starts before F22 is DONE, except C0, which D48 pulled ahead; C4 additionally waits on F16, C5 on F14.
+The follow-on arc: one `vibe` CLI front door over the three tools, plus the cross-tool capabilities no single tool can own — worktree lifecycle, global spec management, global blocks. Architecture: [tech-cli.md](../../../tech/cli.md). Decisions: D40–D43 and D48 in [decisions](../../../decisions/README.md). The original full front-door release uses F22. The [product milestones](../../../concepts/product-milestones.md) pull the reference installer and worktree-specific prerequisites forward. C0 was pulled ahead by D48. C4 still requires F16 and C5 still requires F14.
 
 Approved [spec-projects-mcp](../../../tech/spec/spec-projects-mcp.md) is the sole
 additional spec-only C1/F22 carve-out. It does not complete C1–C6 or F21/F22.
@@ -15,7 +15,7 @@ additional spec-only C1/F22 carve-out. It does not complete C1–C6 or F21/F22.
 | Order | Feature | Deliverable | Test | Status | Starts when |
 |---:|---|---|---|---|---|
 | C0 | global-store | `crates/vibe`: `config init/import-mcp/status/sync/install/uninstall/doctor` and stable `hook session-start` over Claude, Codex, OpenCode, Factory ([D48](../../../decisions/d48-global-store-and-projection.md)) | Idempotent install; real-shaped preserve; fail-open hook; E2E gated (`VIBE_E2E=1`) | DONE | — |
-| C1 | cli-core | `crates/vibe`: `spec\|flow\|instruct` dispatch via the shim's discovery tiers; `~/.config/vibe/repos.json` registry; `space list`; `doctor` peer + registry checks | Dispatch matrix with each tier's env deleted (both legs); missing-peer advice lines; registry floor test | NOT STARTED | F22 |
+| C1 | cli-core | `crates/vibe`: general peer dispatch alongside the delivered embedded Spec path; `~/.config/vibe/repos.json` registry; `space list`; `doctor` peer + registry checks | Dispatch matrix with each tier's env deleted (both legs); missing-peer advice lines; registry floor test | NOT STARTED | F22 |
 | C2 | worktree-lifecycle | `worktree create/list/remove`: git worktree + isolated `.vibe/run/`; mid-flow remove refusal; deregistration | Refusal discriminates vs naive removal; cursor isolation per worktree; fresh non-git target exits 1 with one line | NOT STARTED | C1 |
 | C3 | worktree-bootstrap | Bootstrap on create: `.vibe/spec.json` root pointer, each tool's `init`, AGENTS.md blocks; staleness in `list` | Byte-parity of bootstrapped files vs `install.sh --local` on the same tree; bootstrap idempotent on re-run | NOT STARTED | C2 |
 | C4 | global-lessons | Global library at `~/.config/vibe/spec/lessons.md`; `lessons-for` global source (repo wins on tag conflict); `space lessons edit/promote` | Merged-answer goldens (repo-only, global-only, conflict); promote drops repo-pattern prose; absence is clean, not warned | NOT STARTED | F16, C1 |
