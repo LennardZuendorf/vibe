@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-11-21
+updated: 2026-11-22
 ---
 
 # Product milestones
@@ -30,3 +30,16 @@ Back to [the plan](../plan.md). The owner approved this direction on 2026-11-21.
 - Prove the grouped workspace and the integrated two-repo workflow with separate Git histories. The selected artifact backend has one owner per feature.
 - Compare Git-backed and managed remote configuration in [#118](https://github.com/LennardZuendorf/vibe/issues/118). This discovery covers instructions, MCP definitions and pinned plugin manifests, with local credential references. It runs alongside local delivery.
 - OpenSpec root ownership stays open in [#104](https://github.com/LennardZuendorf/vibe/issues/104). Keep the current Vibe root until a decision is approved. See [the fit assessment](../tech/spec/spec-openspec-durable-fit.md).
+
+## When decisions are needed
+
+Review this roadmap as planning and specification. Decide each open question in the feature design that needs it. Record approved durable rules in [Decisions](../decisions/README.md) and link the owning issue. Start implementation only after its plan approval.
+
+| Decide by | Decision | Owning issues |
+|---|---|---|
+| Native OpenSpec feature design | Agree on the shared lifecycle, supported schemas and versions, and one writer for durable promotion. Keep the current root while the owner reviews any replacement. Skill review can use Superpowers now. | [#103](https://github.com/LennardZuendorf/vibe/issues/103), [#104](https://github.com/LennardZuendorf/vibe/issues/104), [#108](https://github.com/LennardZuendorf/vibe/issues/108), [#107](https://github.com/LennardZuendorf/vibe/issues/107) |
+| Autonomous Flow design | Agree on the trusted evidence producer, approval binding and the reference host's scope enforcement. Choose retry and recovery policy in the runner design. | [#101](https://github.com/LennardZuendorf/vibe/issues/101), [#106](https://github.com/LennardZuendorf/vibe/issues/106) |
+| Instruct integration design | Set the provider interface, command policy, delivery rules, and behavior when a host lacks a required capability. | [#83](https://github.com/LennardZuendorf/vibe/issues/83), [#84](https://github.com/LennardZuendorf/vibe/issues/84), [#85](https://github.com/LennardZuendorf/vibe/issues/85), [#86](https://github.com/LennardZuendorf/vibe/issues/86) |
+| Grouped workspace design | Set feature-artifact ownership, member references, and partial-create recovery. Verify worktree config on its existing scope. | [#105](https://github.com/LennardZuendorf/vibe/issues/105), [#109](https://github.com/LennardZuendorf/vibe/issues/109) |
+| Installer design | Choose the reference host, publication method, and artifact format. Decide supported host versions in the adapter work. Review any change to independent release trains separately. | [#113](https://github.com/LennardZuendorf/vibe/issues/113), [#39](https://github.com/LennardZuendorf/vibe/issues/39) |
+| After remote config discovery | Choose Git-backed sync, managed storage, or continued local-only config after the two-machine experiment. | [#118](https://github.com/LennardZuendorf/vibe/issues/118) |
