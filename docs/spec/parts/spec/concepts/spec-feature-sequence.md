@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-11-12
+updated: 2026-11-20
 ---
 
 # Spec feature sequence
@@ -21,7 +21,7 @@ Rows of the Feature Sequence owned by the spec tool; delivery order and binary g
 ## Spec projects and MCP
 
 Back to [spec](../spec.md). Existing DONE F-rows retain their delivery meaning.
-Tasks 1–9 are implemented and locally verified with independent review.
+Tasks 1–9 merged in [#88](https://github.com/LennardZuendorf/vibe/pull/88), with local verification and independent review.
 Release distribution and installer delivery remain separate.
 The implemented surface adds shared embedded spec execution, registered two-mode project storage,
 branch documents/lifecycle, explicit and conservative delayed reconciliation,

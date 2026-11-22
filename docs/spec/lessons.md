@@ -973,3 +973,33 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Feed early-exit consumers by redirection. Keep large fixtures out of child environments and prove the regression fails against the original implementation. Use the command's help or the checked-in suite before assuming a subcommand or prerequisite. Resolve scratch roots before using them for managed storage fixtures.
 **Tags:** bash, ci, tests, portability
 **Date:** 2026-11-20
+
+### Separate roadmap gates from delivery evidence
+**Pattern:** The Flow register marked both F9 and F10 unblocked after F8 merged, even though F10 still required F9. The attached worktree could be read while its first cursor write needed write permission.
+**Rule:** Check each row's immediate prerequisites before changing its status. Record source, hosted CI, release artifacts and installed proof separately. Verify write access at the actual destination before advancing a flow.
+**Tags:** planning, dependencies, release, worktrees
+**Date:** 2026-11-20
+
+### Verify rendered and machine-readable planning views
+**Pattern:** A Markdown table ended before its new delivery rows. An initial plan probe counted unused JSON fields. The corrected probe showed that the legacy plan resolved correctly but still parsed zero rows.
+**Rule:** Check that inserted table rows belong to the rendered table. Inspect the actual response keys and assert the expected plan population.
+**Tags:** planning, documentation, cli, verification
+**Date:** 2026-11-20
+
+### Trace a roadmap change through every status mirror
+**Pattern:** Reopening Instruct in the product milestones left old deferral statements in a runtime note, the issue catalog and the roadmap index.
+**Rule:** Search for the superseded status after updating its source. Reconcile each live mirror and label earlier phases as historical. Keep edited notes inside their line budgets. Put exact test counts in verification receipts instead of durable spec prose.
+**Tags:** planning, documentation, issue-tracking
+**Date:** 2026-11-21
+
+### Reference status examples from their canonical grammar
+**Pattern:** The drift checker counted status words quoted in a live feature plan as pending units.
+**Rule:** Refer to the canonical status grammar in explanatory prose. Keep literal status tokens in real rows and executable fixtures.
+**Tags:** spec, planning, drift, documentation
+**Date:** 2026-11-21
+
+### Bind verification to the staged worktree
+**Pattern:** The skills suite failed in a fresh planning worktree because it expected the candidate binary under that worktree's target directory. The literal sweep had already built the same candidate in an isolated target.
+**Rule:** Check fixed executable paths before running a suite. Bridge the verified candidate build under an ignored target directory and verify the bridge is ignored.
+**Tags:** tests, verification, worktrees, skills
+**Date:** 2026-11-21

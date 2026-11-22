@@ -3,10 +3,12 @@ type: tech
 applies:
   - "crates/vibe-spec/**"
   - "tests/openspec/**"
-updated: 2026-10-19
+updated: 2026-11-21
 ---
 
 # OpenSpec interchange
+
+Current interchange only. See [durable-spec fit](spec-openspec-durable-fit.md) for the native-feature plan and the open root decision.
 
 Grammar-compatible, layout-native: vibe adopts OpenSpec's requirement
 grammar inside its own document model, not its directory layout.

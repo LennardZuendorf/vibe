@@ -3,7 +3,7 @@ type: feature-plan
 feature: skill-revision
 sibling: tech.md
 parent: ../../plan.md
-updated: 2026-10-24
+updated: 2026-11-21
 ---
 
 # Feature: Skill Revision — Implementation Plan
@@ -509,7 +509,7 @@ tests/skills/cases/spec-docs.sh
 
 - [ ] Write a failing docs-to-validator test on the live path: a root from `vibe-spec init` (layered), plus `features/demo/{product,tech,plan}.md` filled from the feature templates (every `{…}` placeholder replaced with fixed words) and the `reference/plan.md` unit example, plus the `demo` row with `IN PROGRESS` in `plan.md`; `vibe-spec validate` prints zero warnings and `vibe-spec check-drift` exits 0. Also: every template guardrail comment of the root and topic templates contains `flat layout only`; `reference/product.md` has no claim that a tool counts scenarios. No flat-root fixture: the root templates are marked flat-only instead.
 - [ ] Run. Expected FAIL with the warnings listed (Requirements Trace missing, status enum, live merge block, placeholders).
-- [ ] Implement: plan example with a Requirements Trace section and the heading-per-unit form; one status enum `NOT STARTED | IN PROGRESS | BLOCKED | DONE` (`check-drift` reads `IN PROGRESS` and `DONE`; `ACTIVE` reads as NOT STARTED); `templates/feature-tech.md` merge example inside an HTML comment; `{topic}` and `updated: {YYYY-MM-DD}` placeholders; `templates/feature-product.md` "Do NOT: code, APIs, algorithms, plan units. File paths appear only in the Scope table's Owns row."; `reference/product.md` "No tool reads this list."; `reference/design.md` token and template lines; `flat layout only` marks.
+- [ ] Implement: plan example with a Requirements Trace section and the heading-per-unit form; the four-value status enum in `spec/reference/plan.md` (`check-drift` recognizes `IN PROGRESS` and `DONE`; `ACTIVE` falls back to the initial status); `templates/feature-tech.md` merge example inside an HTML comment; `{topic}` and `updated: {YYYY-MM-DD}` placeholders; `templates/feature-product.md` "Do NOT: code, APIs, algorithms, plan units. File paths appear only in the Scope table's Owns row."; `reference/product.md` "No tool reads this list."; `reference/design.md` token and template lines; `flat layout only` marks.
 - [ ] Run the skills suite and the full `bash spec/tests/run.sh` (the frozen `setup.sh` seeds trees from these live templates). Expected PASS; `bash tests/oracles/run.sh` unchanged (the oracle copies are separate files).
 
 **Verification:** zero-warning fixture; suites green.
@@ -1126,14 +1126,14 @@ any file outside docs/spec/, for straggler fixes found by the sweep (one commit 
 ```
 docs/spec/lessons.md
 docs/spec/tech/spec/spec-authoring.md (NEW note), docs/spec/tech/... and docs/spec/concepts/... notes named below
-docs/spec/plan.md                    # row → DONE; four NOT STARTED follow-up rows; folder archived
+docs/spec/plan.md                    # row → DONE; four follow-up rows at the initial status; folder archived
 ```
 
 **Steps:**
 
 - [ ] Cursor `feature.compound` (after the ship approval). Invoke `Skill(spec)`.
 - [ ] Dogfood fixes (each note's `updated:` bumped): `concepts/spec-vs-implementation.md` delivered list (cons:C-07) and the rubric D2 deviation of `flow/SKILL.md`; `concepts/delivered-features.md`, `concepts/issue-catalog.md` and the F19/F20 status rows in the spec feature-sequence note (cons:C-07); `tech/spec/spec-subagents.md` :20 (the promoter runs only the dry run and the apply; the main thread runs `--done`; spec:N-6); `parts/flow/concepts/style-note.md` (flow:V-23: the style rule rides every turn in `style.ste100`; `flow/SKILL.md` has no § Style); `tech/spec/spec-shipped.md` "the skill and the spec subagents call `vibe-spec`"; `tech/spec/spec-hooks.md` router line "only where a spec root exists"; `tech/contracts/contracts-exit-codes.md` usage exit 2 for the raw-tail commands, and the `state set` row qualified "(target; `state.mjs` checks neither `next` nor the gate today — F7)" (tool:U3); `tech/spec/spec-root-discovery.md` `.vibe/spec.json` key table (cons:C-12); `tech/spec/spec-setup-commands.md` drop `doctor`; `tech/spec.md` "two subagents" (cons:C-24); decision D17 marked superseded by D27 and requirements #7 / design principle 6 suffixed "(v0.4 target; until F7 the /flow command asks and no code enforces)" (cons:C-11); D12 note: orders are authored in `SKILL.md` `## Orders` (cons:C-21).
-- [ ] Follow-up rows in `## Branch work`, status `NOT STARTED`, no folder (check-drift reads rows only for live folders): `layered-kind-guard` (flow:V-01 / mig:M-05: the write policy for layered kind folders), `session-start-rearm` (flow:V-06 code half), `spec-hooks-install` (tool:T2/T3: spec-hook wiring of `install.sh` targets and the two `doctor` rows), `spec-tool-followups` (spec:N-16(c) `list-specs` on a layered root, tool:U7 validate text-mode fallback, tool:U4 flow-script exit codes in the contract).
+- [ ] Follow-up rows in `## Branch work`, use the initial status from `spec/reference/plan.md` and create no feature folders (check-drift reads rows only for live folders): `layered-kind-guard` (flow:V-01 / mig:M-05: the write policy for layered kind folders), `session-start-rearm` (flow:V-06 code half), `spec-hooks-install` (tool:T2/T3: spec-hook wiring of `install.sh` targets and the two `doctor` rows), `spec-tool-followups` (spec:N-16(c) `list-specs` on a layered root, tool:U7 validate text-mode fallback, tool:U4 flow-script exit codes in the contract).
 - [ ] Lessons (Pattern, Rule, Tags, Date): a description must not carry a sweep marker; shipped prose names the spec root, and a lint now enforces it; a subagent has no channel to the human, so approvals stay in the main thread; an oracle-parity port must still meet the published contract, with each divergence listed.
 - [ ] Wrap-up per spec `SKILL.md` § Wrap-up: create the typed note `docs/spec/tech/spec/spec-authoring.md` (`type: tech`, ≤60 lines) and list it in the `children:` of its hub, then promote the two `<!-- merge -->` blocks of [tech.md](tech.md) into it (`vibe-spec promote skill-revision --dry-run --target docs/spec/tech/spec/spec-authoring.md`, show, apply on yes), because the root `tech.md` is a hub that only links; row → DONE; `git mv docs/spec/features/skill-revision docs/spec/archive/skill-revision`; `cargo run -q --locked -p vibe-spec -- validate --strict` and `-- check-drift` until both exit 0 (record the `--pre-merge` result: it fails while the F1, F16–F18 and F25 artifacts remain under `docs/superpowers/`, which those features own); `bash .agents/skills/vibe/scripts/regen-active-rules.sh`; ask to delete the archive.
 
@@ -1151,11 +1151,11 @@ Owner decisions. Each has the default this plan implements.
 4. **Whole-tag lesson matching (unit 15).** Default: yes (`ci` no longer matches `decision`). Alternative: keep substring matching for oracle parity.
 5. **Config consolidation (unit 5).** Default: `.vibe/spec.json` keys `featureLayer`, `suggest`, `superpowers`; legacy `.config.yaml` read only for a missing key; `vibe-flow` dropped. Alternative: keep `.config.yaml` and document it as agent-read only.
 6. **Router budget (unit 18).** Default: orders and doctrine stay in `flow/SKILL.md`; budget is 800 words outside the blocks; record the D2 deviation. Alternative: move them out after the port, touching `content.mjs` and six readers.
-7. **Policy rule for layered kind folders (flow:V-01).** Default: cut; unit 31 adds the `NOT STARTED` row `layered-kind-guard`, started after the port is DONE. Alternative: a warn-first rule as a second tail unit.
+7. **Policy rule for layered kind folders (flow:V-01).** Default: cut; unit 31 adds `layered-kind-guard` with the initial status, started after the port is DONE. Alternative: a warn-first rule as a second tail unit.
 8. **Personal delegation policy (unit 25).** Default: move Fable, ultracode and first-person rules to this repo's `vibe.json`. Alternative: keep them shipped.
 9. **Doctrine invariants clause (flow:V-47).** Default: keep it (parity-tested). Alternative: replace with a `decide` pointer and drop the parity legs.
 10. **Tail unit 28.** Default: run when the trigger fires before unit 29; otherwise a recorded gap.
 11. **`spec-health` model.** Default: keep `haiku` (it relays JSON). Alternative: `sonnet`.
 12. **Versions (`package.json` 0.3.0-dev vs Cargo 0.4.0).** Default: no change here; README states the truth. Alternative: bump in this feature.
 13. **`coding-environment` block in `AGENTS.md` (cons:S-01).** It cites `/home/agent/projects/AGENTS.md`, which does not exist on other machines, and no script in this repo writes the block. Default: leave it; an outside tool owns it. Alternative: delete it in unit 27.
-14. **Row status token.** Default: `IN PROGRESS` for in-flight rows and in the `reference/plan.md` enum, because `check-drift` reads only `DONE` and `IN PROGRESS` and reports `ACTIVE` as NOT STARTED. Alternative: teach `drift.rs` `row_status` to read `ACTIVE` (Track C, one parity divergence).
+14. **Row status token.** Default: `IN PROGRESS` for in-flight rows and in the `reference/plan.md` enum, because `check-drift` reads only `DONE` and `IN PROGRESS` and reports `ACTIVE` as the initial status. Alternative: teach `drift.rs` `row_status` to read `ACTIVE` (Track C, one parity divergence).

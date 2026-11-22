@@ -1,7 +1,7 @@
 ---
 title: "F10 [flow] flow-tui: vibe-flow tui: live pane, transitions, recording"
 id: F10
-hold: architecture
+issue: 102
 tool: flow
 phase: 1
 milestone: "v0.4 Phase 1 — flow"
@@ -9,7 +9,7 @@ depends_on: [F7, F9]
 parent: epic
 ---
 
-> **Held.** This feature is under architecture design in the originating thread; no GitHub issue yet.
+> **Planning.** F10 is blocked on F9 (#100). The design must use the shared Flow writer.
 
 ## Deliverable
 `vibe-flow tui` v1 (ratatui, feature `tui`): (1) live pane — cursor, legal next with gate marks, orders, last 20 ledger events, doctor line, 500 ms mtime poll; (2) transitions — pick next, Enter, gated edges prompt `y/N`, `a` aborts, calls the same `check_transition` as F7; (3) recording — `r` starts, `n` adds a note, `s` saves to `~/.config/vibe/flows/<name>.json`. A recorded flow is a linear subset of `state-machine.json`. `vibe-flow flows list|use`; `.vibe/flow.json` `{"machine": "<path>"}` selects a repo's active machine.

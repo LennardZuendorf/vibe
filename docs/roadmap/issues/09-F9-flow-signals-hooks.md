@@ -1,7 +1,7 @@
 ---
 title: "F9 [flow] flow-signals-hooks: vibe-signals + RulesProvider, Task redirect, ledger hooks"
 id: F9
-hold: architecture
+issue: 100
 tool: flow
 phase: 1
 milestone: "v0.4 Phase 1 — flow"
@@ -9,7 +9,7 @@ depends_on: [F8]
 parent: epic
 ---
 
-> **Held.** This feature is under architecture design in the originating thread; no GitHub issue yet.
+> **Planning.** F8 is merged. This planning record awaits owner timing and design approval.
 
 ## Deliverable
 `vibe-signals` crate: `Signal{ts, source, kind: progress|blocked|done|drift, confidence, evidence, state}` — no verdict field. `trait SignalProvider { fn observe(&self, &Observation) -> Vec<Signal> }`. `vibe-signals` depends on `vibe-core`; core cannot depend on signals — cycle-free, asserted by a `cargo metadata` test, so guard/gate are structurally unable to read them (signals are advisory by construction, never gating). Ships now: `RulesProvider` (keyword rules, fixed 0.3 confidence). `Observation` built from the transcript tail at `Stop`/`SubagentStop`. New hooks: `PostToolUse(Task)` delegation redirect (advisory `additionalContext` when `model` is missing or the target is outside the state's `delegates`), `SubagentStop` and `SessionEnd` ledger events.
