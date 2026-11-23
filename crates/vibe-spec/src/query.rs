@@ -115,12 +115,27 @@ pub fn plan(
                 return (exit::FINDINGS, Vec::new());
             }
             let rows = match read_plan(cx, &p) {
-                Ok(text) => table_rows(&text),
+                Ok(text) => {
+                    let table = table_rows(&text);
+                    if table.is_empty() {
+                        heading_rows(&text, feature)
+                    } else {
+                        table
+                    }
+                }
                 Err(e) => return e,
             };
             (p, rows)
         }
     };
+    if rows.is_empty() {
+        diag!(
+            cx,
+            "vibe-spec plan: {}: no unit rows (accepted: `### Task <n>:` headings, \
+             `### <feature>/<n>` headings, or a `| Unit | Status |` table)",
+            rel(&root.project, &path)
+        );
+    }
     if !json_out {
         let mut out = String::new();
         for r in &rows {
@@ -174,16 +189,52 @@ fn task_rows(text: &[u8]) -> Vec<Row> {
             continue;
         }
         if let Some((done, open)) = counts.as_mut() {
-            let t = trim_start_space(line);
-            if t.starts_with(b"- [x]") || t.starts_with(b"- [X]") {
-                *done += 1;
-            } else if t.starts_with(b"- [ ]") {
-                *open += 1;
-            }
+            count_box(line, done, open);
         }
     }
     close(&mut rows, &mut counts);
     rows
+}
+
+/// Rows of a fallback feature plan written as `### <feature>/<n>` headings
+/// (the format `spec/reference/plan.md` teaches): one row per unit, status
+/// from its checkboxes up to the next `##`/`###` heading.
+fn heading_rows(text: &[u8], feature: &str) -> Vec<Row> {
+    let mut rows: Vec<Row> = Vec::new();
+    let mut counts: Option<(usize, usize)> = None;
+    let mut fences = Fences::new();
+    for line in lines(text) {
+        if fences.skip(line) {
+            continue;
+        }
+        if line.starts_with(b"## ") || line.starts_with(b"### ") {
+            close(&mut rows, &mut counts);
+            if let Some((id, title)) = unit_heading(line, feature) {
+                rows.push(Row {
+                    id,
+                    status: String::new(),
+                    title,
+                });
+                counts = Some((0, 0));
+            }
+            continue;
+        }
+        if let Some((done, open)) = counts.as_mut() {
+            count_box(line, done, open);
+        }
+    }
+    close(&mut rows, &mut counts);
+    rows
+}
+
+/// Counts one `- [x]`/`- [ ]` checkbox line.
+fn count_box(line: &[u8], done: &mut usize, open: &mut usize) {
+    let t = trim_start_space(line);
+    if t.starts_with(b"- [x]") || t.starts_with(b"- [X]") {
+        *done += 1;
+    } else if t.starts_with(b"- [ ]") {
+        *open += 1;
+    }
 }
 
 fn close(rows: &mut [Row], counts: &mut Option<(usize, usize)>) {
@@ -213,6 +264,34 @@ fn task_heading(line: &[u8]) -> Option<(String, Option<String>)> {
         format!("Task {}", lossy(&rest[..n])),
         (!title.is_empty()).then(|| lossy(title)),
     ))
+}
+
+/// `### <feature>/<n>[ — <title>]` → (`<feature>/<n>`, title).
+fn unit_heading(line: &[u8], feature: &str) -> Option<(String, Option<String>)> {
+    let rest = line.strip_prefix(b"### ")?;
+    let head = feature.as_bytes();
+    if rest.len() <= head.len() || &rest[..head.len()] != head || rest[head.len()] != b'/' {
+        return None;
+    }
+    let number_at = head.len() + 1;
+    let number = rest[number_at..]
+        .iter()
+        .take_while(|c| c.is_ascii_digit())
+        .count();
+    if number == 0 {
+        return None;
+    }
+    let id = lossy(&rest[..number_at + number]);
+    let after = trim_space(&rest[number_at + number..]);
+    if after.is_empty() {
+        return Some((id, None));
+    }
+    let title = trim_space(
+        ["—", "–", "-", ":"]
+            .into_iter()
+            .find_map(|sep| after.strip_prefix(sep.as_bytes()))?,
+    );
+    Some((id, (!title.is_empty()).then(|| lossy(title))))
 }
 
 /// The trimmed cells of a `| a | b |` row; empty for a non-table line.

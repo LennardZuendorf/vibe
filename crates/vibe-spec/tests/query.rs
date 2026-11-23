@@ -79,6 +79,63 @@ fn plan_falls_back_to_the_unit_status_table() {
 }
 
 #[test]
+fn a_fallback_plan_without_a_table_reads_its_unit_headings() {
+    let p = project("q-plan-head");
+    let plan = "---\ntype: feature-plan\nfeature: auth\n---\n\n# Plan\n\n## Units\n\n### auth/1 — Record the choice\n\n- [x] write it\n- [x] read it\n\n### auth/2 – Publish it\n\n- [x] first\n- [ ] second\n\n### auth/3: Wire it\n\n- [ ] only\n\n### auth/4\n\nNothing to tick yet.\n\n## Notes\n\n- [x] not a unit step\n\n```md\n### auth/9 — fenced\n- [ ] ignored\n```\n\n### other/1 — another feature\n\n- [ ] ignored\n";
+    write(&p, "docs/spec/features/auth/plan.md", plan);
+    let out = spec(&p, &["plan", "--feature", "auth", "--json"], &[]);
+    assert_eq!(
+        v(&out),
+        json!({
+            "v": 1,
+            "feature": "auth",
+            "source": { "kind": "plan", "path": "docs/spec/features/auth/plan.md" },
+            "rows": [
+                { "id": "auth/1", "status": "done", "title": "Record the choice" },
+                { "id": "auth/2", "status": "in-progress", "title": "Publish it" },
+                { "id": "auth/3", "status": "todo", "title": "Wire it" },
+                { "id": "auth/4", "status": "todo" }
+            ]
+        })
+    );
+    #[cfg(unix)]
+    common::assert_spec_json("plan", out.text().trim_end());
+    let text = spec(&p, &["plan", "--feature", "auth"], &[]);
+    assert_eq!(
+        text.text(),
+        "auth/1\tdone\tRecord the choice\nauth/2\tin-progress\tPublish it\nauth/3\ttodo\tWire it\nauth/4\ttodo\n"
+    );
+}
+
+#[test]
+fn a_unit_table_still_wins_over_headings() {
+    let p = project("q-plan-both");
+    let plan = "| Unit | Status |\n|---|---|\n| auth/1 | DONE |\n\n### auth/1 — Record the choice\n\n- [ ] write it\n";
+    write(&p, "docs/spec/features/auth/plan.md", plan);
+    let got = v(&spec(&p, &["plan", "--feature", "auth", "--json"], &[]));
+    assert_eq!(got["rows"], json!([{ "id": "auth/1", "status": "DONE" }]));
+}
+
+#[test]
+fn a_fallback_plan_with_no_units_says_so_on_stderr() {
+    let p = project("q-plan-empty");
+    write(
+        &p,
+        "docs/spec/features/auth/plan.md",
+        "# Plan\n\nProse only, no units.\n",
+    );
+    let out = spec(&p, &["plan", "--feature", "auth", "--json"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(v(&out)["rows"], json!([]));
+    assert!(
+        out.stderr.contains("docs/spec/features/auth/plan.md")
+            && out.stderr.contains("no unit rows"),
+        "stderr was {:?}",
+        out.stderr
+    );
+}
+
+#[test]
 fn feature_reports_its_layer_and_docs() {
     let p = project("q-feature");
     write(&p, ".spec/features/auth/product.md", "x\n");

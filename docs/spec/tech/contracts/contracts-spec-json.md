@@ -46,7 +46,11 @@ exactly, so dropping or adding a required field fails the gate.
 
 `plan` rows come from the newest `docs/superpowers/plans/YYYY-MM-DD-<f>.md`:
 one row per `### Task N:`, with status `done`, `in-progress` or `todo` from
-its checkboxes. Without that plan, they come from the `| Unit | Status |`
-table of `<root>/features/<f>/plan.md`. `feature` reports the layer
+its checkboxes. Without that plan, they come from `<root>/features/<f>/plan.md`:
+the `| Unit | Status |` table when the file has one, otherwise one row per
+`### <feature>/<n>` heading (the grammar `spec/reference/plan.md` teaches), with
+status from its checkboxes. An empty answer names the file on stderr, so a
+plan with no rows in either grammar is never mistaken for a plan with nothing
+left to do. `feature` reports the layer
 `superpowers` when a design or plan artifact exists. Otherwise it reports
 `fallback`, with the folder's `product|tech|design|plan|research` docs.
