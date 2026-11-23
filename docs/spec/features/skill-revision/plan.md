@@ -3,7 +3,7 @@ type: feature-plan
 feature: skill-revision
 sibling: tech.md
 parent: ../../plan.md
-updated: 2026-11-21
+updated: 2026-11-23
 ---
 
 # Feature: Skill Revision — Implementation Plan
@@ -24,6 +24,62 @@ control.
 **Feature gate:** none in the F1–F25 sequence. This is branch work. The root row lands in unit 1, in `strategy.spec`, before any track starts.
 
 **Feature layer:** this feature uses the fallback folder `docs/spec/features/skill-revision/` because the owner asked for the docs/spec feature format. That is the "your human partner says *self*" fallback trigger.
+
+---
+
+## Unit Status
+
+The live status, reconciled against the tree on 2026-11-23 (issue #103).
+Unit bodies below are the historical record; this table is what `vibe-spec plan --feature skill-revision` answers.
+
+| Unit | Status | Basis |
+|---|---|---|
+| skill-revision/1 | DONE | baseline and lint suite landed; `tests/skills/run.sh` runs five case files |
+| skill-revision/2 | DONE | v0.4, Track A, units 2–7 (CHANGELOG 0.4.0) |
+| skill-revision/3 | DONE | v0.4, Track A, units 2–7 (CHANGELOG 0.4.0) |
+| skill-revision/4 | DONE | v0.4, Track A, units 2–7 (CHANGELOG 0.4.0) |
+| skill-revision/5 | DONE | v0.4, Track A, units 2–7 (CHANGELOG 0.4.0) |
+| skill-revision/6 | DONE | v0.4, Track A, units 2–7 (CHANGELOG 0.4.0) |
+| skill-revision/7 | DONE | v0.4, Track A, units 2–7 (CHANGELOG 0.4.0) |
+| skill-revision/8 | DONE | v0.4, Track B, units 8–11 (CHANGELOG 0.4.0) |
+| skill-revision/9 | DONE | v0.4, Track B, units 8–11 (CHANGELOG 0.4.0) |
+| skill-revision/10 | DONE | v0.4, Track B, units 8–11 (CHANGELOG 0.4.0) |
+| skill-revision/11 | DONE | v0.4, Track B, units 8–11 (CHANGELOG 0.4.0) |
+| skill-revision/12 | DONE | v0.4, Track C, units 12–17 (CHANGELOG 0.4.0) |
+| skill-revision/13 | DONE | v0.4, Track C, units 12–17 (CHANGELOG 0.4.0) |
+| skill-revision/14 | DONE | v0.4, Track C, units 12–17 (CHANGELOG 0.4.0) |
+| skill-revision/15 | DONE | v0.4, Track C, units 12–17 (CHANGELOG 0.4.0) |
+| skill-revision/16 | DONE | v0.4, Track C, units 12–17 (CHANGELOG 0.4.0) |
+| skill-revision/17 | DONE | v0.4, Track C, units 12–17 (CHANGELOG 0.4.0) |
+| skill-revision/18 | NOT STARTED | Track D pending; premise files removed in #57 — re-plan against `flow/SKILL.md` |
+| skill-revision/19 | NOT STARTED | Track D pending; the gate now lives in the writer (F7, D27) — prose form needs an owner ruling |
+| skill-revision/20 | NOT STARTED | Track D pending; `flow/SKILL.md` has `## Contract`, not the transition heading this unit names |
+| skill-revision/21 | NOT STARTED | Track D pending; `doctrine.sh` output names neither the `orders.sh` recovery nor "never add `confirm` yourself" |
+| skill-revision/22 | NOT STARTED | Track D pending; `flow/SKILL.md` orders still carry 5 fixed `docs/spec` paths and the compound order never points at `§ Wrap-up` |
+| skill-revision/23 | NOT STARTED | Track D pending; `flow/feature.md` and `flow/strategy.md` were removed in #57 |
+| skill-revision/24 | NOT STARTED | Track D pending; `flow/{verify,quick,compound}.md` were removed in #57 |
+| skill-revision/25 | DONE | v0.4, Track E, units 25–27 (CHANGELOG 0.4.0) |
+| skill-revision/26 | DONE | v0.4, Track E, units 25–27 (CHANGELOG 0.4.0) |
+| skill-revision/27 | DONE | v0.4, Track E, units 25–27 (CHANGELOG 0.4.0) |
+| skill-revision/28 | NOT STARTED | tail; `flow/setup.md` was removed in #57 and its content folded into `flow/SKILL.md` `## setup` |
+| skill-revision/29 | NOT STARTED | closeout; `tests/skills/cases/sweep.sh` does not exist |
+| skill-revision/30 | NOT STARTED | closeout; no `flow/evidence/feature-skill-revision.md` receipt exists |
+| skill-revision/31 | NOT STARTED | closeout; `docs/spec/plan.md` still carries this feature as IN PROGRESS |
+
+## Reconciliation (#103)
+
+Tracks A, B, C and E are delivered by v0.4 (#60) and their unit bodies stay as written.
+Unit 1 shipped with them: `tests/skills/run.sh` exists and runs `docs.sh`, `setup.sh`,
+`spec-docs.sh`, `spec-skill.sh` and `spec-tool.sh`.
+
+Track D, the tail and the closeout were written before #57 replaced six phase files with one
+`flow/SKILL.md`, so the premise of units 20, 23, 24 and 28 is gone: those files no longer exist.
+The intent survives and needs re-expression against the single-file skill, not the deleted paths.
+Units 18, 21 and 22 keep their premise and their gaps are open at today's tree. Unit 19's prose
+`HARD-GATE` block is the one item with no obvious answer: F7 and
+[D27](../../decisions/d27-the-writer-is-the-gate.md) move the gate into the writer, so whether the
+skill text must still carry the block is the owner's call. Track D stays unstarted until that
+answer lands; no implementation is authorized here.
 
 ---
 

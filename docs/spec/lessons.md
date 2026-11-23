@@ -1003,3 +1003,10 @@ Tags make entries retrievable — scan for tags matching the work in hand.
 **Rule:** Check fixed executable paths before running a suite. Bridge the verified candidate build under an ignored target directory and verify the bridge is ignored.
 **Tags:** tests, verification, worktrees, skills
 **Date:** 2026-11-21
+
+### Parse every grammar the docs teach, and make an empty answer speak
+**Pattern:** `vibe-spec plan` read only the `| Unit | Status |` table of a fallback feature plan, while the plan reference teaches units as `### <feature>/<n>` headings. A plan written exactly as taught answered zero rows with exit 0 — indistinguishable from a finished plan, and the same silence that hid a milestone counter reading 0 while holding seven issues.
+**Rule:** A query over a documented format accepts every grammar its own reference teaches, and prefers the explicit form (a status table) over a derived one (headings plus checkboxes). When the answer is empty, name the file and the accepted grammars on stderr so "no rows" never reads as "nothing to do"; keep exit 0 for a genuinely empty plan and exit 1 only when the file cannot be read.
+**Tags:** spec, planning, query, drift, contracts
+**Date:** 2026-11-23
+
