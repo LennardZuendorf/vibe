@@ -19,13 +19,15 @@ pressure runs. The Rust changes are small and sit in the named functions of
 **Plan:** [plan.md](plan.md)
 
 > **Post-#57 status.** #57 replaced the six phase files with one `flow/SKILL.md`, and
-> #96 put the v2 runtime core on top of it (`vibe-flow state set`). Sections written
-> against the old tree are now historical design, not instructions: `§ Flow skill shape`,
-> `§ Doctrine`, `§ Orders`, `§ Machine edits` and `§ Flow contract` describe files that no
-> longer exist (`flow/contract.md`, `flow/{feature,strategy,verify,quick,compound,setup}.md`).
-> What governs those units is the re-targeted text in [plan.md](plan.md) § Reconciliation
-> (#103), which names the surviving `flow/SKILL.md` section and the acceptance check for
-> each. Everything else here still holds.
+> #96 put the v2 runtime core on top of it (`vibe-flow state set`). Two sections here are
+> historical only: `§ Flow contract` describes `flow/contract.md`, which no longer exists
+> and which the plan now retires, and `§ Flow skill shape` describes the `SUBAGENT-STOP` /
+> `## Entry` / procedure-file layout the single-file skill replaced. `§ Doctrine`,
+> `§ Orders` and `§ Machine edits` still hold as fix text for units 21 and 22 — read their
+> `contract.md` citations as `flow/SKILL.md` `## Contract`, and their legacy
+> `set-state.sh` / `.agents/skills/vibe/state.json` paths as `vibe-flow state set` /
+> `.vibe/run/flow/state.json`. [plan.md](plan.md) § Reconciliation (#103) names, per unit,
+> the surviving target and the check that must go red first.
 
 ---
 
