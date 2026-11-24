@@ -3,7 +3,7 @@ type: feature-tech
 feature: skill-revision
 sibling: product.md
 parent: ../../tech.md
-updated: 2026-10-24
+updated: 2026-11-24
 ---
 
 # Feature: Skill Revision — Architecture
@@ -17,6 +17,15 @@ pressure runs. The Rust changes are small and sit in the named functions of
 **Parent:** [../../tech.md](../../tech.md)
 **Requirements:** [product.md](product.md)
 **Plan:** [plan.md](plan.md)
+
+> **Post-#57 status.** #57 replaced the six phase files with one `flow/SKILL.md`, and
+> #96 put the v2 runtime core on top of it (`vibe-flow state set`). Sections written
+> against the old tree are now historical design, not instructions: `§ Flow skill shape`,
+> `§ Doctrine`, `§ Orders`, `§ Machine edits` and `§ Flow contract` describe files that no
+> longer exist (`flow/contract.md`, `flow/{feature,strategy,verify,quick,compound,setup}.md`).
+> What governs those units is the re-targeted text in [plan.md](plan.md) § Reconciliation
+> (#103), which names the surviving `flow/SKILL.md` section and the acceptance check for
+> each. Everything else here still holds.
 
 ---
 

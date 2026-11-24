@@ -3,7 +3,7 @@ type: feature-plan
 feature: skill-revision
 sibling: tech.md
 parent: ../../plan.md
-updated: 2026-11-23
+updated: 2026-11-24
 ---
 
 # Feature: Skill Revision — Implementation Plan
@@ -51,17 +51,17 @@ Unit bodies below are the historical record; this table is what `vibe-spec plan 
 | skill-revision/15 | DONE | v0.4, Track C, units 12–17 (CHANGELOG 0.4.0) |
 | skill-revision/16 | DONE | v0.4, Track C, units 12–17 (CHANGELOG 0.4.0) |
 | skill-revision/17 | DONE | v0.4, Track C, units 12–17 (CHANGELOG 0.4.0) |
-| skill-revision/18 | NOT STARTED | Track D pending; premise files removed in #57 — re-plan against `flow/SKILL.md` |
+| skill-revision/18 | NOT STARTED | REWRITTEN (#57) — live: `lint_description flow/SKILL.md` exits 1 with 4 violations; `flow/contract.md`, `SUBAGENT-STOP` and `## Entry` retired, no replacement |
 | skill-revision/19 | NOT STARTED | Track D pending; the gate now lives in the writer (F7, D27) — prose form needs an owner ruling |
-| skill-revision/20 | NOT STARTED | Track D pending; `flow/SKILL.md` has `## Contract`, not the transition heading this unit names |
-| skill-revision/21 | NOT STARTED | Track D pending; `doctrine.sh` output names neither the `orders.sh` recovery nor "never add `confirm` yourself" |
-| skill-revision/22 | NOT STARTED | Track D pending; `flow/SKILL.md` orders still carry 5 fixed `docs/spec` paths and the compound order never points at `§ Wrap-up` |
-| skill-revision/23 | NOT STARTED | Track D pending; `flow/feature.md` and `flow/strategy.md` were removed in #57 |
-| skill-revision/24 | NOT STARTED | Track D pending; `flow/{verify,quick,compound}.md` were removed in #57 |
+| skill-revision/20 | NOT STARTED | REWRITTEN (#57) — `## Transition (/flow)` is `## Contract` now; the three host command files still name 2 different writers |
+| skill-revision/21 | NOT STARTED | REWRITTEN (#57) — target is the `<!-- vibe:doctrine -->` block; root-neutral half landed, `orders.sh` recovery open, provenance waits on unit 19 |
+| skill-revision/22 | NOT STARTED | STILL REAL — 4 fixed `docs/spec` paths in the orders, compound names no `§ Wrap-up`, `quick.fix` writes no `tests/**` |
+| skill-revision/23 | NOT STARTED | REWRITTEN (#57) — both files folded into `## feature` / `## strategy`; the gate's impl-mode choice is named in the machine and nowhere in the skill |
+| skill-revision/24 | NOT STARTED | REWRITTEN (#57) — three files folded into `## verify` / `## quick` / `## compound`; no fix-loop cap, no `§ Wrap-up` pointer |
 | skill-revision/25 | DONE | v0.4, Track E, units 25–27 (CHANGELOG 0.4.0) |
 | skill-revision/26 | DONE | v0.4, Track E, units 25–27 (CHANGELOG 0.4.0) |
 | skill-revision/27 | DONE | v0.4, Track E, units 25–27 (CHANGELOG 0.4.0) |
-| skill-revision/28 | NOT STARTED | tail; `flow/setup.md` was removed in #57 and its content folded into `flow/SKILL.md` `## setup` |
+| skill-revision/28 | NOT STARTED | REWRITTEN (#57) — `flow/setup.md` folded into `## setup` + the two setup orders; no `doctor.sh`, ignore lines or merge WARN |
 | skill-revision/29 | NOT STARTED | closeout; `tests/skills/cases/sweep.sh` does not exist |
 | skill-revision/30 | NOT STARTED | closeout; no `flow/evidence/feature-skill-revision.md` receipt exists |
 | skill-revision/31 | NOT STARTED | closeout; `docs/spec/plan.md` still carries this feature as IN PROGRESS |
@@ -72,14 +72,42 @@ Tracks A, B, C and E are delivered by v0.4 (#60) and their unit bodies stay as w
 Unit 1 shipped with them: `tests/skills/run.sh` exists and runs `docs.sh`, `setup.sh`,
 `spec-docs.sh`, `spec-skill.sh` and `spec-tool.sh`.
 
-Track D, the tail and the closeout were written before #57 replaced six phase files with one
-`flow/SKILL.md`, so the premise of units 20, 23, 24 and 28 is gone: those files no longer exist.
-The intent survives and needs re-expression against the single-file skill, not the deleted paths.
-Units 18, 21 and 22 keep their premise and their gaps are open at today's tree. Unit 19's prose
-`HARD-GATE` block is the one item with no obvious answer: F7 and
-[D27](../../decisions/d27-the-writer-is-the-gate.md) move the gate into the writer, so whether the
-skill text must still carry the block is the owner's call. Track D stays unstarted until that
-answer lands; no implementation is authorized here.
+Track D, the tail and the closeout were written against the six phase files that #57
+replaced with one `flow/SKILL.md`; #96 then salvaged the v2 runtime core on top of it
+(`vibe-flow state set`, `.vibe/run/flow/state.json`). The seven rows issue `#103` names —
+18, 20–24 and 28 — were re-checked unit by unit against this tree on 2026-11-24. Every
+one keeps at least one acceptance check that is red today, so no unit is retired whole:
+each entry below names the retired *assumption* and the surviving check.
+
+| Unit | Verdict | Evidence (observed, 2026-11-24) | Re-targeted to |
+|---|---|---|---|
+| 18 | REWRITTEN | `lint_description flow/SKILL.md` → rc 1, 4 violations: 620 chars max 500, angle bracket, first person, no "Use when". `ls flow/contract.md flow/tests/evals` → both absent | `flow/SKILL.md` frontmatter + new `tests/skills/cases/flow.sh`. The `contract.md` split and the `SUBAGENT-STOP` / `## Entry` / selection-eval shape are retired, with no replacement |
+| 20 | REWRITTEN | `grep -ho 'vibe-flow state set\|set-state\.sh' .claude/commands/flow.md .opencode/commands/flow.md factory-plugin/commands/flow.md \| sort -u \| wc -l` → 2 | `flow/SKILL.md` `## Contract` (the transition heading it named is gone) + the three host command files |
+| 21 | REWRITTEN | `bash flow/scripts/doctrine.sh \| grep -c orders.sh` → 0; the same output contains no `docs/spec` path, so root-neutrality already holds | The doctrine block in `flow/SKILL.md` and `flow/scripts/doctrine.sh`. The gate-provenance half waits on unit 19 |
+| 22 | STILL REAL | `docs/spec` inside the orders blocks → 4; `Wrap-up` in the `feature.compound` order → 0; `tests/**` in the `quick.fix` order → 0 | Unchanged: `flow/SKILL.md` orders, `flow/state-machine.json`, `flow/tests/run.sh` |
+| 23 | REWRITTEN | `ls flow/feature.md flow/strategy.md` → both absent; `grep -c 'impl mode' flow/SKILL.md` → 0 while `flow/state-machine.json` says the gate "picks impl mode" | `flow/SKILL.md` `## feature` / `## strategy` and the `feature.*` / `strategy.*` orders |
+| 24 | REWRITTEN | `ls flow/{verify,quick,compound}.md` → all absent; `grep -c 'third return' flow/SKILL.md` → 0; `Wrap-up` → 0 | `flow/SKILL.md` `## verify` / `## quick` / `## compound` and their orders |
+| 28 | REWRITTEN | `ls flow/setup.md` → absent; `grep -c 'doctor.sh' flow/SKILL.md` → 0 | `flow/SKILL.md` `## setup` and the `setup.detect` / `setup.apply` orders. Its tail trigger has fired: `review-hardening` is DONE in the root plan, so the unit is no longer conditional |
+
+Assumptions retired without replacement, kept here so they are not re-derived:
+
+- `flow/contract.md` (units 18, 21, 22, 23) — the single-file skill has `## Contract` and
+  `## Delegation protocol`; no contract file ships and nothing reads one.
+- `flow/{feature,strategy,verify,quick,compound,setup}.md` (units 23, 24, 28) — one
+  `flow/SKILL.md` carries all six procedures.
+- `flow/tests/evals/` and the selection-eval harness (unit 18) — no such directory exists.
+- `flow/reference/deps.json` `required_by` (unit 22) — already `strategy.*`, `feature.*`,
+  `quick.*`; nothing to change.
+- `flow/reference/host-surfaces.json` `$comment` (unit 22) — it cites `tech.md`'s host
+  surface contract, not `docs/spec/platform/adapter-contract.md`.
+- The 13-state indent pin (unit 22) — `flow/state-machine.json` now has 12 state keys.
+- `flow/feature.md`'s "create a todo for EACH numbered step" and the `announce:` / `COPY
+  these` delegate-block grammar (unit 23) — the delegate-block format left the skill; the
+  orders blocks are the format now.
+
+Unit 19 is not classified here: its prose gate block is the owner's ruling under F7 and
+[D27](../../decisions/d27-the-writer-is-the-gate.md). Its row keeps the pending token and
+says so. Units 29–31 are the closeout and are untouched by this reconciliation.
 
 ---
 
@@ -189,7 +217,7 @@ test in the named unit.
 - Tracks run in `idle`. In `idle` the policy allows `docs/spec/features/*`, warns on `src/*`, `tests/*`, `AGENTS.md`, and blocks the hubs and `lessons.md`. No track writes a hub, `lessons.md` or the feature folder.
 - `sr/close`: `idle → feature.design skill-revision → feature.plan → feature.impl` (the plan gate: the orchestrator adds `confirm` only because your human partner approved this plan in chat; record the approval message in `flow/evidence/skill-revision-records.md` and the PR) → unit 29 and the tail run in `feature.impl` → `feature.verify` (unit 30) → ship gate: show the unit-30 receipt and stop; after your human partner approves in chat, `feature.compound` (unit 31) → `idle`.
 - Merging: the orchestrator rebases a track branch onto current `villain/vibe` (the port keeps committing there), runs the track's suites, then merges. On a conflict in a hunk the track does not own, keep the other side.
-- Track D gate (decidable): Track D merges only after `git log --oneline -E --grep 'rh/(4|7|19) ' villain/vibe` lists all three port commits, because those port units edit `flow/tests/run.sh` blocks that Track D rebases over. Until then D waits; the other tracks do not depend on D.
+- Track D gate (decidable, **satisfied**): it waited for the port's `rh/(4|7|19)` commits, which edit `flow/tests/run.sh` blocks Track D rebases over. `review-hardening` is DONE in the root plan, so the gate is open and Track D is ungated.
 
 ---
 
@@ -201,9 +229,9 @@ test in the named unit.
 | A spec skill | 2 → 3 → 4 → 5 → 6 → 7 | `spec/SKILL.md`, `spec/using-spec/SKILL.md`, `spec/agents/*.md`, `spec/reference/{setup,layered}.md` (new), `spec/tests/run.sh` (Track A functions), `spec/tests/agents.sh`, `spec/tests/pressure/**`, `spec/tests/evals/**`, `crates/vibe-spec/tests/hook_session.rs` (`skill_is_within_budget` only, unit 7), `tests/skills/cases/spec-skill.sh` |
 | B spec docs | 8 → 9 → 10 → 11 | `spec/tests/run.sh` (Track B functions), `spec/feature.md`, `spec/strategy.md`, `spec/reference/{product,tech,design,plan}.md`, `spec/reference/templates/**`, `spec/README.md`, `spec/AGENTS.md`, `tests/skills/cases/spec-docs.sh` |
 | C spec tool | 12 → 13 → 14 → 15 → 16 → 17 | `crates/vibe-spec/src/{main,lessons,scan_merges,promote,list_specs,drift,hook,root}.rs` (named functions), `crates/vibe-spec/src/templates/init/**`, `crates/vibe-spec/src/templates/agents-fragment.md`, `crates/vibe-spec/tests/{cli,lessons,list_specs,drift,hook_session,init,scan_merges,promote}.rs`, `crates/vibe-parity/src/corpus_spec.rs` (new lessons case), `tests/parity/spec.json`, `tests/parity/corpus/spec/**` (regenerated, never hand-edited), `tests/skills/cases/spec-tool.sh` |
-| D flow skill | 18 → 19 → 20 → 21 → 22 → 23 → 24 | `flow/SKILL.md`, `flow/contract.md` (new), `flow/{feature,quick,verify,compound,strategy}.md`, `flow/state-machine.json`, `flow/reference/{deps,host-surfaces}.json`, `flow/engine/tests/orders.test.mjs` (pins only), `flow/tests/run.sh` (except the port's blocks), `flow/tests/{pressure,evals}/**`, `.claude/commands/flow.md`, `.opencode/commands/flow.md`, `factory-plugin/commands/flow.md`, `tests/skills/cases/flow.sh` |
+| D flow skill | 18 → 19 → 20 → 21 → 22 → 23 → 24 | `flow/SKILL.md` (frontmatter, `## Contract`, the six flow sections, the orders blocks, the doctrine block), `flow/state-machine.json`, `flow/scripts/doctrine.sh`, `flow/engine/tests/orders.test.mjs` (pins only), `flow/tests/run.sh`, `.claude/commands/flow.md`, `.opencode/commands/flow.md`, `factory-plugin/commands/flow.md`, `tests/skills/cases/flow.sh` |
 | E instructions + docs | 25 → 26 → 27 | `flow/content/blocks/delegation/**`, `flow/content/vibe.default.json`, `vibe.json`, `flow/reference/templates/AGENTS.md`, `AGENTS.md`, `README.md`, `flow/README.md`, `flow/AGENTS.md`, `tests/skills/cases/docs.sh` |
-| Tail (conditional) | 28 | `flow/setup.md` |
+| Tail | 28 | `flow/SKILL.md` (`## setup` and the two setup orders), `tests/skills/cases/flow.sh` |
 | Close | 29 → 30 → 31 | 29: any file, for straggler fixes; `tests/skills/cases/sweep.sh`. 31: `docs/spec/**` |
 
 **Overlap table**
@@ -215,15 +243,15 @@ test in the named unit.
 | `CHANGELOG.md` | every track, the port | each track rewrites only its own stub line; never touch the port's bullets |
 | `docs/spec/plan.md` | unit 1, unit 31, the port (step 0, unit 14) | the first writer creates `## Branch work` with the header `\| Feature \| Scope \| Status \|`, the other appends its row; keep both rows on conflict |
 | `AGENTS.md` | E (26: managed block via merge; 27: user-owned sections) | unit 26 merges first, unit 27 edits only text outside the markers |
-| `flow/setup.md` | the port (unit 3), tail unit 28 | unit 28 runs only after the port's unit-3 (`rh.3`) commit is on `villain/vibe` |
+| `flow/setup.md` | tail unit 28 (re-targeted to `flow/SKILL.md` `## setup`) | the file no longer exists; the port's unit-3 commit is merged, so the wait it named is over |
 | `flow/tests/adapters/run.sh` | the port | not edited; D keeps its tokens; units 20 and 22 run it read-only |
-| `flow/tests/run.sh` | D (units 18-24); the port (unit 4 regen sandboxes :690, :759, :1874; unit 7 `spec-v04/p4` pin :1255-1263; unit 19 matcher block :1270-1290) | the port's three units land first (Track D gate); D rebases and keeps both sides |
+| `flow/tests/run.sh` | D (units 18-24); the port (unit 4 regen sandboxes :690, :759, :1874; unit 7 `spec-v04/p4` pin :1255-1263; unit 19 matcher block :1270-1290) | the port's units are merged; D rebases onto them and keeps both sides |
 | `flow/README.md` | E (unit 27); the port (unit 4: the "temp + rename / never clobber" line) | keep both sides |
 | `AGENTS.md` `vibe:active-rules` block | generated by `regen-active-rules.sh` (port unit 14, unit 31) | on conflict take either side, then re-run the script |
 | `crates/vibe-spec/tests/hook_session.rs` | A (unit 7: `skill_is_within_budget`), C (unit 17: `no_root_still_routes`) | each unit edits only its named test; keep both sides |
 | `tests/run.sh` | unit 1 | the suite list only |
 
-**Merge order:** 1 → C → A → B → E → D (after the Track D gate) → 28 (on the trigger) → 29 → 30 → 31.
+**Merge order:** 1 → C → A → B → E → D (gate satisfied) → 28 (trigger fired) → 29 → 30 → 31.
 C first: A and B describe its messages, and B's lesson-format test needs whole-tag
 matching. A before B: B points to `SKILL.md` § Wrap-up and `reference/layered.md`.
 E before D: D's tier pin reads E's `delegation.subagents` text. Cross-track
@@ -266,7 +294,7 @@ CHANGELOG.md                         # ### skill-revision with stub lines A–E,
 **Steps:**
 
 - [ ] Worktree `sr/setup`; cursor to `strategy.spec skill-revision` (Worktrees and cursors). Invoke `Skill(spec)`.
-- [ ] Baseline, before any edit, saved to `flow/evidence/skill-revision-baseline.md` (gitignored): `bash tests/run.sh` per-suite counts; `cargo run -q --locked -p vibe-spec -- validate --strict`; `-- check-drift; echo rc=$?`; `bash tests/parity/run.sh`; `./build-plugin.sh --check`; `bash spec/tests/plugin-validate.sh`; `wc -w spec/SKILL.md` (1718); the `using-spec` body word count as `hook_session.rs` counts it (150; `wc -w` on the whole file gives 175); words of `flow/SKILL.md` outside blocks (450; 1197 whole file); the orders byte table for all 13 states, measured as the flow suite does (`flow/tests/run.sh:414-422`: `orders.sh <state>` with no cursor, so `<feature>` stays literal; the `sr/setup` worktree has no cursor until the step below); the `docs/spec/plan.md` tail (does `## Branch work` exist?).
+- [ ] Baseline, before any edit, saved to `flow/evidence/skill-revision-baseline.md` (gitignored): `bash tests/run.sh` per-suite counts; `cargo run -q --locked -p vibe-spec -- validate --strict`; `-- check-drift; echo rc=$?`; `bash tests/parity/run.sh`; `./build-plugin.sh --check`; `bash spec/tests/plugin-validate.sh`; `wc -w spec/SKILL.md` (1718); the `using-spec` body word count as `hook_session.rs` counts it (150; `wc -w` on the whole file gives 175); words of `flow/SKILL.md` outside blocks (450; 1197 whole file); the orders byte table for all 12 states, measured as the flow suite does (`flow/tests/run.sh:414-422`: `orders.sh <state>` with no cursor, so `<feature>` stays literal; the `sr/setup` worktree has no cursor until the step below); the `docs/spec/plan.md` tail (does `## Branch work` exist?).
 - [ ] Write failing tests in `tests/skills/cases/setup.sh`: `lint_description` on a good fixture (`Use when …`, 120 chars) → rc 0; on `Routes to … <feature>` → rc ≠ 0 with two violation lines; `lint_frontmatter` on a fixture with an extra key → names the key; `words_outside` on a fixture with a doctrine block → counts outside words only; `pressure_ok` on a RED-only fixture → rc ≠ 0; `fixed_root_hits` on `write docs/spec/plan.md` → 1 hit.
 - [ ] Run `bash tests/skills/run.sh`. Expected: fails (no `lib.sh`). Implement `lib.sh`, `run.sh` and the loader; register the suite in `tests/run.sh`.
 - [ ] Run `bash tests/skills/run.sh`, `bash tests/run.sh` and the CI shellcheck command (after `git add -N tests/skills`). Expected: skills PASS; every other suite at its baseline count; no shellcheck output.
@@ -788,6 +816,8 @@ tests/skills/cases/spec-tool.sh
 
 **Goal:** `flow/SKILL.md` gets its router parts and sheds style, precedence and tiers into `contract.md`; the description passes the lint and the selection evals.
 
+**Re-targeted (#57):** the router is the frontmatter description plus `## Contract`, `## Delegation protocol` and `## Flows`; `flow/contract.md`, `SUBAGENT-STOP`, `## Entry` and `flow/tests/evals/` are retired with no replacement. What survives is frontmatter truth pinned by a lint that is red today: `lint_description flow/SKILL.md` exits 1 with four violations.
+
 **Requirements:** R1, R11, R12, R14
 
 **Dependencies:** skill-revision/1
@@ -795,26 +825,18 @@ tests/skills/cases/spec-tool.sh
 **Files:**
 
 ```
-flow/SKILL.md                       # frontmatter; SUBAGENT-STOP; Overview; Entry; Routing with Read when; § Style/Precedence/Model tiers removed
-flow/contract.md                    # NEW, sections per tech.md § Flow contract
-flow/tests/run.sh                   # flow-legibility unit-3 tier pins → contract.md; the flow-mvp unit-3 SKILL.md `confirm` pin (:969) stays green through the orders blocks until unit 19 replaces it
-flow/tests/evals/{selection.json,RESULTS.md}
-tests/skills/cases/flow.sh
+flow/SKILL.md                       # frontmatter only: description ≤500 chars, no angle brackets, no first person, says when to use; compatibility names vibe-flow, not bash + jq
+tests/skills/cases/flow.sh          # NEW — the Track D case file every unit below extends
 ```
-
-**Interfaces:**
-
-- Produces: anchors `contract.md § Delegate blocks`, `§ Config`, `§ Model tiers`, `§ Precedence`, `§ Commits`, `§ When to stop and ask`, `§ Validate`.
 
 **Steps:**
 
-- [ ] Write failing checks: `lint_description flow/SKILL.md` rc 0; `lint_frontmatter flow/SKILL.md "name description user-invocable argument-hint allowed-tools compatibility metadata" vibe` rc 0; `compatibility` names Node and not `bash + jq`; SKILL.md has `<SUBAGENT-STOP>`, `## Entry` with steps 0–5, no `## Style`, no `## Model tiers`, no `governed`; `words_outside flow/SKILL.md` ≤800; `contract.md` has the seven sections and ≤150 lines; tier pins `feature-dev:code-architect` → opus, `feature-dev:code-explorer` → sonnet, `feature-dev:code-reviewer` → opus live in `contract.md`.
-- [ ] [orchestrator] RED: selection evals with the old description.
-- [ ] Run the skills and flow suites. Expected FAIL.
-- [ ] Implement per [tech.md](tech.md) § Flow skill shape and § Flow contract.
-- [ ] Run, plus `bash spec/tests/plugin-validate.sh`. Expected PASS. [orchestrator] GREEN selection evals; record.
+- [ ] Write failing checks in the new `tests/skills/cases/flow.sh`: `lint_description flow/SKILL.md` rc 0; `lint_frontmatter flow/SKILL.md "name description user-invocable argument-hint allowed-tools compatibility metadata" vibe` rc 0 (control, green today); words outside the orders and doctrine blocks ≤800 (control, 552 today); `compatibility` does not require `jq`.
+- [ ] Run `bash tests/skills/run.sh`. Expected FAIL on the description alone.
+- [ ] Implement the frontmatter fix. Add no `contract.md`, no `SUBAGENT-STOP` and no `## Entry`.
+- [ ] Run the skills and flow suites, plus `bash spec/tests/plugin-validate.sh`. Expected PASS.
 
-**Verification:** suites green; evals recorded.
+**Verification:** `bash tests/skills/run.sh` green and `lint_description flow/SKILL.md` prints nothing. Unit 29 re-runs the same lint over every skill; it re-verifies, it does not own this fix.
 
 ---
 
@@ -851,6 +873,8 @@ tests/skills/cases/flow.sh
 
 **Goal:** `/flow` is defined once and every host follows it.
 
+**Re-targeted (#57):** the heading this unit names is now `## Contract`. The gap is live and countable: the three host command files name two different writers (`vibe-flow state set` in `.claude/commands/flow.md`, `bash .agents/skills/vibe/scripts/set-state.sh` plus the legacy `.agents/skills/vibe/state.json` in `.opencode/commands/flow.md` and `factory-plugin/commands/flow.md`), and the Claude file carries a step list the other two do not.
+
 **Requirements:** R1, R8, R10
 
 **Dependencies:** skill-revision/19
@@ -858,27 +882,28 @@ tests/skills/cases/flow.sh
 **Files:**
 
 ```
-flow/SKILL.md                       # ## Transition (/flow)
+flow/SKILL.md                       # ## Contract — the one statement of /flow
 .claude/commands/flow.md, .opencode/commands/flow.md, factory-plugin/commands/flow.md
-flow/tests/run.sh                   # flow-mvp unit-3 pins follow the text; new wrapper check
-tests/skills/cases/flow.sh
+tests/skills/cases/flow.sh          # writer-parity and wrapper checks
 ```
 
 **Steps:**
 
-- [ ] Write failing checks in `flow/tests/run.sh` (flow-mvp unit-3 block): each command file contains `§ Transition (/flow)`, `bash .agents/skills/vibe/scripts/set-state.sh <target> [feature]`, and a description passing `lint_description`; SKILL.md § Transition contains `Membership`, `confirm`, `orders.sh`, and "typed it in their own message", and its step that runs `set-state.sh` comes after the `confirm` step; the Claude file has no step list (no `Gate teeth`).
-- [ ] Run, plus `bash flow/tests/adapters/run.sh 2>&1 | grep -E 'FAIL.*host-support'` as a baseline (expected: no FAIL).
-- [ ] Implement per [tech.md](tech.md) § Flow skill shape (Transition, Command wrappers).
-- [ ] Run the skills and flow suites, the adapters grep again and `bash spec/tests/plugin-validate.sh`. Expected: PASS, no host-support FAIL.
+- [ ] Write the failing check: `grep -ho 'vibe-flow state set\|set-state\.sh' .claude/commands/flow.md .opencode/commands/flow.md factory-plugin/commands/flow.md | sort -u | wc -l` prints 1 (prints 2 today); each file's `description` passes `lint_description`; `flow/SKILL.md` `## Contract` names `confirm`, the human approval, and the cursor it writes; no command file restates a step list of its own.
+- [ ] Run `bash flow/tests/adapters/run.sh 2>&1 | grep -E 'FAIL.*host-support'` as a baseline (expected: no output — control).
+- [ ] Implement: one writer and one cursor resolution named in `## Contract`; the host files keep only their own delivery mechanics.
+- [ ] Run the skills and flow suites and the adapters grep again. Expected PASS, no host-support FAIL.
 - [ ] Application check [orchestrator]: a fresh sonnet agent with the OpenCode wrapper and SKILL.md, cursor `feature.design`, asked `/flow feature.compound`. Expected: refuses and lists `feature.plan` (and the other legal next states).
 
-**Verification:** suites green; adapter host-support legs unchanged.
+**Verification:** suites green; the writer-parity grep prints 1; adapter host-support legs unchanged.
 
 ---
 
 ### skill-revision/21 — Doctrine: root-neutral, orders recovery, gate provenance
 
 **Goal:** the doctrine names the spec root instead of a fixed path, tells the agent how to recover orders after compaction, and states who types `confirm`.
+
+**Re-targeted (#57):** the doctrine is the `<!-- vibe:doctrine -->` block in `flow/SKILL.md`, printed verbatim by `flow/scripts/doctrine.sh`. Root-neutrality already holds (the block names no fixed `docs/spec` path). The recovery half is open: `bash flow/scripts/doctrine.sh | grep -c orders.sh` prints 0, while the shipped `flow/reference/templates/AGENTS.md` still tells the reader that orders are "resolved by `orders.sh`". The provenance half is not this unit's to settle — it waits on unit 19's owner ruling under F7 and [D27](../../decisions/d27-the-writer-is-the-gate.md).
 
 **Requirements:** R2, R9
 
@@ -887,26 +912,33 @@ tests/skills/cases/flow.sh
 **Files:**
 
 ```
-flow/SKILL.md                       # doctrine block and its intro paragraph (flow:V-12 stale claims)
-flow/tests/run.sh                   # doctrine pins (kept); new recovery and provenance pins
-tests/skills/cases/flow.sh
+flow/SKILL.md                       # the <!-- vibe:doctrine --> block and its intro paragraph
+flow/scripts/doctrine.sh            # the printer; stdout stays byte-equal to the block
+flow/tests/run.sh                   # the existing doctrine pins, plus the recovery pin
+tests/skills/cases/flow.sh          # doctrine checks (unit 18 created the file)
 ```
 
 **Steps:**
 
-- [ ] Write failing checks in `flow/tests/run.sh`: `bash flow/scripts/doctrine.sh` output contains `orders.sh`, `` `X.sh` means ``, `never add \`confirm\` yourself`, and no `docs/spec/{product`; the intro paragraph has no `appends a live cursor` and no `fails if the two disagree`. The existing doctrine pins and the doctrine↔`decide` parity legs stay as they are (control).
-- [ ] Run the flow suite. Expected FAIL on the new checks only.
-- [ ] Implement the doctrine text exactly as [tech.md](tech.md) § Doctrine, and the intro paragraph: "`scripts/doctrine.sh` prints this block verbatim for the SessionStart hook (all sources, including `compact`) and prints nothing else. `flow/tests/run.sh` checks each write rule in the block against `detect-context.sh decide`."
-- [ ] Run the flow suite, `node flow/engine/tests/run.mjs doctrine parity`, and the engine suite with jq stripped (CI step). Expected PASS; `doctrine.sh` and `doctrine.mjs` stdout stay byte-equal.
-- [ ] Application check [orchestrator]: a fresh sonnet agent given only the new doctrine and a cursor at `feature.impl`, asked "continue". Expected first action: run `orders.sh`.
+- [ ] Write the failing check in `flow/tests/run.sh`: `bash flow/scripts/doctrine.sh` output contains `orders.sh` and the command that resolves the current state's orders; the block stays within its 700-byte budget (control, green today); the existing doctrine pins and the doctrine↔`decide` parity legs stay as they are (control).
+- [ ] Run the flow suite. Expected FAIL on the recovery check only.
+- [ ] Implement the recovery sentence. Add no gate-provenance line until unit 19 is ruled.
+- [ ] Run the flow suite, `node flow/engine/tests/run.mjs doctrine parity`, and the engine suite with jq stripped. Expected PASS; `doctrine.sh` and `doctrine.mjs` stdout stay byte-equal.
+- [ ] Application check [orchestrator]: a fresh sonnet agent given only the new doctrine and a cursor at `feature.impl`, asked "continue". Expected first action: run the orders resolver.
 
-**Verification:** flow and engine suites green.
+**Verification:** flow and engine suites green; `bash flow/scripts/doctrine.sh | grep -c orders.sh` prints 1.
 
 ---
 
 ### skill-revision/22 — Orders and machine sweep
 
 **Goal:** every order and machine path is root-neutral, compound follows the spec wrap-up, quick.fix may write tests, delegates are qualified, and evidence paths are real.
+
+**Premise check (2026-11-24):** still real, and narrower than written. Nothing blocks it; every check below is red or green against today's tree, measured.
+
+- red today: 4 fixed `docs/spec` paths inside the orders blocks; the `feature.compound` order names no `§ Wrap-up`; the `quick.fix` order writes `src/**` and no `tests/**`; the `feature.impl` order delegates bare `executing-plans` / `subagent-driven-development` and names `TDD`.
+- already satisfied (control): every orders block is ≤400 B (largest is `feature.verify` at 387); `flow/reference/deps.json` already lists `strategy.*`, `feature.*`, `quick.*`.
+- superseded — do not re-check: no `contract.md` to cite; `flow/state-machine.json` has 12 state keys, not 13; `flow/reference/host-surfaces.json` cites `tech.md`'s host surface contract, not `docs/spec/platform/adapter-contract.md`.
 
 **Requirements:** R2, R4, R9, R11
 
@@ -917,18 +949,16 @@ tests/skills/cases/flow.sh
 ```
 flow/SKILL.md                       # the remaining 8 orders blocks (10 change; unit 19 did feature.plan and feature.verify)
 flow/state-machine.json             # per tech.md § Machine edits; keep the 4-space state-key indent
-flow/reference/deps.json            # required_by: strategy.*, feature.*, quick.*
-flow/reference/host-surfaces.json   # $comment → docs/spec/platform/adapter-contract.md
 flow/tests/run.sh                   # spec-v04/F25 compound pin → "spec skill wrap-up"; machine path pins → <root>
-tests/skills/cases/flow.sh
+tests/skills/cases/flow.sh          # order checks (unit 18 created the file)
 ```
 
 **Steps:**
 
-- [ ] Write failing checks: `fixed_root_hits` over all orders = 0; every orders block ≤400 B; `quick.fix` orders and `writes` contain `tests/**`; `feature.compound` orders contain `§ Wrap-up`, `superpowers:finishing-a-development-branch` and not `git rm`; no `TDD`; every orders block that names a superpowers skill either prefixes `superpowers:` or carries `(all superpowers:)`; orders cite the contract as `.agents/skills/vibe/contract.md`, never a bare `contract.md`; `grep -cE '^    "[a-z]+\.[a-z]+"[[:space:]]*:[[:space:]]*\{' flow/state-machine.json` prints 13 (the jq-less `set-state.sh` parser needs that indent); the pinned prefixes `skill=vibe · delegate executing-plans` and `skill=vibe · READ the spec root's lessons.md first` are kept (control: `bash flow/tests/adapters/run.sh 2>&1 | grep -E 'FAIL.*platform-adapters.1'` prints nothing); machine `$comment` defines `<root>`; `feature.verify.writes` is the evidence path.
+- [ ] Write failing checks: `fixed_root_hits` over all orders = 0 (prints 4 today); every orders block ≤400 B (control); `quick.fix` orders and `writes` contain `tests/**` (absent today); `feature.compound` orders contain `§ Wrap-up`, `superpowers:finishing-a-development-branch` and not `git rm`; no `TDD` in any orders block; every orders block that names a superpowers skill either prefixes `superpowers:` or carries `(all superpowers:)`; `grep -cE '^    "[a-z]+\.[a-z]+"[[:space:]]*:[[:space:]]*\{' flow/state-machine.json` prints 12 (the jq-less `set-state.sh` parser needs that indent); the pinned prefixes `skill=vibe · delegate executing-plans` and `skill=vibe · READ the spec root's lessons.md first` are kept (control: `bash flow/tests/adapters/run.sh 2>&1 | grep -E 'FAIL.*platform-adapters.1'` prints nothing); machine `$comment` defines `<root>`; `feature.verify.writes` is the evidence path.
 - [ ] Run the skills and flow suites. Expected FAIL.
 - [ ] Implement per [tech.md](tech.md) § Orders and § Machine edits. The machine `delegates` arrays keep their names (no qualification there, so `check-skills.sh` needs no re-check). Edit `state-machine.json` by hand or with `jq` at its default 2-space indent, which keeps state keys at 4 spaces.
-- [ ] Run the skills, flow and full engine suites, `node flow/engine/tests/run.mjs machine parity policy orders`, and the port's adapters section `=== flow-mvp — set-state.sh jq-optional parity ===` read-only (it runs the jq and the no-jq leg): `bash flow/tests/adapters/run.sh 2>&1 | sed -n '/set-state.sh jq-optional parity/,/^===/p' | grep FAIL`. Expected PASS, and no output from the grep. Record the byte table for all 13 states, measured as `flow/tests/run.sh:414-422` does (no cursor, literal `<feature>`), in `flow/evidence/skill-revision-records.md`.
+- [ ] Run the skills, flow and full engine suites, `node flow/engine/tests/run.mjs machine parity policy orders`, and the port's adapters section `=== flow-mvp — set-state.sh jq-optional parity ===` read-only (it runs the jq and the no-jq leg): `bash flow/tests/adapters/run.sh 2>&1 | sed -n '/set-state.sh jq-optional parity/,/^===/p' | grep FAIL`. Expected PASS, and no output from the grep. Record the byte table for all 12 states, measured as `flow/tests/run.sh:414-422` does (no cursor, literal `<feature>`), in `flow/evidence/skill-revision-records.md`.
 
 **Verification:** suites green; byte table recorded.
 
@@ -938,6 +968,8 @@ tests/skills/cases/flow.sh
 
 **Goal:** the feature and strategy procedures follow the contract, ask at the gate, keep the impl mode on disk, and link to spec in every layout.
 
+**Re-targeted (#57):** `flow/feature.md` and `flow/strategy.md` are gone; their intent lives in `flow/SKILL.md` `## feature` / `## strategy` and the `feature.*` / `strategy.*` orders. The delegate-block grammar (`announce:`, `COPY these`) left the skill with them — the orders blocks are the format now. Live gaps: the gate's impl-mode choice is named in `flow/state-machine.json` ("human approves plan units + picks impl mode") and nowhere in the skill (`grep -c 'impl mode' flow/SKILL.md` prints 0), and no line says where the mode is recorded on disk.
+
 **Requirements:** R11
 
 **Dependencies:** skill-revision/22
@@ -945,26 +977,27 @@ tests/skills/cases/flow.sh
 **Files:**
 
 ```
-flow/feature.md, flow/strategy.md
-flow/tests/run.sh                   # spec-v04/F25 "fallback → `docs/spec/features/<name>/` only when" → <feature>/spec-root wording
-tests/skills/cases/flow.sh
+flow/SKILL.md                       # ## feature, ## strategy, and the feature.plan / strategy.spec orders
+tests/skills/cases/flow.sh          # procedure checks (unit 18 created the file)
 ```
 
 **Steps:**
 
-- [ ] Write failing checks: no `announce:` line and no `COPY these`; every Delegate block names only `model/inject/output/redirect/skip`; each file links `contract.md`; links resolve in source and in `.agents/skills/vibe/` (spec links are `../spec/…`); no `Output density`, `the user`, `<name>`, `feature-dev Phase 3`, `trust the agent`; `feature.md` has `**Impl mode:**` and `**Branch:**` written into the plan header at the gate and "Create a todo for EACH numbered step"; `strategy.md` step 4 says "Lessons wait for step 5" and validate per `contract.md § Validate`.
-- [ ] Run. Expected FAIL.
-- [ ] Implement, one file at a time. Plan-gate line: `its execution-choice question is asked AT the plan gate: show the plan, ask for approval and the impl mode, end your turn; after your human partner approves, record the mode and run /flow feature.impl <feature> confirm`.
-- [ ] Application check [orchestrator]: a fresh sonnet agent with SKILL.md, `contract.md` and `feature.md`, cursor `feature.plan`, plan written. Expected actions in order: show plan, ask approval + mode, end turn; no cursor move.
+- [ ] Write failing checks: `grep -c 'impl mode' flow/SKILL.md` ≥ 1 and the plan gate says where the mode is recorded; the `feature.plan` order contains the human gate and `--confirm`; `## strategy` says lessons wait for the spec step and validate against the root; `## feature` links spec, not a bare `spec.md`; no `announce:` line and no `COPY these` (control — already absent).
+- [ ] Run `bash tests/skills/run.sh`. Expected FAIL.
+- [ ] Implement in the two sections and their two orders. Add no `contract.md` link; there is no such file.
 - [ ] Run the skills and flow suites. Expected PASS.
+- [ ] Application check [orchestrator]: a fresh sonnet agent with SKILL.md, cursor `feature.plan`, plan written. Expected actions in order: show plan, ask approval + mode, end turn; no cursor move.
 
-**Verification:** suites green; application record.
+**Verification:** suites green; the impl-mode grep prints 1 or more; application record.
 
 ---
 
 ### skill-revision/24 — `verify.md`, `quick.md`, `compound.md`
 
 **Goal:** verify writes the receipt last and caps the fix loop; quick matches the machine; compound points to the spec wrap-up.
+
+**Re-targeted (#57):** `flow/{verify,quick,compound}.md` are gone; their intent lives in `flow/SKILL.md` `## verify` / `## quick` / `## compound` and the three orders blocks. Live gaps, measured: no fix-loop cap (`grep -c 'third return' flow/SKILL.md` prints 0), no `§ Wrap-up` pointer (`Wrap-up` prints 0), no reviewer-routing confidence rule. Unit 22 owns the order text; this unit owns the prose.
 
 **Requirements:** R4, R11
 
@@ -973,19 +1006,19 @@ tests/skills/cases/flow.sh
 **Files:**
 
 ```
-flow/verify.md, flow/quick.md, flow/compound.md
-tests/skills/cases/flow.sh
+flow/SKILL.md                       # ## verify, ## quick, ## compound
+tests/skills/cases/flow.sh          # procedure checks (unit 18 created the file)
 ```
 
 **Steps:**
 
-- [ ] Write failing checks: `verify.md` step order Verify → Review → On failure → Receipt → Report; a rule "On the third return for the same finding, stop looping…"; reviewer routing "confidence ≥80; ignore severity labels"; no `steal from GSD`; `quick.md` names `tests/**` in the fix surface; `compound.md` contains `Wrap-up: spec SKILL.md § Wrap-up.` and keeps only the digest, the receipt, the finishing delegate (last) and `set-state.sh idle`; no `CODE IS TRUTH`; no `suggest-superpowers`.
-- [ ] Run. Expected FAIL.
-- [ ] Implement, one file at a time. Lesson format line everywhere: "format: spec `strategy.md` § Lessons".
-- [ ] Application check [orchestrator]: a fresh sonnet agent at `feature.compound` with `compound.md` and spec SKILL.md. Expected actions: promote dry run first, finishing-a-development-branch last.
-- [ ] Run the skills and flow suites. Expected PASS. Rewrite Track D's CHANGELOG line.
+- [ ] Write failing checks: `## verify` keeps Verify → Review → On failure → Receipt → Report and carries the rule "on the third return for the same finding, stop looping"; reviewer routing says confidence ≥80 and ignores severity labels; `## quick` names `tests/**` in the fix surface and matches the machine's `quick.*` states; `## compound` points at spec `SKILL.md` § Wrap-up, keeps `superpowers:finishing-a-development-branch` last and `idle` last of all; no `steal from GSD`, no `CODE IS TRUTH`, no `suggest-superpowers` (control — all absent today).
+- [ ] Run `bash tests/skills/run.sh`. Expected FAIL.
+- [ ] Implement, one section at a time.
+- [ ] Application check [orchestrator]: a fresh sonnet agent at `feature.compound` with SKILL.md. Expected actions: promote dry run first, `finishing-a-development-branch` last.
+- [ ] Run the skills and flow suites. Expected PASS.
 
-**Verification:** suites green.
+**Verification:** suites green; the fix-loop and wrap-up greps print 1 or more.
 
 ---
 
@@ -1074,27 +1107,31 @@ tests/skills/cases/docs.sh
 
 ## Tail
 
-### skill-revision/28 — `flow/setup.md` (conditional)
+### skill-revision/28 — setup, in `flow/SKILL.md` (was `flow/setup.md`)
 
 **Goal:** setup matches the cursor rule, the doctor script and the merge script's WARN.
 
+**Re-targeted (#57):** `flow/setup.md` is gone; its intent lives in `flow/SKILL.md` `## setup` and the `setup.detect` / `setup.apply` orders. The tail trigger has fired — `review-hardening` is DONE in the root plan — so the unit is no longer conditional. Live gaps, measured: neither the section nor the orders mention `doctor.sh` or the `check-skills.sh` loop (`grep -c 'doctor.sh' flow/SKILL.md` prints 0), the four ignore lines, or the `merge-agents.sh` WARN.
+
 **Requirements:** R11
 
-**Dependencies:** Tail trigger fired; skill-revision/24
+**Dependencies:** skill-revision/24; tail trigger satisfied (`review-hardening` DONE)
 
 **Files:**
 
 ```
-flow/setup.md
-tests/skills/cases/sweep.sh
+flow/SKILL.md                       # ## setup and the setup.detect / setup.apply orders
+tests/skills/cases/flow.sh          # setup checks (unit 18 created the file)
 ```
 
 **Steps:**
 
-- [ ] Write failing checks: no `cp` of `state.example.json`; seeds with `bash .agents/skills/vibe/scripts/set-state.sh idle`; lists the four gitignore lines (`.agents/skills/vibe/state.json`, `.agents/skills/vibe/evidence/`, `.agents/skills/vibe/warnings.log`, `.vibe/last-inject`); Detect runs `doctor.sh` and the `check-skills.sh` loop; spec scaffold "bare spec root → `vibe-spec init`; without the binary, the legacy `setup.sh` (it seeds the legacy root; every later step then uses that root)"; on merge-agents WARN "show both and ask"; "Create a todo for EACH numbered step"; no `the user`; the port's line ("refuses to replace a symlink or a real file") kept.
-- [ ] Run. Expected FAIL. Implement. Run the skills, flow and adapters suites. Expected PASS.
+- [ ] Write failing checks: `## setup` seeds the cursor through the writer and never copies `state.example.json`; it names the four ignore lines (`flow/state.json`, `flow/evidence/`, `flow/warnings.log`, `.vibe/last-inject`); the detect order names `doctor.sh` and the `check-skills.sh` loop; the spec scaffold says "bare spec root → `vibe-spec init`; without the binary, the legacy `setup.sh` (it seeds the legacy root; every later step then uses that root)"; a `merge-agents.sh` WARN means "show both and ask"; no `the user` (control).
+- [ ] Run `bash tests/skills/run.sh`. Expected FAIL.
+- [ ] Implement in the section and the two orders. Keep the port's line about refusing to replace a symlink or a real file.
+- [ ] Run the skills, flow and adapters suites. Expected PASS.
 
-**Verification:** suites green.
+**Verification:** suites green; `grep -c 'doctor.sh' flow/SKILL.md` prints 1 or more.
 
 ---
 
