@@ -13,6 +13,44 @@ permissions:
   contents: read
 
 jobs:
+  # A markdown-only PR cannot break Rust or bash 3.2, yet the macOS and Windows
+  # legs cost up to ~2 h of runner time each — #122 changed two .md files and
+  # still queued six Rust legs. Classify the diff once, then let those two
+  # families skip when nothing executable changed. `push` to main always runs
+  # everything: this is a PR-cost optimisation, never a way to land unverified
+  # code. The classifier is deliberately conservative — anything not matched as
+  # prose counts as code.
+  changes:
+    name: scope
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.diff.outputs.docs_only }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify changed files
+        id: diff
+        run: |
+          base='${{ github.event.pull_request.base.sha }}'
+          head='${{ github.event.pull_request.head.sha }}'
+          changed=$(git diff --name-only "$base" "$head")
+          echo "changed files:"
+          printf '%s\n' "$changed"
+          non_docs=$(printf '%s\n' "$changed" \
+            | grep -vE '^docs/|\.md$|^LICENSE$|^\.gitignore$' \
+            | grep -c . || true)
+          echo "non-docs files: $non_docs"
+          if [ "$non_docs" -eq 0 ]; then
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          fi
+
   check:
     name: shellcheck + suites + validate
     runs-on: ubuntu-latest
@@ -228,6 +266,8 @@ jobs:
     # `bash` resolves to on PATH — GitHub's macOS runners also carry a
     # Homebrew bash 5+ that would silently mask a bash-3.2 regression).
     name: macOS (bash 3.2) — suites
+    needs: [changes]
+    if: always() && (github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true')
     runs-on: macos-latest
     steps:
       - name: Checkout
@@ -299,6 +339,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         toolchain: [stable, '1.88']
+    needs: [changes]
+    if: always() && (github.event_name != 'pull_request' || needs.changes.outputs.docs_only != 'true')
     runs-on: ${{ matrix.os }}
     env:
       RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
