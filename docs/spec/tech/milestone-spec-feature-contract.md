@@ -48,7 +48,7 @@ Each is an explicit refusal naming both candidates; none is resolved by preceden
 
 ## Where the tree stands today, at `952ed3d` — these gaps are real
 
-- `feature`/`plan` read superpowers first, then `features/<f>/` (`crates/vibe-spec/src/query.rs`), never look at `openspec/`, and let the newest file win without an ambiguity check. A miss exits 1 as `vibe-spec feature: no feature <f>`, naming no root.
+- `feature`/`plan` read superpowers first, then `features/<f>/` (`crates/vibe-spec/src/query.rs`), never look at `openspec/`, and let the newest file win without an ambiguity check. A `feature` miss exits 1 as `vibe-spec feature: no feature <f>` (`query.rs:353`); a `plan` miss exits 1 as `vibe-spec plan: no plan for feature <f>` (`query.rs:114`). Neither names a root.
 - `export|import --openspec` already carry the five feature files byte for byte (`openspec.rs:20-26`). Import refuses a multi-capability change, requirements edited on the OpenSpec side and an edited `tasks.md`; export refuses duplicate requirements, a MODIFIED block that drops scenarios, and `RENAMED`. But `plan_from_tasks` (`openspec.rs:687`) accepts `- [`/`* [`/`+ [` and renumbers units to `<f>/<i>`, so an OpenSpec-side number does not survive. The interchange half exists; selection, validation and closeout do not.
 - D45 and the skill reference say `.vibe/spec.json` `"featureLayer": "vibe"` selects the fallback; no Rust code reads that key, so selection is artifact absence alone.
 - `valid_name` (`query.rs:27-33`) admits a trailing hyphen that `validate` rejects for topic docs (`validate.rs:565-570`).
