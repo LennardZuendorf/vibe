@@ -3,7 +3,7 @@ type: hub
 scope: implementation
 covers: feature sequence, binary gates, validation criteria, open decisions
 children: [concepts/product-milestones.md, concepts/feature-sequence.md, concepts/shared-feature-sequence.md, parts/spec/concepts/spec-feature-sequence.md, parts/flow/concepts/flow-feature-sequence.md, parts/instruct/concepts/instruct-feature-sequence.md, parts/cli/concepts/cli-feature-sequence.md, concepts/issue-catalog.md, concepts/feature-boundaries.md, concepts/delivered-features.md, concepts/spec-vs-implementation.md, decisions/README.md, questions/resolved-open-items.md]
-updated: 2026-11-21
+updated: 2026-11-25
 ---
 
 # vibe — Implementation Plan
@@ -17,6 +17,7 @@ Rust Instruct is active planning again. The trusted Flow runner precedes TUI wor
 ## Sequence
 
 - [Product milestones](concepts/product-milestones.md) — current outcomes, gates and GitHub tracking
+- [Trusted Spec workflow](concepts/milestone-spec-workflow.md) — milestone 1 requirements; the [backend contract](tech/milestone-spec-feature-contract.md) fixes the two-backend lifecycle for [#108](https://github.com/LennardZuendorf/vibe/issues/108)
 
 - [Feature Sequence](concepts/feature-sequence.md) — order, binary gates, tracks, active focus
 - [Shared rows](concepts/shared-feature-sequence.md) — F3, F4, F21 to F24

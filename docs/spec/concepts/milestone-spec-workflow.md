@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-11-21
+updated: 2026-11-25
 ---
 
 # Trusted Spec workflow
@@ -35,6 +35,11 @@ Closeout SHALL distinguish long-lived project knowledge from feature artifacts, 
 
 ## Acceptance scope
 
-Run real-feature drills for both backends. Include ambiguous selection, missing artifacts, invalid task state and conflict at closeout. The durable-root decision remains open in [#104](https://github.com/LennardZuendorf/vibe/issues/104).
+The [backend contract](../tech/milestone-spec-feature-contract.md) now fixes
+selection, identity, task queries, resume, verification and closeout for both
+backends, plus the mixed-state refusals, and records where the tree still falls
+short so [#107](https://github.com/LennardZuendorf/vibe/issues/107) has a
+definition to build against. Run real-feature drills for both backends. Include
+ambiguous selection, missing artifacts, invalid task state and conflict at closeout. The durable-root decision remains open in [#104](https://github.com/LennardZuendorf/vibe/issues/104).
 
 [Milestones](product-milestones.md) · [Technical contract](../tech/milestone-spec-feature-contract.md)
