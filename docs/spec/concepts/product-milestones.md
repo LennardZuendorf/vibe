@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-11-22
+updated: 2026-11-25
 ---
 
 # Product milestones
@@ -17,7 +17,7 @@ Back to [the plan](../plan.md). The owner approved this direction on 2026-11-21.
 
 | Milestone | Completion evidence | Issues |
 |---|---|---|
-| [1. Trusted Spec workflow](https://github.com/LennardZuendorf/vibe/milestone/7) | Skill regression exercises against real features. Common create, validate, query, resume, verify and closeout behavior across selected native backends. Keep durable authority explicit. | Skill [#103](https://github.com/LennardZuendorf/vibe/issues/103), durable decision [#104](https://github.com/LennardZuendorf/vibe/issues/104), lifecycle [#108](https://github.com/LennardZuendorf/vibe/issues/108), native OpenSpec [#107](https://github.com/LennardZuendorf/vibe/issues/107) |
+| [1. Trusted Spec workflow](https://github.com/LennardZuendorf/vibe/milestone/7) | Skill regression exercises against real features. Common create, validate, query, resume, verify and closeout behavior across selected native backends. Keep durable authority explicit. | Skill [#103](https://github.com/LennardZuendorf/vibe/issues/103), durable decision [#104](https://github.com/LennardZuendorf/vibe/issues/104), lifecycle [#108](https://github.com/LennardZuendorf/vibe/issues/108) (contract agreed, [#124](https://github.com/LennardZuendorf/vibe/pull/124)) with its contract tests in [#126](https://github.com/LennardZuendorf/vibe/issues/126), native OpenSpec [#107](https://github.com/LennardZuendorf/vibe/issues/107) |
 | [2. Autonomous Flow execution](https://github.com/LennardZuendorf/vibe/milestone/8) | One host runs an approved single-repo plan, dispatches agents, verifies trusted candidate evidence, retries within limits, resumes and stops at the human gates. | Trusted verification [#101](https://github.com/LennardZuendorf/vibe/issues/101), runner [#106](https://github.com/LennardZuendorf/vibe/issues/106), advisory signals [#100](https://github.com/LennardZuendorf/vibe/issues/100) |
 | [3. Rust Instruct and steering](https://github.com/LennardZuendorf/vibe/milestone/9) | Versioned Spec and Flow provider API, tested Rust composition and turn guidance on a reference host. Worktree-aware, deterministic managed lesson refresh in `AGENTS.md`. | Provider and delivery [#83](https://github.com/LennardZuendorf/vibe/issues/83)–[#86](https://github.com/LennardZuendorf/vibe/issues/86), managed lessons [#32](https://github.com/LennardZuendorf/vibe/issues/32) |
 | [4. Feature workspaces across repos](https://github.com/LennardZuendorf/vibe/milestone/10) | Idempotent config across checkouts. One feature workspace joins independent worktrees for `indexed` and its web repo, sets up the selected spec backend, resumes and verifies both candidates, and stops for ship approval. | Config [#105](https://github.com/LennardZuendorf/vibe/issues/105), lifecycle [#44](https://github.com/LennardZuendorf/vibe/issues/44)–[#45](https://github.com/LennardZuendorf/vibe/issues/45), grouped workspace [#109](https://github.com/LennardZuendorf/vibe/issues/109), proof [#111](https://github.com/LennardZuendorf/vibe/issues/111) |
@@ -25,7 +25,7 @@ Back to [the plan](../plan.md). The owner approved this direction on 2026-11-21.
 
 ## Gates and parallel work
 
-- Agree on the Spec lifecycle contract before binding the runner to it. Trusted verification gates the runner. Rust Instruct can proceed alongside the runner after agreeing on the provider boundary.
+- The [Spec lifecycle contract](../tech/milestone-spec-feature-contract.md) is agreed; the runner binds to it. Trusted verification gates the runner. Rust Instruct can proceed alongside the runner after agreeing on the provider boundary.
 - Prove the reference installer early. Full distribution requires supported versions and a host-specific verification matrix. Hook trust and consent stay host-owned. The TUI follows the working runner and advisory signals.
 - Prove the grouped workspace and the integrated two-repo workflow with separate Git histories. The selected artifact backend has one owner per feature.
 - Compare Git-backed and managed remote configuration in [#118](https://github.com/LennardZuendorf/vibe/issues/118). This discovery covers instructions, MCP definitions and pinned plugin manifests, with local credential references. It runs alongside local delivery.
@@ -37,7 +37,7 @@ Review this roadmap as planning and specification. Decide each open question in 
 
 | Decide by | Decision | Owning issues |
 |---|---|---|
-| Native OpenSpec feature design | Agree on the shared lifecycle, supported schemas and versions, and one writer for durable promotion. Keep the current root while the owner reviews any replacement. Skill review can use Superpowers now. | [#103](https://github.com/LennardZuendorf/vibe/issues/103), [#104](https://github.com/LennardZuendorf/vibe/issues/104), [#108](https://github.com/LennardZuendorf/vibe/issues/108), [#107](https://github.com/LennardZuendorf/vibe/issues/107) |
+| Native OpenSpec feature design | Agree supported schemas and versions, and one writer for durable promotion, under the agreed shared lifecycle. Keep the current root while the owner reviews any replacement. Skill review can use Superpowers now. | [#103](https://github.com/LennardZuendorf/vibe/issues/103), [#104](https://github.com/LennardZuendorf/vibe/issues/104), [#107](https://github.com/LennardZuendorf/vibe/issues/107) |
 | Autonomous Flow design | Agree on the trusted evidence producer, approval binding and the reference host's scope enforcement. Choose retry and recovery policy in the runner design. | [#101](https://github.com/LennardZuendorf/vibe/issues/101), [#106](https://github.com/LennardZuendorf/vibe/issues/106) |
 | Instruct integration design | Set the provider interface, command policy, delivery rules, and behavior when a host lacks a required capability. | [#83](https://github.com/LennardZuendorf/vibe/issues/83), [#84](https://github.com/LennardZuendorf/vibe/issues/84), [#85](https://github.com/LennardZuendorf/vibe/issues/85), [#86](https://github.com/LennardZuendorf/vibe/issues/86) |
 | Grouped workspace design | Set feature-artifact ownership, member references, and partial-create recovery. Verify worktree config on its existing scope. | [#105](https://github.com/LennardZuendorf/vibe/issues/105), [#109](https://github.com/LennardZuendorf/vibe/issues/109) |
