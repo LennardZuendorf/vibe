@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 use vibe_core::exit;
 
-use crate::root::{Miss, Root};
+use crate::root::{FeatureLayer, Miss, Root};
 use crate::superpowers::{PLANS, SPECS};
 use crate::text::{Fences, is_date, lines, lossy, trim_space, trim_start_space};
 
@@ -68,6 +68,18 @@ fn newest(dir: &Path, feature: &str, suffix: &str) -> Option<PathBuf> {
     hits.pop().map(|n| dir.join(n))
 }
 
+/// The superpowers artifacts bound to `<name>`, in report order.
+fn superpowers_docs(project: &Path, name: &str) -> Vec<(&'static str, PathBuf)> {
+    let mut docs = Vec::new();
+    if let Some(p) = newest(&project.join(SPECS), name, "-design.md") {
+        docs.push(("design", p));
+    }
+    if let Some(p) = newest(&project.join(PLANS), name, ".md") {
+        docs.push(("plan", p));
+    }
+    docs
+}
+
 /// `path` relative to `project`, `/`-joined; the absolute path when it lies
 /// outside `project`.
 pub(crate) fn rel(project: &Path, path: &Path) -> String {
@@ -89,6 +101,36 @@ fn read_plan(cx: &crate::api::Execution<'_>, path: &Path) -> Result<Vec<u8>, (u8
     })
 }
 
+/// The layer `.vibe/spec.json` forces, for a CLI read; a bad value is a usage
+/// error naming the allowed ones.
+fn forced_layer(
+    cx: &crate::api::Execution<'_>,
+    cmd: &str,
+    project: &Path,
+) -> Result<Option<FeatureLayer>, (u8, Vec<u8>)> {
+    crate::root::feature_layer(project).map_err(|e| {
+        diag!(cx, "vibe-spec {cmd}: {e}");
+        (exit::USAGE, Vec::new())
+    })
+}
+
+/// The refusal for a forced layer that holds nothing to answer: names the
+/// selected layer, what it lacks, and what the other layer holds. A selected
+/// backend never switches.
+fn layer_refusal(cmd: &str, forced: FeatureLayer, missing: &str, other: Option<String>) -> String {
+    let mut text = format!(
+        "vibe-spec {cmd}: `.vibe/spec.json` sets `featureLayer` \"{}\" and the {} layer has no {missing}",
+        forced.key(),
+        forced.key()
+    );
+    if let Some(other) = other {
+        text.push_str(&format!(
+            "; {other} exists, and a selected layer never switches"
+        ));
+    }
+    text
+}
+
 /// `vibe-spec plan --feature <f> [--json]`.
 pub fn plan(
     cx: &crate::api::Execution<'_>,
@@ -100,7 +142,32 @@ pub fn plan(
         Ok(root) => root,
         Err(e) => return e,
     };
-    let (path, rows) = match newest(&root.project.join(PLANS), feature, ".md") {
+    let forced = match forced_layer(cx, "plan", &root.project) {
+        Ok(layer) => layer,
+        Err(e) => return e,
+    };
+    let fallback = root.dir.join("features").join(feature).join("plan.md");
+    let superpowers = match forced {
+        Some(FeatureLayer::Fallback) => None,
+        _ => newest(&root.project.join(PLANS), feature, ".md"),
+    };
+    if forced == Some(FeatureLayer::Superpowers) && superpowers.is_none() {
+        let other = fallback
+            .is_file()
+            .then(|| format!("the fallback plan {} exists", rel(&root.project, &fallback)));
+        diag!(
+            cx,
+            "{}",
+            layer_refusal(
+                "plan",
+                FeatureLayer::Superpowers,
+                &format!("plan (docs/superpowers/plans/YYYY-MM-DD-{feature}.md)"),
+                other
+            )
+        );
+        return (exit::FINDINGS, Vec::new());
+    }
+    let (path, rows) = match superpowers {
         Some(p) => {
             let rows = match read_plan(cx, &p) {
                 Ok(text) => task_rows(&text),
@@ -109,12 +176,31 @@ pub fn plan(
             (p, rows)
         }
         None => {
-            let p = root.dir.join("features").join(feature).join("plan.md");
-            if !p.is_file() {
-                diag!(cx, "vibe-spec plan: no plan for feature {feature}");
+            if !fallback.is_file() {
+                match forced {
+                    Some(forced) => {
+                        let other = match forced {
+                            FeatureLayer::Fallback => {
+                                newest(&root.project.join(PLANS), feature, ".md").map(|p| {
+                                    format!(
+                                        "the superpowers plan {} exists",
+                                        rel(&root.project, &p)
+                                    )
+                                })
+                            }
+                            FeatureLayer::Superpowers => None,
+                        };
+                        diag!(
+                            cx,
+                            "{}",
+                            layer_refusal("plan", forced, &rel(&root.project, &fallback), other)
+                        )
+                    }
+                    None => diag!(cx, "vibe-spec plan: no plan for feature {feature}"),
+                }
                 return (exit::FINDINGS, Vec::new());
             }
-            let rows = match read_plan(cx, &p) {
+            let rows = match read_plan(cx, &fallback) {
                 Ok(text) => {
                     let table = table_rows(&text);
                     if table.is_empty() {
@@ -125,7 +211,7 @@ pub fn plan(
                 }
                 Err(e) => return e,
             };
-            (p, rows)
+            (fallback, rows)
         }
     };
     if rows.is_empty() {
@@ -340,17 +426,57 @@ pub fn feature(
         Ok(root) => root,
         Err(e) => return e,
     };
-    let mut docs: Vec<(&str, PathBuf)> = Vec::new();
-    if let Some(p) = newest(&root.project.join(SPECS), name, "-design.md") {
-        docs.push(("design", p));
+    let forced = match forced_layer(cx, "feature", &root.project) {
+        Ok(layer) => layer,
+        Err(e) => return e,
+    };
+    let mut docs: Vec<(&'static str, PathBuf)> = Vec::new();
+    if forced != Some(FeatureLayer::Fallback) {
+        docs.extend(superpowers_docs(&root.project, name));
     }
-    if let Some(p) = newest(&root.project.join(PLANS), name, ".md") {
-        docs.push(("plan", p));
+    let dir = root.dir.join("features").join(name);
+    if forced == Some(FeatureLayer::Superpowers) && docs.is_empty() {
+        let other = dir
+            .is_dir()
+            .then(|| format!("the fallback folder {} exists", rel(&root.project, &dir)));
+        diag!(
+            cx,
+            "{}",
+            layer_refusal(
+                "feature",
+                FeatureLayer::Superpowers,
+                "design/plan under docs/superpowers/",
+                other
+            )
+        );
+        return (exit::FINDINGS, Vec::new());
     }
     let layer = if docs.is_empty() {
-        let dir = root.dir.join("features").join(name);
         if !dir.is_dir() {
-            diag!(cx, "vibe-spec feature: no feature {name}");
+            match forced {
+                Some(forced) => {
+                    let other = match forced {
+                        FeatureLayer::Fallback => {
+                            let held = superpowers_docs(&root.project, name);
+                            (!held.is_empty()).then(|| {
+                                let paths = held
+                                    .iter()
+                                    .map(|(_, p)| rel(&root.project, p))
+                                    .collect::<Vec<_>>()
+                                    .join(" and ");
+                                format!("the superpowers layer holds {paths}")
+                            })
+                        }
+                        FeatureLayer::Superpowers => None,
+                    };
+                    diag!(
+                        cx,
+                        "{}",
+                        layer_refusal("feature", forced, &rel(&root.project, &dir), other)
+                    )
+                }
+                None => diag!(cx, "vibe-spec feature: no feature {name}"),
+            }
             return (exit::FINDINGS, Vec::new());
         }
         for kind in FALLBACK_DOCS {
@@ -412,6 +538,7 @@ pub(crate) fn bound_files(files: &crate::documents::Files, feature: &str) -> Vec
 pub(crate) fn feature_data(
     files: &crate::documents::Files,
     name: &str,
+    forced: Option<FeatureLayer>,
 ) -> Result<Value, crate::SpecError> {
     if !valid_name(name) {
         return Err(crate::SpecError::new(
@@ -420,24 +547,46 @@ pub(crate) fn feature_data(
         ));
     }
     let mut docs = Vec::new();
-    for (prefix, suffix, kind) in [
-        ("superpowers/specs/", "-design.md", "design"),
-        ("superpowers/plans/", ".md", "plan"),
-    ] {
-        if let Some(path) = bound_files(files, name)
-            .into_iter()
-            .filter(|p| p.starts_with(prefix) && p.ends_with(suffix))
-            .max()
-        {
-            docs.push(json!({"kind":kind,"path":path}));
+    if forced != Some(FeatureLayer::Fallback) {
+        for (prefix, suffix, kind) in [
+            ("superpowers/specs/", "-design.md", "design"),
+            ("superpowers/plans/", ".md", "plan"),
+        ] {
+            if let Some(path) = bound_files(files, name)
+                .into_iter()
+                .filter(|p| p.starts_with(prefix) && p.ends_with(suffix))
+                .max()
+            {
+                docs.push(json!({"kind":kind,"path":path}));
+            }
         }
+    }
+    if forced == Some(FeatureLayer::Superpowers) && docs.is_empty() {
+        return Err(crate::SpecError::new(
+            "layer_empty",
+            format!(
+                "`.vibe/spec.json` sets `featureLayer` \"superpowers\" and the superpowers layer has no design or plan for {name}, and a selected layer never switches"
+            ),
+        ));
     }
     let layer = if docs.is_empty() {
         for kind in FALLBACK_DOCS {
             let p = format!("spec/features/{name}/{kind}.md");
             if files.contains_key(&p) {
-                docs.push(json!({"kind":kind,"path":p}));
+                docs.push(json!({"kind": kind,"path": p}));
             }
+        }
+        if docs.is_empty()
+            && let Some(forced) = forced
+        {
+            return Err(crate::SpecError::new(
+                "layer_empty",
+                format!(
+                    "`.vibe/spec.json` sets `featureLayer` \"{}\" and the {} layer has no docs for {name}, and a selected layer never switches",
+                    forced.key(),
+                    forced.key()
+                ),
+            ));
         }
         "fallback"
     } else {
@@ -454,6 +603,7 @@ pub(crate) fn feature_data(
 pub(crate) fn plan_data(
     files: &crate::documents::Files,
     name: &str,
+    forced: Option<FeatureLayer>,
 ) -> Result<Value, crate::SpecError> {
     if !valid_name(name) {
         return Err(crate::SpecError::new(
@@ -461,13 +611,39 @@ pub(crate) fn plan_data(
             "expected lowercase-kebab feature name",
         ));
     }
-    let path = bound_files(files, name)
-        .into_iter()
-        .filter(|p| p.starts_with("superpowers/plans/"))
-        .max()
-        .unwrap_or_else(|| format!("spec/features/{name}/plan.md"));
+    let fallback = format!("spec/features/{name}/plan.md");
+    let superpowers = match forced {
+        Some(FeatureLayer::Fallback) => None,
+        _ => bound_files(files, name)
+            .into_iter()
+            .filter(|p| p.starts_with("superpowers/plans/"))
+            .max(),
+    };
+    if forced == Some(FeatureLayer::Superpowers) && superpowers.is_none() {
+        return Err(crate::SpecError::new(
+            "layer_empty",
+            format!(
+                "`.vibe/spec.json` sets `featureLayer` \"superpowers\" and the superpowers layer has no plan for {name} (the fallback layer holds {fallback}), and a selected layer never switches"
+            ),
+        ));
+    }
+    let path = match superpowers {
+        Some(path) => path,
+        None => fallback,
+    };
     let text = files.get(&path).ok_or_else(|| {
-        crate::SpecError::new("plan_not_found", format!("no plan for feature {name}"))
+        if let Some(forced) = forced {
+            crate::SpecError::new(
+                "layer_empty",
+                format!(
+                    "`.vibe/spec.json` sets `featureLayer` \"{}\" and the {} layer has no plan for {name}, and a selected layer never switches",
+                    forced.key(),
+                    forced.key()
+                ),
+            )
+        } else {
+            crate::SpecError::new("plan_not_found", format!("no plan for feature {name}"))
+        }
     })?;
     let rows = if path.starts_with("superpowers/") {
         task_rows(text)

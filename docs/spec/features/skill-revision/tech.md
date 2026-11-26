@@ -3,7 +3,7 @@ type: feature-tech
 feature: skill-revision
 sibling: product.md
 parent: ../../tech.md
-updated: 2026-11-24
+updated: 2026-11-26
 ---
 
 # Feature: Skill Revision — Architecture
@@ -266,12 +266,13 @@ into the spec root; the main thread holds the approval.`
 ### Config (one file)
 
 `.vibe/spec.json` holds every key. `root.rs` rejects unknown keys only inside
-`migrate`, so new top-level keys parse today. No binary reads the three skill
-keys. The agent reads them.
+`migrate`, so new top-level keys parse today. `vibe-spec feature` and
+`vibe-spec plan` read `featureLayer`; `suggest` and `superpowers` are the agent's
+alone.
 
 | Key | Default | Effect |
 |---|---|---|
-| `featureLayer` | `"superpowers"` | `"vibe"` → fallback feature folders |
+| `featureLayer` | `"superpowers"` | `"vibe"` → fallback feature folders; `"superpowers"` pins the default; an unknown value is an error |
 | `suggest` | `true` | `false` → do not dispatch `feature-dev:code-explorer` or `feature-dev:code-architect` |
 | `superpowers` | `{}` | `{"<skill>": false}` → that delegate is unavailable; brainstorming or writing-plans false → fallback |
 

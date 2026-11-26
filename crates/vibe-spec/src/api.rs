@@ -258,11 +258,15 @@ impl SpecApi {
             SpecRequest::Drift(request) => self.read_domain(&request.selector, |context, _| {
                 crate::drift::data(context, &request)
             }),
-            SpecRequest::Feature(request) => self.read_domain(&request.selector, |_, files| {
-                crate::query::feature_data(files, &request.feature)
-            }),
-            SpecRequest::Plan(request) => self.read_domain(&request.selector, |_, files| {
-                crate::query::plan_data(files, &request.feature)
+            SpecRequest::Feature(request) => {
+                self.read_domain(&request.selector, |context, files| {
+                    let layer = self.feature_layer(context)?;
+                    crate::query::feature_data(files, &request.feature, layer)
+                })
+            }
+            SpecRequest::Plan(request) => self.read_domain(&request.selector, |context, files| {
+                let layer = self.feature_layer(context)?;
+                crate::query::plan_data(files, &request.feature, layer)
             }),
             SpecRequest::Lessons(request) => self.read_domain(&request.selector, |_, files| {
                 crate::lessons::data(
@@ -308,6 +312,17 @@ impl SpecApi {
 }
 
 impl SpecApi {
+    /// The layer `.vibe/spec.json` forces for `feature`/`plan`, read at the
+    /// context's code checkout (where the project config lives) so the API and
+    /// the CLI resolve the same key.
+    fn feature_layer(
+        &self,
+        context: &crate::SpecContext,
+    ) -> Result<Option<crate::root::FeatureLayer>, SpecError> {
+        let project = context.checkout.as_deref().unwrap_or(&self.runtime.cwd);
+        crate::root::feature_layer(project).map_err(|e| SpecError::new("invalid_config", e))
+    }
+
     pub(crate) fn read_domain(
         &self,
         selector: &crate::ContextSelector,

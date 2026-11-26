@@ -248,6 +248,52 @@ pub(crate) fn config_root(path: &Path) -> Result<Option<PathBuf>, Miss> {
     }
 }
 
+/// The feature backend `plan`/`feature` read from (D45): superpowers' native
+/// artifacts, or the fallback `<root>/features/<f>/` folder.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FeatureLayer {
+    Superpowers,
+    Fallback,
+}
+
+impl FeatureLayer {
+    /// The `.vibe/spec.json` spelling of this layer.
+    pub fn key(self) -> &'static str {
+        match self {
+            FeatureLayer::Superpowers => "superpowers",
+            FeatureLayer::Fallback => "vibe",
+        }
+    }
+}
+
+/// The `featureLayer` key of `<project>/.vibe/spec.json`: `"vibe"` names the
+/// fallback layer, `"superpowers"` the default. `None` when the key is absent,
+/// so selection stays artifact-presence (D45). Any other value, a non-object
+/// document or unreadable JSON fails closed: a documented key that silently
+/// selects nothing is the one switch the backend contract forbids.
+pub fn feature_layer(project: &Path) -> Result<Option<FeatureLayer>, String> {
+    let path = project.join(".vibe").join("spec.json");
+    let shown = path.display().to_string();
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("{shown}: {e}")),
+    };
+    let value: Value =
+        serde_json::from_str(&text).map_err(|e| format!("{shown}: not JSON: {e}"))?;
+    if !value.is_object() {
+        return Err(format!("{shown}: not a JSON object"));
+    }
+    match value.get("featureLayer") {
+        None => Ok(None),
+        Some(Value::String(s)) if s == "vibe" => Ok(Some(FeatureLayer::Fallback)),
+        Some(Value::String(s)) if s == "superpowers" => Ok(Some(FeatureLayer::Superpowers)),
+        Some(_) => Err(format!(
+            "{shown}: `featureLayer` must be \"vibe\" or \"superpowers\""
+        )),
+    }
+}
+
 /// How the spec tooth treats a would-be block (`tooth` in `.vibe/spec.json`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tooth {
