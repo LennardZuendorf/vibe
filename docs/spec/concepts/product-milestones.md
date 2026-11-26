@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-11-25
+updated: 2026-11-26
 ---
 
 # Product milestones
@@ -29,7 +29,7 @@ Back to [the plan](../plan.md). The owner approved this direction on 2026-11-21.
 - Prove the reference installer early. Full distribution requires supported versions and a host-specific verification matrix. Hook trust and consent stay host-owned. The TUI follows the working runner and advisory signals.
 - Prove the grouped workspace and the integrated two-repo workflow with separate Git histories. The selected artifact backend has one owner per feature.
 - Compare Git-backed and managed remote configuration in [#118](https://github.com/LennardZuendorf/vibe/issues/118). This discovery covers instructions, MCP definitions and pinned plugin manifests, with local credential references. It runs alongside local delivery.
-- OpenSpec root ownership stays open in [#104](https://github.com/LennardZuendorf/vibe/issues/104). Keep the current Vibe root until a decision is approved. See [the fit assessment](../tech/spec/spec-openspec-durable-fit.md).
+- OpenSpec root ownership is decided: `docs/spec/**` stays the single durable owner and `openspec/specs/` is a change-format surface, not a second home ([D49](../decisions/d49-the-spec-root-stays-the-durable-owner.md), closing [#104](https://github.com/LennardZuendorf/vibe/issues/104)). See [the fit assessment](../tech/spec/spec-openspec-durable-fit.md).
 
 ## When decisions are needed
 
@@ -37,7 +37,7 @@ Review this roadmap as planning and specification. Decide each open question in 
 
 | Decide by | Decision | Owning issues |
 |---|---|---|
-| Native OpenSpec feature design | Agree supported schemas and versions, and one writer for durable promotion, under the agreed shared lifecycle. Keep the current root while the owner reviews any replacement. Skill review can use Superpowers now. | [#103](https://github.com/LennardZuendorf/vibe/issues/103), [#104](https://github.com/LennardZuendorf/vibe/issues/104), [#107](https://github.com/LennardZuendorf/vibe/issues/107) |
+| Native OpenSpec feature design | Agree supported schemas and versions, and one writer for durable promotion, under the agreed shared lifecycle. The root is settled by [D49](../decisions/d49-the-spec-root-stays-the-durable-owner.md); any replacement needs a new equivalence decision. Skill review can use Superpowers now. | [#103](https://github.com/LennardZuendorf/vibe/issues/103), [#104](https://github.com/LennardZuendorf/vibe/issues/104), [#107](https://github.com/LennardZuendorf/vibe/issues/107) |
 | Autonomous Flow design | Agree on the trusted evidence producer, approval binding and the reference host's scope enforcement. Choose retry and recovery policy in the runner design. | [#101](https://github.com/LennardZuendorf/vibe/issues/101), [#106](https://github.com/LennardZuendorf/vibe/issues/106) |
 | Instruct integration design | Set the provider interface, command policy, delivery rules, and behavior when a host lacks a required capability. | [#83](https://github.com/LennardZuendorf/vibe/issues/83), [#84](https://github.com/LennardZuendorf/vibe/issues/84), [#85](https://github.com/LennardZuendorf/vibe/issues/85), [#86](https://github.com/LennardZuendorf/vibe/issues/86) |
 | Grouped workspace design | Set feature-artifact ownership, member references, and partial-create recovery. Verify worktree config on its existing scope. | [#105](https://github.com/LennardZuendorf/vibe/issues/105), [#109](https://github.com/LennardZuendorf/vibe/issues/109) |

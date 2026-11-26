@@ -1,7 +1,7 @@
 ---
 type: tech
 applies: ["crates/vibe-spec/**", "spec/**"]
-updated: 2026-11-25
+updated: 2026-11-26
 ---
 
 # Spec feature backend contract
@@ -29,7 +29,7 @@ The fallback folder is the `superpowers` backend's degraded layer, not a third b
 - **Resume** re-reads the backend and its native task state before any write. A cursor whose artifacts no longer resolve under the recorded backend is reported, not repaired: an explicit transition corrects it, never a fallback to another backend.
 - **Verification** binds evidence to the backend that owns the change; a receipt from one backend never closes a feature that has since moved. A promotion that revises the reviewed candidate re-opens verification.
 - **Closeout** has one writer per fact. `promote <f> --done` (D46) retires superpowers artifacts after the durable fact lands in the spec root; `openspec archive` applies deltas to `openspec/specs/` and moves the change under `archive/`. Both at once, or either twice, is refused. Archive is not reversible upstream, so closeout states what it moved.
-- **Durable ownership** waits for [#104](https://github.com/LennardZuendorf/vibe/issues/104): `docs/spec/` is authoritative for product, architecture, design, plan and lessons; an `openspec` backend's `specs/` only for the capabilities it owns. One fact, one writer.
+- **Durable ownership** is decided by [D49](../decisions/d49-the-spec-root-stays-the-durable-owner.md), closing [#104](https://github.com/LennardZuendorf/vibe/issues/104): `docs/spec/` is authoritative for product, architecture, design, plan and lessons, and stays the single owner of durable requirements. An `openspec` backend's `specs/` is a change-format surface whose deltas are promoted into the spec root, not a second durable home. One fact, one writer.
 
 ## Mixed and ambiguous state
 
@@ -55,6 +55,6 @@ Each is an explicit refusal naming both candidates; none is resolved by preceden
 
 ## Open inputs
 
-[#104](https://github.com/LennardZuendorf/vibe/issues/104) owns the durable-root authority: keep `docs/spec/` with native OpenSpec as a selectable backend (the recommended default), or replace the root after an equivalence decision. [#107](https://github.com/LennardZuendorf/vibe/issues/107) builds and dogfoods the backend.
+The durable-root authority is decided in [D49](../decisions/d49-the-spec-root-stays-the-durable-owner.md): `docs/spec/**` stays the owner and native OpenSpec remains a selectable backend. [#107](https://github.com/LennardZuendorf/vibe/issues/107) builds and dogfoods the backend.
 
 [Milestones](../concepts/product-milestones.md) · [Product requirements](../concepts/milestone-spec-workflow.md) · [OpenSpec interchange](spec/spec-openspec.md) · [Project storage](spec/spec-projects-mcp.md)
