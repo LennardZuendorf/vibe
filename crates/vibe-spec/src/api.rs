@@ -260,12 +260,12 @@ impl SpecApi {
             }),
             SpecRequest::Feature(request) => {
                 self.read_domain(&request.selector, |context, files| {
-                    let layer = self.feature_layer(context)?;
+                    let layer = self.feature_layer(context, &request.selector)?;
                     crate::query::feature_data(files, &request.feature, layer)
                 })
             }
             SpecRequest::Plan(request) => self.read_domain(&request.selector, |context, files| {
-                let layer = self.feature_layer(context)?;
+                let layer = self.feature_layer(context, &request.selector)?;
                 crate::query::plan_data(files, &request.feature, layer)
             }),
             SpecRequest::Lessons(request) => self.read_domain(&request.selector, |_, files| {
@@ -312,15 +312,34 @@ impl SpecApi {
 }
 
 impl SpecApi {
-    /// The layer `.vibe/spec.json` forces for `feature`/`plan`, read at the
-    /// context's code checkout (where the project config lives) so the API and
-    /// the CLI resolve the same key.
+    /// The layer `.vibe/spec.json` forces for `feature`/`plan`. The key lives in
+    /// the project's code checkout; a selected branch without one falls back to
+    /// the project's main checkout, and the cwd is used only when cwd *is* the
+    /// selection. No project config reachable means no forced layer — never
+    /// another project's setting.
     fn feature_layer(
         &self,
         context: &crate::SpecContext,
+        selector: &crate::ContextSelector,
     ) -> Result<Option<crate::root::FeatureLayer>, SpecError> {
-        let project = context.checkout.as_deref().unwrap_or(&self.runtime.cwd);
-        crate::root::feature_layer(project).map_err(|e| SpecError::new("invalid_config", e))
+        let project = match &context.checkout {
+            Some(path) => Some(path.clone()),
+            None => match &context.project_id {
+                Some(id) => crate::registry::load(&self.runtime)?
+                    .projects
+                    .into_iter()
+                    .find(|p| &p.id == id)
+                    .map(|p| p.main_checkout),
+                None if selector == &crate::ContextSelector::default() => {
+                    Some(self.runtime.cwd.clone())
+                }
+                None => None,
+            },
+        };
+        let Some(project) = project else {
+            return Ok(None);
+        };
+        crate::root::feature_layer(&project).map_err(|e| SpecError::new("invalid_config", e))
     }
 
     pub(crate) fn read_domain(

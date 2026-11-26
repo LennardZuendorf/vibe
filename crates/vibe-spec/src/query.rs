@@ -485,6 +485,16 @@ pub fn feature(
                 docs.push((kind, p));
             }
         }
+        if docs.is_empty()
+            && let Some(forced) = forced
+        {
+            diag!(
+                cx,
+                "{}",
+                layer_refusal("feature", forced, &rel(&root.project, &dir), None)
+            );
+            return (exit::FINDINGS, Vec::new());
+        }
         "fallback"
     } else {
         "superpowers"
@@ -648,7 +658,12 @@ pub(crate) fn plan_data(
     let rows = if path.starts_with("superpowers/") {
         task_rows(text)
     } else {
-        table_rows(text)
+        let table = table_rows(text);
+        if table.is_empty() {
+            heading_rows(text, name)
+        } else {
+            table
+        }
     };
     Ok(
         json!({"v":1,"feature":name,"rows":rows.iter().map(|r|{let mut v=json!({"id":r.id,"status":r.status});if let Some(title)=&r.title{v["title"]=json!(title);}v}).collect::<Vec<_>>(),"source":{"kind":"plan","path":path}}),

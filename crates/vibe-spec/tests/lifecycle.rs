@@ -1158,10 +1158,10 @@ fn the_typed_api_honours_the_feature_layer_key() {
         .unwrap()
         .data
     };
-    let plan = |api: &SpecApi| {
+    let plan = |api: &SpecApi, name: &str| {
         api.execute(SpecRequest::Plan(vibe_spec::PlanRequest {
             selector: ContextSelector::default(),
-            feature: "checkout".into(),
+            feature: name.into(),
         }))
         .unwrap()
         .data
@@ -1184,7 +1184,20 @@ fn the_typed_api_honours_the_feature_layer_key() {
         "{data}"
     );
     assert_eq!(
-        plan(&f.api)["source"]["path"],
+        plan(&f.api, "checkout")["source"]["path"],
         "spec/features/checkout/plan.md"
+    );
+    // The typed plan query reads a heading-only fallback plan the same way the
+    // CLI does; an empty row list there would be a parser divergence.
+    f.write(
+        "spec/features/heading/plan.md",
+        "---\ntype: feature-plan\nfeature: heading\nupdated: 2026-01-15\n---\n\n### heading/1 — Work\n\n- [x] done\n\n### heading/2 — More\n\n- [ ] open\n",
+    );
+    assert_eq!(
+        plan(&f.api, "heading")["rows"],
+        serde_json::json!([
+            { "id": "heading/1", "status": "done", "title": "Work" },
+            { "id": "heading/2", "status": "todo", "title": "More" }
+        ])
     );
 }

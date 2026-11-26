@@ -6,8 +6,9 @@ Read this on `/spec setup`, or when a route depends on a config key.
 
 One file holds every key: `.vibe/spec.json` in the project root. A missing file or
 key means the default. A legacy `<root>/.config.yaml` is read only for a key that
-`.vibe/spec.json` lacks. `vibe-spec` reads `featureLayer`; `suggest` and
-`superpowers` are yours alone.
+`.vibe/spec.json` lacks. `vibe-spec` reads `featureLayer` from `.vibe/spec.json`
+only — a legacy value configures nothing. `suggest` and `superpowers` are yours
+alone.
 
 | Key | Default | Effect |
 |---|---|---|

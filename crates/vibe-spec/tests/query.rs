@@ -336,6 +336,21 @@ fn feature_layer_vibe_refuses_when_the_fallback_layer_holds_no_plan() {
 }
 
 #[test]
+fn feature_layer_vibe_refuses_an_empty_fallback_folder() {
+    let p = project("q-layer-emptyfolder");
+    write(&p, ".vibe/spec.json", "{\"featureLayer\": \"vibe\"}\n");
+    std::fs::create_dir_all(p.join("docs/spec/features/auth")).unwrap();
+    let out = spec(&p, &["feature", "auth", "--json"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(
+        out.stderr.contains("featureLayer") && out.stderr.contains("docs/spec/features/auth"),
+        "stderr was {:?}",
+        out.stderr
+    );
+    assert!(out.stdout.is_empty(), "{}", out.text());
+}
+
+#[test]
 fn an_unknown_feature_layer_is_a_config_error() {
     let p = project("q-layer-bad");
     write(&p, ".vibe/spec.json", "{\"featureLayer\": \"openspec\"}\n");
