@@ -1137,3 +1137,67 @@ fn registered_ordinary_consumers_ignore_completed_artifact_free_directories() {
         assert_eq!(out.code, 0, "{command}: {} {}", out.stderr, out.text());
     }
 }
+
+#[test]
+fn the_typed_api_honours_the_feature_layer_key() {
+    let f = Fixture::new(false);
+    f.root_fixture();
+    let context = f.api.resolve_context(&f.selector()).unwrap();
+    f.api
+        .execute(SpecRequest::Init(vibe_spec::InitRequest {
+            selector: f.selector(),
+            expected_revision: context.revision_token,
+        }))
+        .unwrap();
+    f.feature_fixture();
+    let feature = |api: &SpecApi| {
+        api.execute(SpecRequest::Feature(vibe_spec::FeatureRequest {
+            selector: ContextSelector::default(),
+            feature: "checkout".into(),
+        }))
+        .unwrap()
+        .data
+    };
+    let plan = |api: &SpecApi, name: &str| {
+        api.execute(SpecRequest::Plan(vibe_spec::PlanRequest {
+            selector: ContextSelector::default(),
+            feature: name.into(),
+        }))
+        .unwrap()
+        .data
+    };
+    // Both layers hold `checkout`, so the key is the only thing that decides.
+    assert_eq!(feature(&f.api)["layer"], "superpowers");
+    std::fs::create_dir_all(f.code.join(".vibe")).unwrap();
+    std::fs::write(
+        f.code.join(".vibe/spec.json"),
+        "{\"featureLayer\": \"vibe\"}\n",
+    )
+    .unwrap();
+    let data = feature(&f.api);
+    assert_eq!(data["layer"], "fallback");
+    assert!(
+        data["docs"].as_array().unwrap().iter().all(|d| d["path"]
+            .as_str()
+            .unwrap()
+            .starts_with("spec/features/checkout/")),
+        "{data}"
+    );
+    assert_eq!(
+        plan(&f.api, "checkout")["source"]["path"],
+        "spec/features/checkout/plan.md"
+    );
+    // The typed plan query reads a heading-only fallback plan the same way the
+    // CLI does; an empty row list there would be a parser divergence.
+    f.write(
+        "spec/features/heading/plan.md",
+        "---\ntype: feature-plan\nfeature: heading\nupdated: 2026-01-15\n---\n\n### heading/1 — Work\n\n- [x] done\n\n### heading/2 — More\n\n- [ ] open\n",
+    );
+    assert_eq!(
+        plan(&f.api, "heading")["rows"],
+        serde_json::json!([
+            { "id": "heading/1", "status": "done", "title": "Work" },
+            { "id": "heading/2", "status": "todo", "title": "More" }
+        ])
+    );
+}

@@ -6,13 +6,21 @@ Read this on `/spec setup`, or when a route depends on a config key.
 
 One file holds every key: `.vibe/spec.json` in the project root. A missing file or
 key means the default. A legacy `<root>/.config.yaml` is read only for a key that
-`.vibe/spec.json` lacks. No binary reads these three keys; you read them.
+`.vibe/spec.json` lacks. `vibe-spec` reads `featureLayer` from `.vibe/spec.json`
+only — a legacy value configures nothing. `suggest` and `superpowers` are yours
+alone.
 
 | Key | Default | Effect |
 |---|---|---|
-| `featureLayer` | `"superpowers"` | `"vibe"` → fallback feature folders (`<root>/features/<feature>/`) |
+| `featureLayer` | `"superpowers"` | `"vibe"` → fallback feature folders (`<root>/features/<feature>/`); `"superpowers"` pins the default |
 | `suggest` | `true` | `false` → do not dispatch `feature-dev:code-explorer` or `feature-dev:code-architect` |
 | `superpowers` | `{}` | `{"<skill>": false}` → that delegate is unavailable; `brainstorming` or `writing-plans` false → fallback |
+
+`vibe-spec feature` and `vibe-spec plan` honour `featureLayer`. Absent, selection
+is artifact-presence: a superpowers artifact answers, the fallback folders
+otherwise. Set, the named layer answers even when the other layer holds
+artifacts, and a named layer with nothing to read is a refusal naming both
+candidates. An unknown value is an error.
 
 The same file holds keys that `vibe-spec` reads (`root`, `tooth`, `migrate`).
 Keep them when you write the file.

@@ -258,11 +258,15 @@ impl SpecApi {
             SpecRequest::Drift(request) => self.read_domain(&request.selector, |context, _| {
                 crate::drift::data(context, &request)
             }),
-            SpecRequest::Feature(request) => self.read_domain(&request.selector, |_, files| {
-                crate::query::feature_data(files, &request.feature)
-            }),
-            SpecRequest::Plan(request) => self.read_domain(&request.selector, |_, files| {
-                crate::query::plan_data(files, &request.feature)
+            SpecRequest::Feature(request) => {
+                self.read_domain(&request.selector, |context, files| {
+                    let layer = self.feature_layer(context, &request.selector)?;
+                    crate::query::feature_data(files, &request.feature, layer)
+                })
+            }
+            SpecRequest::Plan(request) => self.read_domain(&request.selector, |context, files| {
+                let layer = self.feature_layer(context, &request.selector)?;
+                crate::query::plan_data(files, &request.feature, layer)
             }),
             SpecRequest::Lessons(request) => self.read_domain(&request.selector, |_, files| {
                 crate::lessons::data(
@@ -308,6 +312,36 @@ impl SpecApi {
 }
 
 impl SpecApi {
+    /// The layer `.vibe/spec.json` forces for `feature`/`plan`. The key lives in
+    /// the project's code checkout; a selected branch without one falls back to
+    /// the project's main checkout, and the cwd is used only when cwd *is* the
+    /// selection. No project config reachable means no forced layer — never
+    /// another project's setting.
+    fn feature_layer(
+        &self,
+        context: &crate::SpecContext,
+        selector: &crate::ContextSelector,
+    ) -> Result<Option<crate::root::FeatureLayer>, SpecError> {
+        let project = match &context.checkout {
+            Some(path) => Some(path.clone()),
+            None => match &context.project_id {
+                Some(id) => crate::registry::load(&self.runtime)?
+                    .projects
+                    .into_iter()
+                    .find(|p| &p.id == id)
+                    .map(|p| p.main_checkout),
+                None if selector == &crate::ContextSelector::default() => {
+                    Some(self.runtime.cwd.clone())
+                }
+                None => None,
+            },
+        };
+        let Some(project) = project else {
+            return Ok(None);
+        };
+        crate::root::feature_layer(&project).map_err(|e| SpecError::new("invalid_config", e))
+    }
+
     pub(crate) fn read_domain(
         &self,
         selector: &crate::ContextSelector,

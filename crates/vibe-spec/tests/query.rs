@@ -249,3 +249,138 @@ fn a_directory_named_like_a_plan_is_skipped() {
     let got = v(&spec(&p, &["feature", "dd", "--json"], &[]));
     assert_eq!(got["layer"], "fallback");
 }
+
+// ── `.vibe/spec.json` `featureLayer` (D45, #125) ────────────────────────────
+// The key selects a layer and never switches silently: the selected layer
+// answers, or the read is refused naming the artifact the other layer holds.
+
+#[test]
+fn feature_layer_vibe_wins_over_a_superpowers_plan() {
+    let p = project("q-layer-vibe");
+    write(&p, ".vibe/spec.json", "{\"featureLayer\": \"vibe\"}\n");
+    write(&p, "docs/spec/features/auth/plan.md", FALLBACK_PLAN);
+    write(&p, "docs/superpowers/plans/2026-02-01-auth.md", SP_PLAN);
+    let plan = v(&spec(&p, &["plan", "--feature", "auth", "--json"], &[]));
+    assert_eq!(
+        plan["source"]["path"],
+        json!("docs/spec/features/auth/plan.md"),
+        "the fallback layer wins when featureLayer says vibe"
+    );
+    assert_eq!(
+        plan["rows"],
+        json!([
+            { "id": "auth/1", "status": "DONE" },
+            { "id": "auth/2", "status": "IN PROGRESS" }
+        ])
+    );
+    let feature = v(&spec(&p, &["feature", "auth", "--json"], &[]));
+    assert_eq!(feature["layer"], json!("fallback"));
+    assert_eq!(
+        feature["docs"][0]["path"],
+        json!("docs/spec/features/auth/plan.md")
+    );
+}
+
+#[test]
+fn feature_layer_superpowers_refuses_instead_of_reading_the_fallback_layer() {
+    let p = project("q-layer-sp");
+    write(
+        &p,
+        ".vibe/spec.json",
+        "{\"featureLayer\": \"superpowers\"}\n",
+    );
+    write(&p, "docs/spec/features/auth/plan.md", FALLBACK_PLAN);
+    let out = spec(&p, &["plan", "--feature", "auth", "--json"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(out.stdout.is_empty(), "{}", out.text());
+    assert!(
+        out.stderr.contains("featureLayer")
+            && out.stderr.contains("docs/spec/features/auth/plan.md"),
+        "stderr was {:?}",
+        out.stderr
+    );
+    let out = spec(&p, &["feature", "auth"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(
+        out.stderr.contains("featureLayer"),
+        "stderr was {:?}",
+        out.stderr
+    );
+}
+
+#[test]
+fn feature_layer_vibe_refuses_when_the_fallback_layer_holds_no_plan() {
+    let p = project("q-layer-empty");
+    write(&p, ".vibe/spec.json", "{\"featureLayer\": \"vibe\"}\n");
+    write(&p, "docs/spec/README.md", "x\n");
+    write(&p, "docs/superpowers/plans/2026-02-01-auth.md", SP_PLAN);
+    let out = spec(&p, &["plan", "--feature", "auth", "--json"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(out.stdout.is_empty(), "{}", out.text());
+    assert!(
+        out.stderr.contains("featureLayer")
+            && out.stderr.contains("docs/spec/features/auth/plan.md")
+            && out
+                .stderr
+                .contains("docs/superpowers/plans/2026-02-01-auth.md"),
+        "the refusal names both candidates; stderr was {:?}",
+        out.stderr
+    );
+    let out = spec(&p, &["feature", "auth"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(
+        out.stderr.contains("featureLayer") && out.stderr.contains("docs/superpowers"),
+        "stderr was {:?}",
+        out.stderr
+    );
+}
+
+#[test]
+fn feature_layer_vibe_refuses_an_empty_fallback_folder() {
+    let p = project("q-layer-emptyfolder");
+    write(&p, ".vibe/spec.json", "{\"featureLayer\": \"vibe\"}\n");
+    std::fs::create_dir_all(p.join("docs/spec/features/auth")).unwrap();
+    let out = spec(&p, &["feature", "auth", "--json"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(
+        out.stderr.contains("featureLayer") && out.stderr.contains("docs/spec/features/auth"),
+        "stderr was {:?}",
+        out.stderr
+    );
+    assert!(out.stdout.is_empty(), "{}", out.text());
+}
+
+#[test]
+fn an_unknown_feature_layer_is_a_config_error() {
+    let p = project("q-layer-bad");
+    write(&p, ".vibe/spec.json", "{\"featureLayer\": \"openspec\"}\n");
+    write(&p, "docs/spec/features/auth/plan.md", FALLBACK_PLAN);
+    for args in [
+        vec!["plan", "--feature", "auth", "--json"],
+        vec!["feature", "auth", "--json"],
+    ] {
+        let out = spec(&p, &args, &[]);
+        assert_eq!(out.code, 2, "{args:?}: {}", out.stderr);
+        assert!(
+            out.stderr.contains("`featureLayer`")
+                && out.stderr.contains("\"vibe\"")
+                && out.stderr.contains("\"superpowers\""),
+            "the error names the allowed values; stderr was {:?}",
+            out.stderr
+        );
+    }
+}
+
+#[test]
+fn without_the_key_superpowers_still_wins() {
+    let p = project("q-layer-default");
+    write(&p, "docs/spec/features/auth/plan.md", FALLBACK_PLAN);
+    write(&p, "docs/superpowers/plans/2026-02-01-auth.md", SP_PLAN);
+    let plan = v(&spec(&p, &["plan", "--feature", "auth", "--json"], &[]));
+    assert_eq!(
+        plan["source"]["path"],
+        json!("docs/superpowers/plans/2026-02-01-auth.md")
+    );
+    let feature = v(&spec(&p, &["feature", "auth", "--json"], &[]));
+    assert_eq!(feature["layer"], json!("superpowers"));
+}
