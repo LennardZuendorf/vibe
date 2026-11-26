@@ -16,9 +16,11 @@ alone.
 | `suggest` | `true` | `false` → do not dispatch `feature-dev:code-explorer` or `feature-dev:code-architect` |
 | `superpowers` | `{}` | `{"<skill>": false}` → that delegate is unavailable; `brainstorming` or `writing-plans` false → fallback |
 
-`vibe-spec feature` and `vibe-spec plan` honour `featureLayer`: the selected layer
-answers even when the other layer holds artifacts, a selected layer with nothing to
-read is a refusal naming both candidates, and an unknown value is an error.
+`vibe-spec feature` and `vibe-spec plan` honour `featureLayer`. Absent, selection
+is artifact-presence: a superpowers artifact answers, the fallback folders
+otherwise. Set, the named layer answers even when the other layer holds
+artifacts, and a named layer with nothing to read is a refusal naming both
+candidates. An unknown value is an error.
 
 The same file holds keys that `vibe-spec` reads (`root`, `tooth`, `migrate`).
 Keep them when you write the file.
