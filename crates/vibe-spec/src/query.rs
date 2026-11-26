@@ -131,6 +131,150 @@ fn layer_refusal(cmd: &str, forced: FeatureLayer, missing: &str, other: Option<S
     text
 }
 
+/// What one `plan`/`feature` lookup asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Query {
+    Plan,
+    Feature,
+}
+
+/// How one lookup spells the roots it searches: the superpowers tree, the spec
+/// root and the openspec tree. The CLI spells them from the project; the typed
+/// API uses the logical `superpowers/`, `spec/`, `openspec/` prefixes. One
+/// spelling per lookup keeps refusals and misses identical across both paths.
+pub(crate) struct Roots {
+    /// The superpowers tree holding `plans/` and `specs/`.
+    pub superpowers: String,
+    /// The spec root holding `features/<f>/`.
+    pub spec: String,
+    /// The openspec tree holding `changes/<f>/`.
+    pub openspec: String,
+}
+
+impl Roots {
+    /// The CLI spelling: `project`-relative when inside the project.
+    fn of(project: &Path, root: &Root) -> Self {
+        let rel_root = |p: &str| rel(project, &project.join(p));
+        Self {
+            superpowers: rel_root(crate::superpowers::ROOT),
+            spec: root.display(),
+            openspec: rel_root("openspec"),
+        }
+    }
+
+    /// The typed API spelling: the logical document prefixes `Files` uses.
+    fn logical() -> Self {
+        Self {
+            superpowers: "superpowers".into(),
+            spec: "spec".into(),
+            openspec: "openspec".into(),
+        }
+    }
+}
+
+/// One feature lookup: the bound superpowers artifacts, the fallback artifact,
+/// and whether the openspec backend holds the name. The caller decides what the
+/// selected layer allows it to see; this type decides what that means.
+pub(crate) struct Lookup<'a> {
+    pub query: Query,
+    pub name: &'a str,
+    pub roots: Roots,
+    /// Bound superpowers artifacts, displayed. Empty when the selected layer
+    /// keeps the superpowers candidates out.
+    pub superpowers: Vec<String>,
+    /// The fallback artifact or folder, displayed, when it holds the name.
+    pub fallback: Option<String>,
+    /// `openspec/changes/<f>`, displayed, when that directory exists.
+    pub openspec: Option<String>,
+}
+
+/// Why a lookup must refuse before any artifact is read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Refusal {
+    /// Two backends hold one name: an error, not a precedence question.
+    Ambiguous,
+    /// Only openspec holds it, and this build has no openspec reader (#107).
+    OpenspecOnly,
+}
+
+impl Refusal {
+    /// The typed API error code for this refusal.
+    pub fn code(self) -> &'static str {
+        match self {
+            Refusal::Ambiguous => "feature_ambiguous",
+            Refusal::OpenspecOnly => "openspec_unreadable",
+        }
+    }
+}
+
+impl Lookup<'_> {
+    /// The refusal this lookup owes, or `None` when one candidate may answer.
+    /// A forced layer only changes what `superpowers` holds; a second backend
+    /// holding the name stays a fact about the tree, never a preference.
+    pub fn refusal(&self) -> Option<Refusal> {
+        self.openspec.as_ref()?;
+        Some(if self.superpowers.is_empty() && self.fallback.is_none() {
+            Refusal::OpenspecOnly
+        } else {
+            Refusal::Ambiguous
+        })
+    }
+
+    /// The refusal, one line, naming both candidates.
+    pub fn refusal_message(&self, refusal: Refusal) -> String {
+        let name = self.name;
+        match refusal {
+            Refusal::Ambiguous => {
+                let mut held = self.superpowers.clone();
+                held.extend(self.fallback.iter().cloned());
+                format!(
+                    "{name} is held by both backends: superpowers ({}) and openspec ({}); \
+                     two backends holding one name is an error, not a precedence question",
+                    held.join(" and "),
+                    self.openspec.as_deref().unwrap_or_default()
+                )
+            }
+            Refusal::OpenspecOnly => format!(
+                "{name} is held by the openspec backend ({}), and this build cannot read \
+                 openspec features yet",
+                self.openspec.as_deref().unwrap_or_default()
+            ),
+        }
+    }
+
+    /// The lookup miss: the feature and both candidate roots, the same way for
+    /// both selectors and both entry points.
+    pub fn miss(&self) -> String {
+        let name = self.name;
+        let sp = &self.roots.superpowers;
+        let spec = &self.roots.spec;
+        let os = &self.roots.openspec;
+        match self.query {
+            Query::Plan => format!(
+                "no plan for feature {name} (superpowers: {sp}/plans/YYYY-MM-DD-{name}.md or \
+                 {spec}/features/{name}/plan.md; openspec: {os}/changes/{name}/)"
+            ),
+            Query::Feature => format!(
+                "no feature {name} (superpowers: {sp}/specs/YYYY-MM-DD-{name}-design.md, \
+                 {sp}/plans/YYYY-MM-DD-{name}.md or {spec}/features/{name}/; \
+                 openspec: {os}/changes/{name}/)"
+            ),
+        }
+    }
+}
+
+/// `openspec/changes/<f>` when the project holds that active change.
+fn openspec_change(project: &Path, name: &str) -> Option<PathBuf> {
+    let dir = project.join(crate::openspec::CHANGES).join(name);
+    dir.is_dir().then_some(dir)
+}
+
+/// The typed spelling of [`openspec_change`]; `None` without a project dir.
+fn openspec_change_of(project: Option<&Path>, name: &str) -> Option<String> {
+    let project = project?;
+    openspec_change(project, name).map(|p| rel(project, &p))
+}
+
 /// `vibe-spec plan --feature <f> [--json]`.
 pub fn plan(
     cx: &crate::api::Execution<'_>,
@@ -151,6 +295,18 @@ pub fn plan(
         Some(FeatureLayer::Fallback) => None,
         _ => newest(&root.project.join(PLANS), feature, ".md"),
     };
+    let lookup = Lookup {
+        query: Query::Plan,
+        name: feature,
+        roots: Roots::of(&root.project, root),
+        superpowers: superpowers.iter().map(|p| rel(&root.project, p)).collect(),
+        fallback: fallback.is_file().then(|| rel(&root.project, &fallback)),
+        openspec: openspec_change(&root.project, feature).map(|p| rel(&root.project, &p)),
+    };
+    if let Some(refusal) = lookup.refusal() {
+        diag!(cx, "vibe-spec plan: {}", lookup.refusal_message(refusal));
+        return (exit::FINDINGS, Vec::new());
+    }
     if forced == Some(FeatureLayer::Superpowers) && superpowers.is_none() {
         let other = fallback
             .is_file()
@@ -196,7 +352,7 @@ pub fn plan(
                             layer_refusal("plan", forced, &rel(&root.project, &fallback), other)
                         )
                     }
-                    None => diag!(cx, "vibe-spec plan: no plan for feature {feature}"),
+                    None => diag!(cx, "vibe-spec plan: {}", lookup.miss()),
                 }
                 return (exit::FINDINGS, Vec::new());
             }
@@ -435,6 +591,21 @@ pub fn feature(
         docs.extend(superpowers_docs(&root.project, name));
     }
     let dir = root.dir.join("features").join(name);
+    let fallback_docs = FALLBACK_DOCS
+        .iter()
+        .any(|kind| dir.join(format!("{kind}.md")).is_file());
+    let lookup = Lookup {
+        query: Query::Feature,
+        name,
+        roots: Roots::of(&root.project, root),
+        superpowers: docs.iter().map(|(_, p)| rel(&root.project, p)).collect(),
+        fallback: fallback_docs.then(|| rel(&root.project, &dir)),
+        openspec: openspec_change(&root.project, name).map(|p| rel(&root.project, &p)),
+    };
+    if let Some(refusal) = lookup.refusal() {
+        diag!(cx, "vibe-spec feature: {}", lookup.refusal_message(refusal));
+        return (exit::FINDINGS, Vec::new());
+    }
     if forced == Some(FeatureLayer::Superpowers) && docs.is_empty() {
         let other = dir
             .is_dir()
@@ -475,7 +646,7 @@ pub fn feature(
                         layer_refusal("feature", forced, &rel(&root.project, &dir), other)
                     )
                 }
-                None => diag!(cx, "vibe-spec feature: no feature {name}"),
+                None => diag!(cx, "vibe-spec feature: {}", lookup.miss()),
             }
             return (exit::FINDINGS, Vec::new());
         }
@@ -549,6 +720,7 @@ pub(crate) fn feature_data(
     files: &crate::documents::Files,
     name: &str,
     forced: Option<FeatureLayer>,
+    project: Option<&Path>,
 ) -> Result<Value, crate::SpecError> {
     if !valid_name(name) {
         return Err(crate::SpecError::new(
@@ -570,6 +742,27 @@ pub(crate) fn feature_data(
                 docs.push(json!({"kind":kind,"path":path}));
             }
         }
+    }
+    let fallback = format!("spec/features/{name}");
+    let lookup = Lookup {
+        query: Query::Feature,
+        name,
+        roots: Roots::logical(),
+        superpowers: docs
+            .iter()
+            .filter_map(|d| d["path"].as_str().map(str::to_string))
+            .collect(),
+        fallback: FALLBACK_DOCS
+            .iter()
+            .any(|kind| files.contains_key(&format!("{fallback}/{kind}.md")))
+            .then(|| fallback.clone()),
+        openspec: openspec_change_of(project, name),
+    };
+    if let Some(refusal) = lookup.refusal() {
+        return Err(crate::SpecError::new(
+            refusal.code(),
+            lookup.refusal_message(refusal),
+        ));
     }
     if forced == Some(FeatureLayer::Superpowers) && docs.is_empty() {
         return Err(crate::SpecError::new(
@@ -603,10 +796,7 @@ pub(crate) fn feature_data(
         "superpowers"
     };
     if docs.is_empty() {
-        return Err(crate::SpecError::new(
-            "feature_not_found",
-            format!("no feature {name}"),
-        ));
+        return Err(crate::SpecError::new("feature_not_found", lookup.miss()));
     }
     Ok(json!({"v":1,"feature":name,"layer":layer,"docs":docs}))
 }
@@ -614,6 +804,7 @@ pub(crate) fn plan_data(
     files: &crate::documents::Files,
     name: &str,
     forced: Option<FeatureLayer>,
+    project: Option<&Path>,
 ) -> Result<Value, crate::SpecError> {
     if !valid_name(name) {
         return Err(crate::SpecError::new(
@@ -629,6 +820,20 @@ pub(crate) fn plan_data(
             .filter(|p| p.starts_with("superpowers/plans/"))
             .max(),
     };
+    let lookup = Lookup {
+        query: Query::Plan,
+        name,
+        roots: Roots::logical(),
+        superpowers: superpowers.iter().cloned().collect(),
+        fallback: files.contains_key(&fallback).then(|| fallback.clone()),
+        openspec: openspec_change_of(project, name),
+    };
+    if let Some(refusal) = lookup.refusal() {
+        return Err(crate::SpecError::new(
+            refusal.code(),
+            lookup.refusal_message(refusal),
+        ));
+    }
     if forced == Some(FeatureLayer::Superpowers) && superpowers.is_none() {
         return Err(crate::SpecError::new(
             "layer_empty",
@@ -652,7 +857,7 @@ pub(crate) fn plan_data(
                 ),
             )
         } else {
-            crate::SpecError::new("plan_not_found", format!("no plan for feature {name}"))
+            crate::SpecError::new("plan_not_found", lookup.miss())
         }
     })?;
     let rows = if path.starts_with("superpowers/") {

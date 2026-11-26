@@ -1201,3 +1201,82 @@ fn the_typed_api_honours_the_feature_layer_key() {
         ])
     );
 }
+
+#[test]
+fn the_typed_api_refuses_a_name_both_backends_hold() {
+    let f = Fixture::new(false);
+    f.root_fixture();
+    let context = f.api.resolve_context(&f.selector()).unwrap();
+    f.api
+        .execute(SpecRequest::Init(vibe_spec::InitRequest {
+            selector: f.selector(),
+            expected_revision: context.revision_token,
+        }))
+        .unwrap();
+    f.feature_fixture();
+    common::write(
+        &f.code,
+        "openspec/changes/checkout/proposal.md",
+        "## Why\n\nx\n",
+    );
+    let calls = [
+        (
+            "plan",
+            SpecRequest::Plan(vibe_spec::PlanRequest {
+                selector: f.selector(),
+                feature: "checkout".into(),
+            }),
+        ),
+        (
+            "feature",
+            SpecRequest::Feature(vibe_spec::FeatureRequest {
+                selector: f.selector(),
+                feature: "checkout".into(),
+            }),
+        ),
+    ];
+    for (cmd, request) in calls {
+        let err = f
+            .api
+            .execute(request)
+            .expect_err("both backends hold checkout");
+        assert_eq!(err.code, "feature_ambiguous", "{cmd}: {err}");
+        assert!(
+            err.message
+                .contains("superpowers/plans/2026-01-15-checkout.md")
+                && err.message.contains("openspec/changes/checkout"),
+            "{cmd} names both candidates; message was {:?}",
+            err.message
+        );
+    }
+}
+
+#[test]
+fn the_typed_api_miss_names_both_candidate_roots() {
+    let f = Fixture::new(false);
+    f.root_fixture();
+    let context = f.api.resolve_context(&f.selector()).unwrap();
+    f.api
+        .execute(SpecRequest::Init(vibe_spec::InitRequest {
+            selector: f.selector(),
+            expected_revision: context.revision_token,
+        }))
+        .unwrap();
+    f.feature_fixture();
+    let err = f
+        .api
+        .execute(SpecRequest::Plan(vibe_spec::PlanRequest {
+            selector: f.selector(),
+            feature: "ghost".into(),
+        }))
+        .expect_err("neither backend holds ghost");
+    assert_eq!(err.code, "plan_not_found", "{err}");
+    assert!(
+        err.message.contains("ghost")
+            && err.message.contains("superpowers/plans")
+            && err.message.contains("openspec/changes")
+            && err.message.contains("spec/features/ghost"),
+        "the miss names the feature and both candidate roots; message was {:?}",
+        err.message
+    );
+}

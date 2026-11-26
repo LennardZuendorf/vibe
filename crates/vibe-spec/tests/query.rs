@@ -384,3 +384,92 @@ fn without_the_key_superpowers_still_wins() {
     let feature = v(&spec(&p, &["feature", "auth", "--json"], &[]));
     assert_eq!(feature["layer"], json!("superpowers"));
 }
+
+// ── Two backends holding one name (#126) ───────────────────────────────────
+// The contract: "Two backends holding one name is an error, not a precedence
+// question"; each refusal names both candidates, and a total miss names the
+// feature and both candidate roots. Neither selector may diverge.
+
+#[test]
+fn plan_refuses_a_name_both_backends_hold() {
+    let p = project("q-amb-plan");
+    write(&p, "docs/spec/README.md", "x\n");
+    write(&p, "docs/superpowers/plans/2026-01-01-auth.md", SP_PLAN);
+    write(&p, "openspec/changes/auth/proposal.md", "## Why\n\nx\n");
+    let out = spec(&p, &["plan", "--feature", "auth"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(out.stdout.is_empty(), "{}", out.text());
+    assert!(
+        out.stderr
+            .contains("docs/superpowers/plans/2026-01-01-auth.md")
+            && out.stderr.contains("openspec/changes/auth"),
+        "the refusal names both candidates; stderr was {:?}",
+        out.stderr
+    );
+}
+
+#[test]
+fn feature_refuses_a_name_both_backends_hold() {
+    let p = project("q-amb-feature");
+    write(&p, "docs/spec/README.md", "x\n");
+    write(&p, "docs/superpowers/plans/2026-01-01-auth.md", SP_PLAN);
+    write(&p, "openspec/changes/auth/proposal.md", "## Why\n\nx\n");
+    let out = spec(&p, &["feature", "auth"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(out.stdout.is_empty(), "{}", out.text());
+    assert!(
+        out.stderr
+            .contains("docs/superpowers/plans/2026-01-01-auth.md")
+            && out.stderr.contains("openspec/changes/auth"),
+        "the refusal names both candidates, as `plan` does; stderr was {:?}",
+        out.stderr
+    );
+}
+
+#[test]
+fn plan_miss_names_the_feature_and_both_candidate_roots() {
+    let p = project("q-miss-plan");
+    write(&p, "docs/spec/README.md", "x\n");
+    let out = spec(&p, &["plan", "--feature", "ghost"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(
+        out.stderr.contains("ghost")
+            && out.stderr.contains("docs/superpowers/plans")
+            && out.stderr.contains("openspec/changes")
+            && out.stderr.contains("docs/spec/features/ghost"),
+        "the miss states the feature and both candidate roots; stderr was {:?}",
+        out.stderr
+    );
+}
+
+#[test]
+fn feature_miss_names_the_feature_and_both_candidate_roots() {
+    let p = project("q-miss-feature");
+    write(&p, "docs/spec/README.md", "x\n");
+    let out = spec(&p, &["feature", "ghost"], &[]);
+    assert_eq!(out.code, 1, "{}", out.stderr);
+    assert!(
+        out.stderr.contains("ghost")
+            && out.stderr.contains("docs/superpowers/specs")
+            && out.stderr.contains("openspec/changes")
+            && out.stderr.contains("docs/spec/features/ghost"),
+        "the miss states the feature and both candidate roots; stderr was {:?}",
+        out.stderr
+    );
+}
+
+#[test]
+fn an_openspec_only_name_is_not_reported_as_superpowers_absence_alone() {
+    let p = project("q-openspec-only");
+    write(&p, "docs/spec/README.md", "x\n");
+    write(&p, "openspec/changes/auth/proposal.md", "## Why\n\nx\n");
+    for args in [vec!["plan", "--feature", "auth"], vec!["feature", "auth"]] {
+        let out = spec(&p, &args, &[]);
+        assert_eq!(out.code, 1, "{args:?}: {}", out.stderr);
+        assert!(
+            out.stderr.contains("openspec/changes/auth") && !out.stderr.contains("both backends"),
+            "a sole openspec holder is named as such, never as ambiguity; stderr was {:?}",
+            out.stderr
+        );
+    }
+}

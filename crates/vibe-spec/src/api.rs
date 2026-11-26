@@ -261,12 +261,14 @@ impl SpecApi {
             SpecRequest::Feature(request) => {
                 self.read_domain(&request.selector, |context, files| {
                     let layer = self.feature_layer(context, &request.selector)?;
-                    crate::query::feature_data(files, &request.feature, layer)
+                    let project = self.project_dir(context, &request.selector)?;
+                    crate::query::feature_data(files, &request.feature, layer, project.as_deref())
                 })
             }
             SpecRequest::Plan(request) => self.read_domain(&request.selector, |context, files| {
                 let layer = self.feature_layer(context, &request.selector)?;
-                crate::query::plan_data(files, &request.feature, layer)
+                let project = self.project_dir(context, &request.selector)?;
+                crate::query::plan_data(files, &request.feature, layer, project.as_deref())
             }),
             SpecRequest::Lessons(request) => self.read_domain(&request.selector, |_, files| {
                 crate::lessons::data(
@@ -322,24 +324,36 @@ impl SpecApi {
         context: &crate::SpecContext,
         selector: &crate::ContextSelector,
     ) -> Result<Option<crate::root::FeatureLayer>, SpecError> {
-        let project = match &context.checkout {
-            Some(path) => Some(path.clone()),
-            None => match &context.project_id {
-                Some(id) => crate::registry::load(&self.runtime)?
-                    .projects
-                    .into_iter()
-                    .find(|p| &p.id == id)
-                    .map(|p| p.main_checkout),
-                None if selector == &crate::ContextSelector::default() => {
-                    Some(self.runtime.cwd.clone())
-                }
-                None => None,
-            },
-        };
-        let Some(project) = project else {
+        let Some(project) = self.project_dir(context, selector)? else {
             return Ok(None);
         };
         crate::root::feature_layer(&project).map_err(|e| SpecError::new("invalid_config", e))
+    }
+
+    /// The code checkout a project-level fact (the layer key, the openspec
+    /// change tree) is read from. A selected branch without a checkout falls
+    /// back to the project's main checkout, and the cwd is used only when cwd
+    /// *is* the selection. No project config reachable means `None` — never
+    /// another project's setting.
+    fn project_dir(
+        &self,
+        context: &crate::SpecContext,
+        selector: &crate::ContextSelector,
+    ) -> Result<Option<std::path::PathBuf>, SpecError> {
+        match &context.checkout {
+            Some(path) => Ok(Some(path.clone())),
+            None => match &context.project_id {
+                Some(id) => Ok(crate::registry::load(&self.runtime)?
+                    .projects
+                    .into_iter()
+                    .find(|p| &p.id == id)
+                    .map(|p| p.main_checkout)),
+                None if selector == &crate::ContextSelector::default() => {
+                    Ok(Some(self.runtime.cwd.clone()))
+                }
+                None => Ok(None),
+            },
+        }
     }
 
     pub(crate) fn read_domain(

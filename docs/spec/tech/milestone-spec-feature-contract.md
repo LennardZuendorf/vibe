@@ -1,7 +1,7 @@
 ---
 type: tech
 applies: ["crates/vibe-spec/**", "spec/**"]
-updated: 2026-11-25
+updated: 2026-11-26
 ---
 
 # Spec feature backend contract
@@ -46,11 +46,11 @@ Each is an explicit refusal naming both candidates; none is resolved by preceden
 
 `openspec` support is validated against 1.14.2 only: ADDED/MODIFIED/REMOVED, `### Requirement:` plus `#### Scenario:`, whole-block MODIFIED replacement, checkboxes where only `x`/`X` count as done, archive at `changes/archive/<date>-<id>/`. Upstream also supports `RENAMED`; vibe refuses it and requires REMOVED + ADDED so a durable delta has one spelling. Any other OpenSpec version is unverified: `validate` warns and closeout refuses until re-pinned. Upstream stores and references are beta — names, flags and JSON shapes can change — so no design may depend on them.
 
-## Where the tree stands today, at `952ed3d` — these gaps are real
+## Where the tree stands today — these gaps are real
 
-- `feature`/`plan` read superpowers first, then `features/<f>/` (`crates/vibe-spec/src/query.rs`), never look at `openspec/`, and let the newest file win without an ambiguity check. A `feature` miss exits 1 as `vibe-spec feature: no feature <f>` (`query.rs:353`); a `plan` miss exits 1 as `vibe-spec plan: no plan for feature <f>` (`query.rs:114`). Neither names a root.
+- Closed since this section was first written at `952ed3d`: `.vibe/spec.json` selects a layer ([#125](https://github.com/LennardZuendorf/vibe/issues/125), #128), and `feature`/`plan` now refuse a name two backends hold and name both candidate roots on a miss ([#126](https://github.com/LennardZuendorf/vibe/issues/126)); both selectors and both entry points — CLI and typed API — share one rule (`query.rs` `Lookup`).
+- No query reads openspec artifacts. A name only `openspec/changes/<f>/` holds is reported as such and exits 1, never as a superpowers miss and never served; reading `tasks.md`, native ids and closeout stay [#107](https://github.com/LennardZuendorf/vibe/issues/107).
 - `export|import --openspec` already carry the five feature files byte for byte (`openspec.rs:20-26`). Import refuses a multi-capability change, requirements edited on the OpenSpec side and an edited `tasks.md`; export refuses duplicate requirements, a MODIFIED block that drops scenarios, and `RENAMED`. But `plan_from_tasks` (`openspec.rs:687`) accepts `- [`/`* [`/`+ [` and renumbers units to `<f>/<i>`, so an OpenSpec-side number does not survive. The interchange half exists; selection, validation and closeout do not.
-- D45 and the skill reference say `.vibe/spec.json` `"featureLayer": "vibe"` selects the fallback; no Rust code reads that key, so selection is artifact absence alone.
 - `valid_name` (`query.rs:27-33`) admits a trailing hyphen that `validate` rejects for topic docs (`validate.rs:565-570`).
 
 ## Open inputs
