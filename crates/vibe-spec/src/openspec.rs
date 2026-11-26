@@ -25,6 +25,9 @@ const CARRIED: [&str; 5] = [
     "research.md",
 ];
 
+/// The project-relative root of active changes; one directory per feature.
+pub(crate) const CHANGES: &str = "openspec/changes";
+
 /// Files to write: path components under the output dir, and bytes.
 macro_rules! note { ($cx:expr,$($args:tt)*) => {$cx.notice("openspec_diagnostic",format_args!($($args)*))}; }
 

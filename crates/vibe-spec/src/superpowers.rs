@@ -8,6 +8,8 @@ use crate::pattern::{md_link_target, md_links};
 use crate::report::Report;
 use crate::text::{Fences, is_date, join_raw, lines, lossy};
 
+/// The superpowers artifact tree, a project-relative root.
+pub const ROOT: &str = "docs/superpowers";
 /// Design specs, `YYYY-MM-DD-<topic>-design.md`.
 pub const SPECS: &str = "docs/superpowers/specs";
 /// Plans, `YYYY-MM-DD-<topic>.md`.
