@@ -31,7 +31,8 @@ that owner. Reference-host execution capability must be proven before enabling i
 ## Open design
 
 [#101](https://github.com/LennardZuendorf/vibe/issues/101) decides trusted
-collection and scoped actions. [#106](https://github.com/LennardZuendorf/vibe/issues/106)
+collection and scoped actions, in [trusted verification receipts](flow-trusted-verification.md).
+[#106](https://github.com/LennardZuendorf/vibe/issues/106)
 chooses the reference host and checkpoint/retry policy. Avoid promising
 universal host confinement. The TUI uses the same writer and outcomes.
 
