@@ -1,6 +1,6 @@
 ---
 type: concept
-updated: 2026-11-25
+updated: 2026-11-26
 ---
 
 # Trusted Spec workflow
@@ -40,6 +40,6 @@ selection, identity, task queries, resume, verification and closeout for both
 backends, plus the mixed-state refusals, and records where the tree still falls
 short so [#107](https://github.com/LennardZuendorf/vibe/issues/107) has a
 definition to build against. Run real-feature drills for both backends. Include
-ambiguous selection, missing artifacts, invalid task state and conflict at closeout. The durable-root decision remains open in [#104](https://github.com/LennardZuendorf/vibe/issues/104).
+ambiguous selection, missing artifacts, invalid task state and conflict at closeout. The durable root is decided: `docs/spec/**` stays the single owner of durable requirements ([D49](../decisions/d49-the-spec-root-stays-the-durable-owner.md), closing [#104](https://github.com/LennardZuendorf/vibe/issues/104)).
 
 [Milestones](product-milestones.md) · [Technical contract](../tech/milestone-spec-feature-contract.md)
