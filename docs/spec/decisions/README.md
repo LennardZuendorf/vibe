@@ -46,3 +46,4 @@ Index of the architecture decisions; each decision is its own note in this folde
 - [D47 — Router + tooth](d47-router-tooth.md)
 - [D48 — Global store and harness projection (v0.5)](d48-global-store-and-projection.md)
 - [D49 — The spec root stays the durable owner](d49-the-spec-root-stays-the-durable-owner.md)
+- [D50 — Unit-row forms are artifact-scoped, and no rows is an answer](d50-unit-row-forms-are-artifact-scoped.md)

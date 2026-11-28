@@ -117,20 +117,61 @@ fn a_unit_table_still_wins_over_headings() {
 }
 
 #[test]
-fn a_fallback_plan_with_no_units_says_so_on_stderr() {
+fn an_empty_fallback_plan_names_only_the_forms_the_fallback_reads() {
     let p = project("q-plan-empty");
     write(
         &p,
         "docs/spec/features/auth/plan.md",
-        "# Plan\n\nProse only, no units.\n",
+        "### Task 1: a superpowers heading this file never answers to\n\n- [ ] write it\n",
     );
     let out = spec(&p, &["plan", "--feature", "auth", "--json"], &[]);
     assert_eq!(out.code, 0, "{}", out.stderr);
     assert_eq!(v(&out)["rows"], json!([]));
     assert!(
         out.stderr.contains("docs/spec/features/auth/plan.md")
-            && out.stderr.contains("no unit rows"),
+            && out.stderr.contains("no unit rows in a fallback plan"),
         "stderr was {:?}",
+        out.stderr
+    );
+    assert!(
+        out.stderr.contains("`| Unit | Status |`") && out.stderr.contains("`### auth/<n>`"),
+        "the fallback's own forms are missing from {:?}",
+        out.stderr
+    );
+    assert!(
+        !out.stderr.contains("### Task <n>:"),
+        "the fallback names a form it never reads: {:?}",
+        out.stderr
+    );
+}
+
+#[test]
+fn an_empty_superpowers_plan_names_only_the_task_headings() {
+    let p = project("q-plan-empty-sp");
+    std::fs::create_dir_all(p.join("docs/spec")).unwrap();
+    write(
+        &p,
+        "docs/superpowers/plans/2026-01-01-tab.md",
+        "# Tab\n\n| Unit | Status |\n|---|---|\n| tab/1 | done |\n",
+    );
+    let out = spec(&p, &["plan", "--feature", "tab", "--json"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert_eq!(v(&out)["rows"], json!([]));
+    assert!(
+        out.stderr
+            .contains("docs/superpowers/plans/2026-01-01-tab.md")
+            && out.stderr.contains("no unit rows in a superpowers plan"),
+        "stderr was {:?}",
+        out.stderr
+    );
+    assert!(
+        out.stderr.contains("`### Task <n>:`"),
+        "the superpowers form is missing from {:?}",
+        out.stderr
+    );
+    assert!(
+        !out.stderr.contains("| Unit | Status |") && !out.stderr.contains("tab/<n>"),
+        "the superpowers plan names forms it never reads: {:?}",
         out.stderr
     );
 }

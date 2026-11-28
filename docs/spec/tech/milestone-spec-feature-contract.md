@@ -1,7 +1,7 @@
 ---
 type: tech
 applies: ["crates/vibe-spec/**", "spec/**"]
-updated: 2026-11-26
+updated: 2026-11-28
 ---
 
 # Spec feature backend contract
@@ -22,7 +22,7 @@ The fallback folder is the `superpowers` backend's degraded layer, not a third b
 - A resolved feature exposes project and branch context, stable identity, backend, authoritative paths, task IDs and readiness. Repeated reads of unchanged artifacts agree. Contract tests cover routing, resume, missing prerequisites, native edits and promotion, and assert real task ids and statuses.
 - **Discovery** applies the selected layer first — a project whose layer is `vibe` never consults the superpowers candidates — then orders what remains: an `openspec/changes/<f>/` directory, a plan or design bound by the exact `-<f>.md` / `-<f>-design.md` suffix, then `<root>/features/<f>/`. Two backends holding one name is an error, not a precedence question; neither holding it is a lookup miss, not an empty feature: exit 1 naming the feature and both candidate roots, and never an implicit create.
 - **Feature identity** is the slug `^[a-z0-9][a-z0-9-]*$`, no trailing hyphen, derived from the artifact that carries it: the `-<f>.md` / `-<f>-design.md` stem under `superpowers`, the `changes/<f>/` directory under `openspec`. There is no rename: a rename orphans every bound artifact, so a write refuses when the name matches a bound artifact filed under a different one. Identity is reported with backend and path.
-- **Task identity** is the artifact's own: `### Task <n>`, `### <f>/<n>` or the `| Unit | Status |` table for `superpowers`; `- [ ] <n>.<m> <title>` in `tasks.md` for `openspec`. Queries return native ids verbatim, never renumber, read status from that backend's markers only, and answer "what is left, in what order" from one backend in one read — mixed reads are refused, not merged. No rows is a stated answer at exit 0; an unreadable artifact is exit 1.
+- **Task identity** is the artifact's own. Inside the `superpowers` backend a plan under `docs/superpowers/plans/` reads `### Task <n>:` headings only, while the fallback `features/<f>/plan.md` reads its `| Unit | Status |` table or `### <f>/<n>` headings; `openspec` reads `- [ ] <n>.<m> <title>` in `tasks.md`. The forms are artifact-scoped, so a reader or a diagnostic names only the ones the artifact it read accepts (D50). Queries return native ids verbatim, never renumber, read status from that backend's markers only, and answer "what is left, in what order" from one backend in one read — mixed reads are refused, not merged. No rows is a stated answer at exit 0 with `rows: []`; a missing artifact is a lookup miss at exit 1 naming both candidate roots, and an unreadable artifact is exit 1 (D50).
 - **Creation** goes through the backend's own writer — a superpowers plan, or `openspec new change`. A name the other backend already holds is refused with both paths. Vibe never scaffolds an authoritative copy of a change it did not create.
 - Preserve repo-first and global-first resolution and reconciliation. A backend cannot silently switch code refs, change storage mode or start a second authoritative copy. Keep private spec history and index separate from code Git state.
 - **Validation** stays three separate results: repository (`vibe-spec validate`), backend artifacts (`openspec validate --strict` or SF28–SF36), and Flow verification. A green in one cannot stand in for another or approve a gated edge.
