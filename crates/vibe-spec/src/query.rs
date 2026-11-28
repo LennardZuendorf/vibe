@@ -323,13 +323,13 @@ pub fn plan(
         );
         return (exit::FINDINGS, Vec::new());
     }
-    let (path, rows) = match superpowers {
+    let (path, rows, layer) = match superpowers {
         Some(p) => {
             let rows = match read_plan(cx, &p) {
                 Ok(text) => task_rows(&text),
                 Err(e) => return e,
             };
-            (p, rows)
+            (p, rows, FeatureLayer::Superpowers)
         }
         None => {
             if !fallback.is_file() {
@@ -367,15 +367,15 @@ pub fn plan(
                 }
                 Err(e) => return e,
             };
-            (fallback, rows)
+            (fallback, rows, FeatureLayer::Fallback)
         }
     };
     if rows.is_empty() {
         diag!(
             cx,
-            "vibe-spec plan: {}: no unit rows (accepted: `### Task <n>:` headings, \
-             `### <feature>/<n>` headings, or a `| Unit | Status |` table)",
-            rel(&root.project, &path)
+            "vibe-spec plan: {}: {}",
+            rel(&root.project, &path),
+            no_rows(layer, feature)
         );
     }
     if !json_out {
@@ -406,6 +406,23 @@ pub fn plan(
         "source": { "kind": "plan", "path": rel(&root.project, &path) },
     });
     (exit::OK, format!("{v}\n").into_bytes())
+}
+
+/// Why an existing plan answered with no unit rows: the forms the artifact the
+/// query actually read accepts, and only those. A superpowers plan carries
+/// `### Task <n>:` headings; the fallback plan carries the unit table or
+/// `### <feature>/<n>` headings — offering the other layer's form sends the
+/// reader to a shape its own layer rejects (#133).
+fn no_rows(layer: FeatureLayer, feature: &str) -> String {
+    match layer {
+        FeatureLayer::Superpowers => {
+            "no unit rows in a superpowers plan (accepted: `### Task <n>:` headings)".to_string()
+        }
+        FeatureLayer::Fallback => format!(
+            "no unit rows in a fallback plan (accepted: a `| Unit | Status |` table or \
+             `### {feature}/<n>` headings)"
+        ),
+    }
 }
 
 /// Rows of a superpowers plan: one per `### Task <n>[: title]`, status from

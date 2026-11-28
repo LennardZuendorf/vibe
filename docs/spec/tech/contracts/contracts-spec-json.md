@@ -3,7 +3,7 @@ type: tech
 applies:
   - "contracts/spec-json.schema.json"
   - "crates/vibe-spec/**"
-updated: 2026-10-19
+updated: 2026-11-28
 ---
 
 # Spec JSON v1
@@ -49,8 +49,10 @@ one row per `### Task N:`, with status `done`, `in-progress` or `todo` from
 its checkboxes. Without that plan, they come from `<root>/features/<f>/plan.md`:
 the `| Unit | Status |` table when the file has one, otherwise one row per
 `### <feature>/<n>` heading (the grammar `spec/reference/plan.md` teaches), with
-status from its checkboxes. An empty answer names the file on stderr, so a
-plan with no rows in either grammar is never mistaken for a plan with nothing
-left to do. `feature` reports the layer
+status from its checkboxes. An empty answer names the file on stderr with the
+forms that file's own layer reads and only those — `### Task <n>:` for a
+superpowers plan, the table or `### <feature>/<n>` headings for the fallback
+(D50) — so a plan with no rows is never mistaken for a plan with nothing left
+to do, nor sent to a form its own layer rejects. `feature` reports the layer
 `superpowers` when a design or plan artifact exists. Otherwise it reports
 `fallback`, with the folder's `product|tech|design|plan|research` docs.
